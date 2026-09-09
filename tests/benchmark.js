@@ -12,7 +12,7 @@ try {
   const source = (
     await readFile(new URL("../public/markdown.js", import.meta.url), "utf8")
   )
-    .replace(/^import .*;\n/gm, "")
+    .replace(/^import .*;\r?\n/gm, "")
     .replace("export function", "function");
   const optimized = new Function(
     "marked",

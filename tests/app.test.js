@@ -12,7 +12,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
   );
   const source = (
     await readFile(new URL("../public/app.js", import.meta.url), "utf8")
-  ).replace(/^import .*;\n/gm, "");
+  ).replace(/^import .*;\r?\n/gm, "");
   const dom = new JSDOM(html, {
     url: "http://localhost",
     runScripts: "outside-only",
