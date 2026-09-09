@@ -56,6 +56,29 @@ test("local connection without token, foreign origin rejection, recovery and shu
     });
   let ws;
   try {
+    const http = `http://127.0.0.1:${app.server.address().port}`;
+    for (const path of ["/", "/app.js", "/style.css", "/vendor/marked.js"]) {
+      const first = await fetch(http + path);
+      assert.equal(first.status, 200);
+      assert.match(first.headers.get("cache-control"), /no-cache/);
+      assert.match(
+        first.headers.get("content-security-policy"),
+        /frame-ancestors 'none'/,
+      );
+      const etag = first.headers.get("etag");
+      assert(etag);
+      assert((await first.text()).length > 0);
+      const cached = await fetch(http + path, {
+        headers: { "If-None-Match": etag },
+      });
+      assert.equal(cached.status, 304);
+      assert.equal(await cached.text(), "");
+      const changed = await fetch(http + path, {
+        headers: { "If-None-Match": '"old"' },
+      });
+      assert.equal(changed.status, 200);
+      await changed.arrayBuffer();
+    }
     const bad = new WebSocket(url, { origin: "https://untrusted.example" });
     bad.on("error", () => {});
     const [req, res] = await once(bad, "unexpected-response");

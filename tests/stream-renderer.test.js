@@ -59,6 +59,31 @@ test("one frame, only dirty text, lazy thinking, final flush and switch cancella
     renderer.mark(item);
     renderer.clear();
     assert.equal(scheduled, undefined);
+
+    item.task = { node: document.createElement("details") };
+    const before = count;
+    for (let i = 0; i < 100; i++) {
+      item.buffer += " hidden";
+      renderer.mark(item);
+    }
+    renderer.flush(item);
+    assert.equal(count, before, "collapsed tasks do not schedule frames");
+    assert.equal(writes, 2, "collapsed tasks skip Markdown parsing");
+    item.task.node.open = true;
+    renderer.mark(item);
+    scheduled();
+    assert.equal(writes, 3);
+    assert.equal(
+      item.text.textContent,
+      item.buffer,
+      "opening paints the full result",
+    );
+    item.buffer = "closed before frame";
+    renderer.mark(item);
+    item.task.node.open = false;
+    scheduled();
+    assert.equal(writes, 3);
+    renderer.clear();
   } finally {
     dom.window.close();
   }

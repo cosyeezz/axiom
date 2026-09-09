@@ -3,6 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#101114" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>Axiom</title>
     <link rel="stylesheet" href="/style.css" />
     <script type="module" src="/app.js"></script>
@@ -30,6 +32,12 @@
         <nav id="sessions" aria-label="会话历史"></nav>
         <div class="sidebar-footer">本地执行 · Pi Runtime</div>
       </aside>
+      <button
+        id="sidebar-backdrop"
+        aria-label="关闭侧栏"
+        tabindex="-1"
+        hidden
+      ></button>
       <main>
         <header>
           <button
@@ -37,6 +45,7 @@
             class="secondary"
             aria-label="切换侧栏"
             aria-expanded="true"
+            aria-controls="sidebar"
           >
             ☰
           </button>
@@ -53,17 +62,23 @@
             </div>
           </details>
         </header>
-        <form id="login" hidden><button id="connect">重新连接</button></form>
+        <form id="login" hidden>
+          <span>连接已断开，消息和草稿仍保留在此页面。</span>
+          <button id="connect" class="secondary">重新连接</button>
+        </form>
         <section id="workspace" hidden>
-          <div id="transcript"><div id="output"></div></div>
-          <button id="latest" class="secondary" hidden>回到最新消息 ↓</button>
+          <div id="transcript" role="region" aria-label="对话记录" tabindex="0">
+            <div id="output"></div>
+          </div>
           <div class="composer-wrap">
+            <button id="latest" class="secondary" hidden>回到最新消息 ↓</button>
             <form id="composer">
               <label for="prompt" class="sr-only">任务内容</label
               ><textarea
                 id="prompt"
                 rows="3"
                 placeholder="描述任务，让 Axiom 开始执行…"
+                aria-describedby="composer-help"
                 required
               ></textarea>
               <div class="actions">
@@ -84,7 +99,7 @@
                 ><button id="send">发送 ↑</button>
               </div>
             </form>
-            <div class="composer-footer">
+            <div class="composer-footer" id="composer-help">
               <span>Enter 发送 · Shift / Ctrl / ⌘ + Enter 换行</span
               ><span>Esc 停止</span>
             </div>

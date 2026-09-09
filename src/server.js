@@ -1,28 +1,25 @@
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
-const assets = new Map(
-  [
-    ["/", ["index.html", "text/html"]],
-    ["/app.js", ["app.js", "text/javascript"]],
-    ["/style.css", ["style.css", "text/css"]],
-  ].map(([route, [file, type]]) => [
-    route,
-    { type, body: readFileSync(new URL(`../public/${file}`, import.meta.url)) },
-  ]),
-);
+import { createHash } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import { command } from "./protocol.js";
-for (const [route, file] of [
-  ["/markdown.js", "public/markdown.js"],
-  ["/stream-renderer.js", "public/stream-renderer.js"],
-  ["/vendor/marked.js", "node_modules/marked/lib/marked.esm.js"],
-  ["/vendor/purify.js", "node_modules/dompurify/dist/purify.es.mjs"],
-]) {
-  assets.set(route, {
-    type: "text/javascript",
-    body: readFileSync(new URL(`../${file}`, import.meta.url)),
-  });
-}
+
+const assets = new Map(
+  [
+    ["/", "public/index.html", "text/html"],
+    ["/favicon.svg", "public/favicon.svg", "image/svg+xml"],
+    ["/style.css", "public/style.css", "text/css"],
+    ["/app.js", "public/app.js"],
+    ["/markdown.js", "public/markdown.js"],
+    ["/stream-renderer.js", "public/stream-renderer.js"],
+    ["/vendor/marked.js", "node_modules/marked/lib/marked.esm.js"],
+    ["/vendor/purify.js", "node_modules/dompurify/dist/purify.es.mjs"],
+  ].map(([route, file, type = "text/javascript"]) => {
+    const body = readFileSync(new URL(`../${file}`, import.meta.url));
+    const etag = `"${createHash("sha256").update(body).digest("base64url")}"`;
+    return [route, { type, body, etag }];
+  }),
+);
 
 export function createServerApp(sessions) {
   let stopping = false;
@@ -30,13 +27,16 @@ export function createServerApp(sessions) {
   const server = createServer((req, res) => {
     const asset = assets.get(req.url);
     if (asset) {
-      res.writeHead(200, {
+      const unchanged = req.headers["if-none-match"] === asset.etag;
+      res.writeHead(unchanged ? 304 : 200, {
         "Content-Type": `${asset.type}; charset=utf-8`,
-        "Cache-Control": "no-store",
+        "Cache-Control": "no-cache",
+        ETag: asset.etag,
+        "X-Content-Type-Options": "nosniff",
         "Content-Security-Policy":
           "default-src 'self'; connect-src 'self'; frame-ancestors 'none'",
       });
-      res.end(asset.body);
+      res.end(unchanged ? undefined : asset.body);
       return;
     }
     res.writeHead(req.url === "/health" ? 200 : 404, {

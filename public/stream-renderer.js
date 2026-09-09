@@ -8,6 +8,7 @@ export function createStreamRenderer(
   const dirty = new Set();
   let frame;
   function paint(item) {
+    if (item.task && !item.task.node.open) return;
     if (item.paintedText !== item.buffer) {
       renderMarkdown(item.text, item.buffer);
       item.paintedText = item.buffer;
@@ -25,6 +26,7 @@ export function createStreamRenderer(
   }
   return {
     mark(item) {
+      if (item.task && !item.task.node.open) return;
       dirty.add(item);
       if (frame !== undefined) return;
       frame = schedule(() => {
@@ -37,7 +39,7 @@ export function createStreamRenderer(
     flush(item) {
       dirty.delete(item);
       paint(item);
-      afterPaint();
+      if (!item.task || item.task.node.open) afterPaint();
     },
     clear() {
       if (frame !== undefined) cancel(frame);

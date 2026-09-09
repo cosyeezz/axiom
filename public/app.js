@@ -6,13 +6,26 @@ let ws,
   models = [],
   config,
   busy = false,
-  changing = false;
+  changing = false,
+  connected = false;
 let allSessions = [],
   follow = true;
 const views = new Map();
 try {
   sessionId = localStorage.getItem("axiom.session") || undefined;
 } catch {}
+function saveView() {
+  if (sessionId)
+    views.set(sessionId, {
+      draft: $("prompt").value,
+      scroll: $("transcript").scrollTop,
+      follow,
+    });
+}
+function resizePrompt() {
+  $("prompt").style.height = "auto";
+  $("prompt").style.height = Math.min($("prompt").scrollHeight, 240) + "px";
+}
 let scrollFrame;
 function scrollLatest() {
   if (!follow || changing || scrollFrame !== undefined) return;
@@ -30,13 +43,24 @@ $("transcript").onscroll = () => {
 };
 $("latest").onclick = () => {
   follow = true;
+  $("latest").hidden = true;
   scrollLatest();
 };
-$("toggle-sidebar").onclick = () => {
-  const hidden = document.querySelector(".shell").classList.toggle("collapsed");
-  $("toggle-sidebar").setAttribute("aria-expanded", String(!hidden));
-};
-if (innerWidth < 700) $("toggle-sidebar").click();
+const mobile = matchMedia("(max-width: 700px)");
+function sidebar(open) {
+  document.querySelector(".shell").classList.toggle("collapsed", !open);
+  $("toggle-sidebar").setAttribute("aria-expanded", String(open));
+  $("sidebar-backdrop").hidden = !open || !mobile.matches;
+  document.querySelector("main").inert = open && mobile.matches;
+  if (open && mobile.matches) $("search").focus();
+  else if ($("sidebar").contains(document.activeElement))
+    $("toggle-sidebar").focus();
+}
+$("toggle-sidebar").onclick = () =>
+  sidebar($("toggle-sidebar").getAttribute("aria-expanded") !== "true");
+$("sidebar-backdrop").onclick = () => sidebar(false);
+mobile.onchange = () => sidebar(!mobile.matches);
+sidebar(!mobile.matches);
 const pending = new Map(),
   live = new Map(),
   tasks = new Map();
@@ -53,13 +77,23 @@ function request(type, data = {}) {
   });
 }
 function controls() {
+  const unavailable = !connected || changing;
   for (const id of ["provider", "model", "thinking"])
-    $(id).disabled = busy || changing;
-  $("send").disabled = busy || changing;
-  $("stop").disabled = !busy || changing;
+    $(id).disabled = busy || unavailable;
+  $("send").disabled = busy || unavailable || !$("prompt").value.trim();
+  $("stop").disabled = !busy || unavailable;
   $("stop").hidden = !busy;
   $("send").hidden = busy;
-  for (const id of ["new", "delete", "rename"]) $(id).disabled = changing;
+  for (const id of ["new", "delete", "rename"]) $(id).disabled = unavailable;
+  $("status").dataset.busy = String(busy && !unavailable);
+  $("status").textContent =
+    ws?.readyState !== WebSocket.OPEN
+      ? "连接断开"
+      : changing
+        ? "正在切换"
+        : busy
+          ? "正在执行"
+          : "已连接 · 就绪";
 }
 function options(select, entries, selected) {
   select.replaceChildren(
@@ -118,7 +152,7 @@ async function configure(thinking) {
     controls();
   }
 }
-function card(title, parent) {
+function card(title, task) {
   $("output").querySelector(".empty")?.remove();
   const node = document.createElement("article");
   node.className = title === "你" ? "message user" : "message";
@@ -134,9 +168,11 @@ function card(title, parent) {
   const text = document.createElement("div");
   text.className = "markdown";
   node.append(heading, thinking, text);
-  (parent || $("output")).append(node);
-  scrollLatest();
+  if (task && !task.node.isConnected) $("output").append(task.node);
+  (task?.node || $("output")).append(node);
+  if (!task || task.node.open) scrollLatest();
   const item = {
+    task,
     node,
     heading,
     thinking,
@@ -146,6 +182,7 @@ function card(title, parent) {
     reasoning: "",
     paintedText: "",
   };
+  task?.messages.push(item);
   thinking.ontoggle = () => {
     if (thinking.open) renderer.mark(item);
   };
@@ -172,7 +209,6 @@ function event(message) {
   if (type === "session.state") {
     void refreshSessions().catch(error);
     busy = data.status !== "idle";
-    $("status").textContent = busy ? "正在执行" : "已连接 · 就绪";
     controls();
   }
   if (type === "agent.message.start" && data.message.role === "assistant")
@@ -180,7 +216,7 @@ function event(message) {
       agentId,
       card(
         agentId === "main" ? "AXIOM" : `子 Agent · ${agentId.slice(0, 8)}`,
-        tasks.get(agentId)?.node,
+        tasks.get(agentId),
       ),
     );
   if (type === "agent.delta") {
@@ -193,7 +229,8 @@ function event(message) {
   }
   if (type === "agent.message.end" && data.message.role === "assistant") {
     const item =
-      live.get(agentId) || card(agentId === "main" ? "AXIOM" : "子 Agent");
+      live.get(agentId) ||
+      card(agentId === "main" ? "AXIOM" : "子 Agent", tasks.get(agentId));
     renderMessage(item, data.message);
     live.delete(agentId);
   }
@@ -204,9 +241,14 @@ function event(message) {
       const heading = document.createElement("summary");
       node.append(heading);
       $("output").append(node);
-      tasks.set(message.taskId, { node, heading });
+      const task = { node, heading, messages: [] };
+      node.ontoggle = () => {
+        if (node.open) for (const item of task.messages) renderer.mark(item);
+      };
+      tasks.set(message.taskId, task);
     }
     const item = tasks.get(message.taskId);
+    item.node.dataset.status = data.status;
     item.heading.textContent = `${{ starting: "启动中", running: "运行中", completed: "已完成", failed: "失败", cancelled: "已取消" }[data.status] || data.status} · ${data.task}${data.error ? " · " + data.error : ""}`;
     scrollLatest();
   }
@@ -232,8 +274,10 @@ function snapshot(state) {
   $("output").replaceChildren();
   live.clear();
   tasks.clear();
-  for (const task of state.tasks)
+  for (const task of state.tasks) {
     event({ type: "task.state", sessionId, taskId: task.id, data: task });
+    tasks.get(task.id).node.remove();
+  }
   for (const { agentId, message } of state.messages)
     if (["assistant", "user"].includes(message.role))
       renderMessage(
@@ -243,7 +287,7 @@ function snapshot(state) {
             : agentId === "main"
               ? "AXIOM"
               : "子 Agent",
-          tasks.get(agentId)?.node,
+          tasks.get(agentId),
         ),
         message,
       );
@@ -251,30 +295,40 @@ function snapshot(state) {
     if (message.role === "assistant") {
       const item = card(
         agentId === "main" ? "AXIOM" : "子 Agent",
-        tasks.get(agentId)?.node,
+        tasks.get(agentId),
       );
       renderMessage(item, message);
       live.set(agentId, item);
     }
+  for (const task of tasks.values())
+    if (!task.node.isConnected) $("output").append(task.node);
   if (!$("output").children.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
     empty.innerHTML =
-      "<h2>有什么需要一起完成？</h2><p>从一个任务开始。Axiom 会协同思考与执行。</p>";
+      '<span class="empty-mark" aria-hidden="true">A</span><p class="eyebrow">你的本地 AI 工作台</p><h2>把想法，变成下一步。</h2><p>描述目标，让 Axiom 协同思考与执行。</p><div class="empty-hints"><span>梳理代码</span><span>排查问题</span><span>实现想法</span></div>';
     $("output").append(empty);
   }
   const view = views.get(sessionId);
   $("prompt").value = view?.draft || "";
   follow = view?.follow ?? true;
-  requestAnimationFrame(() => {
-    $("transcript").scrollTop = view?.scroll ?? $("transcript").scrollHeight;
+  $("latest").hidden = follow;
+  scrollFrame = requestAnimationFrame(() => {
+    scrollFrame = undefined;
+    resizePrompt();
+    $("transcript").scrollTop = follow
+      ? $("transcript").scrollHeight
+      : (view?.scroll ?? 0);
   });
   applyConfig(state.config);
   controls();
 }
 $("login").onsubmit = async (e) => {
   e.preventDefault();
+  connected = false;
+  controls();
   $("connect").disabled = true;
+  $("status").textContent = "连接中";
   $("error").textContent = "";
   try {
     ws = new WebSocket(
@@ -296,15 +350,17 @@ $("login").onsubmit = async (e) => {
     await new Promise((resolve, reject) => {
       ws.onopen = resolve;
       ws.onerror = () => reject(new Error("连接失败，请检查服务是否运行"));
+      ws.onclose = () => {
+        connected = false;
+        if (!$("workspace").hidden) saveView();
+        reject(new Error("连接断开"));
+        for (const p of pending.values()) p.reject(new Error("连接断开"));
+        pending.clear();
+        $("login").hidden = false;
+        $("connect").disabled = false;
+        controls();
+      };
     });
-    ws.onclose = () => {
-      for (const p of pending.values()) p.reject(new Error("连接断开"));
-      pending.clear();
-      $("status").textContent = "连接断开";
-      $("login").hidden = false;
-      $("workspace").hidden = true;
-      $("connect").disabled = false;
-    };
     models = await request("models.list");
     options(
       $("provider"),
@@ -324,18 +380,24 @@ $("login").onsubmit = async (e) => {
         ? await request("session.attach", { sessionId: existing[0].id })
         : await request("session.create");
     }
+    if (!$("workspace").hidden) saveView();
     snapshot(state);
     await refreshSessions();
     $("login").hidden = true;
     $("workspace").hidden = false;
-    $("status").textContent = busy ? "正在执行" : "已连接 · 就绪";
+    connected = true;
+    resizePrompt();
+    controls();
   } catch (e) {
     error(e);
+    $("login").hidden = false;
     ws?.close();
   } finally {
     $("connect").disabled = false;
+    controls();
   }
 };
+controls();
 $("login").requestSubmit();
 $("provider").onchange = () => {
   fillModels();
@@ -349,8 +411,9 @@ $("thinking").onchange = () => {
 };
 $("composer").onsubmit = async (e) => {
   e.preventDefault();
-  const text = $("prompt").value.trim();
-  if (!text || busy || changing) return;
+  const draft = $("prompt").value;
+  const text = draft.trim();
+  if (!text || busy || changing || !connected) return;
   busy = true;
   controls();
   $("error").textContent = "";
@@ -361,13 +424,14 @@ $("composer").onsubmit = async (e) => {
   scrollLatest();
   try {
     await request("prompt", { sessionId: sendingSession, text });
-    if (sessionId === sendingSession && $("prompt").value === text) {
+    if (sessionId === sendingSession && $("prompt").value === draft) {
       $("prompt").value = "";
-      $("prompt").style.height = "";
+      resizePrompt();
+      controls();
     }
     const saved = views.get(sendingSession);
-    if (saved?.draft === text) saved.draft = "";
-    await refreshSessions();
+    if (saved?.draft === draft) saved.draft = "";
+    void refreshSessions().catch(error);
   } catch (e) {
     userCard.node.remove();
     if (sessionId === sendingSession) {
@@ -390,10 +454,14 @@ $("prompt").onkeydown = (e) => {
   }
 };
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !e.isComposing && busy) {
-    e.preventDefault();
-    $("stop").click();
-  }
+  if (e.key !== "Escape" || e.isComposing) return;
+  if (
+    mobile.matches &&
+    $("toggle-sidebar").getAttribute("aria-expanded") === "true"
+  ) {
+    sidebar(false);
+    $("toggle-sidebar").focus();
+  } else if (busy) $("stop").click();
 });
 $("stop").onclick = async () => {
   try {
@@ -419,17 +487,14 @@ async function updateSessions() {
   renderSessions();
 }
 async function switchSession(action) {
-  if (changing) return;
-  if (sessionId)
-    views.set(sessionId, {
-      draft: $("prompt").value,
-      scroll: $("transcript").scrollTop,
-      follow,
-    });
+  if (changing || !connected) return;
+  saveView();
   changing = true;
+  $("error").textContent = "";
   controls();
   try {
     snapshot(await action());
+    if (mobile.matches) sidebar(false);
     await refreshSessions();
   } catch (e) {
     error(e);
@@ -439,14 +504,15 @@ async function switchSession(action) {
   }
 }
 function renderSessions() {
-  $("sessions").replaceChildren();
+  const fragment = document.createDocumentFragment();
+  const query = $("search").value.trim().toLowerCase();
   let group;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   for (const s of allSessions.filter(
     (s) =>
-      s.cwd === $("cwd").value &&
-      s.title.toLowerCase().includes($("search").value.toLowerCase()),
+      s.cwd === $("workspace-label").textContent &&
+      s.title.toLowerCase().includes(query),
   )) {
     const name =
       s.updatedAt >= +today
@@ -459,7 +525,7 @@ function renderSessions() {
       const label = document.createElement("p");
       label.className = "session-group";
       label.textContent = name;
-      $("sessions").append(label);
+      fragment.append(label);
     }
     const button = document.createElement("button");
     button.className = "session-item";
@@ -472,8 +538,15 @@ function renderSessions() {
     button.append(title, status);
     button.onclick = () =>
       switchSession(() => request("session.attach", { sessionId: s.id }));
-    $("sessions").append(button);
+    fragment.append(button);
   }
+  if (!fragment.childNodes.length) {
+    const empty = document.createElement("p");
+    empty.className = "session-group";
+    empty.textContent = query ? "没有找到匹配的会话" : "还没有会话";
+    fragment.append(empty);
+  }
+  $("sessions").replaceChildren(fragment);
 }
 $("search").oninput = renderSessions;
 $("rename").onclick = async () => {
@@ -481,15 +554,16 @@ $("rename").onclick = async () => {
   if (!title?.trim()) return;
   try {
     const state = await request("session.rename", { sessionId, title });
-    $("session-title").textContent = state.title;
+    if (state.sessionId === sessionId)
+      $("session-title").textContent = state.title;
     await refreshSessions();
   } catch (e) {
     error(e);
   }
 };
 $("prompt").oninput = () => {
-  $("prompt").style.height = "auto";
-  $("prompt").style.height = Math.min($("prompt").scrollHeight, 240) + "px";
+  resizePrompt();
+  controls();
 };
 $("new").onclick = () =>
   switchSession(() => request("session.create", { cwd: $("cwd").value }));
@@ -511,6 +585,7 @@ $("delete").onclick = () => {
   if (!confirm("删除当前会话并停止其中的任务？")) return;
   void switchSession(async () => {
     await request("session.close", { sessionId });
+    views.delete(sessionId);
     const rest = await request("sessions.list");
     const next = rest.find((s) => s.cwd === $("cwd").value);
     return next
