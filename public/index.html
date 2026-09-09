@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Axiom</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <div class="shell">
+      <aside id="sidebar">
+        <div class="brand">A<span>XIOM</span></div>
+        <details id="workspace-picker">
+          <summary id="workspace-name">工作空间</summary>
+          <form id="workspace-form">
+            <label for="cwd">目录路径</label
+            ><input
+              id="cwd"
+              list="workspaces"
+              placeholder="工作空间的绝对路径"
+              required
+            /><datalist id="workspaces"></datalist
+            ><button class="secondary">打开工作空间</button>
+          </form>
+        </details>
+        <button id="new" class="secondary">＋ 新会话</button
+        ><label class="sr-only" for="search">搜索会话</label
+        ><input id="search" type="search" placeholder="搜索会话…" />
+        <nav id="sessions" aria-label="会话历史"></nav>
+        <div class="sidebar-footer">本地执行 · Pi Runtime</div>
+      </aside>
+      <main>
+        <header>
+          <button
+            id="toggle-sidebar"
+            class="secondary"
+            aria-label="切换侧栏"
+            aria-expanded="true"
+          >
+            ☰
+          </button>
+          <div class="header-title">
+            <h1 id="session-title">新会话</h1>
+            <span id="workspace-label"></span>
+          </div>
+          <span id="status" role="status">连接中</span>
+          <details class="menu">
+            <summary aria-label="会话操作">···</summary>
+            <div>
+              <button id="rename" class="secondary">重命名</button
+              ><button id="delete" class="secondary">删除会话</button>
+            </div>
+          </details>
+        </header>
+        <form id="login" hidden><button id="connect">重新连接</button></form>
+        <section id="workspace" hidden>
+          <div id="transcript"><div id="output"></div></div>
+          <button id="latest" class="secondary" hidden>回到最新消息 ↓</button>
+          <div class="composer-wrap">
+            <form id="composer">
+              <label for="prompt" class="sr-only">任务内容</label
+              ><textarea
+                id="prompt"
+                rows="3"
+                placeholder="描述任务，让 Axiom 开始执行…"
+                required
+              ></textarea>
+              <div class="actions">
+                <div class="selectors">
+                  <label
+                    ><span class="sr-only">供应商</span
+                    ><select id="provider" title="供应商"></select></label
+                  ><label
+                    ><span class="sr-only">模型</span
+                    ><select id="model" title="模型"></select></label
+                  ><label
+                    ><span class="sr-only">思考程度</span
+                    ><select id="thinking" title="思考程度"></select
+                  ></label>
+                </div>
+                <button type="button" class="secondary" id="stop" hidden>
+                  停止 ■</button
+                ><button id="send">发送 ↑</button>
+              </div>
+            </form>
+            <div class="composer-footer">
+              <span>Enter 发送 · Shift / Ctrl / ⌘ + Enter 换行</span
+              ><span>Esc 停止</span>
+            </div>
+          </div>
+        </section>
+        <p id="error" role="alert"></p>
+      </main>
+    </div>
+  </body>
+</html>
