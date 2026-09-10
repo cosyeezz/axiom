@@ -7,10 +7,13 @@ test("configuration applies to the main agent and is inherited by delegated chil
   const selections = [];
   const sessions = new Sessions(async (_tools, selected) => {
     selections.push(selected);
-    let config = { model: "a/b", thinking: "off", levels: ["off", "high"] };
+    let config = { model: "a/b", thinking: "off", ...selected, levels: ["off", "high"] };
     return {
       config: () => config,
-      configure: async (value) => (config = { ...config, ...value }),
+      configure: async (value) => {
+        if (value.model === "unknown/model") throw new Error("Unknown model");
+        return (config = { ...config, model: value.model, thinking: value.thinking ?? config.thinking });
+      },
       subscribe: () => () => {},
       prompt: async () => {},
       result: () => "ok",
@@ -44,6 +47,16 @@ test("configuration applies to the main agent and is inherited by delegated chil
     assert.equal(selections[3].model, "c/d");
     const other = await sessions.create();
     assert.equal(sessions.snapshot(other).config.subagentModel, null);
+    assert.equal(sessions.snapshot(other).config.model, "c/d");
+    assert.equal(sessions.snapshot(other).config.thinking, "high");
+    await sessions.configure(other, { model: "a/b", thinking: "off" });
+    assert.equal(sessions.snapshot(id).config.model, "c/d", "existing sessions stay unchanged");
+    await sessions.configure(id, { model: "c/d", subagentModel: "a/b" });
+    await assert.rejects(sessions.configure(id, { model: "unknown/model" }), /Unknown model/);
+    const newest = await sessions.create();
+    assert.equal(sessions.snapshot(newest).config.model, "a/b", "subagent-only changes and failures do not replace defaults");
+    assert.equal(sessions.snapshot(newest).config.thinking, "off");
+    assert.equal(sessions.snapshot(newest).config.subagentModel, null);
     for (const subagentModel of [null, "a/b", "", 123]) {
       assert.equal(command.safeParse({
         id: "1", type: "session.configure", sessionId: id,

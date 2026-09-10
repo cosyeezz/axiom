@@ -7,6 +7,7 @@ export class Sessions {
   constructor(createAgent) {
     this.createAgent = createAgent;
     this.items = new Map();
+    this.defaults = {};
   }
 
   list() {
@@ -99,7 +100,10 @@ export class Sessions {
         }),
       item.emit,
     );
-    item.agent = await this.createAgent(delegationTools(item.tasks), { cwd });
+    item.agent = await this.createAgent(delegationTools(item.tasks), {
+      ...this.defaults,
+      cwd,
+    });
     item.unsubscribe = item.agent.subscribe((event) =>
       item.emit({ ...event, agentId: "main", runId: item.runId }),
     );
@@ -145,7 +149,10 @@ export class Sessions {
       throw new Error("Unknown subagent model");
     item.status = "configuring";
     try {
+      const previous = item.agent.config?.();
       const config = await item.agent.configure({ model, thinking });
+      if (config.model !== previous?.model || config.thinking !== previous?.thinking)
+        this.defaults = { model: config.model, thinking: config.thinking };
       item.subagentModel = subagentModel;
       return { ...config, subagentModel };
     } finally {
