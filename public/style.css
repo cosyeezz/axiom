@@ -297,13 +297,28 @@ h1 {
 }
 .markdown table {
   display: block;
+  max-width: 100%;
+  margin: 12px 0;
   overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
   border-collapse: collapse;
 }
 .markdown td,
 .markdown th {
   border: 1px solid var(--line);
   padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+  line-height: 1.6;
+}
+.markdown th {
+  background: var(--raised);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.markdown tbody tr:nth-child(even) {
+  background: #ffffff08;
 }
 .markdown blockquote {
   border-left: 2px solid var(--accent);
