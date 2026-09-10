@@ -138,7 +138,7 @@ summary {
   color: var(--muted);
   margin: 16px 8px 8px;
 }
-.session-row { display: flex; align-items: center; min-width: 0; border-radius: 8px; }
+.session-row { display: flex; align-items: center; min-width: 0; padding-right: 4px; border: 1px solid transparent; border-radius: 8px; }
 .session-row:hover, .session-row:focus-within { background: var(--surface); }
 .session-actions { display: flex; flex: 0 0 auto; gap: 2px; }
 .session-actions button { display: grid; place-items: center; width: 28px; min-height: 32px; padding: 5px; background: transparent; border-color: transparent; color: var(--muted); }
@@ -158,10 +158,10 @@ summary {
   padding: 8px;
   font-weight: 400;
 }
-.session-item:hover {
-  background: var(--raised);
+.session-item:hover:not(:disabled) {
+  background: transparent;
 }
-.session-item[aria-current="page"] {
+.session-row:has(.session-item[aria-current="page"]) {
   background: #717de514;
   border-color: #717de52b;
   box-shadow: inset 2px 0 var(--accent);
@@ -420,7 +420,6 @@ h1 {
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 button.danger { background: #a53543; border-color: #c34b5b; color: white; }
 button.danger:hover:not(:disabled) { background: #c13e50; }
-.session-actions .session-delete { color: #f2a6a6; }
 #session-action-description { overflow-wrap: anywhere; }
 #session-action-title { margin-top: 0; }
 #session-action { width: min(460px, calc(100vw - 32px)); }
