@@ -196,7 +196,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     ]) assert.equal(window.capabilityName(id), name);
     $("open-settings").click();
     assert.equal($("settings").open, true);
-    assert.equal($("settings-session").textContent, "a");
+    assert.equal($("settings-session"), null);
+    assert.equal($("active-capabilities"), null);
     window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape" }));
     assert.equal($("sidebar-backdrop").hidden, true, "settings Escape must not toggle sidebar");
     $("subagent-provider").value = "other";
@@ -282,7 +283,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     await settle();
     assert.equal($("model").value, "other/child");
     assert.equal(Object.hasOwn(lastCreation, "capabilities"), false, "ordinary creation resolves defaults on the server");
-    assert.match($("active-capabilities").textContent, /Skills：无\nMCP：无\nExtensions：无/);
+    assert.equal($("defaults-preview").compareDocumentPosition($("defaults-editor")) & window.Node.DOCUMENT_POSITION_FOLLOWING, window.Node.DOCUMENT_POSITION_FOLLOWING);
     window.document.querySelectorAll(".session-item")[0].click();
     await settle();
     $("custom-new").click();

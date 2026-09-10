@@ -140,17 +140,6 @@ function capabilityName(id) {
 }
 function applyConfig(value) {
   config = value;
-  const summary = (title, key, thinking, selection) => {
-    const model = models.find((m) => m.key === key);
-    return `${title}\n供应商：${model?.provider || key?.split("/")[0] || "默认"} · 模型：${model?.name || key || "默认"}\n思考等级：${thinking || "跟随主代理"}\n` +
-      [["skills", "Skills"], ["mcp", "MCP"], ["plugins", "Extensions"]].map(([kind, label]) =>
-        `${label}：${selection == null ? "全部已启用（子任务启动时解析）" : selection[kind]?.map(capabilityName).join("、") || "无"}`).join("\n");
-  };
-  const mainCapabilities = value.capabilities ?? value.capabilitySelection;
-  $("active-capabilities").textContent = summary("主 Agent", value.model, value.thinking, mainCapabilities) + "\n\n" +
-    summary(`子 Agent${value.subagentModel == null ? "（模型跟随主代理）" : ""}${value.subagentCapabilities === "inherit" ? "（能力跟随主代理）" : ""}`,
-      value.subagentModel || value.model, value.subagentThinking || value.thinking, value.subagentCapabilities === "inherit" ? mainCapabilities : value.subagentResolvedCapabilities ?? value.subagentCapabilities) +
-    (value.warnings?.length ? "\n加载提示：" + value.warnings.join("；") : "");
   options(
     $("subagent-provider"),
     [["", "跟随主代理"], ...[...new Set(models.map((m) => m.provider))].map((p) => [p, p])],
@@ -201,7 +190,6 @@ async function configure(thinking) {
   }
 }
 $("open-settings").onclick = () => {
-  $("settings-session").textContent = $("session-title").textContent;
   controls();
   $("settings").showModal();
   openCreation(true);

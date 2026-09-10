@@ -117,11 +117,10 @@
       <div class="settings-layout">
       <nav class="settings-nav" aria-label="设置分类"><button type="button" class="secondary" aria-current="page">默认新会话设置</button></nav>
       <div class="settings-body" id="defaults-panel">
-        <p class="settings-scope">当前会话 · <span id="settings-session"></span></p>
         <section>
-          <h3>当前会话实际能力（不随默认配置改变）</h3>
-          <p id="active-capabilities"></p>
-          <p>以上为当前会话配置；Skills 按需使用，子代理列表为启动配置，并非已执行记录。下方仅设置之后的新会话，不修改当前会话。</p>
+          <h3>会话能力</h3>
+          <p>与下方选择实时同步；自动保存成功后用于新会话。</p>
+          <p id="defaults-preview"></p>
         </section>
         <section aria-labelledby="subagent-title" hidden>
           <h3 id="subagent-title">子代理</h3>
@@ -136,8 +135,6 @@
         <section aria-labelledby="defaults-title">
           <h3 id="defaults-title">默认新会话设置</h3>
           <p>选择后自动通过 WebSocket 保存到本机，重启保留；仅影响之后的普通新会话，不修改当前会话。</p>
-          <h4>默认会话能力预览（随下方选择同步）</h4>
-          <p id="defaults-preview" style="white-space: pre-wrap; overflow-wrap: anywhere"></p>
           <div id="defaults-editor"></div>
         </section>
       </div>
