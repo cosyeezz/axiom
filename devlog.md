@@ -1,5 +1,9 @@
 # 开发记录
 
+## 2026-09-10 — 已完成区改名与去掉计数
+- worktree MyWorkbench-session-done / feat/session-done-label。按用户要求，隐藏区标题由「已隐藏 (N) · 拖到这里」改为「已完成 · 拖到这里」，不再显示会话个数；README 同步。涉及 public/{app.js,index.html}、README.md、devlog.md。
+- 验证：npm test 全量 51 项通过（测试未断言计数文案，无需改动）。
+
 ## 2026-09-10 — 会话隐藏与拖放恢复
 - worktree MyWorkbench-session-hide / feat/session-hide。在会话列表下方添加默认收起的原生 details 隐藏区，支持拖入隐藏、拖回恢复及键盘/触屏按钮；限制展开高度，避免影响正常列表阅读。
 - 按后续反馈，将重命名图标改为直线铅笔轮廓，去掉原有类似取色器的圆头。

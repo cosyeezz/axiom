@@ -1124,7 +1124,7 @@ function renderSessions() {
     row.append(button, actions);
     (hidden ? hiddenFragment : fragment).append(row);
   }
-  $("hidden-session-summary").textContent = `已隐藏 (${hiddenFragment.childNodes.length}) · 拖到这里`;
+  $("hidden-session-summary").textContent = `已完成 · 拖到这里`;
   $("hidden-sessions").replaceChildren(hiddenFragment);
   if (!fragment.childNodes.length) {
     const empty = document.createElement("p");
