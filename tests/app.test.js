@@ -1089,6 +1089,23 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     assert.equal(cards()[0].open, false, "compaction cards stay folded by default");
     delete firstFolded.hidden;
 
+    // 重试过程自动聚合，成功折叠，原生 details 仍可手动展开；错误文本不能注入 HTML。
+    const retry = { id: "r1", attempt: 1, maxRetries: 30, status: "waiting", delayMs: 96000, nextRetryAt: Date.now() + 96000, error: "429 <img src=x onerror=alert(1)>" };
+    emit("agent.retry", retry);
+    emit("agent.retry", retry);
+    const retryCard = $("output").querySelector(".retry-card");
+    assert.equal(retryCard.open, true);
+    assert.equal(retryCard.querySelectorAll("li").length, 1);
+    assert.match(retryCard.textContent, /96 秒/);
+    assert.equal(retryCard.querySelector("img"), null);
+    emit("agent.retry", { ...retry, attempt: 2, delayMs: 192000 });
+    emit("agent.retry", { id: "r1", attempt: 2, status: "succeeded" });
+    assert.equal(retryCard.open, false);
+    assert.equal(retryCard.querySelectorAll("li").length, 2);
+    retryCard.open = true;
+    assert.equal(retryCard.open, true);
+    retryCard.remove();
+
     // 重复事件不重复。
     emit("agent.compaction", { id: "c1", summary: "dup", compactedMessageIds: ["m1", "m2"] });
     assert.equal(cards().length, 1);

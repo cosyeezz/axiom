@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-10 — 主/子代理自动避让重试
+- worktree MyWorkbench-auto-retry / feat/auto-retry。调研 OpenAI/Anthropic SDK 与 Pi SDK 后，在共享 factory 层统一重试，禁用底层重复计数；保留工具结果后继续，不重发用户任务。
+- 用户确认间隔 3、3、3、6、6、12、24、48、96、192…秒，持续翻倍、最多30次。长等待分段定时防32位溢出；主动停止立即取消；永久错误不重试。
+- UI 原生 details 聚合错误与等待时间，成功自动折叠，可手动展开；主/子代理隔离，记录保存、重启标记停止。前端委托两次遇到429失败，改由主代理实现。
+- 涉及 src/{pi,retry,sessions}.js、public/{app.js,style.css}、tests/{retry,app,session-flow}.test.js、README.md、索引与知识库。测试使用假模型/假等待，不调用付费模型；未做真实浏览器视觉验收。
+
 ## 2026-09-10 — 三类分组与拖动排序
 - worktree MyWorkbench-session-groups / feat/session-groups。按用户要求列表分三类：按时间分组、待处理（运行中会话，紧挨已完成上方）、已完成；另支持同类内拖动会话到另一行手动排序。
 - 排序以全局会话 id 顺序物化存入 localStorage（axiom.sessionOrder），搜索中拖动也不破坏其他会话顺序；未排序会话按原服务端顺序稳定跟随。

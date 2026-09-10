@@ -498,9 +498,49 @@ function renderQueue(queue = {}) {
   })));
   $("message-queue").hidden = !$("message-queue").children.length;
 }
+const retryCards = new Map();
+const retryFailures = new Map();
+function renderRetry(agentId, data) {
+  const key = `${agentId}:${data.id}`;
+  let record = retryCards.get(key);
+  if (!record) {
+    const node = document.createElement("details");
+    node.className = "retry-card";
+    const summary = document.createElement("summary");
+    const history = document.createElement("ol");
+    const status = document.createElement("p");
+    status.setAttribute("role", "status");
+    node.append(summary, status, history);
+    const output = tasks.get(agentId)?.output || $("output");
+    output.querySelector(".empty")?.remove();
+    output.append(node);
+    record = { node, summary, history, status, attempts: new Set() };
+    retryCards.set(key, record);
+  }
+  for (const attempt of data.history || (data.status === "waiting" ? [data] : [])) {
+    if (record.attempts.has(attempt.attempt)) continue;
+    record.attempts.add(attempt.attempt);
+    const row = document.createElement("li");
+    row.textContent = `第 ${attempt.attempt} 次 · 等待 ${attempt.delayMs / 1000} 秒 · ${attempt.error || "异常中断"}`;
+    record.history.append(row);
+  }
+  if (data.status === "waiting" && retryFailures.has(agentId)) {
+    record.node.append(retryFailures.get(agentId).node);
+    retryFailures.delete(agentId);
+  }
+  const labels = { waiting: "等待重试", running: "正在重试", succeeded: "重试成功", failed: "重试失败", cancelled: "重试已停止" };
+  record.summary.textContent = `${labels[data.status] || data.status} · ${data.attempt}/${data.maxRetries || 30}`;
+  record.status.textContent = data.status === "waiting"
+    ? `预计 ${new Date(data.nextRetryAt).toLocaleString()} 继续，可点击 Stop 停止。`
+    : data.status === "succeeded" ? "任务已恢复，展开可查看重试过程。" : data.error || "继续执行任务…";
+  if (record.lastStatus !== data.status) record.node.open = data.status !== "succeeded";
+  record.lastStatus = data.status;
+  scrollLatest();
+}
 function event(message) {
   if (message.sessionId !== sessionId) return;
   const { type, agentId = "main", data } = message;
+  if (type === "agent.retry") renderRetry(agentId, data);
   if (type === "session.queue" && agentId === "main") renderQueue(data);
   if (type === "agent.message.end" && data.message.role === "user") {
     const item = card("你", tasks.get(agentId));
@@ -539,6 +579,7 @@ function event(message) {
       live.get(agentId) ||
       card(agentId === "main" ? "AXIOM" : "子 Agent", tasks.get(agentId));
     renderMessage(item, data.message);
+    if (["error", "aborted", "length"].includes(data.message.stopReason)) retryFailures.set(agentId, item);
     live.delete(agentId);
     if (agentId === "main") mainItems.push({ item, entryId: data.entryId });
   }
@@ -626,6 +667,8 @@ function snapshot(state) {
   $("output").replaceChildren();
   live.clear();
   tasks.clear();
+  retryCards.clear();
+  retryFailures.clear();
   compactions = state.compactions || [];
   mainItems = [];
   for (const task of state.tasks) {
@@ -669,6 +712,7 @@ function snapshot(state) {
     }
   for (const task of tasks.values())
     if (!task.trigger.isConnected) $("output").append(task.trigger);
+  for (const record of state.retries || []) renderRetry(record.agentId, record);
   if (!$("output").children.length) {
     const empty = document.createElement("div");
     empty.className = "empty";

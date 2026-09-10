@@ -98,7 +98,7 @@ export class Sessions {
   persist(item) {
     if (!item.storageDir) return Promise.resolve();
     const data = JSON.stringify({ id: item.id, cwd: item.cwd, title: item.title,
-      updatedAt: item.updatedAt, messages: item.messages, compactions: item.compactions, tasks: item.tasks.snapshot(),
+      updatedAt: item.updatedAt, messages: item.messages, compactions: item.compactions, retries: item.retries, tasks: item.tasks.snapshot(),
       sessionFile: item.agent.sessionFile?.(),
       selection: { ...item.agent.config?.(), capabilities: item.capabilities,
         subagentCapabilities: item.subagentCapabilities, subagentModel: item.subagentModel,
@@ -151,6 +151,8 @@ export class Sessions {
       listeners: new Set(),
       messages: saved?.messages || [],
       compactions: saved?.compactions || [],
+      retries: (saved?.retries || []).map((record) => ["waiting", "running"].includes(record.status)
+        ? { ...record, status: "cancelled", error: "服务已重启，自动重试已停止" } : record),
       live: {},
       tools: {},
       subagentModel: selection.subagentModel ?? null,
@@ -203,6 +205,16 @@ export class Sessions {
       if (event.type === "agent.compaction" && agentId === "main") {
         if (!item.compactions.some((entry) => entry.id === event.data.id)) item.compactions.push(event.data);
         void this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `会话保存失败：${error.message}` } }));
+      }
+      if (event.type === "agent.retry") {
+        let record = item.retries.find((entry) => entry.agentId === agentId && entry.id === event.data.id);
+        if (!record) {
+          record = { agentId, history: [] };
+          item.retries.push(record);
+        }
+        if (event.data.status === "waiting") record.history.push({ ...event.data });
+        Object.assign(record, event.data);
+        void this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `重试记录保存失败：${error.message}` } }));
       }
       if (event.type === "tool.state")
         item.tools[`${agentId}:${event.data.toolCallId}`] = {
@@ -362,6 +374,7 @@ try {
       runId: item.runId,
       messages: item.messages,
       compactions: item.compactions,
+      retries: item.retries,
       live: item.live,
       tools: item.tools,
       tasks: item.tasks.snapshot(),

@@ -185,7 +185,9 @@ ws.onopen = () => ws.send(JSON.stringify({id:'1', type:'session.create'}));
 - `delegate({tasks:[{task:'任务 A'},{task:'任务 B'}]})`：并行启动，立即返回 `{taskIds:[...]}`。
 - `read_result({taskIds:[...],wait:true})`：等待并返回各任务结果；`wait:false` 查询当前状态。重复读取保留结果，失败与成功分别返回。
 
-无固定并发上限、任务超时、只读限制或结果截断。子 Agent 没有递归委派工具。并行修改同一文件可能冲突，应让主 Agent 分配不同文件，或使用不同工作目录/worktree。取消不回滚已发生的文件修改，不自动重试委派任务。
+无固定并发上限、任务超时、只读限制或结果截断。子 Agent 没有递归委派工具。并行修改同一文件可能冲突，应让主 Agent 分配不同文件，或使用不同工作目录/worktree。取消不回滚已发生的文件修改。主代理与子代理遇到模型限流、可恢复网络异常或意外中断时自动避让续跑，最多重试 30 次；间隔为 `3、3、3、6、6、12、24、48、96、192……秒`，48 秒之后持续翻倍，不封顶（后期可能等待很久）。Stop 会立即取消等待；凭证、权限、计费等永久错误不重试。重试保留已完成工具结果，不重新发送原始任务；正常结束不凭空判断“任务未完成”，仅对明确的可恢复失败重试。重试详情显示次数、错误和预计继续时间，成功后折叠，可手动展开；记录随会话保存，服务重启不会自动继续执行。
+
+实现参考 [OpenAI Node SDK](https://github.com/openai/openai-node#retries)、[Anthropic TypeScript SDK](https://github.com/anthropics/anthropic-sdk-typescript#retries) 及已安装 Pi SDK 的错误分类/安全继续机制。禁用底层重复重试，由 Axiom 统一计数；采用上述指定时间表，不额外加入随机抖动。SDK 消息边界未保留原始 HTTP Retry-After 响应头，因此这里不宣称支持按该响应头调整等待。
 
 ## 模块边界
 

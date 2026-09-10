@@ -564,6 +564,10 @@ button.danger:hover:not(:disabled) { background: #c13e50; }
 .skill-invocation summary { color: #b3bafa; font-size: 12px; cursor: pointer; }
 .skill-invocation > small { display: block; color: var(--muted); overflow-wrap: anywhere; margin: 10px 0; }
 .skill-invocation > div { font-size: 13px; overflow-wrap: anywhere; }
+.retry-card { margin: 12px 0; padding: 12px 16px; border: 1px solid var(--border); border-radius: 12px; overflow-wrap: anywhere; }
+.retry-card summary { cursor: pointer; font-weight: 600; }
+.retry-card p, .retry-card li { color: var(--muted); font-size: .85rem; }
+.retry-card ol { padding-left: 24px; }
 .compaction-card {
   border: 1px solid #717de52b;
   border-left: 3px solid var(--accent);
