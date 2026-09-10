@@ -20,7 +20,7 @@ const compactionDefaults = { enabled: false, tokenThreshold: 100000, percentThre
 const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 let compactions = [], mainItems = [], sessionCompaction;
 let images = [], imageLoading = false;
-let selectedSkill = "", contextFiles = [], contextMode, contextListing = { path: "", entries: [] }, contextLoad = 0, pickingWorkspace = false;
+let selectedSkill = "", contextFiles = [], contextMode, contextListing = { path: "", entries: [] }, contextLoad = 0, pickingWorkspace = false, currentCwd = "";
 try {
   sessionId = localStorage.getItem("axiom.session") || undefined;
 } catch {}
@@ -606,12 +606,7 @@ function snapshot(state) {
     localStorage.setItem("axiom.session", sessionId);
   } catch {}
   $("session-title").textContent = state.title || "新会话";
-  $("workspace-name").textContent = state.cwd
-    .split(/[\\/]/)
-    .filter(Boolean)
-    .at(-1);
-  $("workspace-picker").open = false;
-  $("cwd").value = state.cwd;
+  currentCwd = state.cwd;
   $("workspace-label").textContent = state.cwd;
   busy = state.status !== "idle";
   $("output").replaceChildren();
@@ -1029,8 +1024,6 @@ async function updateSessions() {
   allSessions = await request("sessions.list");
   const active = allSessions.find((s) => s.id === sessionId);
   if (active) $("session-title").textContent = active.title;
-  const paths = [...new Set(allSessions.map((s) => s.cwd))];
-  $("workspaces").replaceChildren(...paths.map((p) => new Option(p, p)));
   renderSessions();
 }
 async function switchSession(action) {
@@ -1255,8 +1248,17 @@ $("open-workspace").onclick = async () => {
   try {
     const { path } = await request("workspace.pick");
     if (!path || original !== sessionId) return;
-    $("cwd").value = path;
-    $("workspace-form").requestSubmit();
+    void switchSession(async () => {
+      await refreshSessions();
+      const existing = allSessions.find(
+        (s) =>
+          s.cwd.replaceAll("\\", "/").toLowerCase() ===
+          path.replaceAll("\\", "/").toLowerCase(),
+      );
+      return existing
+        ? request("session.attach", { sessionId: existing.id })
+        : request("session.create", { cwd: path });
+    });
   } catch (e) { error(e); }
   finally { pickingWorkspace = false; controls(); }
 };
@@ -1273,7 +1275,7 @@ $("reveal-workspace").onclick = async () => {
   catch (e) { error(e); }
 };
 $("new").onclick = () =>
-  switchSession(() => request("session.create", { cwd: $("cwd").value }));
+  switchSession(() => request("session.create", { cwd: currentCwd }));
 
 let creationLoad = 0;
 function createAgentPicker(role, title, catalog, initial) {
@@ -1397,7 +1399,7 @@ async function loadCreation() {
   }
 }
 function openCreation(defaults = false) {
-  creation = { cwd: $("cwd").value, defaults };
+  creation = { cwd: currentCwd, defaults };
   $("create-title").textContent = defaults ? "默认新会话配置" : "自定义新会话";
   $("create-submit").textContent = defaults ? "保存默认配置" : "创建会话";
   $("create-submit").hidden = defaults;
@@ -1484,18 +1486,4 @@ $("create-form").onsubmit = async (e) => {
     }
   });
   $("create-submit").disabled = !connected;
-};
-$("workspace-form").onsubmit = (e) => {
-  e.preventDefault();
-  void switchSession(async () => {
-    await refreshSessions();
-    const existing = allSessions.find(
-      (s) =>
-        s.cwd.replaceAll("\\", "/").toLowerCase() ===
-        $("cwd").value.replaceAll("\\", "/").toLowerCase(),
-    );
-    return existing
-      ? request("session.attach", { sessionId: existing.id })
-      : request("session.create", { cwd: $("cwd").value });
-  });
 };

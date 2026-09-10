@@ -13,19 +13,6 @@
     <div class="shell">
       <aside id="sidebar">
         <div class="brand">A<span>XIOM</span></div>
-        <details id="workspace-picker">
-          <summary id="workspace-name">工作空间</summary>
-          <form id="workspace-form">
-            <label for="cwd">目录路径</label
-            ><input
-              id="cwd"
-              list="workspaces"
-              placeholder="工作空间的绝对路径"
-              required
-            /><datalist id="workspaces"></datalist
-            ><button class="secondary">打开工作空间</button>
-          </form>
-        </details>
         <button id="open-workspace" class="secondary workspace-open"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l3 3h9v4M3 7v13h16l3-9H7l-4 9"/></svg>打开工作空间</button>
         <button id="new" class="secondary" title="使用设置中的默认新会话配置">＋ 新会话</button>
         <button id="custom-new" class="secondary" aria-haspopup="dialog" aria-controls="create-session">自定义新会话…</button

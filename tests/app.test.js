@@ -240,9 +240,12 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(copiedPath, "C:\\work");
     $("reveal-workspace").click(); await settle();
     assert.equal(requests.findLast((req) => req.type === "workspace.reveal").sessionId, "a");
+    pickedPath = "C:\\other";
     $("open-workspace").click(); await settle();
     assert.equal($("open-workspace").disabled, false);
-    assert.equal($("cwd").value, "C:\\work");
+    assert.equal(requests.findLast((req) => req.type === "session.create").cwd, "C:\\other");
+    pickedPath = null;
+    lastCreation = undefined;
     window.document.querySelector('[data-context="skill"]').click();
     assert.equal($("context-picker").open, true);
     $("context-search").value = "代码导航";
