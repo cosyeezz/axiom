@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-10 — 会话隐藏与拖放恢复
+- worktree MyWorkbench-session-hide / feat/session-hide。在会话列表下方添加默认收起的原生 details 隐藏区，支持拖入隐藏、拖回恢复及键盘/触屏按钮；限制展开高度，避免影响正常列表阅读。
+- 按后续反馈，将重命名图标改为直线铅笔轮廓，去掉原有类似取色器的圆头。
+- 按后续要求，将隐藏入口放在编辑前，使用对钩图标与「完成并隐藏」提示，点击后移动到下方隐藏区；隐藏区仍提供向上箭头恢复。
+- 仅作为当前浏览器列表偏好保存到 localStorage，不增加服务端协议、不删除或停止会话、不切换当前对话；搜索和工作空间筛选继续生效。
+- 涉及 public/{app.js,index.html,style.css}、tests/app.test.js、README.md、devlog.md 和 codebase-map 索引。
+- 验证：npm test 全量 51 项通过，覆盖双向拖放、按钮隐藏/恢复、折叠、持久化写入、列表刷新、搜索及不发会话操作请求；未执行真实浏览器拖放验收。首次因 worktree 缺依赖失败，建立既有 node_modules junction 后通过，无新增依赖。
+
 ## 2026-09-10 — 移除浏览器截图，增加图片放大预览
 - worktree MyWorkbench-image-preview / feat/image-preview。按用户要求删除截图按钮与 getDisplayMedia 抓帧逻辑，保留上传和粘贴；附件及消息/历史图片共用原生 dialog 放大预览，支持点击、Enter/空格打开，关闭按钮、遮罩或原生 Esc 关闭，不新增依赖。
 - 涉及 public/{app.js,index.html,style.css}、tests/app.test.js、README.md、devlog.md 与 codebase-map 索引。

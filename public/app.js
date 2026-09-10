@@ -24,6 +24,38 @@ let selectedSkill = "", contextFiles = [], contextMode, contextListing = { path:
 try {
   sessionId = localStorage.getItem("axiom.session") || undefined;
 } catch {}
+let hiddenSessions = new Set();
+try {
+  const saved = JSON.parse(localStorage.getItem("axiom.hiddenSessions") || "[]");
+  if (Array.isArray(saved)) hiddenSessions = new Set(saved.filter((id) => typeof id === "string"));
+} catch {}
+function setSessionHidden(id, hidden) {
+  if (!allSessions.some((s) => s.id === id && s.cwd === $("workspace-label").textContent)) return;
+  hidden ? hiddenSessions.add(id) : hiddenSessions.delete(id);
+  try { localStorage.setItem("axiom.hiddenSessions", JSON.stringify([...hiddenSessions])); }
+  catch { error("无法保存隐藏状态，刷新后可能丢失"); }
+  renderSessions();
+  $("hidden-session-summary").focus();
+}
+let draggedSession;
+for (const [target, hidden] of [["hidden-session-area", true], ["sessions", false]]) {
+  const area = $(target);
+  area.ondragover = (e) => {
+    if (!draggedSession) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    area.classList.add("session-drop-target");
+  };
+  area.ondragleave = (e) => {
+    if (!area.contains(e.relatedTarget)) area.classList.remove("session-drop-target");
+  };
+  area.ondrop = (e) => {
+    e.preventDefault();
+    area.classList.remove("session-drop-target");
+    if (draggedSession) setSessionHidden(draggedSession, hidden);
+    draggedSession = undefined;
+  };
+}
 function saveView() {
   if (sessionId)
     views.set(sessionId, {
@@ -1019,6 +1051,7 @@ async function switchSession(action) {
 }
 function renderSessions() {
   const fragment = document.createDocumentFragment();
+  const hiddenFragment = document.createDocumentFragment();
   const query = $("search").value.trim().toLowerCase();
   let group;
   const today = new Date();
@@ -1028,13 +1061,14 @@ function renderSessions() {
       s.cwd === $("workspace-label").textContent &&
       s.title.toLowerCase().includes(query),
   )) {
+    const hidden = hiddenSessions.has(s.id);
     const name =
       s.updatedAt >= +today
         ? "今天"
         : s.updatedAt >= +today - 86400000
           ? "昨天"
           : "更早";
-    if (group !== name) {
+    if (!hidden && group !== name) {
       group = name;
       const label = document.createElement("p");
       label.className = "session-group";
@@ -1054,10 +1088,21 @@ function renderSessions() {
       switchSession(() => request("session.attach", { sessionId: s.id }));
     const row = document.createElement("div");
     row.className = "session-row";
+    row.draggable = true;
+    row.ondragstart = (e) => {
+      draggedSession = s.id;
+      e.dataTransfer.setData("text/plain", s.id);
+      e.dataTransfer.effectAllowed = "move";
+    };
+    row.ondragend = () => {
+      draggedSession = undefined;
+      document.querySelectorAll(".session-drop-target").forEach((node) => node.classList.remove("session-drop-target"));
+    };
     const actions = document.createElement("div");
     actions.className = "session-actions";
     for (const [kind, label, path] of [
-      ["rename", "重命名", 'M12 5l7 7M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L3 16l-1 6z'],
+      ["hide", hidden ? "恢复会话" : "完成并隐藏", hidden ? 'M12 20V4M5 11l7-7 7 7' : 'M5 12l4 4L19 6'],
+      ["rename", "重命名", 'M16 3l5 5L8 21H3v-5L16 3zM13 6l5 5M3 16l5 5'],
       ["delete", "删除会话", 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7'],
     ]) {
       const action = document.createElement("button");
@@ -1065,15 +1110,17 @@ function renderSessions() {
       action.className = `session-${kind}`;
       action.title = label;
       action.setAttribute("aria-label", `${label}：${s.title}`);
-      action.setAttribute("aria-haspopup", "dialog");
-      action.disabled = !connected || changing;
+      if (kind !== "hide") action.setAttribute("aria-haspopup", "dialog");
+      action.disabled = kind !== "hide" && (!connected || changing);
       action.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
-      action.onclick = () => openSessionAction(kind, s);
+      action.onclick = () => kind === "hide" ? setSessionHidden(s.id, !hidden) : openSessionAction(kind, s);
       actions.append(action);
     }
     row.append(button, actions);
-    fragment.append(row);
+    (hidden ? hiddenFragment : fragment).append(row);
   }
+  $("hidden-session-summary").textContent = `已隐藏 (${hiddenFragment.childNodes.length}) · 拖到这里`;
+  $("hidden-sessions").replaceChildren(hiddenFragment);
   if (!fragment.childNodes.length) {
     const empty = document.createElement("p");
     empty.className = "session-group";
