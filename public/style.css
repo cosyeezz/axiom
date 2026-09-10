@@ -409,9 +409,8 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 .runtime-summary > span { min-width: 0; }
-#session-runtime { padding: 0 16px 8px; order: -1; }
+#session-runtime { padding: 0 16px 8px; }
 #composer { display: flex; flex-direction: column; }
-#prompt { order: -2; }
 .message-model { display: block; margin-top: 12px; color: var(--muted); overflow-wrap: anywhere; font-size: 11px; }
 #message-queue { max-height: 180px; overflow: auto; margin-bottom: 8px; }
 #message-queue button { display: flex; gap: 12px; width: 100%; text-align: left; background: var(--raised); color: var(--ink); margin-top: 4px; }
@@ -497,18 +496,25 @@ button.danger:hover:not(:disabled) { background: #c13e50; }
 .workspace-location #workspace-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .workspace-location .icon-button { width: 26px; height: 26px; border: 0; background: transparent; display: grid; place-items: center; }
 .workspace-location svg, .workspace-open svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; flex-shrink: 0; }
-.context-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; min-width: 0; }
+.context-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; min-width: 0; }
 .icon-button { width: 32px; height: 32px; padding: 0; flex-shrink: 0; border-radius: 9px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); font-size: 22px; }
 .icon-button:hover { color: var(--text); border-color: #717de580; background: #717de51a; }
-#add-context { anchor-name: --context-add; }
+#add-context { anchor-name: --context-add; display: grid; place-items: center; width: 28px; height: 28px; min-height: 28px; border: 0; border-radius: 7px; background: transparent; }
+#add-context svg { width: 18px; height: 18px; color: var(--muted); }
+#add-context:hover:not(:disabled), #add-context:focus-visible { background: var(--raised); }
+#add-context:hover svg { color: var(--ink); }
 #context-chips { display: flex; gap: 6px; overflow-x: auto; min-width: 0; }
 .context-chip { display: flex; align-items: center; gap: 6px; padding: 5px 9px; max-width: 240px; flex-shrink: 0; border: 1px solid #717de533; background: #717de510; color: var(--text); border-radius: 8px; font-size: 12px; }
 .context-chip span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .context-chip span:last-child { color: var(--muted); }
 .context-bar svg, #context-menu svg, #context-picker svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; flex-shrink: 0; color: #a8afe8; }
-#context-menu { position: fixed; inset: auto; left: max(8px, 5vw); bottom: 260px; position-anchor: --context-add; margin: 0; width: 254px; padding: 6px; border: 1px solid #ffffff18; border-radius: 13px; background: #1c1d24; color: var(--text); box-shadow: 0 16px 48px #0006; }
+#context-menu { position: fixed; inset: auto; left: max(8px, 5vw); bottom: 260px; position-anchor: --context-add; margin: 0; width: 176px; padding: 4px; border: 1px solid #ffffff12; border-radius: 9px; background: #1c1d22; color: var(--ink); box-shadow: 0 8px 24px #0005; }
 @supports (left: anchor(left)) { #context-menu { left: anchor(left); bottom: calc(anchor(top) + 8px); } }
-.context-menu-title { padding: 8px 10px; font-size: 11px; color: var(--muted); }
+#context-menu > button { min-height: 32px; height: 32px; gap: 9px; padding: 0 9px; font-size: 12px; font-weight: 400; border-radius: 5px; }
+#context-menu button svg { width: 15px; height: 15px; color: #a5a8b6; }
+#context-menu .context-chevron { color: #737784; font-size: 16px; }
+#context-menu button:hover:not(:disabled) { background: #ffffff09; }
+@media (pointer: coarse) { #add-context { width: 40px; height: 40px; } #context-menu button { height: 40px; min-height: 40px; } }
 #context-menu button, #context-results button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px; text-align: left; color: var(--text); background: transparent; border: 0; border-radius: 7px; }
 #context-menu button:hover, #context-results button:hover { background: #717de51a; }
 #context-menu button > span:first-of-type, #context-results button > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }

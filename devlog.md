@@ -4,7 +4,12 @@
 - 独立 worktree MyWorkbench-background-compaction / feat/background-compaction。按照用户确定方案，后台独立内存 Pi 会话生成摘要，主会话继续运行；token/窗口占比阈值任一先达到触发，支持专用模型、思考等级和近期保留量，摘要会话固定无工具及无关资源。
 - 复用 Pi 原生轮次刷新钩子，摘要完成后仅在下一请求前校验并提交；保留固定边界之后的近期消息与全部新增输入/输出/工具结果，原生压缩作为窗口保护。每会话单任务，失败/失效不折叠、不删除原文。
 - 配置接入默认设置、自定义新会话和当前会话；成功压缩事件/历史消息 ID 落盘，前端按覆盖范围局部隐藏旧消息并新增可展开摘要，不重建流式消息。无新增依赖，不修改 node_modules。
-- 涉及 src/{pi,compaction,protocol,sessions}.js、public/{app.js,index.html,style.css}、tests/{compaction,compaction-config,config,app}.test.js、README/devlog 与 codebase-map。验证结果在完成复核后补充。
+- 涉及 src/{pi,compaction,protocol,sessions}.js、public/{app.js,index.html,style.css}、tests/{compaction,compaction-config,config,app}.test.js、README/devlog 与 codebase-map。验证：npm test 34 项通过，含真实 SDK + 本地 SSE 伪模型端到端、真实 HTTP 取消、split-turn、失效检查、阈值校验、配置/消息 ID/摘要重启恢复、前端折叠与输入滚动保留。实际本机已认证 Pi factory 创建/配置/释放检查通过；未调用付费模型、未重启现有服务，未进行真实浏览器视觉验收。
+
+## 2026-09-10 — 紧凑添加菜单、Skill 标签与布局纠正
+- 在独立 worktree MyWorkbench-compact-context-menu 实施：菜单改为 176px 三行单行布局，移除标题/副文案，说明移入 title；加号换细线 SVG、桌面 28px 无边框按钮，触屏保留 40px 点击区域。
+- Skill 单独保存为页面草稿状态，上方标签显示，正文不再重复命令，发送时复用 Pi /skill 命令；取消不改正文、失败保留、切换按会话恢复，支持仅发送 Skill。删除旧 CSS order，恢复正文→模型按钮→会话信息。
+- 涉及 public/{app.js,index.html,style.css}、tests/app.test.js、README.md、devlog.md 和 codebase-map；npm test 13 项通过。独立 Chromium 检查 1440/390px 菜单 176×106、加号 28×28、无横向溢出，模型操作行实际位于信息栏上方。未重启现有服务。
 
 ## 2026-09-10 — 上下文添加菜单与工作空间本地操作
 - 独立 worktree MyWorkbench-composer-add-menu / feat/composer-add-menu。参考 Claude Code 桌面「＋」与 Cursor 上下文引用官方文档，移除可见的 Skill 表单行，输入框上沿增加图标菜单、搜索选择器、可移除标签；不调整模型栏/运行摘要位置。Skill 正文以 Pi 终端同款 `[skill] 名称` 默认折叠、点击展开并安全渲染，保留任务正文。

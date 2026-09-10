@@ -17,7 +17,7 @@ const views = new Map();
 const compactionDefaults = { enabled: false, tokenThreshold: 100000, percentThreshold: 70, model: null, thinking: "off", keepRecentTokens: 20000 };
 const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 let compactions = [], mainItems = [], sessionCompaction;
-let contextFiles = [], contextMode, contextListing = { path: "", entries: [] }, contextLoad = 0, pickingWorkspace = false;
+let selectedSkill = "", contextFiles = [], contextMode, contextListing = { path: "", entries: [] }, contextLoad = 0, pickingWorkspace = false;
 try {
   sessionId = localStorage.getItem("axiom.session") || undefined;
 } catch {}
@@ -26,6 +26,7 @@ function saveView() {
     views.set(sessionId, {
       draft: $("prompt").value,
       contextFiles: [...contextFiles],
+      selectedSkill,
       scroll: $("transcript").scrollTop,
       follow,
     });
@@ -100,14 +101,15 @@ function controls() {
   for (const input of document.querySelectorAll("#session-compaction input, #session-compaction select"))
     input.disabled = unavailable;
   $("composer-skill").disabled = unavailable || !config?.skills?.length;
-  $("composer-skill").value = /^\/skill:([^\s]+)/.exec($("prompt").value)?.[1] || "";
+  $("composer-skill").value = selectedSkill;
+  $("prompt").required = !selectedSkill;
   $("add-context").disabled = unavailable;
   $("open-workspace").disabled = unavailable || pickingWorkspace;
   $("reveal-workspace").disabled = unavailable;
   $("copy-workspace").disabled = !$("workspace-label").textContent;
   renderContextChips();
   for (const id of ["send", "send-steer", "send-followup"])
-    $(id).disabled = unavailable || !$("prompt").value.trim();
+    $(id).disabled = unavailable || (!$("prompt").value.trim() && !selectedSkill);
   $("send-steer").hidden = $("send-followup").hidden = !busy;
   $("stop").disabled = !busy || unavailable;
   $("stop").hidden = !busy;
@@ -645,6 +647,7 @@ function snapshot(state) {
   const view = views.get(sessionId);
   $("prompt").value = view?.draft || "";
   contextFiles = [...(view?.contextFiles || [])];
+  selectedSkill = view?.selectedSkill || "";
   contextLoad++;
   $("context-picker").close();
   follow = view?.follow ?? true;
@@ -774,9 +777,10 @@ $("thinking").onchange = () => {
 $("composer").onsubmit = async (e) => {
   e.preventDefault();
   const draft = $("prompt").value;
-  const files = [...contextFiles];
-  const text = [draft.trim(), files.length ? `工作空间引用（按需读取；文件夹不代表已读取全部内容）：\n${files.map((file) => `- ${file.directory ? "文件夹" : "文件"}：${JSON.stringify(file.path)}`).join("\n")}` : ""].filter(Boolean).join("\n\n");
-  if (!draft.trim() || changing || !connected) return;
+  const files = [...contextFiles], skill = selectedSkill;
+  const body = [draft.trim(), files.length ? `工作空间引用（按需读取；文件夹不代表已读取全部内容）：\n${files.map((file) => `- ${file.directory ? "文件夹" : "文件"}：${JSON.stringify(file.path)}`).join("\n")}` : ""].filter(Boolean).join("\n\n");
+  const text = skill ? `/skill:${skill} ${body}` : body;
+  if ((!draft.trim() && !skill) || changing || !connected) return;
   const wasBusy = busy;
   const queueType = e.submitter?.dataset.queue || config?.queueType || "steer";
   busy = true;
@@ -791,12 +795,14 @@ $("composer").onsubmit = async (e) => {
     if (sessionId === sendingSession && $("prompt").value === draft) {
       $("prompt").value = "";
       contextFiles = contextFiles.filter((file) => !files.includes(file));
+      if (selectedSkill === skill) selectedSkill = "";
       resizePrompt();
       controls();
     }
     const saved = views.get(sendingSession);
     if (saved?.draft === draft) {
       saved.draft = "";
+      if (saved.selectedSkill === skill) saved.selectedSkill = "";
       saved.contextFiles = (saved.contextFiles || []).filter((file) => !files.includes(file));
     }
     void refreshSessions().catch(error);
@@ -1013,7 +1019,7 @@ function contextIcon(kind) {
   return document.querySelector(`[data-context="${kind}"] svg`).cloneNode(true);
 }
 function renderContextChips() {
-  const skill = /^\/skill:([^\s]+)/.exec($("prompt").value)?.[1];
+  const skill = selectedSkill;
   const entries = [...(skill ? [{ name: skill, kind: "skill" }] : []), ...contextFiles.map((file) => ({ ...file, name: file.path, kind: file.directory ? "folder" : "file" }))];
   $("context-chips").replaceChildren(...entries.map((entry) => {
     const chip = document.createElement("button");
@@ -1086,14 +1092,17 @@ for (const button of document.querySelectorAll("[data-context]")) button.onclick
 $("context-search").oninput = renderContextResults;
 $("context-close").onclick = () => $("context-picker").close();
 $("composer-skill").onchange = () => {
-  const name = $("composer-skill").value;
-  const text = $("prompt").value.replace(/^\/skill:[^\s]+(?:\s+|$)/, "");
-  $("prompt").value = name ? `/skill:${name} ${text}` : text;
+  selectedSkill = $("composer-skill").value;
   resizePrompt();
   controls();
   $("prompt").focus();
 };
 $("prompt").oninput = () => {
+  const command = /^\/skill:([^\s]+)\s+/.exec($("prompt").value);
+  if (command && config?.skills?.some((skill) => skill.name === command[1])) {
+    selectedSkill = command[1];
+    $("prompt").value = $("prompt").value.slice(command[0].length);
+  }
   resizePrompt();
   controls();
 };
