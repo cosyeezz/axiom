@@ -26,7 +26,7 @@
             ><button class="secondary">打开工作空间</button>
           </form>
         </details>
-        <button id="new" class="secondary" title="加载终端已启用的全部能力">＋ 新会话 · 全部能力</button>
+        <button id="new" class="secondary" title="使用设置中的默认新会话配置">＋ 新会话</button>
         <button id="custom-new" class="secondary" aria-haspopup="dialog" aria-controls="create-session">自定义新会话…</button
         ><label class="sr-only" for="search">搜索会话</label
         ><input id="search" type="search" placeholder="搜索会话…" />
@@ -131,6 +131,11 @@
           <p>思考程度沿用主代理，并按所选模型支持的等级调整。</p>
         </section>
         <p id="settings-feedback" role="status" aria-live="polite"></p>
+        <section aria-labelledby="defaults-title">
+          <h3 id="defaults-title">默认新会话</h3>
+          <p>设置「新会话」使用的主/子代理模型和能力。仅影响之后新建的普通会话，不改变当前会话或「自定义新会话」。刷新保留，服务重启后重置。</p>
+          <button id="edit-defaults" class="secondary" aria-haspopup="dialog" aria-controls="create-session">配置默认新会话…</button>
+        </section>
       </div>
     </dialog>
     <dialog id="create-session" aria-labelledby="create-title">
@@ -140,6 +145,7 @@
       </header>
       <form id="create-form" class="settings-body">
         <p id="create-workspace" class="settings-scope"></p>
+        <p id="create-defaults-help" hidden>保存后「新会话」使用此配置；默认主代理模型沿用最近成功调整的主模型。能力清单按当前目录读取，不保存目录信任；所选能力在其他目录不可用时会提示错误，不会自动改为全部能力。</p>
         <p>复用本机 Pi 已启用的能力；Skills 按需读取，MCP 按配置连接。未选能力不会自动加载，但这不是权限沙箱。</p>
         <div id="create-agents"></div>
         <label id="create-trust-row" class="trust-row" hidden><input id="create-trust" type="checkbox">我信任此目录的 Pi / MCP 配置，允许其插件和服务在本机执行（仅本会话）</label>

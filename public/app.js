@@ -89,7 +89,7 @@ function controls() {
   $("stop").disabled = !busy || unavailable;
   $("stop").hidden = !busy;
   $("send").hidden = busy;
-  for (const id of ["new", "custom-new", "delete", "rename"]) $(id).disabled = unavailable;
+  for (const id of ["new", "custom-new", "edit-defaults", "delete", "rename"]) $(id).disabled = unavailable;
   $("status").dataset.busy = String(busy && !unavailable);
   $("status").textContent =
     ws?.readyState !== WebSocket.OPEN
@@ -615,7 +615,7 @@ $("new").onclick = () =>
   switchSession(() => request("session.create", { cwd: $("cwd").value }));
 
 let creation, creationLoad = 0;
-function createAgentPicker(role, title, catalog) {
+function createAgentPicker(role, title, catalog, initial) {
   const fieldset = document.createElement("fieldset");
   fieldset.className = "capability-agent";
   const legend = document.createElement("legend");
@@ -637,7 +637,7 @@ function createAgentPicker(role, title, catalog) {
   };
   const provider = select("provider", `${title}供应商`);
   const model = select("model", `${title}模型`);
-  const key = role === "main" ? config?.model : config?.subagentModel;
+  const key = initial.model;
   options(provider, [["", role === "main" ? "默认主代理模型" : "跟随主代理"],
     ...[...new Set(models.map((m) => m.provider))].map((p) => [p, p])],
     models.find((m) => m.key === key)?.provider || "");
@@ -648,30 +648,33 @@ function createAgentPicker(role, title, catalog) {
   provider.onchange = fill;
   fill();
   const mode = select("mode", `${title}能力模式`);
-  options(mode, [["all", "全部能力"], ["custom", "自定义能力"]], "all");
+  options(mode, [["all", "全部能力"], ["custom", "自定义能力"]], initial.capabilities == null ? "all" : "custom");
   fieldset.append(selectors);
   const pickers = document.createElement("div");
-  pickers.hidden = true;
+  pickers.hidden = mode.value !== "custom";
   for (const [kind, labelText] of [["skills", "Skills"], ["mcp", "MCP 服务"], ["plugins", "插件"]]) {
+    const entries = [...catalog[kind], ...(initial.capabilities?.[kind] || [])
+      .filter((id) => !catalog[kind].some((entry) => entry.id === id))
+      .map((id) => ({ id, name: `当前目录不可用 · ${id}` }))];
     const details = document.createElement("details");
     details.className = "capability-picker";
     const heading = document.createElement("summary");
     const list = document.createElement("div");
     list.className = "capability-options";
-    const update = () => heading.textContent = `${labelText} · 已选 ${list.querySelectorAll("input:checked").length} / ${catalog[kind].length}`;
-    for (const entry of catalog[kind]) {
+    const update = () => heading.textContent = `${labelText} · 已选 ${list.querySelectorAll("input:checked").length} / ${entries.length}`;
+    for (const entry of entries) {
       const label = document.createElement("label");
       label.title = entry.description || entry.id;
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
-      checkbox.checked = true;
+      checkbox.checked = initial.capabilities == null || initial.capabilities[kind].includes(entry.id);
       checkbox.value = entry.id;
       checkbox.dataset.kind = kind;
       checkbox.onchange = update;
       label.append(checkbox, document.createTextNode(entry.name));
       list.append(label);
     }
-    if (!catalog[kind].length) {
+    if (!entries.length) {
       const empty = document.createElement("p");
       empty.textContent = "没有已启用的可用项";
       list.append(empty);
@@ -696,27 +699,37 @@ async function loadCreation() {
   $("create-submit").disabled = true;
   $("create-feedback").textContent = "正在读取本机 Pi 能力…";
   try {
-    const catalog = await request("capabilities.list", { cwd: current.cwd, trustProject: $("create-trust").checked });
+    const [catalog, selected] = await Promise.all([
+      request("capabilities.list", { cwd: current.cwd, trustProject: !current.defaults && $("create-trust").checked }),
+      current.defaults ? request("session.defaults.get") : { model: config?.model, subagentModel: config?.subagentModel },
+    ]);
     if (creation !== current || load !== creationLoad) return;
     $("create-agents").replaceChildren();
-    current.main = createAgentPicker("main", "主代理", catalog);
-    current.subagent = createAgentPicker("subagent", "子代理", catalog);
-    $("create-trust-row").hidden = !catalog.needsTrust && !$("create-trust").checked;
-    $("create-submit").disabled = catalog.needsTrust || !connected;
-    $("create-feedback").textContent = catalog.needsTrust ? "此目录包含未信任的配置；确认信任后加载完整列表。" : catalog.warnings.join("\n");
+    current.main = createAgentPicker("main", "主代理", catalog, { model: selected.model, capabilities: selected.capabilities });
+    current.subagent = createAgentPicker("subagent", "子代理", catalog, { model: selected.subagentModel, capabilities: selected.subagentCapabilities });
+    $("create-trust-row").hidden = current.defaults || (!catalog.needsTrust && !$("create-trust").checked);
+    $("create-submit").disabled = (!current.defaults && catalog.needsTrust) || !connected || changing;
+    $("create-feedback").textContent = catalog.needsTrust
+      ? (current.defaults ? "此目录包含未信任的配置；默认配置仅使用已信任的能力，不保存目录信任。" : "此目录包含未信任的配置；确认信任后加载完整列表。")
+      : catalog.warnings.join("\n");
   } catch (e) {
     if (creation === current && load === creationLoad) $("create-feedback").textContent = `加载失败：${e.message}`;
   }
 }
-$("custom-new").onclick = () => {
-  creation = { cwd: $("cwd").value };
+function openCreation(defaults = false) {
+  creation = { cwd: $("cwd").value, defaults };
+  $("create-title").textContent = defaults ? "默认新会话配置" : "自定义新会话";
+  $("create-submit").textContent = defaults ? "保存默认配置" : "创建会话";
+  $("create-defaults-help").hidden = !defaults;
   $("create-workspace").textContent = creation.cwd;
   $("create-trust").checked = false;
   $("create-trust-row").hidden = true;
   $("create-agents").replaceChildren();
   $("create-session").showModal();
   void loadCreation();
-};
+}
+$("custom-new").onclick = () => openCreation();
+$("edit-defaults").onclick = () => openCreation(true);
 $("create-trust").onchange = () => { void loadCreation(); };
 $("create-form").onsubmit = async (e) => {
   e.preventDefault();
@@ -724,17 +737,32 @@ $("create-form").onsubmit = async (e) => {
   const main = creation.main(), child = creation.subagent();
   const data = {
     cwd: creation.cwd,
-    ...(main.model ? { model: main.model } : {}),
+    model: main.model,
     subagentModel: child.model,
     capabilities: main.capabilities,
     subagentCapabilities: child.capabilities,
-    trustProject: $("create-trust").checked,
   };
   $("create-submit").disabled = true;
+  if (creation.defaults) {
+    changing = true;
+    controls();
+    $("create-feedback").textContent = "正在保存默认配置…";
+    try {
+      await request("session.defaults.configure", data);
+      $("create-session").close();
+    } catch (e) {
+      $("create-feedback").textContent = `保存失败：${e.message}`;
+    } finally {
+      changing = false;
+      controls();
+      $("create-submit").disabled = !connected;
+    }
+    return;
+  }
   $("create-feedback").textContent = "正在加载能力并创建会话…";
   await switchSession(async () => {
     try {
-      const state = await request("session.create", data);
+      const state = await request("session.create", { ...data, useDefaults: false, trustProject: $("create-trust").checked });
       $("create-session").close();
       return state;
     } catch (e) {

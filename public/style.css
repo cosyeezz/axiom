@@ -518,6 +518,11 @@ textarea {
   padding-top: 16px;
   margin-bottom: 0;
 }
+#settings-feedback + section {
+  margin-top: 24px;
+  border-top: 1px solid var(--line);
+  padding-top: 24px;
+}
 .capability-agent { border: 0; padding: 0; margin: 20px 0; min-width: 0; }
 .capability-agent legend { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
 .capability-agent .selectors { flex-wrap: wrap; overflow: visible; }

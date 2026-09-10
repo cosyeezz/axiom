@@ -71,7 +71,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       message: { role: "assistant", content: "historical result" },
     },
   ];
-  let lastCreation;
+  let lastCreation, lastDefaults;
+  let defaults = { model: null, subagentModel: null, capabilities: null, subagentCapabilities: null };
+  let failDefaults = false, needsTrust = false;
   let failCreation = false;
   let failList = false;
   let failConfig = false;
@@ -98,7 +100,19 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
         let data;
         switch (req.type) {
           case "capabilities.list":
-            data = { needsTrust: false, warnings: [], skills: [{ id: "skill-a", name: "Skill A" }, { id: "skill-b", name: "Skill B" }], mcp: [{ id: "browser", name: "Browser" }], plugins: [{ id: "search", name: "Search" }] };
+            data = { needsTrust, warnings: [], skills: [{ id: "skill-a", name: "Skill A" }, { id: "skill-b", name: "Skill B" }], mcp: [{ id: "browser", name: "Browser" }], plugins: [{ id: "search", name: "Search" }] };
+            break;
+          case "session.defaults.get":
+            data = defaults;
+            break;
+          case "session.defaults.configure":
+            lastDefaults = req;
+            if (failDefaults) {
+              this.receive({ type: "response", id: req.id, ok: false, error: "defaults unavailable" });
+              return;
+            }
+            defaults = Object.fromEntries(Object.keys(defaults).map((key) => [key, req[key]]));
+            data = defaults;
             break;
           case "session.create":
             lastCreation = req;
@@ -106,7 +120,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
               this.receive({ type: "response", id: req.id, ok: false, error: "plugin unavailable" });
               return;
             }
-            data = { ...states[0], config: { ...config, capabilitySelection: req.capabilities, subagentCapabilities: req.subagentCapabilities } };
+            const selected = { ...(req.useDefaults === false ? {} : defaults), ...req };
+            data = { ...states[0], config: { ...config, model: selected.model || config.model, subagentModel: selected.subagentModel ?? null, capabilitySelection: selected.capabilities ?? null, subagentCapabilities: selected.subagentCapabilities ?? null } };
             break;
           case "models.list":
             data = [
@@ -170,6 +185,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("subagent-model").value, "");
     assert.equal($("subagent-model").disabled, true);
     assert.equal($("composer").contains($("subagent-model")), false);
+    assert.equal($("new").textContent.trim(), "＋ 新会话");
     $("open-settings").click();
     assert.equal($("settings").open, true);
     assert.equal($("settings-session").textContent, "a");
@@ -198,10 +214,67 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("subagent-provider").value = "other";
     $("subagent-provider").dispatchEvent(new window.Event("change"));
     await settle();
+    $("edit-defaults").click();
+    await settle();
+    assert.equal($("create-title").textContent, "默认新会话配置");
+    assert.equal($("create-submit").textContent, "保存默认配置");
+    assert.equal($("create-main-provider").value, "", "defaults do not take the current model implicitly");
+    assert.equal($("create-trust-row").hidden, true);
+    $("create-main-provider").value = "other";
+    $("create-main-provider").dispatchEvent(new window.Event("change"));
+    $("create-main-mode").value = "custom";
+    $("create-main-mode").dispatchEvent(new window.Event("change"));
+    window.document.querySelectorAll('.capability-agent:first-child input[data-kind="skills"]')[1].checked = false;
+    $("create-subagent-mode").value = "custom";
+    $("create-subagent-mode").dispatchEvent(new window.Event("change"));
+    for (const checkbox of window.document.querySelectorAll('.capability-agent:last-child input')) checkbox.checked = false;
+    failDefaults = true;
+    $("create-form").requestSubmit();
+    await settle();
+    assert.equal($("create-session").open, true);
+    assert.match($("create-feedback").textContent, /保存失败.*defaults unavailable/);
+    assert.equal(defaults.capabilities, null);
+    assert.equal($("create-submit").disabled, false);
+    failDefaults = false;
+    $("create-form").requestSubmit();
+    await settle();
+    assert.equal($("create-session").open, false);
+    assert.equal($("settings").open, true);
+    assert.equal(lastCreation, undefined, "saving defaults never creates or switches sessions");
+    assert.equal(defaults.model, "other/child");
+    assert.deepEqual(defaults.capabilities.skills, ["skill-a"]);
+    assert.deepEqual(defaults.subagentCapabilities, { skills: [], mcp: [], plugins: [] });
+    assert.equal(Object.hasOwn(lastDefaults, "trustProject"), false);
+    assert.equal($("model").value, "test/model");
+    assert.equal($("subagent-model").value, "other/child");
+    needsTrust = true;
+    defaults.capabilities.skills.push("missing-skill");
+    $("edit-defaults").click();
+    await settle();
+    assert.equal($("create-main-model").value, "other/child");
+    assert.equal($("create-main-mode").value, "custom");
+    assert.equal(window.document.querySelectorAll('.capability-agent:first-child input[data-kind="skills"]:checked').length, 2);
+    assert.match($("create-agents").textContent, /当前目录不可用 · missing-skill/, "unavailable defaults are not silently removed");
+    assert.equal(window.document.querySelectorAll('.capability-agent:last-child input:checked').length, 0);
+    assert.equal($("create-trust-row").hidden, true);
+    assert.equal($("create-submit").disabled, false, "defaults may save trusted global capabilities");
+    needsTrust = false;
+    defaults.capabilities.skills.pop();
+    $("create-session").close();
     $("settings").close();
+    $("new").click();
+    await settle();
+    assert.equal($("model").value, "other/child");
+    assert.equal(Object.hasOwn(lastCreation, "capabilities"), false, "ordinary creation resolves defaults on the server");
+    assert.match($("active-capabilities").textContent, /Skills 0 · MCP 0 · 插件 0/);
+    window.document.querySelectorAll(".session-item")[0].click();
+    await settle();
     $("custom-new").click();
     await settle();
     assert.equal($("create-session").open, true);
+    assert.equal($("create-title").textContent, "自定义新会话");
+    assert.equal($("create-submit").textContent, "创建会话");
+    assert.equal($("create-main-model").value, "test/model", "custom creation keeps current model instead of new defaults");
     assert.equal($("create-main-mode").value, "all");
     assert.equal($("create-subagent-mode").value, "all");
     $("create-main-mode").value = "custom";
@@ -219,6 +292,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.deepEqual(lastCreation.capabilities.skills, ["skill-a"]);
     assert.equal(lastCreation.subagentCapabilities, null);
     assert.equal(lastCreation.subagentModel, "other/child");
+    assert.equal(lastCreation.useDefaults, false);
     assert.equal($("create-submit").disabled, false);
     failCreation = false;
     $("create-session").close();
@@ -260,6 +334,13 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     paint();
     assert.equal($("prompt").value, "edited offline");
     assert.equal($("subagent-model").value, "other/child");
+    $("open-settings").click();
+    $("edit-defaults").click();
+    await settle();
+    assert.equal($("create-main-mode").value, "custom", "reconnection retrieves saved defaults");
+    assert.equal($("create-main-model").value, "other/child");
+    $("create-session").close();
+    $("settings").close();
     input("  accepted task \n");
     failList = true;
     $("composer").requestSubmit();

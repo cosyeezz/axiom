@@ -8,7 +8,33 @@ export class Sessions {
   constructor(createAgent) {
     this.createAgent = createAgent;
     this.items = new Map();
-    this.defaults = {};
+    this.recentConfig = {};
+    this.defaultSelection = { model: null, subagentModel: null, capabilities: null, subagentCapabilities: null };
+  }
+
+  getDefaults() {
+    return structuredClone(this.defaultSelection);
+  }
+  async configureDefaults(workspace, selection) {
+    const next = this.getDefaults();
+    for (const key of Object.keys(next))
+      if (selection[key] !== undefined) next[key] = structuredClone(selection[key]);
+    await this.validateSelection(workspace, next);
+    this.defaultSelection = next;
+    return this.getDefaults();
+  }
+  async validateSelection(workspace = this.createAgent.cwd || process.cwd(), selection) {
+    const cwd = await realpath(workspace);
+    if (!(await stat(cwd)).isDirectory()) throw new Error("工作空间必须是目录");
+    for (const key of ["model", "subagentModel"])
+      if (selection[key] != null && !this.createAgent.catalog().some((m) => m.key === selection[key]))
+        throw new Error(key === "model" ? "Unknown model" : "Unknown subagent model");
+    if (this.createAgent.capabilities) {
+      const catalog = await this.createAgent.capabilities(cwd, selection.trustProject === true);
+      resolveCapabilities(selection.capabilities, catalog);
+      resolveCapabilities(selection.subagentCapabilities, catalog);
+    }
+    return cwd;
   }
 
   list() {
@@ -28,9 +54,9 @@ export class Sessions {
     return { sessionId: id, title };
   }
 
-  async create(workspace = this.createAgent.cwd || process.cwd(), selection = {}) {
-    const cwd = await realpath(workspace);
-    if (!(await stat(cwd)).isDirectory()) throw new Error("工作空间必须是目录");
+  async create(workspace, selection = {}) {
+    selection = structuredClone({ ...(selection.useDefaults === false ? {} : this.defaultSelection), ...selection });
+    const cwd = await this.validateSelection(workspace, selection);
     const id = randomUUID();
     const item = {
       id,
@@ -106,15 +132,8 @@ export class Sessions {
         }),
       item.emit,
     );
-    if (item.subagentModel !== null && !this.createAgent.catalog().some((m) => m.key === item.subagentModel))
-      throw new Error("Unknown subagent model");
-    if (this.createAgent.capabilities) {
-      const catalog = await this.createAgent.capabilities(cwd, item.trustProject);
-      resolveCapabilities(item.capabilities, catalog);
-      resolveCapabilities(item.subagentCapabilities, catalog);
-    }
     item.agent = await this.createAgent(delegationTools(item.tasks), {
-      ...this.defaults,
+      ...this.recentConfig,
       ...(selection.model ? { model: selection.model } : {}),
       ...(selection.thinking ? { thinking: selection.thinking } : {}),
       capabilities: item.capabilities,
@@ -173,7 +192,7 @@ export class Sessions {
       const previous = item.agent.config?.();
       const config = await item.agent.configure({ model, thinking });
       if (config.model !== previous?.model || config.thinking !== previous?.thinking)
-        this.defaults = { model: config.model, thinking: config.thinking };
+        this.recentConfig = { model: config.model, thinking: config.thinking };
       item.subagentModel = subagentModel;
       return {
         ...item.agent.config?.(), ...config, subagentModel,

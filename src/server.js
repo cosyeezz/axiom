@@ -114,6 +114,12 @@ export function createServerApp(sessions) {
             case "session.configure":
               data = await sessions.configure(request.sessionId, request);
               break;
+            case "session.defaults.get":
+              data = sessions.getDefaults();
+              break;
+            case "session.defaults.configure":
+              data = await sessions.configureDefaults(request.cwd, request);
+              break;
             case "session.create": {
               const id = await sessions.create(request.cwd, request);
               if (ws.readyState !== WebSocket.OPEN) {

@@ -86,8 +86,13 @@ test("local connection without token, foreign origin rejection, recovery and shu
     req.destroy();
     bad.terminate();
     ws = await connect();
+    const empty = { skills: [], mcp: [], plugins: [] };
+    const defaults = await request(ws, { id: "defaults-save", type: "session.defaults.configure", capabilities: empty });
+    assert.equal(defaults.ok, true);
+    assert.deepEqual(defaults.data.capabilities, empty);
     const created = await request(ws, { id: "1", type: "session.create" });
     assert.equal(created.ok, true);
+    assert.deepEqual(created.data.config.capabilitySelection, empty);
     const sessionId = created.data.sessionId;
     assert.equal(
       (await request(ws, { id: "2", type: "prompt", sessionId, text: "go" }))
@@ -98,6 +103,8 @@ test("local connection without token, foreign origin rejection, recovery and shu
     await once(ws, "close");
     assert.equal(sessions.get(sessionId).status, "running");
     ws = await connect();
+    const restored = await request(ws, { id: "defaults-get", type: "session.defaults.get" });
+    assert.deepEqual(restored.data, defaults.data, "defaults survive client reconnects");
     const attached = await request(ws, {
       id: "3",
       type: "session.attach",

@@ -4,6 +4,14 @@ const id = z.string().min(1);
 const capabilities = z.object({
   skills: z.array(id), mcp: z.array(id), plugins: z.array(id),
 }).strict().nullable();
+const workspace = z.string().trim().min(1).optional();
+const thinking = z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]).optional();
+const selection = z.object({
+  model: id.nullable().optional(),
+  subagentModel: id.nullable().optional(),
+  capabilities: capabilities.optional(),
+  subagentCapabilities: capabilities.optional(),
+});
 export const command = z.discriminatedUnion("type", [
   z
     .object({
@@ -16,8 +24,10 @@ export const command = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("models.list") }).strict(),
   z.object({
     id, type: z.literal("capabilities.list"),
-    cwd: id.optional(), trustProject: z.boolean().optional(),
+    cwd: workspace, trustProject: z.boolean().optional(),
   }).strict(),
+  z.object({ id, type: z.literal("session.defaults.get") }).strict(),
+  selection.extend({ id, type: z.literal("session.defaults.configure"), cwd: workspace }).strict(),
   z
     .object({
       id,
@@ -25,22 +35,17 @@ export const command = z.discriminatedUnion("type", [
       sessionId: id,
       model: id,
       subagentModel: id.nullable().optional(),
-      thinking: z
-        .enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
-        .optional(),
+      thinking,
     })
     .strict(),
   z.object({ id, type: z.literal("sessions.list") }).strict(),
-  z
-    .object({
+  selection
+    .extend({
       id,
       type: z.literal("session.create"),
-      cwd: z.string().trim().min(1).optional(),
-      model: id.optional(),
-      thinking: z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]).optional(),
-      subagentModel: id.nullable().optional(),
-      capabilities: capabilities.optional(),
-      subagentCapabilities: capabilities.optional(),
+      cwd: workspace,
+      thinking,
+      useDefaults: z.boolean().optional(),
       trustProject: z.boolean().optional(),
     })
     .strict(),
