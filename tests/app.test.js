@@ -72,7 +72,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     },
   ];
   let lastCreation, lastDefaults;
-  let defaults = { model: null, subagentModel: null, capabilities: null, subagentCapabilities: null };
+  let defaults = { model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
   let failDefaults = false, needsTrust = false;
   let failCreation = false;
   let failList = false;
@@ -214,12 +214,17 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("subagent-provider").value = "other";
     $("subagent-provider").dispatchEvent(new window.Event("change"));
     await settle();
-    $("edit-defaults").click();
     await settle();
+    assert.equal($("defaults-editor").contains($("create-form")), true);
+    assert.equal($("create-session").open, false);
     assert.equal($("create-title").textContent, "默认新会话配置");
     assert.equal($("create-submit").textContent, "保存默认配置");
     assert.equal($("create-main-provider").value, "", "defaults do not take the current model implicitly");
     assert.equal($("create-trust-row").hidden, true);
+    assert.equal(window.document.querySelectorAll('.settings-nav button').length, 1);
+    assert.equal($("create-subagent-mode").querySelector('option[value="inherit"]').textContent, "跟随主代理能力");
+    $("create-main-thinking").value = "high";
+    $("create-subagent-thinking").value = "off";
     $("create-main-provider").value = "other";
     $("create-main-provider").dispatchEvent(new window.Event("change"));
     $("create-main-mode").value = "custom";
@@ -231,7 +236,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     failDefaults = true;
     $("create-form").requestSubmit();
     await settle();
-    assert.equal($("create-session").open, true);
+    assert.equal($("create-session").open, false);
     assert.match($("create-feedback").textContent, /保存失败.*defaults unavailable/);
     assert.equal(defaults.capabilities, null);
     assert.equal($("create-submit").disabled, false);
@@ -242,6 +247,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("settings").open, true);
     assert.equal(lastCreation, undefined, "saving defaults never creates or switches sessions");
     assert.equal(defaults.model, "other/child");
+    assert.equal(defaults.thinking, "high");
+    assert.equal(defaults.subagentThinking, "off");
     assert.deepEqual(defaults.capabilities.skills, ["skill-a"]);
     assert.deepEqual(defaults.subagentCapabilities, { skills: [], mcp: [], plugins: [] });
     assert.equal(Object.hasOwn(lastDefaults, "trustProject"), false);
@@ -249,7 +256,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("subagent-model").value, "other/child");
     needsTrust = true;
     defaults.capabilities.skills.push("missing-skill");
-    $("edit-defaults").click();
+    $("settings").close();
+    $("open-settings").click();
     await settle();
     assert.equal($("create-main-model").value, "other/child");
     assert.equal($("create-main-mode").value, "custom");
@@ -266,7 +274,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     await settle();
     assert.equal($("model").value, "other/child");
     assert.equal(Object.hasOwn(lastCreation, "capabilities"), false, "ordinary creation resolves defaults on the server");
-    assert.match($("active-capabilities").textContent, /Skills 0 · MCP 0 · 插件 0/);
+    assert.match($("active-capabilities").textContent, /Skills：无\nMCP：无\nExtensions：无/);
     window.document.querySelectorAll(".session-item")[0].click();
     await settle();
     $("custom-new").click();
@@ -335,10 +343,16 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("prompt").value, "edited offline");
     assert.equal($("subagent-model").value, "other/child");
     $("open-settings").click();
-    $("edit-defaults").click();
     await settle();
     assert.equal($("create-main-mode").value, "custom", "reconnection retrieves saved defaults");
     assert.equal($("create-main-model").value, "other/child");
+    $("create-subagent-mode").value = "inherit";
+    $("create-subagent-mode").dispatchEvent(new window.Event("change"));
+    $("create-form").requestSubmit();
+    await settle();
+    assert.equal(defaults.subagentCapabilities, "inherit");
+    assert.equal($("settings").open, true);
+    assert.equal($("create-session").open, false);
     $("create-session").close();
     $("settings").close();
     input("  accepted task \n");

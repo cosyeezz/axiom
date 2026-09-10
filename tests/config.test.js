@@ -59,10 +59,10 @@ test("configuration applies to the main agent and is inherited by delegated chil
     assert.equal(sessions.snapshot(newest).config.thinking, "off");
     assert.equal(sessions.snapshot(newest).config.subagentModel, null);
 
-    const all = { model: null, subagentModel: null, capabilities: null, subagentCapabilities: null };
+    const all = { model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
     assert.deepEqual(sessions.getDefaults(), all);
     const defaults = {
-      model: "c/d", subagentModel: "a/b",
+      model: "c/d", subagentModel: "a/b", thinking: null, subagentThinking: null,
       capabilities: { skills: ["s"], mcp: [], plugins: ["p"] },
       subagentCapabilities: { skills: [], mcp: ["m"], plugins: [] },
     };
@@ -110,6 +110,16 @@ test("configuration applies to the main agent and is inherited by delegated chil
     await assert.rejects(sessions.create(), /未知/, "unavailable defaults must not expand to all capabilities");
     assert.equal(selections.length, callsBeforeFailure);
     sessions.createAgent.capabilities = catalog;
+    await sessions.configureDefaults(undefined, { thinking: "high", subagentThinking: "off", subagentCapabilities: "inherit", subagentModel: null });
+    const following = await sessions.create();
+    assert.equal(sessions.snapshot(following).config.thinking, "high");
+    assert.equal(sessions.snapshot(following).config.subagentCapabilities, "inherit");
+    await sessions.get(following).tasks.read(sessions.get(following).tasks.start(["follow main"]));
+    assert.equal(selections.at(-1).model, "c/d");
+    assert.equal(selections.at(-1).thinking, "off");
+    assert.deepEqual(selections.at(-1).capabilities, defaults.capabilities);
+    assert.equal(command.safeParse({ id: "follow", type: "session.defaults.configure", subagentCapabilities: "inherit", thinking: "high", subagentThinking: "off" }).success, true);
+    assert.equal(command.safeParse({ id: "invalid", type: "session.defaults.configure", subagentThinking: "invalid" }).success, false);
     await sessions.configureDefaults(undefined, all);
     const reset = await sessions.create();
     assert.equal(sessions.snapshot(reset).config.model, "a/b");

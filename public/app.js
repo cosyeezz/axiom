@@ -7,7 +7,8 @@ let ws,
   config,
   busy = false,
   changing = false,
-  connected = false;
+  connected = false,
+  creation;
 let allSessions = [],
   follow = true;
 const views = new Map();
@@ -84,12 +85,12 @@ function controls() {
   $("settings-feedback").textContent = unavailable
     ? (changing ? "正在保存或切换配置…" : "连接断开，暂时无法修改配置")
     : busy ? "任务执行中，完成后可修改配置" : "更改自动保存";
-  if (!connected || changing) $("create-submit").disabled = true;
+  $("create-submit").disabled = unavailable || !creation?.main || creation.loading || (!creation.defaults && creation.needsTrust);
   $("send").disabled = busy || unavailable || !$("prompt").value.trim();
   $("stop").disabled = !busy || unavailable;
   $("stop").hidden = !busy;
   $("send").hidden = busy;
-  for (const id of ["new", "custom-new", "edit-defaults", "delete", "rename"]) $(id).disabled = unavailable;
+  for (const id of ["new", "custom-new", "delete", "rename"]) $(id).disabled = unavailable;
   $("status").dataset.busy = String(busy && !unavailable);
   $("status").textContent =
     ws?.readyState !== WebSocket.OPEN
@@ -128,9 +129,17 @@ function fillSubagentModels() {
 }
 function applyConfig(value) {
   config = value;
-  const summary = (selection) => selection == null ? "全部已启用能力" :
-    `Skills ${selection.skills.length} · MCP ${selection.mcp.length} · 插件 ${selection.plugins.length}`;
-  $("active-capabilities").textContent = `主代理：${summary(value.capabilitySelection)}\n子代理：${summary(value.subagentCapabilities)}${value.warnings?.length ? "\n加载提示：" + value.warnings.join("；") : ""}`;
+  const summary = (title, key, thinking, selection) => {
+    const model = models.find((m) => m.key === key);
+    return `${title}\n供应商：${model?.provider || key?.split("/")[0] || "默认"} · 模型：${model?.name || key || "默认"}\n思考等级：${thinking || "跟随主代理"}\n` +
+      [["skills", "Skills"], ["mcp", "MCP"], ["plugins", "Extensions"]].map(([kind, label]) =>
+        `${label}：${selection == null ? "全部已启用（子任务启动时解析）" : selection[kind]?.join("、") || "无"}`).join("\n");
+  };
+  const mainCapabilities = value.capabilities ?? value.capabilitySelection;
+  $("active-capabilities").textContent = summary("主 Agent", value.model, value.thinking, mainCapabilities) + "\n\n" +
+    summary(`子 Agent${value.subagentModel == null ? "（模型跟随主代理）" : ""}${value.subagentCapabilities === "inherit" ? "（能力跟随主代理）" : ""}`,
+      value.subagentModel || value.model, value.subagentThinking || value.thinking, value.subagentCapabilities === "inherit" ? mainCapabilities : value.subagentResolvedCapabilities ?? value.subagentCapabilities) +
+    (value.warnings?.length ? "\n加载提示：" + value.warnings.join("；") : "");
   options(
     $("subagent-provider"),
     [["", "跟随主代理"], ...[...new Set(models.map((m) => m.provider))].map((p) => [p, p])],
@@ -184,6 +193,7 @@ $("open-settings").onclick = () => {
   $("settings-session").textContent = $("session-title").textContent;
   controls();
   $("settings").showModal();
+  openCreation(true);
 };
 $("settings").onclick = (e) => {
   if (e.target !== $("settings")) return;
@@ -614,7 +624,7 @@ $("prompt").oninput = () => {
 $("new").onclick = () =>
   switchSession(() => request("session.create", { cwd: $("cwd").value }));
 
-let creation, creationLoad = 0;
+let creationLoad = 0;
 function createAgentPicker(role, title, catalog, initial) {
   const fieldset = document.createElement("fieldset");
   fieldset.className = "capability-agent";
@@ -626,7 +636,6 @@ function createAgentPicker(role, title, catalog, initial) {
   const select = (name, labelText) => {
     const label = document.createElement("label");
     const text = document.createElement("span");
-    text.className = "sr-only";
     text.textContent = labelText;
     const node = document.createElement("select");
     node.id = `create-${role}-${name}`;
@@ -647,12 +656,20 @@ function createAgentPicker(role, title, catalog, initial) {
   };
   provider.onchange = fill;
   fill();
+  const thinking = select("thinking", `${title}思考等级`);
+  const fillThinking = () => {
+    const levels = models.find((m) => m.key === model.value)?.levels || ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+    options(thinking, [["", role === "main" ? "沿用默认思考等级" : "跟随主代理思考等级"], ...levels.map((v) => [v, `思考 · ${v}`])], thinking.value || initial.thinking || "");
+  };
+  model.onchange = fillThinking;
+  provider.onchange = () => { fill(); fillThinking(); };
+  fillThinking();
   const mode = select("mode", `${title}能力模式`);
-  options(mode, [["all", "全部能力"], ["custom", "自定义能力"]], initial.capabilities == null ? "all" : "custom");
+  options(mode, [...(role === "subagent" ? [["inherit", "跟随主代理能力"]] : []), ["all", "全部能力"], ["custom", "自定义能力"]], initial.capabilities === "inherit" ? "inherit" : initial.capabilities == null ? "all" : "custom");
   fieldset.append(selectors);
   const pickers = document.createElement("div");
   pickers.hidden = mode.value !== "custom";
-  for (const [kind, labelText] of [["skills", "Skills"], ["mcp", "MCP 服务"], ["plugins", "插件"]]) {
+  for (const [kind, labelText] of [["skills", "Skills"], ["mcp", "MCP 服务"], ["plugins", "Extensions 扩展"]]) {
     const entries = [...catalog[kind], ...(initial.capabilities?.[kind] || [])
       .filter((id) => !catalog[kind].some((entry) => entry.id === id))
       .map((id) => ({ id, name: `当前目录不可用 · ${id}` }))];
@@ -667,7 +684,7 @@ function createAgentPicker(role, title, catalog, initial) {
       label.title = entry.description || entry.id;
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
-      checkbox.checked = initial.capabilities == null || initial.capabilities[kind].includes(entry.id);
+      checkbox.checked = initial.capabilities == null || initial.capabilities === "inherit" || initial.capabilities[kind].includes(entry.id);
       checkbox.value = entry.id;
       checkbox.dataset.kind = kind;
       checkbox.onchange = update;
@@ -688,7 +705,8 @@ function createAgentPicker(role, title, catalog, initial) {
   $("create-agents").append(fieldset);
   return () => ({
     model: model.value || null,
-    capabilities: mode.value === "all" ? null : Object.fromEntries(
+    thinking: thinking.value || null,
+    capabilities: mode.value === "inherit" ? "inherit" : mode.value === "all" ? null : Object.fromEntries(
       ["skills", "mcp", "plugins"].map((kind) => [kind,
         [...pickers.querySelectorAll(`input[data-kind="${kind}"]:checked`)].map((input) => input.value)])),
   });
@@ -696,6 +714,7 @@ function createAgentPicker(role, title, catalog, initial) {
 async function loadCreation() {
   const current = creation;
   const load = ++creationLoad;
+  current.loading = true;
   $("create-submit").disabled = true;
   $("create-feedback").textContent = "正在读取本机 Pi 能力…";
   try {
@@ -704,9 +723,11 @@ async function loadCreation() {
       current.defaults ? request("session.defaults.get") : { model: config?.model, subagentModel: config?.subagentModel },
     ]);
     if (creation !== current || load !== creationLoad) return;
+    current.loading = false;
+    current.needsTrust = catalog.needsTrust;
     $("create-agents").replaceChildren();
-    current.main = createAgentPicker("main", "主代理", catalog, { model: selected.model, capabilities: selected.capabilities });
-    current.subagent = createAgentPicker("subagent", "子代理", catalog, { model: selected.subagentModel, capabilities: selected.subagentCapabilities });
+    current.main = createAgentPicker("main", "主代理", catalog, { model: selected.model, thinking: selected.thinking, capabilities: selected.capabilities });
+    current.subagent = createAgentPicker("subagent", "子代理", catalog, { model: selected.subagentModel, thinking: selected.subagentThinking, capabilities: selected.subagentCapabilities });
     $("create-trust-row").hidden = current.defaults || (!catalog.needsTrust && !$("create-trust").checked);
     $("create-submit").disabled = (!current.defaults && catalog.needsTrust) || !connected || changing;
     $("create-feedback").textContent = catalog.needsTrust
@@ -725,11 +746,11 @@ function openCreation(defaults = false) {
   $("create-trust").checked = false;
   $("create-trust-row").hidden = true;
   $("create-agents").replaceChildren();
-  $("create-session").showModal();
+  (defaults ? $("defaults-editor") : $("create-session")).append($("create-form"));
+  if (!defaults) $("create-session").showModal();
   void loadCreation();
 }
 $("custom-new").onclick = () => openCreation();
-$("edit-defaults").onclick = () => openCreation(true);
 $("create-trust").onchange = () => { void loadCreation(); };
 $("create-form").onsubmit = async (e) => {
   e.preventDefault();
@@ -739,6 +760,8 @@ $("create-form").onsubmit = async (e) => {
     cwd: creation.cwd,
     model: main.model,
     subagentModel: child.model,
+    thinking: main.thinking,
+    subagentThinking: child.thinking,
     capabilities: main.capabilities,
     subagentCapabilities: child.capabilities,
   };
@@ -749,7 +772,7 @@ $("create-form").onsubmit = async (e) => {
     $("create-feedback").textContent = "正在保存默认配置…";
     try {
       await request("session.defaults.configure", data);
-      $("create-session").close();
+      $("create-feedback").textContent = "默认新会话配置已保存";
     } catch (e) {
       $("create-feedback").textContent = `保存失败：${e.message}`;
     } finally {

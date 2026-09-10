@@ -471,6 +471,19 @@ textarea {
   border-radius: 16px;
   box-shadow: 0 24px 80px #0008;
 }
+#settings { width: min(1000px, calc(100% - 32px)); }
+.settings-layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); }
+.settings-nav { padding: 20px 12px; border-right: 1px solid var(--line); }
+.settings-nav button { width: 100%; white-space: normal; }
+#defaults-panel { min-width: 0; }
+#defaults-editor .settings-body { padding: 0; }
+#active-capabilities { white-space: pre-wrap; overflow-wrap: anywhere; }
+.capability-agent .selectors label { display: grid; gap: 6px; min-width: 0; flex: 1 1 180px; font-size: 12px; }
+.capability-agent select { width: 100%; min-width: 0; }
+@media (max-width: 700px) {
+  .settings-layout { grid-template-columns: minmax(0, 1fr); }
+  .settings-nav { border-right: 0; border-bottom: 1px solid var(--line); }
+}
 #settings::backdrop,
 #create-session::backdrop {
   background: #0009;

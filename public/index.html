@@ -114,14 +114,16 @@
         <h2 id="settings-title">设置</h2>
         <form method="dialog"><button class="secondary" aria-label="关闭设置" autofocus>✕</button></form>
       </header>
-      <div class="settings-body">
+      <div class="settings-layout">
+      <nav class="settings-nav" aria-label="设置分类"><button type="button" class="secondary" aria-current="page">默认新会话设置</button></nav>
+      <div class="settings-body" id="defaults-panel">
         <p class="settings-scope">当前会话 · <span id="settings-session"></span></p>
         <section>
           <h3>会话能力</h3>
           <p id="active-capabilities"></p>
-          <p>能力在创建时确定；如需更换，请使用「自定义新会话」。模型仍可随时在空闲时调整。</p>
+          <p>以上为当前会话配置；Skills 按需使用，子代理列表为启动配置，并非已执行记录。下方仅设置之后的新会话，不修改当前会话。</p>
         </section>
-        <section aria-labelledby="subagent-title">
+        <section aria-labelledby="subagent-title" hidden>
           <h3 id="subagent-title">子代理</h3>
           <p id="subagent-help">为协作任务选择模型。更改自动保存，仅影响当前会话之后启动的子任务。</p>
           <div class="selectors settings-selectors">
@@ -130,12 +132,13 @@
           </div>
           <p>思考程度沿用主代理，并按所选模型支持的等级调整。</p>
         </section>
-        <p id="settings-feedback" role="status" aria-live="polite"></p>
+        <p id="settings-feedback" hidden role="status" aria-live="polite"></p>
         <section aria-labelledby="defaults-title">
-          <h3 id="defaults-title">默认新会话</h3>
+          <h3 id="defaults-title">默认新会话设置</h3>
           <p>设置「新会话」使用的主/子代理模型和能力。仅影响之后新建的普通会话，不改变当前会话或「自定义新会话」。刷新保留，服务重启后重置。</p>
-          <button id="edit-defaults" class="secondary" aria-haspopup="dialog" aria-controls="create-session">配置默认新会话…</button>
+          <div id="defaults-editor"></div>
         </section>
+      </div>
       </div>
     </dialog>
     <dialog id="create-session" aria-labelledby="create-title">

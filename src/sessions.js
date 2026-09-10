@@ -9,7 +9,7 @@ export class Sessions {
     this.createAgent = createAgent;
     this.items = new Map();
     this.recentConfig = {};
-    this.defaultSelection = { model: null, subagentModel: null, capabilities: null, subagentCapabilities: null };
+    this.defaultSelection = { model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
   }
 
   getDefaults() {
@@ -29,12 +29,13 @@ export class Sessions {
     for (const key of ["model", "subagentModel"])
       if (selection[key] != null && !this.createAgent.catalog().some((m) => m.key === selection[key]))
         throw new Error(key === "model" ? "Unknown model" : "Unknown subagent model");
+    let catalog;
     if (this.createAgent.capabilities) {
-      const catalog = await this.createAgent.capabilities(cwd, selection.trustProject === true);
+      catalog = await this.createAgent.capabilities(cwd, selection.trustProject === true);
       resolveCapabilities(selection.capabilities, catalog);
-      resolveCapabilities(selection.subagentCapabilities, catalog);
+      resolveCapabilities(selection.subagentCapabilities === "inherit" ? selection.capabilities : selection.subagentCapabilities, catalog);
     }
-    return cwd;
+    return { cwd, catalog };
   }
 
   list() {
@@ -56,7 +57,7 @@ export class Sessions {
 
   async create(workspace, selection = {}) {
     selection = structuredClone({ ...(selection.useDefaults === false ? {} : this.defaultSelection), ...selection });
-    const cwd = await this.validateSelection(workspace, selection);
+    const { cwd, catalog } = await this.validateSelection(workspace, selection);
     const id = randomUUID();
     const item = {
       id,
@@ -70,6 +71,8 @@ export class Sessions {
       live: {},
       tools: {},
       subagentModel: selection.subagentModel ?? null,
+      subagentThinking: selection.subagentThinking ?? null,
+      subagentResolvedCapabilities: catalog ? resolveCapabilities(selection.subagentCapabilities === "inherit" ? selection.capabilities : selection.subagentCapabilities, catalog) : null,
       capabilities: selection.capabilities ?? null,
       subagentCapabilities: selection.subagentCapabilities ?? null,
       trustProject: selection.trustProject === true,
@@ -127,7 +130,8 @@ export class Sessions {
           ...item.agent.config?.(),
           ...(item.subagentModel ? { model: item.subagentModel } : {}),
           cwd,
-          capabilities: item.subagentCapabilities,
+          ...(item.subagentThinking ? { thinking: item.subagentThinking } : {}),
+          capabilities: item.subagentCapabilities === "inherit" ? item.agent.config?.().capabilities ?? item.capabilities : item.subagentCapabilities,
           trustProject: item.trustProject,
         }),
       item.emit,
@@ -162,6 +166,8 @@ export class Sessions {
       status: item.status,
       config: {
         ...item.agent.config?.(), subagentModel: item.subagentModel,
+        subagentThinking: item.subagentThinking,
+        subagentResolvedCapabilities: item.subagentResolvedCapabilities,
         capabilitySelection: item.capabilities,
         subagentCapabilities: item.subagentCapabilities,
       },
@@ -196,6 +202,8 @@ export class Sessions {
       item.subagentModel = subagentModel;
       return {
         ...item.agent.config?.(), ...config, subagentModel,
+        subagentThinking: item.subagentThinking,
+        subagentResolvedCapabilities: item.subagentResolvedCapabilities,
         capabilitySelection: item.capabilities,
         subagentCapabilities: item.subagentCapabilities,
       };

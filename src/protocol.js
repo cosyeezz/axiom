@@ -10,7 +10,9 @@ const selection = z.object({
   model: id.nullable().optional(),
   subagentModel: id.nullable().optional(),
   capabilities: capabilities.optional(),
-  subagentCapabilities: capabilities.optional(),
+  subagentCapabilities: z.union([capabilities, z.literal("inherit")]).optional(),
+  thinking: thinking.unwrap().nullable().optional(),
+  subagentThinking: thinking.unwrap().nullable().optional(),
 });
 export const command = z.discriminatedUnion("type", [
   z
@@ -44,7 +46,6 @@ export const command = z.discriminatedUnion("type", [
       id,
       type: z.literal("session.create"),
       cwd: workspace,
-      thinking,
       useDefaults: z.boolean().optional(),
       trustProject: z.boolean().optional(),
     })

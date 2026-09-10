@@ -4,6 +4,8 @@ import {
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { capabilityLoader, discoverCapabilities } from "./capabilities.js";
+import { createJiti } from "jiti";
+const { getSupportedThinkingLevels } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai/compat");
 
 export async function createPiFactory({ cwd, model: requested }) {
   const modelRuntime = await ModelRuntime.create();
@@ -136,6 +138,7 @@ export async function createPiFactory({ cwd, model: requested }) {
       id: m.id,
       name: m.name,
       key: `${m.provider}/${m.id}`,
+      levels: getSupportedThinkingLevels(m),
     }));
   return factory;
 }
