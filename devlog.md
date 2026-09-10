@@ -6,6 +6,12 @@
 - 涉及 public/app.js、tests/app.test.js、README.md、devlog.md、codebase-map 的 INDEX.md 与 knowledge.md。测试覆盖中间粘贴、继续输入、删除重排、失败恢复、异步切会话、多条撤回编号、发送说明；独立复查补充了读图/撤回竞态防护。
 - 验证：npm test 全量 52 项通过；未做真实浏览器手动验收。
 
+## 2026-09-10 — 三类分组与拖动排序
+- worktree MyWorkbench-session-groups / feat/session-groups。按用户要求列表分三类：按时间分组、待处理（运行中会话，紧挨已完成上方）、已完成；另支持同类内拖动会话到另一行手动排序。
+- 排序以全局会话 id 顺序物化存入 localStorage（axiom.sessionOrder），搜索中拖动也不破坏其他会话顺序；未排序会话按原服务端顺序稳定跟随。
+- 涉及 public/{app.js,style.css}、tests/app.test.js、README.md、devlog.md 与 codebase-map 索引。
+- 验证：npm test 全量 52 项通过，新增断言三类分组顺序、拖动排序落点、localStorage 持久化与重渲染稳定；未做真实浏览器拖拽验收。
+
 ## 2026-09-10 — 已完成区上移与待处理分组
 - worktree MyWorkbench-done-placement / feat/done-placement。按用户要求，「已完成」区域从侧栏底部固定改为紧贴会话列表下方（列表空间不足时自动压缩滚动，「设置」仍钉在底部），并在列表顶部增加「待处理」分组标题。
 - 涉及 public/{app.js,style.css}、tests/app.test.js、README.md、devlog.md 与 codebase-map 索引。

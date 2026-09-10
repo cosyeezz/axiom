@@ -30,6 +30,11 @@ try {
   const saved = JSON.parse(localStorage.getItem("axiom.hiddenSessions") || "[]");
   if (Array.isArray(saved)) hiddenSessions = new Set(saved.filter((id) => typeof id === "string"));
 } catch {}
+let sessionOrder = [];
+try {
+  const saved = JSON.parse(localStorage.getItem("axiom.sessionOrder") || "[]");
+  if (Array.isArray(saved)) sessionOrder = saved.filter((id) => typeof id === "string");
+} catch {}
 function setSessionHidden(id, hidden) {
   if (!allSessions.some((s) => s.id === id && s.cwd === $("workspace-label").textContent)) return;
   hidden ? hiddenSessions.add(id) : hiddenSessions.delete(id);
@@ -1110,11 +1115,19 @@ function renderSessions() {
   let group;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  for (const s of allSessions.filter(
+  const matched = allSessions.filter(
     (s) =>
       s.cwd === $("workspace-label").textContent &&
       s.title.toLowerCase().includes(query),
-  )) {
+  );
+  const rank = (s) => {
+    const at = sessionOrder.indexOf(s.id);
+    return at === -1 ? sessionOrder.length : at;
+  };
+  const idle = matched.filter((s) => s.status === "idle" && !hiddenSessions.has(s.id)).sort((a, b) => rank(a) - rank(b));
+  const active = matched.filter((s) => s.status !== "idle" && !hiddenSessions.has(s.id)).sort((a, b) => rank(a) - rank(b));
+  const done = matched.filter((s) => hiddenSessions.has(s.id)).sort((a, b) => rank(a) - rank(b));
+  const addRow = (s) => {
     const hidden = hiddenSessions.has(s.id);
     const name =
       s.updatedAt >= +today
@@ -1150,7 +1163,29 @@ function renderSessions() {
     };
     row.ondragend = () => {
       draggedSession = undefined;
-      document.querySelectorAll(".session-drop-target").forEach((node) => node.classList.remove("session-drop-target"));
+      document.querySelectorAll(".session-drop-target, .session-reorder-target").forEach((node) => node.classList.remove("session-drop-target", "session-reorder-target"));
+    };
+    row.ondragover = (e) => {
+      if (!draggedSession || draggedSession === s.id) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "move";
+      row.classList.add("session-reorder-target");
+    };
+    row.ondragleave = () => row.classList.remove("session-reorder-target");
+    row.ondrop = (e) => {
+      if (!draggedSession || draggedSession === s.id) return;
+      e.preventDefault();
+      e.stopPropagation();
+      row.classList.remove("session-reorder-target");
+      // ponytail: 全局顺序一次性物化，搜索/分组下拖动也不破坏其他工作区顺序
+      const ids = allSessions.map((item) => item.id).filter((id) => id !== draggedSession);
+      const at = ids.indexOf(s.id);
+      ids.splice(at === -1 ? ids.length : at, 0, draggedSession);
+      sessionOrder = ids;
+      try { localStorage.setItem("axiom.sessionOrder", JSON.stringify(sessionOrder)); }
+      catch { error("无法保存排序，刷新后可能丢失"); }
+      renderSessions();
     };
     const actions = document.createElement("div");
     actions.className = "session-actions";
@@ -1172,15 +1207,18 @@ function renderSessions() {
     }
     row.append(button, actions);
     (hidden ? hiddenFragment : fragment).append(row);
+  };
+  for (const s of idle) addRow(s);
+  if (active.length) {
+    const label = document.createElement("p");
+    label.className = "session-group";
+    label.textContent = "待处理";
+    fragment.append(label);
+    for (const s of active) addRow(s);
   }
+  for (const s of done) addRow(s);
   $("hidden-session-summary").textContent = `已完成`;
   $("hidden-sessions").replaceChildren(hiddenFragment);
-  if (fragment.childNodes.length) {
-    const pendingLabel = document.createElement("p");
-    pendingLabel.className = "session-group";
-    pendingLabel.textContent = "待处理";
-    fragment.insertBefore(pendingLabel, fragment.firstChild);
-  }
   if (!fragment.childNodes.length) {
     const empty = document.createElement("p");
     empty.className = "session-group";
