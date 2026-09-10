@@ -1,5 +1,9 @@
 # 开发记录
 
+## 2026-09-10 — 守护进程自动重生
+- worktree MyWorkbench-supervisor-respawn / feat/supervisor-respawn。worker 意外退出后 supervisor 自动重启（指数退避 1s→10s，稳定运行 30s 重置计数），端口被占时后台重试、释放后接管；优雅停止/快速重建路径不受影响，终端 Ctrl+C 仍整体退出。
+- 涉及 scripts/service.mjs、tests/service.test.js。验证：真实子进程测试 49 项全部通过。
+
 ## 2026-09-10 — 工作空间打开改原生选择
 - worktree MyWorkbench-workspace-picker / feat/workspace-picker。按用户要求移除侧栏手输目录路径表单（▶ 工作空间），「打开工作空间」直接拉起原生文件夹选择，选后切已有同目录会话或新建；当前工作空间改存 JS 变量，不再借隐藏 DOM 输入框当状态。非 Windows 暂无打开其他工作空间入口（pick 本就仅 Windows），README 同步。
 - 涉及 public/{index.html,app.js,style.css}、tests/app.test.js、README 与代码索引。验证：全量 npm test 48 项通过。

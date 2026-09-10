@@ -40,15 +40,22 @@ export function supervise() {
   mkdirSync(logDir, { recursive: true });
   const log = openSync(join(logDir, "service.log"), "a");
   output = ["ignore", log, log];
-  let child, restarting = false, stopping = false;
+  let child, restarting = false, stopping = false, failures = 0, startedAt = 0;
   const start = (error = "") => {
+    if (stopping) return;
+    startedAt = Date.now();
     child = fork(join(root, "src/main.js"), [], {
       cwd: root, env: { ...process.env, AXIOM_SERVICE_ERROR: error },
       stdio: ["ignore", log, log, "ipc"], windowsHide: true,
     });
     child.on("error", (error) => { console.error(error); process.exitCode = 1; });
     child.on("exit", (code) => {
-      if (!restarting) process.exit(code || 0);
+      if (restarting) return;
+      if (stopping) process.exit(code || 0);
+      if (Date.now() - startedAt > 30000) failures = 0;
+      const delay = Math.min(1000 * 2 ** failures++, 10000);
+      console.error(`服务进程意外退出（code ${code ?? "signal"}），${delay}ms 后自动重启`);
+      setTimeout(() => start(), delay);
     });
     child.on("message", (message) => {
       if (message?.type !== "service.restart" || !["quick", "rebuild"].includes(message.mode) || restarting || stopping) return;
@@ -62,7 +69,7 @@ export function supervise() {
             try { await rebuild(); }
             catch (cause) { error = `重建失败：${cause.message}`; console.error(error); }
           }
-          if (!stopping) start(error);
+          if (!stopping) { failures = 0; start(error); }
         } catch (error) { console.error(error); process.exitCode = 1; }
         finally { restarting = false; }
       }, 150);

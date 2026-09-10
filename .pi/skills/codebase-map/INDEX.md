@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/10 07:34:17）
+# Axiom 多级代码索引（生成于 2026/9/10 08:03:29）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -11,7 +11,7 @@
 | public/stream-renderer.js | 51 | 流式增量渲染状态机 | createStreamRenderer |
 | public/style.css | 907 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | scripts/autostart.mjs | 133 | Windows/macOS/Linux 当前用户登录自动启动安装/卸载 | run, projectDir, serviceEntry, label |
-| scripts/service.mjs | 89 | 服务守护：IPC 快速/重建重启与安装构建失败反馈 | root, output, run, rebuild |
+| scripts/service.mjs | 96 | 服务守护：IPC 快速/重建重启与安装构建失败反馈 | root, output, run, rebuild |
 | src/capabilities.js | 114 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/compaction.js | 351 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
 | src/main.js | 48 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, factory, home |
@@ -34,7 +34,7 @@
 | tests/markdown.test.js | 55 | node --test 测试（npm test） | - |
 | tests/server.test.js | 125 | node --test 测试（npm test） | - |
 | tests/service-api.test.js | 34 | node --test 测试（npm test） | - |
-| tests/service.test.js | 52 | node --test 测试（npm test） | - |
+| tests/service.test.js | 81 | node --test 测试（npm test） | - |
 | tests/session-flow.test.js | 59 | node --test 测试（npm test） | - |
 | tests/smoke.js | 29 | node --test 测试（npm test） | sessions |
 | tests/stream-renderer.test.js | 91 | node --test 测试（npm test） | - |
@@ -201,7 +201,7 @@
 | actions | const | 110 |
 | main | function | 116 |
 
-### scripts/service.mjs（89 行） — 服务守护：IPC 快速/重建重启与安装构建失败反馈
+### scripts/service.mjs（96 行） — 服务守护：IPC 快速/重建重启与安装构建失败反馈
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -211,7 +211,7 @@
 | rebuild | function | 17 |
 | supervise | function | 36 |
 | mkdirSync | method | 40 |
-| start | method | 86 |
+| start | method | 93 |
 
 ### src/capabilities.js（114 行） — 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities）
 
