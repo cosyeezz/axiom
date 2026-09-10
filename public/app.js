@@ -5,6 +5,7 @@ let ws,
   sessionId,
   models = [],
   config,
+  runtime,
   busy = false,
   changing = false,
   connected = false,
@@ -138,8 +139,36 @@ function capabilityName(id) {
   }
   return /^index\.[cm]?[jt]s$/i.test(parts.at(-1)) ? parts.at(-2) || id : parts.at(-1) || id;
 }
+function runtimeSummary(value = {}) {
+  const { usage, context, model, thinking } = value;
+  const input = (usage?.input ?? 0) + (usage?.cacheRead ?? 0) + (usage?.cacheWrite ?? 0);
+  const count = (n) => Number.isFinite(n) ? n.toLocaleString("en-US") : "—";
+  const cache = input > 0 && Number.isFinite(usage?.cacheRead)
+    ? `${(usage.cacheRead / input * 100).toFixed(1)}% (${count(usage.cacheRead)} tokens)` : "暂无数据";
+  const contextText = context?.contextWindow > 0
+    ? `${count(context.tokens)} / ${count(context.contextWindow)} tokens${Number.isFinite(context.percent) ? ` · ${context.percent.toFixed(1)}%` : " · 待更新"}`
+    : "暂无数据";
+  const split = model?.indexOf("/") ?? -1;
+  const identity = split >= 0 ? `${model.slice(0, split)} · ${model.slice(split + 1)}` : model || "模型待加载";
+  return [`缓存命中 ${cache}`, `上下文 ${contextText}`, `${identity} · 思考 ${thinking || "未知"}`];
+}
+function renderRuntime(node, value) {
+  node.replaceChildren(...runtimeSummary(value).map((text) => {
+    const span = document.createElement("span");
+    span.textContent = text;
+    return span;
+  }));
+  node.title = "缓存命中：最近一次模型请求的缓存读取 / 输入总量（含缓存读写）；上下文：Pi 当前估算，非累计消耗。";
+}
+function updateTaskRuntime(task, value) {
+  if (!task) return;
+  renderRuntime(task.runtime, value);
+  task.systemPrompt.textContent = value?.systemPrompt ?? "系统提示词尚未加载";
+}
 function applyConfig(value) {
   config = value;
+  runtime = value.runtime ?? { ...runtime, model: value.model, thinking: value.thinking };
+  renderRuntime($("session-runtime"), runtime);
   options(
     $("subagent-provider"),
     [["", "跟随主代理"], ...[...new Set(models.map((m) => m.provider))].map((p) => [p, p])],
@@ -254,6 +283,12 @@ function renderMessage(item, message) {
 function event(message) {
   if (message.sessionId !== sessionId) return;
   const { type, agentId = "main", data } = message;
+  if (type === "agent.runtime") {
+    if (agentId === "main") {
+      runtime = data;
+      renderRuntime($("session-runtime"), runtime);
+    } else updateTaskRuntime(tasks.get(agentId), data);
+  }
   if (type === "session.state") {
     void refreshSessions().catch(error);
     busy = data.status !== "idle";
@@ -287,9 +322,26 @@ function event(message) {
       const node = document.createElement("details");
       node.className = "task-card";
       const heading = document.createElement("summary");
-      node.append(heading);
+      const title = document.createElement("span");
+      title.className = "task-title";
+      const runtime = document.createElement("span");
+      runtime.className = "runtime-summary";
+      heading.append(title, runtime);
+      const description = document.createElement("pre");
+      description.className = "task-description";
+      const prompt = document.createElement("details");
+      prompt.className = "task-system-prompt";
+      const label = document.createElement("summary");
+      label.textContent = "系统提示词（运行时）";
+      const systemPrompt = document.createElement("pre");
+      prompt.append(label, systemPrompt);
+      const failure = document.createElement("p");
+      failure.className = "task-error";
+      failure.hidden = true;
+      node.append(heading, description, prompt, failure);
+      $("output").querySelector(".empty")?.remove();
       $("output").append(node);
-      const task = { node, heading, messages: [] };
+      const task = { node, heading: title, runtime, description, systemPrompt, failure, messages: [] };
       node.ontoggle = () => {
         if (node.open) for (const item of task.messages) renderer.mark(item);
       };
@@ -297,7 +349,11 @@ function event(message) {
     }
     const item = tasks.get(message.taskId);
     item.node.dataset.status = data.status;
-    item.heading.textContent = `${{ starting: "启动中", running: "运行中", completed: "已完成", failed: "失败", cancelled: "已取消" }[data.status] || data.status} · ${data.task}${data.error ? " · " + data.error : ""}`;
+    item.heading.textContent = `${{ starting: "启动中", running: "运行中", completed: "已完成", failed: "失败", cancelled: "已取消" }[data.status] || data.status} · ${data.task}`;
+    item.description.textContent = data.task;
+    item.failure.textContent = data.error || "";
+    item.failure.hidden = !data.error;
+    updateTaskRuntime(item, data.runtime);
     scrollLatest();
   }
   if (type === "error") error(data.message);
@@ -368,6 +424,7 @@ function snapshot(state) {
       ? $("transcript").scrollHeight
       : (view?.scroll ?? 0);
   });
+  runtime = state.runtime;
   applyConfig(state.config);
   controls();
 }

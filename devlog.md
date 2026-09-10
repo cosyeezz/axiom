@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-10 — 会话运行摘要与子代理详情
+- 在独立 worktree MyWorkbench-session-runtime（feat/session-runtime）实施。发送按钮去掉 ↑；模型选择下显示最近请求缓存命中、Pi 当前上下文估算和实际供应商/模型/思考程度，窄屏换行。
+- 复用 SDK systemPrompt、messages.usage 和 getContextUsage，增加 agent.runtime 边界事件与主/子快照；子任务销毁前保留最终信息。折叠摘要显示状态与运行信息，展开查看完整任务、实际系统提示词、错误和输出，提示词只按纯文本展示。
+- 展示元数据不进入 read_result/tasks.read，避免额外占用主代理上下文；未知用量不伪装成 0%，压缩后的未知上下文显示待更新。无新依赖，不在 token 增量上扫描历史或传输提示词。
+- 验证：npm test 12 项通过，覆盖运行数据、模型变更、主子/跨会话隔离、历史恢复、终态保留、XSS 文本边界与折叠按需绘制；真实 SDK 创建/读取/释放验证通过，未发起付费模型请求。Playwright 使用独立 4327 模拟服务验证 1440/390/320px 无横向溢出、提示词纯文本及摘要展示；git diff --check 通过。
+- 涉及 public/{app.js,index.html,style.css}、src/{pi,sessions,tasks}.js、tests/{app,config}.test.js、README.md、devlog.md 与 codebase-map 索引/坑库。
+
 ## 2026-09-10 — 顶部能力同步默认选择，移除当前会话展示
 - 浏览器复现顶部仍显示当前会话、同步预览位于下方的混淆；按用户要求删除当前会话标题和能力展示及渲染代码，唯一默认预览移到顶部「会话能力」。
 - 修复浏览器 CSP 阻止预览 inline style 的错误：换行与长文本样式移入外部 CSS，不放宽安全策略。

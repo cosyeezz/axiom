@@ -59,7 +59,11 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     live: {},
   }));
   states[1].tasks = [
-    { id: "history-child", task: "Historical task", status: "completed" },
+    { id: "history-child", task: "Historical task", status: "completed", runtime: {
+      model: "other/child", thinking: "high", systemPrompt: "Historical system prompt",
+      usage: { input: 100, cacheRead: 800, cacheWrite: 100 },
+      context: { tokens: 1200, contextWindow: 10000, percent: 12 },
+    } },
   ];
   states[1].messages = [
     {
@@ -182,6 +186,12 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     paint();
     assert.equal($("workspace").hidden, false);
     assert.equal($("send").disabled, true);
+    assert.equal($("send").textContent, "发送");
+    assert.match($("session-runtime").textContent, /缓存命中 暂无数据.*上下文 暂无数据.*test · model · 思考 off/);
+    assert.match(window.runtimeSummary({ usage: { input: 100, cacheRead: 0, cacheWrite: 0 } })[0], /0.0%/);
+    assert.match(window.runtimeSummary({ usage: { input: 0, cacheRead: 0 } })[0], /暂无数据/);
+    assert.match(window.runtimeSummary({ context: { tokens: null, contextWindow: 10000, percent: null } })[1], /— \/ 10,000 tokens · 待更新/);
+    assert.equal($("session-runtime").previousElementSibling.className, "actions");
     assert.equal($("subagent-model").value, "");
     assert.equal($("subagent-model").disabled, true);
     assert.equal($("composer").contains($("subagent-model")), false);
@@ -326,6 +336,10 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("subagent-model").value, "");
     const historicalTask = window.document.querySelector(".task-card");
     assert.equal(historicalTask.querySelector(".markdown").textContent, "");
+    assert.match(historicalTask.querySelector(".runtime-summary").textContent, /80.0%.*1,200 \/ 10,000 tokens · 12.0%.*other · child · 思考 high/);
+    assert.equal(historicalTask.querySelector(".task-system-prompt pre").textContent, "Historical system prompt");
+    assert.equal(historicalTask.querySelector(".task-description").textContent, "Historical task");
+    assert.doesNotMatch($("session-runtime").textContent, /80.0%/, "child usage never leaks to the main agent");
     historicalTask.open = true;
     historicalTask.dispatchEvent(new window.Event("toggle"));
     paint();
@@ -395,6 +409,17 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       { task: "Inspect code", status: "running" },
       { taskId: "child" },
     );
+    const runtime = {
+      model: "other/child", thinking: "high", systemPrompt: '<img src=x onerror="alert(1)">\nSystem instructions',
+      usage: { input: 100, cacheRead: 800, cacheWrite: 100 },
+      context: { tokens: 1200, contextWindow: 10000, percent: 12 },
+    };
+    emit("agent.runtime", runtime, { agentId: "child" });
+    assert.match($("session-runtime").textContent, /暂无数据/);
+    emit("agent.runtime", { ...runtime, model: "test/model" });
+    assert.match($("session-runtime").textContent, /80.0%.*test · model · 思考 high/);
+    emit("agent.runtime", { ...runtime, model: "unrelated/model" }, { sessionId: "b" });
+    assert.doesNotMatch($("session-runtime").textContent, /unrelated/, "ignore events belonging to a different session");
     emit(
       "agent.message.start",
       { message: { role: "assistant", content: [] } },
@@ -407,6 +432,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     );
     paint();
     const task = window.document.querySelector(".task-card");
+    assert.match(task.querySelector(".runtime-summary").textContent, /80.0%.*other · child/);
+    assert.equal(task.querySelector(".task-system-prompt pre").textContent, runtime.systemPrompt);
+    assert.equal(task.querySelector(".task-system-prompt img"), null, "system prompts are plain text, not executable markup");
     assert.equal(task.querySelector(".markdown").textContent, "");
     task.open = true;
     task.dispatchEvent(new window.Event("toggle"));
@@ -415,6 +443,13 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       task.querySelector(".markdown").textContent,
       "full child result",
     );
+    emit("task.state", { task: "Inspect code", status: "failed", error: "Provider failed", runtime }, { taskId: "child" });
+    assert.equal(task.open, true, "updates preserve expansion state");
+    assert.equal(task.querySelector(".task-error").textContent, "Provider failed");
+    assert.equal(task.querySelector(".task-error").hidden, false);
+    window.document.querySelectorAll(".session-item")[1].click();
+    await settle();
+    assert.match($("session-runtime").textContent, /暂无数据/, "switching sessions clears previous usage");
     $("toggle-sidebar").click();
     assert.equal($("sidebar-backdrop").hidden, false);
     window.document.dispatchEvent(

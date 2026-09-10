@@ -192,6 +192,7 @@ export class Sessions {
       title: item.title,
       seq: item.seq,
       status: item.status,
+      runtime: item.agent.runtime?.(),
       config: {
         ...item.agent.config?.(), subagentModel: item.subagentModel,
         subagentThinking: item.subagentThinking,
@@ -230,6 +231,7 @@ export class Sessions {
       item.subagentModel = subagentModel;
       return {
         ...item.agent.config?.(), ...config, subagentModel,
+        runtime: item.agent.runtime?.(),
         subagentThinking: item.subagentThinking,
         subagentResolvedCapabilities: item.subagentResolvedCapabilities,
         capabilitySelection: item.capabilities,

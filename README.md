@@ -35,6 +35,13 @@ npm start
 
 `session.defaults.get` 返回 `{model,subagentModel,thinking,subagentThinking,capabilities,subagentCapabilities}`；`session.defaults.configure` 接收上述可选字段及 `cwd?`（仅用于校验目录里的可用能力），省略字段保留原值，保存失败保留全部旧值。主模型 `null` 使用最近主模型/启动模型，子模型 `null` 跟随主代理；`thinking:null` 沿用最近/启动思考等级，`subagentThinking:null` 跟随主代理；`subagentCapabilities:"inherit"` 跟随主代理能力，`null` 仍表示全部能力；默认配置不接收 `trustProject`。`session.create` 的显式字段优先于默认值，`useDefaults:false` 完全绕过这份默认配置，网页自定义入口使用该标记；最近主模型和思考程度的原有继承规则不变。
 
+## 会话与子代理运行信息
+
+- 发送按钮只显示「发送」，不带上箭头。模型选择区下方新增运行摘要：缓存命中、上下文用量/窗口及占比、当前实际供应商 · 模型 · 思考程度。桌面一行排列，窄屏自动换行。
+- 缓存命中按最近一次模型回答的 `cacheRead / (input + cacheRead + cacheWrite)` 计算，并显示命中 token 数；没有用量或输入总量为零时显示「暂无数据」，不伪造 0%。上下文直接使用 Pi `getContextUsage()` 的当前估算，不是累计 token 消耗；压缩后尚无可靠统计时显示「待更新」。
+- 子任务折叠摘要显示状态、简短任务标题及独立运行信息；展开后显示完整任务说明、可继续展开的实际系统提示词、失败原因与消息。系统提示词取自该子代理运行状态（含扩展的动态修改），按纯文本安全展示，而不是拿任务文本代替；尚未创建代理时明确提示未加载。
+- 主/子运行信息通过 `agent.runtime` 事件更新，只在消息、轮次结束及上下文压缩等边界采样，不随每个 token 重发。会话快照新增 `runtime`，子任务 `task.state` 与快照附带各自的 `runtime`，包含 `model/thinking/systemPrompt/context/usage`；子代理销毁前保留最终状态，切换或重连恢复，互不串用。`read_result` 与 `tasks.read` 仍只返回任务结果，不把展示用的系统提示词再塞入主代理上下文。
+
 ## 输出渲染与性能
 
 流式更新只处理发生变化的消息，每帧合并一次；思考不再触发正文 Markdown 重绘，折叠思考按需渲染。折叠子任务仅收集文本，不调度动画帧、不解析 Markdown，展开时一次显示完整结果（包括历史恢复与最终消息）。Markdown 按块比较，保留未变化的 DOM，仅对变化块解析、清理并替换；仍完整词法分析以正确处理后出现的引用定义。超长单个段落/代码块仍需重算该块，不保证恒定开销。
@@ -75,7 +82,7 @@ ws.onopen = () => ws.send(JSON.stringify({id:'1', type:'session.create'}));
 
 `session.create` 自动订阅；断开连接不取消任务。重新 attach 返回状态、历史消息、当前流式消息、工具状态、任务结果与序号。快照后按事件 seq 接续，不要重复追加快照之前的内容。服务不保存每个增量的回放日志。
 
-事件包含 `sessionId`、`seq`；Agent 事件包含 `agentId`，子任务另有 `taskId`、`parentAgentId`。类型为 `session.state`、`agent.message.start/end`、`agent.delta`、`tool.state`、`task.state`、`error`。`agent.delta.data` 的 `type/contentIndex/delta` 对应内容块增量；thinking 是否可见取决于模型。`tool.state.data.partialResult` 为累计结果，替换展示而非追加。`agent.message.end` 的完整消息为最终事实。
+事件包含 `sessionId`、`seq`；Agent 事件包含 `agentId`，子任务另有 `taskId`、`parentAgentId`。类型为 `session.state`、`agent.message.start/end`、`agent.delta`、`agent.runtime`、`tool.state`、`task.state`、`error`。`agent.delta.data` 的 `type/contentIndex/delta` 对应内容块增量；thinking 是否可见取决于模型。`tool.state.data.partialResult` 为累计结果，替换展示而非追加。`agent.message.end` 的完整消息为最终事实。
 
 主 Agent idle 不代表所有子任务完成，使用 task.state 判断子任务。任务 ID 只在其所属会话中有效。本机客户端能访问所有会话。
 

@@ -30,3 +30,9 @@
 - 根因：默认选择未持久化/继承
 - 修复：src/sessions.js 默认配置快照 + agent 目录 axiom/defaults.json 持久化
 - 防再犯：改会话创建逻辑时，确认 defaultSelection 的读取与保存链路完整
+
+### 2026-09-10 子代理详情缺少真实运行信息
+- 症状：子任务只有状态与输出，无法查看实际系统提示词、模型、缓存命中和上下文；销毁后不能再读取 SDK 状态。
+- 根因：原协议只传消息与任务状态，Tasks 终态删除 agent，未保存独立运行快照。
+- 修复：src/pi.js 读取 SDK systemPrompt/messages.usage/getContextUsage，边界事件发布 agent.runtime；src/tasks.js 保留终态 runtime，src/sessions.js 恢复主会话 runtime；public/app.js 按会话和 agentId 隔离展示，系统提示词只用 textContent。
+- 防再犯：展示用 runtime 不进入 read_result，避免把系统提示词灌回主代理上下文；缓存率分母包含 cacheWrite，未知用量与压缩后未知上下文不能当零；销毁前保存，切换时清空前会话状态，不逐 token 扫历史。

@@ -7,6 +7,17 @@ import { capabilityLoader, discoverCapabilities } from "./capabilities.js";
 import { createJiti } from "jiti";
 const { getSupportedThinkingLevels } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai/compat");
 
+export function agentRuntime(session) {
+  const last = session.messages.findLast((message) => message.role === "assistant");
+  return {
+    model: `${session.model.provider}/${session.model.id}`,
+    thinking: session.thinkingLevel,
+    systemPrompt: session.systemPrompt,
+    context: session.getContextUsage() ?? null,
+    usage: last?.usage ?? null,
+  };
+}
+
 export async function createPiFactory({ cwd, model: requested }) {
   const modelRuntime = await ModelRuntime.create();
   const available = await modelRuntime.getAvailable();
@@ -57,6 +68,7 @@ export async function createPiFactory({ cwd, model: requested }) {
     }
     let promptStart = 0;
     return {
+      runtime: () => agentRuntime(session),
       async configure({ model: key, thinking }) {
         const selected = available.find((m) => `${m.provider}/${m.id}` === key);
         if (!selected) throw new Error("Unknown model");
@@ -125,6 +137,9 @@ export async function createPiFactory({ cwd, model: requested }) {
               data: { phase: type.slice("tool_execution_".length), ...data },
             });
           }
+          // Lifecycle boundaries only: never resend the prompt or scan history per token.
+          if (["message_start", "message_end", "turn_end", "agent_end", "compaction_end"].includes(event.type))
+            listener({ type: "agent.runtime", data: agentRuntime(session) });
         });
       },
     };

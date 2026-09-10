@@ -381,6 +381,42 @@ h1 {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+.task-title {
+  display: inline-block;
+  max-width: calc(100% - 20px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+.runtime-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.runtime-summary > span { min-width: 0; }
+#session-runtime { padding: 0 16px 12px; }
+.task-card .runtime-summary { margin-top: 6px; }
+.task-description,
+.task-system-prompt pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-size: 12px;
+}
+.task-system-prompt {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.task-system-prompt pre { max-height: 320px; overflow: auto; }
+.task-error { color: #f2a6a6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .task-card[data-status="running"],
 .task-card[data-status="starting"] {
   border-color: #717de555;

@@ -2,6 +2,63 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Sessions } from "../src/sessions.js";
 import { command } from "../src/protocol.js";
+import { agentRuntime } from "../src/pi.js";
+
+test("runtime snapshots use actual agent state, survive disposal and stay out of model tool results", async () => {
+  const sessions = new Sessions(async () => {
+    const state = {
+      model: { provider: "test", id: "model" }, thinkingLevel: "off", systemPrompt: "Initial prompt",
+      messages: [], getContextUsage: () => ({ tokens: null, contextWindow: 10000, percent: null }),
+    };
+    let listener;
+    return {
+      config: () => ({ model: "test/model", thinking: state.thinkingLevel, levels: ["off", "high"] }),
+      runtime: () => agentRuntime(state),
+      subscribe: (fn) => { listener = fn; return () => {}; },
+      configure: async () => { state.thinkingLevel = "high"; return { model: "test/model", thinking: "high" }; },
+      prompt: async () => {
+        state.systemPrompt = "Prompt changed by an extension";
+        state.messages.push({ role: "assistant", usage: { input: 100, cacheRead: 800, cacheWrite: 100 } });
+        state.getContextUsage = () => ({ tokens: 1200, contextWindow: 10000, percent: 12 });
+        listener({ type: "agent.runtime", data: agentRuntime(state) });
+      },
+      result: () => "done", abort: async () => {},
+      dispose: () => { state.systemPrompt = "Disposed"; },
+    };
+  });
+  const id = await sessions.create();
+  try {
+    const initial = sessions.snapshot(id).runtime;
+    assert.equal(initial.usage, null);
+    assert.equal(initial.context.tokens, null);
+    assert.equal(initial.systemPrompt, "Initial prompt");
+    const configured = await sessions.configure(id, { model: "test/model" });
+    assert.equal(configured.runtime.thinking, "high");
+    const events = [];
+    sessions.subscribe(id, (event) => events.push(event));
+    sessions.prompt(id, "test");
+    await sessions.get(id).work;
+    const current = sessions.snapshot(id).runtime;
+    assert.equal(current.systemPrompt, "Prompt changed by an extension");
+    assert.equal(current.usage.cacheRead, 800);
+    assert.equal(current.context.percent, 12);
+    assert(events.some((event) => event.type === "agent.runtime" && event.agentId === "main"));
+    const tasks = sessions.get(id).tasks;
+    const ids = tasks.start(["child"]);
+    const [result] = await tasks.read(ids);
+    assert.equal(result.text, "done");
+    assert.equal(Object.hasOwn(result, "runtime"), false, "read_result must not feed system prompts back into the parent's context");
+    const [child] = sessions.snapshot(id).tasks;
+    assert.equal(child.runtime.systemPrompt, current.systemPrompt, "preserve final prompt before disposing");
+    assert.equal(child.runtime.context.percent, 12);
+    assert(events.some((event) => event.type === "agent.runtime" && event.taskId === ids[0]));
+    assert.equal(events.findLast((event) => event.type === "task.state").data.runtime.usage.cacheRead, 800);
+    child.runtime.usage.cacheRead = 0;
+    assert.equal(sessions.snapshot(id).tasks[0].runtime.usage.cacheRead, 800, "snapshot is isolated");
+  } finally {
+    await sessions.close();
+  }
+});
 
 test("configuration applies to the main agent and is inherited by delegated children", async () => {
   const selections = [];

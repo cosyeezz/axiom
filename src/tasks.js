@@ -19,30 +19,32 @@ export class Tasks {
   }
 
   publish(job) {
-    this.emit({ type: "task.state", taskId: job.id, data: this.view(job) });
+    this.emit({ type: "task.state", taskId: job.id, data: { ...this.view(job), runtime: job.runtime } });
   }
   view({ id, task, status, text, error }) {
     return { id, task, status, text, error };
   }
   snapshot() {
-    return [...this.jobs.values()].map((job) => this.view(job));
+    return [...this.jobs.values()].map((job) => ({ ...this.view(job), runtime: job.runtime }));
   }
 
   async run(job) {
     let unsubscribe;
     try {
       job.agent = await this.createAgent();
+      job.runtime = job.agent.runtime?.();
       if (job.cancelled) throw new Error("Cancelled");
       job.status = "running";
       this.publish(job);
-      unsubscribe = job.agent.subscribe((event) =>
+      unsubscribe = job.agent.subscribe((event) => {
+        if (event.type === "agent.runtime") job.runtime = event.data;
         this.emit({
           ...event,
           agentId: job.id,
           parentAgentId: "main",
           taskId: job.id,
-        }),
-      );
+        });
+      });
       await job.agent.prompt(job.task);
       if (job.cancelled) throw new Error("Cancelled");
       job.text = job.agent.result();
@@ -53,6 +55,7 @@ export class Tasks {
     } finally {
       unsubscribe?.();
       try {
+        job.runtime = job.agent?.runtime?.() ?? job.runtime;
         await job.agent?.dispose();
       } catch (error) {
         job.status = "failed";
