@@ -583,6 +583,7 @@ textarea {
 #settings,
 #create-session,
 #session-action,
+#restart-dialog,
 .task-dialog {
   width: min(600px, calc(100% - 32px));
   max-height: calc(100dvh - 32px);
@@ -593,6 +594,8 @@ textarea {
   border-radius: 16px;
   box-shadow: 0 24px 80px #0008;
 }
+#restart-dialog { width: min(460px, calc(100% - 32px)); }
+#restart-title { margin: 0; font-size: 18px; }
 #settings { width: min(1000px, calc(100% - 32px)); }
 .task-dialog { width: min(880px, calc(100% - var(--sidebar-width) - 32px)); border-color: #42455f; }
 .settings-layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); }
@@ -610,6 +613,7 @@ textarea {
 #settings::backdrop,
 #create-session::backdrop,
 #session-action::backdrop,
+#restart-dialog::backdrop,
 .task-dialog::backdrop {
   background: #0009;
 }

@@ -148,6 +148,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
           case "service.status":
             data = { managed: true, error: "" };
             break;
+          case "service.restart":
+            this.receive({ type: "response", id: req.id, ok: false, error: "请先停止正在运行的会话" });
+            return;
           case "models.list":
             data = [
               { key: "test/model", provider: "test", name: "Model" },
@@ -524,6 +527,32 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("status").textContent, "已连接");
     assert.equal($("restart-quick").disabled, false);
     assert.equal($("restart-rebuild").disabled, false);
+    const restartRequests = () => requests.filter((r) => r.type === "service.restart");
+    window.confirm = () => { throw new Error("must use styled dialog"); };
+    for (const mode of ["quick", "rebuild"]) {
+      const before = restartRequests().length;
+      $(`restart-${mode}`).click();
+      assert.equal($("restart-dialog").open, true);
+      assert.equal(window.document.activeElement, $("restart-cancel"));
+      assert.match($("restart-description").textContent, mode === "quick" ? /不安装依赖/ : /数分钟/);
+      assert.equal(restartRequests().length, before);
+      $("restart-cancel").click();
+      assert.equal($("restart-dialog").open, false);
+      $("restart-form").requestSubmit();
+      assert.equal(restartRequests().length, before);
+      $(`restart-${mode}`).click();
+      $("restart-dialog").close(); // Native Escape closes without submitting.
+      assert.equal(restartRequests().length, before);
+      $(`restart-${mode}`).click();
+      $("restart-form").requestSubmit();
+      $("restart-form").requestSubmit();
+      assert.equal($("restart-dialog").open, false);
+      assert.equal(restartRequests().length, before + 1);
+      assert.equal(restartRequests().at(-1).mode, mode);
+      await settle();
+      assert.match($("service-feedback").textContent, /请先停止/);
+      assert.equal($(`restart-${mode}`).disabled, false);
+    }
     assert.equal($("status").dataset.connected, "true");
     emit("session.queue", { steering: ["插话内容"], followUp: ["追加内容"] });
     assert.equal($("message-queue").children.length, 2);

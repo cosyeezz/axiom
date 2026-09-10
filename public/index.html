@@ -46,9 +46,9 @@
             <span id="status" role="status" title="WebSocket 连接状态">连接中</span>
             <button type="button" id="service-menu-button" class="secondary" popovertarget="service-menu">服务 ▾</button>
             <div id="service-menu" popover>
-              <button type="button" id="restart-quick" disabled>快速重启</button>
+              <button type="button" id="restart-quick" aria-haspopup="dialog" aria-controls="restart-dialog" disabled>快速重启</button>
               <small>仅重新启动服务</small>
-              <button type="button" id="restart-rebuild" disabled>重建重启</button>
+              <button type="button" id="restart-rebuild" aria-haspopup="dialog" aria-controls="restart-dialog" disabled>重建重启</button>
               <small>重新安装依赖、执行构建后启动</small>
               <p id="service-feedback" role="status">正在检查服务…</p>
             </div>
@@ -129,6 +129,14 @@
         <input id="session-name" maxlength="120" required />
         <p id="session-action-error" role="alert"></p>
         <div class="dialog-actions"><button type="button" id="session-action-cancel" class="secondary">取消</button><button id="session-action-submit">确认</button></div>
+      </form>
+    </dialog>
+    <dialog id="restart-dialog" aria-labelledby="restart-title" aria-describedby="restart-description restart-warning">
+      <form id="restart-form" class="settings-body">
+        <h2 id="restart-title">重启服务</h2>
+        <p id="restart-description"></p>
+        <p id="restart-warning">请先停止所有会话任务。重启不会删除会话历史。</p>
+        <div class="dialog-actions"><button type="button" id="restart-cancel" class="secondary" autofocus>取消</button><button id="restart-submit">确认重启</button></div>
       </form>
     </dialog>
     <div id="task-overlays"></div>

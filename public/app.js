@@ -779,9 +779,24 @@ function scheduleReconnect() {
   reconnectTimer = setTimeout(() => $("login").requestSubmit(), reconnectDelay);
   reconnectDelay = Math.min(reconnectDelay * 2, 15000);
 }
-for (const mode of ["quick", "rebuild"]) $(`restart-${mode}`).onclick = async () => {
+for (const mode of ["quick", "rebuild"]) $(`restart-${mode}`).onclick = () => {
+  $("restart-dialog").dataset.mode = mode;
+  $("restart-title").textContent = mode === "quick" ? "快速重启" : "重建重启";
+  $("restart-description").textContent = mode === "quick"
+    ? "仅重新启动服务，不安装依赖。所有页面会暂时断开连接，随后自动重连。"
+    : "重新安装依赖、执行构建后启动，可能需要数分钟。所有页面会暂时断开连接，随后自动重连。";
+  $("restart-submit").textContent = `确认${$("restart-title").textContent}`;
+  $("restart-dialog").showModal();
+  $("restart-cancel").focus();
+};
+$("restart-cancel").onclick = () => $("restart-dialog").close();
+$("restart-form").onsubmit = async (e) => {
+  e.preventDefault();
+  if (!$("restart-dialog").open) return;
+  const mode = $("restart-dialog").dataset.mode;
   const name = mode === "quick" ? "快速重启" : "重建重启";
-  if (!confirm(`${name}会暂时断开所有页面连接。${mode === "rebuild" ? "重新安装依赖可能需要数分钟。" : ""}确定继续？`)) return;
+  $("restart-dialog").close();
+  if (!connected || !serviceManaged || restarting) return;
   restarting = true;
   controls();
   $("service-feedback").textContent = `${name}中，请等待自动重连…`;
