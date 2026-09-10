@@ -66,3 +66,9 @@
 - 根因：背景、边框和选中阴影仍挂在 .session-item，而操作按钮是兄弟元素。
 - 修复：public/style.css 将选中外观移到 .session-row，以 :has([aria-current]) 驱动；行内留边距，图标颜色统一。
 - 防再犯：复合条目外观作用于整行，不把交互按钮嵌套进另一个按钮。
+
+### 2026-09-10 信息栏与模型栏视觉顺序颠倒
+- 症状：HTML 中信息在模型栏后面，但实际显示在其上方。
+- 根因：#session-runtime 的 order:-1 与 #prompt 的 order:-2 覆盖 DOM 顺序；只检查 DOM 无法发现。
+- 修复：删除两处 order，使用自然顺序；浏览器比较 actions.bottom <= session-runtime.top。
+- 防再犯：布局顺序验收检查真实坐标，不只测试 previousElementSibling；紧凑按钮同时覆盖全局 min-height。

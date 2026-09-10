@@ -1,5 +1,10 @@
 # 开发记录
 
+## 2026-09-10 — 紧凑添加菜单、Skill 标签与布局纠正
+- 在独立 worktree MyWorkbench-compact-context-menu 实施：菜单改为 176px 三行单行布局，移除标题/副文案，说明移入 title；加号换细线 SVG、桌面 28px 无边框按钮，触屏保留 40px 点击区域。
+- Skill 单独保存为页面草稿状态，上方标签显示，正文不再重复命令，发送时复用 Pi /skill 命令；取消不改正文、失败保留、切换按会话恢复，支持仅发送 Skill。删除旧 CSS order，恢复正文→模型按钮→会话信息。
+- 涉及 public/{app.js,index.html,style.css}、tests/app.test.js、README.md、devlog.md 和 codebase-map；npm test 13 项通过。独立 Chromium 检查 1440/390px 菜单 176×106、加号 28×28、无横向溢出，模型操作行实际位于信息栏上方。未重启现有服务。
+
 ## 2026-09-10 — 上下文添加菜单与工作空间本地操作
 - 独立 worktree MyWorkbench-composer-add-menu / feat/composer-add-menu。参考 Claude Code 桌面「＋」与 Cursor 上下文引用官方文档，移除可见的 Skill 表单行，输入框上沿增加图标菜单、搜索选择器、可移除标签；不调整模型栏/运行摘要位置。Skill 正文以 Pi 终端同款 `[skill] 名称` 默认折叠、点击展开并安全渲染，保留任务正文。
 - 文件/目录只添加工作空间路径引用，按需读取；浏览接口校验真实路径边界，排除符号链接及 .git/node_modules。新会话上方提供 Windows 原生选目录，路径后增加复制/Explorer 图标；取消选择不切换，沿用原会话/信任流程。顶栏仅 WS 状态、停止按钮改 Stop。

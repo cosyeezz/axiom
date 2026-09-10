@@ -69,14 +69,13 @@
             <button id="latest" class="secondary" hidden>回到最新消息 ↓</button>
             <div id="message-queue" aria-label="待发送队列" aria-live="polite" hidden></div>
             <div class="context-bar">
-              <button type="button" id="add-context" class="icon-button" popovertarget="context-menu" title="添加上下文" aria-label="添加 Skill、文件或文件夹">＋</button>
+              <button type="button" id="add-context" class="icon-button" popovertarget="context-menu" title="添加上下文" aria-label="添加 Skill、文件或文件夹"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
               <div id="context-chips" aria-label="待发送上下文"></div>
             </div>
             <div id="context-menu" popover>
-              <div class="context-menu-title">添加上下文</div>
-              <button type="button" data-context="skill"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 3 6 6 3-6 3-3 6-3-6-6-3 6-3Z"/></svg><span>Skill<small>加载技能指令</small></span><span>›</span></button>
-              <button type="button" data-context="file"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H5v18h14V8Zm0 0v5h5M8 12h8M8 16h6"/></svg><span>工作空间文件<small>引用相关代码或文档</small></span><span>›</span></button>
-              <button type="button" data-context="folder"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l3 3h9v13H3Z"/></svg><span>工作空间文件夹<small>指定任务关注的目录</small></span><span>›</span></button>
+              <button type="button" data-context="skill" title="加载技能指令"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 3 6 6 3-6 3-3 6-3-6-6-3 6-3Z"/></svg><span>Skill</span><span class="context-chevron" aria-hidden="true">›</span></button>
+              <button type="button" data-context="file" title="引用工作空间中的代码或文档"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H5v18h14V8Zm0 0v5h5M8 12h8M8 16h6"/></svg><span>文件</span><span class="context-chevron" aria-hidden="true">›</span></button>
+              <button type="button" data-context="folder" title="引用工作空间中的文件夹"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l3 3h9v13H3Z"/></svg><span>文件夹</span><span class="context-chevron" aria-hidden="true">›</span></button>
             </div>
             <dialog id="context-picker" aria-labelledby="context-title">
               <header><h2 id="context-title">添加上下文</h2><button type="button" id="context-close" class="icon-button" aria-label="关闭">×</button></header>
