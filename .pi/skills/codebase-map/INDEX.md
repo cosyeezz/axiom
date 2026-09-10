@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/10 07:30:40）
+# Axiom 多级代码索引（生成于 2026/9/10 07:34:17）
 
 ## L1 模块总览（文件 → 职责）
 

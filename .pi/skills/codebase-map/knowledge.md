@@ -73,6 +73,12 @@
 - 修复：src/compaction.js 固定历史快照并后台生成，在下一轮刷新钩子或空闲后的 prompt 入口校验并应用；src/pi.js 延迟一个微任务取得真实 entryId，result 使用本次最后响应引用而非压缩前数组下标；src/sessions.js 按顺序补齐旧历史 ID 并恢复 JSONL 已提交摘要。
 - 防再犯：保留边界后的全部消息按当前分支重建；旧 compaction 条目可位于新切点之后，不能重复当作摘要正文或近期消息；压缩后未知 usage 使用内容估算，不复用旧用量。摘要会话显式禁用资源发现，取消须中断真实 HTTP。tests/compaction.test.js 与 compaction-config.test.js 覆盖安全点、取消、分支失效和重启恢复。
 
+### 2026-09-10 隐藏 DOM 输入框不能当状态存储
+- 症状：删除侧栏「工作空间」路径表单后，新会话/自定义新会话报错（openCreation 读 `$("cwd").value`）。
+- 根因：`#cwd` 隐藏输入被当作「当前工作空间」状态存储，UI 元素与状态耦合。
+- 修复：app.js 模块级 `currentCwd` 变量，snapshot 时更新；DOM 只负责展示。
+- 防再犯：删任何 UI 元素前先 rg 全部引用；状态放变量，DOM 只做展示。
+
 ### 2026-09-10 信息栏与模型栏视觉顺序颠倒
 - 症状：HTML 中信息在模型栏后面，但实际显示在其上方。
 - 根因：#session-runtime 的 order:-1 与 #prompt 的 order:-2 覆盖 DOM 顺序；只检查 DOM 无法发现。
