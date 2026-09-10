@@ -1,4 +1,6 @@
-# 开发记录
+## 2026-09-10 — 已完成区去掉拖放提示文案
+- worktree MyWorkbench-done-label / feat/done-label。按用户要求，折叠区标题精简为「已完成」，去掉「· 拖到这里」提示；拖放行为不变。涉及 public/{app.js,index.html}、devlog.md。
+- 验证：npm test 全量 51 项通过（测试未断言该文案）。
 
 ## 2026-09-10 — 输入框 Skill 与工作空间补全
 - worktree MyWorkbench-composer-completion / feat/composer-completion。输入开头 `/` 补全当前会话 Skill，`@` 补全文件及文件夹，支持名称过滤、路径分层、带空格路径、点击与上下/Enter/Tab/Esc 键；文件夹可直接引用或右箭头进入。
