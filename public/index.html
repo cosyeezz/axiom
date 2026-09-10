@@ -55,7 +55,17 @@
             <h1 id="session-title">新会话</h1>
             <div class="workspace-location"><span id="workspace-label"></span><button id="copy-workspace" class="icon-button" title="复制工作空间路径" aria-label="复制工作空间路径"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h11v12H9ZM15 9V3H4v12h5"/></svg></button><button id="reveal-workspace" class="icon-button" title="在资源管理器中打开" aria-label="在资源管理器中打开工作空间"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l3 3h9v4M3 7v13h16l3-9H7l-4 9"/></svg></button><span id="workspace-feedback" class="sr-only" role="status"></span></div>
           </div>
-          <span id="status" role="status" title="WebSocket 连接状态">连接中</span>
+          <div class="service-controls">
+            <span id="status" role="status" title="WebSocket 连接状态">连接中</span>
+            <button type="button" id="service-menu-button" class="secondary" popovertarget="service-menu">服务 ▾</button>
+            <div id="service-menu" popover>
+              <button type="button" id="restart-quick" disabled>快速重启</button>
+              <small>仅重新启动服务</small>
+              <button type="button" id="restart-rebuild" disabled>重建重启</button>
+              <small>重新安装依赖、执行构建后启动</small>
+              <p id="service-feedback" role="status">正在检查服务…</p>
+            </div>
+          </div>
         </header>
         <form id="login" hidden>
           <span>连接已断开，正在自动重连；消息和草稿仍保留在此页面。</span>

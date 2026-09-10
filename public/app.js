@@ -10,6 +10,8 @@ let ws,
   busy = false,
   changing = false,
   connected = false,
+  serviceManaged = false,
+  restarting = false,
   creation;
 let allSessions = [],
   follow = true;
@@ -117,7 +119,9 @@ function controls() {
   for (const id of ["new", "custom-new"]) $(id).disabled = unavailable;
   for (const button of document.querySelectorAll(".session-actions button")) button.disabled = unavailable;
   $("status").dataset.connected = String(connected);
-  $("status").textContent = connected ? (busy ? "Running" : "Idle") : "连接断开";
+  $("status").textContent = restarting ? "正在重启…" : connected ? "已连接" : "连接断开";
+  for (const id of ["restart-quick", "restart-rebuild"])
+    $(id).disabled = !connected || !serviceManaged || restarting;
 }
 function options(select, entries, selected) {
   select.replaceChildren(
@@ -709,6 +713,12 @@ $("login").onsubmit = async (e) => {
         controls();
       };
     });
+    const service = await request("service.status");
+    serviceManaged = service.managed;
+    restarting = false;
+    $("service-feedback").textContent = service.error || (serviceManaged
+      ? "重启前请停止所有会话任务；页面会自动重连。"
+      : "当前为直接启动，请改用 npm start 以启用重启。");
     models = await request("models.list");
     options(
       $("provider"),
@@ -753,6 +763,19 @@ function scheduleReconnect() {
   reconnectTimer = setTimeout(() => $("login").requestSubmit(), reconnectDelay);
   reconnectDelay = Math.min(reconnectDelay * 2, 15000);
 }
+for (const mode of ["quick", "rebuild"]) $(`restart-${mode}`).onclick = async () => {
+  const name = mode === "quick" ? "快速重启" : "重建重启";
+  if (!confirm(`${name}会暂时断开所有页面连接。${mode === "rebuild" ? "重新安装依赖可能需要数分钟。" : ""}确定继续？`)) return;
+  restarting = true;
+  controls();
+  $("service-feedback").textContent = `${name}中，请等待自动重连…`;
+  try { await request("service.restart", { mode }); }
+  catch (e) {
+    restarting = false;
+    $("service-feedback").textContent = e.message;
+    controls();
+  }
+};
 controls();
 $("login").requestSubmit();
 $("provider").onchange = () => {

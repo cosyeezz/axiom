@@ -21,7 +21,7 @@ const assets = new Map(
   }),
 );
 
-export function createServerApp(sessions) {
+export function createServerApp(sessions, service = {}) {
   let stopping = false;
   const pending = new Set();
   const server = createServer((req, res) => {
@@ -99,6 +99,20 @@ export function createServerApp(sessions) {
           request = command.parse(JSON.parse(raw.toString()));
           let data;
           switch (request.type) {
+            case "service.status":
+              data = { managed: Boolean(service.restart), error: service.error || "" };
+              break;
+            case "service.restart":
+              if (!service.restart) throw new Error("请通过 npm start 启动服务后再使用重启功能");
+              if (sessions.list().some((item) => item.status !== "idle") ||
+                  [...(sessions.items?.values() || [])].some((item) => item.configuring ||
+                    [...item.tasks.jobs.values()].some((task) => ["starting", "running"].includes(task.status))))
+                throw new Error("还有会话正在运行，请先停止所有任务再重启");
+              stopping = true;
+              try { await service.restart(request.mode); }
+              catch (error) { stopping = false; throw error; }
+              data = { restarting: true };
+              break;
             case "capabilities.list":
               data = await sessions.createAgent.capabilities(request.cwd, request.trustProject);
               break;

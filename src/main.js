@@ -24,14 +24,24 @@ try {
 const sessions = new Sessions(factory, join(home, "defaults.json"), join(home, "workspaces"));
 await sessions.loadDefaults();
 await sessions.load();
-const app = createServerApp(sessions);
+const app = createServerApp(sessions, {
+  error: process.env.AXIOM_SERVICE_ERROR,
+  restart: process.send ? (mode) => new Promise((resolve, reject) => {
+    process.send({ type: "service.restart", mode }, (error) => error ? reject(error) : resolve());
+  }) : undefined,
+});
 app.server.listen(port, "127.0.0.1", () =>
   console.log(`Axiom listening on http://127.0.0.1:${port}; workspace: ${cwd}`),
 );
-for (const signal of ["SIGINT", "SIGTERM"])
-  process.once(signal, () => {
-    void app.close().catch((error) => {
-      console.error(error);
-      process.exitCode = 1;
-    });
+let closing;
+function stop() {
+  closing ||= app.close().then(() => process.exit(0)).catch((error) => {
+    console.error(error);
+    process.exit(1);
   });
+}
+for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, stop);
+process.on("message", (message) => {
+  if (message?.type === "service.stop") stop();
+});
+if (process.send) process.once("disconnect", stop);
