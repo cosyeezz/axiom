@@ -74,9 +74,20 @@ export const command = z.discriminatedUnion("type", [
       title: z.string().trim().min(1).max(120),
     })
     .strict(),
-  z.object({ id, type: z.literal("workspace.pick") }).strict(),
   z.object({ id, type: z.literal("workspace.reveal"), sessionId: id }).strict(),
   z.object({ id, type: z.literal("workspace.browse"), sessionId: id, path: z.string().max(4096).default("") }).strict(),
+  // 统一文件浏览：sessionId 存在则限定工作空间（相对路径），否则浏览主机绝对目录（工作空间选择器）。
+  z
+    .object({
+      id,
+      type: z.literal("files.browse"),
+      sessionId: id.optional(),
+      path: z.string().max(4096).optional(),
+      directoriesOnly: z.boolean().optional(),
+      offset: z.number().int().nonnegative().optional(),
+      query: z.string().max(200).optional(),
+    })
+    .strict(),
   z.object({ id, type: z.literal("models.list") }).strict(),
   z.object({
     id, type: z.literal("capabilities.list"),

@@ -7,6 +7,7 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>Axiom</title>
     <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/file-picker.css" />
     <script type="module" src="/app.js"></script>
   </head>
   <body>
@@ -83,7 +84,7 @@
             <dialog id="context-picker" aria-labelledby="context-title">
               <header><h2 id="context-title">添加上下文</h2><button type="button" id="context-close" class="icon-button" aria-label="关闭">×</button></header>
               <input id="context-search" type="search" placeholder="搜索当前列表…" aria-label="搜索上下文">
-              <div id="context-path"></div><div id="context-results"></div>
+              <div id="context-results"></div>
               <p id="context-error" role="status"></p>
             </dialog>
             <div id="image-attachments" class="image-attachments" aria-label="待发送图片" hidden></div>

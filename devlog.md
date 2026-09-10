@@ -284,3 +284,10 @@
 - 原因：快速/重建重启仍调用浏览器 confirm，与页面样式不一致。
 - 改动：public/index.html、public/app.js、public/style.css 增加共享暗色重启 dialog，复用已有表单/按钮样式，默认取消焦点、Esc 关闭，确认时校验连接状态并避免重复提交。
 - 验证：tests/app.test.js 覆盖两种模式的打开、取消、关闭、确认、重复提交与服务拒绝恢复；同步 README.md 和代码索引。
+
+### 2026-09-10 统一跨平台文件选择器
+- 原因：Windows 专用系统目录选择框与上下文文件选择界面割裂、图标单一，无法跨平台复用。
+- 决策：调研 VS Code Explorer、Seti、vanilla FileExplorer 和浏览器 File System Access API；采用原生 dialog + 现有 WS/Node 文件系统，不引入框架/图标依赖，不递归扫描或读取内容。
+- 改动：public/file-picker.js、file-picker.css 共用导航、地址、搜索、分页、确认、分类 SVG 图标和手机布局；app.js 统一工作空间/文件/文件夹入口，保留 Skill 与图片上传各自语义；src/sessions.js、protocol.js、server.js 增加 files.browse 和跨平台系统打开，删除 PowerShell picker；工作空间内 realpath 限界，主机模式可浏览可访问目录，每页 200 项。
+- 防回归：tests/file-picker.test.js、app.test.js、workspace-picker.test.js、session-flow.test.js、server.test.js；README.md、导航架构/索引和坑库同步。
+- 验证：npm test 55 项中 54 通过、1 个非 Windows 平台测试跳过、0 失败；Windows Chromium 真浏览器 1280×900 / 320×640 检查文件浏览、图标、Esc 和弹窗无横向溢出，控制台无脚本/CSP 错误。macOS/Linux 桌面及 UNC 网络共享未实机验证。

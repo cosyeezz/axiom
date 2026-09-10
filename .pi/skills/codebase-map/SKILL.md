@@ -32,6 +32,7 @@ INDEX.md 是生成物（勿手改）；knowledge.md 是人工沉淀物（勿删�
 ```
 浏览器 public/
   index.html ── app.js（唯一入口：视图栈/WS客户端/会话设置UI）
+                 ├─ file-picker.js     共享文件/目录选择、分类图标、按目录分页加载
                  ├─ markdown.js        marked + DOMPurify（XSS 边界）
                  └─ stream-renderer.js 流式增量渲染状态机
       │  WebSocket JSON（command，src/protocol.js zod 校验）

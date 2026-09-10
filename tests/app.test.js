@@ -6,6 +6,8 @@ import { marked } from "marked";
 import createPurify from "dompurify";
 import { createStreamRenderer } from "../public/stream-renderer.js";
 
+const pickerSource = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+
 test("header path icons do not inherit the global button minimum height", async () => {
   const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
   const css = await readFile(new URL("../public/style.css", import.meta.url), "utf8");
@@ -102,7 +104,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       message: { role: "assistant", content: "historical result" },
     },
   ];
-  let lastCreation, lastDefaults, pickedPath = null, copiedPath;
+  let lastCreation, lastDefaults, copiedPath;
   Object.defineProperty(window.navigator, "clipboard", { value: { writeText: async (text) => { copiedPath = text; } } });
   let defaults = { model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
   let failDefaults = false, needsTrust = false;
@@ -134,7 +136,11 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       queueMicrotask(() => {
         let data;
         switch (req.type) {
-          case "workspace.pick": data = { path: pickedPath }; break;
+          case "files.browse":
+            data = { path: req.sessionId ? req.path : "C:\\other", parent: req.path ? "" : null,
+              entries: req.sessionId ? (req.path ? [{ name: "app.js", path: "src/app.js", directory: false }] : [{ name: "src", path: "src", directory: true }]) : [],
+              nextOffset: null, breadcrumbs: [], locations: [] };
+            break;
           case "workspace.reveal": data = { opened: true }; break;
           case "workspace.browse":
             data = { path: req.path, entries: req.path ? [{ name: "app.js", path: "src/app.js", directory: false }] : [{ name: "src", path: "src", directory: true }] };
@@ -225,7 +231,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("prompt").dispatchEvent(new window.Event("input"));
   };
   try {
-    window.eval(source);
+    window.eval(`${pickerSource}\n${source}`);
     sockets[0].close(); // Close before open: retry must not remain hidden.
     await settle();
     assert.equal($("login").hidden, false);
@@ -299,11 +305,11 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(copiedPath, "C:\\work");
     $("reveal-workspace").click(); await settle();
     assert.equal(requests.findLast((req) => req.type === "workspace.reveal").sessionId, "a");
-    pickedPath = "C:\\other";
     $("open-workspace").click(); await settle();
+    assert.equal($("file-picker").open, true);
+    $("file-picker-confirm").click(); await settle();
     assert.equal($("open-workspace").disabled, false);
     assert.equal(requests.findLast((req) => req.type === "session.create").cwd, "C:\\other");
-    pickedPath = null;
     lastCreation = undefined;
     window.document.querySelector('[data-context="skill"]').click();
     assert.equal($("context-picker").open, true);
@@ -316,9 +322,10 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("prompt").value, "");
     window.document.querySelector('[data-context="file"]').click();
     await settle();
-    $("context-results").firstChild.click();
+    $("file-picker-results").querySelector("button").click();
     await settle();
-    $("context-results").firstChild.click();
+    $("file-picker-results").querySelector("button").click();
+    $("file-picker-confirm").click(); await settle();
     assert.match($("context-chips").textContent, /src\/app.js/);
     input("参考文件");
     $("composer").requestSubmit(); await settle();
@@ -1016,7 +1023,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
   };
   const emit = (type, data) => sockets.at(-1).receive({ type, sessionId: state.sessionId, data });
   try {
-    window.eval(source);
+    window.eval(`${pickerSource}\n${source}`);
     sockets[0].open();
     await settle();
     paint();

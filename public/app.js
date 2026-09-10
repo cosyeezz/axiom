@@ -1,5 +1,7 @@
 import { renderMarkdown } from "./markdown.js";
 import { createStreamRenderer } from "./stream-renderer.js";
+import { createFilePicker, fileIcon } from "./file-picker.js";
+const filePicker = createFilePicker(request);
 const $ = (id) => document.getElementById(id);
 let ws,
   sessionId,
@@ -21,7 +23,7 @@ const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max
 let compactions = [], mainItems = [];
 let images = [], imageLoading = false;
 let completionVersion = 0, completionToken, completionEntries = [], completionIndex = 0;
-let selectedSkill = "", contextFiles = [], contextMode, contextListing = { path: "", entries: [] }, contextLoad = 0, pickingWorkspace = false, currentCwd = "";
+let selectedSkill = "", contextFiles = [], pickingWorkspace = false, currentCwd = "";
 try {
   sessionId = localStorage.getItem("axiom.session") || undefined;
 } catch {}
@@ -677,7 +679,7 @@ function snapshot(state) {
   images = [...(view?.images || [])];
   renderImages();
   selectedSkill = view?.selectedSkill || "";
-  contextLoad++;
+  filePicker.close();
   closeCompletion();
   $("context-picker").close();
   follow = view?.follow ?? true;
@@ -1213,7 +1215,7 @@ function renderContextChips() {
     chip.setAttribute("aria-label", chip.title);
     const label = document.createElement("span"); label.textContent = entry.name;
     const close = document.createElement("span"); close.textContent = "×"; close.setAttribute("aria-hidden", "true");
-    chip.append(contextIcon(entry.kind), label, close);
+    chip.append(entry.kind === "skill" ? contextIcon("skill") : fileIcon({ ...entry, name: entry.path.split(/[\\/]/).pop() }), label, close);
     chip.onclick = () => {
       if (entry.kind === "skill") { $("composer-skill").value = ""; $("composer-skill").onchange(); }
       else { contextFiles = contextFiles.filter((file) => file.path !== entry.path); controls(); }
@@ -1223,56 +1225,37 @@ function renderContextChips() {
 }
 function renderContextResults() {
   const query = $("context-search").value.toLocaleLowerCase();
-  const skills = contextMode === "skill";
-  const entries = skills ? (config?.skills || []) : contextListing.entries;
-  $("context-path").replaceChildren();
-  if (!skills) {
-    const up = document.createElement("button"); up.type = "button"; up.textContent = "← 上一级";
-    up.disabled = !contextListing.path;
-    up.onclick = () => { void browseContext(contextListing.path.split("/").slice(0, -1).join("/")); };
-    const path = document.createElement("span"); path.textContent = contextListing.path || "工作空间";
-    $("context-path").append(up, path);
-    if (contextMode === "folder") {
-      const add = document.createElement("button"); add.type = "button"; add.textContent = "添加此文件夹";
-      add.onclick = () => selectContext({ path: contextListing.path || ".", directory: true });
-      $("context-path").append(add);
-    }
-  }
-  const shown = entries.filter((entry) => (contextMode !== "folder" || entry.directory) && `${entry.name} ${entry.description || ""}`.toLocaleLowerCase().includes(query));
+  const shown = (config?.skills || []).filter((entry) => `${entry.name} ${entry.description || ""}`.toLocaleLowerCase().includes(query));
   $("context-results").replaceChildren(...shown.map((entry) => {
     const button = document.createElement("button"); button.type = "button";
     const text = document.createElement("span"); text.textContent = entry.name;
-    const description = document.createElement("small"); description.textContent = entry.description || (entry.directory ? "打开文件夹 ›" : entry.path);
+    const description = document.createElement("small"); description.textContent = entry.description || "Skill";
     text.append(description);
-    button.append(contextIcon(skills ? "skill" : entry.directory ? "folder" : "file"), text);
-    button.onclick = () => skills ? selectContext(entry) : entry.directory ? void browseContext(entry.path) : selectContext(entry);
+    button.append(contextIcon("skill"), text);
+    button.onclick = () => {
+      if (!connected || changing) return;
+      $("composer-skill").value = entry.name; $("composer-skill").onchange();
+      $("context-picker").close();
+    };
     return button;
   }));
   $("context-error").textContent = shown.length ? "" : "没有匹配项";
 }
-function selectContext(entry) {
-  if (!connected || changing) return;
-  if (contextMode === "skill") { $("composer-skill").value = entry.name; $("composer-skill").onchange(); }
-  else if (!contextFiles.some((file) => file.path === entry.path)) contextFiles.push(entry);
-  $("context-picker").close(); controls(); $("prompt").focus();
-}
-async function browseContext(path) {
-  const load = ++contextLoad, target = sessionId;
-  $("context-results").replaceChildren(); $("context-path").replaceChildren();
-  $("context-error").textContent = "正在读取…";
-  try {
-    const listing = await request("workspace.browse", { sessionId: target, path });
-    if (load !== contextLoad || target !== sessionId || !$("context-picker").open) return;
-    contextListing = listing; $("context-search").value = ""; renderContextResults();
-  } catch (e) { if (load === contextLoad) $("context-error").textContent = e.message; }
-}
-for (const button of document.querySelectorAll("[data-context]")) button.onclick = () => {
+for (const button of document.querySelectorAll("[data-context]")) button.onclick = async () => {
   $("context-menu").hidePopover?.();
-  contextMode = button.dataset.context; contextLoad++;
-  $("context-title").textContent = { skill: "添加 Skill", file: "添加工作空间文件", folder: "添加工作空间文件夹" }[contextMode];
-  $("context-search").value = ""; $("context-picker").showModal();
-  if (contextMode === "skill") renderContextResults(); else void browseContext("");
-  $("context-search").focus();
+  const mode = button.dataset.context;
+  if (mode === "skill") {
+    $("context-title").textContent = "添加 Skill";
+    $("context-search").value = ""; $("context-picker").showModal();
+    renderContextResults(); $("context-search").focus();
+    return;
+  }
+  const target = sessionId;
+  const entry = await filePicker.open({ title: mode === "file" ? "添加工作空间文件" : "添加工作空间文件夹", mode, sessionId: target, path: "" });
+  if (!entry || target !== sessionId || !connected || changing) return;
+  entry.path ||= ".";
+  if (!contextFiles.some((file) => file.path === entry.path)) contextFiles.push(entry);
+  controls(); $("prompt").focus();
 };
 $("context-search").oninput = renderContextResults;
 $("context-close").onclick = () => $("context-picker").close();
@@ -1376,14 +1359,16 @@ $("open-workspace").onclick = async () => {
   const original = sessionId;
   pickingWorkspace = true; controls();
   try {
-    const { path } = await request("workspace.pick");
-    if (!path || original !== sessionId) return;
+    const entry = await filePicker.open({ title: "打开工作空间", mode: "folder", path: currentCwd });
+    if (!entry || original !== sessionId || !connected || changing) return;
+    const { path } = entry;
     void switchSession(async () => {
       await refreshSessions();
       const existing = allSessions.find(
         (s) =>
-          s.cwd.replaceAll("\\", "/").toLowerCase() ===
-          path.replaceAll("\\", "/").toLowerCase(),
+          (/^[a-z]:[\\/]|^[\\/]{2}/i.test(path)
+            ? s.cwd.replaceAll("\\", "/").toLowerCase() === path.replaceAll("\\", "/").toLowerCase()
+            : s.cwd === path),
       );
       return existing
         ? request("session.attach", { sessionId: existing.id })

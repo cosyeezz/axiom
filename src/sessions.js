@@ -1,12 +1,73 @@
 import { createHash, randomUUID } from "node:crypto";
-import { execFile, spawn } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
 import { realpath, stat, readFile, mkdir, writeFile, rename, rm, readdir } from "node:fs/promises";
-import { dirname, join, relative, isAbsolute, resolve, sep } from "node:path";
+import { homedir } from "node:os";
+import { basename, dirname, join, relative, isAbsolute, resolve, sep, parse } from "node:path";
+
 import { selection as selectionSchema, compaction as compactionSchema, compactionDefaults, assertPromptImages } from "./protocol.js";
 import { Tasks } from "./tasks.js";
 import { delegationTools } from "./tools.js";
 import { resolveCapabilities } from "./capabilities.js";
+
+// 统一目录浏览：目录优先排序后按服务端过滤结果分页；不递归、不逐项 stat、跳过符号链接。
+const BROWSE_PAGE = 200;
+
+async function resolveDir(target) {
+  try {
+    return await realpath(target);
+  } catch (error) {
+    if (error.code === "ENOENT" || error.code === "ENOTDIR") throw new Error(`目录不存在：${target}`);
+    if (error.code === "EACCES" || error.code === "EPERM") throw new Error(`没有访问权限：${target}`);
+    throw error;
+  }
+}
+
+// 绝对路径（正斜杠形式）的父目录；根（"/" 或 "F:/"）返回 null。
+function parentOf(slashPath) {
+  const root = parse(slashPath).root.replaceAll("\\", "/").replace(/\/+$/, "");
+  const trimmed = slashPath.replace(/\/+$/, "");
+  if (trimmed === root) return null;
+  if (!trimmed || /^[a-zA-Z]:$/.test(trimmed)) return null;
+  const parent = trimmed.slice(0, trimmed.lastIndexOf("/"));
+  return /^[a-zA-Z]:$/.test(parent) ? `${parent}/` : parent || "/";
+}
+
+function absoluteCrumbs(slashPath) {
+  const crumbs = [];
+  let acc = "";
+  if (slashPath.startsWith("//")) {
+    acc = parse(slashPath).root.replaceAll("\\", "/");
+    crumbs.push({ name: acc.replace(/\/+$/, ""), path: acc });
+  } else if (/^[a-zA-Z]:/.test(slashPath)) {
+    acc = `${slashPath.slice(0, 2)}/`;
+    crumbs.push({ name: slashPath.slice(0, 2), path: acc });
+  } else if (slashPath.startsWith("/")) {
+    acc = "/";
+    crumbs.push({ name: "/", path: "/" });
+  }
+  for (const segment of slashPath.slice(acc.length).split("/").filter(Boolean)) {
+    acc += segment;
+    crumbs.push({ name: segment, path: acc });
+    acc += "/";
+  }
+  return crumbs;
+}
+
+// 主机快速位置：主目录 + 文件系统根；Windows 盘符仅全局模式用 fs stat 探测，不 shell。
+async function hostLocations() {
+  const home = homedir().split(sep).join("/");
+  const locations = process.platform === "win32"
+    ? (await Promise.all(Array.from({ length: 26 }, (_, index) => {
+        const drive = `${String.fromCharCode(65 + index)}:`;
+        return stat(`${drive}/`)
+          .then((info) => (info.isDirectory() ? { name: drive, path: `${drive}/` } : null))
+          .catch(() => null);
+      }))).filter(Boolean)
+    : [{ name: "/", path: "/" }];
+  if (!locations.some((location) => location.path === home))
+    locations.unshift({ name: basename(home) || home, path: home });
+  return locations;
+}
 
 export class Sessions {
   constructor(createAgent, defaultsPath, storagePath) {
@@ -268,77 +329,82 @@ export class Sessions {
     if (!item) throw new Error("Unknown session");
     return item;
   }
-  async pickWorkspace() {
-    if (process.platform !== "win32") throw new Error("系统目录选择目前仅支持 Windows");
-    if (this.pickingWorkspace) throw new Error("上一次目录选择尚未结束，请完成或取消选择；最多等待 5 分钟后可重试");
-    this.pickingWorkspace = true;
-    try {
-      // Give the hidden PowerShell host a visible, topmost owner for the modal picker.
-      const script = `
-$ErrorActionPreference = "Stop"
-[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
-Add-Type -AssemblyName System.Windows.Forms
-[System.Windows.Forms.Application]::EnableVisualStyles()
-$owner = New-Object System.Windows.Forms.Form
-$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-try {
-  $owner.Text = "Axiom 工作空间"
-  $owner.ShowInTaskbar = $false
-  $owner.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
-  $owner.Opacity = 0
-  $owner.TopMost = $true
-  $owner.Show()
-  $owner.Activate()
-  $dialog.Description = "选择 Axiom 工作空间"
-  $dialog.ShowNewFolderButton = $true
-  if ($dialog.PSObject.Properties["AutoUpgradeEnabled"]) {
-    $dialog.AutoUpgradeEnabled = $true
-    $dialog.UseDescriptionForTitle = $true
-  }
-  if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {
-    [Console]::Write($dialog.SelectedPath)
-  }
-} finally {
-  $dialog.Dispose()
-  $owner.Dispose()
-}`;
-      const args = ["-NoProfile", "-STA", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")];
-      const options = { windowsHide: true, timeout: 300000, encoding: "utf8" };
-      // PowerShell 7 uses the modern Windows picker; keep legacy hosts working without installing anything.
-      const { stdout } = await promisify(execFile)("pwsh.exe", args, options).catch((error) => {
-        if (error.code !== "ENOENT") throw error;
-        return promisify(execFile)("powershell.exe", args, options);
-      });
-      return { path: stdout.trim() || null };
-    } catch (error) {
-      if (error.killed) throw new Error("目录选择已超时，请重新点击打开工作空间");
-      throw error;
-    } finally { this.pickingWorkspace = false; }
-  }
-
   async revealWorkspace(id) {
-    if (process.platform !== "win32") throw new Error("打开资源管理器目前支持 Windows");
-    const path = await realpath(this.get(id).cwd);
-    if (!(await stat(path)).isDirectory()) throw new Error("工作空间目录不存在");
+    const target = await resolveDir(this.get(id).cwd);
+    if (!(await stat(target)).isDirectory()) throw new Error("工作空间目录不存在");
+    const opener = { win32: "explorer.exe", darwin: "open", linux: "xdg-open" }[process.platform];
+    if (!opener) throw new Error(`当前平台 ${process.platform} 不支持打开资源管理器`);
     await new Promise((resolve, reject) => {
-      const child = spawn("explorer.exe", [path], { shell: false, detached: true, stdio: "ignore" });
+      const child = spawn(opener, [target], { shell: false, detached: true, stdio: "ignore" });
       child.once("error", reject);
       child.once("spawn", () => { child.unref(); resolve(); });
     });
     return { opened: true };
   }
 
+  // 旧补全接口：保留 {path, entries} 形状，共享统一浏览实现（不分页）。
   async browse(id, path = "") {
-    const root = await realpath(this.get(id).cwd);
-    const target = await realpath(resolve(root, path));
-    const rel = relative(root, target);
-    if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`))
-      throw new Error("只能浏览当前工作空间");
-    const entries = (await readdir(target, { withFileTypes: true }))
-      .filter((entry) => !entry.isSymbolicLink() && (entry.isDirectory() || entry.isFile()) && ![".git", "node_modules"].includes(entry.name))
-      .map((entry) => ({ name: entry.name, directory: entry.isDirectory(), path: join(rel, entry.name).split(sep).join("/") }))
-      .sort((a, b) => Number(b.directory) - Number(a.directory) || a.name.localeCompare(b.name));
-    return { path: rel.split(sep).join("/"), entries };
+    const { path: current, entries } = await this.listFiles({ sessionId: id, path, pageSize: Infinity });
+    return { path: current, entries };
+  }
+
+  // 统一文件浏览：带 sessionId 限定工作空间并返回相对路径，否则浏览主机绝对目录。
+  async listFiles({ sessionId, path = "", directoriesOnly = false, offset = 0, query = "", pageSize = BROWSE_PAGE } = {}) {
+    const needle = query.toLocaleLowerCase();
+    const readEntries = async (target, session, base) => {
+      let dirents;
+      try {
+        dirents = await readdir(target, { withFileTypes: true });
+      } catch (error) {
+        if (error.code === "EACCES" || error.code === "EPERM") throw new Error(`没有访问权限：${target}`);
+        if (error.code === "ENOENT") throw new Error(`目录不存在：${target}`);
+        if (error.code === "ENOTDIR") throw new Error(`不是目录：${target}`);
+        throw error;
+      }
+      const entries = [];
+      for (const entry of dirents) {
+        if (entry.isSymbolicLink() || (!entry.isDirectory() && !entry.isFile())) continue;
+        if (session && [".git", "node_modules"].includes(entry.name)) continue;
+        if (directoriesOnly && !entry.isDirectory()) continue;
+        if (needle && !entry.name.toLocaleLowerCase().includes(needle)) continue;
+        entries.push({ name: entry.name, directory: entry.isDirectory(), path: join(base, entry.name).split(sep).join("/") });
+      }
+      // ponytail: 单层排序仍占 O(n) 内存；超大目录成为瓶颈时改用流式目录游标。
+      entries.sort((a, b) => Number(b.directory) - Number(a.directory) || a.name.localeCompare(b.name));
+      return {
+        entries: entries.slice(offset, offset + pageSize),
+        nextOffset: offset + pageSize < entries.length ? offset + pageSize : null,
+      };
+    };
+    if (sessionId) {
+      const root = await resolveDir(this.get(sessionId).cwd);
+      const target = await resolveDir(resolve(root, path));
+      const rel = relative(root, target);
+      if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`))
+        throw new Error("只能浏览当前工作空间");
+      const slashRel = rel.split(sep).join("/");
+      const rootLabel = basename(root);
+      return {
+        path: slashRel,
+        parent: slashRel === "" ? null : slashRel.includes("/") ? slashRel.slice(0, slashRel.lastIndexOf("/")) : "",
+        ...(await readEntries(target, true, rel)),
+        breadcrumbs: [{ name: rootLabel, path: "" }, ...slashRel.split("/").filter(Boolean)
+          .map((segment, index, segments) => ({ name: segment, path: segments.slice(0, index + 1).join("/") }))],
+        locations: [{ name: rootLabel, path: "" }],
+      };
+    }
+    const base = this.createAgent.cwd || process.cwd();
+    const requested = path.trim() ? (isAbsolute(path) ? path : join(base, path)) : base;
+    const target = await resolveDir(requested);
+    if (!(await stat(target)).isDirectory()) throw new Error(`不是目录：${target}`);
+    const slashPath = target.split(sep).join("/");
+    return {
+      path: slashPath,
+      parent: parentOf(slashPath),
+      ...(await readEntries(target, false, target)),
+      breadcrumbs: absoluteCrumbs(slashPath),
+      locations: await hostLocations(),
+    };
   }
 
   snapshot(id) {
