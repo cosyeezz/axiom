@@ -5,6 +5,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { capabilityLoader, discoverCapabilities } from "./capabilities.js";
 import { createBackgroundCompaction, entryIdFor, normalizeCompaction } from "./compaction.js";
+import { createAutoRetry } from "./retry.js";
 import { createJiti } from "jiti";
 const { getSupportedThinkingLevels } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai/compat");
 
@@ -75,6 +76,11 @@ export async function createPiFactory({ cwd, model: requested }) {
     const initialCompaction = validateCompaction(selection.compaction, selected);
     const resources = await discoverCapabilities(workspace, { trustProject: selection.trustProject });
     const { settingsManager } = resources;
+    // 退避计划由 axiom retry 层负责：禁用 SDK 内建自动重试（默认开启 3 次指数退避）避免双重重试。
+    // setRetryEnabled 只关 session 层；provider 层（retry.provider.maxRetries，SDK 客户端默认 2 次）
+    // 可能来自用户配置并叠加，这里一并清零（仅本会话内存态，不写盘）。
+    settingsManager.setRetryEnabled(false);
+    settingsManager.applyOverrides({ retry: { provider: { maxRetries: 0 } } });
     const { loader, selected: capabilities } = capabilityLoader(resources, selection.capabilities, customTools);
     await loader.reload();
     const diagnostics = loader.getExtensions().errors;
@@ -132,6 +138,7 @@ export async function createPiFactory({ cwd, model: requested }) {
       config: initialCompaction,
       onEvent: emitAxiom,
     });
+    const retry = createAutoRetry({ session, emit: emitAxiom });
     session.subscribe((event) => {
       if (event.type === "turn_end") void compactionCtrl.onTurnEnd();
       if (event.type === "compaction_end" && event.result && !event.aborted) {
@@ -204,12 +211,14 @@ export async function createPiFactory({ cwd, model: requested }) {
       prompt: async (text, options) => {
         if (await compactionCtrl.maybeApply()) emitAxiom({ type: "agent.runtime", data: agentRuntime(session) });
         lastResult = undefined;
-        await session.prompt(text, options?.images ? { images: options.images } : undefined);
+        await retry.run(() => session.prompt(text, options?.images ? { images: options.images } : undefined));
       },
       async abort() {
+        retry.cancel(); // 先中断等待中的自动重试，避免 abort 后又发起 continue
         await Promise.all([compactionCtrl.cancel?.(), session.abort()]);
       },
       async dispose() {
+        retry.cancel();
         await compactionCtrl.dispose();
         try {
           await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
