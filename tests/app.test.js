@@ -85,6 +85,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     tasks: [],
     live: {},
   }));
+  states.push({ sessionId: "c", title: "c", cwd: "C:\\work", status: "running", config, messages: [], tasks: [], live: {} });
   states[1].tasks = [
     { id: "history-child", task: "Historical task", status: "completed", runtime: {
       model: "other/child", thinking: "high", systemPrompt: "Historical system prompt",
@@ -242,7 +243,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("send").textContent, "Send");
     assert.equal(window.document.querySelector("header .menu"), null);
     const firstActions = $("sessions").querySelector(".session-actions");
-    assert.equal($("sessions").querySelector(".session-group").textContent, "待处理");
+    assert.deepEqual([...$("sessions").querySelectorAll(".session-group")].map((n) => n.textContent), ["今天", "待处理"], "idle by time first, running last");
     assert.equal(firstActions.children[0].title, "完成并隐藏");
     assert.equal(firstActions.children[1].className, "session-rename");
     assert.equal(firstActions.children[0].querySelector("path").getAttribute("d"), "M5 12l4 4L19 6");
@@ -261,7 +262,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     };
     drag($("sessions").querySelector(".session-row"), $("hidden-session-area"));
     assert.equal($("hidden-session-area").open, false, "hidden area stays collapsed");
-    assert.equal($("sessions").querySelectorAll(".session-row").length, 1);
+    assert.equal($("sessions").querySelectorAll(".session-row").length, 2);
     assert.equal($("hidden-sessions").querySelector(".session-item span").textContent, "a");
     assert.deepEqual(JSON.parse(window.localStorage.getItem("axiom.hiddenSessions")), ["a"]);
     assert.equal($("session-title").textContent, "a", "hiding does not switch the active conversation");
@@ -277,8 +278,31 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("sessions").querySelector(".session-hide").click();
     $("hidden-sessions").querySelector(".session-hide").click();
     assert.deepEqual(JSON.parse(window.localStorage.getItem("axiom.hiddenSessions")), []);
-    assert.equal($("sessions").querySelectorAll(".session-row").length, 2);
+    assert.equal($("sessions").querySelectorAll(".session-row").length, 3);
     assert.equal(requests.length, beforeHide, "hiding/restoring never deletes or cancels sessions");
+    const rowTitles = () => [...$("sessions").querySelectorAll(".session-row .session-item span")].map((n) => n.textContent);
+    assert.deepEqual(rowTitles(), ["a", "b", "c"], "idle by recency, running last");
+    const reorder = (from, to) => {
+      const dataTransfer = { setData() {} };
+      from.ondragstart({ dataTransfer });
+      const over = new window.Event("dragover", { cancelable: true });
+      Object.defineProperty(over, "dataTransfer", { value: dataTransfer });
+      to.dispatchEvent(over);
+      assert.equal(over.defaultPrevented, true);
+      assert.equal(to.classList.contains("session-reorder-target"), true);
+      to.dispatchEvent(new window.Event("drop", { cancelable: true }));
+      from.ondragend();
+      assert.equal(to.classList.contains("session-reorder-target"), false);
+    };
+    const sessionRows = $("sessions").querySelectorAll(".session-row");
+    reorder(sessionRows[1], sessionRows[0]);
+    assert.deepEqual(rowTitles(), ["b", "a", "c"], "dragged row lands before drop target");
+    assert.deepEqual(JSON.parse(window.localStorage.getItem("axiom.sessionOrder")), ["b", "a", "c"]);
+    window.eval("renderSessions() ");
+    assert.deepEqual(rowTitles(), ["b", "a", "c"], "order survives rerender");
+    reorder($("sessions").querySelectorAll(".session-row")[1], $("sessions").querySelectorAll(".session-row")[0]);
+    assert.deepEqual(rowTitles(), ["a", "b", "c"], "dragging back restores order");
+    window.localStorage.removeItem("axiom.sessionOrder");
     window.document.querySelectorAll(".session-rename")[1].click();
     assert.equal($("session-name").value, "b");
     $("session-name").value = "Renamed other session";
