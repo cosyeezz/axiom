@@ -359,6 +359,13 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("create-form").requestSubmit();
     await settle();
     assert.equal(defaults.subagentCapabilities, "inherit");
+    assert.equal($("create-submit").hidden, true);
+    $("create-subagent-mode").value = "all";
+    $("create-subagent-mode").dispatchEvent(new window.Event("change", { bubbles: true }));
+    await settle();
+    assert.equal(defaults.subagentCapabilities, null, "change auto-saves through WebSocket without submit click");
+    assert.match($("create-feedback").textContent, /已保存到本机/);
+    assert.match($("defaults-preview").textContent, /Skills：skill-a/);
     assert.equal($("settings").open, true);
     assert.equal($("create-session").open, false);
     $("create-session").close();

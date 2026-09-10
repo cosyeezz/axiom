@@ -1,25 +1,53 @@
 import { randomUUID } from "node:crypto";
-import { realpath, stat } from "node:fs/promises";
+import { realpath, stat, readFile, mkdir, writeFile, rename, rm } from "node:fs/promises";
+import { dirname } from "node:path";
+import { selection as selectionSchema } from "./protocol.js";
 import { Tasks } from "./tasks.js";
 import { delegationTools } from "./tools.js";
 import { resolveCapabilities } from "./capabilities.js";
 
 export class Sessions {
-  constructor(createAgent) {
+  constructor(createAgent, defaultsPath) {
+    this.defaultsPath = defaultsPath;
+    this.savingDefaults = Promise.resolve();
     this.createAgent = createAgent;
     this.items = new Map();
     this.recentConfig = {};
     this.defaultSelection = { model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
   }
 
+  async loadDefaults() {
+    if (!this.defaultsPath) return;
+    try {
+      const saved = selectionSchema.strict().parse(JSON.parse(await readFile(this.defaultsPath, "utf8")));
+      Object.assign(this.defaultSelection, saved);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw new Error(`默认新会话配置读取失败：${error.message}`);
+    }
+  }
   getDefaults() {
     return structuredClone(this.defaultSelection);
   }
-  async configureDefaults(workspace, selection) {
+  configureDefaults(workspace, selection) {
+    const save = this.savingDefaults.then(() => this.saveDefaults(workspace, selection));
+    this.savingDefaults = save.catch(() => {});
+    return save;
+  }
+  async saveDefaults(workspace, selection) {
     const next = this.getDefaults();
     for (const key of Object.keys(next))
       if (selection[key] !== undefined) next[key] = structuredClone(selection[key]);
     await this.validateSelection(workspace, next);
+    if (this.defaultsPath) {
+      const temporary = `${this.defaultsPath}.${randomUUID()}.tmp`;
+      await mkdir(dirname(this.defaultsPath), { recursive: true });
+      try {
+        await writeFile(temporary, JSON.stringify(next, null, 2) + "\n", { mode: 0o600 });
+        await rename(temporary, this.defaultsPath);
+      } finally {
+        await rm(temporary, { force: true });
+      }
+    }
     this.defaultSelection = next;
     return this.getDefaults();
   }

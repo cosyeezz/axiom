@@ -86,6 +86,7 @@ function controls() {
     ? (changing ? "正在保存或切换配置…" : "连接断开，暂时无法修改配置")
     : busy ? "任务执行中，完成后可修改配置" : "更改自动保存";
   $("create-submit").disabled = unavailable || !creation?.main || creation.loading || (!creation.defaults && creation.needsTrust);
+  if (creation?.defaults) for (const fieldset of $("create-agents").children) fieldset.disabled = unavailable;
   $("send").disabled = busy || unavailable || !$("prompt").value.trim();
   $("stop").disabled = !busy || unavailable;
   $("stop").hidden = !busy;
@@ -738,6 +739,8 @@ async function loadCreation() {
     $("create-agents").replaceChildren();
     current.main = createAgentPicker("main", "主代理", catalog, { model: selected.model, thinking: selected.thinking, capabilities: selected.capabilities });
     current.subagent = createAgentPicker("subagent", "子代理", catalog, { model: selected.subagentModel, thinking: selected.subagentThinking, capabilities: selected.subagentCapabilities });
+    current.catalog = catalog;
+    updateDefaultsPreview();
     $("create-trust-row").hidden = current.defaults || (!catalog.needsTrust && !$("create-trust").checked);
     $("create-submit").disabled = (!current.defaults && catalog.needsTrust) || !connected || changing;
     $("create-feedback").textContent = catalog.needsTrust
@@ -751,6 +754,8 @@ function openCreation(defaults = false) {
   creation = { cwd: $("cwd").value, defaults };
   $("create-title").textContent = defaults ? "默认新会话配置" : "自定义新会话";
   $("create-submit").textContent = defaults ? "保存默认配置" : "创建会话";
+  $("create-submit").hidden = defaults;
+  $("defaults-preview").textContent = "";
   $("create-defaults-help").hidden = !defaults;
   $("create-workspace").textContent = creation.cwd;
   $("create-trust").checked = false;
@@ -762,6 +767,22 @@ function openCreation(defaults = false) {
 }
 $("custom-new").onclick = () => openCreation();
 $("create-trust").onchange = () => { void loadCreation(); };
+function updateDefaultsPreview() {
+  if (!creation?.defaults || !creation.main) return;
+  const main = creation.main(), child = creation.subagent();
+  $("defaults-preview").textContent = [["主 Agent", main], ["子 Agent", child]].map(([title, agent]) => {
+    const key = agent.model || (agent === child ? main.model : null);
+    const model = models.find((m) => m.key === key);
+    const capabilities = agent.capabilities === "inherit" ? main.capabilities : agent.capabilities;
+    return `${title} · ${model?.provider || "默认供应商"} · ${model?.name || key || "默认模型"} · 思考 ${agent.thinking || (agent === child ? main.thinking : null) || "默认"}\n` +
+      [["skills", "Skills"], ["mcp", "MCP"], ["plugins", "Extensions"]].map(([kind, label]) => `${label}：${(capabilities?.[kind] || creation.catalog[kind].map((entry) => entry.id)).map(capabilityName).join("、") || "无"}`).join("\n");
+  }).join("\n\n");
+}
+$("create-form").onchange = () => {
+  if (!creation?.defaults) return;
+  updateDefaultsPreview();
+  $("create-form").requestSubmit();
+};
 $("create-form").onsubmit = async (e) => {
   e.preventDefault();
   if (!creation?.main || $("create-submit").disabled || changing || !connected) return;
@@ -782,9 +803,9 @@ $("create-form").onsubmit = async (e) => {
     $("create-feedback").textContent = "正在保存默认配置…";
     try {
       await request("session.defaults.configure", data);
-      $("create-feedback").textContent = "默认新会话配置已保存";
+      $("create-feedback").textContent = "已保存到本机 · 新会话使用此配置";
     } catch (e) {
-      $("create-feedback").textContent = `保存失败：${e.message}`;
+      $("create-feedback").textContent = `保存失败，当前选择未生效：${e.message}。请重新选择以重试。`;
     } finally {
       changing = false;
       controls();

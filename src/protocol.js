@@ -6,7 +6,7 @@ const capabilities = z.object({
 }).strict().nullable();
 const workspace = z.string().trim().min(1).optional();
 const thinking = z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]).optional();
-const selection = z.object({
+export const selection = z.object({
   model: id.nullable().optional(),
   subagentModel: id.nullable().optional(),
   capabilities: capabilities.optional(),
