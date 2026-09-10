@@ -19,6 +19,7 @@ const OUT = join(SKILL_DIR, "INDEX.md");
 const MODULE_INFO = {
   "scripts/service.mjs": "服务守护：IPC 快速/重建重启与安装构建失败反馈",
   "scripts/autostart.mjs": "Windows/macOS/Linux 当前用户登录自动启动安装/卸载",
+  "scripts/install.mjs": "一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器",
   "src/main.js": "入口：端口/工作区校验，组装 factory+Sessions+server，信号处理",
   "src/pi.js": "createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）",
   "src/compaction.js": "后台独立摘要、token/占比阈值、快照校验与 turn 安全提交",

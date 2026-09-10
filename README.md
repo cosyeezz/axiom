@@ -6,6 +6,26 @@
 
 需要 Node.js >=22.5，以及已配置好凭据和所需扩展包的 Pi。未修改默认新会话配置时，主 Agent 和子 Agent 加载本机 Pi 已启用的 Skills、插件、MCP、提示词模板及目录上下文；基础编码工具为 read/bash/edit/write，主 Agent 额外获得两个委派工具。默认能力与终端持久配置对齐，不继承另一终端进程的临时参数、会话状态或已执行的模式命令。纯 TUI 组件和终端快捷键不适用于网页；当前无插件交互 UI 桥，需要审批的 MCP 调用按适配器规则拒绝，不自动批准。
 
+### 一键安装（macOS / Windows）
+
+前提：已装 git 并能访问本仓库（当前为私有仓库，需先配置 SSH key）。命令克隆到 `~/MyWorkbench`（已存在则直接复用，不自动拉取更新），缺 Node 时经 Homebrew / winget 自动安装，随后装依赖、启动服务并在就绪后打开浏览器。交互终端逐项确认（默认注册登录自启、打开浏览器）；脚本调用可用 `--no-autostart` / `--no-browser` 关闭。自定义端口写项目根 `.env.local`（`AXIOM_PORT=…`），安装、自启、服务读取同一来源。
+
+macOS（终端）：
+
+```sh
+git clone --depth 1 git@github.com:cosyeezz/MyWorkbench.git ~/MyWorkbench; sh ~/MyWorkbench/axiom/install.sh
+```
+
+Windows（PowerShell）：
+
+```powershell
+git clone --depth 1 git@github.com:cosyeezz/MyWorkbench.git "$env:USERPROFILE\MyWorkbench"; & "$env:USERPROFILE\MyWorkbench\axiom\install.ps1"
+```
+
+Windows 也可直接双击 `axiom\install.cmd`。更新版本：目录内 `git pull` 后重新运行安装脚本（依赖变更会自动重装）。卸载自启：`npm run autostart:disable`。
+
+### 手动启动
+
 ```powershell
 npm ci --ignore-scripts
 $env:AXIOM_CWD = 'F:/your-project'

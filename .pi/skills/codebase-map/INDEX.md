@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/10 10:57:33）
+# Axiom 多级代码索引（生成于 2026/9/10 11:01:16）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -11,6 +11,7 @@
 | public/stream-renderer.js | 51 | 流式增量渲染状态机 | createStreamRenderer |
 | public/style.css | 946 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | scripts/autostart.mjs | 133 | Windows/macOS/Linux 当前用户登录自动启动安装/卸载 | run, projectDir, serviceEntry, label |
+| scripts/install.mjs | 84 | 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器 | root, parseArgs, nodeOk, openCommand |
 | scripts/service.mjs | 96 | 服务守护：IPC 快速/重建重启与安装构建失败反馈 | root, output, run, rebuild |
 | src/capabilities.js | 114 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/compaction.js | 351 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
@@ -31,6 +32,7 @@
 | tests/config.test.js | 215 | node --test 测试（npm test） | - |
 | tests/defaults.test.js | 33 | node --test 测试（npm test） | - |
 | tests/image-input.test.js | 167 | node --test 测试（npm test） | pngBase64, jpegBase64, image, parsePrompt |
+| tests/install.test.js | 24 | node --test 测试（npm test） | - |
 | tests/markdown.test.js | 55 | node --test 测试（npm test） | - |
 | tests/server.test.js | 125 | node --test 测试（npm test） | - |
 | tests/service-api.test.js | 34 | node --test 测试（npm test） | - |
@@ -212,6 +214,18 @@
 | disableLinux | function | 103 |
 | actions | const | 110 |
 | main | function | 116 |
+
+### scripts/install.mjs（84 行） — 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| root | const | 14 |
+| parseArgs | const | 16 |
+| nodeOk | const | 26 |
+| openCommand | const | 31 |
+| probe | const | 37 |
+| ask | const | 45 |
+| install | function | 47 |
 
 ### scripts/service.mjs（96 行） — 服务守护：IPC 快速/重建重启与安装构建失败反馈
 
