@@ -144,6 +144,7 @@ summary {
 .session-item:hover:not(:disabled) {
   background: transparent;
 }
+.session-row.session-reorder-target { border-top-color: var(--accent); }
 .session-row:has(.session-item[aria-current="page"]) {
   background: #717de514;
   border-color: #717de52b;

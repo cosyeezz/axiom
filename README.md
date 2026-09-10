@@ -6,6 +6,26 @@
 
 需要 Node.js >=22.5，以及已配置好凭据和所需扩展包的 Pi。未修改默认新会话配置时，主 Agent 和子 Agent 加载本机 Pi 已启用的 Skills、插件、MCP、提示词模板及目录上下文；基础编码工具为 read/bash/edit/write，主 Agent 额外获得两个委派工具。默认能力与终端持久配置对齐，不继承另一终端进程的临时参数、会话状态或已执行的模式命令。纯 TUI 组件和终端快捷键不适用于网页；当前无插件交互 UI 桥，需要审批的 MCP 调用按适配器规则拒绝，不自动批准。
 
+### 一键安装（macOS / Windows）
+
+前提：已装 git 并能访问本仓库（当前为私有仓库，需先配置 SSH key）。命令克隆到 `~/MyWorkbench`（已存在则直接复用，不自动拉取更新），缺 Node 时经 Homebrew / winget 自动安装，随后装依赖、启动服务并在就绪后打开浏览器。交互终端逐项确认（默认注册登录自启、打开浏览器）；脚本调用可用 `--no-autostart` / `--no-browser` 关闭。自定义端口写项目根 `.env.local`（`AXIOM_PORT=…`），安装、自启、服务读取同一来源。
+
+macOS（终端）：
+
+```sh
+git clone --depth 1 git@github.com:cosyeezz/MyWorkbench.git ~/MyWorkbench; sh ~/MyWorkbench/axiom/install.sh
+```
+
+Windows（PowerShell）：
+
+```powershell
+git clone --depth 1 git@github.com:cosyeezz/MyWorkbench.git "$env:USERPROFILE\MyWorkbench"; & "$env:USERPROFILE\MyWorkbench\axiom\install.ps1"
+```
+
+Windows 也可直接双击 `axiom\install.cmd`。更新版本：目录内 `git pull` 后重新运行安装脚本（依赖变更会自动重装）。卸载自启：`npm run autostart:disable`。
+
+### 手动启动
+
 ```powershell
 npm ci --ignore-scripts
 $env:AXIOM_CWD = 'F:/your-project'
@@ -49,6 +69,7 @@ Axiom 使用原生 JavaScript，目前没有编译脚本，因此重建时不会
 
 ## 会话已完成
 
+- 列表分三类：按时间分组（今天/昨天/更早）、待处理（运行中的会话，紧挨在已完成上方）、已完成（收起区）。在同一类内拖动会话到另一行可手动排序，顺序保存在当前浏览器 localStorage，刷新保留；跨浏览器不同步。
 - 将会话拖到列表下方的「已完成」区域即可收起；该区域紧贴会话列表，会话多时列表自动压缩滚动。默认折叠，展开后最多占侧栏 35%，不显示数量。列表顶部显示「待处理」分组。
 - 点击编辑按钮前的对钩「完成并隐藏」也可隐藏（适合触屏/键盘；仅作为整理标记，不改变任务执行状态）；展开后点击向上箭头或拖回正常列表即可恢复。搜索同时筛选两个列表。
 - 隐藏只整理列表，不删除记录、不停止任务，也不切换当前对话。状态保存在当前浏览器的 localStorage，刷新保留，不跨浏览器同步；清除网站数据会重置。
@@ -73,9 +94,11 @@ Axiom 使用原生 JavaScript，目前没有编译脚本，因此重建时不会
 输入区支持点击图片按钮上传，或在输入框粘贴系统截图（Windows 可用 `Win + Shift + S`）；不再提供浏览器截图按钮或屏幕共享。待发送附件、消息和历史中的图片均可点击放大，也可通过 Tab 聚焦后按 Enter / 空格打开；点击关闭按钮、遮罩空白处或按 Esc 关闭预览。
 
 ```text
-上传 / 粘贴 -> 附件预览（可放大、移除） -> Send -> 消息图片（可放大）
+上传 / 粘贴 -> 光标处 [image1] + 同编号附件预览 -> Send -> 文字标记 + 消息图片
 ```
 
+- 上传或粘贴时立即在光标处插入 `[image1]`、`[image2]` 占位（有选中文字时替换选区），可以继续在图片前后写说明；读取失败恢复原选区。缩略图显示同编号，点击 × 移除附件时同步删除对应标记并重排编号。手动删掉文字标记不会删除附件，删除图片请点 ×。
+- 发送时保留占位和“编号对应附件顺序”的说明，模型可区分正文中引用哪张图；多条队列撤回合入草稿时同步调整编号。
 - 支持 PNG、JPEG、GIF、WebP，每条最多 4 张、每张最多 5 MiB；不支持 SVG，也不自动压缩或裁剪。大截图可先裁剪再粘贴。
 - 可以只发图片，也可以搭配文字、Skill 和文件引用；附件跟随会话草稿，切换会话不会串图，发送失败保留附件。未发送草稿只存在当前页面内存，刷新页面会丢失。
 - 运行中也可用 Steer / Follow-up 发送图片，队列显示附件数量，Esc 撤回时恢复图片；多条队列撤回后若累计超过 4 张，请移除多余附件后分批发送。

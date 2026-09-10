@@ -32,6 +32,11 @@ try {
   const saved = JSON.parse(localStorage.getItem("axiom.hiddenSessions") || "[]");
   if (Array.isArray(saved)) hiddenSessions = new Set(saved.filter((id) => typeof id === "string"));
 } catch {}
+let sessionOrder = [];
+try {
+  const saved = JSON.parse(localStorage.getItem("axiom.sessionOrder") || "[]");
+  if (Array.isArray(saved)) sessionOrder = saved.filter((id) => typeof id === "string");
+} catch {}
 function setSessionHidden(id, hidden) {
   if (!allSessions.some((s) => s.id === id && s.cwd === $("workspace-label").textContent)) return;
   hidden ? hiddenSessions.add(id) : hiddenSessions.delete(id);
@@ -842,7 +847,7 @@ $("composer").onsubmit = async (e) => {
   e.preventDefault();
   const draft = $("prompt").value;
   const files = [...contextFiles], skill = selectedSkill, sentImages = [...images];
-  const body = [draft.trim(), files.length ? `工作空间引用（按需读取；文件夹不代表已读取全部内容）：\n${files.map((file) => `- ${file.directory ? "文件夹" : "文件"}：${JSON.stringify(file.path)}`).join("\n")}` : ""].filter(Boolean).join("\n\n");
+  const body = [draft.trim(), sentImages.length ? "图片标记说明：[imageN] 对应本条消息附件顺序中的第 N 张图片（从 1 开始）。" : "", files.length ? `工作空间引用（按需读取；文件夹不代表已读取全部内容）：\n${files.map((file) => `- ${file.directory ? "文件夹" : "文件"}：${JSON.stringify(file.path)}`).join("\n")}` : ""].filter(Boolean).join("\n\n");
   const text = skill ? `/skill:${skill} ${body}` : body;
   if ((!draft.trim() && !skill && !sentImages.length && !files.length) || imageLoading || changing || !connected) return;
   closeCompletion();
@@ -920,8 +925,16 @@ function renderImages() {
     remove.type = "button";
     remove.textContent = "×";
     remove.setAttribute("aria-label", `移除图片 ${index + 1}`);
-    remove.onclick = () => { images = images.filter((item) => item !== image); renderImages(); controls(); };
-    tile.append(preview, remove);
+    remove.disabled = imageLoading;
+    remove.onclick = () => {
+      $("prompt").value = $("prompt").value.replace(/\[image(\d+)\]/g, (marker, n) =>
+        Number(n) === index + 1 ? "" : Number(n) > index + 1 ? `[image${Number(n) - 1}]` : marker);
+      images = images.filter((item) => item !== image);
+      renderImages(); resizePrompt(); controls();
+    };
+    const label = document.createElement("span");
+    label.textContent = `[image${index + 1}]`;
+    tile.append(preview, label, remove);
     return tile;
   }));
 }
@@ -947,12 +960,30 @@ async function addImages(files, target = sessionId) {
   else { images = [...current, ...added]; renderImages(); controls(); }
 }
 async function loadImages(files) {
-  if (imageLoading || changing || !connected) return;
+  if (imageLoading || withdrawing || changing || !connected) return;
+  if (!files.length) return;
+  const target = sessionId, input = $("prompt"), start = input.selectionStart;
+  const selected = input.value.slice(start, input.selectionEnd);
+  const markers = files.map((_, index) => `[image${images.length + index + 1}]`).join(" ");
+  input.setRangeText(markers, input.selectionStart, input.selectionEnd, "end");
+  input.dispatchEvent(new Event("input", { bubbles: true }));
   imageLoading = true;
-  controls();
-  try { await addImages(files); }
-  catch (e) { error(e); }
-  finally { imageLoading = false; controls(); }
+  renderImages(); controls();
+  try { await addImages(files, target); }
+  catch (e) {
+    // ponytail: only roll back an unchanged insertion; edited markers remain ordinary draft text.
+    const rollback = (text) => text.slice(start, start + markers.length) === markers
+      ? text.slice(0, start) + selected + text.slice(start + markers.length) : text;
+    if (sessionId === target) {
+      input.value = rollback(input.value);
+      resizePrompt();
+    } else {
+      const view = views.get(target);
+      if (view) view.draft = rollback(view.draft || "");
+    }
+    error(e);
+  }
+  finally { imageLoading = false; renderImages(); controls(); }
 }
 $("add-image").onclick = () => $("image-files").click();
 $("image-files").onchange = async () => {
@@ -993,13 +1024,19 @@ $("prompt").onkeydown = (e) => {
 };
 let escapeTimer, withdrawing;
 async function withdrawQueue() {
-  if (withdrawing || !connected || changing) return;
+  if (withdrawing || imageLoading || !connected || changing) return;
   const target = sessionId;
   withdrawing = true;
   try {
     const queue = await request("queue.withdraw", { sessionId: target });
-    const text = [...queue.steering, ...queue.followUp].filter(Boolean).join("\n\n");
-    const restored = [...(queue.images?.steering || []), ...(queue.images?.followUp || [])].flat().filter(Boolean);
+    const queuedImages = [...(queue.images?.steering || queue.steering.map(() => null)), ...(queue.images?.followUp || queue.followUp.map(() => null))];
+    let imageOffset = (sessionId === target ? images : views.get(target)?.images || []).length;
+    const text = [...queue.steering, ...queue.followUp].map((text, index) => {
+      const shifted = text.replace(/\[image(\d+)\]/g, (_, n) => `[image${Number(n) + imageOffset}]`);
+      imageOffset += queuedImages[index]?.length || 0;
+      return shifted;
+    }).filter(Boolean).join("\n\n");
+    const restored = queuedImages.flat().filter(Boolean);
     if (!text && !restored.length) return;
     if (sessionId === target) {
       $("prompt").value = [$("prompt").value, text].filter(Boolean).join("\n\n");
@@ -1080,11 +1117,19 @@ function renderSessions() {
   let group;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  for (const s of allSessions.filter(
+  const matched = allSessions.filter(
     (s) =>
       s.cwd === $("workspace-label").textContent &&
       s.title.toLowerCase().includes(query),
-  )) {
+  );
+  const rank = (s) => {
+    const at = sessionOrder.indexOf(s.id);
+    return at === -1 ? sessionOrder.length : at;
+  };
+  const idle = matched.filter((s) => s.status === "idle" && !hiddenSessions.has(s.id)).sort((a, b) => rank(a) - rank(b));
+  const active = matched.filter((s) => s.status !== "idle" && !hiddenSessions.has(s.id)).sort((a, b) => rank(a) - rank(b));
+  const done = matched.filter((s) => hiddenSessions.has(s.id)).sort((a, b) => rank(a) - rank(b));
+  const addRow = (s) => {
     const hidden = hiddenSessions.has(s.id);
     const name =
       s.updatedAt >= +today
@@ -1120,7 +1165,29 @@ function renderSessions() {
     };
     row.ondragend = () => {
       draggedSession = undefined;
-      document.querySelectorAll(".session-drop-target").forEach((node) => node.classList.remove("session-drop-target"));
+      document.querySelectorAll(".session-drop-target, .session-reorder-target").forEach((node) => node.classList.remove("session-drop-target", "session-reorder-target"));
+    };
+    row.ondragover = (e) => {
+      if (!draggedSession || draggedSession === s.id) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "move";
+      row.classList.add("session-reorder-target");
+    };
+    row.ondragleave = () => row.classList.remove("session-reorder-target");
+    row.ondrop = (e) => {
+      if (!draggedSession || draggedSession === s.id) return;
+      e.preventDefault();
+      e.stopPropagation();
+      row.classList.remove("session-reorder-target");
+      // ponytail: 全局顺序一次性物化，搜索/分组下拖动也不破坏其他工作区顺序
+      const ids = allSessions.map((item) => item.id).filter((id) => id !== draggedSession);
+      const at = ids.indexOf(s.id);
+      ids.splice(at === -1 ? ids.length : at, 0, draggedSession);
+      sessionOrder = ids;
+      try { localStorage.setItem("axiom.sessionOrder", JSON.stringify(sessionOrder)); }
+      catch { error("无法保存排序，刷新后可能丢失"); }
+      renderSessions();
     };
     const actions = document.createElement("div");
     actions.className = "session-actions";
@@ -1142,15 +1209,18 @@ function renderSessions() {
     }
     row.append(button, actions);
     (hidden ? hiddenFragment : fragment).append(row);
+  };
+  for (const s of idle) addRow(s);
+  if (active.length) {
+    const label = document.createElement("p");
+    label.className = "session-group";
+    label.textContent = "待处理";
+    fragment.append(label);
+    for (const s of active) addRow(s);
   }
+  for (const s of done) addRow(s);
   $("hidden-session-summary").textContent = `已完成`;
   $("hidden-sessions").replaceChildren(hiddenFragment);
-  if (fragment.childNodes.length) {
-    const pendingLabel = document.createElement("p");
-    pendingLabel.className = "session-group";
-    pendingLabel.textContent = "待处理";
-    fragment.insertBefore(pendingLabel, fragment.firstChild);
-  }
   if (!fragment.childNodes.length) {
     const empty = document.createElement("p");
     empty.className = "session-group";

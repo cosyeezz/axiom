@@ -87,6 +87,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     tasks: [],
     live: {},
   }));
+  states.push({ sessionId: "c", title: "c", cwd: "C:\\work", status: "running", config, messages: [], tasks: [], live: {} });
   states[1].tasks = [
     { id: "history-child", task: "Historical task", status: "completed", runtime: {
       model: "other/child", thinking: "high", systemPrompt: "Historical system prompt",
@@ -248,7 +249,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("send").textContent, "Send");
     assert.equal(window.document.querySelector("header .menu"), null);
     const firstActions = $("sessions").querySelector(".session-actions");
-    assert.equal($("sessions").querySelector(".session-group").textContent, "待处理");
+    assert.deepEqual([...$("sessions").querySelectorAll(".session-group")].map((n) => n.textContent), ["今天", "待处理"], "idle by time first, running last");
     assert.equal(firstActions.children[0].title, "完成并隐藏");
     assert.equal(firstActions.children[1].className, "session-rename");
     assert.equal(firstActions.children[0].querySelector("path").getAttribute("d"), "M5 12l4 4L19 6");
@@ -267,7 +268,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     };
     drag($("sessions").querySelector(".session-row"), $("hidden-session-area"));
     assert.equal($("hidden-session-area").open, false, "hidden area stays collapsed");
-    assert.equal($("sessions").querySelectorAll(".session-row").length, 1);
+    assert.equal($("sessions").querySelectorAll(".session-row").length, 2);
     assert.equal($("hidden-sessions").querySelector(".session-item span").textContent, "a");
     assert.deepEqual(JSON.parse(window.localStorage.getItem("axiom.hiddenSessions")), ["a"]);
     assert.equal($("session-title").textContent, "a", "hiding does not switch the active conversation");
@@ -283,8 +284,31 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("sessions").querySelector(".session-hide").click();
     $("hidden-sessions").querySelector(".session-hide").click();
     assert.deepEqual(JSON.parse(window.localStorage.getItem("axiom.hiddenSessions")), []);
-    assert.equal($("sessions").querySelectorAll(".session-row").length, 2);
+    assert.equal($("sessions").querySelectorAll(".session-row").length, 3);
     assert.equal(requests.length, beforeHide, "hiding/restoring never deletes or cancels sessions");
+    const rowTitles = () => [...$("sessions").querySelectorAll(".session-row .session-item span")].map((n) => n.textContent);
+    assert.deepEqual(rowTitles(), ["a", "b", "c"], "idle by recency, running last");
+    const reorder = (from, to) => {
+      const dataTransfer = { setData() {} };
+      from.ondragstart({ dataTransfer });
+      const over = new window.Event("dragover", { cancelable: true });
+      Object.defineProperty(over, "dataTransfer", { value: dataTransfer });
+      to.dispatchEvent(over);
+      assert.equal(over.defaultPrevented, true);
+      assert.equal(to.classList.contains("session-reorder-target"), true);
+      to.dispatchEvent(new window.Event("drop", { cancelable: true }));
+      from.ondragend();
+      assert.equal(to.classList.contains("session-reorder-target"), false);
+    };
+    const sessionRows = $("sessions").querySelectorAll(".session-row");
+    reorder(sessionRows[1], sessionRows[0]);
+    assert.deepEqual(rowTitles(), ["b", "a", "c"], "dragged row lands before drop target");
+    assert.deepEqual(JSON.parse(window.localStorage.getItem("axiom.sessionOrder")), ["b", "a", "c"]);
+    window.eval("renderSessions() ");
+    assert.deepEqual(rowTitles(), ["b", "a", "c"], "order survives rerender");
+    reorder($("sessions").querySelectorAll(".session-row")[1], $("sessions").querySelectorAll(".session-row")[0]);
+    assert.deepEqual(rowTitles(), ["a", "b", "c"], "dragging back restores order");
+    window.localStorage.removeItem("axiom.sessionOrder");
     window.document.querySelectorAll(".session-rename")[1].click();
     assert.equal($("session-name").value, "b");
     $("session-name").value = "Renamed other session";
@@ -845,7 +869,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("composer").requestSubmit();
     await settle();
     assert.equal(requests.findLast((req) => req.type === "prompt").images[0].mimeType, "image/png");
-    assert.equal(requests.findLast((req) => req.type === "prompt").text, "");
+    assert.match(requests.findLast((req) => req.type === "prompt").text, /^\[image1\]\n\n图片标记说明：/);
     assert.equal($("image-attachments").hidden, true);
     assert.equal($("output").querySelectorAll(".message-images img").length, 1);
     const sentImage = $("output").querySelector(".message-images img");
@@ -854,25 +878,54 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("image-preview-image").src, sentImage.src);
     $("image-preview").close(); // Native Escape closes dialogs; JSDOM does not implement it.
     assert.equal($("image-preview-image").hasAttribute("src"), false);
+    input("前文后文");
+    $("prompt").setSelectionRange(2, 2);
     let prevented = false;
     $("prompt").onpaste({ clipboardData: { items: [{ kind: "file", type: "image/png", getAsFile: () => png }] }, preventDefault() { prevented = true; } });
+    assert.equal($("prompt").value, "前文[image1]后文", "paste reserves its exact position before reading finishes");
+    assert.equal($("prompt").selectionStart, 10);
+    $("prompt").setRangeText("继续", 10, 10, "end");
     for (let i = 0; i < 100 && !$("image-attachments").children.length; i++) await new Promise((resolve) => setTimeout(resolve, 5));
     assert.equal(prevented, true);
     assert.equal($("image-attachments").children.length, 1);
+    assert.equal($("prompt").value, "前文[image1]继续后文");
+    await window.eval("loadImages")([png]);
+    assert.equal($("prompt").value, "前文[image1]继续[image2]后文");
     $("image-attachments").querySelector("button").click();
+    assert.equal($("prompt").value, "前文继续[image1]后文", "removing an image renumbers remaining references");
+    assert.match($("image-attachments").textContent, /\[image1\]/);
+    $("image-attachments").querySelector("button").click();
+    assert.equal($("prompt").value, "前文继续后文");
     assert.equal($("image-attachments").hidden, true);
+    $("prompt").setSelectionRange(0, 2);
     await window.eval("loadImages")([new window.File(["<svg/>"], "bad.svg", { type: "image/svg+xml" })]);
     assert.match($("error").textContent, /仅支持/);
+    assert.equal($("prompt").value, "前文继续后文", "invalid image restores replaced selection");
     assert.equal($("image-attachments").hidden, true);
     await window.eval("loadImages")([png, png, png, png, png]);
     assert.match($("error").textContent, /最多/);
     assert.equal($("image-attachments").hidden, true);
+    const loadingImage = window.eval("loadImages")([png]);
+    const imageDraft = $("prompt").value;
+    window.document.querySelectorAll(".session-item")[0].click();
+    await settle();
+    await loadingImage;
+    assert.equal($("image-attachments").hidden, true, "async image read must not leak into another session");
+    window.document.querySelectorAll(".session-item")[1].click();
+    await settle();
+    assert.equal($("prompt").value, imageDraft);
+    assert.equal($("image-attachments").children.length, 1);
     const queuedImage = { type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" };
     withdrawnImages = { steering: [[queuedImage]], followUp: [null] };
     window.eval("renderQueue")({ steering: [""], followUp: [], images: withdrawnImages });
     assert.match($("message-queue").textContent, /图片 × 1/);
     await window.eval("withdrawQueue")();
-    assert.equal($("image-attachments").querySelectorAll("img").length, 1, "withdrawing restores images, not just text");
+    assert.equal($("image-attachments").querySelectorAll("img").length, 2, "withdrawing restores images, not just text");
+    const oldWithdraw = window.eval("request");
+    window.eval("request = async () => ({ steering: ['第一条[image1]', '第二条[image1]'], followUp: [], images: { steering: [[{type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgo='}], [{type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgo='}]], followUp: [] } })");
+    await window.eval("withdrawQueue")();
+    assert.match($("prompt").value, /第一条\[image3\]\n\n第二条\[image4\]/, "withdrawn messages are rebased against draft and each other");
+    window.request = oldWithdraw;
     $("search").value = "missing";
     $("search").dispatchEvent(new window.Event("input"));
     assert.match($("sessions").textContent, /没有找到/);

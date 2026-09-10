@@ -1,5 +1,17 @@
 # 开发记录
 
+## 2026-09-10 — 图片粘贴位置占位
+- worktree MyWorkbench-image-placeholders / feat/image-placeholders。上传/粘贴立即在光标或选区插入 `[imageN]`，缩略图显示同编号，删除附件同步删标记并重排；发送保留正文位置并附编号与附件顺序说明，复用原协议，不改 SDK。
+- 队列撤回按已有草稿与各条附件数累加调整编号；读图与撤回互斥，避免异步编号冲突；读图失败只回滚原位置尚未编辑的占位，不覆盖用户新输入。手改标记按普通文字处理，删除标记不自动丢弃图片。
+- 涉及 public/app.js、tests/app.test.js、README.md、devlog.md、codebase-map 的 INDEX.md 与 knowledge.md。测试覆盖中间粘贴、继续输入、删除重排、失败恢复、异步切会话、多条撤回编号、发送说明；独立复查补充了读图/撤回竞态防护。
+- 验证：npm test 全量 52 项通过；未做真实浏览器手动验收。
+
+## 2026-09-10 — 三类分组与拖动排序
+- worktree MyWorkbench-session-groups / feat/session-groups。按用户要求列表分三类：按时间分组、待处理（运行中会话，紧挨已完成上方）、已完成；另支持同类内拖动会话到另一行手动排序。
+- 排序以全局会话 id 顺序物化存入 localStorage（axiom.sessionOrder），搜索中拖动也不破坏其他会话顺序；未排序会话按原服务端顺序稳定跟随。
+- 涉及 public/{app.js,style.css}、tests/app.test.js、README.md、devlog.md 与 codebase-map 索引。
+- 验证：npm test 全量 52 项通过，新增断言三类分组顺序、拖动排序落点、localStorage 持久化与重渲染稳定；未做真实浏览器拖拽验收。
+
 ## 2026-09-10 — 已完成区上移与待处理分组
 - worktree MyWorkbench-done-placement / feat/done-placement。按用户要求，「已完成」区域从侧栏底部固定改为紧贴会话列表下方（列表空间不足时自动压缩滚动，「设置」仍钉在底部），并在列表顶部增加「待处理」分组标题。
 - 涉及 public/{app.js,style.css}、tests/app.test.js、README.md、devlog.md 与 codebase-map 索引。
@@ -290,4 +302,4 @@
 - 决策：调研 VS Code Explorer、Seti、vanilla FileExplorer 和浏览器 File System Access API；采用原生 dialog + 现有 WS/Node 文件系统，不引入框架/图标依赖，不递归扫描或读取内容。
 - 改动：public/file-picker.js、file-picker.css 共用导航、地址、搜索、分页、确认、分类 SVG 图标和手机布局；app.js 统一工作空间/文件/文件夹入口，保留 Skill 与图片上传各自语义；src/sessions.js、protocol.js、server.js 增加 files.browse 和跨平台系统打开，删除 PowerShell picker；工作空间内 realpath 限界，主机模式可浏览可访问目录，每页 200 项。
 - 防回归：tests/file-picker.test.js、app.test.js、workspace-picker.test.js、session-flow.test.js、server.test.js；README.md、导航架构/索引和坑库同步。
-- 验证：npm test 55 项中 54 通过、1 个非 Windows 平台测试跳过、0 失败；Windows Chromium 真浏览器 1280×900 / 320×640 检查文件浏览、图标、Esc 和弹窗无横向溢出，控制台无脚本/CSP 错误。macOS/Linux 桌面及 UNC 网络共享未实机验证。
+- 验证：npm test 初次 55 项中 54 通过；同步 master 的安装器/图片占位改动后复验 58 项中 57 通过、1 个非 Windows 平台测试跳过、0 失败；Windows Chromium 真浏览器 1280×900 / 320×640 检查文件浏览、图标、Esc 和弹窗无横向溢出，控制台无脚本/CSP 错误。macOS/Linux 桌面及 UNC 网络共享未实机验证。
