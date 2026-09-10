@@ -5,13 +5,22 @@ import { syncBuiltinESMExports } from "node:module";
 import { Sessions } from "../src/sessions.js";
 
 test("workspace picker owns its dialog and releases the lock after selection, cancel or failure", { skip: process.platform !== "win32" }, async () => {
-  let complete;
+  let complete, missingModern = false;
+  const calls = [];
   const original = childProcess.execFile;
   childProcess.execFile = (file, args, options, callback) => {
-    assert.equal(file, "powershell.exe");
+    calls.push(file);
+    assert.equal(file, missingModern && calls.at(-2) === "pwsh.exe" ? "powershell.exe" : "pwsh.exe");
+    if (missingModern && file === "pwsh.exe") {
+      callback(Object.assign(new Error("not installed"), { code: "ENOENT" }));
+      return;
+    }
     assert.ok(args.includes("-STA"));
     const script = Buffer.from(args.at(-1), "base64").toString("utf16le");
     assert.match(script, /\$ErrorActionPreference = "Stop"/);
+    assert.match(script, /EnableVisualStyles\(\)/);
+    assert.match(script, /\$dialog.AutoUpgradeEnabled = \$true/);
+    assert.match(script, /\$dialog.UseDescriptionForTitle = \$true/);
     assert.match(script, /\$owner.TopMost = \$true/);
     assert.ok(script.indexOf("$owner.Show()") < script.indexOf("$dialog.ShowDialog($owner)"));
     assert.match(script, /\$owner.Activate\(\)/);
@@ -38,6 +47,14 @@ test("workspace picker owns its dialog and releases the lock after selection, ca
     complete(new Error("PowerShell failed"), "", "");
     await assert.rejects(result, /PowerShell failed/);
     assert.equal(sessions.pickingWorkspace, false);
+    assert.ok(calls.every((file) => file === "pwsh.exe"));
+    calls.length = 0;
+    missingModern = true;
+    result = sessions.pickWorkspace();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(calls, ["pwsh.exe", "powershell.exe"]);
+    complete(null, "F:\\fallback");
+    assert.deepEqual(await result, { path: "F:\\fallback" });
   } finally {
     childProcess.execFile = original;
     syncBuiltinESMExports();
