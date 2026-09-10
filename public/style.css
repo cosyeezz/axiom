@@ -217,6 +217,15 @@ h1 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.service-controls { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+#service-menu-button { min-height: 28px; padding: 4px 8px; font-size: 12px; }
+#service-menu {
+  position: fixed; inset: 60px 12px auto auto; margin: 0;
+  width: min(270px, calc(100vw - 24px)); padding: 12px;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+}
+#service-menu button { display: block; width: 100%; margin-top: 8px; }
+#service-menu small, #service-feedback { display: block; font-size: 12px; color: var(--muted); margin: 6px 0; }
 #status {
   display: flex;
   align-items: center;

@@ -64,6 +64,8 @@ export const selection = z.object({
   subagentThinking: thinking.unwrap().nullable().optional(),
 });
 export const command = z.discriminatedUnion("type", [
+  z.object({ id, type: z.literal("service.status") }).strict(),
+  z.object({ id, type: z.literal("service.restart"), mode: z.enum(["quick", "rebuild"]) }).strict(),
   z
     .object({
       id,

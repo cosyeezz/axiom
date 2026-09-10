@@ -36,7 +36,9 @@ INDEX.md 是生成物（勿手改）；knowledge.md 是人工沉淀物（勿删�
                  └─ stream-renderer.js 流式增量渲染状态机
       │  WebSocket JSON（command，src/protocol.js zod 校验）
       ▼
-src/main.js  入口：端口/cwd 校验，组装并 listen(127.0.0.1)
+scripts/autostart.mjs  Windows/macOS/Linux 用户登录自动启动注册
+  └─ scripts/service.mjs  守护进程：快速重启 / 安装构建后重启
+       └─ src/main.js  入口：端口/cwd 校验，组装并 listen(127.0.0.1)
   ├─ server.js       HTTP 静态路由 + /health + WS 升级分发
   ├─ Sessions        会话生命周期/队列 + ~/.axiom 工作空间历史与默认配置
   │    └─ Tasks ── delegationTools（tools.js，注册给 pi 的委托工具）

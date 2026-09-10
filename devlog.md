@@ -4,7 +4,13 @@
 - 独立 worktree MyWorkbench-image-input / feat/image-input。输入区增加图片上传、粘贴系统截图、浏览器授权截取屏幕/窗口/标签页；截图只抓一帧，成功或失败都停止共享。复用 FileReader、canvas、getDisplayMedia 与 Pi 原生图片输入，无新增依赖。
 - 支持纯图片/图文发送、附件预览与移除、按会话保留草稿、消息历史图片；限制 PNG/JPEG/GIF/WebP、4 张/消息、5 MiB/张，后端校验 base64、签名与大小，视觉模型能力提前校验。排队与撤回保留附件，避免 SDK 文本队列回执丢图。
 - 涉及 public/{app.js,index.html,style.css}、src/{protocol,server,sessions,pi}.js、tests/{app,image-input}.test.js、README/devlog、codebase-map。刻意不增加裁剪/压缩库或独立上传存储；截图超限可先使用系统区域截图。未发送草稿仅存页面内存。
-- 验证：`npm test` 全部 41 项通过；前端 JSDOM 检查上传、粘贴、纯图发送、会话隔离、移除、格式/数量限制和截图清理；后端检查协议、模型限制、图片队列与 WebSocket 大图传输。未调用付费视觉模型、未进行真实浏览器授权弹窗人工验收，未重启现有服务。
+- 验证：`npm test` 初始 41 项、同步最新 master（服务控制功能）后全部 48 项通过；前端 JSDOM 检查上传、粘贴、纯图发送、会话隔离、移除、格式/数量限制和截图清理；后端检查协议、模型限制、图片队列与 WebSocket 大图传输。未调用付费视觉模型、未进行真实浏览器授权弹窗人工验收，未重启现有服务。
+
+## 2026-09-10 — 跨平台自动启动与服务重启
+- 独立 worktree MyWorkbench-service-controls / feat/service-controls。右上角独立连接状态与服务菜单，命名「快速重启」「重建重启」；复用 WebSocket Origin/Host 校验，严格校验模式，忙碌会话/子任务禁止重启。
+- npm start 使用 Node 守护进程与 IPC 优雅停止。重建执行 npm ci + 可选 build，暂存原依赖以便安装失败恢复；原生 JS 不增加虚假编译步骤。当前用户登录自动启动分别使用 Windows Startup、macOS LaunchAgent、Linux systemd --user，不立即启停现有进程。
+- 涉及 scripts/{service,autostart}.mjs、package.json、src/{main,server,protocol}.js、public/{app.js,index.html,style.css}、tests/{service,service-api,autostart,app}.test.js、README 和代码索引。
+- 验证：自动启动三平台配置生成/转义、真实子进程快速重启、重建失败恢复与 API 校验测试；全量 npm test。macOS/Linux 尚无真实系统登录验收，不宣称已验证开机；不强杀运行中的现有服务。
 
 ## 2026-09-10 — 可配置后台摘要与 turn 安全压缩
 - 独立 worktree MyWorkbench-background-compaction / feat/background-compaction。按照用户确定方案，后台独立内存 Pi 会话生成摘要，主会话继续运行；token/窗口占比阈值任一先达到触发，支持专用模型、思考等级和近期保留量，摘要会话固定无工具及无关资源。

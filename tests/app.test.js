@@ -145,6 +145,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
             const selected = { ...(req.useDefaults === false ? {} : defaults), ...req };
             data = { ...states[0], config: { ...config, model: selected.model || config.model, subagentModel: selected.subagentModel ?? null, capabilitySelection: selected.capabilities ?? null, subagentCapabilities: selected.subagentCapabilities ?? null } };
             break;
+          case "service.status":
+            data = { managed: true, error: "" };
+            break;
           case "models.list":
             data = [
               { key: "test/model", provider: "test", name: "Model" },
@@ -515,7 +518,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
 
     const emit = (type, data, extra = {}) =>
       sockets[2].receive({ type, sessionId: "a", data, ...extra });
-    assert.equal($("status").textContent, "Running");
+    assert.equal($("status").textContent, "已连接");
+    assert.equal($("restart-quick").disabled, false);
+    assert.equal($("restart-rebuild").disabled, false);
     assert.equal($("status").dataset.connected, "true");
     emit("session.queue", { steering: ["插话内容"], followUp: ["追加内容"] });
     assert.equal($("message-queue").children.length, 2);
@@ -528,7 +533,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       await settle();
       assert.equal(requests.findLast((r) => r.type === "prompt").queueType, queueType);
       assert.equal($("prompt").value, "");
-      assert.equal($("status").textContent, "Running");
+      assert.equal($("status").textContent, "已连接");
     }
     input("保留草稿");
     $("message-queue").querySelector("button").click();
@@ -807,6 +812,9 @@ test("compaction settings edit per scope and fold transcripts in place", async (
       queueMicrotask(() => {
         let data;
         switch (req.type) {
+          case "service.status":
+            data = { managed: true, error: "" };
+            break;
           case "models.list":
             data = [
               { key: "test/model", provider: "test", name: "Model", levels: ["off", "low"] },
