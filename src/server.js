@@ -34,7 +34,8 @@ export function createServerApp(sessions) {
         ETag: asset.etag,
         "X-Content-Type-Options": "nosniff",
         "Content-Security-Policy":
-          "default-src 'self'; connect-src 'self'; frame-ancestors 'none'",
+          // img-src 加 data: 仅为显示消息内嵌的 base64 图片预览，其余策略不放宽。
+          "default-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'",
       });
       res.end(unchanged ? undefined : asset.body);
       return;
@@ -51,7 +52,8 @@ export function createServerApp(sessions) {
   });
   const wss = new WebSocketServer({
     noServer: true,
-    maxPayload: 1024 * 1024,
+    // 4 张 × 5MiB 图片 base64 后约 27MiB，预留 JSON 结构余量。
+    maxPayload: 32 * 1024 * 1024,
     perMessageDeflate: false,
     handleProtocols: () => "axiom",
   });
@@ -74,7 +76,8 @@ export function createServerApp(sessions) {
     const send = (message) => {
       if (ws.readyState !== WebSocket.OPEN) return;
       // Bound network buffering, not task output; reconnect retrieves the current snapshot.
-      if (ws.bufferedAmount > 8 * 1024 * 1024) {
+      // 上限与 WS maxPayload 一致：带图快照（最多 20MiB 图片）单次发送不应被判为慢消费者。
+      if (ws.bufferedAmount > 32 * 1024 * 1024) {
         ws.terminate();
         return;
       }
@@ -146,7 +149,7 @@ export function createServerApp(sessions) {
               break;
             case "prompt":
               data = {
-                runId: await sessions.prompt(request.sessionId, request.text, request.queueType),
+                runId: await sessions.prompt(request.sessionId, request.text, request.queueType, request.images),
               };
               break;
             case "queue.withdraw":

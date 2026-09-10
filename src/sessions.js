@@ -3,7 +3,7 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { realpath, stat, readFile, mkdir, writeFile, rename, rm, readdir } from "node:fs/promises";
 import { dirname, join, relative, isAbsolute, resolve, sep } from "node:path";
-import { selection as selectionSchema, compaction as compactionSchema, compactionDefaults } from "./protocol.js";
+import { selection as selectionSchema, compaction as compactionSchema, compactionDefaults, assertPromptImages } from "./protocol.js";
 import { Tasks } from "./tasks.js";
 import { delegationTools } from "./tools.js";
 import { resolveCapabilities } from "./capabilities.js";
@@ -367,14 +367,22 @@ export class Sessions {
     }
   }
 
-  async prompt(id, text, queueType) {
+  async prompt(id, text, queueType, images) {
+    if (!text.trim() && !images?.length) throw new Error("请求内容不能为空：请输入文本或附加图片");
     const item = this.get(id);
+    if (images?.length) {
+      // 必须在回执前拒绝：一旦入队或启动，SDK 会静默丢弃不支持模型的图片。
+      assertPromptImages(images);
+      const model = this.createAgent.catalog().find((m) => m.key === item.agent.config?.()?.model);
+      if (model?.input && !model.input.includes("image"))
+        throw new Error(`当前模型 ${model.key} 不支持图片输入，请先切换到具备视觉能力的模型`);
+    }
     if (item.status === "running") {
-      await item.agent.enqueue(text, queueType || item.queueType);
+      await item.agent.enqueue(text, queueType || item.queueType, images);
       return item.runId;
     }
     if (item.status !== "idle" || item.configuring) throw new Error("Session is busy");
-    if (item.title === "新会话") item.title = text.slice(0, 60);
+    if (item.title === "新会话") item.title = (text.trim() || "[图片]").slice(0, 60);
     item.updatedAt = Date.now();
     item.runId = randomUUID();
     item.status = "running";
@@ -384,7 +392,7 @@ export class Sessions {
     });
     item.work = (async () => {
       try {
-        await item.agent.prompt(text);
+        await item.agent.prompt(text, images?.length ? { images } : undefined);
         item.agent.result();
       } catch (error) {
         item.emit({

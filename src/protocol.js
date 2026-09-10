@@ -7,6 +7,39 @@ const capabilities = z.object({
 const workspace = z.string().trim().min(1).optional();
 const thinking = z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]).optional();
 const queueType = z.enum(["steer", "followUp"]);
+// 图片附件：SDK ImageContent（{type:'image',mimeType,data:base64}）。安全上限 4 张、单张 5MiB、共 20MiB。
+const base64Pattern = /^[A-Za-z0-9+/]+={0,2}$/;
+const decodedBytes = (data) => Buffer.byteLength(data, "base64");
+export const promptImage = z
+  .object({
+    type: z.literal("image"),
+    mimeType: z.enum(["image/png", "image/jpeg", "image/gif", "image/webp"]),
+    data: z
+      .string()
+      .min(1, "图片数据不能为空")
+      .regex(base64Pattern, "图片数据必须是标准 base64 编码")
+      .refine((data) => data.length % 4 === 0, "图片数据必须是标准 base64 编码"),
+  })
+  .strict();
+export const promptImages = z
+  .array(promptImage)
+  .max(4, "图片最多 4 张")
+  .refine((images) => images.every((image) => decodedBytes(image.data) <= 5 * 1024 * 1024), "单张图片不能超过 5 MiB")
+  .refine((images) => images.reduce((sum, image) => sum + decodedBytes(image.data), 0) <= 20 * 1024 * 1024, "图片总大小不能超过 20 MiB");
+const imageSignatures = {
+  "image/png": (bytes) => bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+  "image/jpeg": (bytes) => bytes.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])),
+  "image/gif": (bytes) => ["GIF87a", "GIF89a"].includes(bytes.subarray(0, 6).toString("latin1")),
+  "image/webp": (bytes) => bytes.subarray(0, 4).toString("latin1") === "RIFF" && bytes.subarray(8, 12).toString("latin1") === "WEBP",
+};
+// 解码后校验文件签名，防止改名的非图片文件进入模型上下文。
+export function assertPromptImages(images) {
+  for (const { mimeType, data } of images ?? []) {
+    const check = imageSignatures[mimeType];
+    if (!check || !check(Buffer.from(data, "base64")))
+      throw new Error("图片内容与声明的格式不符：仅支持真实的 PNG、JPEG、GIF、WebP 文件");
+  }
+}
 export const compactionDefaults = {
   enabled: false, tokenThreshold: 100000, percentThreshold: 70,
   model: null, thinking: "off", keepRecentTokens: 20000,
@@ -78,7 +111,9 @@ export const command = z.discriminatedUnion("type", [
       id,
       type: z.literal("prompt"),
       sessionId: id,
-      text: z.string().trim().min(1),
+      // text 与 images 的“不能双空”检查放在 sessions.prompt：zod v3 discriminatedUnion 成员不支持 object 级 refine。
+      text: z.string().trim(),
+      images: promptImages.optional(),
       queueType: queueType.optional(),
     })
     .strict(),

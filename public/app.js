@@ -17,6 +17,7 @@ const views = new Map();
 const compactionDefaults = { enabled: false, tokenThreshold: 100000, percentThreshold: 70, model: null, thinking: "off", keepRecentTokens: 20000 };
 const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 let compactions = [], mainItems = [], sessionCompaction;
+let images = [], imageLoading = false;
 let selectedSkill = "", contextFiles = [], contextMode, contextListing = { path: "", entries: [] }, contextLoad = 0, pickingWorkspace = false;
 try {
   sessionId = localStorage.getItem("axiom.session") || undefined;
@@ -26,6 +27,7 @@ function saveView() {
     views.set(sessionId, {
       draft: $("prompt").value,
       contextFiles: [...contextFiles],
+      images: [...images],
       selectedSkill,
       scroll: $("transcript").scrollTop,
       follow,
@@ -102,14 +104,17 @@ function controls() {
     input.disabled = unavailable;
   $("composer-skill").disabled = unavailable || !config?.skills?.length;
   $("composer-skill").value = selectedSkill;
-  $("prompt").required = !selectedSkill;
+  $("prompt").required = !selectedSkill && !images.length;
+  $("add-image").disabled = unavailable || imageLoading;
+  $("capture-screen").disabled = unavailable || imageLoading;
+  $("capture-screen").hidden = !navigator.mediaDevices?.getDisplayMedia;
   $("add-context").disabled = unavailable;
   $("open-workspace").disabled = unavailable || pickingWorkspace;
   $("reveal-workspace").disabled = unavailable;
   $("copy-workspace").disabled = !$("workspace-label").textContent;
   renderContextChips();
   for (const id of ["send", "send-steer", "send-followup"])
-    $(id).disabled = unavailable || (!$("prompt").value.trim() && !selectedSkill);
+    $(id).disabled = unavailable || imageLoading || (!$("prompt").value.trim() && !selectedSkill && !images.length);
   $("send-steer").hidden = $("send-followup").hidden = !busy;
   $("stop").disabled = !busy || unavailable;
   $("stop").hidden = !busy;
@@ -320,6 +325,19 @@ function renderMessage(item, message) {
     item.skillBlocks = blocks;
     item.node.prepend(blocks);
   }
+  item.images?.remove();
+  item.images = document.createElement("div");
+  item.images.className = "message-images";
+  for (const block of content.filter((c) => c?.type === "image")) {
+    if (!/^image\/(png|jpeg|gif|webp)$/.test(block.mimeType) || typeof block.data !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(block.data)) continue;
+    const image = document.createElement("img");
+    image.src = `data:${block.mimeType};base64,${block.data}`;
+    image.alt = "消息附件图片";
+    image.loading = "lazy";
+    image.onload = scrollLatest;
+    item.images.append(image);
+  }
+  item.node.append(item.images);
   renderer.flush(item);
 }
 function compactionCard(data) {
@@ -446,8 +464,8 @@ function buildSessionCompaction() {
   node.append(sessionCompaction.node);
 }
 function renderQueue(queue = {}) {
-  const entries = [["Steer", queue.steering || []], ["Follow-up", queue.followUp || []]];
-  $("message-queue").replaceChildren(...entries.flatMap(([type, texts]) => texts.map((text) => {
+  const entries = [["Steer", "steering"], ["Follow-up", "followUp"]];
+  $("message-queue").replaceChildren(...entries.flatMap(([type, key]) => (queue[key] || []).map((text, index) => {
     const row = document.createElement("button");
     row.type = "button";
     row.title = "撤回全部队列到输入框修改（与 Pi 原生一致）";
@@ -455,7 +473,8 @@ function renderQueue(queue = {}) {
     const badge = document.createElement("strong");
     badge.textContent = type;
     const content = document.createElement("span");
-    content.textContent = text;
+    const count = queue.images?.[key]?.[index]?.length || 0;
+    content.textContent = [text, count ? `[图片 × ${count}]` : ""].filter(Boolean).join(" ");
     row.append(badge, content);
     return row;
   })));
@@ -647,6 +666,8 @@ function snapshot(state) {
   const view = views.get(sessionId);
   $("prompt").value = view?.draft || "";
   contextFiles = [...(view?.contextFiles || [])];
+  images = [...(view?.images || [])];
+  renderImages();
   selectedSkill = view?.selectedSkill || "";
   contextLoad++;
   $("context-picker").close();
@@ -777,10 +798,11 @@ $("thinking").onchange = () => {
 $("composer").onsubmit = async (e) => {
   e.preventDefault();
   const draft = $("prompt").value;
-  const files = [...contextFiles], skill = selectedSkill;
+  const files = [...contextFiles], skill = selectedSkill, sentImages = [...images];
   const body = [draft.trim(), files.length ? `工作空间引用（按需读取；文件夹不代表已读取全部内容）：\n${files.map((file) => `- ${file.directory ? "文件夹" : "文件"}：${JSON.stringify(file.path)}`).join("\n")}` : ""].filter(Boolean).join("\n\n");
   const text = skill ? `/skill:${skill} ${body}` : body;
-  if ((!draft.trim() && !skill) || changing || !connected) return;
+  if ((!draft.trim() && !skill && !sentImages.length) || imageLoading || changing || !connected) return;
+  if (sentImages.length > 4) return error(new Error("每条消息最多发送 4 张图片，请移除多余附件后分批发送"));
   const wasBusy = busy;
   const queueType = e.submitter?.dataset.queue || config?.queueType || "steer";
   busy = true;
@@ -791,7 +813,14 @@ $("composer").onsubmit = async (e) => {
   follow = true;
   scrollLatest();
   try {
-    await request("prompt", { sessionId: sendingSession, text, ...(wasBusy ? { queueType } : {}) });
+    await request("prompt", { sessionId: sendingSession, text, ...(sentImages.length ? { images: sentImages } : {}), ...(wasBusy ? { queueType } : {}) });
+    if (sessionId === sendingSession) {
+      images = images.filter((image) => !sentImages.includes(image));
+      renderImages();
+      controls();
+    }
+    const imageView = views.get(sendingSession);
+    if (imageView) imageView.images = (imageView.images || []).filter((image) => !sentImages.includes(image));
     if (sessionId === sendingSession && $("prompt").value === draft) {
       $("prompt").value = "";
       contextFiles = contextFiles.filter((file) => !files.includes(file));
@@ -814,6 +843,94 @@ $("composer").onsubmit = async (e) => {
     }
   }
 };
+function renderImages() {
+  $("image-attachments").hidden = !images.length;
+  $("image-attachments").replaceChildren(...images.map((image, index) => {
+    const tile = document.createElement("div");
+    const preview = document.createElement("img");
+    preview.src = `data:${image.mimeType};base64,${image.data}`;
+    preview.alt = `待发送图片 ${index + 1}`;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "×";
+    remove.setAttribute("aria-label", `移除图片 ${index + 1}`);
+    remove.onclick = () => { images = images.filter((item) => item !== image); renderImages(); controls(); };
+    tile.append(preview, remove);
+    return tile;
+  }));
+}
+async function addImages(files, target = sessionId) {
+  if (files.length > 4) throw new Error("每条消息最多添加 4 张图片");
+  const added = [];
+  for (const file of files) {
+    if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type)) throw new Error("仅支持 PNG、JPEG、GIF、WebP 图片");
+    if (!file.size || file.size > 5 * 1024 * 1024) throw new Error("每张图片必须大于 0 且不超过 5 MiB");
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("图片读取失败，请重试"));
+      reader.onabort = () => reject(new Error("图片读取已取消"));
+      reader.readAsDataURL(file);
+    });
+    added.push({ type: "image", mimeType: file.type, data: dataUrl.slice(dataUrl.indexOf(",") + 1) });
+  }
+  const view = target === sessionId ? null : (views.get(target) || {});
+  const current = view ? (view.images || []) : images;
+  if (current.length + added.length > 4) throw new Error("每条消息最多添加 4 张图片");
+  if (view) { view.images = [...current, ...added]; views.set(target, view); }
+  else { images = [...current, ...added]; renderImages(); controls(); }
+}
+async function loadImages(files) {
+  if (imageLoading || changing || !connected) return;
+  imageLoading = true;
+  controls();
+  try { await addImages(files); }
+  catch (e) { error(e); }
+  finally { imageLoading = false; controls(); }
+}
+$("add-image").onclick = () => $("image-files").click();
+$("image-files").onchange = async () => {
+  const files = [...$("image-files").files];
+  $("image-files").value = "";
+  await loadImages(files);
+};
+$("prompt").onpaste = (e) => {
+  const files = [...(e.clipboardData?.items || [])].filter((item) => item.kind === "file" && item.type.startsWith("image/")).map((item) => item.getAsFile()).filter(Boolean);
+  if (!files.length) return;
+  e.preventDefault();
+  void loadImages(files);
+};
+$("capture-screen").onclick = async () => {
+  if (imageLoading || changing || !connected) return;
+  const target = sessionId;
+  let stream, video;
+  imageLoading = true;
+  controls();
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = stream;
+    await video.play();
+    if (!video.videoWidth || !video.videoHeight) throw new Error("截图失败，请重试或粘贴系统截图");
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    stream.getTracks().forEach((track) => track.stop());
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("截图失败，请重试或粘贴系统截图");
+    await addImages([blob], target);
+  } catch (e) {
+    if (e.name !== "NotAllowedError") error(e);
+  } finally {
+    stream?.getTracks().forEach((track) => track.stop());
+    if (video) video.srcObject = null;
+    imageLoading = false;
+    controls();
+  }
+};
 $("prompt").onkeydown = (e) => {
   if (e.key !== "Enter" || e.isComposing || e.keyCode === 229) return;
   if (e.ctrlKey || e.metaKey) {
@@ -833,14 +950,17 @@ async function withdrawQueue() {
   withdrawing = true;
   try {
     const queue = await request("queue.withdraw", { sessionId: target });
-    const text = [...queue.steering, ...queue.followUp].join("\n\n");
-    if (!text) return;
+    const text = [...queue.steering, ...queue.followUp].filter(Boolean).join("\n\n");
+    const restored = [...(queue.images?.steering || []), ...(queue.images?.followUp || [])].flat().filter(Boolean);
+    if (!text && !restored.length) return;
     if (sessionId === target) {
       $("prompt").value = [$("prompt").value, text].filter(Boolean).join("\n\n");
-      resizePrompt(); controls(); $("prompt").focus();
+      images = [...images, ...restored];
+      renderImages(); resizePrompt(); controls(); $("prompt").focus();
     } else {
       const view = views.get(target) || {};
       view.draft = [view.draft, text].filter(Boolean).join("\n\n");
+      view.images = [...(view.images || []), ...restored];
       views.set(target, view);
     }
   } catch (e) { error(e); }

@@ -19,6 +19,36 @@ export function agentRuntime(session) {
   };
 }
 
+// SDK 的 queue_update/clearQueue/getSteeringMessages 只回传文本，图片仅存于 agent 真实队列
+// （agent.steeringQueue/followUpQueue.messages，pi-coding-agent 0.85.1 私有字段但为普通属性，
+// 元素为 {role:'user',content:[text,...image]}，入队后不会被 clearQueue 之外的路径改写）。
+// 展示与撤回直接读真实队列：避免按文本做 shadow 映射的同文本键碰撞，
+// 也避免 clearQueue 同步触发 queue_update 先清空 shadow 再取图导致撤回丢图。
+export function queueStateOf(steeringQueue, followUpQueue) {
+  const read = (queue) =>
+    queue.messages.map((message) => ({
+      text: message.content.filter((block) => block.type === "text").map((block) => block.text).join("\n"),
+      images: message.content.filter((block) => block.type === "image").map((block) => ({ ...block })),
+    }));
+  const steering = read(steeringQueue);
+  const followUp = read(followUpQueue);
+  return {
+    steering: steering.map((entry) => entry.text),
+    followUp: followUp.map((entry) => entry.text),
+    images: {
+      steering: steering.map((entry) => (entry.images.length ? entry.images : null)),
+      followUp: followUp.map((entry) => (entry.images.length ? entry.images : null)),
+    },
+  };
+}
+
+// 撤回 = 先快照真实队列再 clearQueue：clearQueue 会同步清空队列并发出 queue_update，事后取不到图。
+export function withdrawQueue(session) {
+  const queued = queueStateOf(session.agent.steeringQueue, session.agent.followUpQueue);
+  session.clearQueue();
+  return queued;
+}
+
 export async function createPiFactory({ cwd, model: requested }) {
   const modelRuntime = await ModelRuntime.create();
   const available = await modelRuntime.getAvailable();
@@ -78,6 +108,7 @@ export async function createPiFactory({ cwd, model: requested }) {
       throw error;
     }
     let lastResult;
+    const queueState = () => queueStateOf(session.agent.steeringQueue, session.agent.followUpQueue);
     const messageEntries = () => session.sessionManager.getBranch().filter((entry) => entry.type === "message");
     const compactionRecords = () => session.sessionManager.getBranch().filter((entry) => entry.type === "compaction").map((entry) => {
       const branch = session.sessionManager.getBranch(entry.id);
@@ -107,8 +138,9 @@ export async function createPiFactory({ cwd, model: requested }) {
         const record = compactionRecords().at(-1);
         if (record) emitAxiom({ type: "agent.compaction", data: record });
       }
+      // _queueSteer 先发 queue_update 再压入真实队列，推迟到微任务读取才能看到刚入队的消息（与下方 message_end 同理）。
       if (event.type === "queue_update")
-        emitAxiom({ type: "session.queue", data: { steering: event.steering, followUp: event.followUp } });
+        queueMicrotask(() => emitAxiom({ type: "session.queue", data: queueState() }));
       if (event.type === "message_start")
         emitAxiom({ type: "agent.message.start", data: { message: event.message } });
       if (event.type === "message_end") {
@@ -137,9 +169,9 @@ export async function createPiFactory({ cwd, model: requested }) {
       sessionFile: () => session.sessionFile,
       historyEntries: messageEntries,
       compactions: compactionRecords,
-      queue: () => ({ steering: [...session.getSteeringMessages()], followUp: [...session.getFollowUpMessages()] }),
-      withdraw: () => session.clearQueue(),
-      enqueue: (text, type) => type === "steer" ? session.steer(text) : session.followUp(text),
+      queue: queueState,
+      withdraw: () => withdrawQueue(session),
+      enqueue: (text, type, images) => (type === "steer" ? session.steer(text, images) : session.followUp(text, images)),
       async configure({ model: key, thinking, compaction }) {
         const selected = available.find((m) => `${m.provider}/${m.id}` === key);
         if (!selected) throw new Error("Unknown model");
@@ -169,10 +201,10 @@ export async function createPiFactory({ cwd, model: requested }) {
         activeTools: session.getActiveToolNames(),
         compaction: compactionCtrl.getConfig(),
       }),
-      prompt: async (text) => {
+      prompt: async (text, options) => {
         if (await compactionCtrl.maybeApply()) emitAxiom({ type: "agent.runtime", data: agentRuntime(session) });
         lastResult = undefined;
-        await session.prompt(text);
+        await session.prompt(text, options?.images ? { images: options.images } : undefined);
       },
       async abort() {
         await Promise.all([compactionCtrl.cancel?.(), session.abort()]);
@@ -213,6 +245,7 @@ export async function createPiFactory({ cwd, model: requested }) {
       name: m.name,
       key: `${m.provider}/${m.id}`,
       levels: getSupportedThinkingLevels(m),
+      input: m.input,
     }));
   return factory;
 }
