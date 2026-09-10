@@ -183,7 +183,11 @@ header {
 .header-title {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
+.header-title h1 { line-height: 20px; }
 h1 {
   font-size: 14px;
   font-weight: 500;
@@ -501,7 +505,7 @@ button.danger:hover:not(:disabled) { background: #c13e50; }
 .workspace-open { display: flex; align-items: center; justify-content: center; gap: 8px; }
 .workspace-location { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .workspace-location #workspace-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.workspace-location .icon-button { width: 26px; height: 26px; border: 0; background: transparent; display: grid; place-items: center; }
+.workspace-location .icon-button { width: 24px; height: 24px; min-height: 24px; border: 0; background: transparent; display: grid; place-items: center; }
 .workspace-location svg, .workspace-open svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; flex-shrink: 0; }
 .image-attachments { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 8px; }
 .image-attachments > div { position: relative; flex-shrink: 0; }

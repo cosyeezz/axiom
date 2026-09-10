@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-10 — 顶栏标题与路径间距
+- 用户反馈标题和路径行距过大，与左侧菜单按钮不协调；路径图标虽然设置 height:26px，仍被全局 button min-height:40px 撑高。
+- public/style.css 显式设置路径图标 height/min-height:24px，标题行高 20px、双行间距 2px，沿用顶栏垂直居中，不改其他按钮。
+- tests/app.test.js 增加真实页面 CSS 计算样式回归检查；同步 README.md、knowledge.md 与索引。npm test 全量 52 项通过；worktree 初次缺依赖，建立现有 node_modules junction 后通过，无新增依赖。未做真实浏览器截图验收。
+- 同时排查 Steer / Follow-up：空输入时禁用符合现有逻辑，输入后启用及双类型发送已有测试覆盖，无需修改队列。
+
 ## 2026-09-10 — 会话隐藏与拖放恢复
 - worktree MyWorkbench-session-hide / feat/session-hide。在会话列表下方添加默认收起的原生 details 隐藏区，支持拖入隐藏、拖回恢复及键盘/触屏按钮；限制展开高度，避免影响正常列表阅读。
 - 按后续反馈，将重命名图标改为直线铅笔轮廓，去掉原有类似取色器的圆头。
