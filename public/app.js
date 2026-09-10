@@ -1,5 +1,7 @@
 import { renderMarkdown } from "./markdown.js";
 import { createStreamRenderer } from "./stream-renderer.js";
+import { createFilePicker, fileIcon } from "./file-picker.js";
+const filePicker = createFilePicker(request);
 const $ = (id) => document.getElementById(id);
 let ws,
   sessionId,
@@ -21,7 +23,7 @@ const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max
 let compactions = [], mainItems = [];
 let images = [], imageLoading = false;
 let completionVersion = 0, completionToken, completionEntries = [], completionIndex = 0;
-let selectedSkill = "", contextFiles = [], contextMode, contextListing = { path: "", entries: [] }, contextLoad = 0, pickingWorkspace = false, currentCwd = "";
+let selectedSkill = "", contextFiles = [], pickingWorkspace = false, currentCwd = "";
 try {
   sessionId = localStorage.getItem("axiom.session") || undefined;
 } catch {}
@@ -726,7 +728,7 @@ function snapshot(state) {
   images = [...(view?.images || [])];
   renderImages();
   selectedSkill = view?.selectedSkill || "";
-  contextLoad++;
+  filePicker.close();
   closeCompletion();
   $("context-picker").close();
   follow = view?.follow ?? true;
@@ -889,7 +891,7 @@ $("composer").onsubmit = async (e) => {
   e.preventDefault();
   const draft = $("prompt").value;
   const files = [...contextFiles], skill = selectedSkill, sentImages = [...images];
-  const body = [draft.trim(), files.length ? `工作空间引用（按需读取；文件夹不代表已读取全部内容）：\n${files.map((file) => `- ${file.directory ? "文件夹" : "文件"}：${JSON.stringify(file.path)}`).join("\n")}` : ""].filter(Boolean).join("\n\n");
+  const body = [draft.trim(), sentImages.length ? "图片标记说明：[imageN] 对应本条消息附件顺序中的第 N 张图片（从 1 开始）。" : "", files.length ? `工作空间引用（按需读取；文件夹不代表已读取全部内容）：\n${files.map((file) => `- ${file.directory ? "文件夹" : "文件"}：${JSON.stringify(file.path)}`).join("\n")}` : ""].filter(Boolean).join("\n\n");
   const text = skill ? `/skill:${skill} ${body}` : body;
   if ((!draft.trim() && !skill && !sentImages.length && !files.length) || imageLoading || changing || !connected) return;
   closeCompletion();
@@ -967,8 +969,16 @@ function renderImages() {
     remove.type = "button";
     remove.textContent = "×";
     remove.setAttribute("aria-label", `移除图片 ${index + 1}`);
-    remove.onclick = () => { images = images.filter((item) => item !== image); renderImages(); controls(); };
-    tile.append(preview, remove);
+    remove.disabled = imageLoading;
+    remove.onclick = () => {
+      $("prompt").value = $("prompt").value.replace(/\[image(\d+)\]/g, (marker, n) =>
+        Number(n) === index + 1 ? "" : Number(n) > index + 1 ? `[image${Number(n) - 1}]` : marker);
+      images = images.filter((item) => item !== image);
+      renderImages(); resizePrompt(); controls();
+    };
+    const label = document.createElement("span");
+    label.textContent = `[image${index + 1}]`;
+    tile.append(preview, label, remove);
     return tile;
   }));
 }
@@ -994,12 +1004,30 @@ async function addImages(files, target = sessionId) {
   else { images = [...current, ...added]; renderImages(); controls(); }
 }
 async function loadImages(files) {
-  if (imageLoading || changing || !connected) return;
+  if (imageLoading || withdrawing || changing || !connected) return;
+  if (!files.length) return;
+  const target = sessionId, input = $("prompt"), start = input.selectionStart;
+  const selected = input.value.slice(start, input.selectionEnd);
+  const markers = files.map((_, index) => `[image${images.length + index + 1}]`).join(" ");
+  input.setRangeText(markers, input.selectionStart, input.selectionEnd, "end");
+  input.dispatchEvent(new Event("input", { bubbles: true }));
   imageLoading = true;
-  controls();
-  try { await addImages(files); }
-  catch (e) { error(e); }
-  finally { imageLoading = false; controls(); }
+  renderImages(); controls();
+  try { await addImages(files, target); }
+  catch (e) {
+    // ponytail: only roll back an unchanged insertion; edited markers remain ordinary draft text.
+    const rollback = (text) => text.slice(start, start + markers.length) === markers
+      ? text.slice(0, start) + selected + text.slice(start + markers.length) : text;
+    if (sessionId === target) {
+      input.value = rollback(input.value);
+      resizePrompt();
+    } else {
+      const view = views.get(target);
+      if (view) view.draft = rollback(view.draft || "");
+    }
+    error(e);
+  }
+  finally { imageLoading = false; renderImages(); controls(); }
 }
 $("add-image").onclick = () => $("image-files").click();
 $("image-files").onchange = async () => {
@@ -1040,13 +1068,19 @@ $("prompt").onkeydown = (e) => {
 };
 let escapeTimer, withdrawing;
 async function withdrawQueue() {
-  if (withdrawing || !connected || changing) return;
+  if (withdrawing || imageLoading || !connected || changing) return;
   const target = sessionId;
   withdrawing = true;
   try {
     const queue = await request("queue.withdraw", { sessionId: target });
-    const text = [...queue.steering, ...queue.followUp].filter(Boolean).join("\n\n");
-    const restored = [...(queue.images?.steering || []), ...(queue.images?.followUp || [])].flat().filter(Boolean);
+    const queuedImages = [...(queue.images?.steering || queue.steering.map(() => null)), ...(queue.images?.followUp || queue.followUp.map(() => null))];
+    let imageOffset = (sessionId === target ? images : views.get(target)?.images || []).length;
+    const text = [...queue.steering, ...queue.followUp].map((text, index) => {
+      const shifted = text.replace(/\[image(\d+)\]/g, (_, n) => `[image${Number(n) + imageOffset}]`);
+      imageOffset += queuedImages[index]?.length || 0;
+      return shifted;
+    }).filter(Boolean).join("\n\n");
+    const restored = queuedImages.flat().filter(Boolean);
     if (!text && !restored.length) return;
     if (sessionId === target) {
       $("prompt").value = [$("prompt").value, text].filter(Boolean).join("\n\n");
@@ -1295,7 +1329,7 @@ function renderContextChips() {
     chip.setAttribute("aria-label", chip.title);
     const label = document.createElement("span"); label.textContent = entry.name;
     const close = document.createElement("span"); close.textContent = "×"; close.setAttribute("aria-hidden", "true");
-    chip.append(contextIcon(entry.kind), label, close);
+    chip.append(entry.kind === "skill" ? contextIcon("skill") : fileIcon({ ...entry, name: entry.path.split(/[\\/]/).pop() }), label, close);
     chip.onclick = () => {
       if (entry.kind === "skill") { $("composer-skill").value = ""; $("composer-skill").onchange(); }
       else { contextFiles = contextFiles.filter((file) => file.path !== entry.path); controls(); }
@@ -1305,56 +1339,37 @@ function renderContextChips() {
 }
 function renderContextResults() {
   const query = $("context-search").value.toLocaleLowerCase();
-  const skills = contextMode === "skill";
-  const entries = skills ? (config?.skills || []) : contextListing.entries;
-  $("context-path").replaceChildren();
-  if (!skills) {
-    const up = document.createElement("button"); up.type = "button"; up.textContent = "← 上一级";
-    up.disabled = !contextListing.path;
-    up.onclick = () => { void browseContext(contextListing.path.split("/").slice(0, -1).join("/")); };
-    const path = document.createElement("span"); path.textContent = contextListing.path || "工作空间";
-    $("context-path").append(up, path);
-    if (contextMode === "folder") {
-      const add = document.createElement("button"); add.type = "button"; add.textContent = "添加此文件夹";
-      add.onclick = () => selectContext({ path: contextListing.path || ".", directory: true });
-      $("context-path").append(add);
-    }
-  }
-  const shown = entries.filter((entry) => (contextMode !== "folder" || entry.directory) && `${entry.name} ${entry.description || ""}`.toLocaleLowerCase().includes(query));
+  const shown = (config?.skills || []).filter((entry) => `${entry.name} ${entry.description || ""}`.toLocaleLowerCase().includes(query));
   $("context-results").replaceChildren(...shown.map((entry) => {
     const button = document.createElement("button"); button.type = "button";
     const text = document.createElement("span"); text.textContent = entry.name;
-    const description = document.createElement("small"); description.textContent = entry.description || (entry.directory ? "打开文件夹 ›" : entry.path);
+    const description = document.createElement("small"); description.textContent = entry.description || "Skill";
     text.append(description);
-    button.append(contextIcon(skills ? "skill" : entry.directory ? "folder" : "file"), text);
-    button.onclick = () => skills ? selectContext(entry) : entry.directory ? void browseContext(entry.path) : selectContext(entry);
+    button.append(contextIcon("skill"), text);
+    button.onclick = () => {
+      if (!connected || changing) return;
+      $("composer-skill").value = entry.name; $("composer-skill").onchange();
+      $("context-picker").close();
+    };
     return button;
   }));
   $("context-error").textContent = shown.length ? "" : "没有匹配项";
 }
-function selectContext(entry) {
-  if (!connected || changing) return;
-  if (contextMode === "skill") { $("composer-skill").value = entry.name; $("composer-skill").onchange(); }
-  else if (!contextFiles.some((file) => file.path === entry.path)) contextFiles.push(entry);
-  $("context-picker").close(); controls(); $("prompt").focus();
-}
-async function browseContext(path) {
-  const load = ++contextLoad, target = sessionId;
-  $("context-results").replaceChildren(); $("context-path").replaceChildren();
-  $("context-error").textContent = "正在读取…";
-  try {
-    const listing = await request("workspace.browse", { sessionId: target, path });
-    if (load !== contextLoad || target !== sessionId || !$("context-picker").open) return;
-    contextListing = listing; $("context-search").value = ""; renderContextResults();
-  } catch (e) { if (load === contextLoad) $("context-error").textContent = e.message; }
-}
-for (const button of document.querySelectorAll("[data-context]")) button.onclick = () => {
+for (const button of document.querySelectorAll("[data-context]")) button.onclick = async () => {
   $("context-menu").hidePopover?.();
-  contextMode = button.dataset.context; contextLoad++;
-  $("context-title").textContent = { skill: "添加 Skill", file: "添加工作空间文件", folder: "添加工作空间文件夹" }[contextMode];
-  $("context-search").value = ""; $("context-picker").showModal();
-  if (contextMode === "skill") renderContextResults(); else void browseContext("");
-  $("context-search").focus();
+  const mode = button.dataset.context;
+  if (mode === "skill") {
+    $("context-title").textContent = "添加 Skill";
+    $("context-search").value = ""; $("context-picker").showModal();
+    renderContextResults(); $("context-search").focus();
+    return;
+  }
+  const target = sessionId;
+  const entry = await filePicker.open({ title: mode === "file" ? "添加工作空间文件" : "添加工作空间文件夹", mode, sessionId: target, path: "" });
+  if (!entry || target !== sessionId || !connected || changing) return;
+  entry.path ||= ".";
+  if (!contextFiles.some((file) => file.path === entry.path)) contextFiles.push(entry);
+  controls(); $("prompt").focus();
 };
 $("context-search").oninput = renderContextResults;
 $("context-close").onclick = () => $("context-picker").close();
@@ -1458,14 +1473,16 @@ $("open-workspace").onclick = async () => {
   const original = sessionId;
   pickingWorkspace = true; controls();
   try {
-    const { path } = await request("workspace.pick");
-    if (!path || original !== sessionId) return;
+    const entry = await filePicker.open({ title: "打开工作空间", mode: "folder", path: currentCwd });
+    if (!entry || original !== sessionId || !connected || changing) return;
+    const { path } = entry;
     void switchSession(async () => {
       await refreshSessions();
       const existing = allSessions.find(
         (s) =>
-          s.cwd.replaceAll("\\", "/").toLowerCase() ===
-          path.replaceAll("\\", "/").toLowerCase(),
+          (/^[a-z]:[\\/]|^[\\/]{2}/i.test(path)
+            ? s.cwd.replaceAll("\\", "/").toLowerCase() === path.replaceAll("\\", "/").toLowerCase()
+            : s.cwd === path),
       );
       return existing
         ? request("session.attach", { sessionId: existing.id })

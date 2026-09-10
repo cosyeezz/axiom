@@ -1,0 +1,268 @@
+/* public/file-picker.css — 文件选择组件样式。
+   依赖 style.css 的主题变量：--canvas/--surface/--raised/--line/--ink/--muted/--accent，
+   深/浅主题切换只需覆盖这些变量，本文件自动适配。 */
+
+#file-picker {
+  width: min(720px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  max-height: min(700px, calc(100dvh - 24px));
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 35%);
+  overflow: hidden;
+}
+#file-picker::backdrop {
+  background: rgb(8 8 14 / 50%);
+  backdrop-filter: blur(2px);
+}
+#file-picker .fp-shell {
+  display: flex;
+  flex-direction: column;
+  height: min(600px, calc(100dvh - 26px));
+  max-height: min(700px, calc(100dvh - 24px));
+}
+
+/* 头部 */
+#file-picker .fp-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+#file-picker .fp-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 工具栏：路径输入 + 上一级 + 刷新 */
+#file-picker .fp-toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px 4px;
+}
+#file-picker #file-picker-path {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  padding: 4px 10px;
+}
+#file-picker .fp-iconbtn {
+  flex: none;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0 10px;
+  background: var(--raised);
+  font-weight: 500;
+}
+#file-picker .fp-iconbtn:hover:not(:disabled) { background: var(--accent); }
+#file-picker .fp-iconbtn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* 面包屑 */
+#file-picker .fp-crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 2px;
+  min-height: 18px;
+  padding: 6px 12px 8px 16px;
+}
+#file-picker .fp-crumb {
+  min-height: 24px;
+  max-width: 180px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#file-picker .fp-crumb:hover { background: var(--raised); color: var(--ink); }
+#file-picker .fp-crumb[aria-current] { color: var(--accent); font-weight: 600; }
+#file-picker .fp-sep { color: var(--muted); opacity: 0.6; }
+
+/* 主体：位置侧栏 + 结果区 */
+#file-picker .fp-body {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  border-top: 1px solid var(--line);
+}
+#file-picker .fp-side {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 8px;
+  border-right: 1px solid var(--line);
+  overflow: auto;
+}
+#file-picker .fp-side-title {
+  margin: 0 0 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+#file-picker .fp-locations { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+#file-picker .fp-row-arrow { color: var(--muted); font-size: 18px; }
+#file-picker .fp-loc {
+  min-height: 30px;
+  max-width: 100%;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 400;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#file-picker .fp-loc:hover { background: var(--raised); }
+
+/* 结果区 */
+#file-picker .fp-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+#file-picker #file-picker-search {
+  margin: 10px 12px 6px;
+  width: calc(100% - 24px);
+  min-height: 34px;
+  padding: 4px 10px;
+}
+#file-picker .fp-results {
+  flex: 1;
+  min-height: 120px;
+  margin: 0;
+  padding: 0 8px 8px;
+  list-style: none;
+  overflow: auto;
+  transition: opacity 0.15s;
+}
+#file-picker .fp-results.fp-loading { opacity: 0.55; pointer-events: none; }
+#file-picker .fp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink);
+  font-weight: 400;
+  text-align: left;
+}
+#file-picker .fp-row:hover:not(:disabled) { background: var(--raised); }
+#file-picker .fp-row.fp-active {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+#file-picker .fp-row:disabled { opacity: 0.45; cursor: not-allowed; }
+#file-picker .fp-icon { flex: none; width: 20px; height: 20px; }
+#file-picker .fp-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#file-picker .fp-more {
+  align-self: center;
+  margin: 0 12px 4px;
+  min-height: 32px;
+  padding: 4px 16px;
+  background: var(--raised);
+  font-weight: 500;
+}
+#file-picker .fp-more:hover:not(:disabled) { background: var(--accent); }
+#file-picker .fp-status {
+  min-height: 18px;
+  margin: 0;
+  padding: 2px 16px 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+#file-picker .fp-status .fp-retry {
+  min-height: 24px;
+  margin-left: 8px;
+  padding: 1px 10px;
+  background: var(--raised);
+  color: var(--ink);
+  font-size: 12px;
+}
+#file-picker .fp-status .fp-retry:hover:not(:disabled) { background: var(--accent); }
+
+/* 底部：当前选择 + 取消/确认 */
+#file-picker .fp-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 16px 14px;
+  border-top: 1px solid var(--line);
+}
+#file-picker .fp-selection {
+  flex: 1 1 160px;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#file-picker .fp-cancel { background: var(--raised); }
+#file-picker .fp-cancel:hover:not(:disabled) { background: var(--line); }
+#file-picker .fp-confirm { min-width: 96px; }
+#file-picker .fp-confirm:hover:not(:disabled) { filter: brightness(1.12); }
+
+/* 窄屏（320px 起不溢出） */
+@media (max-width: 480px) {
+  #file-picker .fp-body { grid-template-columns: 1fr; }
+  #file-picker .fp-side {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 8px;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  #file-picker .fp-side-title { margin: 0 2px; flex: none; }
+  #file-picker .fp-loc {
+    flex: none;
+    min-height: 28px;
+    padding: 3px 10px;
+    background: var(--raised);
+    border-radius: 999px;
+  }
+  #file-picker .fp-locations { flex-direction: row; flex: none; }
+  #file-picker .fp-toolbar { flex-wrap: wrap; }
+  #file-picker .fp-confirm { flex: 1; }
+}
+@media (max-height: 560px) {
+  #file-picker .fp-results { min-height: 80px; }
+}

@@ -10,6 +10,8 @@ const assets = new Map(
     ["/favicon.svg", "public/favicon.svg", "image/svg+xml"],
     ["/style.css", "public/style.css", "text/css"],
     ["/app.js", "public/app.js"],
+    ["/file-picker.js", "public/file-picker.js"],
+    ["/file-picker.css", "public/file-picker.css", "text/css"],
     ["/markdown.js", "public/markdown.js"],
     ["/stream-renderer.js", "public/stream-renderer.js"],
     ["/vendor/marked.js", "node_modules/marked/lib/marked.esm.js"],
@@ -119,8 +121,8 @@ export function createServerApp(sessions, service = {}) {
             case "capabilities.list":
               data = await sessions.createAgent.capabilities(request.cwd, request.trustProject);
               break;
-            case "workspace.pick":
-              data = await sessions.pickWorkspace();
+            case "files.browse":
+              data = await sessions.listFiles(request);
               break;
             case "workspace.reveal":
               data = await sessions.revealWorkspace(request.sessionId);

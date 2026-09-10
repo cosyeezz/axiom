@@ -19,6 +19,7 @@ const OUT = join(SKILL_DIR, "INDEX.md");
 const MODULE_INFO = {
   "scripts/service.mjs": "服务守护：IPC 快速/重建重启与安装构建失败反馈",
   "scripts/autostart.mjs": "Windows/macOS/Linux 当前用户登录自动启动安装/卸载",
+  "scripts/install.mjs": "一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器",
   "src/main.js": "入口：端口/工作区校验，组装 factory+Sessions+server，信号处理",
   "src/pi.js": "createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）",
   "src/retry.js": "模型失败重试：可取消退避、最多30次、保留已有工具结果继续",
@@ -32,6 +33,9 @@ const MODULE_INFO = {
   "public/app.js": "前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度",
   "public/markdown.js": "marked + DOMPurify 渲染（XSS 边界）",
   "public/stream-renderer.js": "流式增量渲染状态机",
+  "public/file-picker.js": "共享文件/目录选择弹窗、懒加载与分类 SVG 图标",
+  "public/file-picker.css": "文件选择弹窗主题与响应式布局",
+  "tests/file-picker.test.js": "共享选择器懒加载、分页、竞态和键盘交互回归",
   "public/index.html": "页面骨架与元素 id（见 L3）",
   "public/style.css": "全局样式（CSP 禁 inline style，样式一律进这里）",
   "tests/image-input.test.js": "图片协议/签名/模型限制、真实队列附件快照与撤回、大图 WS 回归",

@@ -6,6 +6,8 @@ import { marked } from "marked";
 import createPurify from "dompurify";
 import { createStreamRenderer } from "../public/stream-renderer.js";
 
+const pickerSource = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+
 test("header path icons do not inherit the global button minimum height", async () => {
   const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
   const css = await readFile(new URL("../public/style.css", import.meta.url), "utf8");
@@ -103,7 +105,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       message: { role: "assistant", content: "historical result" },
     },
   ];
-  let lastCreation, lastDefaults, pickedPath = null, copiedPath;
+  let lastCreation, lastDefaults, copiedPath;
   Object.defineProperty(window.navigator, "clipboard", { value: { writeText: async (text) => { copiedPath = text; } } });
   let defaults = { model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
   let failDefaults = false, needsTrust = false;
@@ -135,7 +137,11 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       queueMicrotask(() => {
         let data;
         switch (req.type) {
-          case "workspace.pick": data = { path: pickedPath }; break;
+          case "files.browse":
+            data = { path: req.sessionId ? req.path : "C:\\other", parent: req.path ? "" : null,
+              entries: req.sessionId ? (req.path ? [{ name: "app.js", path: "src/app.js", directory: false }] : [{ name: "src", path: "src", directory: true }]) : [],
+              nextOffset: null, breadcrumbs: [], locations: [] };
+            break;
           case "workspace.reveal": data = { opened: true }; break;
           case "workspace.browse":
             data = { path: req.path, entries: req.path ? [{ name: "app.js", path: "src/app.js", directory: false }] : [{ name: "src", path: "src", directory: true }] };
@@ -226,7 +232,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("prompt").dispatchEvent(new window.Event("input"));
   };
   try {
-    window.eval(source);
+    window.eval(`${pickerSource}\n${source}`);
     sockets[0].close(); // Close before open: retry must not remain hidden.
     await settle();
     assert.equal($("login").hidden, false);
@@ -323,11 +329,11 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(copiedPath, "C:\\work");
     $("reveal-workspace").click(); await settle();
     assert.equal(requests.findLast((req) => req.type === "workspace.reveal").sessionId, "a");
-    pickedPath = "C:\\other";
     $("open-workspace").click(); await settle();
+    assert.equal($("file-picker").open, true);
+    $("file-picker-confirm").click(); await settle();
     assert.equal($("open-workspace").disabled, false);
     assert.equal(requests.findLast((req) => req.type === "session.create").cwd, "C:\\other");
-    pickedPath = null;
     lastCreation = undefined;
     window.document.querySelector('[data-context="skill"]').click();
     assert.equal($("context-picker").open, true);
@@ -340,9 +346,10 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("prompt").value, "");
     window.document.querySelector('[data-context="file"]').click();
     await settle();
-    $("context-results").firstChild.click();
+    $("file-picker-results").querySelector("button").click();
     await settle();
-    $("context-results").firstChild.click();
+    $("file-picker-results").querySelector("button").click();
+    $("file-picker-confirm").click(); await settle();
     assert.match($("context-chips").textContent, /src\/app.js/);
     input("参考文件");
     $("composer").requestSubmit(); await settle();
@@ -862,7 +869,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("composer").requestSubmit();
     await settle();
     assert.equal(requests.findLast((req) => req.type === "prompt").images[0].mimeType, "image/png");
-    assert.equal(requests.findLast((req) => req.type === "prompt").text, "");
+    assert.match(requests.findLast((req) => req.type === "prompt").text, /^\[image1\]\n\n图片标记说明：/);
     assert.equal($("image-attachments").hidden, true);
     assert.equal($("output").querySelectorAll(".message-images img").length, 1);
     const sentImage = $("output").querySelector(".message-images img");
@@ -871,25 +878,54 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("image-preview-image").src, sentImage.src);
     $("image-preview").close(); // Native Escape closes dialogs; JSDOM does not implement it.
     assert.equal($("image-preview-image").hasAttribute("src"), false);
+    input("前文后文");
+    $("prompt").setSelectionRange(2, 2);
     let prevented = false;
     $("prompt").onpaste({ clipboardData: { items: [{ kind: "file", type: "image/png", getAsFile: () => png }] }, preventDefault() { prevented = true; } });
+    assert.equal($("prompt").value, "前文[image1]后文", "paste reserves its exact position before reading finishes");
+    assert.equal($("prompt").selectionStart, 10);
+    $("prompt").setRangeText("继续", 10, 10, "end");
     for (let i = 0; i < 100 && !$("image-attachments").children.length; i++) await new Promise((resolve) => setTimeout(resolve, 5));
     assert.equal(prevented, true);
     assert.equal($("image-attachments").children.length, 1);
+    assert.equal($("prompt").value, "前文[image1]继续后文");
+    await window.eval("loadImages")([png]);
+    assert.equal($("prompt").value, "前文[image1]继续[image2]后文");
     $("image-attachments").querySelector("button").click();
+    assert.equal($("prompt").value, "前文继续[image1]后文", "removing an image renumbers remaining references");
+    assert.match($("image-attachments").textContent, /\[image1\]/);
+    $("image-attachments").querySelector("button").click();
+    assert.equal($("prompt").value, "前文继续后文");
     assert.equal($("image-attachments").hidden, true);
+    $("prompt").setSelectionRange(0, 2);
     await window.eval("loadImages")([new window.File(["<svg/>"], "bad.svg", { type: "image/svg+xml" })]);
     assert.match($("error").textContent, /仅支持/);
+    assert.equal($("prompt").value, "前文继续后文", "invalid image restores replaced selection");
     assert.equal($("image-attachments").hidden, true);
     await window.eval("loadImages")([png, png, png, png, png]);
     assert.match($("error").textContent, /最多/);
     assert.equal($("image-attachments").hidden, true);
+    const loadingImage = window.eval("loadImages")([png]);
+    const imageDraft = $("prompt").value;
+    window.document.querySelectorAll(".session-item")[0].click();
+    await settle();
+    await loadingImage;
+    assert.equal($("image-attachments").hidden, true, "async image read must not leak into another session");
+    window.document.querySelectorAll(".session-item")[1].click();
+    await settle();
+    assert.equal($("prompt").value, imageDraft);
+    assert.equal($("image-attachments").children.length, 1);
     const queuedImage = { type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" };
     withdrawnImages = { steering: [[queuedImage]], followUp: [null] };
     window.eval("renderQueue")({ steering: [""], followUp: [], images: withdrawnImages });
     assert.match($("message-queue").textContent, /图片 × 1/);
     await window.eval("withdrawQueue")();
-    assert.equal($("image-attachments").querySelectorAll("img").length, 1, "withdrawing restores images, not just text");
+    assert.equal($("image-attachments").querySelectorAll("img").length, 2, "withdrawing restores images, not just text");
+    const oldWithdraw = window.eval("request");
+    window.eval("request = async () => ({ steering: ['第一条[image1]', '第二条[image1]'], followUp: [], images: { steering: [[{type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgo='}], [{type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgo='}]], followUp: [] } })");
+    await window.eval("withdrawQueue")();
+    assert.match($("prompt").value, /第一条\[image3\]\n\n第二条\[image4\]/, "withdrawn messages are rebased against draft and each other");
+    window.request = oldWithdraw;
     $("search").value = "missing";
     $("search").dispatchEvent(new window.Event("input"));
     assert.match($("sessions").textContent, /没有找到/);
@@ -1040,7 +1076,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
   };
   const emit = (type, data) => sockets.at(-1).receive({ type, sessionId: state.sessionId, data });
   try {
-    window.eval(source);
+    window.eval(`${pickerSource}\n${source}`);
     sockets[0].open();
     await settle();
     paint();
