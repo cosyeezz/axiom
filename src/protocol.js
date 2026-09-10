@@ -25,6 +25,9 @@ export const command = z.discriminatedUnion("type", [
       title: z.string().trim().min(1).max(120),
     })
     .strict(),
+  z.object({ id, type: z.literal("workspace.pick") }).strict(),
+  z.object({ id, type: z.literal("workspace.reveal"), sessionId: id }).strict(),
+  z.object({ id, type: z.literal("workspace.browse"), sessionId: id, path: z.string().max(4096).default("") }).strict(),
   z.object({ id, type: z.literal("models.list") }).strict(),
   z.object({
     id, type: z.literal("capabilities.list"),

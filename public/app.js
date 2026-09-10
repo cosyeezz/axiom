@@ -14,6 +14,7 @@ let ws,
 let allSessions = [],
   follow = true;
 const views = new Map();
+let contextFiles = [], contextMode, contextListing = { path: "", entries: [] }, contextLoad = 0, pickingWorkspace = false;
 try {
   sessionId = localStorage.getItem("axiom.session") || undefined;
 } catch {}
@@ -21,6 +22,7 @@ function saveView() {
   if (sessionId)
     views.set(sessionId, {
       draft: $("prompt").value,
+      contextFiles: [...contextFiles],
       scroll: $("transcript").scrollTop,
       follow,
     });
@@ -94,6 +96,11 @@ function controls() {
   $("queue-type").disabled = unavailable;
   $("composer-skill").disabled = unavailable || !config?.skills?.length;
   $("composer-skill").value = /^\/skill:([^\s]+)/.exec($("prompt").value)?.[1] || "";
+  $("add-context").disabled = unavailable;
+  $("open-workspace").disabled = unavailable || pickingWorkspace;
+  $("reveal-workspace").disabled = unavailable;
+  $("copy-workspace").disabled = !$("workspace-label").textContent;
+  renderContextChips();
   for (const id of ["send", "send-steer", "send-followup"])
     $(id).disabled = unavailable || !$("prompt").value.trim();
   $("send-steer").hidden = $("send-followup").hidden = !busy;
@@ -279,6 +286,27 @@ function renderMessage(item, message) {
     .filter((c) => c?.type === "thinking")
     .map((c) => c.thinking)
     .join("\n");
+  if (message.role === "user") {
+    item.skillBlocks?.remove();
+    const blocks = document.createElement("div");
+    item.buffer = item.buffer.replace(/<skill name="([^"]+)" location="([^"]*)">\r?\n([\s\S]*?)\r?\n<\/skill>/g, (_, name, location, body) => {
+      const details = document.createElement("details");
+      details.className = "skill-invocation";
+      const summary = document.createElement("summary");
+      summary.textContent = `[skill] ${name}`;
+      summary.title = "技能正文已加入本条消息，点击展开";
+      const path = document.createElement("small");
+      path.textContent = location;
+      const content = document.createElement("div");
+      details.append(summary, path, content);
+      let rendered = false;
+      details.ontoggle = () => { if (details.open && !rendered) { renderMarkdown(content, body); rendered = true; } };
+      blocks.append(details);
+      return "";
+    }).trim();
+    item.skillBlocks = blocks;
+    item.node.prepend(blocks);
+  }
   renderer.flush(item);
 }
 function renderQueue(queue = {}) {
@@ -459,6 +487,9 @@ function snapshot(state) {
   }
   const view = views.get(sessionId);
   $("prompt").value = view?.draft || "";
+  contextFiles = [...(view?.contextFiles || [])];
+  contextLoad++;
+  $("context-picker").close();
   follow = view?.follow ?? true;
   $("latest").hidden = follow;
   scrollFrame = requestAnimationFrame(() => {
@@ -570,8 +601,9 @@ $("thinking").onchange = () => {
 $("composer").onsubmit = async (e) => {
   e.preventDefault();
   const draft = $("prompt").value;
-  const text = draft.trim();
-  if (!text || changing || !connected) return;
+  const files = [...contextFiles];
+  const text = [draft.trim(), files.length ? `工作空间引用（按需读取；文件夹不代表已读取全部内容）：\n${files.map((file) => `- ${file.directory ? "文件夹" : "文件"}：${JSON.stringify(file.path)}`).join("\n")}` : ""].filter(Boolean).join("\n\n");
+  if (!draft.trim() || changing || !connected) return;
   const wasBusy = busy;
   const queueType = e.submitter?.dataset.queue || config?.queueType || "steer";
   busy = true;
@@ -585,11 +617,15 @@ $("composer").onsubmit = async (e) => {
     await request("prompt", { sessionId: sendingSession, text, ...(wasBusy ? { queueType } : {}) });
     if (sessionId === sendingSession && $("prompt").value === draft) {
       $("prompt").value = "";
+      contextFiles = contextFiles.filter((file) => !files.includes(file));
       resizePrompt();
       controls();
     }
     const saved = views.get(sendingSession);
-    if (saved?.draft === draft) saved.draft = "";
+    if (saved?.draft === draft) {
+      saved.draft = "";
+      saved.contextFiles = (saved.contextFiles || []).filter((file) => !files.includes(file));
+    }
     void refreshSessions().catch(error);
   } catch (e) {
     if (sessionId === sendingSession) {
@@ -780,6 +816,82 @@ $("session-action-form").onsubmit = async (e) => {
   } catch (e) { $("session-action-error").textContent = e.message; }
   finally { $("session-action-submit").disabled = false; }
 };
+function contextIcon(kind) {
+  return document.querySelector(`[data-context="${kind}"] svg`).cloneNode(true);
+}
+function renderContextChips() {
+  const skill = /^\/skill:([^\s]+)/.exec($("prompt").value)?.[1];
+  const entries = [...(skill ? [{ name: skill, kind: "skill" }] : []), ...contextFiles.map((file) => ({ ...file, name: file.path, kind: file.directory ? "folder" : "file" }))];
+  $("context-chips").replaceChildren(...entries.map((entry) => {
+    const chip = document.createElement("button");
+    chip.type = "button"; chip.className = "context-chip";
+    chip.title = `移除${entry.kind === "skill" ? "待加载 Skill" : "引用"}：${entry.name}`;
+    chip.setAttribute("aria-label", chip.title);
+    const label = document.createElement("span"); label.textContent = entry.name;
+    const close = document.createElement("span"); close.textContent = "×"; close.setAttribute("aria-hidden", "true");
+    chip.append(contextIcon(entry.kind), label, close);
+    chip.onclick = () => {
+      if (entry.kind === "skill") { $("composer-skill").value = ""; $("composer-skill").onchange(); }
+      else { contextFiles = contextFiles.filter((file) => file.path !== entry.path); controls(); }
+    };
+    return chip;
+  }));
+}
+function renderContextResults() {
+  const query = $("context-search").value.toLocaleLowerCase();
+  const skills = contextMode === "skill";
+  const entries = skills ? (config?.skills || []) : contextListing.entries;
+  $("context-path").replaceChildren();
+  if (!skills) {
+    const up = document.createElement("button"); up.type = "button"; up.textContent = "← 上一级";
+    up.disabled = !contextListing.path;
+    up.onclick = () => { void browseContext(contextListing.path.split("/").slice(0, -1).join("/")); };
+    const path = document.createElement("span"); path.textContent = contextListing.path || "工作空间";
+    $("context-path").append(up, path);
+    if (contextMode === "folder") {
+      const add = document.createElement("button"); add.type = "button"; add.textContent = "添加此文件夹";
+      add.onclick = () => selectContext({ path: contextListing.path || ".", directory: true });
+      $("context-path").append(add);
+    }
+  }
+  const shown = entries.filter((entry) => (contextMode !== "folder" || entry.directory) && `${entry.name} ${entry.description || ""}`.toLocaleLowerCase().includes(query));
+  $("context-results").replaceChildren(...shown.map((entry) => {
+    const button = document.createElement("button"); button.type = "button";
+    const text = document.createElement("span"); text.textContent = entry.name;
+    const description = document.createElement("small"); description.textContent = entry.description || (entry.directory ? "打开文件夹 ›" : entry.path);
+    text.append(description);
+    button.append(contextIcon(skills ? "skill" : entry.directory ? "folder" : "file"), text);
+    button.onclick = () => skills ? selectContext(entry) : entry.directory ? void browseContext(entry.path) : selectContext(entry);
+    return button;
+  }));
+  $("context-error").textContent = shown.length ? "" : "没有匹配项";
+}
+function selectContext(entry) {
+  if (!connected || changing) return;
+  if (contextMode === "skill") { $("composer-skill").value = entry.name; $("composer-skill").onchange(); }
+  else if (!contextFiles.some((file) => file.path === entry.path)) contextFiles.push(entry);
+  $("context-picker").close(); controls(); $("prompt").focus();
+}
+async function browseContext(path) {
+  const load = ++contextLoad, target = sessionId;
+  $("context-results").replaceChildren(); $("context-path").replaceChildren();
+  $("context-error").textContent = "正在读取…";
+  try {
+    const listing = await request("workspace.browse", { sessionId: target, path });
+    if (load !== contextLoad || target !== sessionId || !$("context-picker").open) return;
+    contextListing = listing; $("context-search").value = ""; renderContextResults();
+  } catch (e) { if (load === contextLoad) $("context-error").textContent = e.message; }
+}
+for (const button of document.querySelectorAll("[data-context]")) button.onclick = () => {
+  $("context-menu").hidePopover?.();
+  contextMode = button.dataset.context; contextLoad++;
+  $("context-title").textContent = { skill: "添加 Skill", file: "添加工作空间文件", folder: "添加工作空间文件夹" }[contextMode];
+  $("context-search").value = ""; $("context-picker").showModal();
+  if (contextMode === "skill") renderContextResults(); else void browseContext("");
+  $("context-search").focus();
+};
+$("context-search").oninput = renderContextResults;
+$("context-close").onclick = () => $("context-picker").close();
 $("composer-skill").onchange = () => {
   const name = $("composer-skill").value;
   const text = $("prompt").value.replace(/^\/skill:[^\s]+(?:\s+|$)/, "");
@@ -791,6 +903,29 @@ $("composer-skill").onchange = () => {
 $("prompt").oninput = () => {
   resizePrompt();
   controls();
+};
+$("open-workspace").onclick = async () => {
+  const original = sessionId;
+  pickingWorkspace = true; controls();
+  try {
+    const { path } = await request("workspace.pick");
+    if (!path || original !== sessionId) return;
+    $("cwd").value = path;
+    $("workspace-form").requestSubmit();
+  } catch (e) { error(e); }
+  finally { pickingWorkspace = false; controls(); }
+};
+$("copy-workspace").onclick = async () => {
+  try {
+    await navigator.clipboard.writeText($("workspace-label").textContent);
+    $("copy-workspace").title = "已复制";
+    $("workspace-feedback").textContent = "工作空间路径已复制";
+    setTimeout(() => { $("copy-workspace").title = "复制工作空间路径"; }, 1600);
+  } catch (e) { error(new Error(`复制失败：${e.message}`)); }
+};
+$("reveal-workspace").onclick = async () => {
+  try { await request("workspace.reveal", { sessionId }); }
+  catch (e) { error(e); }
 };
 $("new").onclick = () =>
   switchSession(() => request("session.create", { cwd: $("cwd").value }));

@@ -84,7 +84,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       message: { role: "assistant", content: "historical result" },
     },
   ];
-  let lastCreation, lastDefaults;
+  let lastCreation, lastDefaults, pickedPath = null, copiedPath;
+  Object.defineProperty(window.navigator, "clipboard", { value: { writeText: async (text) => { copiedPath = text; } } });
   let defaults = { model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
   let failDefaults = false, needsTrust = false;
   let failCreation = false;
@@ -114,6 +115,11 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       queueMicrotask(() => {
         let data;
         switch (req.type) {
+          case "workspace.pick": data = { path: pickedPath }; break;
+          case "workspace.reveal": data = { opened: true }; break;
+          case "workspace.browse":
+            data = { path: req.path, entries: req.path ? [{ name: "app.js", path: "src/app.js", directory: false }] : [{ name: "src", path: "src", directory: true }] };
+            break;
           case "capabilities.list":
             data = { needsTrust, warnings: [], skills: [{ id: "skill-a", name: "Skill A" }, { id: "skill-b", name: "Skill B" }], mcp: [{ id: "browser", name: "Browser" }], plugins: [{ id: "search", name: "Search" }] };
             break;
@@ -205,6 +211,43 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("send").textContent, "发送");
     assert.equal($("composer-skill").disabled, false);
     assert.equal($("composer-skill").options[1].title, "代码导航");
+    assert.equal($("composer-skill").hidden, true);
+    assert.equal($("stop").textContent.trim(), "Stop ■");
+    $("copy-workspace").click(); await settle();
+    assert.equal(copiedPath, "C:\\work");
+    $("reveal-workspace").click(); await settle();
+    assert.equal(requests.findLast((req) => req.type === "workspace.reveal").sessionId, "a");
+    $("open-workspace").click(); await settle();
+    assert.equal($("open-workspace").disabled, false);
+    assert.equal($("cwd").value, "C:\\work");
+    window.document.querySelector('[data-context="skill"]').click();
+    assert.equal($("context-picker").open, true);
+    $("context-search").value = "代码导航";
+    $("context-search").dispatchEvent(new window.Event("input"));
+    assert.equal($("context-results").children.length, 1);
+    $("context-results").firstChild.click();
+    assert.match($("context-chips").textContent, /codebase-map/);
+    $("context-chips").firstChild.click();
+    assert.equal($("prompt").value, "");
+    window.document.querySelector('[data-context="file"]').click();
+    await settle();
+    $("context-results").firstChild.click();
+    await settle();
+    $("context-results").firstChild.click();
+    assert.match($("context-chips").textContent, /src\/app.js/);
+    input("参考文件");
+    $("composer").requestSubmit(); await settle();
+    assert.match(requests.findLast((req) => req.type === "prompt").text, /文件："src\/app.js"/);
+    assert.equal($("context-chips").children.length, 0);
+    const skillCard = window.card("你");
+    window.renderMessage(skillCard, { role: "user", content: '<skill name="codebase-map" location="/skills/SKILL.md">\n# Skill body\n</skill>\n\n检查项目' });
+    assert.equal(skillCard.node.querySelector("summary").textContent, "[skill] codebase-map");
+    assert.equal(skillCard.node.querySelector(".skill-invocation").open, false);
+    assert.equal(skillCard.buffer, "检查项目");
+    skillCard.node.querySelector(".skill-invocation").open = true;
+    skillCard.node.querySelector(".skill-invocation").ontoggle();
+    assert.match(skillCard.node.textContent, /Skill body/);
+    skillCard.node.remove();
     input("检查代码");
     $("composer-skill").value = "codebase-map";
     $("composer-skill").dispatchEvent(new window.Event("change"));

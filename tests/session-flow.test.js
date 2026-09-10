@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, readdir } from "node:fs/promises";
+import { mkdtemp, rm, readdir, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Sessions } from "../src/sessions.js";
@@ -26,6 +26,13 @@ test("sessions persist across shutdown, queue by type, switch models while runni
   try {
     const first = new Sessions(factory, undefined, storage);
     const id = await first.create(root);
+    await mkdir(join(root, "src"));
+    await mkdir(join(root, ".git"));
+    await writeFile(join(root, "src", "hello.txt"), "hello");
+    assert.equal((await first.browse(id)).entries.some((entry) => entry.name === ".git"), false);
+    assert.deepEqual((await first.browse(id, "src")).entries, [{ name: "hello.txt", directory: false, path: "src/hello.txt" }]);
+    await assert.rejects(first.browse(id, ".."), /只能浏览当前工作空间/);
+    await assert.rejects(first.browse(id, "missing"));
     await first.prompt(id, "hello");
     await first.configure(id, { model: "test/two", queueType: "followUp" });
     assert.equal(first.get(id).status, "running");

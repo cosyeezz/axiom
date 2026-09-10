@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
+import { execFile, spawn } from "node:child_process";
+import { promisify } from "node:util";
 import { realpath, stat, readFile, mkdir, writeFile, rename, rm, readdir } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, isAbsolute, resolve, sep } from "node:path";
 import { selection as selectionSchema } from "./protocol.js";
 import { Tasks } from "./tasks.js";
 import { delegationTools } from "./tools.js";
@@ -229,6 +231,42 @@ export class Sessions {
     if (!item) throw new Error("Unknown session");
     return item;
   }
+  async pickWorkspace() {
+    if (process.platform !== "win32") throw new Error("系统目录选择目前支持 Windows；其他系统请输入目录路径");
+    if (this.pickingWorkspace) throw new Error("文件夹选择窗口已打开");
+    this.pickingWorkspace = true;
+    try {
+      const script = '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); Add-Type -AssemblyName System.Windows.Forms; $dialog = New-Object System.Windows.Forms.FolderBrowserDialog; $dialog.Description = "选择 Axiom 工作空间"; $dialog.ShowNewFolderButton = $true; try { if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Write($dialog.SelectedPath) } } finally { $dialog.Dispose() }';
+      const { stdout } = await promisify(execFile)("powershell.exe", ["-NoProfile", "-STA", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")], { windowsHide: true, timeout: 300000, encoding: "utf8" });
+      return { path: stdout.trim() || null };
+    } finally { this.pickingWorkspace = false; }
+  }
+
+  async revealWorkspace(id) {
+    if (process.platform !== "win32") throw new Error("打开资源管理器目前支持 Windows");
+    const path = await realpath(this.get(id).cwd);
+    if (!(await stat(path)).isDirectory()) throw new Error("工作空间目录不存在");
+    await new Promise((resolve, reject) => {
+      const child = spawn("explorer.exe", [path], { shell: false, detached: true, stdio: "ignore" });
+      child.once("error", reject);
+      child.once("spawn", () => { child.unref(); resolve(); });
+    });
+    return { opened: true };
+  }
+
+  async browse(id, path = "") {
+    const root = await realpath(this.get(id).cwd);
+    const target = await realpath(resolve(root, path));
+    const rel = relative(root, target);
+    if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`))
+      throw new Error("只能浏览当前工作空间");
+    const entries = (await readdir(target, { withFileTypes: true }))
+      .filter((entry) => !entry.isSymbolicLink() && (entry.isDirectory() || entry.isFile()) && ![".git", "node_modules"].includes(entry.name))
+      .map((entry) => ({ name: entry.name, directory: entry.isDirectory(), path: join(rel, entry.name).split(sep).join("/") }))
+      .sort((a, b) => Number(b.directory) - Number(a.directory) || a.name.localeCompare(b.name));
+    return { path: rel.split(sep).join("/"), entries };
+  }
+
   snapshot(id) {
     const item = this.get(id);
     return structuredClone({

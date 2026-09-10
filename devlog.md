@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-10 — 上下文添加菜单与工作空间本地操作
+- 独立 worktree MyWorkbench-composer-add-menu / feat/composer-add-menu。参考 Claude Code 桌面「＋」与 Cursor 上下文引用官方文档，移除可见的 Skill 表单行，输入框上沿增加图标菜单、搜索选择器、可移除标签；不调整模型栏/运行摘要位置。Skill 正文以 Pi 终端同款 `[skill] 名称` 默认折叠、点击展开并安全渲染，保留任务正文。
+- 文件/目录只添加工作空间路径引用，按需读取；浏览接口校验真实路径边界，排除符号链接及 .git/node_modules。新会话上方提供 Windows 原生选目录，路径后增加复制/Explorer 图标；取消选择不切换，沿用原会话/信任流程。顶栏仅 WS 状态、停止按钮改 Stop。
+- 涉及 public/{app.js,index.html,style.css}、src/{sessions,server,protocol}.js、tests/{app,session-flow,codebase-index}.test.js、README/devlog 与索引/坑库。无新增依赖；native picker 限 Windows，目录引用不冒充完整附件加载。
+- 验证：13 项自动测试通过，覆盖菜单搜索/选择/移除/发送、Skill 折叠与正文、复制/打开请求、目录越界/缺失、索引行号；独立 4348 模拟服务浏览器验证 1440/390/320px 无横向溢出、菜单与标签可操作、无页面异常。未调用付费模型，未重启现有服务；Windows 原生弹窗与 Explorer 尚未人工点击验收。
+
 ## 2026-09-10 — 输入框显式加载 Skill
 - 独立 worktree MyWorkbench-composer-skills / feat/composer-skills。输入框增加原生 Skill 下拉框，显示主代理实际可用技能及说明；选择、替换、取消直接编辑草稿中的 `/skill:名称 `，发送前即可看到要加载的技能。
 - 复用 Pi 原生命令展开，普通发送/插话/追加共用，不添加加载接口、依赖或独立选择状态；草稿原有切换保留与失败保留机制不变。只提供单技能显式加载，不把默认能力预览当作当前加载状态。

@@ -508,15 +508,40 @@ h1 {
   overflow: hidden;
   box-shadow: 0 8px 32px #0003;
 }
-.composer-skill {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 16px 8px;
-  color: var(--muted);
-  font-size: 12px;
-}
-.composer-skill select { min-width: 0; max-width: 100%; flex: 1; }
+.workspace-open { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.workspace-location { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.workspace-location #workspace-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.workspace-location .icon-button { width: 26px; height: 26px; border: 0; background: transparent; display: grid; place-items: center; }
+.workspace-location svg, .workspace-open svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; flex-shrink: 0; }
+.context-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; min-width: 0; }
+.icon-button { width: 32px; height: 32px; padding: 0; flex-shrink: 0; border-radius: 9px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); font-size: 22px; }
+.icon-button:hover { color: var(--text); border-color: #717de580; background: #717de51a; }
+#add-context { anchor-name: --context-add; }
+#context-chips { display: flex; gap: 6px; overflow-x: auto; min-width: 0; }
+.context-chip { display: flex; align-items: center; gap: 6px; padding: 5px 9px; max-width: 240px; flex-shrink: 0; border: 1px solid #717de533; background: #717de510; color: var(--text); border-radius: 8px; font-size: 12px; }
+.context-chip span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.context-chip span:last-child { color: var(--muted); }
+.context-bar svg, #context-menu svg, #context-picker svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; flex-shrink: 0; color: #a8afe8; }
+#context-menu { position: fixed; inset: auto; left: max(8px, 5vw); bottom: 260px; position-anchor: --context-add; margin: 0; width: 254px; padding: 6px; border: 1px solid #ffffff18; border-radius: 13px; background: #1c1d24; color: var(--text); box-shadow: 0 16px 48px #0006; }
+@supports (left: anchor(left)) { #context-menu { left: anchor(left); bottom: calc(anchor(top) + 8px); } }
+.context-menu-title { padding: 8px 10px; font-size: 11px; color: var(--muted); }
+#context-menu button, #context-results button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px; text-align: left; color: var(--text); background: transparent; border: 0; border-radius: 7px; }
+#context-menu button:hover, #context-results button:hover { background: #717de51a; }
+#context-menu button > span:first-of-type, #context-results button > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+#context-menu small, #context-results small { display: block; color: var(--muted); font-size: 11px; font-weight: 400; margin-top: 3px; }
+#context-picker { width: min(480px, calc(100vw - 32px)); max-height: min(620px, 80dvh); padding: 18px; border: 1px solid #ffffff18; border-radius: 16px; background: #1c1d24; color: var(--text); box-shadow: 0 24px 80px #0008; }
+#context-picker::backdrop { background: #0006; }
+#context-picker header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+#context-title { font-size: 15px; margin: 0; }
+#context-search { width: 100%; margin-bottom: 10px; }
+#context-path { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+#context-path button { padding: 5px 8px; font-size: 11px; background: #ffffff08; color: var(--text); }
+#context-results { max-height: 360px; overflow-y: auto; margin-top: 8px; }
+#context-error { font-size: 12px; color: var(--muted); }
+.skill-invocation { border: 1px solid #717de52b; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; background: #717de50b; }
+.skill-invocation summary { color: #b3bafa; font-size: 12px; cursor: pointer; }
+.skill-invocation > small { display: block; color: var(--muted); overflow-wrap: anywhere; margin: 10px 0; }
+.skill-invocation > div { font-size: 13px; overflow-wrap: anywhere; }
 #composer:focus-within {
   border-color: #717de580;
   box-shadow:

@@ -102,6 +102,15 @@ export function createServerApp(sessions) {
             case "capabilities.list":
               data = await sessions.createAgent.capabilities(request.cwd, request.trustProject);
               break;
+            case "workspace.pick":
+              data = await sessions.pickWorkspace();
+              break;
+            case "workspace.reveal":
+              data = await sessions.revealWorkspace(request.sessionId);
+              break;
+            case "workspace.browse":
+              data = await sessions.browse(request.sessionId, request.path);
+              break;
             case "models.list":
               data = sessions.createAgent.catalog();
               break;

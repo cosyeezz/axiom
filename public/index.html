@@ -26,6 +26,7 @@
             ><button class="secondary">打开工作空间</button>
           </form>
         </details>
+        <button id="open-workspace" class="secondary workspace-open"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l3 3h9v4M3 7v13h16l3-9H7l-4 9"/></svg>打开工作空间</button>
         <button id="new" class="secondary" title="使用设置中的默认新会话配置">＋ 新会话</button>
         <button id="custom-new" class="secondary" aria-haspopup="dialog" aria-controls="create-session">自定义新会话…</button
         ><label class="sr-only" for="search">搜索会话</label
@@ -52,9 +53,9 @@
           </button>
           <div class="header-title">
             <h1 id="session-title">新会话</h1>
-            <span id="workspace-label"></span>
+            <div class="workspace-location"><span id="workspace-label"></span><button id="copy-workspace" class="icon-button" title="复制工作空间路径" aria-label="复制工作空间路径"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h11v12H9ZM15 9V3H4v12h5"/></svg></button><button id="reveal-workspace" class="icon-button" title="在资源管理器中打开" aria-label="在资源管理器中打开工作空间"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l3 3h9v4M3 7v13h16l3-9H7l-4 9"/></svg></button><span id="workspace-feedback" class="sr-only" role="status"></span></div>
           </div>
-          <span id="status" role="status">连接中</span>
+          <span id="status" role="status" title="WebSocket 连接状态">连接中</span>
           <details class="menu">
             <summary aria-label="会话操作">···</summary>
             <div>
@@ -74,6 +75,22 @@
           <div class="composer-wrap">
             <button id="latest" class="secondary" hidden>回到最新消息 ↓</button>
             <div id="message-queue" aria-label="待发送队列" aria-live="polite" hidden></div>
+            <div class="context-bar">
+              <button type="button" id="add-context" class="icon-button" popovertarget="context-menu" title="添加上下文" aria-label="添加 Skill、文件或文件夹">＋</button>
+              <div id="context-chips" aria-label="待发送上下文"></div>
+            </div>
+            <div id="context-menu" popover>
+              <div class="context-menu-title">添加上下文</div>
+              <button type="button" data-context="skill"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 3 6 6 3-6 3-3 6-3-6-6-3 6-3Z"/></svg><span>Skill<small>加载技能指令</small></span><span>›</span></button>
+              <button type="button" data-context="file"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H5v18h14V8Zm0 0v5h5M8 12h8M8 16h6"/></svg><span>工作空间文件<small>引用相关代码或文档</small></span><span>›</span></button>
+              <button type="button" data-context="folder"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l3 3h9v13H3Z"/></svg><span>工作空间文件夹<small>指定任务关注的目录</small></span><span>›</span></button>
+            </div>
+            <dialog id="context-picker" aria-labelledby="context-title">
+              <header><h2 id="context-title">添加上下文</h2><button type="button" id="context-close" class="icon-button" aria-label="关闭">×</button></header>
+              <input id="context-search" type="search" placeholder="搜索当前列表…" aria-label="搜索上下文">
+              <div id="context-path"></div><div id="context-results"></div>
+              <p id="context-error" role="status"></p>
+            </dialog>
             <form id="composer">
               <label for="prompt" class="sr-only">任务内容</label
               ><textarea
@@ -83,9 +100,7 @@
                 aria-describedby="composer-help"
                 required
               ></textarea>
-              <label class="composer-skill">Skill
-                <select id="composer-skill" aria-label="本次发送加载的 Skill"></select>
-              </label>
+              <select id="composer-skill" aria-label="本次发送加载的 Skill" hidden></select>
               <div class="actions">
                 <div class="selectors">
                   <label
@@ -99,8 +114,8 @@
                     ><select id="thinking" title="思考程度"></select
                   ></label>
                 </div>
-                <button type="button" class="secondary" id="stop" hidden>
-                  停止 ■</button
+                <button type="button" class="secondary" id="stop" title="停止当前会话任务" aria-label="停止当前会话任务" hidden>
+                  Stop ■</button
                 ><button type="submit" class="secondary" id="send-steer" data-queue="steer" hidden>插话</button><button type="submit" class="secondary" id="send-followup" data-queue="followUp" hidden>追加</button><button id="send">发送</button>
               </div>
               <div id="session-runtime" class="runtime-summary" role="status" aria-live="polite"></div>
