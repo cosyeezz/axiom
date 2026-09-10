@@ -276,6 +276,7 @@ export class Sessions {
 $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 Add-Type -AssemblyName System.Windows.Forms
+[System.Windows.Forms.Application]::EnableVisualStyles()
 $owner = New-Object System.Windows.Forms.Form
 $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
 try {
@@ -288,6 +289,10 @@ try {
   $owner.Activate()
   $dialog.Description = "选择 Axiom 工作空间"
   $dialog.ShowNewFolderButton = $true
+  if ($dialog.PSObject.Properties["AutoUpgradeEnabled"]) {
+    $dialog.AutoUpgradeEnabled = $true
+    $dialog.UseDescriptionForTitle = $true
+  }
   if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {
     [Console]::Write($dialog.SelectedPath)
   }
@@ -295,7 +300,13 @@ try {
   $dialog.Dispose()
   $owner.Dispose()
 }`;
-      const { stdout } = await promisify(execFile)("powershell.exe", ["-NoProfile", "-STA", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")], { windowsHide: true, timeout: 300000, encoding: "utf8" });
+      const args = ["-NoProfile", "-STA", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")];
+      const options = { windowsHide: true, timeout: 300000, encoding: "utf8" };
+      // PowerShell 7 uses the modern Windows picker; keep legacy hosts working without installing anything.
+      const { stdout } = await promisify(execFile)("pwsh.exe", args, options).catch((error) => {
+        if (error.code !== "ENOENT") throw error;
+        return promisify(execFile)("powershell.exe", args, options);
+      });
       return { path: stdout.trim() || null };
     } catch (error) {
       if (error.killed) throw new Error("目录选择已超时，请重新点击打开工作空间");

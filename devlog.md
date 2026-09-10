@@ -1,5 +1,10 @@
 # 开发记录
 
+## 2026-09-10 — 现代原生工作空间选择框
+- worktree MyWorkbench-modern-workspace-picker / feat/modern-workspace-picker。按用户反馈替换老式树状 UI：优先调用本机 PowerShell 7，启用 VisualStyles、AutoUpgradeEnabled 和标题；仅未安装（ENOENT）时回退 Windows PowerShell，其他错误不重复弹窗。不新增依赖，保留置顶 owner、取消和超时语义。
+- 涉及 src/sessions.js、tests/workspace-picker.test.js、README.md、devlog.md、codebase-map 坑库与索引。
+- 验证：全量 `npm test` 50 项通过；本机 PowerShell 7.6.6；Windows UI Automation 实测现代选择框、地址栏、搜索框和选择文件夹按钮可见，测试窗口已关闭；测试覆盖新版优先、缺失回退以及非 ENOENT 错误不回退。
+
 ## 2026-09-10 — 修复工作空间选择窗口不可见
 - worktree MyWorkbench-workspace-picker / feat/workspace-picker。后台 PowerShell 的无 owner 文件夹选择框可能隐藏或落在浏览器后面，未完成的请求随后被误导性提示「窗口已打开」。为原生选择框创建并激活置顶 owner，完成后释放；保留互斥与 5 分钟超时，补充明确占用/超时错误，移除不再存在的手输路径建议。
 - 涉及 src/sessions.js、tests/workspace-picker.test.js、README.md、devlog.md、codebase-map 索引与坑库。无新增依赖，不改会话切换流程。
