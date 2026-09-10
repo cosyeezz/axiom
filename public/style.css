@@ -171,8 +171,8 @@ summary {
 }
 .sidebar-footer {
   color: var(--muted);
-  font-size: 12px;
-  padding: 8px;
+  text-align: left;
+  padding: 10px 12px;
 }
 main {
   display: flex;
@@ -460,24 +460,58 @@ textarea {
   background: transparent;
   line-height: 1.6;
 }
-.agent-settings {
-  margin: 0 16px 8px;
-  font-size: 12px;
+#settings {
+  width: min(600px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 24px 80px #0008;
+}
+#settings::backdrop {
+  background: #0009;
+}
+#settings header {
+  justify-content: space-between;
+}
+#settings h2 {
+  font-size: 18px;
+  margin: 0;
+}
+.settings-body {
+  padding: 24px;
+}
+.settings-body h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.settings-body p {
   color: var(--muted);
+  font-size: 12px;
+  margin: 8px 0 16px;
 }
-.agent-settings summary {
-  padding: 8px 0;
+.settings-body .settings-scope {
+  margin-top: 0;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
 }
-.agent-settings label {
-  display: block;
-  margin-bottom: 4px;
+#settings .settings-selectors {
+  flex-wrap: wrap;
+  overflow: visible;
 }
-.agent-settings select {
-  width: 100%;
-  min-height: 40px;
+#settings .selectors label {
+  max-width: 100%;
 }
-.agent-settings p {
-  margin: 8px 0;
+#settings .selectors select {
+  max-width: 100%;
+}
+#settings-feedback {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-bottom: 0;
 }
 .actions {
   display: flex;

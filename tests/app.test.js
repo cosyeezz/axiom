@@ -20,6 +20,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
   });
   const { window } = dom;
   const $ = (id) => window.document.getElementById(id);
+  window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  window.HTMLDialogElement.prototype.close = function () { this.open = false; };
   const sockets = [];
   const frames = new Map();
   let frameId = 0;
@@ -70,6 +72,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     },
   ];
   let failList = false;
+  let failConfig = false;
   class Socket {
     static OPEN = 1;
     readyState = 0;
@@ -99,6 +102,10 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
             ];
             break;
           case "session.configure":
+            if (failConfig) {
+              this.receive({ type: "response", id: req.id, ok: false, error: "configuration unavailable" });
+              return;
+            }
             data = { ...config, subagentModel: req.subagentModel };
             states.find((s) => s.sessionId === req.sessionId).config = data;
             break;
@@ -148,12 +155,37 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("workspace").hidden, false);
     assert.equal($("send").disabled, true);
     assert.equal($("subagent-model").value, "");
-    $("subagent-model").value = "other/child";
-    $("subagent-model").dispatchEvent(new window.Event("change"));
+    assert.equal($("subagent-model").disabled, true);
+    assert.equal($("composer").contains($("subagent-model")), false);
+    $("open-settings").click();
+    assert.equal($("settings").open, true);
+    assert.equal($("settings-session").textContent, "a");
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape" }));
+    assert.equal($("sidebar-backdrop").hidden, true, "settings Escape must not toggle sidebar");
+    $("subagent-provider").value = "other";
+    $("subagent-provider").dispatchEvent(new window.Event("change"));
     assert.equal($("subagent-model").disabled, true);
     await settle();
     assert.equal(states[0].config.subagentModel, "other/child");
     assert.equal($("model").value, "test/model");
+    assert.equal($("subagent-model").options.length, 1);
+    assert.equal($("subagent-model").disabled, false);
+    failConfig = true;
+    $("subagent-provider").value = "";
+    $("subagent-provider").dispatchEvent(new window.Event("change"));
+    await settle();
+    assert.equal($("subagent-provider").value, "other");
+    assert.match($("settings-feedback").textContent, /保存失败/);
+    failConfig = false;
+    $("subagent-provider").value = "";
+    $("subagent-provider").dispatchEvent(new window.Event("change"));
+    await settle();
+    assert.equal(states[0].config.subagentModel, null);
+    assert.equal($("subagent-model").disabled, true);
+    $("subagent-provider").value = "other";
+    $("subagent-provider").dispatchEvent(new window.Event("change"));
+    await settle();
+    $("settings").close();
     input("first draft\nsecond line");
     assert.equal($("send").disabled, false);
     window.document.querySelectorAll(".session-item")[1].click();

@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-09 21:00 — 统一设置入口与子代理配置迁移
+- 在独立 worktree MyWorkbench-agent-settings（feat/agent-settings）实施；删除侧栏底部运行时标语，改为「设置」入口，采用常见的设置弹窗与分区布局，后续设置继续加入此处，不创建空白分类或插件框架。
+- 将子代理配置从输入区迁入设置，复用主代理的供应商 → 模型下拉样式，保留默认跟随主代理、当前会话作用范围和自动保存；未增加独立思考配置，继续沿用既有继承规则。
+- 使用原生 dialog 处理焦点与 Escape，避免关闭设置时误停任务；支持关闭按钮、遮罩关闭、失败反馈及回滚、忙碌/离线禁用。
+- 验证：npm test 全部 7 项通过，补充供应商筛选、跟随恢复、失败回滚和入口迁移检查；真实浏览器验证桌面打开、关闭焦点与 Escape、390px 手机宽度无横向溢出，未调用付费模型。
+- 涉及文件：public/{index.html,app.js,style.css}、tests/app.test.js、README.md、devlog.md。
+
 ## 2026-09-09 — 页面子 Agent 模型配置
 - 在独立 worktree F:/worktrees/MyWorkbench-subagent-model（feat/subagent-model）实现，复用模型目录与 session.configure，不新增依赖或配置服务。
 - 输入框下新增原生折叠配置区：子 Agent 可选择独立模型或默认跟随主 Agent；按会话内存保存，快照恢复，忙碌/断线时禁用选择。

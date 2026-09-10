@@ -30,7 +30,7 @@
         ><label class="sr-only" for="search">搜索会话</label
         ><input id="search" type="search" placeholder="搜索会话…" />
         <nav id="sessions" aria-label="会话历史"></nav>
-        <div class="sidebar-footer">本地执行 · Pi Runtime</div>
+        <button id="open-settings" class="secondary sidebar-footer" aria-haspopup="dialog" aria-controls="settings"><span aria-hidden="true">⚙</span> 设置</button>
       </aside>
       <button
         id="sidebar-backdrop"
@@ -81,12 +81,6 @@
                 aria-describedby="composer-help"
                 required
               ></textarea>
-              <details class="agent-settings">
-                <summary>子 Agent 配置</summary>
-                <label for="subagent-model">子 Agent 模型</label>
-                <select id="subagent-model" aria-describedby="subagent-help"></select>
-                <p id="subagent-help">仅影响当前会话之后启动的子任务；思考程度沿用主 Agent，并按模型支持调整。</p>
-              </details>
               <div class="actions">
                 <div class="selectors">
                   <label
@@ -114,5 +108,24 @@
         <p id="error" role="alert"></p>
       </main>
     </div>
+    <dialog id="settings" aria-labelledby="settings-title">
+      <header>
+        <h2 id="settings-title">设置</h2>
+        <form method="dialog"><button class="secondary" aria-label="关闭设置" autofocus>✕</button></form>
+      </header>
+      <div class="settings-body">
+        <p class="settings-scope">当前会话 · <span id="settings-session"></span></p>
+        <section aria-labelledby="subagent-title">
+          <h3 id="subagent-title">子代理</h3>
+          <p id="subagent-help">为协作任务选择模型。更改自动保存，仅影响当前会话之后启动的子任务。</p>
+          <div class="selectors settings-selectors">
+            <label><span class="sr-only">子代理供应商</span><select id="subagent-provider" title="子代理供应商" aria-describedby="subagent-help"></select></label>
+            <label><span class="sr-only">子代理模型</span><select id="subagent-model" title="子代理模型"></select></label>
+          </div>
+          <p>思考程度沿用主代理，并按所选模型支持的等级调整。</p>
+        </section>
+        <p id="settings-feedback" role="status" aria-live="polite"></p>
+      </div>
+    </dialog>
   </body>
 </html>

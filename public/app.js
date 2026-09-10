@@ -78,8 +78,12 @@ function request(type, data = {}) {
 }
 function controls() {
   const unavailable = !connected || changing;
-  for (const id of ["provider", "model", "thinking", "subagent-model"])
+  for (const id of ["provider", "model", "thinking", "subagent-provider", "subagent-model"])
     $(id).disabled = busy || unavailable;
+  $("subagent-model").disabled ||= !$("subagent-provider").value;
+  $("settings-feedback").textContent = unavailable
+    ? (changing ? "正在保存或切换配置…" : "连接断开，暂时无法修改配置")
+    : busy ? "任务执行中，完成后可修改配置" : "更改自动保存";
   $("send").disabled = busy || unavailable || !$("prompt").value.trim();
   $("stop").disabled = !busy || unavailable;
   $("stop").hidden = !busy;
@@ -111,13 +115,24 @@ function fillModels() {
     config?.model,
   );
 }
+function fillSubagentModels() {
+  const provider = $("subagent-provider").value;
+  options(
+    $("subagent-model"),
+    provider
+      ? models.filter((m) => m.provider === provider).map((m) => [m.key, m.name || m.id])
+      : [["", "跟随主代理模型"]],
+    config?.subagentModel || "",
+  );
+}
 function applyConfig(value) {
   config = value;
   options(
-    $("subagent-model"),
-    [["", "跟随主 Agent"], ...models.map((m) => [m.key, `${m.provider} / ${m.name || m.id}`])],
-    value.subagentModel || "",
+    $("subagent-provider"),
+    [["", "跟随主代理"], ...[...new Set(models.map((m) => m.provider))].map((p) => [p, p])],
+    models.find((m) => m.key === value.subagentModel)?.provider || "",
   );
+  fillSubagentModels();
   $("provider").value = models.find((m) => m.key === value.model)?.provider;
   fillModels();
   options(
@@ -138,6 +153,7 @@ function applyConfig(value) {
   );
 }
 async function configure(thinking) {
+  let failure;
   changing = true;
   controls();
   $("error").textContent = "";
@@ -152,12 +168,25 @@ async function configure(thinking) {
     );
   } catch (e) {
     error(e);
+    failure = e.message || String(e);
     if (config) applyConfig(config);
   } finally {
     changing = false;
     controls();
+    if (failure) $("settings-feedback").textContent = `保存失败：${failure}`;
   }
 }
+$("open-settings").onclick = () => {
+  $("settings-session").textContent = $("session-title").textContent;
+  controls();
+  $("settings").showModal();
+};
+$("settings").onclick = (e) => {
+  if (e.target !== $("settings")) return;
+  const rect = $("settings").getBoundingClientRect();
+  if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom)
+    $("settings").close();
+};
 function card(title, task) {
   $("output").querySelector(".empty")?.remove();
   const node = document.createElement("article");
@@ -412,6 +441,10 @@ $("provider").onchange = () => {
 $("model").onchange = () => {
   void configure();
 };
+$("subagent-provider").onchange = () => {
+  fillSubagentModels();
+  void configure();
+};
 $("subagent-model").onchange = () => {
   void configure();
 };
@@ -463,7 +496,7 @@ $("prompt").onkeydown = (e) => {
   }
 };
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" || e.isComposing) return;
+  if (e.key !== "Escape" || e.isComposing || $("settings").open) return;
   if (
     mobile.matches &&
     $("toggle-sidebar").getAttribute("aria-expanded") === "true"
