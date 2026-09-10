@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/10 08:03:29）
+# Axiom 多级代码索引（生成于 2026/9/10 08:25:52）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -18,7 +18,7 @@
 | src/pi.js | 252 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, queueStateOf, withdrawQueue, createPiFactory |
 | src/protocol.js | 134 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/server.js | 208 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | assets, createServerApp |
-| src/sessions.js | 450 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | Sessions |
+| src/sessions.js | 476 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | Sessions |
 | src/tasks.js | 108 | Tasks：子任务（委托）生命周期 | Tasks |
 | src/tools.js | 73 | delegationTools：注册给 pi 的委托/读取工具定义（zod 入参） | delegateInput, readInput, result, delegationTools |
 | tests/app.test.js | 1081 | node --test 测试（npm test） | - |
@@ -39,6 +39,7 @@
 | tests/smoke.js | 29 | node --test 测试（npm test） | sessions |
 | tests/stream-renderer.test.js | 91 | node --test 测试（npm test） | - |
 | tests/tasks.test.js | 87 | node --test 测试（npm test） | fixture |
+| tests/workspace-picker.test.js | 46 | node --test 测试（npm test） | - |
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
@@ -293,7 +294,7 @@
 | assets | const | 7 |
 | createServerApp | function | 24 |
 
-### src/sessions.js（450 行） — Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化
+### src/sessions.js（476 行） — Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -312,15 +313,15 @@
 | create | method | 134 |
 | get | method | 264 |
 | pickWorkspace | method | 269 |
-| revealWorkspace | method | 280 |
-| browse | method | 292 |
-| snapshot | method | 305 |
-| subscribe | method | 331 |
-| configure | method | 337 |
-| prompt | method | 370 |
-| cancel | method | 416 |
-| remove | method | 433 |
-| close | method | 446 |
+| revealWorkspace | method | 306 |
+| browse | method | 318 |
+| snapshot | method | 331 |
+| subscribe | method | 357 |
+| configure | method | 363 |
+| prompt | method | 396 |
+| cancel | method | 442 |
+| remove | method | 459 |
+| close | method | 472 |
 
 ### src/tasks.js（108 行） — Tasks：子任务（委托）生命周期
 
@@ -419,6 +420,12 @@
 | fixture | function | 6 |
 | assert | method | 67 |
 | assert | method | 85 |
+
+### tests/workspace-picker.test.js（46 行） — node --test 测试（npm test）
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| syncBuiltinESMExports | method | 23 |
 
 ## L3 横切常量（跨模块定位入口）
 

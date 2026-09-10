@@ -267,13 +267,39 @@ export class Sessions {
     return item;
   }
   async pickWorkspace() {
-    if (process.platform !== "win32") throw new Error("系统目录选择目前支持 Windows；其他系统请输入目录路径");
-    if (this.pickingWorkspace) throw new Error("文件夹选择窗口已打开");
+    if (process.platform !== "win32") throw new Error("系统目录选择目前仅支持 Windows");
+    if (this.pickingWorkspace) throw new Error("上一次目录选择尚未结束，请完成或取消选择；最多等待 5 分钟后可重试");
     this.pickingWorkspace = true;
     try {
-      const script = '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); Add-Type -AssemblyName System.Windows.Forms; $dialog = New-Object System.Windows.Forms.FolderBrowserDialog; $dialog.Description = "选择 Axiom 工作空间"; $dialog.ShowNewFolderButton = $true; try { if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Write($dialog.SelectedPath) } } finally { $dialog.Dispose() }';
+      // Give the hidden PowerShell host a visible, topmost owner for the modal picker.
+      const script = `
+$ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+Add-Type -AssemblyName System.Windows.Forms
+$owner = New-Object System.Windows.Forms.Form
+$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+try {
+  $owner.Text = "Axiom 工作空间"
+  $owner.ShowInTaskbar = $false
+  $owner.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+  $owner.Opacity = 0
+  $owner.TopMost = $true
+  $owner.Show()
+  $owner.Activate()
+  $dialog.Description = "选择 Axiom 工作空间"
+  $dialog.ShowNewFolderButton = $true
+  if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {
+    [Console]::Write($dialog.SelectedPath)
+  }
+} finally {
+  $dialog.Dispose()
+  $owner.Dispose()
+}`;
       const { stdout } = await promisify(execFile)("powershell.exe", ["-NoProfile", "-STA", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")], { windowsHide: true, timeout: 300000, encoding: "utf8" });
       return { path: stdout.trim() || null };
+    } catch (error) {
+      if (error.killed) throw new Error("目录选择已超时，请重新点击打开工作空间");
+      throw error;
     } finally { this.pickingWorkspace = false; }
   }
 

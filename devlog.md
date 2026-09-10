@@ -1,5 +1,10 @@
 # 开发记录
 
+## 2026-09-10 — 修复工作空间选择窗口不可见
+- worktree MyWorkbench-workspace-picker / feat/workspace-picker。后台 PowerShell 的无 owner 文件夹选择框可能隐藏或落在浏览器后面，未完成的请求随后被误导性提示「窗口已打开」。为原生选择框创建并激活置顶 owner，完成后释放；保留互斥与 5 分钟超时，补充明确占用/超时错误，移除不再存在的手输路径建议。
+- 涉及 src/sessions.js、tests/workspace-picker.test.js、README.md、devlog.md、codebase-map 索引与坑库。无新增依赖，不改会话切换流程。
+- 验证：全量 `npm test` 50 项通过；Windows UI Automation 确认真实选择框和取消/确定按钮 IsOffscreen=false（测试窗口已关闭）；回归覆盖中文路径、取消、并发拒绝、超时及失败释放锁。首次原生探测命令误匹配自身并终止，已修正排除自身后重新验证。
+
 ## 2026-09-10 — 守护进程自动重生
 - worktree MyWorkbench-supervisor-respawn / feat/supervisor-respawn。worker 意外退出后 supervisor 自动重启（指数退避 1s→10s，稳定运行 30s 重置计数），端口被占时后台重试、释放后接管；优雅停止/快速重建路径不受影响，终端 Ctrl+C 仍整体退出。
 - 涉及 scripts/service.mjs、tests/service.test.js。验证：真实子进程测试 49 项全部通过。
