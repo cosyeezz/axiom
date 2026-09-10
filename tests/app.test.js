@@ -242,6 +242,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("send").textContent, "Send");
     assert.equal(window.document.querySelector("header .menu"), null);
     const firstActions = $("sessions").querySelector(".session-actions");
+    assert.equal($("sessions").querySelector(".session-group").textContent, "待处理");
     assert.equal(firstActions.children[0].title, "完成并隐藏");
     assert.equal(firstActions.children[1].className, "session-rename");
     assert.equal(firstActions.children[0].querySelector("path").getAttribute("d"), "M5 12l4 4L19 6");

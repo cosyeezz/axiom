@@ -1,15 +1,15 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/10 09:48:50）
+# Axiom 多级代码索引（生成于 2026/9/10 09:52:54）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| public/app.js | 1614 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | $, ws, allSessions, views |
+| public/app.js | 1620 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | $, ws, allSessions, views |
 | public/index.html | 236 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown.js | 37 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, renderMarkdown |
 | public/stream-renderer.js | 51 | 流式增量渲染状态机 | createStreamRenderer |
-| public/style.css | 944 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 945 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | scripts/autostart.mjs | 133 | Windows/macOS/Linux 当前用户登录自动启动安装/卸载 | run, projectDir, serviceEntry, label |
 | scripts/service.mjs | 96 | 服务守护：IPC 快速/重建重启与安装构建失败反馈 | root, output, run, rebuild |
 | src/capabilities.js | 114 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
@@ -21,7 +21,7 @@
 | src/sessions.js | 489 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | Sessions |
 | src/tasks.js | 108 | Tasks：子任务（委托）生命周期 | Tasks |
 | src/tools.js | 73 | delegationTools：注册给 pi 的委托/读取工具定义（zod 入参） | delegateInput, readInput, result, delegationTools |
-| tests/app.test.js | 1196 | node --test 测试（npm test） | - |
+| tests/app.test.js | 1197 | node --test 测试（npm test） | - |
 | tests/autostart.test.js | 60 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
 | tests/capabilities.test.js | 78 | node --test 测试（npm test） | - |
@@ -43,7 +43,7 @@
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
-### public/app.js（1614 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
+### public/app.js（1620 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -139,34 +139,34 @@
 | saveView | method | 1059 |
 | controls | method | 1062 |
 | renderSessions | function | 1074 |
-| sessionAction | const | 1155 |
-| openSessionAction | function | 1156 |
-| contextIcon | function | 1197 |
-| renderContextChips | function | 1200 |
-| renderContextResults | function | 1218 |
-| selectContext | function | 1247 |
-| browseContext | function | 1253 |
-| resizePrompt | method | 1275 |
-| controls | method | 1276 |
-| closeCompletion | function | 1279 |
-| highlightCompletion | function | 1287 |
-| chooseCompletion | function | 1296 |
-| closeCompletion | method | 1306 |
-| updateCompletion | function | 1309 |
-| closeCompletion | method | 1310 |
-| resizePrompt | method | 1363 |
-| controls | method | 1364 |
-| switchSession | method | 1402 |
-| creationLoad | const | 1404 |
-| createAgentPicker | function | 1405 |
-| options | method | 1427 |
-| fill | method | 1435 |
-| fillThinking | method | 1443 |
-| options | method | 1445 |
-| loadCreation | function | 1491 |
-| openCreation | function | 1525 |
-| updateDefaultsPreview | function | 1542 |
-| updateDefaultsPreview | method | 1562 |
+| sessionAction | const | 1161 |
+| openSessionAction | function | 1162 |
+| contextIcon | function | 1203 |
+| renderContextChips | function | 1206 |
+| renderContextResults | function | 1224 |
+| selectContext | function | 1253 |
+| browseContext | function | 1259 |
+| resizePrompt | method | 1281 |
+| controls | method | 1282 |
+| closeCompletion | function | 1285 |
+| highlightCompletion | function | 1293 |
+| chooseCompletion | function | 1302 |
+| closeCompletion | method | 1312 |
+| updateCompletion | function | 1315 |
+| closeCompletion | method | 1316 |
+| resizePrompt | method | 1369 |
+| controls | method | 1370 |
+| switchSession | method | 1408 |
+| creationLoad | const | 1410 |
+| createAgentPicker | function | 1411 |
+| options | method | 1433 |
+| fill | method | 1441 |
+| fillThinking | method | 1449 |
+| options | method | 1451 |
+| loadCreation | function | 1497 |
+| openCreation | function | 1531 |
+| updateDefaultsPreview | function | 1548 |
+| updateDefaultsPreview | method | 1568 |
 
 ### public/markdown.js（37 行） — marked + DOMPurify 渲染（XSS 边界）
 

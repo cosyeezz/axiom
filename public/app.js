@@ -1143,6 +1143,12 @@ function renderSessions() {
   }
   $("hidden-session-summary").textContent = `已完成`;
   $("hidden-sessions").replaceChildren(hiddenFragment);
+  if (fragment.childNodes.length) {
+    const pendingLabel = document.createElement("p");
+    pendingLabel.className = "session-group";
+    pendingLabel.textContent = "待处理";
+    fragment.insertBefore(pendingLabel, fragment.firstChild);
+  }
   if (!fragment.childNodes.length) {
     const empty = document.createElement("p");
     empty.className = "session-group";

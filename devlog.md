@@ -1,3 +1,9 @@
+# 开发记录
+
+## 2026-09-10 — 已完成区上移与待处理分组
+- worktree MyWorkbench-done-placement / feat/done-placement。按用户要求，「已完成」区域从侧栏底部固定改为紧贴会话列表下方（列表空间不足时自动压缩滚动，「设置」仍钉在底部），并在列表顶部增加「待处理」分组标题。
+- 涉及 public/{app.js,style.css}、tests/app.test.js、README.md、devlog.md 与 codebase-map 索引。
+
 ## 2026-09-10 — 已完成区去掉拖放提示文案
 - worktree MyWorkbench-done-label / feat/done-label。按用户要求，折叠区标题精简为「已完成」，去掉「· 拖到这里」提示；拖放行为不变。涉及 public/{app.js,index.html}、devlog.md。
 - 验证：npm test 全量 51 项通过（测试未断言该文案）。

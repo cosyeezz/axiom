@@ -109,9 +109,9 @@ summary {
   color: #d0d6e0;
 }
 #sessions {
+  flex: 0 1 auto;
+  min-height: 60px;
   overflow: auto;
-  flex: 1;
-  min-height: 0;
 }
 #hidden-session-area { flex: 0 1 auto; min-height: 40px; max-height: 35%; overflow: auto; border-top: 1px solid var(--line); }
 #hidden-session-summary { padding: 12px 8px; color: var(--muted); font-size: 12px; }
@@ -161,6 +161,7 @@ summary {
   font-size: 11px;
 }
 .sidebar-footer {
+  margin-top: auto;
   color: var(--muted);
   text-align: left;
   padding: 10px 12px;
