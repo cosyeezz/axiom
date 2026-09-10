@@ -78,7 +78,7 @@ function request(type, data = {}) {
 }
 function controls() {
   const unavailable = !connected || changing;
-  for (const id of ["provider", "model", "thinking"])
+  for (const id of ["provider", "model", "thinking", "subagent-model"])
     $(id).disabled = busy || unavailable;
   $("send").disabled = busy || unavailable || !$("prompt").value.trim();
   $("stop").disabled = !busy || unavailable;
@@ -113,6 +113,11 @@ function fillModels() {
 }
 function applyConfig(value) {
   config = value;
+  options(
+    $("subagent-model"),
+    [["", "跟随主 Agent"], ...models.map((m) => [m.key, `${m.provider} / ${m.name || m.id}`])],
+    value.subagentModel || "",
+  );
   $("provider").value = models.find((m) => m.key === value.model)?.provider;
   fillModels();
   options(
@@ -141,6 +146,7 @@ async function configure(thinking) {
       await request("session.configure", {
         sessionId,
         model: $("model").value,
+        subagentModel: $("subagent-model").value || null,
         ...(thinking ? { thinking } : {}),
       }),
     );
@@ -404,6 +410,9 @@ $("provider").onchange = () => {
   void configure();
 };
 $("model").onchange = () => {
+  void configure();
+};
+$("subagent-model").onchange = () => {
   void configure();
 };
 $("thinking").onchange = () => {

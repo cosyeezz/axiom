@@ -81,6 +81,12 @@
                 aria-describedby="composer-help"
                 required
               ></textarea>
+              <details class="agent-settings">
+                <summary>子 Agent 配置</summary>
+                <label for="subagent-model">子 Agent 模型</label>
+                <select id="subagent-model" aria-describedby="subagent-help"></select>
+                <p id="subagent-help">仅影响当前会话之后启动的子任务；思考程度沿用主 Agent，并按模型支持调整。</p>
+              </details>
               <div class="actions">
                 <div class="selectors">
                   <label

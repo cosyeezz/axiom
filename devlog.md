@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-09 — 页面子 Agent 模型配置
+- 在独立 worktree F:/worktrees/MyWorkbench-subagent-model（feat/subagent-model）实现，复用模型目录与 session.configure，不新增依赖或配置服务。
+- 输入框下新增原生折叠配置区：子 Agent 可选择独立模型或默认跟随主 Agent；按会话内存保存，快照恢复，忙碌/断线时禁用选择。
+- 委派创建统一应用模型覆盖，保留工作目录和思考继承；配置只影响新子任务，未知模型在主 Agent 配置变更前拒绝。省略覆盖保留旧值，null 恢复继承。
+- 验证：npm test 7 项通过，覆盖独立模型、恢复继承、未知模型拒绝、会话隔离、协议校验、页面选择提交及切换/重连恢复；未进行付费模型调用。依赖通过临时 node_modules junction 复用本机安装。
+- 涉及文件：src/{sessions,protocol}.js、public/{app.js,index.html,style.css}、tests/{config,app}.test.js、README.md、devlog.md。
+
 ## 2026-09-09 — Axiom 独立服务
 
 - 按用户要求在当前空间新建独立项目，不接入 MyWorkbench，不改其依赖、代码和文档。

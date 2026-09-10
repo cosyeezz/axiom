@@ -17,6 +17,7 @@ export const command = z.discriminatedUnion("type", [
       type: z.literal("session.configure"),
       sessionId: id,
       model: id,
+      subagentModel: id.nullable().optional(),
       thinking: z
         .enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
         .optional(),

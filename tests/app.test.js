@@ -93,7 +93,14 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
         let data;
         switch (req.type) {
           case "models.list":
-            data = [{ key: "test/model", provider: "test", name: "Model" }];
+            data = [
+              { key: "test/model", provider: "test", name: "Model" },
+              { key: "other/child", provider: "other", name: "Child" },
+            ];
+            break;
+          case "session.configure":
+            data = { ...config, subagentModel: req.subagentModel };
+            states.find((s) => s.sessionId === req.sessionId).config = data;
             break;
           case "sessions.list":
             if (failList) {
@@ -140,6 +147,13 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     paint();
     assert.equal($("workspace").hidden, false);
     assert.equal($("send").disabled, true);
+    assert.equal($("subagent-model").value, "");
+    $("subagent-model").value = "other/child";
+    $("subagent-model").dispatchEvent(new window.Event("change"));
+    assert.equal($("subagent-model").disabled, true);
+    await settle();
+    assert.equal(states[0].config.subagentModel, "other/child");
+    assert.equal($("model").value, "test/model");
     input("first draft\nsecond line");
     assert.equal($("send").disabled, false);
     window.document.querySelectorAll(".session-item")[1].click();
@@ -150,6 +164,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       "message user",
       "restored tasks follow their parent prompt",
     );
+    assert.equal($("subagent-model").value, "");
     const historicalTask = window.document.querySelector(".task-card");
     assert.equal(historicalTask.querySelector(".markdown").textContent, "");
     historicalTask.open = true;
@@ -164,19 +179,23 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     await settle();
     paint();
     assert.equal($("prompt").value, "first draft\nsecond line");
+    assert.equal($("subagent-model").value, "other/child");
 
     sockets[1].close();
     assert.equal($("workspace").hidden, false);
     assert.equal($("send").disabled, true);
+    assert.equal($("subagent-model").disabled, true);
     input("edited offline");
     $("connect").click();
     sockets[2].open();
     await settle();
     paint();
     assert.equal($("prompt").value, "edited offline");
+    assert.equal($("subagent-model").value, "other/child");
     input("  accepted task \n");
     failList = true;
     $("composer").requestSubmit();
+    assert.equal($("subagent-model").disabled, true);
     await settle();
     assert.equal(
       $("prompt").value,

@@ -41,6 +41,7 @@ export class Sessions {
       messages: [],
       live: {},
       tools: {},
+      subagentModel: null,
     };
     item.emit = (event) => {
       const agentId = event.agentId ?? "main";
@@ -90,7 +91,12 @@ export class Sessions {
       for (const listener of item.listeners) listener(envelope);
     };
     item.tasks = new Tasks(
-      () => this.createAgent([], { ...item.agent.config?.(), cwd }),
+      () =>
+        this.createAgent([], {
+          ...item.agent.config?.(),
+          ...(item.subagentModel ? { model: item.subagentModel } : {}),
+          cwd,
+        }),
       item.emit,
     );
     item.agent = await this.createAgent(delegationTools(item.tasks), { cwd });
@@ -114,7 +120,7 @@ export class Sessions {
       title: item.title,
       seq: item.seq,
       status: item.status,
-      config: item.agent.config?.(),
+      config: { ...item.agent.config?.(), subagentModel: item.subagentModel },
       runId: item.runId,
       messages: item.messages,
       live: item.live,
@@ -131,9 +137,17 @@ export class Sessions {
   async configure(id, selection) {
     const item = this.get(id);
     if (item.status !== "idle") throw new Error("Session is busy");
+    const { subagentModel = item.subagentModel, model, thinking } = selection;
+    if (
+      subagentModel !== null &&
+      !this.createAgent.catalog().some((m) => m.key === subagentModel)
+    )
+      throw new Error("Unknown subagent model");
     item.status = "configuring";
     try {
-      return await item.agent.configure(selection);
+      const config = await item.agent.configure({ model, thinking });
+      item.subagentModel = subagentModel;
+      return { ...config, subagentModel };
     } finally {
       item.status = "idle";
     }
