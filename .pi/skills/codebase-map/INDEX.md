@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/10 02:26:37）
+# Axiom 多级代码索引（生成于 2026/9/10 02:33:49）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -9,7 +9,7 @@
 | public/index.html | 188 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown.js | 37 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, renderMarkdown |
 | public/stream-renderer.js | 51 | 流式增量渲染状态机 | createStreamRenderer |
-| public/style.css | 843 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 839 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | src/capabilities.js | 114 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/main.js | 28 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, factory, sessions |
 | src/pi.js | 160 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, createPiFactory |

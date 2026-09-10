@@ -157,3 +157,8 @@
 - 原因：需要快速定位项目结构与按层排障，且索引和知识随代码改动同步成长，不腐烂。
 - 涉及文件：axiom/.pi/skills/codebase-map/{SKILL.md,INDEX.md,knowledge.md,scripts/reindex.mjs}、axiom/tests/codebase-index.test.js、axiom/README.md、axiom/devlog.md。
 - 分支：feat/axiom-project-skill（worktree F:/worktrees/MyWorkbench-axiom-project-skill）。
+
+## 2026-09-10 会话左右留白调整
+
+- 按需求将主会话消息区和输入区左右留白统一为可用宽度的 5%，移除 880px 最大宽度；手机断点同步调整，保留原有上下间距和安全区。子任务浮层不变。
+- 涉及文件：`public/style.css`、`README.md`、`.pi/skills/codebase-map/INDEX.md`、`devlog.md`。采用纯 CSS，不新增依赖或配置。

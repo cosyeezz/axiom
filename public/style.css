@@ -269,9 +269,7 @@ h1 {
   overscroll-behavior: contain;
 }
 #output {
-  max-width: 880px;
-  margin: auto;
-  padding: 40px 32px 24px;
+  padding: 40px 5% 24px;
 }
 .message {
   margin-bottom: 32px;
@@ -490,10 +488,8 @@ h1 {
 .composer-wrap {
   flex-shrink: 0;
   position: relative;
-  padding: 12px 32px 16px;
+  padding: 12px 5% 16px;
   width: 100%;
-  max-width: 880px;
-  margin: 0 auto;
 }
 #composer {
   background: var(--surface);
@@ -805,14 +801,14 @@ textarea {
     display: none;
   }
   #output {
-    padding: 24px 16px;
+    padding: 24px 5%;
   }
   .task-body { padding: 16px; }
   .task-top .runtime-summary { padding: 0 12px 12px; }
   .task-navigation { padding: 0 12px 12px; }
   .task-navigation button { min-height: 40px; }
   .composer-wrap {
-    padding: 8px 12px max(12px, env(safe-area-inset-bottom));
+    padding: 8px 5% max(12px, env(safe-area-inset-bottom));
   }
   textarea {
     font-size: 16px;
