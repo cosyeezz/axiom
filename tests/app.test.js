@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
+import { marked } from "marked";
+import createPurify from "dompurify";
 import { createStreamRenderer } from "../public/stream-renderer.js";
 
 // Exercise the real page handlers without a live model or an extra test framework.
@@ -21,7 +23,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
   const { window } = dom;
   const $ = (id) => window.document.getElementById(id);
   window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
-  window.HTMLDialogElement.prototype.close = function () { this.open = false; };
+  window.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new window.Event("close")); };
   const sockets = [];
   const frames = new Map();
   let frameId = 0;
@@ -37,8 +39,13 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
   };
   const media = { matches: true };
   window.matchMedia = () => media;
+  const markdownSource = (await readFile(new URL("../public/markdown.js", import.meta.url), "utf8"))
+    .replace(/^import .*;\r?\n/gm, "").replace("export function", "function");
+  const renderMarkdown = new Function("marked", "DOMPurify", `${markdownSource}; return renderMarkdown;`)(marked, createPurify(window));
+  let renders = 0;
   window.renderMarkdown = (node, text) => {
-    node.textContent = text;
+    renders++;
+    renderMarkdown(node, text);
   };
   window.createStreamRenderer = (render, after) =>
     createStreamRenderer(
@@ -81,6 +88,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
   let failCreation = false;
   let failList = false;
   let failConfig = false;
+  const requests = [];
   class Socket {
     static OPEN = 1;
     readyState = 0;
@@ -100,6 +108,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     }
     send(raw) {
       const req = JSON.parse(raw);
+      requests.push(req);
       queueMicrotask(() => {
         let data;
         switch (req.type) {
@@ -187,7 +196,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("workspace").hidden, false);
     assert.equal($("send").disabled, true);
     assert.equal($("send").textContent, "发送");
-    assert.match($("session-runtime").textContent, /缓存命中 暂无数据.*上下文 暂无数据.*test · model · 思考 off/);
+    assert.match($("session-runtime").textContent, /缓存命中 暂无数据.*上下文 暂无数据.*test · model · off/);
+    assert.equal($("thinking").selectedOptions[0].textContent, "off");
+    assert.equal(window.runtimeSummary({ model: "zai-coding-cn/glm-5.3-flash", thinking: "max" })[2], "zai-coding-cn · glm-5.3-flash · max");
     assert.match(window.runtimeSummary({ usage: { input: 100, cacheRead: 0, cacheWrite: 0 } })[0], /0.0%/);
     assert.match(window.runtimeSummary({ usage: { input: 0, cacheRead: 0 } })[0], /暂无数据/);
     assert.match(window.runtimeSummary({ context: { tokens: null, contextWindow: 10000, percent: null } })[1], /— \/ 10,000 tokens · 待更新/);
@@ -242,6 +253,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("create-trust-row").hidden, true);
     assert.equal(window.document.querySelectorAll('.settings-nav button').length, 1);
     assert.equal($("create-subagent-mode").querySelector('option[value="inherit"]').textContent, "跟随主代理能力");
+    assert.equal($("create-subagent-thinking").querySelector('option[value="max"]').textContent, "max");
     $("create-main-thinking").value = "high";
     $("create-subagent-thinking").value = "off";
     $("create-main-provider").value = "other";
@@ -334,23 +346,29 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       "restored tasks follow their parent prompt",
     );
     assert.equal($("subagent-model").value, "");
-    const historicalTask = window.document.querySelector(".task-card");
+    const historicalTrigger = window.document.querySelector(".task-card");
+    const historicalTask = $(historicalTrigger.getAttribute("aria-controls"));
+    assert.equal(historicalTrigger.tagName, "BUTTON");
+    assert.equal(historicalTrigger.querySelector(".message"), null, "the main transcript only holds a subagent entry");
+    assert.match(historicalTrigger.textContent, /SUBAGENT.*已完成/s);
+    assert.equal($("task-overlays").contains(historicalTask), true);
+    assert.equal(historicalTask.open, false);
     assert.equal(historicalTask.querySelector(".markdown").textContent, "");
-    assert.match(historicalTask.querySelector(".runtime-summary").textContent, /80.0%.*1,200 \/ 10,000 tokens · 12.0%.*other · child · 思考 high/);
+    assert.match(historicalTask.querySelector(".runtime-summary").textContent, /80.0%.*1,200 \/ 10,000 tokens · 12.0%.*other · child · high/);
+    assert.equal(historicalTask.querySelector(".task-top .runtime-summary")?.parentElement.nextElementSibling.className, "task-body");
     assert.equal(historicalTask.querySelector(".task-system-prompt pre").textContent, "Historical system prompt");
     assert.equal(historicalTask.querySelector(".task-description").textContent, "Historical task");
     assert.doesNotMatch($("session-runtime").textContent, /80.0%/, "child usage never leaks to the main agent");
-    historicalTask.open = true;
-    historicalTask.dispatchEvent(new window.Event("toggle"));
+    historicalTrigger.click();
     paint();
-    assert.equal(
-      historicalTask.querySelector(".markdown").textContent,
-      "historical result",
-    );
+    assert.equal(historicalTask.open, true);
+    assert.equal(historicalTask.querySelector(".markdown").textContent.trim(), "historical result");
     input("other draft");
     window.document.querySelectorAll(".session-item")[0].click();
     await settle();
     paint();
+    assert.equal(historicalTask.open, false, "switching sessions closes the old overlay");
+    assert.equal($("task-overlays").children.length, 0, "switching releases old task DOM");
     assert.equal($("prompt").value, "first draft\nsecond line");
     assert.equal($("subagent-model").value, "other/child");
 
@@ -396,7 +414,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       "whitespace must not prevent clearing acknowledged draft",
     );
     assert.equal(
-      window.document.querySelector(".message.user .markdown").textContent,
+      window.document.querySelector(".message.user .markdown").textContent.trim(),
       "accepted task",
       "list refresh failure must not remove an accepted message",
     );
@@ -417,7 +435,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     emit("agent.runtime", runtime, { agentId: "child" });
     assert.match($("session-runtime").textContent, /暂无数据/);
     emit("agent.runtime", { ...runtime, model: "test/model" });
-    assert.match($("session-runtime").textContent, /80.0%.*test · model · 思考 high/);
+    assert.match($("session-runtime").textContent, /80.0%.*test · model · high/);
     emit("agent.runtime", { ...runtime, model: "unrelated/model" }, { sessionId: "b" });
     assert.doesNotMatch($("session-runtime").textContent, /unrelated/, "ignore events belonging to a different session");
     emit(
@@ -425,28 +443,97 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       { message: { role: "assistant", content: [] } },
       { agentId: "child" },
     );
-    emit(
-      "agent.delta",
-      { type: "text_delta", delta: "full child result" },
-      { agentId: "child" },
-    );
+    const beforeHidden = renders;
+    const answer = "# Child result\n\n**bold**\n\n- item\n\n```js\nconst n = 1;\n```\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\n<img src=x onerror=alert(1)>";
+    emit("agent.delta", { type: "text_delta", delta: answer }, { agentId: "child" });
+    emit("agent.delta", { type: "thinking_delta", delta: "private thought" }, { agentId: "child" });
     paint();
-    const task = window.document.querySelector(".task-card");
+    const trigger = window.document.querySelector(".task-card");
+    const task = $(trigger.getAttribute("aria-controls"));
+    assert.equal(renders, beforeHidden, "closed overlays skip Markdown parsing");
     assert.match(task.querySelector(".runtime-summary").textContent, /80.0%.*other · child/);
+    assert.equal(trigger.querySelector(".runtime-summary"), null, "runtime information is pinned in the overlay, not duplicated in the transcript");
     assert.equal(task.querySelector(".task-system-prompt pre").textContent, runtime.systemPrompt);
     assert.equal(task.querySelector(".task-system-prompt img"), null, "system prompts are plain text, not executable markup");
     assert.equal(task.querySelector(".markdown").textContent, "");
-    task.open = true;
-    task.dispatchEvent(new window.Event("toggle"));
+    trigger.click();
     paint();
-    assert.equal(
-      task.querySelector(".markdown").textContent,
-      "full child result",
-    );
+    assert.equal(task.open, true);
+    const text = task.querySelector(".markdown");
+    for (const selector of ["h1", "strong", "li", "pre code", "table"]) assert(text.querySelector(selector), selector);
+    assert.equal(text.querySelector("img,[onerror]"), null);
+    const thought = task.querySelector(".message details");
+    assert.equal(thought.hidden, false);
+    assert.equal(thought.querySelector("pre").textContent, "");
+    thought.open = true;
+    thought.dispatchEvent(new window.Event("toggle"));
+    paint();
+    assert.equal(thought.querySelector("pre").textContent, "private thought");
+    const titleNode = text.querySelector("h1");
+    emit("agent.delta", { type: "text_delta", delta: "\n\nnext paragraph" }, { agentId: "child" });
+    paint();
+    assert.match(text.textContent, /next paragraph/);
+    assert.equal(text.querySelector("h1"), titleNode, "streamed subagent output reuses the main block renderer");
+    const beforeEscape = requests.filter((req) => req.type === "cancel").length;
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape" }));
+    assert.equal(requests.filter((req) => req.type === "cancel").length, beforeEscape, "Escape in a task overlay must not cancel the running session");
+    task.close(); // JSDOM has no native dialog Escape handling.
+    paint();
+    const beforeClosed = renders;
+    const finalMessage = { role: "assistant", content: [{ type: "text", text: `${answer}\n\nfinal result` }, { type: "thinking", thinking: "final thought" }] };
+    emit("agent.message.end", { message: finalMessage }, { agentId: "child" });
+    paint();
+    assert.equal(renders, beforeClosed, "final messages remain lazy while the overlay is closed");
+    trigger.click();
+    task.dispatchEvent(new window.Event("close")); // A delayed close event must not clear a reopened overlay.
+    paint();
+    assert.match(text.textContent, /final result/);
+    assert.equal(text.querySelector("h1"), titleNode);
+    assert.equal(thought.querySelector("pre").textContent, "final thought");
+    emit("agent.message.end", { message: finalMessage });
+    assert.equal($("output").querySelector(".message:not(.user) .markdown").innerHTML, text.innerHTML, "main and child messages have identical Markdown rendering");
+    const body = task.querySelector(".task-body");
+    Object.defineProperties(body, { scrollHeight: { value: 1200 }, clientHeight: { value: 300 } });
+    window.scrollLatest();
+    paint();
+    assert.equal(body.scrollTop, 1200, "reopened overlays still follow new output");
+    const topButton = task.querySelector('.task-top [data-scroll="top"]');
+    const bottomButton = task.querySelector('.task-top [data-scroll="bottom"]');
+    topButton.click();
+    assert.equal(body.scrollTop, 0, "top navigation is pinned outside the scrolling body");
+    window.scrollLatest();
+    paint();
+    assert.equal(body.scrollTop, 0, "jumping to the top pauses automatic following");
+    bottomButton.click();
+    assert.equal(body.scrollTop, 1200, "bottom navigation jumps to the latest content");
+    body.scrollTop = 500;
+    window.scrollLatest();
+    paint();
+    assert.equal(body.scrollTop, 1200, "jumping to the bottom resumes automatic following");
+    body.scrollTop = 100;
+    body.dispatchEvent(new window.Event("scroll"));
     emit("task.state", { task: "Inspect code", status: "failed", error: "Provider failed", runtime }, { taskId: "child" });
-    assert.equal(task.open, true, "updates preserve expansion state");
+    paint();
+    assert.equal(task.open, true, "updates preserve the open overlay");
+    assert.equal(body.scrollTop, 100, "runtime updates do not pull readers back to the bottom");
+    assert.equal(trigger.dataset.status, "failed");
     assert.equal(task.querySelector(".task-error").textContent, "Provider failed");
     assert.equal(task.querySelector(".task-error").hidden, false);
+    emit("task.state", { task: "Second task", status: "running" }, { taskId: "sibling" });
+    emit("agent.runtime", { model: "other/sibling", thinking: "low" }, { agentId: "sibling" });
+    assert.equal(task.open, true, "new subagents never steal the active overlay");
+    assert.doesNotMatch(task.textContent, /other · sibling/);
+    const sibling = $("task-sibling");
+    assert.equal(sibling.open, false);
+    task.click();
+    assert.equal(task.open, true, "clicking inside the overlay does not dismiss it");
+    task.dispatchEvent(new window.MouseEvent("click", { clientX: -1, clientY: -1 }));
+    assert.equal(task.open, false, "clicking the backdrop closes the overlay");
+    window.document.querySelectorAll(".task-card")[1].click();
+    paint();
+    assert.equal(sibling.open, true);
+    assert.match(sibling.querySelector(".runtime-summary").textContent, /other · sibling · low/);
+    assert.doesNotMatch(sibling.textContent, /System instructions|final result/);
     window.document.querySelectorAll(".session-item")[1].click();
     await settle();
     assert.match($("session-runtime").textContent, /暂无数据/, "switching sessions clears previous usage");

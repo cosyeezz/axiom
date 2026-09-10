@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-10 — 子代理会话内浮层、统一渲染与上下跳转
+- 在独立 worktree MyWorkbench-subagent-overlay（feat/subagent-overlay）实施。模型摘要及等级选项去掉「思考」前缀，直接显示供应商 · 模型 · max 等实际等级；不改变运行配置或思考输出能力。
+- 主会话保留 SUBAGENT 状态/任务卡片，点击打开原生 dialog。按用户反馈将初版青绿色改为与现有主题协调的低饱和蓝紫色；浮层和遮罩限定在右侧会话区，以其中心定位，宽度沿用 880px 上限，避开侧栏和顶部会话栏，随侧栏收起及移动端布局变化。
+- 复用主会话 card/renderMessage、stream-renderer、Markdown/DOMPurify 和消息样式，只替换容器；没有第二套子代理渲染或新依赖。缓存、上下文、实际模型/等级固定在顶部，下方独立滚动；「回到最上」暂停跟随，「回到最下」恢复跟随。关闭/未打开时不解析正文，重开补绘完整结果；不自动弹窗抢焦点。
+- 保留原生关闭/遮罩/Esc/焦点返回，Esc 不取消代理；切换/重连释放旧浮层，按快照恢复；延迟 close 回调不清空已重新打开的 activeTask。将浮层 h2 样式限定到顶部，避免污染复用的 Markdown 正文。
+- 验证：npm test 12 项通过（主/子真实 Markdown 相同、XSS 边界、流式/思考/最终消息、隐藏按需绘制、任务隔离、上下跳转与跟随、关闭竞态等）；Playwright 独立 4331 模拟服务验证 1440/1024/768/390/320px 及 700×400 横屏、侧栏展开/收起、浮层相对会话居中、顶部固定、跳转、关闭/焦点、断线重连与会话隔离，无横向溢出和控制台错误，未调用付费模型。原 4319 服务未重启（重启会丢失内存会话）。
+- 涉及 public/{app.js,index.html,style.css}、tests/app.test.js、README.md、devlog.md 与 codebase-map 索引/坑库；截图仅放独立 artifacts 目录，不提交。
+
 ## 2026-09-10 — 会话运行摘要与子代理详情
 - 在独立 worktree MyWorkbench-session-runtime（feat/session-runtime）实施。发送按钮去掉 ↑；模型选择下显示最近请求缓存命中、Pi 当前上下文估算和实际供应商/模型/思考程度，窄屏换行。
 - 复用 SDK systemPrompt、messages.usage 和 getContextUsage，增加 agent.runtime 边界事件与主/子快照；子任务销毁前保留最终信息。折叠摘要显示状态与运行信息，展开查看完整任务、实际系统提示词、错误和输出，提示词只按纯文本展示。

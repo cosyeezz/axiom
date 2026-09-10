@@ -110,6 +110,32 @@
         <p id="error" role="alert"></p>
       </main>
     </div>
+    <div id="task-overlays"></div>
+    <template id="task-template">
+      <button type="button" class="task-card" aria-haspopup="dialog">
+        <span class="task-meta"><span class="task-badge">SUBAGENT</span><span class="task-status"></span><span class="task-open" aria-hidden="true">查看详情 ↗</span></span>
+        <span class="task-title"></span>
+      </button>
+      <dialog class="task-dialog">
+        <div class="task-top">
+          <header>
+            <h2></h2>
+            <form method="dialog"><button class="secondary" aria-label="关闭子代理详情" autofocus>✕</button></form>
+          </header>
+          <div class="runtime-summary" role="status" aria-live="polite"></div>
+          <nav class="task-navigation" aria-label="子代理记录跳转">
+            <button type="button" class="secondary" data-scroll="top">回到最上 ↑</button>
+            <button type="button" class="secondary" data-scroll="bottom">回到最下 ↓</button>
+          </nav>
+        </div>
+        <div class="task-body" role="region" aria-label="子代理执行记录" tabindex="0">
+          <h3>任务</h3>
+          <pre class="task-description"></pre>
+          <details class="task-system-prompt"><summary>系统提示词（运行时）</summary><pre></pre></details>
+          <p class="task-error" role="alert" hidden></p>
+        </div>
+      </dialog>
+    </template>
     <dialog id="settings" aria-labelledby="settings-title">
       <header>
         <h2 id="settings-title">设置</h2>

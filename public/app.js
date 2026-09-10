@@ -6,6 +6,7 @@ let ws,
   models = [],
   config,
   runtime,
+  activeTask,
   busy = false,
   changing = false,
   connected = false,
@@ -30,11 +31,13 @@ function resizePrompt() {
 }
 let scrollFrame;
 function scrollLatest() {
-  if (!follow || changing || scrollFrame !== undefined) return;
+  if (changing || scrollFrame !== undefined || (!follow && !activeTask?.follow)) return;
   scrollFrame = requestAnimationFrame(() => {
     scrollFrame = undefined;
-    if (follow && !changing)
-      $("transcript").scrollTop = $("transcript").scrollHeight;
+    if (changing) return;
+    if (follow) $("transcript").scrollTop = $("transcript").scrollHeight;
+    if (activeTask?.node.open && activeTask.follow)
+      activeTask.output.scrollTop = activeTask.output.scrollHeight;
   });
 }
 const renderer = createStreamRenderer(renderMarkdown, scrollLatest);
@@ -150,7 +153,7 @@ function runtimeSummary(value = {}) {
     : "暂无数据";
   const split = model?.indexOf("/") ?? -1;
   const identity = split >= 0 ? `${model.slice(0, split)} · ${model.slice(split + 1)}` : model || "模型待加载";
-  return [`缓存命中 ${cache}`, `上下文 ${contextText}`, `${identity} · 思考 ${thinking || "未知"}`];
+  return [`缓存命中 ${cache}`, `上下文 ${contextText}`, `${identity} · ${thinking || "未知"}`];
 }
 function renderRuntime(node, value) {
   node.replaceChildren(...runtimeSummary(value).map((text) => {
@@ -179,18 +182,7 @@ function applyConfig(value) {
   fillModels();
   options(
     $("thinking"),
-    value.levels.map((v) => [
-      v,
-      {
-        off: "思考关闭",
-        minimal: "思考 · 最低",
-        low: "思考 · 低",
-        medium: "思考 · 中",
-        high: "思考 · 高",
-        xhigh: "思考 · 超高",
-        max: "思考 · 最高",
-      }[v] || v,
-    ]),
+    value.levels.map((v) => [v, v]),
     value.thinking,
   );
 }
@@ -245,8 +237,8 @@ function card(title, task) {
   const text = document.createElement("div");
   text.className = "markdown";
   node.append(heading, thinking, text);
-  if (task && !task.node.isConnected) $("output").append(task.node);
-  (task?.node || $("output")).append(node);
+  if (task && !task.trigger.isConnected) $("output").append(task.trigger);
+  (task?.output || $("output")).append(node);
   if (!task || task.node.open) scrollLatest();
   const item = {
     task,
@@ -319,37 +311,56 @@ function event(message) {
   }
   if (type === "task.state") {
     if (!tasks.has(message.taskId)) {
-      const node = document.createElement("details");
-      node.className = "task-card";
-      const heading = document.createElement("summary");
-      const title = document.createElement("span");
-      title.className = "task-title";
-      const runtime = document.createElement("span");
-      runtime.className = "runtime-summary";
-      heading.append(title, runtime);
-      const description = document.createElement("pre");
-      description.className = "task-description";
-      const prompt = document.createElement("details");
-      prompt.className = "task-system-prompt";
-      const label = document.createElement("summary");
-      label.textContent = "系统提示词（运行时）";
-      const systemPrompt = document.createElement("pre");
-      prompt.append(label, systemPrompt);
-      const failure = document.createElement("p");
-      failure.className = "task-error";
-      failure.hidden = true;
-      node.append(heading, description, prompt, failure);
-      $("output").querySelector(".empty")?.remove();
-      $("output").append(node);
-      const task = { node, heading: title, runtime, description, systemPrompt, failure, messages: [] };
-      node.ontoggle = () => {
-        if (node.open) for (const item of task.messages) renderer.mark(item);
+      const fragment = $("task-template").content.cloneNode(true);
+      const trigger = fragment.querySelector(".task-card");
+      const node = fragment.querySelector("dialog");
+      const heading = node.querySelector("h2");
+      node.id = `task-${message.taskId}`;
+      heading.id = `${node.id}-title`;
+      node.setAttribute("aria-labelledby", heading.id);
+      trigger.setAttribute("aria-controls", node.id);
+      const task = {
+        node, trigger, heading, messages: [], follow: true,
+        title: trigger.querySelector(".task-title"),
+        status: trigger.querySelector(".task-status"),
+        output: node.querySelector(".task-body"),
+        runtime: node.querySelector(".runtime-summary"),
+        description: node.querySelector(".task-description"),
+        systemPrompt: node.querySelector(".task-system-prompt pre"),
+        failure: node.querySelector(".task-error"),
       };
+      trigger.onclick = () => {
+        activeTask = task;
+        node.showModal();
+        for (const item of task.messages) renderer.mark(item);
+        scrollLatest();
+      };
+      for (const button of node.querySelectorAll("[data-scroll]")) button.onclick = () => {
+        task.follow = button.dataset.scroll === "bottom";
+        task.output.scrollTop = task.follow ? task.output.scrollHeight : 0;
+      };
+      task.output.onscroll = () => {
+        const el = task.output;
+        task.follow = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+      };
+      node.onclose = () => { if (!node.open && activeTask === task) activeTask = undefined; };
+      node.onclick = (e) => {
+        if (e.target !== node) return;
+        const rect = node.getBoundingClientRect();
+        if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom)
+          node.close();
+      };
+      $("output").querySelector(".empty")?.remove();
+      $("output").append(trigger);
+      $("task-overlays").append(node);
       tasks.set(message.taskId, task);
     }
     const item = tasks.get(message.taskId);
-    item.node.dataset.status = data.status;
-    item.heading.textContent = `${{ starting: "启动中", running: "运行中", completed: "已完成", failed: "失败", cancelled: "已取消" }[data.status] || data.status} · ${data.task}`;
+    item.trigger.dataset.status = item.node.dataset.status = data.status;
+    const status = { starting: "启动中", running: "运行中", completed: "已完成", failed: "失败", cancelled: "已取消" }[data.status] || data.status;
+    item.status.textContent = status;
+    item.heading.textContent = `SUBAGENT · ${status}`;
+    item.title.textContent = item.trigger.title = data.task;
     item.description.textContent = data.task;
     item.failure.textContent = data.error || "";
     item.failure.hidden = !data.error;
@@ -359,6 +370,9 @@ function event(message) {
   if (type === "error") error(data.message);
 }
 function snapshot(state) {
+  activeTask?.node.close();
+  activeTask = undefined;
+  $("task-overlays").replaceChildren();
   renderer.clear();
   if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame);
   scrollFrame = undefined;
@@ -380,7 +394,7 @@ function snapshot(state) {
   tasks.clear();
   for (const task of state.tasks) {
     event({ type: "task.state", sessionId, taskId: task.id, data: task });
-    tasks.get(task.id).node.remove();
+    tasks.get(task.id).trigger.remove();
   }
   for (const { agentId, message } of state.messages)
     if (["assistant", "user"].includes(message.role))
@@ -405,7 +419,7 @@ function snapshot(state) {
       live.set(agentId, item);
     }
   for (const task of tasks.values())
-    if (!task.node.isConnected) $("output").append(task.node);
+    if (!task.trigger.isConnected) $("output").append(task.trigger);
   if (!$("output").children.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
@@ -566,7 +580,7 @@ $("prompt").onkeydown = (e) => {
   }
 };
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" || e.isComposing || $("settings").open || $("create-session").open) return;
+  if (e.key !== "Escape" || e.isComposing || document.querySelector("dialog[open]")) return;
   if (
     mobile.matches &&
     $("toggle-sidebar").getAttribute("aria-expanded") === "true"
@@ -715,7 +729,7 @@ function createAgentPicker(role, title, catalog, initial) {
   const thinking = select("thinking", `${title}思考等级`);
   const fillThinking = () => {
     const levels = models.find((m) => m.key === model.value)?.levels || ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
-    options(thinking, [["", role === "main" ? "沿用默认思考等级" : "跟随主代理思考等级"], ...levels.map((v) => [v, `思考 · ${v}`])], thinking.value || initial.thinking || "");
+    options(thinking, [["", role === "main" ? "沿用默认思考等级" : "跟随主代理思考等级"], ...levels.map((v) => [v, v])], thinking.value || initial.thinking || "");
   };
   model.onchange = fillThinking;
   provider.onchange = () => { fill(); fillThinking(); };
@@ -819,7 +833,7 @@ function updateDefaultsPreview() {
     const key = agent.model || (agent === child ? main.model : null);
     const model = models.find((m) => m.key === key);
     const capabilities = agent.capabilities === "inherit" ? main.capabilities : agent.capabilities;
-    return `${title} · ${model?.provider || "默认供应商"} · ${model?.name || key || "默认模型"} · 思考 ${agent.thinking || (agent === child ? main.thinking : null) || "默认"}\n` +
+    return `${title} · ${model?.provider || "默认供应商"} · ${model?.name || key || "默认模型"} · ${agent.thinking || (agent === child ? main.thinking : null) || "默认"}\n` +
       [["skills", "Skills"], ["mcp", "MCP"], ["plugins", "Extensions"]].map(([kind, label]) => `${label}：${(capabilities?.[kind] || creation.catalog[kind].map((entry) => entry.id)).map(capabilityName).join("、") || "无"}`).join("\n");
   }).join("\n\n");
 }

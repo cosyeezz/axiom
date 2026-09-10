@@ -1,15 +1,15 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/10 01:58:09）
+# Axiom 多级代码索引（生成于 2026/9/10 02:26:37）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| public/app.js | 900 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | $, ws, allSessions, views |
-| public/index.html | 162 | 页面骨架与元素 id（见 L3） | - |
+| public/app.js | 914 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | $, ws, allSessions, views |
+| public/index.html | 188 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown.js | 37 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, renderMarkdown |
 | public/stream-renderer.js | 51 | 流式增量渲染状态机 | createStreamRenderer |
-| public/style.css | 806 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 843 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | src/capabilities.js | 114 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/main.js | 28 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, factory, sessions |
 | src/pi.js | 160 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, createPiFactory |
@@ -18,7 +18,7 @@
 | src/sessions.js | 307 | Sessions：会话生命周期、配置快照、默认会话持久化（agent目录 axiom/defaults.json） | Sessions |
 | src/tasks.js | 108 | Tasks：子任务（委托）生命周期 | Tasks |
 | src/tools.js | 73 | delegationTools：注册给 pi 的委托/读取工具定义（zod 入参） | delegateInput, readInput, result, delegationTools |
-| tests/app.test.js | 466 | node --test 测试（npm test） | - |
+| tests/app.test.js | 553 | node --test 测试（npm test） | - |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
 | tests/capabilities.test.js | 78 | node --test 测试（npm test） | - |
 | tests/codebase-index.test.js | 18 | node --test 测试（npm test） | ROOT, SKILL |
@@ -32,80 +32,80 @@
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
-### public/app.js（900 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
+### public/app.js（914 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | $ | const | 3 |
 | ws | const | 4 |
-| allSessions | const | 13 |
-| views | const | 15 |
-| saveView | function | 19 |
-| resizePrompt | function | 27 |
-| scrollFrame | const | 31 |
-| scrollLatest | function | 32 |
-| renderer | const | 40 |
-| scrollLatest | method | 49 |
-| mobile | const | 51 |
-| sidebar | function | 52 |
-| sidebar | method | 62 |
-| pending | const | 66 |
-| error | function | 69 |
-| request | function | 72 |
-| controls | function | 81 |
-| options | function | 106 |
-| fillModels | function | 113 |
-| options | method | 114 |
-| fillSubagentModels | function | 122 |
-| options | method | 124 |
-| capabilityName | function | 132 |
-| runtimeSummary | function | 142 |
-| renderRuntime | function | 155 |
-| updateTaskRuntime | function | 163 |
-| renderRuntime | method | 165 |
-| applyConfig | function | 168 |
-| renderRuntime | method | 171 |
-| options | method | 172 |
-| fillSubagentModels | method | 177 |
-| fillModels | method | 179 |
-| options | method | 180 |
-| configure | function | 197 |
-| controls | method | 200 |
-| controls | method | 222 |
-| openCreation | method | 224 |
-| card | function | 232 |
-| renderMessage | function | 268 |
-| event | function | 283 |
-| snapshot | function | 361 |
-| applyConfig | method | 428 |
-| controls | method | 429 |
-| controls | method | 434 |
-| fillModels | method | 508 |
-| fillSubagentModels | method | 515 |
-| controls | method | 530 |
-| renderMarkdown | method | 534 |
-| scrollLatest | method | 536 |
-| refreshing | const | 585 |
-| refreshSessions | function | 586 |
-| updateSessions | function | 593 |
-| renderSessions | method | 599 |
-| switchSession | function | 601 |
-| saveView | method | 603 |
-| controls | method | 606 |
-| renderSessions | function | 618 |
-| resizePrompt | method | 677 |
-| controls | method | 678 |
-| switchSession | method | 681 |
-| creationLoad | const | 683 |
-| createAgentPicker | function | 684 |
-| options | method | 706 |
-| fill | method | 714 |
-| fillThinking | method | 722 |
-| options | method | 724 |
-| loadCreation | function | 770 |
-| openCreation | function | 798 |
-| updateDefaultsPreview | function | 815 |
-| updateDefaultsPreview | method | 828 |
+| allSessions | const | 14 |
+| views | const | 16 |
+| saveView | function | 20 |
+| resizePrompt | function | 28 |
+| scrollFrame | const | 32 |
+| scrollLatest | function | 33 |
+| renderer | const | 43 |
+| scrollLatest | method | 52 |
+| mobile | const | 54 |
+| sidebar | function | 55 |
+| sidebar | method | 65 |
+| pending | const | 69 |
+| error | function | 72 |
+| request | function | 75 |
+| controls | function | 84 |
+| options | function | 109 |
+| fillModels | function | 116 |
+| options | method | 117 |
+| fillSubagentModels | function | 125 |
+| options | method | 127 |
+| capabilityName | function | 135 |
+| runtimeSummary | function | 145 |
+| renderRuntime | function | 158 |
+| updateTaskRuntime | function | 166 |
+| renderRuntime | method | 168 |
+| applyConfig | function | 171 |
+| renderRuntime | method | 174 |
+| options | method | 175 |
+| fillSubagentModels | method | 180 |
+| fillModels | method | 182 |
+| options | method | 183 |
+| configure | function | 189 |
+| controls | method | 192 |
+| controls | method | 214 |
+| openCreation | method | 216 |
+| card | function | 224 |
+| renderMessage | function | 260 |
+| event | function | 275 |
+| snapshot | function | 372 |
+| applyConfig | method | 442 |
+| controls | method | 443 |
+| controls | method | 448 |
+| fillModels | method | 522 |
+| fillSubagentModels | method | 529 |
+| controls | method | 544 |
+| renderMarkdown | method | 548 |
+| scrollLatest | method | 550 |
+| refreshing | const | 599 |
+| refreshSessions | function | 600 |
+| updateSessions | function | 607 |
+| renderSessions | method | 613 |
+| switchSession | function | 615 |
+| saveView | method | 617 |
+| controls | method | 620 |
+| renderSessions | function | 632 |
+| resizePrompt | method | 691 |
+| controls | method | 692 |
+| switchSession | method | 695 |
+| creationLoad | const | 697 |
+| createAgentPicker | function | 698 |
+| options | method | 720 |
+| fill | method | 728 |
+| fillThinking | method | 736 |
+| options | method | 738 |
+| loadCreation | function | 784 |
+| openCreation | function | 812 |
+| updateDefaultsPreview | function | 829 |
+| updateDefaultsPreview | method | 842 |
 
 ### public/markdown.js（37 行） — marked + DOMPurify 渲染（XSS 边界）
 
@@ -249,7 +249,7 @@
 ## L3 横切常量（跨模块定位入口）
 
 - 协议 command.type：inherit、session.rename、models.list、capabilities.list、session.defaults.get、session.defaults.configure、session.configure、sessions.list、session.create、session.attach、session.close、prompt、cancel、tasks.read（src/protocol.js）
-- HTML id：sidebar、workspace-picker、workspace-name、workspace-form、cwd、workspaces、new、custom-new、search、sessions、open-settings、sidebar-backdrop、toggle-sidebar、session-title、workspace-label、status、rename、delete、login、connect、workspace、transcript、output、latest、composer、prompt、provider、model、thinking、stop、send、session-runtime、composer-help、error、settings、settings-title、defaults-panel、defaults-preview、subagent-title、subagent-help、subagent-provider、subagent-model、settings-feedback、defaults-title、defaults-editor、create-session、create-title、create-form、create-workspace、create-defaults-help、create-agents、create-trust-row、create-trust、create-feedback、create-submit（public/index.html）
+- HTML id：sidebar、workspace-picker、workspace-name、workspace-form、cwd、workspaces、new、custom-new、search、sessions、open-settings、sidebar-backdrop、toggle-sidebar、session-title、workspace-label、status、rename、delete、login、connect、workspace、transcript、output、latest、composer、prompt、provider、model、thinking、stop、send、session-runtime、composer-help、error、task-overlays、task-template、settings、settings-title、defaults-panel、defaults-preview、subagent-title、subagent-help、subagent-provider、subagent-model、settings-feedback、defaults-title、defaults-editor、create-session、create-title、create-form、create-workspace、create-defaults-help、create-agents、create-trust-row、create-trust、create-feedback、create-submit（public/index.html）
 - HTTP 静态路由：/、/favicon.svg、/style.css、/app.js、/markdown.js、/stream-renderer.js、/vendor/marked.js、/vendor/purify.js、/health（src/server.js）
 
 ## ⚠ 未登记文件（0）
