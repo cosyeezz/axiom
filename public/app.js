@@ -350,7 +350,7 @@ function renderMessage(item, message) {
       return "";
     }).trim();
     item.skillBlocks = blocks;
-    item.node.prepend(blocks);
+    if (blocks.childElementCount) item.node.before(blocks);
   }
   item.images?.remove();
   item.images = document.createElement("div");
@@ -366,6 +366,7 @@ function renderMessage(item, message) {
     item.images.append(image);
   }
   item.node.append(item.images);
+  item.node.hidden = message.role === "user" && !item.buffer && !item.images.childElementCount;
   renderer.flush(item);
 }
 function compactionCard(data) {
@@ -388,13 +389,17 @@ function compactionCard(data) {
 function foldCompaction(data) {
   const ids = new Set(data.compactedMessageIds || []);
   const items = mainItems
-    .filter(({ item, entryId }) => entryId && ids.has(entryId) && item.node.isConnected && !item.node.hidden)
+    .filter(({ item, entryId }) => entryId && ids.has(entryId) && item.node.isConnected && (!item.node.hidden || (item.skillBlocks?.isConnected && !item.skillBlocks.hidden)))
     .sort((a, b) => (a.item.node.compareDocumentPosition(b.item.node) & 4 ? -1 : 1));
   if (!items.length) return;
   const anchor = items.at(-1).item.node.nextElementSibling;
   const top = anchor?.getBoundingClientRect().top ?? 0;
-  items[0].item.node.before(compactionCard(data));
-  for (const { item } of items) item.node.hidden = true;
+  const first = items[0].item;
+  (first.skillBlocks?.isConnected ? first.skillBlocks : first.node).before(compactionCard(data));
+  for (const { item } of items) {
+    item.node.hidden = true;
+    if (item.skillBlocks) item.skillBlocks.hidden = true;
+  }
   // 折叠改变上方高度，按保留消息的位移补偿滚动位置，保持阅读锚点而不强制到底部。
   if (anchor) $("transcript").scrollTop += anchor.getBoundingClientRect().top - top;
 }

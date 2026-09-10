@@ -8,6 +8,11 @@
 - 涉及 public/{app.js,index.html,style.css}、tests/app.test.js、README.md、devlog.md 和 codebase-map 索引。
 - 验证：npm test 全量 51 项通过，覆盖双向拖放、按钮隐藏/恢复、折叠、持久化写入、列表刷新、搜索及不发会话操作请求；未执行真实浏览器拖放验收。首次因 worktree 缺依赖失败，建立既有 node_modules junction 后通过，无新增依赖。
 
+## 2026-09-10 — Skill 与用户消息分离
+- 按用户要求，public/app.js 将 skill 折叠块放到对应用户气泡前面、同级显示，保留安全 Markdown 与按需展开；纯 skill 不留空气泡，压缩时一起隐藏。
+- 涉及 public/app.js、tests/app.test.js、README.md、devlog.md 与 codebase-map 索引。worktree MyWorkbench-skill-flat / feat/skill-flat；不增加依赖。
+- 验证：`npm test` 51 项通过；覆盖同级顺序、展开、重复渲染清理、纯 skill 和压缩隐藏。首次缺少依赖，建立共享 node_modules junction 后重跑。
+
 ## 2026-09-10 — 移除浏览器截图，增加图片放大预览
 - worktree MyWorkbench-image-preview / feat/image-preview。按用户要求删除截图按钮与 getDisplayMedia 抓帧逻辑，保留上传和粘贴；附件及消息/历史图片共用原生 dialog 放大预览，支持点击、Enter/空格打开，关闭按钮、遮罩或原生 Esc 关闭，不新增依赖。
 - 涉及 public/{app.js,index.html,style.css}、tests/app.test.js、README.md、devlog.md 与 codebase-map 索引。
