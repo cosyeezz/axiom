@@ -135,3 +135,10 @@
 - 涉及文件：public/{app.js,index.html,style.css,stream-renderer.js,favicon.svg}、src/server.js、tests/{app.test.js,stream-renderer.test.js,server.test.js,benchmark.js}、README.md、devlog.md。仍不做磁盘持久化、自动重连或额外前端框架。
 - 交付：基线 87d2816、优化 65916cb 已推送 origin/feat/axiom-quality。尝试按规范合并 master，被主工作区未跟踪的 axiom/ 同名文件阻止，Git 安全中止；不强制覆盖或自动移动原代码。等待用户确认备份策略后再合并、推送 master 和清理 worktree。
 - 保留独立预览 http://127.0.0.1:4320/（该 worktree 内运行，PID 记录在被忽略的 .axiom.pid），未重启原 4319 服务。浏览器截图留在 F:/worktrees/MyWorkbench-axiom-quality-artifacts/，不提交生成图片。
+
+## 2026-09-10 项目 skill：codebase-map 多级索引与排障
+
+- 内容：新增项目级 skill `.pi/skills/codebase-map/`（SKILL.md / INDEX.md / knowledge.md / scripts/reindex.mjs）。多级索引：L0 架构图与模块职责（SKILL.md）→ L1 文件总览 → L2 符号→行号跳转表 → L3 横切常量（协议 command.type、HTML id、HTTP 路由），INDEX.md 由脚本毫秒级重建，用前/改后各跑一次保证实时。bug 知识库 knowledge.md 从 devlog 历史提炼 5 条，修复后追加实现自成长。新增 tests/codebase-index.test.js 守住生成逻辑。
+- 原因：需要快速定位项目结构与按层排障，且索引和知识随代码改动同步成长，不腐烂。
+- 涉及文件：axiom/.pi/skills/codebase-map/{SKILL.md,INDEX.md,knowledge.md,scripts/reindex.mjs}、axiom/tests/codebase-index.test.js、axiom/README.md、axiom/devlog.md。
+- 分支：feat/axiom-project-skill（worktree F:/worktrees/MyWorkbench-axiom-project-skill）。

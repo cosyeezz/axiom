@@ -103,6 +103,8 @@ capabilities.js 原生能力发现、内存配置、MCP 快照与选择加载
 
 ## 验证和运行边界
 
+项目级 skill `codebase-map`（.pi/skills/codebase-map/）：多级索引快速定位代码与排障。`node .pi/skills/codebase-map/scripts/reindex.mjs` 重建 INDEX.md（模块总览→符号行号→协议/路由/元素常量）；knowledge.md 沉淀历史 bug，改代码后重建索引并追加记录。
+
 ```sh
 npm test           # 含默认配置保存/继承/隔离、自定义入口、页面交互、断线恢复及渲染/缓存回归
 node tests/benchmark.js # CPU/DOM 微基准，不代表模型生成速度
