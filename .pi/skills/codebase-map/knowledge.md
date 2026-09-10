@@ -108,3 +108,9 @@
 - 根因：系统 Windows PowerShell 5.1 的 .NET Framework FolderBrowserDialog 使用旧 shell 界面，不能仅靠 EnableVisualStyles 升级。
 - 修复：优先已安装的 pwsh.exe，利用现代 .NET 的 AutoUpgradeEnabled；仅 ENOENT 回退旧系统宿主，避免取消/超时/执行错误再次打开窗口。
 - 防再犯：检查实际宿主版本，UI Automation 验证 Address Band Root/SearchEditBox，不把原生等同于现代；不自动安装 PowerShell。
+
+### 2026-09-10 输入框引用单独发送与补全初始化
+- 症状：只有文件/文件夹标签时按钮禁用；开发补全时首次页面加载触发 TDZ。
+- 根因：required、按钮禁用、submit 三处未计入 contextFiles；controls 在事件注册段前已经执行。
+- 修复：public/app.js 三处统一计入文件引用，补全状态声明放到文件顶部。
+- 防再犯：新增上下文类型检查表单校验到发送全链路；controls 使用的 let 状态必须先初始化，保留真实页面启动回归测试。

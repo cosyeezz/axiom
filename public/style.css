@@ -548,6 +548,12 @@ button.danger:hover:not(:disabled) { background: #c13e50; }
 #context-path button { padding: 5px 8px; font-size: 11px; background: #ffffff08; color: var(--text); }
 #context-results { max-height: 360px; overflow-y: auto; margin-top: 8px; }
 #context-error { font-size: 12px; color: var(--muted); }
+#prompt-completion { max-height: 220px; overflow-y: auto; padding: 6px; margin: 0 8px 8px; border: 1px solid #717de533; border-radius: 8px; background: #1c1d24; font-size: 12px; }
+#prompt-completion [role="option"] { display: flex; border-radius: 5px; }
+#prompt-completion [aria-selected="true"], #prompt-completion [role="option"]:hover { background: #717de52a; }
+#prompt-completion button { background: transparent; color: var(--text); text-align: left; padding: 8px; border: 0; }
+#prompt-completion button:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+#prompt-completion button + button { flex-shrink: 0; color: var(--muted); }
 .skill-invocation { border: 1px solid #717de52b; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; background: #717de50b; }
 .skill-invocation summary { color: #b3bafa; font-size: 12px; cursor: pointer; }
 .skill-invocation > small { display: block; color: var(--muted); overflow-wrap: anywhere; margin: 10px 0; }

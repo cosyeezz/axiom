@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-10 — 输入框 Skill 与工作空间补全
+- worktree MyWorkbench-composer-completion / feat/composer-completion。输入开头 `/` 补全当前会话 Skill，`@` 补全文件及文件夹，支持名称过滤、路径分层、带空格路径、点击与上下/Enter/Tab/Esc 键；文件夹可直接引用或右箭头进入。
+- 复用 workspace.browse 的工作空间边界检查、已有标签及发送链路，不引入依赖或新协议；序号与会话检查丢弃过期结果，切换/断线/失焦关闭候选。修正仅文件/文件夹标签无法发送的已有条件遗漏。
+- 涉及 public/{app.js,index.html,style.css}、tests/app.test.js、README.md、devlog.md、codebase-map 索引与知识库。测试覆盖技能/文件/文件夹、去重、键盘、邮件/URL 不误触发、过期回包与引用单独发送。
+- 验证时发现 controls 首次执行早于补全状态初始化，将状态声明移到文件顶部后页面测试通过；`npm test` 全量 51 项通过。未执行真实浏览器手动验收。
+
 ## 2026-09-10 — 已完成区改名与去掉计数
 - worktree MyWorkbench-session-done / feat/session-done-label。按用户要求，隐藏区标题由「已隐藏 (N) · 拖到这里」改为「已完成 · 拖到这里」，不再显示会话个数；README 同步。涉及 public/{app.js,index.html}、README.md、devlog.md。
 - 验证：npm test 全量 51 项通过（测试未断言计数文案，无需改动）。

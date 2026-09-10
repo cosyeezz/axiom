@@ -20,6 +20,7 @@ const compactionDefaults = { enabled: false, tokenThreshold: 100000, percentThre
 const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 let compactions = [], mainItems = [];
 let images = [], imageLoading = false;
+let completionVersion = 0, completionToken, completionEntries = [], completionIndex = 0;
 let selectedSkill = "", contextFiles = [], contextMode, contextListing = { path: "", entries: [] }, contextLoad = 0, pickingWorkspace = false, currentCwd = "";
 try {
   sessionId = localStorage.getItem("axiom.session") || undefined;
@@ -136,7 +137,8 @@ function controls() {
   $("queue-type").disabled = unavailable;
   $("composer-skill").disabled = unavailable || !config?.skills?.length;
   $("composer-skill").value = selectedSkill;
-  $("prompt").required = !selectedSkill && !images.length;
+  if (unavailable) closeCompletion();
+  $("prompt").required = !selectedSkill && !images.length && !contextFiles.length;
   $("add-image").disabled = unavailable || imageLoading;
   $("add-context").disabled = unavailable;
   $("open-workspace").disabled = unavailable || pickingWorkspace;
@@ -144,7 +146,7 @@ function controls() {
   $("copy-workspace").disabled = !$("workspace-label").textContent;
   renderContextChips();
   for (const id of ["send", "send-steer", "send-followup"])
-    $(id).disabled = unavailable || imageLoading || (!$("prompt").value.trim() && !selectedSkill && !images.length);
+    $(id).disabled = unavailable || imageLoading || (!$("prompt").value.trim() && !selectedSkill && !images.length && !contextFiles.length);
   $("send-steer").hidden = $("send-followup").hidden = !busy;
   $("stop").disabled = !busy || unavailable;
   $("stop").hidden = !busy;
@@ -676,6 +678,7 @@ function snapshot(state) {
   renderImages();
   selectedSkill = view?.selectedSkill || "";
   contextLoad++;
+  closeCompletion();
   $("context-picker").close();
   follow = view?.follow ?? true;
   $("latest").hidden = follow;
@@ -839,7 +842,8 @@ $("composer").onsubmit = async (e) => {
   const files = [...contextFiles], skill = selectedSkill, sentImages = [...images];
   const body = [draft.trim(), files.length ? `工作空间引用（按需读取；文件夹不代表已读取全部内容）：\n${files.map((file) => `- ${file.directory ? "文件夹" : "文件"}：${JSON.stringify(file.path)}`).join("\n")}` : ""].filter(Boolean).join("\n\n");
   const text = skill ? `/skill:${skill} ${body}` : body;
-  if ((!draft.trim() && !skill && !sentImages.length) || imageLoading || changing || !connected) return;
+  if ((!draft.trim() && !skill && !sentImages.length && !files.length) || imageLoading || changing || !connected) return;
+  closeCompletion();
   if (sentImages.length > 4) return error(new Error("每条消息最多发送 4 张图片，请移除多余附件后分批发送"));
   const wasBusy = busy;
   const queueType = e.submitter?.dataset.queue || config?.queueType || "steer";
@@ -961,7 +965,20 @@ $("prompt").onpaste = (e) => {
   void loadImages(files);
 };
 $("prompt").onkeydown = (e) => {
-  if (e.key !== "Enter" || e.isComposing || e.keyCode === 229) return;
+  if (e.isComposing || e.keyCode === 229) return;
+  if (!$("prompt-completion").hidden && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+    if (["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape", "ArrowRight"].includes(e.key)) {
+      if (e.key === "ArrowRight" && !completionEntries[completionIndex]?.directory) return;
+      e.preventDefault(); e.stopPropagation();
+      if (e.key === "Escape") closeCompletion();
+      else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        completionIndex = (completionIndex + (e.key === "ArrowDown" ? 1 : -1) + completionEntries.length) % (completionEntries.length || 1);
+        highlightCompletion();
+      } else if (completionEntries.length) chooseCompletion(completionEntries[completionIndex], e.key === "ArrowRight");
+      return;
+    }
+  }
+  if (e.key !== "Enter") return;
   if (e.ctrlKey || e.metaKey) {
     e.preventDefault();
     const input = e.currentTarget;
@@ -1259,7 +1276,85 @@ $("composer-skill").onchange = () => {
   controls();
   $("prompt").focus();
 };
-$("prompt").oninput = () => {
+function closeCompletion() {
+  completionVersion++;
+  completionToken = undefined;
+  completionEntries = [];
+  $("prompt-completion").hidden = true;
+  $("prompt").setAttribute("aria-expanded", "false");
+  $("prompt").removeAttribute("aria-activedescendant");
+}
+function highlightCompletion() {
+  [...$("prompt-completion").children].forEach((node, index) => {
+    node.setAttribute("aria-selected", String(index === completionIndex));
+    if (index === completionIndex) {
+      $("prompt").setAttribute("aria-activedescendant", node.id);
+      node.scrollIntoView?.({ block: "nearest" });
+    }
+  });
+}
+function chooseCompletion(entry, browse = false) {
+  const input = $("prompt"), token = completionToken;
+  if (!token || !connected || changing) return;
+  if (browse) {
+    input.setRangeText(`@"${entry.path}/`, token.start, token.end, "end");
+  } else {
+    if (token.skill) selectedSkill = entry.name;
+    else if (!contextFiles.some((file) => file.path === entry.path)) contextFiles.push(entry);
+    input.setRangeText("", token.start, token.end, "end");
+  }
+  closeCompletion(); input.focus(); resizePrompt(); controls();
+  if (browse) void updateCompletion();
+}
+async function updateCompletion() {
+  closeCompletion();
+  const input = $("prompt");
+  if (!connected || changing || input.selectionStart !== input.selectionEnd) return;
+  const end = input.selectionStart, before = input.value.slice(0, end);
+  const match = /(?:^|\s)(\/[^\s]*|@"[^"\n]*|@[^\s]*)$/.exec(before);
+  if (!match) return;
+  const text = match[1], start = end - text.length, skill = text[0] === "/";
+  if (skill && before.slice(0, start).trim()) return;
+  const query = skill ? text.slice(1).replace(/^skill:/, "") : text.slice(text.startsWith('@"') ? 2 : 1).replaceAll("\\", "/");
+  const version = completionVersion, target = sessionId;
+  completionToken = { start, end, skill };
+  $("prompt-completion").hidden = false;
+  $("prompt-completion").textContent = "正在读取…";
+  input.setAttribute("aria-expanded", "true");
+  try {
+    const slash = query.lastIndexOf("/");
+    const entries = skill ? (config?.skills || []) : (await request("workspace.browse", { sessionId: target, path: slash < 0 ? "" : query.slice(0, slash) })).entries;
+    if (version !== completionVersion || target !== sessionId) return;
+    const filter = (skill ? query : query.slice(slash + 1)).toLocaleLowerCase();
+    completionEntries = entries.filter((entry) => `${entry.name} ${skill ? entry.description || "" : ""}`.toLocaleLowerCase().includes(filter));
+    completionIndex = 0;
+    $("prompt-completion").replaceChildren(...completionEntries.map((entry, index) => {
+      const option = document.createElement("div");
+      option.id = `completion-${index}`; option.setAttribute("role", "option");
+      const label = document.createElement("button"); label.type = "button"; label.tabIndex = -1;
+      label.textContent = skill ? `/${entry.name} — ${entry.description || "Skill"}` : `${entry.directory ? "文件夹" : "文件"}：${entry.path}`;
+      label.onclick = () => chooseCompletion(entry);
+      option.append(label);
+      if (entry.directory) {
+        const open = document.createElement("button"); open.type = "button"; open.tabIndex = -1;
+        open.textContent = "进入 ›"; open.setAttribute("aria-label", `进入文件夹 ${entry.path}`);
+        open.onclick = () => chooseCompletion(entry, true); option.append(open);
+      }
+      return option;
+    }));
+    if (!completionEntries.length) $("prompt-completion").textContent = "没有匹配项";
+    highlightCompletion();
+  } catch (e) {
+    if (version === completionVersion) $("prompt-completion").textContent = e.message;
+  }
+}
+$("prompt-completion").onmousedown = (e) => e.preventDefault();
+$("prompt").onblur = closeCompletion;
+$("prompt").onclick = () => { void updateCompletion(); };
+$("prompt").onkeyup = (e) => {
+  if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) void updateCompletion();
+};
+$("prompt").oninput = (e) => {
   const command = /^\/skill:([^\s]+)\s+/.exec($("prompt").value);
   if (command && config?.skills?.some((skill) => skill.name === command[1])) {
     selectedSkill = command[1];
@@ -1267,7 +1362,10 @@ $("prompt").oninput = () => {
   }
   resizePrompt();
   controls();
+  if (!e?.isComposing) void updateCompletion();
+  else closeCompletion();
 };
+$("prompt").oncompositionend = () => { void updateCompletion(); };
 $("open-workspace").onclick = async () => {
   const original = sessionId;
   pickingWorkspace = true; controls();
