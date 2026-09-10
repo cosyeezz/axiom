@@ -114,3 +114,9 @@
 - 根因：required、按钮禁用、submit 三处未计入 contextFiles；controls 在事件注册段前已经执行。
 - 修复：public/app.js 三处统一计入文件引用，补全状态声明放到文件顶部。
 - 防再犯：新增上下文类型检查表单校验到发送全链路；controls 使用的 let 状态必须先初始化，保留真实页面启动回归测试。
+
+### 2026-09-10 顶栏路径图标撑大标题行距
+- 症状：标题与路径间距松散，与左侧菜单按钮不协调。
+- 根因：路径图标的 height:26px 小于全局 button min-height:40px，实际路径行被撑高。
+- 修复：public/style.css 同时设置图标 height/min-height:24px，标题显式行高与双行间距，保留顶栏居中。
+- 防再犯：紧凑按钮同时检查 height 与 min-height；tests/app.test.js 检查真实页面计算样式，不只匹配 CSS 文本。
