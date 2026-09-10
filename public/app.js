@@ -127,13 +127,23 @@ function fillSubagentModels() {
     config?.subagentModel || "",
   );
 }
+function capabilityName(id) {
+  const parts = id.split(/[\\/]/).filter(Boolean);
+  if (/^skill\.md$/i.test(parts.at(-1))) return parts.at(-2) || id;
+  const packageIndex = parts.lastIndexOf("node_modules");
+  if (packageIndex >= 0) {
+    const name = parts.slice(packageIndex + 1);
+    return name.slice(0, name[0]?.startsWith("@") ? 2 : 1).join("/") || id;
+  }
+  return /^index\.[cm]?[jt]s$/i.test(parts.at(-1)) ? parts.at(-2) || id : parts.at(-1) || id;
+}
 function applyConfig(value) {
   config = value;
   const summary = (title, key, thinking, selection) => {
     const model = models.find((m) => m.key === key);
     return `${title}\n供应商：${model?.provider || key?.split("/")[0] || "默认"} · 模型：${model?.name || key || "默认"}\n思考等级：${thinking || "跟随主代理"}\n` +
       [["skills", "Skills"], ["mcp", "MCP"], ["plugins", "Extensions"]].map(([kind, label]) =>
-        `${label}：${selection == null ? "全部已启用（子任务启动时解析）" : selection[kind]?.join("、") || "无"}`).join("\n");
+        `${label}：${selection == null ? "全部已启用（子任务启动时解析）" : selection[kind]?.map(capabilityName).join("、") || "无"}`).join("\n");
   };
   const mainCapabilities = value.capabilities ?? value.capabilitySelection;
   $("active-capabilities").textContent = summary("主 Agent", value.model, value.thinking, mainCapabilities) + "\n\n" +
@@ -672,7 +682,7 @@ function createAgentPicker(role, title, catalog, initial) {
   for (const [kind, labelText] of [["skills", "Skills"], ["mcp", "MCP 服务"], ["plugins", "Extensions 扩展"]]) {
     const entries = [...catalog[kind], ...(initial.capabilities?.[kind] || [])
       .filter((id) => !catalog[kind].some((entry) => entry.id === id))
-      .map((id) => ({ id, name: `当前目录不可用 · ${id}` }))];
+      .map((id) => ({ id, name: `当前目录不可用 · ${capabilityName(id)}` }))];
     const details = document.createElement("details");
     details.className = "capability-picker";
     const heading = document.createElement("summary");

@@ -186,6 +186,14 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("subagent-model").disabled, true);
     assert.equal($("composer").contains($("subagent-model")), false);
     assert.equal($("new").textContent.trim(), "＋ 新会话");
+    for (const [id, name] of [
+      ["C:\\Users\\user\\skills\\ponytail\\SKILL.md", "ponytail"],
+      ["/home/user/node_modules/pi-web-access/index.ts", "pi-web-access"],
+      ["C:\\node_modules\\@scope\\plugin\\pi-extension\\index.js", "@scope/plugin"],
+      ["/home/user/extensions/local/index.ts", "local"],
+      ["/home/user/extensions/search.ts", "search.ts"],
+      ["playwright", "playwright"],
+    ]) assert.equal(window.capabilityName(id), name);
     $("open-settings").click();
     assert.equal($("settings").open, true);
     assert.equal($("settings-session").textContent, "a");
