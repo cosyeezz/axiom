@@ -6,6 +6,24 @@ import { marked } from "marked";
 import createPurify from "dompurify";
 import { createStreamRenderer } from "../public/stream-renderer.js";
 
+test("header path icons do not inherit the global button minimum height", async () => {
+  const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
+  const css = await readFile(new URL("../public/style.css", import.meta.url), "utf8");
+  const dom = new JSDOM(html);
+  try {
+    const style = dom.window.document.createElement("style");
+    style.textContent = css;
+    dom.window.document.head.append(style);
+    const computed = (selector) => dom.window.getComputedStyle(dom.window.document.querySelector(selector));
+    assert.equal(computed(".header-title").gap, "2px");
+    assert.equal(computed(".header-title h1").lineHeight, "20px");
+    for (const id of ["copy-workspace", "reveal-workspace"]) {
+      assert.equal(computed(`#${id}`).height, "24px");
+      assert.equal(computed(`#${id}`).minHeight, "24px");
+    }
+  } finally { dom.window.close(); }
+});
+
 // Exercise the real page handlers without a live model or an extra test framework.
 test("page preserves drafts, recovers failed connections and paints tasks on demand", async () => {
   const html = await readFile(
