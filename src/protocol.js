@@ -1,6 +1,9 @@
 import { z } from "zod";
 
 const id = z.string().min(1);
+const capabilities = z.object({
+  skills: z.array(id), mcp: z.array(id), plugins: z.array(id),
+}).strict().nullable();
 export const command = z.discriminatedUnion("type", [
   z
     .object({
@@ -11,6 +14,10 @@ export const command = z.discriminatedUnion("type", [
     })
     .strict(),
   z.object({ id, type: z.literal("models.list") }).strict(),
+  z.object({
+    id, type: z.literal("capabilities.list"),
+    cwd: id.optional(), trustProject: z.boolean().optional(),
+  }).strict(),
   z
     .object({
       id,
@@ -29,6 +36,12 @@ export const command = z.discriminatedUnion("type", [
       id,
       type: z.literal("session.create"),
       cwd: z.string().trim().min(1).optional(),
+      model: id.optional(),
+      thinking: z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]).optional(),
+      subagentModel: id.nullable().optional(),
+      capabilities: capabilities.optional(),
+      subagentCapabilities: capabilities.optional(),
+      trustProject: z.boolean().optional(),
     })
     .strict(),
   z.object({ id, type: z.literal("session.attach"), sessionId: id }).strict(),

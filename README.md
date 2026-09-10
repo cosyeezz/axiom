@@ -4,12 +4,12 @@
 
 ## 启动
 
-需要 Node.js >=22.5，以及已配置好凭据的 Pi。服务读取本机 Pi 凭据，但不自动加载扩展、Skills 和提示词模板；会加载工作目录的上下文说明。主 Agent 和子 Agent 都使用 Pi 默认编码工具（read/bash/edit/write），只有主 Agent 额外获得两个委派工具。
+需要 Node.js >=22.5，以及已配置好凭据和所需扩展包的 Pi。主 Agent 和子 Agent 默认加载本机 Pi 已启用的 Skills、插件、MCP、提示词模板及目录上下文；基础编码工具为 read/bash/edit/write，主 Agent 额外获得两个委派工具。默认能力与终端持久配置对齐，不继承另一终端进程的临时参数、会话状态或已执行的模式命令。纯 TUI 组件和终端快捷键不适用于网页；当前无插件交互 UI 桥，需要审批的 MCP 调用按适配器规则拒绝，不自动批准。
 
 ```powershell
 npm ci --ignore-scripts
 $env:AXIOM_CWD = 'F:/your-project'
-# 可选，建议明确指定；不指定时选择首个已认证模型
+# 可选；默认使用 Pi 设置中的已认证模型，不可用时选择首个已认证模型
 $env:AXIOM_MODEL = 'provider/model'
 # 可选，默认 4319
 $env:AXIOM_PORT = '4319'
@@ -19,6 +19,17 @@ npm start
 本次本机启动使用 `.env.local` 保存工作目录（已忽略，不要提交或共享），日志为 `axiom.log`，PID 为 `.axiom.pid`。手动重新启动可执行 `node --env-file=.env.local src/main.js`；先停止已有进程，避免端口冲突。
 
 服务仅监听 `127.0.0.1`。健康检查 `GET /health`，WebSocket `/ws`。无需令牌。本机网页自动连接，服务校验 Host 和浏览器 Origin，拒绝其他网站跨站连接。本机进程可直接访问。不要公开部署到网络。工作目录不是沙箱，Agent 可以执行命令和修改文件。
+
+## 新会话与能力选择
+
+- 「新会话 · 全部能力」直接创建主/子代理均启用全部可用能力的会话。
+- 「自定义新会话…」弹窗分别设置主/子代理的供应商、模型与能力模式；模型单选，Skills、MCP 服务、插件通过折叠下拉中的复选框多选。默认全部，可切换自定义并全部取消。
+- 能力清单来自 Pi 原生包解析与 Skill 发现；仅列出本机已安装且已启用的资源，不安装新包。MCP 复用已安装 `pi-mcp-adapter` 的配置合并及 `createMcpAdapter({config})`，适配器本身不再重复显示为插件。每个代理拥有独立服务清单，未选服务不会通过该适配器暴露，stdio 服务默认使用会话工作目录。
+- 未信任目录默认只加载全局能力并显示提示；在自定义弹窗确认信任后加载项目资源，仅本会话生效，不写入全局 trust/settings/MCP 文件。设置采用内存快照，保留全局和项目相对路径语义。
+- 能力在创建时确定，设置弹窗显示主/子代理的能力摘要；模型仍沿用原有空闲时调整机制。子代理默认全部能力、模型跟随主代理；自定义可分别选择。状态通过会话快照恢复，服务重启丢失。
+- 插件加载失败会阻止创建并显示错误；启动钩子错误保留为加载提示。插件的启动和关闭事件均执行。插件命令可以没有模型回答，不会再误报失败。所有扩展仍有本机执行权限，取消勾选不是文件系统沙箱；选中的插件也可能贡献自己的额外工具。
+
+协议新增 `capabilities.list({cwd?,trustProject?})`，返回不含凭据的 Skills/插件/MCP 目录与信任状态。`session.create` 新增 `model`、`thinking`、`subagentModel`、`capabilities`、`subagentCapabilities`、`trustProject`。能力值为 `null`（全部）或 `{skills:[id],mcp:[id],plugins:[id]}`，空数组表示不加载该类。主/子选择都在创建前校验，未知 ID 拒绝。`config.activeTools` 返回实际工具名用于验证。
 
 ## 输出渲染与性能
 
@@ -81,6 +92,7 @@ sessions.js 主会话、订阅、快照、取消
   tools.js  两个工具的参数和适配
   tasks.js  子任务状态、并行执行、结果
 pi.js       Pi SDK 创建、事件适配与释放
+capabilities.js 原生能力发现、内存配置、MCP 快照与选择加载
 ```
 
 任务状态只归 tasks 管理，工具不保存另一份状态；传输层不直接调用 Pi SDK。采用原生 JavaScript ES modules 和 Node 测试工具，不增加编译步骤或工作流框架。

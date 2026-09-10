@@ -460,7 +460,8 @@ textarea {
   background: transparent;
   line-height: 1.6;
 }
-#settings {
+#settings,
+#create-session {
   width: min(600px, calc(100% - 32px));
   max-height: calc(100dvh - 32px);
   padding: 0;
@@ -470,13 +471,16 @@ textarea {
   border-radius: 16px;
   box-shadow: 0 24px 80px #0008;
 }
-#settings::backdrop {
+#settings::backdrop,
+#create-session::backdrop {
   background: #0009;
 }
-#settings header {
+#settings header,
+#create-session header {
   justify-content: space-between;
 }
-#settings h2 {
+#settings h2,
+#create-session h2 {
   font-size: 18px;
   margin: 0;
 }
@@ -498,7 +502,8 @@ textarea {
   border-bottom: 1px solid var(--line);
   overflow-wrap: anywhere;
 }
-#settings .settings-selectors {
+#settings .settings-selectors,
+#create-session .settings-selectors {
   flex-wrap: wrap;
   overflow: visible;
 }
@@ -513,6 +518,27 @@ textarea {
   padding-top: 16px;
   margin-bottom: 0;
 }
+.capability-agent { border: 0; padding: 0; margin: 20px 0; min-width: 0; }
+.capability-agent legend { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+.capability-agent .selectors { flex-wrap: wrap; overflow: visible; }
+.capability-picker { position: relative; margin: 8px 3px; }
+.capability-picker > summary {
+  padding: 5px 12px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--raised); font-size: 12px; min-height: 32px;
+}
+.capability-options {
+  max-height: 220px; overflow: auto; padding: 4px; margin-top: 4px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--raised);
+}
+.capability-options label { display: flex; gap: 8px; padding: 8px; overflow-wrap: anywhere; cursor: pointer; }
+.capability-options label:hover { background: #23252a; }
+.capability-options input, .trust-row input { width: auto; min-height: 0; accent-color: var(--accent); }
+.capability-options p { padding: 8px; }
+.trust-row { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; }
+#create-workspace { overflow-wrap: anywhere; }
+#create-feedback { white-space: pre-wrap; }
+#create-form > button { width: 100%; }
+#active-capabilities { white-space: pre-wrap; overflow-wrap: anywhere; }
 .actions {
   display: flex;
   align-items: center;

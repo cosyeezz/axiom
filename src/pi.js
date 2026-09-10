@@ -1,18 +1,16 @@
 import {
   createAgentSession,
-  DefaultResourceLoader,
-  getAgentDir,
   ModelRuntime,
   SessionManager,
-  SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { capabilityLoader, discoverCapabilities } from "./capabilities.js";
 
 export async function createPiFactory({ cwd, model: requested }) {
   const modelRuntime = await ModelRuntime.create();
   const available = await modelRuntime.getAvailable();
-  const model = requested
-    ? available.find((m) => `${m.provider}/${m.id}` === requested)
-    : available[0];
+  const startup = await discoverCapabilities(cwd, { loadAdapter: false });
+  const defaultKey = requested || `${startup.settingsManager.getDefaultProvider()}/${startup.settingsManager.getDefaultModel()}`;
+  const model = available.find((m) => `${m.provider}/${m.id}` === defaultKey) || (!requested && available[0]);
   if (!model)
     throw new Error(
       "No authenticated model. Configure Pi credentials and AXIOM_MODEL=provider/model.",
@@ -23,25 +21,18 @@ export async function createPiFactory({ cwd, model: requested }) {
       ? available.find((m) => `${m.provider}/${m.id}` === selection.model)
       : model;
     if (!selected) throw new Error("Unknown model");
-    const settingsManager = SettingsManager.inMemory();
-    const loader = new DefaultResourceLoader({
-      cwd: workspace,
-      agentDir: getAgentDir(),
-      settingsManager,
-      noExtensions: true,
-      noSkills: true,
-      noPromptTemplates: true,
-      noThemes: true,
-      appendSystemPrompt: [
-        customTools.length
-          ? "Delegate independent work with delegate, then collect results with read_result. Avoid concurrent edits to the same files. Report task failures honestly."
-          : "Complete the delegated task. Return concise findings and changes with evidence.",
-      ],
-    });
+    const resources = await discoverCapabilities(workspace, { trustProject: selection.trustProject });
+    const { settingsManager } = resources;
+    const { loader, selected: capabilities } = capabilityLoader(resources, selection.capabilities, customTools);
     await loader.reload();
+    const diagnostics = loader.getExtensions().errors;
+    if (diagnostics.length) {
+      loader.getExtensions().runtime.invalidate();
+      throw new Error(`插件加载失败：${diagnostics.map((d) => `${d.path}: ${d.error}`).join("; ")}`);
+    }
     const { session } = await createAgentSession({
       cwd: workspace,
-      modelRuntime,
+      modelRuntime: await ModelRuntime.create(),
       model: selected,
       thinkingLevel: selection.thinking,
       settingsManager,
@@ -49,6 +40,20 @@ export async function createPiFactory({ cwd, model: requested }) {
       customTools,
       sessionManager: SessionManager.inMemory(workspace),
     });
+    const warnings = [...resources.catalog.warnings];
+    if (resources.catalog.needsTrust)
+      warnings.push("此目录的 Pi/MCP 配置尚未信任，仅加载全局能力；通过自定义新会话确认信任后可加载目录配置。");
+    try {
+      await session.bindExtensions({
+        mode: "print",
+        onError: (event) => warnings.push(`${event.extensionPath}: ${event.error}`),
+      });
+    } catch (error) {
+      try { await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }); }
+      finally { session.dispose(); }
+      throw error;
+    }
+    let promptStart = 0;
     return {
       async configure({ model: key, thinking }) {
         const selected = available.find((m) => `${m.provider}/${m.id}` === key);
@@ -69,13 +74,27 @@ export async function createPiFactory({ cwd, model: requested }) {
         model: `${session.model.provider}/${session.model.id}`,
         thinking: session.thinkingLevel,
         levels: session.getAvailableThinkingLevels(),
+        capabilities,
+        capabilityMode: selection.capabilities == null ? "all" : "custom",
+        warnings: [...warnings],
+        activeTools: session.getActiveToolNames(),
       }),
-      prompt: (text) => session.prompt(text),
+      prompt: async (text) => {
+        promptStart = session.messages.length;
+        await session.prompt(text);
+      },
       abort: () => session.abort(),
-      dispose: () => session.dispose(),
+      async dispose() {
+        try {
+          await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+        } finally {
+          session.dispose();
+        }
+      },
       result() {
-        const last = session.messages.findLast((m) => m.role === "assistant");
-        if (!last || ["error", "aborted", "length"].includes(last.stopReason))
+        const last = session.messages.slice(promptStart).findLast((m) => m.role === "assistant");
+        if (!last) return "指令已处理，未产生模型回答。";
+        if (["error", "aborted", "length"].includes(last.stopReason))
           throw new Error(
             last?.errorMessage || last?.stopReason || "No assistant result",
           );
@@ -109,6 +128,8 @@ export async function createPiFactory({ cwd, model: requested }) {
     };
   };
   factory.cwd = cwd;
+  factory.capabilities = async (workspace = cwd, trustProject = false) =>
+    (await discoverCapabilities(workspace, { trustProject, loadAdapter: false })).catalog;
   factory.catalog = () =>
     available.map((m) => ({
       provider: m.provider,

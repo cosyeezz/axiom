@@ -52,9 +52,15 @@ export class Tasks {
       job.error = String(error.message ?? error);
     } finally {
       unsubscribe?.();
-      job.agent?.dispose();
-      delete job.agent;
-      this.publish(job);
+      try {
+        await job.agent?.dispose();
+      } catch (error) {
+        job.status = "failed";
+        job.error = `子代理清理失败：${error.message || error}`;
+      } finally {
+        delete job.agent;
+        this.publish(job);
+      }
     }
   }
 

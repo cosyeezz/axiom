@@ -99,6 +99,9 @@ export function createServerApp(sessions) {
           request = command.parse(JSON.parse(raw.toString()));
           let data;
           switch (request.type) {
+            case "capabilities.list":
+              data = await sessions.createAgent.capabilities(request.cwd, request.trustProject);
+              break;
             case "models.list":
               data = sessions.createAgent.catalog();
               break;
@@ -112,7 +115,7 @@ export function createServerApp(sessions) {
               data = await sessions.configure(request.sessionId, request);
               break;
             case "session.create": {
-              const id = await sessions.create(request.cwd);
+              const id = await sessions.create(request.cwd, request);
               if (ws.readyState !== WebSocket.OPEN) {
                 await sessions.remove(id);
                 return;

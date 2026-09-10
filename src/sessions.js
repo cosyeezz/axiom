@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import { Tasks } from "./tasks.js";
 import { delegationTools } from "./tools.js";
+import { resolveCapabilities } from "./capabilities.js";
 
 export class Sessions {
   constructor(createAgent) {
@@ -27,7 +28,7 @@ export class Sessions {
     return { sessionId: id, title };
   }
 
-  async create(workspace = this.createAgent.cwd || process.cwd()) {
+  async create(workspace = this.createAgent.cwd || process.cwd(), selection = {}) {
     const cwd = await realpath(workspace);
     if (!(await stat(cwd)).isDirectory()) throw new Error("工作空间必须是目录");
     const id = randomUUID();
@@ -42,7 +43,10 @@ export class Sessions {
       messages: [],
       live: {},
       tools: {},
-      subagentModel: null,
+      subagentModel: selection.subagentModel ?? null,
+      capabilities: selection.capabilities ?? null,
+      subagentCapabilities: selection.subagentCapabilities ?? null,
+      trustProject: selection.trustProject === true,
     };
     item.emit = (event) => {
       const agentId = event.agentId ?? "main";
@@ -97,11 +101,24 @@ export class Sessions {
           ...item.agent.config?.(),
           ...(item.subagentModel ? { model: item.subagentModel } : {}),
           cwd,
+          capabilities: item.subagentCapabilities,
+          trustProject: item.trustProject,
         }),
       item.emit,
     );
+    if (item.subagentModel !== null && !this.createAgent.catalog().some((m) => m.key === item.subagentModel))
+      throw new Error("Unknown subagent model");
+    if (this.createAgent.capabilities) {
+      const catalog = await this.createAgent.capabilities(cwd, item.trustProject);
+      resolveCapabilities(item.capabilities, catalog);
+      resolveCapabilities(item.subagentCapabilities, catalog);
+    }
     item.agent = await this.createAgent(delegationTools(item.tasks), {
       ...this.defaults,
+      ...(selection.model ? { model: selection.model } : {}),
+      ...(selection.thinking ? { thinking: selection.thinking } : {}),
+      capabilities: item.capabilities,
+      trustProject: item.trustProject,
       cwd,
     });
     item.unsubscribe = item.agent.subscribe((event) =>
@@ -124,7 +141,11 @@ export class Sessions {
       title: item.title,
       seq: item.seq,
       status: item.status,
-      config: { ...item.agent.config?.(), subagentModel: item.subagentModel },
+      config: {
+        ...item.agent.config?.(), subagentModel: item.subagentModel,
+        capabilitySelection: item.capabilities,
+        subagentCapabilities: item.subagentCapabilities,
+      },
       runId: item.runId,
       messages: item.messages,
       live: item.live,
@@ -154,7 +175,11 @@ export class Sessions {
       if (config.model !== previous?.model || config.thinking !== previous?.thinking)
         this.defaults = { model: config.model, thinking: config.thinking };
       item.subagentModel = subagentModel;
-      return { ...config, subagentModel };
+      return {
+        ...item.agent.config?.(), ...config, subagentModel,
+        capabilitySelection: item.capabilities,
+        subagentCapabilities: item.subagentCapabilities,
+      };
     } finally {
       item.status = "idle";
     }
@@ -214,7 +239,7 @@ export class Sessions {
     const item = this.get(id);
     await this.cancel(id);
     item.unsubscribe();
-    item.agent.dispose();
+    await item.agent.dispose();
     item.listeners.clear();
     this.items.delete(id);
   }

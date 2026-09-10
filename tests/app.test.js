@@ -71,6 +71,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       message: { role: "assistant", content: "historical result" },
     },
   ];
+  let lastCreation;
+  let failCreation = false;
   let failList = false;
   let failConfig = false;
   class Socket {
@@ -95,6 +97,17 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       queueMicrotask(() => {
         let data;
         switch (req.type) {
+          case "capabilities.list":
+            data = { needsTrust: false, warnings: [], skills: [{ id: "skill-a", name: "Skill A" }, { id: "skill-b", name: "Skill B" }], mcp: [{ id: "browser", name: "Browser" }], plugins: [{ id: "search", name: "Search" }] };
+            break;
+          case "session.create":
+            lastCreation = req;
+            if (failCreation) {
+              this.receive({ type: "response", id: req.id, ok: false, error: "plugin unavailable" });
+              return;
+            }
+            data = { ...states[0], config: { ...config, capabilitySelection: req.capabilities, subagentCapabilities: req.subagentCapabilities } };
+            break;
           case "models.list":
             data = [
               { key: "test/model", provider: "test", name: "Model" },
@@ -186,6 +199,29 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("subagent-provider").dispatchEvent(new window.Event("change"));
     await settle();
     $("settings").close();
+    $("custom-new").click();
+    await settle();
+    assert.equal($("create-session").open, true);
+    assert.equal($("create-main-mode").value, "all");
+    assert.equal($("create-subagent-mode").value, "all");
+    $("create-main-mode").value = "custom";
+    $("create-main-mode").dispatchEvent(new window.Event("change"));
+    const checkboxes = window.document.querySelectorAll('.capability-agent:first-child input[data-kind="skills"]');
+    checkboxes[1].checked = false;
+    checkboxes[1].dispatchEvent(new window.Event("change"));
+    $("create-subagent-provider").value = "other";
+    $("create-subagent-provider").dispatchEvent(new window.Event("change"));
+    failCreation = true;
+    $("create-form").requestSubmit();
+    await settle();
+    assert.equal($("create-session").open, true);
+    assert.match($("create-feedback").textContent, /plugin unavailable/);
+    assert.deepEqual(lastCreation.capabilities.skills, ["skill-a"]);
+    assert.equal(lastCreation.subagentCapabilities, null);
+    assert.equal(lastCreation.subagentModel, "other/child");
+    assert.equal($("create-submit").disabled, false);
+    failCreation = false;
+    $("create-session").close();
     input("first draft\nsecond line");
     assert.equal($("send").disabled, false);
     window.document.querySelectorAll(".session-item")[1].click();

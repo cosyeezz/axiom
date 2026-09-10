@@ -26,7 +26,8 @@
             ><button class="secondary">打开工作空间</button>
           </form>
         </details>
-        <button id="new" class="secondary">＋ 新会话</button
+        <button id="new" class="secondary" title="加载终端已启用的全部能力">＋ 新会话 · 全部能力</button>
+        <button id="custom-new" class="secondary" aria-haspopup="dialog" aria-controls="create-session">自定义新会话…</button
         ><label class="sr-only" for="search">搜索会话</label
         ><input id="search" type="search" placeholder="搜索会话…" />
         <nav id="sessions" aria-label="会话历史"></nav>
@@ -115,6 +116,11 @@
       </header>
       <div class="settings-body">
         <p class="settings-scope">当前会话 · <span id="settings-session"></span></p>
+        <section>
+          <h3>会话能力</h3>
+          <p id="active-capabilities"></p>
+          <p>能力在创建时确定；如需更换，请使用「自定义新会话」。模型仍可随时在空闲时调整。</p>
+        </section>
         <section aria-labelledby="subagent-title">
           <h3 id="subagent-title">子代理</h3>
           <p id="subagent-help">为协作任务选择模型。更改自动保存，仅影响当前会话之后启动的子任务。</p>
@@ -126,6 +132,21 @@
         </section>
         <p id="settings-feedback" role="status" aria-live="polite"></p>
       </div>
+    </dialog>
+    <dialog id="create-session" aria-labelledby="create-title">
+      <header>
+        <h2 id="create-title">自定义新会话</h2>
+        <form method="dialog"><button class="secondary" aria-label="关闭新会话设置" autofocus>✕</button></form>
+      </header>
+      <form id="create-form" class="settings-body">
+        <p id="create-workspace" class="settings-scope"></p>
+        <p>复用本机 Pi 已启用的能力；Skills 按需读取，MCP 按配置连接。未选能力不会自动加载，但这不是权限沙箱。</p>
+        <div id="create-agents"></div>
+        <label id="create-trust-row" class="trust-row" hidden><input id="create-trust" type="checkbox">我信任此目录的 Pi / MCP 配置，允许其插件和服务在本机执行（仅本会话）</label>
+        <p>网页支持插件的工具与指令逻辑，不提供终端专用组件；需要交互审批的操作不会自动放行。</p>
+        <p id="create-feedback" role="status" aria-live="polite"></p>
+        <button id="create-submit" disabled>创建会话</button>
+      </form>
     </dialog>
   </body>
 </html>
