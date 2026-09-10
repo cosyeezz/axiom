@@ -95,6 +95,7 @@ export async function createPiFactory({ cwd, model: requested }) {
         thinking: session.thinkingLevel,
         levels: session.getAvailableThinkingLevels(),
         capabilities,
+        skills: loader.getSkills().skills.map(({ name, description }) => ({ name, description })),
         capabilityMode: selection.capabilities == null ? "all" : "custom",
         warnings: [...warnings],
         activeTools: session.getActiveToolNames(),

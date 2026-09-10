@@ -54,7 +54,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       window.requestAnimationFrame,
       window.cancelAnimationFrame,
     );
-  const config = { model: "test/model", thinking: "off", levels: ["off"] };
+  const config = { model: "test/model", thinking: "off", levels: ["off"], skills: [
+    { name: "codebase-map", description: "代码导航" }, { name: "ponytail", description: "最小实现" },
+  ] };
   const states = ["a", "b"].map((id) => ({
     sessionId: id,
     title: id,
@@ -220,6 +222,26 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("session-action-submit").classList.contains("danger"), true);
     assert.equal(window.document.activeElement, $("session-action-cancel"));
     $("session-action-cancel").click();
+    assert.equal($("composer-skill").disabled, false);
+    assert.equal($("composer-skill").options[1].title, "代码导航");
+    input("检查代码");
+    $("composer-skill").value = "codebase-map";
+    $("composer-skill").dispatchEvent(new window.Event("change"));
+    assert.equal($("prompt").value, "/skill:codebase-map 检查代码");
+    $("composer-skill").value = "ponytail";
+    $("composer-skill").dispatchEvent(new window.Event("change"));
+    assert.equal($("prompt").value, "/skill:ponytail 检查代码");
+    $("composer-skill").value = "";
+    $("composer-skill").dispatchEvent(new window.Event("change"));
+    assert.equal($("prompt").value, "检查代码");
+    input("/skill:codebase-map 检查代码");
+    assert.equal($("composer-skill").value, "codebase-map");
+    $("composer").requestSubmit();
+    await settle();
+    assert.equal(requests.findLast((req) => req.type === "prompt").text, "/skill:codebase-map 检查代码");
+    assert.equal($("composer-skill").value, "");
+    sockets[1].receive({ type: "session.status", sessionId: "a", data: { status: "idle" } });
+    input("");
     assert.match($("session-runtime").textContent, /缓存命中 暂无数据.*上下文 暂无数据.*test · model · off/);
     assert.equal($("thinking").selectedOptions[0].textContent, "off");
     assert.equal(window.runtimeSummary({ model: "zai-coding-cn/glm-5.3-flash", thinking: "max" })[2], "zai-coding-cn · glm-5.3-flash · max");
