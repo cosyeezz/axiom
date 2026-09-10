@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Sessions } from "../src/sessions.js";
-import { command } from "../src/protocol.js";
+import { command, compactionDefaults } from "../src/protocol.js";
 import { agentRuntime } from "../src/pi.js";
 
 test("runtime snapshots use actual agent state, survive disposal and stay out of model tool results", async () => {
@@ -116,9 +116,10 @@ test("configuration applies to the main agent and is inherited by delegated chil
     assert.equal(sessions.snapshot(newest).config.thinking, "off");
     assert.equal(sessions.snapshot(newest).config.subagentModel, null);
 
-    const all = { queueType: "steer", model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
+    const all = { compaction: { ...compactionDefaults }, queueType: "steer", model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
     assert.deepEqual(sessions.getDefaults(), all);
     const defaults = {
+      compaction: { ...compactionDefaults },
       queueType: "steer", model: "c/d", subagentModel: "a/b", thinking: null, subagentThinking: null,
       capabilities: { skills: ["s"], mcp: [], plugins: ["p"] },
       subagentCapabilities: { skills: [], mcp: ["m"], plugins: [] },

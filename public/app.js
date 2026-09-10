@@ -14,6 +14,9 @@ let ws,
 let allSessions = [],
   follow = true;
 const views = new Map();
+const compactionDefaults = { enabled: false, tokenThreshold: 100000, percentThreshold: 70, model: null, thinking: "off", keepRecentTokens: 20000 };
+const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+let compactions = [], mainItems = [], sessionCompaction;
 let contextFiles = [], contextMode, contextListing = { path: "", entries: [] }, contextLoad = 0, pickingWorkspace = false;
 try {
   sessionId = localStorage.getItem("axiom.session") || undefined;
@@ -94,6 +97,8 @@ function controls() {
   $("create-submit").disabled = unavailable || !creation?.main || creation.loading || (!creation.defaults && creation.needsTrust);
   if (creation?.defaults) for (const fieldset of $("create-agents").children) fieldset.disabled = unavailable;
   $("queue-type").disabled = unavailable;
+  for (const input of document.querySelectorAll("#session-compaction input, #session-compaction select"))
+    input.disabled = unavailable;
   $("composer-skill").disabled = unavailable || !config?.skills?.length;
   $("composer-skill").value = /^\/skill:([^\s]+)/.exec($("prompt").value)?.[1] || "";
   $("add-context").disabled = unavailable;
@@ -203,6 +208,8 @@ async function configure(thinking) {
   controls();
   $("error").textContent = "";
   try {
+    const compaction =
+      sessionCompaction?.dirty && sessionCompaction.valid() ? sessionCompaction.read() : undefined;
     applyConfig(
       await request("session.configure", {
         sessionId,
@@ -210,8 +217,11 @@ async function configure(thinking) {
         queueType: $("queue-type").value,
         subagentModel: $("subagent-model").value || null,
         ...(thinking ? { thinking } : {}),
+        ...(compaction ? { compaction } : {}),
       }),
     );
+    // 旧后端响应可能缺少 compaction，用本地提交值回显；新后端以服务端规范化值为准。
+    if (compaction && !config.compaction) config.compaction = compaction;
   } catch (e) {
     error(e);
     failure = e.message || String(e);
@@ -310,6 +320,129 @@ function renderMessage(item, message) {
   }
   renderer.flush(item);
 }
+function compactionCard(data) {
+  const node = document.createElement("details");
+  node.className = "compaction-card";
+  const label = document.createElement("summary");
+  const badge = document.createElement("span");
+  badge.textContent = "上下文已压缩";
+  const meta = document.createElement("small");
+  const tokens = (value) => (Number.isFinite(value) ? value.toLocaleString("en-US") : "—");
+  meta.textContent = `压缩前 ${tokens(data.tokensBefore)} tokens${Number.isFinite(data.estimatedTokensAfter) ? ` · 压缩后约 ${tokens(data.estimatedTokensAfter)} tokens` : ""}`;
+  const body = document.createElement("div");
+  body.className = "markdown compaction-summary";
+  label.append(badge, meta);
+  node.append(label, body);
+  // renderMarkdown 走 DOMPurify 白名单，摘要里的富文本不会执行。
+  renderMarkdown(body, data.summary || "");
+  return node;
+}
+function foldCompaction(data) {
+  const ids = new Set(data.compactedMessageIds || []);
+  const items = mainItems
+    .filter(({ item, entryId }) => entryId && ids.has(entryId) && item.node.isConnected && !item.node.hidden)
+    .sort((a, b) => (a.item.node.compareDocumentPosition(b.item.node) & 4 ? -1 : 1));
+  if (!items.length) return;
+  const anchor = items.at(-1).item.node.nextElementSibling;
+  const top = anchor?.getBoundingClientRect().top ?? 0;
+  items[0].item.node.before(compactionCard(data));
+  for (const { item } of items) item.node.hidden = true;
+  // 折叠改变上方高度，按保留消息的位移补偿滚动位置，保持阅读锚点而不强制到底部。
+  if (anchor) $("transcript").scrollTop += anchor.getBoundingClientRect().top - top;
+}
+function compactionEditor(initial, mainModel, commit) {
+  initial = { ...compactionDefaults, ...initial };
+  const number = (input, max, fractional = false) => {
+    const text = input.value.trim();
+    if (!text) return null;
+    const value = Number(text);
+    if (!Number.isFinite(value) || value <= 0 || value > max || (!fractional && !Number.isInteger(value)))
+      return NaN;
+    return value;
+  };
+  const node = document.createElement("fieldset");
+  node.className = "capability-agent compaction-settings";
+  const legend = document.createElement("legend");
+  legend.textContent = "自动压缩";
+  const toggle = document.createElement("label");
+  toggle.className = "compaction-toggle";
+  const enabled = Object.assign(document.createElement("input"), { type: "checkbox" });
+  enabled.checked = initial.enabled;
+  toggle.append(enabled, document.createTextNode("启用自动压缩"));
+  const selectors = document.createElement("div");
+  selectors.className = "selectors settings-selectors";
+  const field = (text, input) => {
+    const label = document.createElement("label");
+    const span = document.createElement("span");
+    span.textContent = text;
+    label.append(span, input);
+    selectors.append(label);
+    return input;
+  };
+  const token = field("Token 阈值", Object.assign(document.createElement("input"), { type: "number", min: "1", placeholder: "不启用" }));
+  token.value = initial.tokenThreshold ?? "";
+  const percent = field("百分比阈值", Object.assign(document.createElement("input"), { type: "number", min: "0", max: "100", step: "any", placeholder: "不启用" }));
+  percent.value = initial.percentThreshold ?? "";
+  const keep = field("保留最近 tokens", Object.assign(document.createElement("input"), { type: "number", min: "1" }));
+  keep.value = initial.keepRecentTokens;
+  const model = field("压缩模型", document.createElement("select"));
+  options(model, [["", "跟随主代理模型"], ...models.map((m) => [m.key, m.name || m.id])], initial.model || "");
+  const thinking = field("压缩思考等级", document.createElement("select"));
+  const read = () => {
+    const kept = number(keep, Number.MAX_SAFE_INTEGER);
+    return {
+      enabled: enabled.checked,
+      tokenThreshold: number(token, Number.MAX_SAFE_INTEGER),
+      percentThreshold: number(percent, 100, true),
+      model: model.value || null,
+      thinking: thinking.value,
+      keepRecentTokens: kept == null ? compactionDefaults.keepRecentTokens : kept,
+    };
+  };
+  const error = () => {
+    if (Number.isNaN(number(token, Number.MAX_SAFE_INTEGER))) return "Token 阈值需为大于 0 的整数";
+    if (Number.isNaN(number(percent, 100, true))) return "百分比阈值需为大于 0 且不超过 100 的数值";
+    if (Number.isNaN(number(keep, Number.MAX_SAFE_INTEGER))) return "保留最近 tokens 需为大于 0 的整数";
+    const value = read();
+    return value.enabled && value.tokenThreshold == null && value.percentThreshold == null
+      ? "启用自动压缩时至少设置一个触发阈值" : "";
+  };
+  const valid = () => !error();
+  const fillThinking = () => {
+    const levels = models.find((m) => m.key === (model.value || mainModel()))?.levels || thinkingLevels;
+    const current = thinking.value || initial.thinking;
+    options(thinking, levels.map((v) => [v, v]), levels.includes(current) ? current : "off");
+  };
+  let dirty = false;
+  const change = () => {
+    dirty = true;
+    commit?.(read(), error());
+  };
+  model.onchange = () => {
+    fillThinking();
+    change();
+  };
+  fillThinking();
+  for (const input of [enabled, token, percent, keep, thinking]) input.onchange = change;
+  const hint = document.createElement("p");
+  hint.className = "compaction-hint";
+  hint.textContent = "两个阈值至少填一个（先到先触发，可同时设置）；较早对话折叠为摘要卡片，保留最近内容，压缩固定不使用工具。";
+  node.append(legend, toggle, selectors, hint);
+  return { node, read, valid, error, fillThinking, get dirty() { return dirty; } };
+}
+function commitCompaction(value, message) {
+  if (message) {
+    $("settings-feedback").textContent = message;
+    return;
+  }
+  void configure();
+}
+function buildSessionCompaction() {
+  const node = $("session-compaction");
+  node.replaceChildren();
+  sessionCompaction = compactionEditor(config.compaction || compactionDefaults, () => $("model").value, commitCompaction);
+  node.append(sessionCompaction.node);
+}
 function renderQueue(queue = {}) {
   const entries = [["Steer", queue.steering || []], ["Follow-up", queue.followUp || []]];
   $("message-queue").replaceChildren(...entries.flatMap(([type, texts]) => texts.map((text) => {
@@ -330,8 +463,11 @@ function event(message) {
   if (message.sessionId !== sessionId) return;
   const { type, agentId = "main", data } = message;
   if (type === "session.queue" && agentId === "main") renderQueue(data);
-  if (type === "agent.message.end" && data.message.role === "user")
-    renderMessage(card("你", tasks.get(agentId)), data.message);
+  if (type === "agent.message.end" && data.message.role === "user") {
+    const item = card("你", tasks.get(agentId));
+    renderMessage(item, data.message);
+    if (agentId === "main") mainItems.push({ item, entryId: data.entryId });
+  }
   if (type === "agent.runtime") {
     if (agentId === "main") {
       runtime = data;
@@ -365,6 +501,11 @@ function event(message) {
       card(agentId === "main" ? "AXIOM" : "子 Agent", tasks.get(agentId));
     renderMessage(item, data.message);
     live.delete(agentId);
+    if (agentId === "main") mainItems.push({ item, entryId: data.entryId });
+  }
+  if (type === "agent.compaction" && agentId === "main" && !compactions.some((c) => c.id === data.id)) {
+    compactions.push(data);
+    foldCompaction(data);
   }
   if (type === "task.state") {
     if (!tasks.has(message.taskId)) {
@@ -451,23 +592,38 @@ function snapshot(state) {
   $("output").replaceChildren();
   live.clear();
   tasks.clear();
+  compactions = state.compactions || [];
+  mainItems = [];
   for (const task of state.tasks) {
     event({ type: "task.state", sessionId, taskId: task.id, data: task });
     tasks.get(task.id).trigger.remove();
   }
-  for (const { agentId, message } of state.messages)
-    if (["assistant", "user"].includes(message.role))
-      renderMessage(
-        card(
-          message.role === "user"
-            ? "你"
-            : agentId === "main"
-              ? "AXIOM"
-              : "子 Agent",
-          tasks.get(agentId),
-        ),
-        message,
+  const folded = new Map();
+  for (const record of compactions)
+    for (const entryId of record.compactedMessageIds || [])
+      if (!folded.has(entryId)) folded.set(entryId, record);
+  const placed = new Set();
+  for (const { agentId, message, entryId } of state.messages)
+    if (["assistant", "user"].includes(message.role)) {
+      if (agentId === "main" && entryId && folded.has(entryId)) {
+        const record = folded.get(entryId);
+        if (!placed.has(record.id)) {
+          placed.add(record.id);
+          $("output").append(compactionCard(record));
+        }
+        continue;
+      }
+      const item = card(
+        message.role === "user"
+          ? "你"
+          : agentId === "main"
+            ? "AXIOM"
+            : "子 Agent",
+        tasks.get(agentId),
       );
+      renderMessage(item, message);
+      if (agentId === "main") mainItems.push({ item, entryId });
+    }
   for (const [agentId, message] of Object.entries(state.live))
     if (message.role === "assistant") {
       const item = card(
@@ -503,6 +659,8 @@ function snapshot(state) {
   renderQueue(state.queue);
   runtime = state.runtime;
   applyConfig(state.config);
+  config.compaction = state.config.compaction || compactionDefaults;
+  buildSessionCompaction();
   controls();
 }
 let reconnectTimer, connecting = false, reconnectDelay = 1000;
@@ -599,6 +757,7 @@ $("provider").onchange = () => {
   void configure();
 };
 $("model").onchange = () => {
+  sessionCompaction?.fillThinking();
   void configure();
 };
 $("subagent-provider").onchange = () => {
@@ -1068,6 +1227,12 @@ async function loadCreation() {
     $("create-agents").replaceChildren();
     current.main = createAgentPicker("main", "主代理", catalog, { model: selected.model, thinking: selected.thinking, capabilities: selected.capabilities });
     current.subagent = createAgentPicker("subagent", "子代理", catalog, { model: selected.subagentModel, thinking: selected.subagentThinking, capabilities: selected.subagentCapabilities });
+    current.compaction = compactionEditor(
+      current.defaults ? selected.compaction || compactionDefaults : config?.compaction || compactionDefaults,
+      () => $("create-main-model").value,
+    );
+    $("create-compaction").replaceChildren(current.compaction.node);
+    $("create-main-model").addEventListener("change", current.compaction.fillThinking);
     current.catalog = catalog;
     updateDefaultsPreview();
     $("create-trust-row").hidden = current.defaults || (!catalog.needsTrust && !$("create-trust").checked);
@@ -1099,13 +1264,20 @@ $("create-trust").onchange = () => { void loadCreation(); };
 function updateDefaultsPreview() {
   if (!creation?.defaults || !creation.main) return;
   const main = creation.main(), child = creation.subagent();
+  const compaction = creation.compaction?.read();
+  const compactionLine = compaction
+    ? `\n\n自动压缩 · ${compaction.enabled ? ([
+        compaction.tokenThreshold ? `${compaction.tokenThreshold.toLocaleString("en-US")} tokens` : null,
+        compaction.percentThreshold ? `${compaction.percentThreshold}%` : null,
+      ].filter(Boolean).join(" 或 ") || "未设阈值") + " 触发" : "关闭"} · 保留最近 ${(Number.isFinite(compaction.keepRecentTokens) ? compaction.keepRecentTokens : compactionDefaults.keepRecentTokens).toLocaleString("en-US")} tokens · ${models.find((m) => m.key === compaction.model)?.name || compaction.model || "主代理模型"} · ${compaction.thinking}`
+    : "";
   $("defaults-preview").textContent = [["主 Agent", main], ["子 Agent", child]].map(([title, agent]) => {
     const key = agent.model || (agent === child ? main.model : null);
     const model = models.find((m) => m.key === key);
     const capabilities = agent.capabilities === "inherit" ? main.capabilities : agent.capabilities;
     return `${title} · ${model?.provider || "默认供应商"} · ${model?.name || key || "默认模型"} · ${agent.thinking || (agent === child ? main.thinking : null) || "默认"}\n` +
       [["skills", "Skills"], ["mcp", "MCP"], ["plugins", "Extensions"]].map(([kind, label]) => `${label}：${(capabilities?.[kind] || creation.catalog[kind].map((entry) => entry.id)).map(capabilityName).join("、") || "无"}`).join("\n");
-  }).join("\n\n");
+  }).join("\n\n") + compactionLine;
 }
 $("create-form").onchange = () => {
   if (!creation?.defaults) return;
@@ -1115,6 +1287,11 @@ $("create-form").onchange = () => {
 $("create-form").onsubmit = async (e) => {
   e.preventDefault();
   if (!creation?.main || $("create-submit").disabled || changing || !connected) return;
+  const invalid = creation.compaction?.error?.();
+  if (invalid) {
+    $("create-feedback").textContent = invalid;
+    return;
+  }
   const main = creation.main(), child = creation.subagent();
   const data = {
     cwd: creation.cwd,
@@ -1124,6 +1301,7 @@ $("create-form").onsubmit = async (e) => {
     subagentThinking: child.thinking,
     capabilities: main.capabilities,
     subagentCapabilities: child.capabilities,
+    compaction: creation.compaction.read(),
   };
   $("create-submit").disabled = true;
   if (creation.defaults) {

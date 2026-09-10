@@ -3,7 +3,7 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { realpath, stat, readFile, mkdir, writeFile, rename, rm, readdir } from "node:fs/promises";
 import { dirname, join, relative, isAbsolute, resolve, sep } from "node:path";
-import { selection as selectionSchema } from "./protocol.js";
+import { selection as selectionSchema, compaction as compactionSchema, compactionDefaults } from "./protocol.js";
 import { Tasks } from "./tasks.js";
 import { delegationTools } from "./tools.js";
 import { resolveCapabilities } from "./capabilities.js";
@@ -16,7 +16,7 @@ export class Sessions {
     this.createAgent = createAgent;
     this.items = new Map();
     this.recentConfig = {};
-    this.defaultSelection = { queueType: "steer", model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
+    this.defaultSelection = { compaction: { ...compactionDefaults }, queueType: "steer", model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
   }
 
   async loadDefaults() {
@@ -60,6 +60,7 @@ export class Sessions {
     for (const key of ["model", "subagentModel"])
       if (selection[key] != null && !this.createAgent.catalog().some((m) => m.key === selection[key]))
         throw new Error(key === "model" ? "Unknown model" : "Unknown subagent model");
+    if (selection.compaction) this.validateCompaction(selection.compaction, selection.model);
     let catalog;
     if (this.createAgent.capabilities) {
       catalog = await this.createAgent.capabilities(cwd, selection.trustProject === true);
@@ -67,6 +68,18 @@ export class Sessions {
       resolveCapabilities(selection.subagentCapabilities === "inherit" ? selection.capabilities : selection.subagentCapabilities, catalog);
     }
     return { cwd, catalog };
+  }
+
+  validateCompaction(value, mainModel) {
+    const config = compactionSchema.parse(value);
+    const key = config.model || mainModel;
+    if (key) {
+      const model = this.createAgent.catalog().find((model) => model.key === key);
+      if (!model) throw new Error("Unknown compaction model");
+      if (config.enabled && model.levels && !model.levels.includes(config.thinking))
+        throw new Error("Unsupported compaction thinking level");
+    }
+    return config;
   }
 
   async load() {
@@ -83,7 +96,7 @@ export class Sessions {
   persist(item) {
     if (!item.storageDir) return Promise.resolve();
     const data = JSON.stringify({ id: item.id, cwd: item.cwd, title: item.title,
-      updatedAt: item.updatedAt, messages: item.messages, tasks: item.tasks.snapshot(),
+      updatedAt: item.updatedAt, messages: item.messages, compactions: item.compactions, tasks: item.tasks.snapshot(),
       sessionFile: item.agent.sessionFile?.(),
       selection: { ...item.agent.config?.(), capabilities: item.capabilities,
         subagentCapabilities: item.subagentCapabilities, subagentModel: item.subagentModel,
@@ -135,6 +148,7 @@ export class Sessions {
       status: "idle",
       listeners: new Set(),
       messages: saved?.messages || [],
+      compactions: saved?.compactions || [],
       live: {},
       tools: {},
       subagentModel: selection.subagentModel ?? null,
@@ -180,8 +194,12 @@ export class Sessions {
         }
       }
       if (event.type === "agent.message.end") {
-        item.messages.push({ agentId, message: event.data.message });
+        item.messages.push({ agentId, message: event.data.message, ...(event.data.entryId ? { entryId: event.data.entryId } : {}) });
         delete item.live[agentId];
+        void this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `会话保存失败：${error.message}` } }));
+      }
+      if (event.type === "agent.compaction" && agentId === "main") {
+        if (!item.compactions.some((entry) => entry.id === event.data.id)) item.compactions.push(event.data);
         void this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `会话保存失败：${error.message}` } }));
       }
       if (event.type === "tool.state")
@@ -213,11 +231,28 @@ export class Sessions {
       ...(selection.model ? { model: selection.model } : {}),
       ...(selection.thinking ? { thinking: selection.thinking } : {}),
       capabilities: item.capabilities,
+      compaction: selection.compaction,
       trustProject: item.trustProject,
       cwd,
       sessionDir: storageDir,
       sessionFile: saved?.sessionFile,
     });
+    // Upgrade legacy web history IDs and recover compaction commits saved in Pi JSONL
+    // before a crash could persist the web snapshot. Match in order, never by timestamp alone.
+    const history = item.agent.historyEntries?.() || [];
+    let historyIndex = 0;
+    for (const record of item.messages) {
+      if (record.agentId !== "main") continue;
+      const serialized = JSON.stringify(record.message);
+      const index = history.findIndex((entry, i) => i >= historyIndex &&
+        (record.entryId ? entry.id === record.entryId : JSON.stringify(entry.message) === serialized));
+      if (index >= 0) {
+        record.entryId = history[index].id;
+        historyIndex = index + 1;
+      }
+    }
+    for (const record of item.agent.compactions?.() || [])
+      if (!item.compactions.some((entry) => entry.id === record.id)) item.compactions.push(record);
     item.unsubscribe = item.agent.subscribe((event) =>
       item.emit({ ...event, agentId: "main", runId: item.runId }),
     );
@@ -287,6 +322,7 @@ export class Sessions {
       },
       runId: item.runId,
       messages: item.messages,
+      compactions: item.compactions,
       live: item.live,
       tools: item.tools,
       tasks: item.tasks.snapshot(),
@@ -310,7 +346,8 @@ export class Sessions {
     item.configuring = true;
     try {
       const previous = item.agent.config?.();
-      const config = await item.agent.configure({ model, thinking });
+      if (selection.compaction) this.validateCompaction(selection.compaction, model || previous?.model);
+      const config = await item.agent.configure({ model, thinking, compaction: selection.compaction });
       if (config.model !== previous?.model || config.thinking !== previous?.thinking)
         this.recentConfig = { model: config.model, thinking: config.thinking };
       item.subagentModel = subagentModel;

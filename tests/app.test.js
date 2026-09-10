@@ -669,3 +669,345 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     dom.window.close();
   }
 });
+
+// Compaction: per-scope settings, in-place folding, dedupe and snapshot restore.
+test("compaction settings edit per scope and fold transcripts in place", async () => {
+  const html = await readFile(
+    new URL("../public/index.html", import.meta.url),
+    "utf8",
+  );
+  const source = (
+    await readFile(new URL("../public/app.js", import.meta.url), "utf8")
+  ).replace(/^import .*;\r?\n/gm, "");
+  const dom = new JSDOM(html, {
+    url: "http://localhost",
+    runScripts: "outside-only",
+    pretendToBeVisual: true,
+  });
+  const { window } = dom;
+  const $ = (id) => window.document.getElementById(id);
+  window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  window.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new window.Event("close")); };
+  const frames = new Map();
+  let frameId = 0;
+  window.requestAnimationFrame = (fn) => {
+    frames.set(++frameId, fn);
+    return frameId;
+  };
+  window.cancelAnimationFrame = (id) => frames.delete(id);
+  const paint = () => {
+    const batch = [...frames.values()];
+    frames.clear();
+    for (const fn of batch) fn();
+  };
+  window.matchMedia = () => ({ matches: true });
+  const markdownSource = (await readFile(new URL("../public/markdown.js", import.meta.url), "utf8"))
+    .replace(/^import .*;\r?\n/gm, "").replace("export function", "function");
+  window.renderMarkdown = new Function("marked", "DOMPurify", `${markdownSource}; return renderMarkdown;`)(marked, createPurify(window));
+  window.createStreamRenderer = (render, after) =>
+    createStreamRenderer(render, after, window.requestAnimationFrame, window.cancelAnimationFrame);
+  const compactionDefaults = { enabled: false, tokenThreshold: 100000, percentThreshold: 70, model: null, thinking: "off", keepRecentTokens: 20000 };
+  const baseConfig = { model: "test/model", thinking: "off", levels: ["off"], skills: [] };
+  const state = {
+    sessionId: "a",
+    title: "a",
+    cwd: "C:\\work",
+    status: "idle",
+    config: { ...baseConfig },
+    messages: [
+      { agentId: "main", message: { role: "user", content: "问题一" }, entryId: "m1" },
+      { agentId: "main", message: { role: "assistant", content: "回答一" }, entryId: "m2" },
+      { agentId: "main", message: { role: "user", content: "问题二" }, entryId: "m3" },
+      { agentId: "main", message: { role: "assistant", content: "回答二" }, entryId: "m4" },
+    ],
+    live: {},
+    tasks: [],
+    compactions: [],
+  };
+  let defaults = { compaction: { ...compactionDefaults, tokenThreshold: 50000 }, model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
+  let lastDefaults, lastCreation;
+  const requests = [];
+  const sockets = [];
+  class Socket {
+    static OPEN = 1;
+    readyState = 0;
+    constructor() {
+      sockets.push(this);
+    }
+    open() {
+      this.readyState = 1;
+      this.onopen();
+    }
+    close() {
+      this.readyState = 3;
+      this.onclose();
+    }
+    receive(message) {
+      this.onmessage({ data: JSON.stringify(message) });
+    }
+    send(raw) {
+      const req = JSON.parse(raw);
+      requests.push(req);
+      queueMicrotask(() => {
+        let data;
+        switch (req.type) {
+          case "models.list":
+            data = [
+              { key: "test/model", provider: "test", name: "Model", levels: ["off", "low"] },
+              { key: "other/child", provider: "other", name: "Child", levels: ["off", "medium", "high"] },
+            ];
+            break;
+          case "sessions.list":
+            data = [{ id: state.sessionId, title: state.title, cwd: state.cwd, status: "idle", updatedAt: Date.now() }];
+            break;
+          case "session.attach":
+            data = state;
+            break;
+          case "session.create":
+            lastCreation = req;
+            state.sessionId = "created";
+            state.messages = [];
+            state.compactions = [];
+            state.config = { ...baseConfig, ...(req.compaction ? { compaction: req.compaction } : {}) };
+            data = state;
+            break;
+          case "session.configure":
+            if (req.compaction?.enabled && req.compaction.tokenThreshold == null && req.compaction.percentThreshold == null) {
+              this.receive({ type: "response", id: req.id, ok: false, error: "启用自动压缩时至少设置一个触发阈值" });
+              return;
+            }
+            if (req.compaction) state.config = { ...state.config, compaction: req.compaction };
+            data = { ...state.config, model: req.model, subagentModel: null };
+            break;
+          case "session.defaults.get":
+            data = defaults;
+            break;
+          case "session.defaults.configure":
+            lastDefaults = req;
+            data = defaults = { ...defaults, ...Object.fromEntries(Object.keys(defaults).map((key) => [key, req[key]])) };
+            break;
+          case "capabilities.list":
+            data = { needsTrust: false, warnings: [], skills: [], mcp: [], plugins: [] };
+            break;
+          case "prompt": {
+            const entryId = `m${state.messages.length + 1}`;
+            state.messages.push({ agentId: "main", message: { role: "user", content: req.text }, entryId });
+            this.receive({ type: "agent.message.end", sessionId: state.sessionId, data: { message: { role: "user", content: req.text }, entryId } });
+            data = { runId: "run" };
+            break;
+          }
+        }
+        this.receive({ type: "response", id: req.id, ok: true, data });
+      });
+    }
+  }
+  window.WebSocket = Socket;
+  const settle = () => new Promise(setImmediate);
+  const input = (text) => {
+    $("prompt").value = text;
+    $("prompt").dispatchEvent(new window.Event("input"));
+  };
+  const emit = (type, data) => sockets.at(-1).receive({ type, sessionId: state.sessionId, data });
+  try {
+    window.eval(source);
+    sockets[0].open();
+    await settle();
+    paint();
+    assert.equal($("workspace").hidden, false);
+    assert.equal(window.document.querySelectorAll("#output > .message").length, 4);
+
+    // 折叠保持阅读锚点：按保留消息的位移补偿滚动位置，不强制到底部。
+    const keptAnchor = window.document.querySelectorAll("#output > .message")[2];
+    let anchorTop = 500;
+    keptAnchor.getBoundingClientRect = () => ({ top: anchorTop });
+    const firstFolded = window.document.querySelectorAll("#output > .message")[0];
+    let firstHidden = false;
+    Object.defineProperty(firstFolded, "hidden", {
+      configurable: true,
+      get: () => firstHidden,
+      set: (v) => {
+        firstHidden = v;
+        anchorTop = 450; // 折叠区域塌缩，锚点上移
+        if (v) firstFolded.setAttribute("hidden", "");
+        else firstFolded.removeAttribute("hidden");
+      },
+    });
+    $("transcript").scrollTop = 1000;
+
+    // 成功事件后原地折叠：卡片插在被折叠首条之前，原消息 DOM 隐藏但保留。
+    emit("agent.compaction", {
+      id: "c1",
+      summary: "**早前** 讨论要点 <img src=x onerror=\"alert(1)\">",
+      firstKeptEntryId: "m3",
+      compactedMessageIds: ["m1", "m2"],
+      tokensBefore: 9000,
+      estimatedTokensAfter: 1200,
+    });
+    const cards = () => window.document.querySelectorAll("#output > .compaction-card");
+    assert.equal(cards().length, 1);
+    assert.equal(cards()[0], $("output").firstElementChild, "summary card sits at the old boundary");
+    assert.match($("output").lastElementChild.textContent, /回答二/, "kept messages follow the card in place");
+    const visible = window.document.querySelectorAll("#output > .message:not([hidden])");
+    assert.deepEqual([...visible].map((node) => node.textContent.trim()), ["你思考过程问题二", "AXIOM思考过程回答二"]);
+    const summaryBody = cards()[0].querySelector(".compaction-summary");
+    assert.match(summaryBody.textContent, /早前/);
+    assert.equal(summaryBody.querySelector("img"), null, "summaries render through the sanitizing pipeline");
+    assert.match(cards()[0].querySelector("summary").textContent, /9,000.*1,200/s);
+    assert.equal($("transcript").scrollTop, 950, "folding compensates the viewport anchor instead of forcing the bottom");
+    assert.equal(cards()[0].open, false, "compaction cards stay folded by default");
+    delete firstFolded.hidden;
+
+    // 重复事件不重复。
+    emit("agent.compaction", { id: "c1", summary: "dup", compactedMessageIds: ["m1", "m2"] });
+    assert.equal(cards().length, 1);
+
+    // 累计摘要独立成卡：覆盖旧边界，但近期消息不被折叠。
+    emit("agent.compaction", {
+      id: "c2",
+      summary: "累计摘要",
+      firstKeptEntryId: "m4",
+      compactedMessageIds: ["m1", "m2", "m3"],
+      tokensBefore: 1200,
+    });
+    assert.match(cards()[0].querySelector(".compaction-summary").textContent, /早前/); assert.match(cards()[1].querySelector(".compaction-summary").textContent, /累计摘要/);
+    assert.match($("output").lastElementChild.textContent, /回答二/, "each cumulative summary keeps its own card");
+    assert.equal(window.document.querySelectorAll("#output > .message:not([hidden])").length, 1, "recent messages survive");
+
+    // 新消息通过 agent.message.end 的 entryId 参与后续折叠。
+    input("问题三");
+    $("composer").requestSubmit();
+    await settle();
+    emit("agent.compaction", { id: "c3", summary: "包含新消息", firstKeptEntryId: "m5", compactedMessageIds: ["m4", "m5"] });
+    assert.equal(cards().length, 3);
+    assert.equal(window.document.querySelectorAll("#output > .message:not([hidden])").length, 0);
+
+    // 重连按 compactions 恢复同一视图。
+    state.compactions = [
+      { id: "c1", summary: "**早前** 讨论要点", firstKeptEntryId: "m3", compactedMessageIds: ["m1", "m2"], tokensBefore: 9000, estimatedTokensAfter: 1200 },
+      { id: "c2", summary: "累计摘要", firstKeptEntryId: "m4", compactedMessageIds: ["m1", "m2", "m3"], tokensBefore: 1200 },
+      { id: "c3", summary: "包含新消息", firstKeptEntryId: "m5", compactedMessageIds: ["m4", "m5"], tokensBefore: 1500 },
+    ];
+    sockets.at(-1).close();
+    await settle();
+    assert.equal($("login").hidden, false);
+    $("connect").click();
+    sockets.at(-1).open();
+    await settle();
+    paint();
+    assert.equal(cards().length, 3, "reconnect restores every compaction card");
+    assert.equal([...cards()].every((card) => !card.open), true, "restored cards stay folded");
+    assert.equal(window.document.querySelectorAll("#output > .message").length, 0);
+
+    // 输入校验：非法值明确报错而非静默置空或回退默认；百分比允许小数；两个阈值都为空才禁用启用。
+    const probe = window.compactionEditor({ ...compactionDefaults, enabled: true }, () => "test/model");
+    const probeFields = () => probe.node.querySelectorAll("input[type=number]");
+    const fireProbe = () => { for (const field of probeFields()) field.dispatchEvent(new window.Event("change")); };
+    probeFields()[0].value = "-5"; fireProbe();
+    assert.equal(probe.valid(), false);
+    assert.match(probe.error(), /Token 阈值需为大于 0 的整数/);
+    probeFields()[0].value = "2.5"; fireProbe();
+    assert.match(probe.error(), /Token 阈值/, "non-integer tokens are rejected");
+    probeFields()[0].value = "80000";
+    probeFields()[1].value = "0"; fireProbe();
+    assert.match(probe.error(), /百分比阈值需为大于 0 且不超过 100/);
+    probeFields()[1].value = "150"; fireProbe();
+    assert.match(probe.error(), /百分比阈值/);
+    probeFields()[1].value = "55.5"; fireProbe();
+    assert.equal(probe.valid(), true, "decimal percent within range is valid");
+    assert.deepEqual(probe.read().percentThreshold, 55.5);
+    probeFields()[2].value = "2.5"; fireProbe();
+    assert.match(probe.error(), /保留最近 tokens 需为大于 0 的整数/);
+    probeFields()[2].value = ""; fireProbe();
+    assert.deepEqual(probe.read().keepRecentTokens, 20000, "empty keep falls back to the default");
+    probeFields()[0].value = ""; probeFields()[1].value = ""; fireProbe();
+    assert.match(probe.error(), /至少设置一个触发阈值/, "only two empty thresholds invalidate enabled");
+
+    // 当前会话设置：无效组合不发请求，有效组合随 session.configure 保存。
+    $("open-settings").click();
+    await settle();
+    const editor = $("session-compaction");
+    const selects = editor.querySelectorAll("select");
+    assert.equal(selects[0].value, "", "compaction model defaults to following the main model");
+    $("provider").value = "other";
+    $("provider").dispatchEvent(new window.Event("change"));
+    await settle();
+    $("model").dispatchEvent(new window.Event("change"));
+    await settle();
+    assert.deepEqual([...selects[1].options].map((option) => option.value), ["off", "medium", "high"], "changing the main model refreshes compaction thinking levels");
+    $("provider").value = "test";
+    $("provider").dispatchEvent(new window.Event("change"));
+    await settle();
+    $("model").dispatchEvent(new window.Event("change"));
+    await settle();
+    assert.deepEqual([...selects[1].options].map((option) => option.value), ["off", "low"], "compaction thinking follows the main model back");
+    const configures = requests.filter((r) => r.type === "session.configure").length;
+    editor.querySelector("input[type=checkbox]").checked = true;
+    for (const number of editor.querySelectorAll("input[type=number]")) number.value = "";
+    for (const field of [editor.querySelector("input[type=checkbox]"), ...editor.querySelectorAll("input[type=number]")])
+      field.dispatchEvent(new window.Event("change"));
+    await settle();
+    assert.equal(requests.filter((r) => r.type === "session.configure").length, configures, "invalid compaction never reaches the server");
+    assert.match($("settings-feedback").textContent, /至少设置一个触发阈值/);
+    const numbers = editor.querySelectorAll("input[type=number]");
+    numbers[0].value = "2.5";
+    const before = requests.filter((r) => r.type === "session.configure").length;
+    numbers[0].dispatchEvent(new window.Event("change"));
+    await settle();
+    assert.equal(requests.filter((r) => r.type === "session.configure").length, before, "non-integer thresholds never reach the server");
+    assert.match($("settings-feedback").textContent, /Token 阈值需为大于 0 的整数/);
+    editor.querySelectorAll("input[type=number]")[0].value = "50000";
+    editor.querySelectorAll("input[type=number]")[0].dispatchEvent(new window.Event("change"));
+    await settle();
+    let configureRequest = requests.findLast((r) => r.type === "session.configure");
+    assert.deepEqual(configureRequest.compaction, {
+      enabled: true, tokenThreshold: 50000, percentThreshold: null,
+      model: null, thinking: "off", keepRecentTokens: 20000,
+    });
+    assert.equal(state.config.compaction.tokenThreshold, 50000);
+    selects[0].value = "other/child";
+    selects[0].dispatchEvent(new window.Event("change"));
+    assert.deepEqual([...selects[1].options].map((option) => option.value), ["off", "medium", "high"], "thinking levels follow the compaction model");
+    selects[1].value = "medium";
+    selects[1].dispatchEvent(new window.Event("change"));
+    await settle();
+    configureRequest = requests.findLast((r) => r.type === "session.configure");
+    assert.equal(configureRequest.compaction.model, "other/child");
+    assert.equal(configureRequest.compaction.thinking, "medium");
+
+    // 默认配置：编辑后自动保存；无效组合不覆盖旧值。
+    const defaultsEditor = $("create-compaction");
+    assert.equal(defaultsEditor.querySelector("input[type=checkbox]").checked, false);
+    defaultsEditor.querySelector("input[type=checkbox]").checked = true;
+    defaultsEditor.querySelectorAll("input[type=number]")[0].value = "60000";
+    for (const field of defaultsEditor.querySelectorAll("input, select"))
+      field.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await settle();
+    assert.equal(lastDefaults.compaction.enabled, true);
+    assert.equal(lastDefaults.compaction.tokenThreshold, 60000);
+    for (const number of defaultsEditor.querySelectorAll("input[type=number]")) number.value = "";
+    defaultsEditor.querySelectorAll("input[type=number]")[0].dispatchEvent(new window.Event("change", { bubbles: true }));
+    await settle();
+    assert.match($("create-feedback").textContent, /至少设置一个触发阈值/);
+    assert.equal(lastDefaults.compaction.tokenThreshold, 60000, "invalid defaults are not saved");
+    assert.match($("defaults-preview").textContent, /自动压缩 · 未设阈值 触发 · 保留最近 20,000 tokens/);
+
+    // 自定义新会话：沿用当前会话压缩配置，提交时随 session.create 发送。
+    $("settings").close();
+    $("custom-new").click();
+    await settle();
+    assert.equal($("create-session").open, true);
+    const customEditor = $("create-compaction");
+    assert.equal(customEditor.querySelector("input[type=checkbox]").checked, true, "custom creation keeps the current session compaction");
+    assert.equal(customEditor.querySelectorAll("input[type=number]")[0].value, "50000");
+    customEditor.querySelectorAll("input[type=number]")[0].value = "70000";
+    customEditor.querySelectorAll("input[type=number]")[0].dispatchEvent(new window.Event("change", { bubbles: true }));
+    $("create-form").requestSubmit();
+    await settle();
+    assert.equal(lastCreation.useDefaults, false);
+    assert.equal(lastCreation.compaction.enabled, true);
+    assert.equal(lastCreation.compaction.tokenThreshold, 70000);
+    assert.equal($("create-session").open, false);
+  } finally {
+    dom.window.close();
+  }
+});

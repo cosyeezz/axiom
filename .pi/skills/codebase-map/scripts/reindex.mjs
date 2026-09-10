@@ -19,6 +19,7 @@ const OUT = join(SKILL_DIR, "INDEX.md");
 const MODULE_INFO = {
   "src/main.js": "入口：端口/工作区校验，组装 factory+Sessions+server，信号处理",
   "src/pi.js": "createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）",
+  "src/compaction.js": "后台独立摘要、token/占比阈值、快照校验与 turn 安全提交",
   "src/sessions.js": "Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化",
   "src/server.js": "createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发",
   "src/protocol.js": "zod 协议：selection / command 判别联合（消息类型见 L3）",

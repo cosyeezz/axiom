@@ -35,6 +35,25 @@ npm start
 
 `session.defaults.get` 返回 `{model,subagentModel,thinking,subagentThinking,capabilities,subagentCapabilities}`；`session.defaults.configure` 接收上述可选字段及 `cwd?`（仅用于校验目录里的可用能力），省略字段保留原值，保存失败保留全部旧值。主模型 `null` 使用最近主模型/启动模型，子模型 `null` 跟随主代理；`thinking:null` 沿用最近/启动思考等级，`subagentThinking:null` 跟随主代理；`subagentCapabilities:"inherit"` 跟随主代理能力，`null` 仍表示全部能力；默认配置不接收 `trustProject`。`session.create` 的显式字段优先于默认值，`useDefaults:false` 完全绕过这份默认配置，网页自定义入口使用该标记；最近主模型和思考程度的原有继承规则不变。
 
+## 后台自动压缩
+
+在默认新会话设置、自定义新会话和当前会话设置中配置后台压缩。初始关闭；开启后可设置 token 阈值（默认 100000）和上下文窗口占比（默认 70%），**任一先达到即触发**。留空表示不使用该阈值，开启时至少填写一个。占比使用当前主模型窗口，统计为当前上下文估算，不是会话累计消耗。近期保留量默认 20000 token，按安全消息边界保留，不拆散工具调用与结果。
+
+可单独选择压缩模型（留空跟随主模型）和模型支持的思考等级。摘要由独立内存 Pi 会话生成，不出现在子任务列表；固定禁用全部工具、MCP、插件、Skills 和项目上下文，只接收摘要指令、上次摘要和历史快照，不执行历史中的指令。
+
+```text
+完整 turn 结束 -> 达到任一阈值 -> 固定快照 -> 后台生成摘要
+主会话继续输出/执行工具 -------------------> 摘要待应用
+下一次模型请求前 -> 校验检查点 -> 摘要 + 近期消息 + 全部新增消息
+成功提交 -> 对应历史折叠为一个摘要块，展开查看摘要
+```
+
+每会话最多一个后台摘要任务；任务完成不立即修改运行中的上下文。应用时使用 Pi `prepareNextTurnWithContext` 安全入口，并保留其原生轮次刷新；用户排队输入仍由原队列投递。摘要过期、失败或取消时不删除原历史。接近模型窗口硬上限仍以 Pi 原生压缩兜底，必要时会等待，并非任何情况下都零延迟。摘要是有损的，也可能影响模型缓存命中率。
+
+每次成功压缩保存独立记录，前端只隐藏本次覆盖的历史，保留近期和后台期间新增消息，不重建整个会话或清空输入。重连/重启恢复已保存摘要，未完成的后台摘要不会恢复；Pi JSONL 仍保留原文。
+
+协议：`session.create`、`session.configure`、`session.defaults.configure` 支持 `compaction: {enabled,tokenThreshold,percentThreshold,model,thinking,keepRecentTokens}`，两个阈值和 model 可为 `null`。配置返回实际 compaction；快照包含 `compactions`，消息记录包含 `entryId`。成功事件 `agent.compaction` 包含摘要 ID、正文、保留边界和 `compactedMessageIds`，客户端按消息 ID 折叠而非按时间猜测。未启用此功能时仍保留 Pi 原生窗口保护。
+
 ## 会话与子代理运行信息
 
 - 发送按钮显示 `Send`，不带上箭头。底部操作行上方显示运行摘要：缓存命中、上下文用量/窗口及占比、当前实际供应商 · 模型 · 等级，例如 `zai-coding-cn · glm-5.3-flash · max`，不加「思考」前缀。主/子模型等级选项也直接显示 `off/high/max` 等实际值，保留无障碍标签。桌面一行排列，窄屏自动换行。
@@ -124,6 +143,7 @@ sessions.js 主会话、订阅、快照、取消
   tools.js  两个工具的参数和适配
   tasks.js  子任务状态、并行执行、结果
 pi.js       Pi SDK 创建、事件适配与释放
+compaction.js 后台摘要、检查点校验与安全轮次提交
 capabilities.js 原生能力发现、内存配置、MCP 快照与选择加载
 ```
 

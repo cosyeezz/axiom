@@ -7,7 +7,21 @@ const capabilities = z.object({
 const workspace = z.string().trim().min(1).optional();
 const thinking = z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]).optional();
 const queueType = z.enum(["steer", "followUp"]);
+export const compactionDefaults = {
+  enabled: false, tokenThreshold: 100000, percentThreshold: 70,
+  model: null, thinking: "off", keepRecentTokens: 20000,
+};
+export const compaction = z.object({
+  enabled: z.boolean(),
+  tokenThreshold: z.number().int().positive().max(100000000).nullable(),
+  percentThreshold: z.number().positive().max(100).nullable(),
+  model: id.nullable(),
+  thinking: thinking.unwrap(),
+  keepRecentTokens: z.number().int().positive().max(100000000),
+}).strict().refine((value) => !value.enabled || value.tokenThreshold !== null || value.percentThreshold !== null,
+  "启用自动压缩时至少设置一个触发阈值");
 export const selection = z.object({
+  compaction: compaction.optional(),
   queueType: queueType.optional(),
   model: id.nullable().optional(),
   subagentModel: id.nullable().optional(),
@@ -43,6 +57,7 @@ export const command = z.discriminatedUnion("type", [
       model: id,
       subagentModel: id.nullable().optional(),
       thinking,
+      compaction: compaction.optional(),
       queueType: queueType.optional(),
     })
     .strict(),

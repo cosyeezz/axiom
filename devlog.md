@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-10 — 可配置后台摘要与 turn 安全压缩
+- 独立 worktree MyWorkbench-background-compaction / feat/background-compaction。按照用户确定方案，后台独立内存 Pi 会话生成摘要，主会话继续运行；token/窗口占比阈值任一先达到触发，支持专用模型、思考等级和近期保留量，摘要会话固定无工具及无关资源。
+- 复用 Pi 原生轮次刷新钩子，摘要完成后仅在下一请求前校验并提交；保留固定边界之后的近期消息与全部新增输入/输出/工具结果，原生压缩作为窗口保护。每会话单任务，失败/失效不折叠、不删除原文。
+- 配置接入默认设置、自定义新会话和当前会话；成功压缩事件/历史消息 ID 落盘，前端按覆盖范围局部隐藏旧消息并新增可展开摘要，不重建流式消息。无新增依赖，不修改 node_modules。
+- 涉及 src/{pi,compaction,protocol,sessions}.js、public/{app.js,index.html,style.css}、tests/{compaction,compaction-config,config,app}.test.js、README/devlog 与 codebase-map。验证结果在完成复核后补充。
+
 ## 2026-09-10 — 上下文添加菜单与工作空间本地操作
 - 独立 worktree MyWorkbench-composer-add-menu / feat/composer-add-menu。参考 Claude Code 桌面「＋」与 Cursor 上下文引用官方文档，移除可见的 Skill 表单行，输入框上沿增加图标菜单、搜索选择器、可移除标签；不调整模型栏/运行摘要位置。Skill 正文以 Pi 终端同款 `[skill] 名称` 默认折叠、点击展开并安全渲染，保留任务正文。
 - 文件/目录只添加工作空间路径引用，按需读取；浏览接口校验真实路径边界，排除符号链接及 .git/node_modules。新会话上方提供 Windows 原生选目录，路径后增加复制/Explorer 图标；取消选择不切换，沿用原会话/信任流程。顶栏仅 WS 状态、停止按钮改 Stop。

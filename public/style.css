@@ -526,6 +526,37 @@ button.danger:hover:not(:disabled) { background: #c13e50; }
 .skill-invocation summary { color: #b3bafa; font-size: 12px; cursor: pointer; }
 .skill-invocation > small { display: block; color: var(--muted); overflow-wrap: anywhere; margin: 10px 0; }
 .skill-invocation > div { font-size: 13px; overflow-wrap: anywhere; }
+.compaction-card {
+  border: 1px solid #717de52b;
+  border-left: 3px solid var(--accent);
+  background: #717de50b;
+  border-radius: 10px;
+  padding: 10px 16px;
+  margin-bottom: 32px;
+}
+.compaction-card summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  font-size: 12px;
+  color: #b3bafa;
+}
+.compaction-card summary small { color: var(--muted); font-variant-numeric: tabular-nums; }
+.compaction-summary { margin-top: 10px; font-size: 13px; overflow-wrap: anywhere; }
+.compaction-settings .selectors { flex-wrap: wrap; overflow: visible; margin-top: 8px; }
+.compaction-settings input,
+.compaction-settings select { width: 100%; min-width: 0; }
+.compaction-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin: 0;
+  cursor: pointer;
+}
+.compaction-toggle input { width: auto; min-height: 0; accent-color: var(--accent); }
+.compaction-hint { font-size: 12px; color: var(--muted); margin: 10px 0 0; }
 #composer:focus-within {
   border-color: #717de580;
   box-shadow:

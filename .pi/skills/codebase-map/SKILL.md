@@ -41,7 +41,8 @@ src/main.js  入口：端口/cwd 校验，组装并 listen(127.0.0.1)
   ├─ Sessions        会话生命周期/队列 + ~/.axiom 工作空间历史与默认配置
   │    └─ Tasks ── delegationTools（tools.js，注册给 pi 的委托工具）
   └─ pi.js createPiFactory → pi-coding-agent SDK（原生队列 + SessionManager JSONL）
-       └─ capabilities.js  模型/子代理/技能发现与解析
+       ├─ capabilities.js  模型/子代理/技能发现与解析
+       └─ compaction.js    后台摘要 + 原生 turn 安全提交，保留检查点后的消息
 ```
 
 ## 查 bug 流程
