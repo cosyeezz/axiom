@@ -177,6 +177,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
           case "session.attach":
             data = states.find((s) => s.sessionId === req.sessionId);
             break;
+          case "session.rename":
+            states.find((s) => s.sessionId === req.sessionId).title = req.title;
+            break;
           case "queue.withdraw":
             data = { steering: ["撤回插话"], followUp: ["撤回追加"] };
             this.receive({ type: "session.queue", sessionId: req.sessionId, data: { steering: [], followUp: [] } });
@@ -202,13 +205,29 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     await settle();
     assert.equal($("login").hidden, false);
     assert.equal($("send").disabled, true);
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    assert.equal(sockets.length, 2, "failed initial connection retries without refresh");
     $("connect").click();
+    assert.equal(sockets.length, 2, "manual retry cannot create a concurrent socket");
     sockets[1].open();
     await settle();
     paint();
     assert.equal($("workspace").hidden, false);
     assert.equal($("send").disabled, true);
-    assert.equal($("send").textContent, "发送");
+    assert.equal($("send").textContent, "Send");
+    assert.equal(window.document.querySelector("header .menu"), null);
+    window.document.querySelectorAll(".session-rename")[1].click();
+    assert.equal($("session-name").value, "b");
+    $("session-name").value = "Renamed other session";
+    $("session-action-form").requestSubmit();
+    await settle();
+    assert.equal(requests.findLast((r) => r.type === "session.rename").sessionId, "b");
+    assert.equal($("session-title").textContent, "a", "editing another row does not switch sessions");
+    window.document.querySelectorAll(".session-delete")[1].click();
+    assert.match($("session-action-description").textContent, /Renamed other session/);
+    assert.equal($("session-action-submit").classList.contains("danger"), true);
+    assert.equal(window.document.activeElement, $("session-action-cancel"));
+    $("session-action-cancel").click();
     assert.equal($("composer-skill").disabled, false);
     assert.equal($("composer-skill").options[1].title, "代码导航");
     assert.equal($("composer-skill").hidden, true);
@@ -492,11 +511,21 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
 
     const emit = (type, data, extra = {}) =>
       sockets[2].receive({ type, sessionId: "a", data, ...extra });
-    assert.equal($("status").textContent, "已连接");
+    assert.equal($("status").textContent, "Running");
     assert.equal($("status").dataset.connected, "true");
     emit("session.queue", { steering: ["插话内容"], followUp: ["追加内容"] });
     assert.equal($("message-queue").children.length, 2);
-    assert.match($("message-queue").textContent, /Steering.*Follow-up/);
+    assert.match($("message-queue").textContent, /Steer.*Follow-up/);
+    for (const [id, queueType] of [["send-steer", "steer"], ["send-followup", "followUp"]]) {
+      input(`queued ${queueType}`);
+      assert.equal($(id).hidden, false);
+      assert.equal($(id).disabled, false);
+      $(id).click();
+      await settle();
+      assert.equal(requests.findLast((r) => r.type === "prompt").queueType, queueType);
+      assert.equal($("prompt").value, "");
+      assert.equal($("status").textContent, "Running");
+    }
     input("保留草稿");
     $("message-queue").querySelector("button").click();
     await settle();

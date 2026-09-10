@@ -107,9 +107,10 @@ function controls() {
   $("stop").disabled = !busy || unavailable;
   $("stop").hidden = !busy;
   $("send").hidden = busy;
-  for (const id of ["new", "custom-new", "delete", "rename"]) $(id).disabled = unavailable;
+  for (const id of ["new", "custom-new"]) $(id).disabled = unavailable;
+  for (const button of document.querySelectorAll(".session-actions button")) button.disabled = unavailable;
   $("status").dataset.connected = String(connected);
-  $("status").textContent = connected ? "已连接" : "连接断开";
+  $("status").textContent = connected ? (busy ? "Running" : "Idle") : "连接断开";
 }
 function options(select, entries, selected) {
   select.replaceChildren(
@@ -310,7 +311,7 @@ function renderMessage(item, message) {
   renderer.flush(item);
 }
 function renderQueue(queue = {}) {
-  const entries = [["Steering · 插话", queue.steering || []], ["Follow-up · 追加", queue.followUp || []]];
+  const entries = [["Steer", queue.steering || []], ["Follow-up", queue.followUp || []]];
   $("message-queue").replaceChildren(...entries.flatMap(([type, texts]) => texts.map((text) => {
     const row = document.createElement("button");
     row.type = "button";
@@ -413,7 +414,7 @@ function event(message) {
     }
     const item = tasks.get(message.taskId);
     item.trigger.dataset.status = item.node.dataset.status = data.status;
-    const status = { starting: "启动中", running: "运行中", completed: "已完成", failed: "失败", cancelled: "已取消" }[data.status] || data.status;
+    const status = { starting: "启动中", running: "Running", completed: "已完成", failed: "失败", cancelled: "已取消" }[data.status] || data.status;
     item.status.textContent = status;
     item.heading.textContent = `SUBAGENT · ${status}`;
     item.title.textContent = item.trigger.title = data.task;
@@ -504,8 +505,12 @@ function snapshot(state) {
   applyConfig(state.config);
   controls();
 }
+let reconnectTimer, connecting = false, reconnectDelay = 1000;
 $("login").onsubmit = async (e) => {
   e.preventDefault();
+  if (connecting || connected) return;
+  clearTimeout(reconnectTimer);
+  connecting = true;
   connected = false;
   controls();
   $("connect").disabled = true;
@@ -537,6 +542,7 @@ $("login").onsubmit = async (e) => {
         reject(new Error("连接断开"));
         for (const p of pending.values()) p.reject(new Error("连接断开"));
         pending.clear();
+        if (!connecting) scheduleReconnect();
         $("login").hidden = false;
         $("connect").disabled = false;
         controls();
@@ -567,6 +573,7 @@ $("login").onsubmit = async (e) => {
     $("login").hidden = true;
     $("workspace").hidden = false;
     connected = true;
+    reconnectDelay = 1000;
     resizePrompt();
     controls();
   } catch (e) {
@@ -574,10 +581,17 @@ $("login").onsubmit = async (e) => {
     $("login").hidden = false;
     ws?.close();
   } finally {
+    connecting = false;
     $("connect").disabled = false;
     controls();
+    if (!connected) scheduleReconnect();
   }
 };
+function scheduleReconnect() {
+  clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(() => $("login").requestSubmit(), reconnectDelay);
+  reconnectDelay = Math.min(reconnectDelay * 2, 15000);
+}
 controls();
 $("login").requestSubmit();
 $("provider").onchange = () => {
@@ -759,11 +773,31 @@ function renderSessions() {
     title.textContent = s.title;
     button.title = s.title;
     const status = document.createElement("small");
-    status.textContent = s.status === "idle" ? "" : "运行中";
+    status.textContent = s.status === "idle" ? "" : "Running";
     button.append(title, status);
     button.onclick = () =>
       switchSession(() => request("session.attach", { sessionId: s.id }));
-    fragment.append(button);
+    const row = document.createElement("div");
+    row.className = "session-row";
+    const actions = document.createElement("div");
+    actions.className = "session-actions";
+    for (const [kind, label, path] of [
+      ["rename", "重命名", 'M12 5l7 7M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L3 16l-1 6z'],
+      ["delete", "删除会话", 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7'],
+    ]) {
+      const action = document.createElement("button");
+      action.type = "button";
+      action.className = `session-${kind}`;
+      action.title = label;
+      action.setAttribute("aria-label", `${label}：${s.title}`);
+      action.setAttribute("aria-haspopup", "dialog");
+      action.disabled = !connected || changing;
+      action.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
+      action.onclick = () => openSessionAction(kind, s);
+      actions.append(action);
+    }
+    row.append(button, actions);
+    fragment.append(row);
   }
   if (!fragment.childNodes.length) {
     const empty = document.createElement("p");
@@ -775,12 +809,13 @@ function renderSessions() {
 }
 $("search").oninput = renderSessions;
 let sessionAction;
-function openSessionAction(kind) {
-  sessionAction = { kind, id: sessionId, cwd: $("workspace-label").textContent };
+function openSessionAction(kind, session) {
+  if (!connected || changing) return;
+  sessionAction = { kind, id: session.id, cwd: session.cwd };
   const deleting = kind === "delete";
   $("session-action-title").textContent = deleting ? "删除会话" : "重命名会话";
-  $("session-action-description").textContent = deleting ? `删除「${$("session-title").textContent}」及其本地记录？运行中的任务会停止，此操作不可撤销。` : "为当前会话起一个容易查找的名字。";
-  $("session-name").value = $("session-title").textContent;
+  $("session-action-description").textContent = deleting ? `删除「${session.title}」及其本地记录？运行中的任务会停止，此操作不可撤销。` : "为当前会话起一个容易查找的名字。";
+  $("session-name").value = session.title;
   $("session-name").disabled = deleting;
   $("session-name").hidden = $("session-name-label").hidden = deleting;
   $("session-action-submit").textContent = deleting ? "删除会话" : "保存名称";
@@ -790,7 +825,6 @@ function openSessionAction(kind) {
   (deleting ? $("session-action-cancel") : $("session-name")).focus();
   if (!deleting) $("session-name").select();
 }
-$("rename").onclick = () => openSessionAction("rename");
 $("session-action-cancel").onclick = () => $("session-action").close();
 $("session-action-form").onsubmit = async (e) => {
   e.preventDefault();
@@ -1135,4 +1169,3 @@ $("workspace-form").onsubmit = (e) => {
       : request("session.create", { cwd: $("cwd").value });
   });
 };
-$("delete").onclick = () => openSessionAction("delete");

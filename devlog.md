@@ -187,3 +187,12 @@
 - 原因：新功能落地后 skill 的排障指引未覆盖新增故障面。
 - 涉及文件：axiom/.pi/skills/codebase-map/SKILL.md、axiom/devlog.md。
 - 分支：feat/axiom-skill-refresh（worktree F:/worktrees/MyWorkbench-axiom-skill-refresh）。
+
+### 2026-09-10 会话操作、队列命名与连接恢复
+- 内容/原因：操作入口移到左侧每条会话，固定图标空间并截断长标题；补齐 session-action 暗色样式和危险按钮悬停；修正设置选择器宽度、箭头与复用样式；统一 Send/Steer/Follow-up、Idle/Running 并直接说明效果；WS 退避重连避免后台启动后必须刷新。
+- 涉及：public/app.js、public/index.html、public/style.css、tests/app.test.js、README.md、导航索引及坑库。
+- 验证：新增按钮发送两类队列、初次失败自动重连/防并发、非当前会话重命名及删除确认测试；现有发送链路和 SDK 已支持队列，浏览器模拟 WS 验证两按钮可用，尚未复现用户原先的不可用情况，不凭猜测修改后端。
+
+### 2026-09-10 会话条目统一外框
+- 内容/原因：按反馈将选中边框和背景移到整行，包住标题与两个操作图标；垃圾桶与铅笔统一中性色，仅确认删除保留危险红色。
+- 涉及：public/style.css、README.md、devlog.md、导航索引和坑库；保持标题省略与图标固定宽度。
