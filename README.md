@@ -68,6 +68,12 @@ npm start
 
 新增协议：`sessions.list` 返回已加载的会话列表；`session.create` 可传 cwd（校验目录存在）；`models.list` 返回模型目录；`session.configure` 接收 sessionId、model（provider/id）与可选 thinking、subagentModel，返回实际配置和支持等级。subagentModel 为 provider/id；null 表示跟随主 Agent，省略则保留原值；未知模型拒绝保存。运行中可以切换模型，已发出的请求不被中断；每条模型回答下方显示该消息实际记录的供应商、模型和输入/输出 token 数。静态资源位于 public/。
 
+## 输入框加载 Skill
+
+输入框下方的 Skill 下拉框列出当前主代理实际可用的技能（不是默认新会话预览），悬停选项可查看说明。选择后在草稿开头插入 `/skill:名称 `，替换选择不会丢失任务正文；选回占位项可取消本次加载。也可以直接输入该命令，下拉框同步显示选择。每次显式加载一个 Skill，发送成功后随草稿清空，切换会话随各自草稿保留；断线或无可用技能时禁用选择。
+
+普通发送、插话和追加均复用 Pi 原生 Skill 命令展开，在发送/入队时读取 Skill 正文，不另建文件读取接口，不修改会话能力配置。选择表示「本次发送要加载」，不代表模型已经使用；已进入上下文的 Skill 不会因取消下一次选择而被删除。会话配置新增 `skills: [{name, description}]`，取自主代理实际资源加载器。
+
 ## 队列与执行中交互
 
 - 执行中「插话」调用 Pi steering（当前工具执行后），「追加」调用 follow-up（全部执行结束后）。Enter 使用设置中当前会话的默认类型，初始为 steering。

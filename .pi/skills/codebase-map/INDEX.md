@@ -1,24 +1,24 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/10 02:56:13）
+# Axiom 多级代码索引（生成于 2026/9/10 03:13:26）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| public/app.js | 990 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | $, ws, allSessions, views |
-| public/index.html | 204 | 页面骨架与元素 id（见 L3） | - |
+| public/app.js | 1004 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | $, ws, allSessions, views |
+| public/index.html | 207 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown.js | 37 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, renderMarkdown |
 | public/stream-renderer.js | 51 | 流式增量渲染状态机 | createStreamRenderer |
-| public/style.css | 849 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 858 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | src/capabilities.js | 114 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/main.js | 38 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, factory, home |
-| src/pi.js | 168 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, createPiFactory |
+| src/pi.js | 169 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, createPiFactory |
 | src/protocol.js | 79 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/server.js | 182 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | assets, createServerApp |
 | src/sessions.js | 367 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | Sessions |
 | src/tasks.js | 108 | Tasks：子任务（委托）生命周期 | Tasks |
 | src/tools.js | 73 | delegationTools：注册给 pi 的委托/读取工具定义（zod 入参） | delegateInput, readInput, result, delegationTools |
-| tests/app.test.js | 578 | node --test 测试（npm test） | - |
+| tests/app.test.js | 600 | node --test 测试（npm test） | - |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
 | tests/capabilities.test.js | 78 | node --test 测试（npm test） | - |
 | tests/codebase-index.test.js | 18 | node --test 测试（npm test） | ROOT, SKILL |
@@ -33,7 +33,7 @@
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
-### public/app.js（990 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
+### public/app.js（1004 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -54,65 +54,68 @@
 | error | function | 72 |
 | request | function | 75 |
 | controls | function | 84 |
-| options | function | 105 |
-| fillModels | function | 112 |
-| options | method | 113 |
-| fillSubagentModels | function | 121 |
-| options | method | 123 |
-| capabilityName | function | 131 |
-| runtimeSummary | function | 141 |
-| renderRuntime | function | 154 |
-| updateTaskRuntime | function | 162 |
-| renderRuntime | method | 164 |
-| applyConfig | function | 167 |
-| renderRuntime | method | 171 |
-| options | method | 172 |
-| fillSubagentModels | method | 177 |
-| fillModels | method | 179 |
-| options | method | 180 |
-| configure | function | 186 |
-| controls | method | 189 |
-| controls | method | 212 |
-| openCreation | method | 214 |
-| card | function | 222 |
-| renderMessage | function | 261 |
-| renderQueue | function | 278 |
-| event | function | 294 |
-| snapshot | function | 394 |
-| clearTimeout | method | 395 |
-| renderQueue | method | 465 |
-| applyConfig | method | 467 |
-| controls | method | 468 |
-| controls | method | 473 |
-| fillModels | method | 547 |
-| fillSubagentModels | method | 554 |
-| controls | method | 572 |
-| scrollLatest | method | 577 |
-| escapeTimer | const | 608 |
-| withdrawQueue | function | 609 |
-| refreshing | const | 656 |
-| refreshSessions | function | 657 |
-| updateSessions | function | 664 |
-| renderSessions | method | 670 |
-| switchSession | function | 672 |
-| saveView | method | 674 |
-| controls | method | 677 |
-| renderSessions | function | 689 |
-| sessionAction | const | 735 |
-| openSessionAction | function | 736 |
-| resizePrompt | method | 778 |
-| controls | method | 779 |
-| switchSession | method | 782 |
-| creationLoad | const | 784 |
-| createAgentPicker | function | 785 |
-| options | method | 807 |
-| fill | method | 815 |
-| fillThinking | method | 823 |
-| options | method | 825 |
-| loadCreation | function | 871 |
-| openCreation | function | 899 |
-| updateDefaultsPreview | function | 916 |
-| updateDefaultsPreview | method | 929 |
+| options | function | 107 |
+| fillModels | function | 114 |
+| options | method | 115 |
+| fillSubagentModels | function | 123 |
+| options | method | 125 |
+| capabilityName | function | 133 |
+| runtimeSummary | function | 143 |
+| renderRuntime | function | 156 |
+| updateTaskRuntime | function | 164 |
+| renderRuntime | method | 166 |
+| applyConfig | function | 169 |
+| options | method | 171 |
+| renderRuntime | method | 177 |
+| options | method | 178 |
+| fillSubagentModels | method | 183 |
+| fillModels | method | 185 |
+| options | method | 186 |
+| configure | function | 192 |
+| controls | method | 195 |
+| controls | method | 218 |
+| openCreation | method | 220 |
+| card | function | 228 |
+| renderMessage | function | 267 |
+| renderQueue | function | 284 |
+| event | function | 300 |
+| snapshot | function | 400 |
+| clearTimeout | method | 401 |
+| renderQueue | method | 471 |
+| applyConfig | method | 473 |
+| controls | method | 474 |
+| controls | method | 479 |
+| fillModels | method | 553 |
+| fillSubagentModels | method | 560 |
+| controls | method | 578 |
+| scrollLatest | method | 583 |
+| escapeTimer | const | 614 |
+| withdrawQueue | function | 615 |
+| refreshing | const | 662 |
+| refreshSessions | function | 663 |
+| updateSessions | function | 670 |
+| renderSessions | method | 676 |
+| switchSession | function | 678 |
+| saveView | method | 680 |
+| controls | method | 683 |
+| renderSessions | function | 695 |
+| sessionAction | const | 741 |
+| openSessionAction | function | 742 |
+| resizePrompt | method | 787 |
+| controls | method | 788 |
+| resizePrompt | method | 792 |
+| controls | method | 793 |
+| switchSession | method | 796 |
+| creationLoad | const | 798 |
+| createAgentPicker | function | 799 |
+| options | method | 821 |
+| fill | method | 829 |
+| fillThinking | method | 837 |
+| options | method | 839 |
+| loadCreation | function | 885 |
+| openCreation | function | 913 |
+| updateDefaultsPreview | function | 930 |
+| updateDefaultsPreview | method | 943 |
 
 ### public/markdown.js（37 行） — marked + DOMPurify 渲染（XSS 边界）
 
@@ -152,7 +155,7 @@
 | sessions | const | 24 |
 | app | const | 27 |
 
-### src/pi.js（168 行） — createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）
+### src/pi.js（169 行） — createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -260,7 +263,7 @@
 ## L3 横切常量（跨模块定位入口）
 
 - 协议 command.type：inherit、session.rename、models.list、capabilities.list、session.defaults.get、session.defaults.configure、session.configure、sessions.list、session.create、session.attach、session.close、prompt、cancel、queue.withdraw、tasks.read（src/protocol.js）
-- HTML id：sidebar、workspace-picker、workspace-name、workspace-form、cwd、workspaces、new、custom-new、search、sessions、open-settings、sidebar-backdrop、toggle-sidebar、session-title、workspace-label、status、rename、delete、login、connect、workspace、transcript、output、latest、message-queue、composer、prompt、provider、model、thinking、stop、send-steer、send-followup、send、session-runtime、composer-help、error、session-action、session-action-form、session-action-title、session-action-description、session-name-label、session-name、session-action-error、session-action-cancel、session-action-submit、task-overlays、task-template、settings、settings-title、defaults-panel、queue-type、defaults-preview、subagent-title、subagent-help、subagent-provider、subagent-model、settings-feedback、defaults-title、defaults-editor、create-session、create-title、create-form、create-workspace、create-defaults-help、create-agents、create-trust-row、create-trust、create-feedback、create-submit（public/index.html）
+- HTML id：sidebar、workspace-picker、workspace-name、workspace-form、cwd、workspaces、new、custom-new、search、sessions、open-settings、sidebar-backdrop、toggle-sidebar、session-title、workspace-label、status、rename、delete、login、connect、workspace、transcript、output、latest、message-queue、composer、prompt、composer-skill、provider、model、thinking、stop、send-steer、send-followup、send、session-runtime、composer-help、error、session-action、session-action-form、session-action-title、session-action-description、session-name-label、session-name、session-action-error、session-action-cancel、session-action-submit、task-overlays、task-template、settings、settings-title、defaults-panel、queue-type、defaults-preview、subagent-title、subagent-help、subagent-provider、subagent-model、settings-feedback、defaults-title、defaults-editor、create-session、create-title、create-form、create-workspace、create-defaults-help、create-agents、create-trust-row、create-trust、create-feedback、create-submit（public/index.html）
 - HTTP 静态路由：/、/favicon.svg、/style.css、/app.js、/markdown.js、/stream-renderer.js、/vendor/marked.js、/vendor/purify.js、/health（src/server.js）
 
 ## ⚠ 未登记文件（0）

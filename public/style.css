@@ -508,6 +508,15 @@ h1 {
   overflow: hidden;
   box-shadow: 0 8px 32px #0003;
 }
+.composer-skill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.composer-skill select { min-width: 0; max-width: 100%; flex: 1; }
 #composer:focus-within {
   border-color: #717de580;
   box-shadow:

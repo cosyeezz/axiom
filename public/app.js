@@ -92,6 +92,8 @@ function controls() {
   $("create-submit").disabled = unavailable || !creation?.main || creation.loading || (!creation.defaults && creation.needsTrust);
   if (creation?.defaults) for (const fieldset of $("create-agents").children) fieldset.disabled = unavailable;
   $("queue-type").disabled = unavailable;
+  $("composer-skill").disabled = unavailable || !config?.skills?.length;
+  $("composer-skill").value = /^\/skill:([^\s]+)/.exec($("prompt").value)?.[1] || "";
   for (const id of ["send", "send-steer", "send-followup"])
     $(id).disabled = unavailable || !$("prompt").value.trim();
   $("send-steer").hidden = $("send-followup").hidden = !busy;
@@ -166,6 +168,10 @@ function updateTaskRuntime(task, value) {
 }
 function applyConfig(value) {
   config = value;
+  options($("composer-skill"), [["", value.skills?.length ? "选择 Skill（本次发送加载）" : "此会话无可用 Skill"],
+    ...(value.skills || []).map((skill) => [skill.name, skill.name])]);
+  for (const option of $("composer-skill").options)
+    option.title = value.skills?.find((skill) => skill.name === option.value)?.description || "";
   $("queue-type").value = value.queueType || "steer";
   runtime = value.runtime ?? { ...runtime, model: value.model, thinking: value.thinking };
   renderRuntime($("session-runtime"), runtime);
@@ -773,6 +779,14 @@ $("session-action-form").onsubmit = async (e) => {
     $("session-action").close();
   } catch (e) { $("session-action-error").textContent = e.message; }
   finally { $("session-action-submit").disabled = false; }
+};
+$("composer-skill").onchange = () => {
+  const name = $("composer-skill").value;
+  const text = $("prompt").value.replace(/^\/skill:[^\s]+(?:\s+|$)/, "");
+  $("prompt").value = name ? `/skill:${name} ${text}` : text;
+  resizePrompt();
+  controls();
+  $("prompt").focus();
 };
 $("prompt").oninput = () => {
   resizePrompt();

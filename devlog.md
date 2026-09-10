@@ -1,5 +1,10 @@
 # 开发记录
 
+## 2026-09-10 — 输入框显式加载 Skill
+- 独立 worktree MyWorkbench-composer-skills / feat/composer-skills。输入框增加原生 Skill 下拉框，显示主代理实际可用技能及说明；选择、替换、取消直接编辑草稿中的 `/skill:名称 `，发送前即可看到要加载的技能。
+- 复用 Pi 原生命令展开，普通发送/插话/追加共用，不添加加载接口、依赖或独立选择状态；草稿原有切换保留与失败保留机制不变。只提供单技能显式加载，不把默认能力预览当作当前加载状态。
+- 涉及 src/pi.js、public/{app.js,index.html,style.css}、tests/app.test.js、README.md、devlog.md 和 codebase-map/INDEX.md。npm test 13 项通过，覆盖选择/替换/取消、手动命令同步、发送请求及发送后清空；未调用真实模型，未重启现有服务。
+
 ## 2026-09-10 — 队列、运行中模型切换与工作空间会话落盘
 - 独立 worktree MyWorkbench-session-flow / feat/session-flow。发送操作移到输入区底部；执行中提供 Steering 插话与 Follow-up 追加，设置保存当前会话 Enter 默认类型。复用 Pi 原生队列事件/查询/clearQueue，点击或单按 Esc 撤回全部队列并保留已有草稿，300ms 内双按 Esc 停止；弹窗及手机侧栏优先处理 Esc。
 - 运行中允许切换模型，不误将运行状态改为 idle；回答下方使用消息本身的 provider/model/usage，不套用当前选择。右上角仅显示已连接（绿）/连接断开（灰）。重命名、删除使用统一暗色原生 dialog，异步操作绑定原会话 ID，错误留在弹窗。
