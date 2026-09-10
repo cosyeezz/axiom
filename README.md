@@ -62,12 +62,12 @@ Axiom 使用原生 JavaScript，目前没有编译脚本，因此重建时不会
 
 `session.defaults.get` 返回 `{model,subagentModel,thinking,subagentThinking,capabilities,subagentCapabilities}`；`session.defaults.configure` 接收上述可选字段及 `cwd?`（仅用于校验目录里的可用能力），省略字段保留原值，保存失败保留全部旧值。主模型 `null` 使用最近主模型/启动模型，子模型 `null` 跟随主代理；`thinking:null` 沿用最近/启动思考等级，`subagentThinking:null` 跟随主代理；`subagentCapabilities:"inherit"` 跟随主代理能力，`null` 仍表示全部能力；默认配置不接收 `trustProject`。`session.create` 的显式字段优先于默认值，`useDefaults:false` 完全绕过这份默认配置，网页自定义入口使用该标记；最近主模型和思考程度的原有继承规则不变。
 
-## 截图与图片
+## 图片上传与放大预览
 
-输入区支持三种方式：点击图片按钮上传、在输入框粘贴系统截图（Windows 可用 `Win + Shift + S`），或点击截图按钮并在浏览器中选择屏幕、窗口或标签页。截图按钮仅在支持屏幕共享的浏览器显示；授权后只抓取一帧，随后立即停止共享，不会直接发送，先预览再确认。
+输入区支持点击图片按钮上传，或在输入框粘贴系统截图（Windows 可用 `Win + Shift + S`）；不再提供浏览器截图按钮或屏幕共享。待发送附件、消息和历史中的图片均可点击放大，也可通过 Tab 聚焦后按 Enter / 空格打开；点击关闭按钮、遮罩空白处或按 Esc 关闭预览。
 
 ```text
-上传 / 粘贴 / 截图 -> 附件预览（可移除） -> Send -> 支持视觉的模型
+上传 / 粘贴 -> 附件预览（可放大、移除） -> Send -> 消息图片（可放大）
 ```
 
 - 支持 PNG、JPEG、GIF、WebP，每条最多 4 张、每张最多 5 MiB；不支持 SVG，也不自动压缩或裁剪。大截图可先裁剪再粘贴。

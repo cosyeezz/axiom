@@ -1,15 +1,15 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/10 09:00:08）
+# Axiom 多级代码索引（生成于 2026/9/10 09:01:42）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| public/app.js | 1474 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | $, ws, allSessions, views |
-| public/index.html | 225 | 页面骨架与元素 id（见 L3） | - |
+| public/app.js | 1464 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | $, ws, allSessions, views |
+| public/index.html | 228 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown.js | 37 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, renderMarkdown |
 | public/stream-renderer.js | 51 | 流式增量渲染状态机 | createStreamRenderer |
-| public/style.css | 911 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 916 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | scripts/autostart.mjs | 133 | Windows/macOS/Linux 当前用户登录自动启动安装/卸载 | run, projectDir, serviceEntry, label |
 | scripts/service.mjs | 96 | 服务守护：IPC 快速/重建重启与安装构建失败反馈 | root, output, run, rebuild |
 | src/capabilities.js | 114 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
@@ -21,7 +21,7 @@
 | src/sessions.js | 489 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | Sessions |
 | src/tasks.js | 108 | Tasks：子任务（委托）生命周期 | Tasks |
 | src/tools.js | 73 | delegationTools：注册给 pi 的委托/读取工具定义（zod 入参） | delegateInput, readInput, result, delegationTools |
-| tests/app.test.js | 1085 | node --test 测试（npm test） | - |
+| tests/app.test.js | 1092 | node --test 测试（npm test） | - |
 | tests/autostart.test.js | 60 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
 | tests/capabilities.test.js | 78 | node --test 测试（npm test） | - |
@@ -43,7 +43,7 @@
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
-### public/app.js（1474 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
+### public/app.js（1464 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -69,91 +69,91 @@
 | error | function | 82 |
 | request | function | 85 |
 | controls | function | 94 |
-| renderContextChips | method | 115 |
-| options | function | 129 |
-| fillModels | function | 136 |
-| options | method | 137 |
-| fillSubagentModels | function | 145 |
-| options | method | 147 |
-| capabilityName | function | 155 |
-| runtimeSummary | function | 165 |
-| renderRuntime | function | 178 |
-| updateTaskRuntime | function | 186 |
-| renderRuntime | method | 188 |
-| applyConfig | function | 191 |
-| options | method | 193 |
-| renderRuntime | method | 199 |
-| options | method | 200 |
-| fillSubagentModels | method | 205 |
-| fillModels | method | 207 |
-| options | method | 208 |
-| configure | function | 214 |
-| controls | method | 217 |
-| controls | method | 240 |
-| openCreation | method | 242 |
-| card | function | 250 |
-| renderMessage | function | 289 |
-| compactionCard | function | 340 |
-| renderMarkdown | method | 354 |
-| foldCompaction | function | 357 |
-| compactionEditor | function | 370 |
-| options | method | 406 |
-| fillThinking | method | 434 |
-| renderQueue | function | 441 |
-| event | function | 458 |
-| snapshot | function | 566 |
-| clearTimeout | method | 567 |
-| renderImages | method | 640 |
-| renderQueue | method | 653 |
-| applyConfig | method | 655 |
-| controls | method | 657 |
-| reconnectTimer | const | 659 |
-| clearTimeout | method | 663 |
-| controls | method | 666 |
-| scheduleReconnect | function | 747 |
-| clearTimeout | method | 748 |
-| controls | method | 771 |
-| fillModels | method | 783 |
-| fillSubagentModels | method | 790 |
-| controls | method | 811 |
-| scrollLatest | method | 816 |
-| renderImages | function | 848 |
-| addImages | function | 864 |
-| loadImages | function | 885 |
-| controls | method | 888 |
-| controls | method | 910 |
-| escapeTimer | const | 948 |
-| withdrawQueue | function | 949 |
-| refreshing | const | 999 |
-| refreshSessions | function | 1000 |
-| updateSessions | function | 1007 |
-| renderSessions | method | 1011 |
-| switchSession | function | 1013 |
-| saveView | method | 1015 |
-| controls | method | 1018 |
-| renderSessions | function | 1030 |
-| sessionAction | const | 1096 |
-| openSessionAction | function | 1097 |
-| contextIcon | function | 1138 |
-| renderContextChips | function | 1141 |
-| renderContextResults | function | 1159 |
-| selectContext | function | 1188 |
-| browseContext | function | 1194 |
+| renderContextChips | method | 113 |
+| options | function | 127 |
+| fillModels | function | 134 |
+| options | method | 135 |
+| fillSubagentModels | function | 143 |
+| options | method | 145 |
+| capabilityName | function | 153 |
+| runtimeSummary | function | 163 |
+| renderRuntime | function | 176 |
+| updateTaskRuntime | function | 184 |
+| renderRuntime | method | 186 |
+| applyConfig | function | 189 |
+| options | method | 191 |
+| renderRuntime | method | 197 |
+| options | method | 198 |
+| fillSubagentModels | method | 203 |
+| fillModels | method | 205 |
+| options | method | 206 |
+| configure | function | 212 |
+| controls | method | 215 |
+| controls | method | 238 |
+| openCreation | method | 240 |
+| card | function | 248 |
+| renderMessage | function | 287 |
+| compactionCard | function | 339 |
+| renderMarkdown | method | 353 |
+| foldCompaction | function | 356 |
+| compactionEditor | function | 369 |
+| options | method | 405 |
+| fillThinking | method | 433 |
+| renderQueue | function | 440 |
+| event | function | 457 |
+| snapshot | function | 565 |
+| clearTimeout | method | 566 |
+| renderImages | method | 639 |
+| renderQueue | method | 652 |
+| applyConfig | method | 654 |
+| controls | method | 656 |
+| reconnectTimer | const | 658 |
+| clearTimeout | method | 662 |
+| controls | method | 665 |
+| scheduleReconnect | function | 746 |
+| clearTimeout | method | 747 |
+| controls | method | 770 |
+| fillModels | method | 782 |
+| fillSubagentModels | method | 789 |
+| controls | method | 810 |
+| scrollLatest | method | 815 |
+| enableImagePreview | function | 847 |
+| renderImages | function | 868 |
+| addImages | function | 885 |
+| loadImages | function | 906 |
+| controls | method | 909 |
+| escapeTimer | const | 938 |
+| withdrawQueue | function | 939 |
+| refreshing | const | 989 |
+| refreshSessions | function | 990 |
+| updateSessions | function | 997 |
+| renderSessions | method | 1001 |
+| switchSession | function | 1003 |
+| saveView | method | 1005 |
+| controls | method | 1008 |
+| renderSessions | function | 1020 |
+| sessionAction | const | 1086 |
+| openSessionAction | function | 1087 |
+| contextIcon | function | 1128 |
+| renderContextChips | function | 1131 |
+| renderContextResults | function | 1149 |
+| selectContext | function | 1178 |
+| browseContext | function | 1184 |
+| resizePrompt | method | 1206 |
+| controls | method | 1207 |
 | resizePrompt | method | 1216 |
 | controls | method | 1217 |
-| resizePrompt | method | 1226 |
-| controls | method | 1227 |
-| switchSession | method | 1262 |
-| creationLoad | const | 1264 |
-| createAgentPicker | function | 1265 |
-| options | method | 1287 |
-| fill | method | 1295 |
-| fillThinking | method | 1303 |
-| options | method | 1305 |
-| loadCreation | function | 1351 |
-| openCreation | function | 1385 |
-| updateDefaultsPreview | function | 1402 |
-| updateDefaultsPreview | method | 1422 |
+| switchSession | method | 1252 |
+| creationLoad | const | 1254 |
+| createAgentPicker | function | 1255 |
+| options | method | 1277 |
+| fill | method | 1285 |
+| fillThinking | method | 1293 |
+| options | method | 1295 |
+| loadCreation | function | 1341 |
+| openCreation | function | 1375 |
+| updateDefaultsPreview | function | 1392 |
+| updateDefaultsPreview | method | 1412 |
 
 ### public/markdown.js（37 行） — marked + DOMPurify 渲染（XSS 边界）
 
@@ -427,7 +427,7 @@
 ## L3 横切常量（跨模块定位入口）
 
 - 协议 command.type：image、inherit、service.status、service.restart、session.rename、workspace.pick、workspace.reveal、workspace.browse、models.list、capabilities.list、session.defaults.get、session.defaults.configure、session.configure、sessions.list、session.create、session.attach、session.close、prompt、cancel、queue.withdraw、tasks.read（src/protocol.js）
-- HTML id：sidebar、open-workspace、new、custom-new、search、sessions、open-settings、sidebar-backdrop、toggle-sidebar、session-title、workspace-label、copy-workspace、reveal-workspace、workspace-feedback、status、service-menu-button、service-menu、restart-quick、restart-rebuild、service-feedback、login、connect、workspace、transcript、output、latest、message-queue、add-context、add-image、capture-screen、image-files、context-chips、context-menu、context-picker、context-title、context-close、context-search、context-path、context-results、context-error、image-attachments、composer、prompt、composer-skill、provider、model、thinking、stop、send-steer、send-followup、send、session-runtime、composer-help、error、session-action、session-action-form、session-action-title、session-action-description、session-name-label、session-name、session-action-error、session-action-cancel、session-action-submit、restart-dialog、restart-form、restart-title、restart-description、restart-warning、restart-cancel、restart-submit、task-overlays、task-template、settings、settings-title、defaults-panel、queue-type、steer-help、followup-help、defaults-preview、subagent-title、subagent-help、subagent-provider、subagent-model、settings-feedback、defaults-title、defaults-editor、create-session、create-title、create-form、create-workspace、create-defaults-help、create-agents、create-compaction、create-trust-row、create-trust、create-feedback、create-submit（public/index.html）
+- HTML id：sidebar、open-workspace、new、custom-new、search、sessions、open-settings、sidebar-backdrop、toggle-sidebar、session-title、workspace-label、copy-workspace、reveal-workspace、workspace-feedback、status、service-menu-button、service-menu、restart-quick、restart-rebuild、service-feedback、login、connect、workspace、transcript、output、latest、message-queue、add-context、add-image、image-files、context-chips、context-menu、context-picker、context-title、context-close、context-search、context-path、context-results、context-error、image-attachments、composer、prompt、composer-skill、provider、model、thinking、stop、send-steer、send-followup、send、session-runtime、composer-help、error、session-action、session-action-form、session-action-title、session-action-description、session-name-label、session-name、session-action-error、session-action-cancel、session-action-submit、image-preview、image-preview-close、image-preview-image、restart-dialog、restart-form、restart-title、restart-description、restart-warning、restart-cancel、restart-submit、task-overlays、task-template、settings、settings-title、defaults-panel、queue-type、steer-help、followup-help、defaults-preview、subagent-title、subagent-help、subagent-provider、subagent-model、settings-feedback、defaults-title、defaults-editor、create-session、create-title、create-form、create-workspace、create-defaults-help、create-agents、create-compaction、create-trust-row、create-trust、create-feedback、create-submit（public/index.html）
 - HTTP 静态路由：/、/favicon.svg、/style.css、/app.js、/markdown.js、/stream-renderer.js、/vendor/marked.js、/vendor/purify.js、/health（src/server.js）
 
 ## ⚠ 未登记文件（0）

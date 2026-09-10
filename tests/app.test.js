@@ -703,27 +703,28 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       new window.KeyboardEvent("keydown", { key: "Escape" }),
     );
     assert.equal($("sidebar-backdrop").hidden, true);
-    let stopped = 0;
-    Object.defineProperty(window.navigator, "mediaDevices", { value: { getDisplayMedia: async () => ({ getTracks: () => [{ stop() { stopped++; } }] }) } });
-    window.HTMLVideoElement.prototype.play = async function () {};
-    Object.defineProperty(window.HTMLVideoElement.prototype, "videoWidth", { get: () => 640 });
-    Object.defineProperty(window.HTMLVideoElement.prototype, "videoHeight", { get: () => 480 });
-    window.HTMLCanvasElement.prototype.getContext = () => ({ drawImage() {} });
-    window.HTMLCanvasElement.prototype.toBlob = (callback) => callback(new window.Blob(["image"], { type: "image/png" }));
-    await $("capture-screen").onclick();
-    assert.ok(stopped > 0, "screen sharing stops after capturing");
-    assert.equal($("image-attachments").children.length, 1);
-    $("image-attachments").querySelector("button").click();
-    window.HTMLVideoElement.prototype.play = async function () { throw new Error("capture failed"); };
-    stopped = 0;
-    await $("capture-screen").onclick();
-    assert.ok(stopped > 0, "screen sharing also stops on capture failure");
-    assert.equal($("image-attachments").hidden, true);
+    assert.equal($("capture-screen"), null, "screen capture has been removed");
     const png = new window.File([Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10])], "screen.png", { type: "image/png" });
     input("");
     await window.eval("loadImages")([png]);
     assert.equal($("image-attachments").querySelectorAll("img").length, 1);
     assert.equal($("prompt").required, false, "image-only prompts can submit");
+    const attachment = $("image-attachments").querySelector("img");
+    attachment.click();
+    assert.equal($("image-preview").open, true);
+    assert.equal($("image-preview-image").src, attachment.src);
+    $("image-preview-image").click();
+    assert.equal($("image-preview").open, true, "image clicks do not dismiss preview");
+    $("image-preview-close").click();
+    assert.equal($("image-preview").open, false);
+    assert.equal($("image-preview-image").hasAttribute("src"), false);
+    assert.equal(attachment.tabIndex, 0);
+    for (const key of ["Enter", " "]) {
+      attachment.dispatchEvent(new window.KeyboardEvent("keydown", { key, cancelable: true }));
+      assert.equal($("image-preview").open, true, "keyboard opens preview");
+      $("image-preview").click();
+      assert.equal($("image-preview").open, false, "backdrop closes preview");
+    }
     window.document.querySelectorAll(".session-item")[0].click();
     await settle();
     assert.equal($("image-attachments").hidden, true, "images are isolated by session");
@@ -736,6 +737,12 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(requests.findLast((req) => req.type === "prompt").text, "");
     assert.equal($("image-attachments").hidden, true);
     assert.equal($("output").querySelectorAll(".message-images img").length, 1);
+    const sentImage = $("output").querySelector(".message-images img");
+    sentImage.click();
+    assert.equal($("image-preview").open, true, "sent images also support preview");
+    assert.equal($("image-preview-image").src, sentImage.src);
+    $("image-preview").close(); // Native Escape closes dialogs; JSDOM does not implement it.
+    assert.equal($("image-preview-image").hasAttribute("src"), false);
     let prevented = false;
     $("prompt").onpaste({ clipboardData: { items: [{ kind: "file", type: "image/png", getAsFile: () => png }] }, preventDefault() { prevented = true; } });
     for (let i = 0; i < 100 && !$("image-attachments").children.length; i++) await new Promise((resolve) => setTimeout(resolve, 5));

@@ -1,5 +1,10 @@
 # 开发记录
 
+## 2026-09-10 — 移除浏览器截图，增加图片放大预览
+- worktree MyWorkbench-image-preview / feat/image-preview。按用户要求删除截图按钮与 getDisplayMedia 抓帧逻辑，保留上传和粘贴；附件及消息/历史图片共用原生 dialog 放大预览，支持点击、Enter/空格打开，关闭按钮、遮罩或原生 Esc 关闭，不新增依赖。
+- 涉及 public/{app.js,index.html,style.css}、tests/app.test.js、README.md、devlog.md 与 codebase-map 索引。
+- 验证：全量 `npm test` 50 项通过，覆盖截图入口移除、附件/消息预览、键盘开启、关闭与图片源清理。首次测试因 worktree 缺少依赖失败，修正依赖 junction 后通过；JSDOM 不实现原生 Esc，关闭事件用 close() 验证。
+
 ## 2026-09-10 — 现代原生工作空间选择框
 - worktree MyWorkbench-modern-workspace-picker / feat/modern-workspace-picker。按用户反馈替换老式树状 UI：优先调用本机 PowerShell 7，启用 VisualStyles、AutoUpgradeEnabled 和标题；仅未安装（ENOENT）时回退 Windows PowerShell，其他错误不重复弹窗。不新增依赖，保留置顶 owner、取消和超时语义。
 - 涉及 src/sessions.js、tests/workspace-picker.test.js、README.md、devlog.md、codebase-map 坑库与索引。

@@ -106,8 +106,6 @@ function controls() {
   $("composer-skill").value = selectedSkill;
   $("prompt").required = !selectedSkill && !images.length;
   $("add-image").disabled = unavailable || imageLoading;
-  $("capture-screen").disabled = unavailable || imageLoading;
-  $("capture-screen").hidden = !navigator.mediaDevices?.getDisplayMedia;
   $("add-context").disabled = unavailable;
   $("open-workspace").disabled = unavailable || pickingWorkspace;
   $("reveal-workspace").disabled = unavailable;
@@ -332,6 +330,7 @@ function renderMessage(item, message) {
     image.alt = "消息附件图片";
     image.loading = "lazy";
     image.onload = scrollLatest;
+    enableImagePreview(image);
     item.images.append(image);
   }
   item.node.append(item.images);
@@ -845,6 +844,27 @@ $("composer").onsubmit = async (e) => {
     }
   }
 };
+function enableImagePreview(image) {
+  image.tabIndex = 0;
+  image.setAttribute("role", "button");
+  image.setAttribute("aria-label", `${image.alt}，点击放大`);
+  image.setAttribute("aria-haspopup", "dialog");
+  image.onclick = () => {
+    $("image-preview-image").src = image.src;
+    $("image-preview-image").alt = image.alt;
+    $("image-preview").showModal();
+  };
+  image.onkeydown = (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    image.click();
+  };
+}
+$("image-preview-close").onclick = () => $("image-preview").close();
+$("image-preview").onclick = (e) => {
+  if (e.target === e.currentTarget) e.currentTarget.close();
+};
+$("image-preview").onclose = () => $("image-preview-image").removeAttribute("src");
 function renderImages() {
   $("image-attachments").hidden = !images.length;
   $("image-attachments").replaceChildren(...images.map((image, index) => {
@@ -852,6 +872,7 @@ function renderImages() {
     const preview = document.createElement("img");
     preview.src = `data:${image.mimeType};base64,${image.data}`;
     preview.alt = `待发送图片 ${index + 1}`;
+    enableImagePreview(preview);
     const remove = document.createElement("button");
     remove.type = "button";
     remove.textContent = "×";
@@ -901,37 +922,6 @@ $("prompt").onpaste = (e) => {
   if (!files.length) return;
   e.preventDefault();
   void loadImages(files);
-};
-$("capture-screen").onclick = async () => {
-  if (imageLoading || changing || !connected) return;
-  const target = sessionId;
-  let stream, video;
-  imageLoading = true;
-  controls();
-  try {
-    stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-    video = document.createElement("video");
-    video.muted = true;
-    video.playsInline = true;
-    video.srcObject = stream;
-    await video.play();
-    if (!video.videoWidth || !video.videoHeight) throw new Error("截图失败，请重试或粘贴系统截图");
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext("2d").drawImage(video, 0, 0);
-    stream.getTracks().forEach((track) => track.stop());
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-    if (!blob) throw new Error("截图失败，请重试或粘贴系统截图");
-    await addImages([blob], target);
-  } catch (e) {
-    if (e.name !== "NotAllowedError") error(e);
-  } finally {
-    stream?.getTracks().forEach((track) => track.stop());
-    if (video) video.srcObject = null;
-    imageLoading = false;
-    controls();
-  }
 };
 $("prompt").onkeydown = (e) => {
   if (e.key !== "Enter" || e.isComposing || e.keyCode === 229) return;
