@@ -55,16 +55,9 @@
             <span id="workspace-label"></span>
           </div>
           <span id="status" role="status">连接中</span>
-          <details class="menu">
-            <summary aria-label="会话操作">···</summary>
-            <div>
-              <button id="rename" class="secondary">重命名</button
-              ><button id="delete" class="secondary">删除会话</button>
-            </div>
-          </details>
         </header>
         <form id="login" hidden>
-          <span>连接已断开，消息和草稿仍保留在此页面。</span>
+          <span>连接已断开，正在自动重连；消息和草稿仍保留在此页面。</span>
           <button id="connect" class="secondary">重新连接</button>
         </form>
         <section id="workspace" hidden>
@@ -98,7 +91,7 @@
                 </div>
                 <button type="button" class="secondary" id="stop" hidden>
                   停止 ■</button
-                ><button type="submit" class="secondary" id="send-steer" data-queue="steer" hidden>插话</button><button type="submit" class="secondary" id="send-followup" data-queue="followUp" hidden>追加</button><button id="send">发送</button>
+                ><button type="submit" class="secondary" id="send-steer" data-queue="steer" title="在下一个可介入节点补充指令，不中断正在运行的工具" hidden>Steer</button><button type="submit" class="secondary" id="send-followup" data-queue="followUp" title="等待当前这一轮结束后发送，不影响当前执行" hidden>Follow-up</button><button id="send">Send</button>
               </div>
               <div id="session-runtime" class="runtime-summary" role="status" aria-live="polite"></div>
             </form>
@@ -156,8 +149,10 @@
       <nav class="settings-nav" aria-label="设置分类"><button type="button" class="secondary" aria-current="page">默认新会话设置</button></nav>
       <div class="settings-body" id="defaults-panel">
         <section>
-          <label for="queue-type">当前会话执行中 Enter 默认发送类型</label>
-          <select id="queue-type"><option value="steer">Steering · 插话（当前工具执行后）</option><option value="followUp">Follow-up · 追加（全部执行结束后）</option></select>
+          <div class="selectors settings-selectors"><label for="queue-type"><span>Running 时 Enter 默认发送类型</span>
+          <select id="queue-type" aria-describedby="steer-help followup-help"><option value="steer">Steer</option><option value="followUp">Follow-up</option></select></label></div>
+          <p id="steer-help"><strong>Steer</strong>：执行中补充指令，AI 在下一个可介入节点收到并调整后续执行；不会立即中断正在运行的工具。</p>
+          <p id="followup-help"><strong>Follow-up</strong>：将消息加入队列，等当前这一轮结束后再发送，不影响当前执行；这一轮结束不代表任务一定成功。</p>
           <p>模型可在执行中切换；已发出的请求继续使用原模型，下一次请求使用新模型。</p>
         </section>
         <section>
@@ -174,7 +169,7 @@
           </div>
           <p>思考程度沿用主代理，并按所选模型支持的等级调整。</p>
         </section>
-        <p id="settings-feedback" hidden role="status" aria-live="polite"></p>
+        <p id="settings-feedback" role="status" aria-live="polite"></p>
         <section aria-labelledby="defaults-title">
           <h3 id="defaults-title">默认新会话设置</h3>
           <p>选择后自动通过 WebSocket 保存到本机，重启保留；仅影响之后的普通新会话，不修改当前会话。</p>

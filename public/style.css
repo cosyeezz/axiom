@@ -138,12 +138,19 @@ summary {
   color: var(--muted);
   margin: 16px 8px 8px;
 }
+.session-row { display: flex; align-items: center; min-width: 0; border-radius: 8px; }
+.session-row:hover, .session-row:focus-within { background: var(--surface); }
+.session-actions { display: flex; flex: 0 0 auto; gap: 2px; }
+.session-actions button { display: grid; place-items: center; width: 28px; min-height: 32px; padding: 5px; background: transparent; border-color: transparent; color: var(--muted); }
+.session-actions button:hover:not(:disabled) { background: var(--raised); }
+.session-actions svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .session-item {
+  min-width: 0;
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  width: 100%;
   text-align: left;
   background: transparent;
   border-color: transparent;
@@ -160,6 +167,7 @@ summary {
   box-shadow: inset 2px 0 var(--accent);
 }
 .session-item span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -226,33 +234,6 @@ h1 {
 }
 #status[data-connected="true"] {
   color: #70c99e;
-}
-.menu {
-  position: relative;
-}
-.menu summary {
-  list-style: none;
-  font-size: 22px;
-  width: 40px;
-  min-height: 40px;
-  text-align: center;
-  border-radius: 8px;
-}
-.menu summary:hover {
-  background: var(--raised);
-}
-.menu > div {
-  position: absolute;
-  right: 0;
-  top: 36px;
-  z-index: 3;
-  padding: 8px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  display: grid;
-  gap: 8px;
-  box-shadow: 0 12px 36px #0006;
 }
 #workspace {
   display: flex;
@@ -437,7 +418,11 @@ h1 {
 #message-queue strong { flex-shrink: 0; font-size: 11px; color: #a5afff; }
 #message-queue span { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
-.danger { background: #a53543; color: white; }
+button.danger { background: #a53543; border-color: #c34b5b; color: white; }
+button.danger:hover:not(:disabled) { background: #c13e50; }
+.session-actions .session-delete { color: #f2a6a6; }
+#session-action-description { overflow-wrap: anywhere; }
+#session-action-title { margin-top: 0; }
 #session-action { width: min(460px, calc(100vw - 32px)); }
 .task-description,
 .task-system-prompt pre {
@@ -530,6 +515,7 @@ textarea {
 }
 #settings,
 #create-session,
+#session-action,
 .task-dialog {
   width: min(600px, calc(100% - 32px));
   max-height: calc(100dvh - 32px);
@@ -556,6 +542,7 @@ textarea {
 }
 #settings::backdrop,
 #create-session::backdrop,
+#session-action::backdrop,
 .task-dialog::backdrop {
   background: #0009;
 }
@@ -670,11 +657,11 @@ textarea {
   cursor: pointer;
   border-radius: 6px;
 }
-.selectors label:after {
+.selectors label:has(select):after {
   content: "";
   position: absolute;
   right: 12px;
-  top: 12px;
+  bottom: 14px;
   width: 5px;
   height: 5px;
   border-right: 1px solid var(--muted);
@@ -733,6 +720,10 @@ textarea {
     color: #828fff;
   }
 }
+#settings .settings-selectors label,
+#create-session .settings-selectors label { max-width: 100%; min-width: 0; }
+#settings .settings-selectors select,
+#create-session .settings-selectors select { width: 100%; max-width: 100%; }
 .composer-footer {
   display: flex;
   justify-content: space-between;
@@ -828,8 +819,8 @@ textarea {
     height: 40px;
     min-height: 40px;
   }
-  .selectors label:after {
-    top: 16px;
+  .selectors label:has(select):after {
+    bottom: 18px;
   }
   .composer-footer span:first-child {
     overflow: hidden;
