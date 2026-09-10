@@ -224,8 +224,8 @@ h1 {
   border-radius: 50%;
   background: currentColor;
 }
-#status[data-busy="true"] {
-  color: #a5afff;
+#status[data-connected="true"] {
+  color: #70c99e;
 }
 .menu {
   position: relative;
@@ -428,7 +428,17 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 .runtime-summary > span { min-width: 0; }
-#session-runtime { padding: 0 16px 12px; }
+#session-runtime { padding: 0 16px 8px; order: -1; }
+#composer { display: flex; flex-direction: column; }
+#prompt { order: -2; }
+.message-model { display: block; margin-top: 12px; color: var(--muted); overflow-wrap: anywhere; font-size: 11px; }
+#message-queue { max-height: 180px; overflow: auto; margin-bottom: 8px; }
+#message-queue button { display: flex; gap: 12px; width: 100%; text-align: left; background: var(--raised); color: var(--ink); margin-top: 4px; }
+#message-queue strong { flex-shrink: 0; font-size: 11px; color: #a5afff; }
+#message-queue span { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.danger { background: #a53543; color: white; }
+#session-action { width: min(460px, calc(100vw - 32px)); }
 .task-description,
 .task-system-prompt pre {
   white-space: pre-wrap;
@@ -622,10 +632,10 @@ textarea {
 #create-form > button { width: 100%; }
 .actions {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
   padding: 8px 12px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
 .selectors {
   display: flex;

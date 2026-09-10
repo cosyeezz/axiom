@@ -6,7 +6,9 @@ const capabilities = z.object({
 }).strict().nullable();
 const workspace = z.string().trim().min(1).optional();
 const thinking = z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]).optional();
+const queueType = z.enum(["steer", "followUp"]);
 export const selection = z.object({
+  queueType: queueType.optional(),
   model: id.nullable().optional(),
   subagentModel: id.nullable().optional(),
   capabilities: capabilities.optional(),
@@ -38,6 +40,7 @@ export const command = z.discriminatedUnion("type", [
       model: id,
       subagentModel: id.nullable().optional(),
       thinking,
+      queueType: queueType.optional(),
     })
     .strict(),
   z.object({ id, type: z.literal("sessions.list") }).strict(),
@@ -58,9 +61,11 @@ export const command = z.discriminatedUnion("type", [
       type: z.literal("prompt"),
       sessionId: id,
       text: z.string().trim().min(1),
+      queueType: queueType.optional(),
     })
     .strict(),
   z.object({ id, type: z.literal("cancel"), sessionId: id }).strict(),
+  z.object({ id, type: z.literal("queue.withdraw"), sessionId: id }).strict(),
   z
     .object({
       id,

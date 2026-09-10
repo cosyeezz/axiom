@@ -169,7 +169,12 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
           case "session.attach":
             data = states.find((s) => s.sessionId === req.sessionId);
             break;
+          case "queue.withdraw":
+            data = { steering: ["撤回插话"], followUp: ["撤回追加"] };
+            this.receive({ type: "session.queue", sessionId: req.sessionId, data: { steering: [], followUp: [] } });
+            break;
           case "prompt":
+            this.receive({ type: "agent.message.end", sessionId: req.sessionId, data: { message: { role: "user", content: req.text } } });
             data = { runId: "run" };
             break;
         }
@@ -406,7 +411,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     input("  accepted task \n");
     failList = true;
     $("composer").requestSubmit();
-    assert.equal($("subagent-model").disabled, true);
+    assert.equal($("subagent-model").disabled, false);
     await settle();
     assert.equal(
       $("prompt").value,
@@ -422,6 +427,26 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
 
     const emit = (type, data, extra = {}) =>
       sockets[2].receive({ type, sessionId: "a", data, ...extra });
+    assert.equal($("status").textContent, "已连接");
+    assert.equal($("status").dataset.connected, "true");
+    emit("session.queue", { steering: ["插话内容"], followUp: ["追加内容"] });
+    assert.equal($("message-queue").children.length, 2);
+    assert.match($("message-queue").textContent, /Steering.*Follow-up/);
+    input("保留草稿");
+    $("message-queue").querySelector("button").click();
+    await settle();
+    assert.equal($("prompt").value, "保留草稿\n\n撤回插话\n\n撤回追加");
+    assert.equal($("message-queue").hidden, true);
+    const cancels = requests.filter((r) => r.type === "cancel").length;
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape" }));
+    await new Promise((resolve) => setTimeout(resolve, 330));
+    await settle();
+    assert.equal(requests.filter((r) => r.type === "cancel").length, cancels, "single Esc only withdraws");
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape" }));
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape" }));
+    await settle();
+    assert.equal(requests.filter((r) => r.type === "cancel").length, cancels + 1, "double Esc cancels");
+    input("");
     emit(
       "task.state",
       { task: "Inspect code", status: "running" },

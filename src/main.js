@@ -1,6 +1,8 @@
 import { resolve, join } from "node:path";
+import { homedir } from "node:os";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { stat } from "node:fs/promises";
+import { stat, mkdir, copyFile } from "node:fs/promises";
+import { constants } from "node:fs";
 import { createPiFactory } from "./pi.js";
 import { Sessions } from "./sessions.js";
 import { createServerApp } from "./server.js";
@@ -12,8 +14,16 @@ const cwd = resolve(process.env.AXIOM_CWD || process.cwd());
 if (!(await stat(cwd)).isDirectory())
   throw new Error("AXIOM_CWD must be a directory");
 const factory = await createPiFactory({ cwd, model: process.env.AXIOM_MODEL });
-const sessions = new Sessions(factory, join(getAgentDir(), "axiom", "defaults.json"));
+const home = join(homedir(), ".axiom");
+await mkdir(home, { recursive: true });
+try {
+  await copyFile(join(getAgentDir(), "axiom", "defaults.json"), join(home, "defaults.json"), constants.COPYFILE_EXCL);
+} catch (error) {
+  if (!["ENOENT", "EEXIST"].includes(error.code)) throw error;
+}
+const sessions = new Sessions(factory, join(home, "defaults.json"), join(home, "workspaces"));
 await sessions.loadDefaults();
+await sessions.load();
 const app = createServerApp(sessions);
 app.server.listen(port, "127.0.0.1", () =>
   console.log(`Axiom listening on http://127.0.0.1:${port}; workspace: ${cwd}`),

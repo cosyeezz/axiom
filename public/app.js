@@ -84,27 +84,23 @@ function request(type, data = {}) {
 function controls() {
   const unavailable = !connected || changing;
   for (const id of ["provider", "model", "thinking", "subagent-provider", "subagent-model"])
-    $(id).disabled = busy || unavailable;
+    $(id).disabled = unavailable;
   $("subagent-model").disabled ||= !$("subagent-provider").value;
   $("settings-feedback").textContent = unavailable
     ? (changing ? "正在保存或切换配置…" : "连接断开，暂时无法修改配置")
-    : busy ? "任务执行中，完成后可修改配置" : "更改自动保存";
+    : "更改自动保存，模型在下一次请求生效";
   $("create-submit").disabled = unavailable || !creation?.main || creation.loading || (!creation.defaults && creation.needsTrust);
   if (creation?.defaults) for (const fieldset of $("create-agents").children) fieldset.disabled = unavailable;
-  $("send").disabled = busy || unavailable || !$("prompt").value.trim();
+  $("queue-type").disabled = unavailable;
+  for (const id of ["send", "send-steer", "send-followup"])
+    $(id).disabled = unavailable || !$("prompt").value.trim();
+  $("send-steer").hidden = $("send-followup").hidden = !busy;
   $("stop").disabled = !busy || unavailable;
   $("stop").hidden = !busy;
   $("send").hidden = busy;
   for (const id of ["new", "custom-new", "delete", "rename"]) $(id).disabled = unavailable;
-  $("status").dataset.busy = String(busy && !unavailable);
-  $("status").textContent =
-    ws?.readyState !== WebSocket.OPEN
-      ? "连接断开"
-      : changing
-        ? "正在切换"
-        : busy
-          ? "正在执行"
-          : "已连接 · 就绪";
+  $("status").dataset.connected = String(connected);
+  $("status").textContent = connected ? "已连接" : "连接断开";
 }
 function options(select, entries, selected) {
   select.replaceChildren(
@@ -170,6 +166,7 @@ function updateTaskRuntime(task, value) {
 }
 function applyConfig(value) {
   config = value;
+  $("queue-type").value = value.queueType || "steer";
   runtime = value.runtime ?? { ...runtime, model: value.model, thinking: value.thinking };
   renderRuntime($("session-runtime"), runtime);
   options(
@@ -196,6 +193,7 @@ async function configure(thinking) {
       await request("session.configure", {
         sessionId,
         model: $("model").value,
+        queueType: $("queue-type").value,
         subagentModel: $("subagent-model").value || null,
         ...(thinking ? { thinking } : {}),
       }),
@@ -236,12 +234,15 @@ function card(title, task) {
   thinking.hidden = true;
   const text = document.createElement("div");
   text.className = "markdown";
-  node.append(heading, thinking, text);
+  const modelInfo = document.createElement("small");
+  modelInfo.className = "message-model";
+  node.append(heading, thinking, text, modelInfo);
   if (task && !task.trigger.isConnected) $("output").append(task.trigger);
   (task?.output || $("output")).append(node);
   if (!task || task.node.open) scrollLatest();
   const item = {
     task,
+    modelInfo,
     node,
     heading,
     thinking,
@@ -258,6 +259,8 @@ function card(title, task) {
   return item;
 }
 function renderMessage(item, message) {
+  item.modelInfo.textContent = message.role === "assistant" && message.model
+    ? `${message.provider || "未知供应商"} / ${message.model}${message.usage ? ` · 输入 ${message.usage.input} · 输出 ${message.usage.output}` : ""}` : "";
   const content =
     typeof message.content === "string"
       ? [{ type: "text", text: message.content }]
@@ -272,9 +275,28 @@ function renderMessage(item, message) {
     .join("\n");
   renderer.flush(item);
 }
+function renderQueue(queue = {}) {
+  const entries = [["Steering · 插话", queue.steering || []], ["Follow-up · 追加", queue.followUp || []]];
+  $("message-queue").replaceChildren(...entries.flatMap(([type, texts]) => texts.map((text) => {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.title = "撤回全部队列到输入框修改（与 Pi 原生一致）";
+    row.onclick = () => { void withdrawQueue(); };
+    const badge = document.createElement("strong");
+    badge.textContent = type;
+    const content = document.createElement("span");
+    content.textContent = text;
+    row.append(badge, content);
+    return row;
+  })));
+  $("message-queue").hidden = !$("message-queue").children.length;
+}
 function event(message) {
   if (message.sessionId !== sessionId) return;
   const { type, agentId = "main", data } = message;
+  if (type === "session.queue" && agentId === "main") renderQueue(data);
+  if (type === "agent.message.end" && data.message.role === "user")
+    renderMessage(card("你", tasks.get(agentId)), data.message);
   if (type === "agent.runtime") {
     if (agentId === "main") {
       runtime = data;
@@ -370,6 +392,8 @@ function event(message) {
   if (type === "error") error(data.message);
 }
 function snapshot(state) {
+  clearTimeout(escapeTimer);
+  escapeTimer = undefined;
   activeTask?.node.close();
   activeTask = undefined;
   $("task-overlays").replaceChildren();
@@ -438,6 +462,7 @@ function snapshot(state) {
       ? $("transcript").scrollHeight
       : (view?.scroll ?? 0);
   });
+  renderQueue(state.queue);
   runtime = state.runtime;
   applyConfig(state.config);
   controls();
@@ -532,6 +557,7 @@ $("subagent-provider").onchange = () => {
 $("subagent-model").onchange = () => {
   void configure();
 };
+$("queue-type").onchange = () => { void configure(); };
 $("thinking").onchange = () => {
   void configure($("thinking").value);
 };
@@ -539,17 +565,18 @@ $("composer").onsubmit = async (e) => {
   e.preventDefault();
   const draft = $("prompt").value;
   const text = draft.trim();
-  if (!text || busy || changing || !connected) return;
+  if (!text || changing || !connected) return;
+  const wasBusy = busy;
+  const queueType = e.submitter?.dataset.queue || config?.queueType || "steer";
   busy = true;
   controls();
   $("error").textContent = "";
   const sendingSession = sessionId;
-  const userCard = card("你");
-  renderMarkdown(userCard.text, text);
+
   follow = true;
   scrollLatest();
   try {
-    await request("prompt", { sessionId: sendingSession, text });
+    await request("prompt", { sessionId: sendingSession, text, ...(wasBusy ? { queueType } : {}) });
     if (sessionId === sendingSession && $("prompt").value === draft) {
       $("prompt").value = "";
       resizePrompt();
@@ -559,10 +586,9 @@ $("composer").onsubmit = async (e) => {
     if (saved?.draft === draft) saved.draft = "";
     void refreshSessions().catch(error);
   } catch (e) {
-    userCard.node.remove();
     if (sessionId === sendingSession) {
       error(e);
-      busy = false;
+      busy = wasBusy;
       controls();
     }
   }
@@ -579,6 +605,26 @@ $("prompt").onkeydown = (e) => {
     $("composer").requestSubmit();
   }
 };
+let escapeTimer, withdrawing;
+async function withdrawQueue() {
+  if (withdrawing || !connected || changing) return;
+  const target = sessionId;
+  withdrawing = true;
+  try {
+    const queue = await request("queue.withdraw", { sessionId: target });
+    const text = [...queue.steering, ...queue.followUp].join("\n\n");
+    if (!text) return;
+    if (sessionId === target) {
+      $("prompt").value = [$("prompt").value, text].filter(Boolean).join("\n\n");
+      resizePrompt(); controls(); $("prompt").focus();
+    } else {
+      const view = views.get(target) || {};
+      view.draft = [view.draft, text].filter(Boolean).join("\n\n");
+      views.set(target, view);
+    }
+  } catch (e) { error(e); }
+  finally { withdrawing = false; }
+}
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || e.isComposing || document.querySelector("dialog[open]")) return;
   if (
@@ -587,11 +633,22 @@ document.addEventListener("keydown", (e) => {
   ) {
     sidebar(false);
     $("toggle-sidebar").focus();
-  } else if (busy) $("stop").click();
+  } else if (!e.repeat) {
+    e.preventDefault();
+    if (escapeTimer) {
+      clearTimeout(escapeTimer);
+      escapeTimer = undefined;
+      if (busy) $("stop").click();
+    } else {
+      escapeTimer = setTimeout(() => { escapeTimer = undefined; void withdrawQueue(); }, 300);
+    }
+  }
 });
 $("stop").onclick = async () => {
+  const target = sessionId;
   try {
-    await request("cancel", { sessionId });
+    await withdrawQueue();
+    await request("cancel", { sessionId: target });
   } catch (e) {
     error(e);
   }
@@ -675,17 +732,47 @@ function renderSessions() {
   $("sessions").replaceChildren(fragment);
 }
 $("search").oninput = renderSessions;
-$("rename").onclick = async () => {
-  const title = prompt("会话名称", $("session-title").textContent);
-  if (!title?.trim()) return;
+let sessionAction;
+function openSessionAction(kind) {
+  sessionAction = { kind, id: sessionId, cwd: $("workspace-label").textContent };
+  const deleting = kind === "delete";
+  $("session-action-title").textContent = deleting ? "删除会话" : "重命名会话";
+  $("session-action-description").textContent = deleting ? `删除「${$("session-title").textContent}」及其本地记录？运行中的任务会停止，此操作不可撤销。` : "为当前会话起一个容易查找的名字。";
+  $("session-name").value = $("session-title").textContent;
+  $("session-name").disabled = deleting;
+  $("session-name").hidden = $("session-name-label").hidden = deleting;
+  $("session-action-submit").textContent = deleting ? "删除会话" : "保存名称";
+  $("session-action-submit").classList.toggle("danger", deleting);
+  $("session-action-error").textContent = "";
+  $("session-action").showModal();
+  (deleting ? $("session-action-cancel") : $("session-name")).focus();
+  if (!deleting) $("session-name").select();
+}
+$("rename").onclick = () => openSessionAction("rename");
+$("session-action-cancel").onclick = () => $("session-action").close();
+$("session-action-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const action = sessionAction;
+  $("session-action-submit").disabled = true;
   try {
-    const state = await request("session.rename", { sessionId, title });
-    if (state.sessionId === sessionId)
-      $("session-title").textContent = state.title;
-    await refreshSessions();
-  } catch (e) {
-    error(e);
-  }
+    if (action.kind === "rename") {
+      const title = $("session-name").value.trim();
+      if (!title) throw new Error("请输入会话名称");
+      await request("session.rename", { sessionId: action.id, title });
+      await refreshSessions();
+    } else {
+      await request("session.close", { sessionId: action.id });
+      views.delete(action.id);
+      const rest = await request("sessions.list");
+      if (sessionId === action.id) {
+        const next = rest.find((s) => s.cwd === action.cwd);
+        await switchSession(() => next ? request("session.attach", { sessionId: next.id }) : request("session.create", { cwd: action.cwd }));
+      }
+      await refreshSessions();
+    }
+    $("session-action").close();
+  } catch (e) { $("session-action-error").textContent = e.message; }
+  finally { $("session-action-submit").disabled = false; }
 };
 $("prompt").oninput = () => {
   resizePrompt();
@@ -899,15 +986,4 @@ $("workspace-form").onsubmit = (e) => {
       : request("session.create", { cwd: $("cwd").value });
   });
 };
-$("delete").onclick = () => {
-  if (!confirm("删除当前会话并停止其中的任务？")) return;
-  void switchSession(async () => {
-    await request("session.close", { sessionId });
-    views.delete(sessionId);
-    const rest = await request("sessions.list");
-    const next = rest.find((s) => s.cwd === $("cwd").value);
-    return next
-      ? request("session.attach", { sessionId: next.id })
-      : request("session.create", { cwd: $("cwd").value });
-  });
-};
+$("delete").onclick = () => openSessionAction("delete");

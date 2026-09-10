@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-10 — 队列、运行中模型切换与工作空间会话落盘
+- 独立 worktree MyWorkbench-session-flow / feat/session-flow。发送操作移到输入区底部；执行中提供 Steering 插话与 Follow-up 追加，设置保存当前会话 Enter 默认类型。复用 Pi 原生队列事件/查询/clearQueue，点击或单按 Esc 撤回全部队列并保留已有草稿，300ms 内双按 Esc 停止；弹窗及手机侧栏优先处理 Esc。
+- 运行中允许切换模型，不误将运行状态改为 idle；回答下方使用消息本身的 provider/model/usage，不套用当前选择。右上角仅显示已连接（绿）/连接断开（灰）。重命名、删除使用统一暗色原生 dialog，异步操作绑定原会话 ID，错误留在弹窗。
+- 选择 ~/.axiom/workspaces/<目录 SHA-256>/ 下 Pi 原生 JSONL + 网页元数据 JSON，而非 SQLite：无需新依赖和上下文格式转换，保留 Pi 压缩/模型记录；元数据串行原子替换，保存标题、配置、网页消息和子任务结果。正常退出保留历史，显式删除移除磁盘记录；重启不自动续跑。默认配置移到 ~/.axiom/defaults.json，首次从旧位置复制且不覆盖已有文件。
+- 验证：npm test 13 项通过，新增持久化/关闭恢复/删除/队列类型/运行中配置状态检查；页面测试覆盖撤回保留草稿、单 Esc 不取消、双 Esc 取消与连接状态。真实 SDK 无付费调用验证创建/保存/关闭/重新加载/删除通过。Playwright 独立 4337 模拟服务检查 1440/390/320px 均无横向溢出，发送按钮贴近输入区底部，重命名弹窗打开并聚焦名称输入。未重启既有 4319 服务，旧版纯内存会话无法由此次文件存储自动迁移。
+- 涉及 src/{main,pi,protocol,server,sessions}.js、public/{app.js,index.html,style.css}、tests/{app,config,session-flow}.test.js、README.md 与 codebase-map。队列目前按 Pi 原生一次撤回全部，不实现自造逐条队列；运行队列/未完成片段不跨重启恢复。
+
 ## 2026-09-10 — 子代理会话内浮层、统一渲染与上下跳转
 - 在独立 worktree MyWorkbench-subagent-overlay（feat/subagent-overlay）实施。模型摘要及等级选项去掉「思考」前缀，直接显示供应商 · 模型 · max 等实际等级；不改变运行配置或思考输出能力。
 - 主会话保留 SUBAGENT 状态/任务卡片，点击打开原生 dialog。按用户反馈将初版青绿色改为与现有主题协调的低饱和蓝紫色；浮层和遮罩限定在右侧会话区，以其中心定位，宽度沿用 880px 上限，避开侧栏和顶部会话栏，随侧栏收起及移动端布局变化。

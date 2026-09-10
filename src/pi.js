@@ -51,7 +51,9 @@ export async function createPiFactory({ cwd, model: requested }) {
       settingsManager,
       resourceLoader: loader,
       customTools,
-      sessionManager: SessionManager.inMemory(workspace),
+      sessionManager: selection.sessionFile
+        ? SessionManager.open(selection.sessionFile, selection.sessionDir, workspace)
+        : selection.sessionDir ? SessionManager.create(workspace, selection.sessionDir) : SessionManager.inMemory(workspace),
     });
     const warnings = [...resources.catalog.warnings];
     if (resources.catalog.needsTrust)
@@ -69,6 +71,10 @@ export async function createPiFactory({ cwd, model: requested }) {
     let promptStart = 0;
     return {
       runtime: () => agentRuntime(session),
+      sessionFile: () => session.sessionFile,
+      queue: () => ({ steering: [...session.getSteeringMessages()], followUp: [...session.getFollowUpMessages()] }),
+      withdraw: () => session.clearQueue(),
+      enqueue: (text, type) => type === "steer" ? session.steer(text) : session.followUp(text),
       async configure({ model: key, thinking }) {
         const selected = available.find((m) => `${m.provider}/${m.id}` === key);
         if (!selected) throw new Error("Unknown model");
@@ -119,6 +125,8 @@ export async function createPiFactory({ cwd, model: requested }) {
       },
       subscribe(listener) {
         return session.subscribe((event) => {
+          if (event.type === "queue_update")
+            listener({ type: "session.queue", data: { steering: event.steering, followUp: event.followUp } });
           if (event.type === "message_start" || event.type === "message_end") {
             listener({
               type:

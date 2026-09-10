@@ -19,7 +19,7 @@ const OUT = join(SKILL_DIR, "INDEX.md");
 const MODULE_INFO = {
   "src/main.js": "入口：端口/工作区校验，组装 factory+Sessions+server，信号处理",
   "src/pi.js": "createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）",
-  "src/sessions.js": "Sessions：会话生命周期、配置快照、默认会话持久化（agent目录 axiom/defaults.json）",
+  "src/sessions.js": "Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化",
   "src/server.js": "createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发",
   "src/protocol.js": "zod 协议：selection / command 判别联合（消息类型见 L3）",
   "src/capabilities.js": "模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities）",
@@ -30,6 +30,7 @@ const MODULE_INFO = {
   "public/stream-renderer.js": "流式增量渲染状态机",
   "public/index.html": "页面骨架与元素 id（见 L3）",
   "public/style.css": "全局样式（CSP 禁 inline style，样式一律进这里）",
+  "tests/session-flow.test.js": "会话落盘/恢复/删除、队列和运行中模型切换回归",
   "tests/": "node --test 测试（npm test）",
 };
 

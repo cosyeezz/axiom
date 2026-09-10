@@ -116,10 +116,10 @@ test("configuration applies to the main agent and is inherited by delegated chil
     assert.equal(sessions.snapshot(newest).config.thinking, "off");
     assert.equal(sessions.snapshot(newest).config.subagentModel, null);
 
-    const all = { model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
+    const all = { queueType: "steer", model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
     assert.deepEqual(sessions.getDefaults(), all);
     const defaults = {
-      model: "c/d", subagentModel: "a/b", thinking: null, subagentThinking: null,
+      queueType: "steer", model: "c/d", subagentModel: "a/b", thinking: null, subagentThinking: null,
       capabilities: { skills: ["s"], mcp: [], plugins: ["p"] },
       subagentCapabilities: { skills: [], mcp: ["m"], plugins: [] },
     };
@@ -195,7 +195,8 @@ test("configuration applies to the main agent and is inherited by delegated chil
       }).success, subagentModel === null || subagentModel === "a/b");
     }
     sessions.get(id).status = "running";
-    await assert.rejects(sessions.configure(id, { model: "a/b" }), /busy/);
+    await sessions.configure(id, { model: "a/b" });
+    assert.equal(sessions.get(id).status, "running", "model changes must not mark a running session idle");
     assert.equal(
       command.safeParse({
         id: "1",

@@ -109,7 +109,7 @@ export function createServerApp(sessions) {
               data = sessions.list();
               break;
             case "session.rename":
-              data = sessions.rename(request.sessionId, request.title);
+              data = await sessions.rename(request.sessionId, request.title);
               break;
             case "session.configure":
               data = await sessions.configure(request.sessionId, request);
@@ -137,8 +137,11 @@ export function createServerApp(sessions) {
               break;
             case "prompt":
               data = {
-                runId: sessions.prompt(request.sessionId, request.text),
+                runId: await sessions.prompt(request.sessionId, request.text, request.queueType),
               };
+              break;
+            case "queue.withdraw":
+              data = sessions.get(request.sessionId).agent.withdraw();
               break;
             case "cancel":
               await sessions.cancel(request.sessionId);

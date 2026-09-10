@@ -73,6 +73,7 @@
           </div>
           <div class="composer-wrap">
             <button id="latest" class="secondary" hidden>回到最新消息 ↓</button>
+            <div id="message-queue" aria-label="待发送队列" aria-live="polite" hidden></div>
             <form id="composer">
               <label for="prompt" class="sr-only">任务内容</label
               ><textarea
@@ -97,19 +98,29 @@
                 </div>
                 <button type="button" class="secondary" id="stop" hidden>
                   停止 ■</button
-                ><button id="send">发送</button>
+                ><button type="submit" class="secondary" id="send-steer" data-queue="steer" hidden>插话</button><button type="submit" class="secondary" id="send-followup" data-queue="followUp" hidden>追加</button><button id="send">发送</button>
               </div>
               <div id="session-runtime" class="runtime-summary" role="status" aria-live="polite"></div>
             </form>
             <div class="composer-footer" id="composer-help">
               <span>Enter 发送 · Shift / Ctrl / ⌘ + Enter 换行</span
-              ><span>Esc 停止</span>
+              ><span>Esc 撤回队列 · 双按 Esc 停止</span>
             </div>
           </div>
         </section>
         <p id="error" role="alert"></p>
       </main>
     </div>
+    <dialog id="session-action" aria-labelledby="session-action-title">
+      <form id="session-action-form" class="settings-body">
+        <h2 id="session-action-title"></h2>
+        <p id="session-action-description"></p>
+        <label id="session-name-label" for="session-name">会话名称</label>
+        <input id="session-name" maxlength="120" required />
+        <p id="session-action-error" role="alert"></p>
+        <div class="dialog-actions"><button type="button" id="session-action-cancel" class="secondary">取消</button><button id="session-action-submit">确认</button></div>
+      </form>
+    </dialog>
     <div id="task-overlays"></div>
     <template id="task-template">
       <button type="button" class="task-card" aria-haspopup="dialog">
@@ -144,6 +155,11 @@
       <div class="settings-layout">
       <nav class="settings-nav" aria-label="设置分类"><button type="button" class="secondary" aria-current="page">默认新会话设置</button></nav>
       <div class="settings-body" id="defaults-panel">
+        <section>
+          <label for="queue-type">当前会话执行中 Enter 默认发送类型</label>
+          <select id="queue-type"><option value="steer">Steering · 插话（当前工具执行后）</option><option value="followUp">Follow-up · 追加（全部执行结束后）</option></select>
+          <p>模型可在执行中切换；已发出的请求继续使用原模型，下一次请求使用新模型。</p>
+        </section>
         <section>
           <h3>会话能力</h3>
           <p>与下方选择实时同步；自动保存成功后用于新会话。</p>
