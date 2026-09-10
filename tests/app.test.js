@@ -270,12 +270,24 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("context-chips").children.length, 0);
     const skillCard = window.card("你");
     window.renderMessage(skillCard, { role: "user", content: '<skill name="codebase-map" location="/skills/SKILL.md">\n# Skill body\n</skill>\n\n检查项目' });
-    assert.equal(skillCard.node.querySelector("summary").textContent, "[skill] codebase-map");
-    assert.equal(skillCard.node.querySelector(".skill-invocation").open, false);
+    assert.equal(skillCard.node.previousElementSibling, skillCard.skillBlocks);
+    assert.equal(skillCard.skillBlocks.parentElement, $("output"));
+    assert.equal(skillCard.node.querySelector(".skill-invocation"), null);
+    assert.equal(skillCard.skillBlocks.querySelector("summary").textContent, "[skill] codebase-map");
+    const invocation = skillCard.skillBlocks.querySelector(".skill-invocation");
+    assert.equal(invocation.open, false);
     assert.equal(skillCard.buffer, "检查项目");
-    skillCard.node.querySelector(".skill-invocation").open = true;
-    skillCard.node.querySelector(".skill-invocation").ontoggle();
-    assert.match(skillCard.node.textContent, /Skill body/);
+    invocation.open = true;
+    invocation.ontoggle();
+    assert.match(skillCard.skillBlocks.textContent, /Skill body/);
+    const previousSkills = skillCard.skillBlocks;
+    window.renderMessage(skillCard, { role: "user", content: '<skill name="only" location="/skills/SKILL.md">\nbody\n</skill>' });
+    assert.equal(previousSkills.isConnected, false);
+    assert.equal(skillCard.node.hidden, true);
+    assert.equal(skillCard.skillBlocks.isConnected, true);
+    window.renderMessage(skillCard, { role: "user", content: "普通消息" });
+    assert.equal(skillCard.node.hidden, false);
+    assert.equal(skillCard.skillBlocks.isConnected, false);
     skillCard.node.remove();
     input("检查代码");
     $("composer-skill").value = "codebase-map";
@@ -815,7 +827,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     status: "idle",
     config: { ...baseConfig },
     messages: [
-      { agentId: "main", message: { role: "user", content: "问题一" }, entryId: "m1" },
+      { agentId: "main", message: { role: "user", content: '<skill name="sample" location="/SKILL.md">\nbody\n</skill>\n问题一' }, entryId: "m1" },
       { agentId: "main", message: { role: "assistant", content: "回答一" }, entryId: "m2" },
       { agentId: "main", message: { role: "user", content: "问题二" }, entryId: "m3" },
       { agentId: "main", message: { role: "assistant", content: "回答二" }, entryId: "m4" },
@@ -948,6 +960,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     });
     const cards = () => window.document.querySelectorAll("#output > .compaction-card");
     assert.equal(cards().length, 1);
+    assert.equal($("output").querySelector(".skill-invocation").parentElement.hidden, true);
     assert.equal(cards()[0], $("output").firstElementChild, "summary card sits at the old boundary");
     assert.match($("output").lastElementChild.textContent, /回答二/, "kept messages follow the card in place");
     const visible = window.document.querySelectorAll("#output > .message:not([hidden])");
