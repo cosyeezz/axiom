@@ -18,7 +18,7 @@ let allSessions = [],
 const views = new Map();
 const compactionDefaults = { enabled: false, tokenThreshold: 100000, percentThreshold: 70, model: null, thinking: "off", keepRecentTokens: 20000 };
 const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
-let compactions = [], mainItems = [], sessionCompaction;
+let compactions = [], mainItems = [];
 let images = [], imageLoading = false;
 let selectedSkill = "", contextFiles = [], contextMode, contextListing = { path: "", entries: [] }, contextLoad = 0, pickingWorkspace = false, currentCwd = "";
 try {
@@ -102,8 +102,6 @@ function controls() {
   $("create-submit").disabled = unavailable || !creation?.main || creation.loading || (!creation.defaults && creation.needsTrust);
   if (creation?.defaults) for (const fieldset of $("create-agents").children) fieldset.disabled = unavailable;
   $("queue-type").disabled = unavailable;
-  for (const input of document.querySelectorAll("#session-compaction input, #session-compaction select"))
-    input.disabled = unavailable;
   $("composer-skill").disabled = unavailable || !config?.skills?.length;
   $("composer-skill").value = selectedSkill;
   $("prompt").required = !selectedSkill && !images.length;
@@ -219,8 +217,6 @@ async function configure(thinking) {
   controls();
   $("error").textContent = "";
   try {
-    const compaction =
-      sessionCompaction?.dirty && sessionCompaction.valid() ? sessionCompaction.read() : undefined;
     applyConfig(
       await request("session.configure", {
         sessionId,
@@ -228,11 +224,8 @@ async function configure(thinking) {
         queueType: $("queue-type").value,
         subagentModel: $("subagent-model").value || null,
         ...(thinking ? { thinking } : {}),
-        ...(compaction ? { compaction } : {}),
       }),
     );
-    // 旧后端响应可能缺少 compaction，用本地提交值回显；新后端以服务端规范化值为准。
-    if (compaction && !config.compaction) config.compaction = compaction;
   } catch (e) {
     error(e);
     failure = e.message || String(e);
@@ -374,7 +367,7 @@ function foldCompaction(data) {
   // 折叠改变上方高度，按保留消息的位移补偿滚动位置，保持阅读锚点而不强制到底部。
   if (anchor) $("transcript").scrollTop += anchor.getBoundingClientRect().top - top;
 }
-function compactionEditor(initial, mainModel, commit) {
+function compactionEditor(initial, mainModel) {
   initial = { ...compactionDefaults, ...initial };
   const number = (input, max, fractional = false) => {
     const text = input.value.trim();
@@ -437,35 +430,13 @@ function compactionEditor(initial, mainModel, commit) {
     const current = thinking.value || initial.thinking;
     options(thinking, levels.map((v) => [v, v]), levels.includes(current) ? current : "off");
   };
-  let dirty = false;
-  const change = () => {
-    dirty = true;
-    commit?.(read(), error());
-  };
-  model.onchange = () => {
-    fillThinking();
-    change();
-  };
+  model.onchange = fillThinking;
   fillThinking();
-  for (const input of [enabled, token, percent, keep, thinking]) input.onchange = change;
   const hint = document.createElement("p");
   hint.className = "compaction-hint";
   hint.textContent = "两个阈值至少填一个（先到先触发，可同时设置）；较早对话折叠为摘要卡片，保留最近内容，压缩固定不使用工具。";
   node.append(legend, toggle, selectors, hint);
-  return { node, read, valid, error, fillThinking, get dirty() { return dirty; } };
-}
-function commitCompaction(value, message) {
-  if (message) {
-    $("settings-feedback").textContent = message;
-    return;
-  }
-  void configure();
-}
-function buildSessionCompaction() {
-  const node = $("session-compaction");
-  node.replaceChildren();
-  sessionCompaction = compactionEditor(config.compaction || compactionDefaults, () => $("model").value, commitCompaction);
-  node.append(sessionCompaction.node);
+  return { node, read, valid, error, fillThinking };
 }
 function renderQueue(queue = {}) {
   const entries = [["Steer", "steering"], ["Follow-up", "followUp"]];
@@ -683,7 +654,6 @@ function snapshot(state) {
   runtime = state.runtime;
   applyConfig(state.config);
   config.compaction = state.config.compaction || compactionDefaults;
-  buildSessionCompaction();
   controls();
 }
 let reconnectTimer, connecting = false, reconnectDelay = 1000;
@@ -814,7 +784,6 @@ $("provider").onchange = () => {
   void configure();
 };
 $("model").onchange = () => {
-  sessionCompaction?.fillThinking();
   void configure();
 };
 $("subagent-provider").onchange = () => {

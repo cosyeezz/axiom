@@ -62,3 +62,43 @@ test("compaction settings, message IDs and successful records survive restart; f
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("restored sessions pick up the latest default compaction; other selection survives restart", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "axiom-compaction-"));
+  const selections = [];
+  const factory = async (_tools, selection) => {
+    selections.push(selection);
+    let config = { model: "p/main", thinking: "off", compaction: { ...compactionDefaults }, ...selection };
+    return {
+      config: () => config, configure: async (value) => (config = { ...config, ...value }),
+      historyEntries: () => [], compactions: () => [],
+      subscribe: () => () => {}, abort: async () => {}, dispose: async () => {},
+    };
+  };
+  factory.catalog = () => [{ key: "p/main", levels: ["off", "high"] }];
+  const defaultsPath = join(dir, "defaults.json");
+  const storagePath = join(dir, "sessions");
+  const sessions = new Sessions(factory, defaultsPath, storagePath);
+  const old = { ...compactionDefaults, enabled: true, tokenThreshold: 42000 };
+  const latest = { ...compactionDefaults, enabled: true, tokenThreshold: 60000 };
+  let restored;
+  try {
+    await sessions.configureDefaults(dir, { compaction: old });
+    const id = await sessions.create(dir, { model: "p/main", thinking: "off" });
+    await sessions.configureDefaults(dir, { compaction: latest });
+    // 重启前：会话保留自己的压缩配置，不受默认值影响
+    assert.deepEqual(sessions.snapshot(id).config.compaction, old);
+    restored = new Sessions(factory, defaultsPath, storagePath);
+    await restored.loadDefaults();
+    await restored.load();
+    // 重启后：恢复会话改用最新默认压缩配置，其余配置不变
+    assert.deepEqual(restored.snapshot(id).config.compaction, latest);
+    assert.equal(restored.snapshot(id).config.model, "p/main");
+    assert.equal(restored.snapshot(id).config.thinking, "off");
+    assert.equal(restored.snapshot(id).config.queueType, "steer");
+  } finally {
+    await sessions.close();
+    await restored?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

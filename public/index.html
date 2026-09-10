@@ -194,15 +194,10 @@
           </div>
           <p>思考程度沿用主代理，并按所选模型支持的等级调整。</p>
         </section>
-        <section aria-labelledby="compaction-title">
-          <h3 id="compaction-title">自动压缩（当前会话）</h3>
-          <p>上下文接近阈值时，较早的对话会折叠为 Markdown 摘要卡片，按「保留最近 tokens」保留近期内容；仅作用于当前会话，新会话的默认值在下方「默认新会话设置」中修改。</p>
-          <div id="session-compaction"></div>
-        </section>
         <p id="settings-feedback" role="status" aria-live="polite"></p>
         <section aria-labelledby="defaults-title">
           <h3 id="defaults-title">默认新会话设置</h3>
-          <p>选择后自动通过 WebSocket 保存到本机，重启保留；仅影响之后的普通新会话，不修改当前会话。</p>
+          <p>选择后自动保存到本机，用于之后的普通新会话；自动压缩配置也会在服务重启后应用到已有会话，其他配置不变。</p>
           <div id="defaults-editor"></div>
         </section>
       </div>

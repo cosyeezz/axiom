@@ -1018,10 +1018,11 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     probeFields()[0].value = ""; probeFields()[1].value = ""; fireProbe();
     assert.match(probe.error(), /至少设置一个触发阈值/, "only two empty thresholds invalidate enabled");
 
-    // 当前会话设置：无效组合不发请求，有效组合随 session.configure 保存。
+    // 自动压缩仅在默认/新会话表单配置，不随当前会话模型切换提交。
     $("open-settings").click();
     await settle();
-    const editor = $("session-compaction");
+    assert.equal($("session-compaction"), null, "current-session compaction settings are removed");
+    const editor = $("create-compaction");
     const selects = editor.querySelectorAll("select");
     assert.equal(selects[0].value, "", "compaction model defaults to following the main model");
     $("provider").value = "other";
@@ -1029,46 +1030,20 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     await settle();
     $("model").dispatchEvent(new window.Event("change"));
     await settle();
-    assert.deepEqual([...selects[1].options].map((option) => option.value), ["off", "medium", "high"], "changing the main model refreshes compaction thinking levels");
+    assert.equal(requests.findLast((r) => r.type === "session.configure").compaction, undefined);
     $("provider").value = "test";
     $("provider").dispatchEvent(new window.Event("change"));
     await settle();
     $("model").dispatchEvent(new window.Event("change"));
     await settle();
-    assert.deepEqual([...selects[1].options].map((option) => option.value), ["off", "low"], "compaction thinking follows the main model back");
-    const configures = requests.filter((r) => r.type === "session.configure").length;
-    editor.querySelector("input[type=checkbox]").checked = true;
-    for (const number of editor.querySelectorAll("input[type=number]")) number.value = "";
-    for (const field of [editor.querySelector("input[type=checkbox]"), ...editor.querySelectorAll("input[type=number]")])
-      field.dispatchEvent(new window.Event("change"));
-    await settle();
-    assert.equal(requests.filter((r) => r.type === "session.configure").length, configures, "invalid compaction never reaches the server");
-    assert.match($("settings-feedback").textContent, /至少设置一个触发阈值/);
-    const numbers = editor.querySelectorAll("input[type=number]");
-    numbers[0].value = "2.5";
-    const before = requests.filter((r) => r.type === "session.configure").length;
-    numbers[0].dispatchEvent(new window.Event("change"));
-    await settle();
-    assert.equal(requests.filter((r) => r.type === "session.configure").length, before, "non-integer thresholds never reach the server");
-    assert.match($("settings-feedback").textContent, /Token 阈值需为大于 0 的整数/);
-    editor.querySelectorAll("input[type=number]")[0].value = "50000";
-    editor.querySelectorAll("input[type=number]")[0].dispatchEvent(new window.Event("change"));
-    await settle();
-    let configureRequest = requests.findLast((r) => r.type === "session.configure");
-    assert.deepEqual(configureRequest.compaction, {
-      enabled: true, tokenThreshold: 50000, percentThreshold: null,
-      model: null, thinking: "off", keepRecentTokens: 20000,
-    });
-    assert.equal(state.config.compaction.tokenThreshold, 50000);
+    assert.equal(requests.findLast((r) => r.type === "session.configure").compaction, undefined);
     selects[0].value = "other/child";
     selects[0].dispatchEvent(new window.Event("change"));
     assert.deepEqual([...selects[1].options].map((option) => option.value), ["off", "medium", "high"], "thinking levels follow the compaction model");
     selects[1].value = "medium";
     selects[1].dispatchEvent(new window.Event("change"));
     await settle();
-    configureRequest = requests.findLast((r) => r.type === "session.configure");
-    assert.equal(configureRequest.compaction.model, "other/child");
-    assert.equal(configureRequest.compaction.thinking, "medium");
+    assert.equal(requests.findLast((r) => r.type === "session.configure").compaction, undefined);
 
     // 默认配置：编辑后自动保存；无效组合不覆盖旧值。
     const defaultsEditor = $("create-compaction");
@@ -1093,8 +1068,8 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     await settle();
     assert.equal($("create-session").open, true);
     const customEditor = $("create-compaction");
-    assert.equal(customEditor.querySelector("input[type=checkbox]").checked, true, "custom creation keeps the current session compaction");
-    assert.equal(customEditor.querySelectorAll("input[type=number]")[0].value, "50000");
+    assert.equal(customEditor.querySelector("input[type=checkbox]").checked, false, "defaults edits do not change the running session");
+    customEditor.querySelector("input[type=checkbox]").checked = true;
     customEditor.querySelectorAll("input[type=number]")[0].value = "70000";
     customEditor.querySelectorAll("input[type=number]")[0].dispatchEvent(new window.Event("change", { bubbles: true }));
     $("create-form").requestSubmit();

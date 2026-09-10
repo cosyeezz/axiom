@@ -89,6 +89,8 @@ export class Sessions {
       for (const file of await readdir(join(this.storagePath, workspace))) {
         if (!file.endsWith(".json")) continue;
         const saved = JSON.parse(await readFile(join(this.storagePath, workspace, file), "utf8"));
+        // 重启时统一采用最新默认压缩配置，其余会话配置保持原样。
+        saved.selection.compaction = structuredClone(this.defaultSelection.compaction);
         await this.create(saved.cwd, saved.selection, saved);
       }
     }
