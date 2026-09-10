@@ -59,6 +59,9 @@ src/main.js  入口：端口/cwd 校验，组装并 listen(127.0.0.1)
    - 配置不生效/继承 → sessions.js defaults 快照 + capabilities.js resolveCapabilities
    - 委托子任务 → tasks.js + tools.js + sessions.js 装配处
    - 协议报错 → protocol.js（L3 有全部 command.type）
+   - 消息排队/回执与执行状态混淆 → sessions.js 队列分支 + app.js 队列 UI（回执只代表入队，不代表执行）
+   - 子代理浮层/运行详情 → app.js overlay（必须以会话区定位，不覆盖侧栏、不污染共享渲染）
+   - 重启后会话丢失 → sessions.js ~/.axiom 持久化（load/persist）
 4. 验证：`npm test`；起服务 `npm start`（默认 127.0.0.1:4319）浏览器复现
 
 ## 改动后的更新规则（实时 + 自成长，三件事缺一不可）

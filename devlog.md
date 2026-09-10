@@ -169,3 +169,10 @@
 
 - 按需求将主会话消息区和输入区左右留白统一为可用宽度的 5%，移除 880px 最大宽度；手机断点同步调整，保留原有上下间距和安全区。子任务浮层不变。
 - 涉及文件：`public/style.css`、`README.md`、`.pi/skills/codebase-map/INDEX.md`、`devlog.md`。采用纯 CSS，不新增依赖或配置。
+
+## 2026-09-10 skill 例行更新：codebase-map 怀疑点清单对齐新架构
+
+- 内容：核查 skill 与近期 4 个功能合并（持久化会话/消息队列/子代理浮层/运行详情）的同步情况——MODULE_INFO、架构图、knowledge.md（+3 条）均已被功能分支按规则维护，索引零漂移（仅时间戳差异）。唯一缺口：SKILL.md 查 bug 怀疑点清单缺新区域，补 3 条（队列回执≠执行状态、子代理浮层定位约束、~/.axiom 持久化排查入口）。
+- 原因：新功能落地后 skill 的排障指引未覆盖新增故障面。
+- 涉及文件：axiom/.pi/skills/codebase-map/SKILL.md、axiom/devlog.md。
+- 分支：feat/axiom-skill-refresh（worktree F:/worktrees/MyWorkbench-axiom-skill-refresh）。
