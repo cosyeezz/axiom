@@ -168,9 +168,12 @@ test("configuration applies to the main agent and is inherited by delegated chil
     }
     const catalog = sessions.createAgent.capabilities;
     sessions.createAgent.capabilities = async () => ({ skills: [], mcp: [], plugins: [] });
-    const callsBeforeFailure = selections.length;
-    await assert.rejects(sessions.create(), /未知/, "unavailable defaults must not expand to all capabilities");
-    assert.equal(selections.length, callsBeforeFailure);
+    const withoutAvailable = await sessions.create();
+    const empty = { skills: [], mcp: [], plugins: [] };
+    assert.deepEqual(sessions.snapshot(withoutAvailable).config.capabilitySelection, empty);
+    assert.deepEqual(sessions.snapshot(withoutAvailable).config.subagentCapabilities, empty);
+    assert.deepEqual(sessions.getDefaults(), defaults, "filtering one workspace must not rewrite global defaults");
+    await assert.rejects(sessions.create(undefined, { capabilities: defaults.capabilities }), /未知/);
     sessions.createAgent.capabilities = catalog;
     await sessions.configureDefaults(undefined, { thinking: "high", subagentThinking: "off", subagentCapabilities: "inherit", subagentModel: null });
     const following = await sessions.create();

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, readdir, mkdir, writeFile, symlink } from "node:fs/promises";
+import { mkdtemp, rm, readdir, mkdir, writeFile, symlink, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { Sessions } from "../src/sessions.js";
@@ -123,5 +124,55 @@ test("files.browse session mode stays inside the workspace and pages filtered en
     await assert.rejects(sessions.listFiles({ sessionId: id, path: ".." }), /只能浏览当前工作空间/);
     await assert.rejects(sessions.listFiles({ sessionId: id, path: join(root, "..") }), /只能浏览当前工作空间/);
     await assert.rejects(sessions.listFiles({ sessionId: id, path: "missing" }), /目录不存在/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+// 导入 pi JSONL：复制进本实例存储、重建网页历史与标题，删除会话不触碰原文件。
+test("session.import copies a pi jsonl session, rebuilds history and protects the original", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-import-"));
+  const storage = join(root, "storage");
+  const workspace = join(root, "workspace");
+  await mkdir(workspace, { recursive: true });
+  const source = join(root, "pi-2026.jsonl");
+  await writeFile(source, [
+    { type: "session", version: 3, id: "pi-1", timestamp: "2026-01-01T00:00:00.000Z", cwd: workspace },
+    { type: "model_change", id: "m1", parentId: null, timestamp: "t", provider: "test", modelId: "one" },
+    { type: "message", id: "u1", parentId: "m1", timestamp: "t", message: { role: "user", content: [{ type: "text", text: "<skill name=\"x\" location=\"/x\">\n# 正文\n</skill>\n\n帮我检查导入" }] } },
+    { type: "message", id: "a1", parentId: "u1", timestamp: "t", message: { role: "assistant", content: [{ type: "text", text: "好的" }] } },
+  ].map((entry) => JSON.stringify(entry)).join("\n") + "\n");
+  // 假工厂代替 SDK：像 SessionManager 一样从 sessionFile 读回历史。
+  const factory = async (_, selection = {}) => {
+    const entries = selection.sessionFile
+      ? (await readFile(selection.sessionFile, "utf8")).split("\n").filter(Boolean).slice(1)
+          .map((line) => JSON.parse(line)).filter((entry) => entry.type === "message")
+          .map((entry) => ({ id: entry.id, message: entry.message }))
+      : [];
+    return {
+      config: () => ({ model: "test/one", thinking: "off" }),
+      subscribe: () => () => {}, prompt: async () => {}, enqueue: async () => {},
+      queue: () => ({ steering: [], followUp: [] }), withdraw: () => ({}),
+      abort: async () => {}, result: () => "ok", dispose: async () => {},
+      sessionFile: () => selection.sessionFile,
+      historyEntries: () => entries, compactions: () => [],
+    };
+  };
+  factory.catalog = () => [{ key: "test/one" }];
+  try {
+    const sessions = new Sessions(factory, undefined, storage);
+    const id = await sessions.importSession(source);
+    const state = sessions.snapshot(id);
+    assert.equal(state.cwd, workspace, "工作空间取会话头 cwd");
+    assert.equal(state.title, "帮我检查导入", "标题取首条用户正文，不含 Skill 注入内容");
+    assert.deepEqual(state.messages.map((record) => record.entryId), ["u1", "a1"]);
+    const copied = sessions.get(id).agent.sessionFile();
+    assert.notEqual(copied, source);
+    assert.equal(await readFile(copied, "utf8"), await readFile(source, "utf8"));
+    await sessions.remove(id);
+    assert.equal(existsSync(source), true, "删除 Axiom 会话不删原始 pi 文件");
+    assert.equal(existsSync(copied), false);
+    await assert.rejects(sessions.importSession(join(root, "missing.jsonl")), /会话文件不存在/);
+    const bogus = join(root, "bogus.jsonl");
+    await writeFile(bogus, '{"type":"message","id":"x"}\n');
+    await assert.rejects(sessions.importSession(bogus), /缺少 session 头/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

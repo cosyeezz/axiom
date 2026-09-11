@@ -63,6 +63,14 @@ export const selection = z.object({
   thinking: thinking.unwrap().nullable().optional(),
   subagentThinking: thinking.unwrap().nullable().optional(),
 });
+// 具名会话预设：沿用 selection schema；trustProject/useDefaults 不在 schema 内，保存即剥离。
+export const preset = z.object({
+  id: z.string().uuid(),
+  name: z.string().trim().min(1).max(80),
+  cwd: workspace,
+  selection,
+}).strict();
+export const presetStore = z.object({ presets: z.array(preset) }).strict();
 export const command = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("service.status") }).strict(),
   z.object({ id, type: z.literal("service.restart"), mode: z.enum(["quick", "rebuild", "update"]) }).strict(),
@@ -95,6 +103,18 @@ export const command = z.discriminatedUnion("type", [
   }).strict(),
   z.object({ id, type: z.literal("session.defaults.get") }).strict(),
   selection.extend({ id, type: z.literal("session.defaults.configure"), cwd: workspace }).strict(),
+  z.object({ id, type: z.literal("session.presets.list") }).strict(),
+  z
+    .object({
+      id,
+      type: z.literal("session.presets.save"),
+      presetId: z.string().uuid().optional(),
+      name: z.string().trim().min(1).max(80),
+      cwd: workspace,
+      selection,
+    })
+    .strict(),
+  z.object({ id, type: z.literal("session.presets.delete"), presetId: z.string().uuid() }).strict(),
   z
     .object({
       id,
@@ -117,6 +137,8 @@ export const command = z.discriminatedUnion("type", [
       trustProject: z.boolean().optional(),
     })
     .strict(),
+  // 导入 pi 的 .jsonl 会话文件：服务端路径，复制进本实例存储后作为新会话打开。
+  z.object({ id, type: z.literal("session.import"), path: z.string().trim().min(1).max(4096) }).strict(),
   z.object({ id, type: z.literal("session.attach"), sessionId: id }).strict(),
   z.object({ id, type: z.literal("session.close"), sessionId: id }).strict(),
   z
@@ -131,7 +153,7 @@ export const command = z.discriminatedUnion("type", [
     })
     .strict(),
   z.object({ id, type: z.literal("cancel"), sessionId: id }).strict(),
-  z.object({ id, type: z.literal("queue.withdraw"), sessionId: id }).strict(),
+  z.object({ id, type: z.literal("queue.withdraw"), sessionId: id, recall: z.boolean().optional() }).strict(),
   z
     .object({
       id,

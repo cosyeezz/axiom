@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { discoverCapabilities, capabilityLoader, resolveCapabilities } from "../src/capabilities.js";
@@ -53,6 +53,78 @@ test("selected workspaces load project skills by default, filter plugins and lea
     assert.equal(command.safeParse({ id: "1", type: "session.create", model: "test/model", capabilities: selected, subagentCapabilities: null }).success, true);
     loader.getExtensions().runtime.invalidate();
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("stale absolute IDs only narrow a saved allowlist, never match by skill name", () => {
+  const old = { skills: ["C:\\old\\skills\\same\\SKILL.md", "/Users/old/skills/same/SKILL.md", "shared"], plugins: ["old.js"], mcp: ["gone"] };
+  const catalog = { skills: [{ id: "/new/skills/same/SKILL.md" }, { id: "shared" }], plugins: [{ id: "new.js" }], mcp: [{ id: "new" }] };
+  const warnings = [];
+  assert.deepEqual(resolveCapabilities(old, catalog, { allowUnavailable: true, warnings }), { skills: ["shared"], plugins: [], mcp: [] });
+  assert.equal(warnings.length, 3);
+  assert.throws(() => resolveCapabilities(old, catalog), /C:\\old|不可用/);
+  assert.throws(() => resolveCapabilities({ skills: null }, catalog, { allowUnavailable: true }), /无效/);
+  assert.deepEqual(resolveCapabilities(null, catalog).skills, catalog.skills.map((s) => s.id));
+});
+
+test("missing saved skills do not block another workspace or startup; broken histories stay on disk", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-recovery-"));
+  const agentDir = join(root, "agent"), a = join(root, "a"), b = join(root, "b");
+  const storage = join(root, "sessions");
+  const warnings = [];
+  t.mock.method(console, "warn", (message) => warnings.push(message));
+  const calls = [];
+  const factory = async (_, selection) => {
+    calls.push(selection);
+    return {
+      config: () => ({ model: "test/model" }), subscribe: () => () => {},
+      prompt: async () => {}, result: () => "done", abort: async () => {}, dispose: async () => {},
+    };
+  };
+  factory.catalog = () => [{ key: "test/model" }];
+  factory.capabilities = async (cwd) => (await discoverCapabilities(cwd, { agentDir, loadAdapter: false })).catalog;
+  const first = new Sessions(factory, undefined, storage);
+  const restored = new Sessions(factory, undefined, storage);
+  try {
+    await mkdir(join(a, ".pi", "skills", "local"), { recursive: true });
+    await mkdir(b);
+    await mkdir(agentDir);
+    await writeFile(join(agentDir, "settings.json"), JSON.stringify({ defaultProjectTrust: "always" }));
+    const skill = join(a, ".pi", "skills", "local", "SKILL.md");
+    await writeFile(skill, "---\nname: local\ndescription: Project skill\n---\nInstructions");
+    const catalog = await factory.capabilities(a);
+    assert.equal(catalog.skills.length, 1);
+    const custom = { skills: catalog.skills.map((s) => s.id), plugins: [], mcp: [] };
+    await first.configureDefaults(a, { capabilities: custom, subagentCapabilities: "inherit" });
+    const id = await first.create(a);
+    const other = await first.create(b);
+    assert.deepEqual(first.get(other).capabilities.skills, []);
+    assert.deepEqual(first.getDefaults().capabilities, custom);
+    await first.rename(id, "history survives");
+    await first.close();
+    await rm(skill);
+    const [workspace] = await readdir(storage);
+    const broken = join(storage, workspace, "broken.json");
+    await writeFile(broken, "{bad json");
+    const missingDir = join(storage, workspace, "missing-dir.json");
+    const missingHistory = JSON.stringify({ cwd: join(root, "removed"), selection: {} });
+    await writeFile(missingDir, missingHistory);
+    await restored.load();
+    assert.equal(restored.list().length, 2);
+    assert.equal(restored.get(id).title, "history survives");
+    assert.deepEqual(restored.get(id).capabilities, { skills: [], plugins: [], mcp: [] });
+    const tasks = restored.get(id).tasks;
+    await Promise.all(tasks.start(["child"]).map((taskId) => tasks.jobs.get(taskId).done));
+    assert.deepEqual(calls.at(-1).capabilities.skills, []);
+    assert.equal(await readFile(broken, "utf8"), "{bad json");
+    assert.equal(await readFile(missingDir, "utf8"), missingHistory);
+    assert(warnings.some((line) => line.includes(catalog.skills[0].id)));
+    assert(warnings.some((line) => line.includes(broken)));
+    assert(warnings.some((line) => line.includes(missingDir)));
+  } finally {
+    await first.close();
+    await restored.close();
     await rm(root, { recursive: true, force: true });
   }
 });

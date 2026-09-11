@@ -113,14 +113,19 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       message: { role: "assistant", content: "historical result" },
     },
   ];
-  let lastCreation, lastDefaults, copiedPath;
+  let lastCreation, lastDefaults, lastImport, copiedPath;
   Object.defineProperty(window.navigator, "clipboard", { value: { writeText: async (text) => { copiedPath = text; } } });
   let defaults = { model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
   let failDefaults = false, needsTrust = false;
   let withdrawnImages;
-  let failCreation = false;
   let failList = false;
   let failConfig = false;
+  let presets = [
+    { id: "p1", name: "审查预设", selection: { model: "test/model", thinking: "high", capabilities: null, subagentModel: null, subagentThinking: null, subagentCapabilities: null, compaction: null } },
+    { id: "p2", name: "沙盒预设", cwd: "C:\\untrusted", selection: { model: "test/model", thinking: null, capabilities: null, subagentModel: null, subagentThinking: null, subagentCapabilities: null, compaction: null } },
+    { id: "p3", name: "失效预设", selection: { model: "test/model", thinking: null, capabilities: { skills: ["gone-skill"], mcp: [], plugins: [] }, subagentModel: null, subagentThinking: null, subagentCapabilities: null, compaction: null } },
+  ];
+  let failPresetSave = false, lastPresetSave;
   const requests = [];
   class Socket {
     static OPEN = 1;
@@ -147,7 +152,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
         switch (req.type) {
           case "files.browse":
             data = { path: req.sessionId ? req.path : "C:\\other", parent: req.path ? "" : null,
-              entries: req.sessionId ? (req.path ? [{ name: "app.js", path: "src/app.js", directory: false }] : [{ name: "src", path: "src", directory: true }]) : [],
+              entries: req.sessionId ? (req.path ? [{ name: "app.js", path: "src/app.js", directory: false }] : [{ name: "src", path: "src", directory: true }]) : [{ name: "pi.jsonl", path: "C:\\pi\\sessions\\pi.jsonl", directory: false }],
               nextOffset: null, breadcrumbs: [], locations: [] };
             break;
           case "workspace.reveal": data = { opened: true }; break;
@@ -155,7 +160,24 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
             data = { path: req.path, entries: req.path ? [{ name: "app.js", path: "src/app.js", directory: false }] : [{ name: "src", path: "src", directory: true }] };
             break;
           case "capabilities.list":
-            data = { needsTrust, warnings: [], skills: [{ id: "skill-a", name: "Skill A" }, { id: "skill-b", name: "Skill B" }], mcp: [{ id: "browser", name: "Browser" }], plugins: [{ id: "search", name: "Search" }] };
+            data = { needsTrust: req.trustProject ? false : needsTrust || req.cwd === "C:\\untrusted", warnings: [], skills: [{ id: "skill-a", name: "Skill A" }, { id: "skill-b", name: "Skill B" }], mcp: [{ id: "browser", name: "Browser" }], plugins: [{ id: "search", name: "Search" }] };
+            break;
+          case "session.presets.list":
+            data = { presets };
+            break;
+          case "session.presets.save":
+            lastPresetSave = req;
+            if (failPresetSave) {
+              this.receive({ type: "response", id: req.id, ok: false, error: "preset unavailable" });
+              return;
+            }
+            if (req.presetId) Object.assign(presets.find((preset) => preset.id === req.presetId), { name: req.name, cwd: req.cwd, selection: req.selection });
+            else presets.push({ id: `p${presets.length + 1}`, name: req.name, ...(req.cwd ? { cwd: req.cwd } : {}), selection: req.selection });
+            data = {};
+            break;
+          case "session.presets.delete":
+            presets = presets.filter((preset) => preset.id !== req.presetId);
+            data = {};
             break;
           case "session.defaults.get":
             data = defaults;
@@ -171,15 +193,11 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
             break;
           case "session.create":
             lastCreation = req;
-            if (failCreation) {
-              this.receive({ type: "response", id: req.id, ok: false, error: "plugin unavailable" });
-              return;
-            }
             const selected = { ...(req.useDefaults === false ? {} : defaults), ...req };
             data = { ...states[0], config: { ...config, model: selected.model || config.model, subagentModel: selected.subagentModel ?? null, capabilitySelection: selected.capabilities ?? null, subagentCapabilities: selected.subagentCapabilities ?? null } };
             break;
           case "service.status":
-            data = { managed: true, error: "", version: "9.9.9" };
+            data = { managed: true, error: "", version: "9.9.9", importDir: "C:\\pi\\sessions" };
             break;
           case "service.restart":
             this.receive({ type: "response", id: req.id, ok: false, error: "请先停止正在运行的会话" });
@@ -217,11 +235,19 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
           case "session.attach":
             data = states.find((s) => s.sessionId === req.sessionId);
             break;
+          case "session.import":
+            lastImport = req;
+            data = { sessionId: "imported", title: "imported", cwd: "C:\\pi", status: "idle", config, messages: [], tasks: [], live: {} };
+            break;
           case "session.rename":
             states.find((s) => s.sessionId === req.sessionId).title = req.title;
             break;
           case "queue.withdraw":
             data = { steering: ["撤回插话"], followUp: ["撤回追加"], ...(withdrawnImages ? { images: withdrawnImages } : {}) };
+            if (req.recall) {
+              states.find((s) => s.sessionId === req.sessionId).messages = [];
+              data = { steering: [], followUp: [], recalled: { entryId: "u1", text: "撤回的输入", images: null } };
+            }
             this.receive({ type: "session.queue", sessionId: req.sessionId, data: { steering: [], followUp: [] } });
             break;
           case "prompt":
@@ -241,6 +267,28 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
   };
   try {
     window.eval(`${contrastSource}\n${pickerSource}\n${source}`);
+    const copySelection = window.eval("copySelection");
+    $("prompt").value = "copy selected text";
+    $("prompt").setSelectionRange(5, 13);
+    await copySelection({ type: "pointerup", button: 0, target: $("prompt") });
+    assert.equal(copiedPath, "selected");
+    $("selection-copy").value = "off";
+    $("selection-copy").onchange();
+    assert.equal(window.localStorage.getItem("axiom.selectionCopy"), "off");
+    copiedPath = "unchanged";
+    await copySelection({ type: "pointerup", button: 0, target: $("prompt") });
+    assert.equal(copiedPath, "unchanged");
+    $("selection-copy").value = "on";
+    $("selection-copy").onchange();
+    await copySelection({ type: "keyup", key: "c", target: $("prompt") });
+    await copySelection({ type: "pointerup", button: 2, target: $("prompt") });
+    assert.equal(copiedPath, "unchanged", "clear shortcut and context menu do not copy");
+    const originalWriteText = window.navigator.clipboard.writeText;
+    window.navigator.clipboard.writeText = async () => { throw new Error("denied"); };
+    await copySelection({ type: "keyup", key: "Shift", target: $("prompt") });
+    assert.match($("error").textContent, /右键菜单复制/);
+    window.navigator.clipboard.writeText = originalWriteText;
+    $("prompt").value = "";
     sockets[0].close(); // Close before open: retry must not remain hidden.
     await settle();
     assert.equal($("login").hidden, false);
@@ -253,6 +301,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     await settle();
     paint();
     assert.equal($("workspace").hidden, false);
+    assert.equal(requests.filter((req) => req.type === "session.presets.list").length, 1, "connect fetches the preset list");
     assert.equal($("send").disabled, true);
     assert.equal($("send").textContent, "Send");
     assert.equal(window.document.querySelector("header .menu"), null);
@@ -554,14 +603,27 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("defaults-preview").compareDocumentPosition($("defaults-editor")) & window.Node.DOCUMENT_POSITION_FOLLOWING, window.Node.DOCUMENT_POSITION_FOLLOWING);
     window.document.querySelectorAll(".session-item")[0].click();
     await settle();
+    // 预设列表：connect 拉取，启动/编辑按钮共用 .preset-group。
+    assert.equal(window.document.querySelector(".preset-group").contains($("preset-list")), true);
+    const presetNames = () => [...window.document.querySelectorAll(".preset-group .preset-launch")].map((button) => button.textContent);
+    assert.deepEqual(presetNames(), ["审查预设", "沙盒预设", "失效预设"]);
+    assert.deepEqual([...window.document.querySelectorAll(".preset-group .preset-launch")].map((button) => button.title), ["使用当前工作目录", "C:\\untrusted", "使用当前工作目录"]);
+    assert.equal(window.document.querySelectorAll(".preset-group .preset-edit").length, 3);
+    // 保存预设：needsTrust 不阻止保存；未保存的预设没有删除按钮。
+    needsTrust = true;
     $("custom-new").click();
     await settle();
     assert.equal($("create-session").open, true);
-    assert.equal($("create-title").textContent, "自定义新会话");
-    assert.equal($("create-submit").textContent, "创建会话");
-    assert.equal($("create-main-model").value, "test/model", "custom creation keeps current model instead of new defaults");
+    assert.equal($("create-title").textContent, "预设会话配置");
+    assert.equal($("create-submit").textContent, "保存预设");
+    assert.equal($("preset-fields").hidden, false);
+    assert.equal($("preset-delete").hidden, true, "unsaved presets have nothing to delete");
+    assert.equal($("preset-name").required, true);
+    assert.equal($("create-submit").disabled, false, "saving presets is allowed even when the directory is untrusted");
+    assert.equal($("create-main-model").value, "test/model", "preset editor keeps current model instead of new defaults");
     assert.equal($("create-main-mode").value, "all");
     assert.equal($("create-subagent-mode").value, "all");
+    needsTrust = false;
     $("create-main-mode").value = "custom";
     $("create-main-mode").dispatchEvent(new window.Event("change"));
     const checkboxes = window.document.querySelectorAll('.capability-agent:first-child input[data-kind="skills"]');
@@ -569,18 +631,100 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     checkboxes[1].dispatchEvent(new window.Event("change"));
     $("create-subagent-provider").value = "other";
     $("create-subagent-provider").dispatchEvent(new window.Event("change"));
-    failCreation = true;
+    $("preset-name").value = "  评审工作台  ";
+    const presetSaves = () => requests.filter((req) => req.type === "session.presets.save").length;
+    lastCreation = undefined;
+    failPresetSave = true;
     $("create-form").requestSubmit();
     await settle();
-    assert.equal($("create-session").open, true);
-    assert.match($("create-feedback").textContent, /plugin unavailable/);
-    assert.deepEqual(lastCreation.capabilities.skills, ["skill-a"]);
-    assert.equal(lastCreation.subagentCapabilities, null);
-    assert.equal(lastCreation.subagentModel, "other/child");
+    assert.equal($("create-session").open, true, "failed saves keep the editor open");
+    assert.match($("create-feedback").textContent, /保存失败.*preset unavailable/);
+    assert.equal($("create-submit").disabled, false, "failed saves re-enable submit");
+    assert.equal(lastCreation, undefined, "saving a preset never creates a session");
+    failPresetSave = false;
+    $("create-form").requestSubmit();
+    await settle();
+    assert.equal($("create-session").open, false);
+    assert.equal(lastPresetSave.name, "评审工作台", "preset names are trimmed");
+    assert.equal(Object.hasOwn(lastPresetSave, "presetId"), false);
+    assert.equal(Object.hasOwn(lastPresetSave, "cwd"), false, "cwd is only stored for fixed-directory presets");
+    assert.deepEqual(lastPresetSave.selection.capabilities.skills, ["skill-a"]);
+    assert.equal(lastPresetSave.selection.subagentModel, "other/child");
+    assert.equal(lastPresetSave.selection.compaction.enabled, false);
+    assert.deepEqual(presetNames(), ["审查预设", "沙盒预设", "失效预设", "评审工作台"]);
+    // 直接启动：信任目录直接创建，不带 trustProject。
+    lastCreation = undefined;
+    window.document.querySelectorAll(".preset-group .preset-launch")[3].click();
+    await settle();
+    assert.equal($("create-session").open, false, "trusted presets launch without a dialog");
     assert.equal(lastCreation.useDefaults, false);
+    assert.equal(Object.hasOwn(lastCreation, "trustProject"), false, "direct launch never sends trust");
+    assert.equal(lastCreation.model, "test/model");
+    assert.equal(lastCreation.subagentModel, "other/child");
+    assert.equal(lastCreation.cwd, "C:\\work", "without a fixed cwd the preset uses the current directory");
+    // 编辑：重命名并固定目录。
+    window.document.querySelectorAll(".preset-group .preset-edit")[3].click();
+    await settle();
+    assert.equal($("create-session").open, true);
+    assert.equal($("preset-name").value, "评审工作台");
+    assert.equal($("preset-delete").hidden, false);
+    assert.equal($("create-main-model").value, "test/model", "editing reloads the saved selection");
+    $("preset-name").value = "评审工作台 v2";
+    $("preset-fixed-cwd").checked = true;
+    $("create-form").requestSubmit();
+    await settle();
+    assert.equal(lastPresetSave.presetId, "p4");
+    assert.equal(lastPresetSave.cwd, "C:\\work", "fixed-directory presets store their cwd");
+    assert.deepEqual(presetNames(), ["审查预设", "沙盒预设", "失效预设", "评审工作台 v2"]);
+    // 删除预设。
+    $("preset-delete").click();
+    await settle();
+    assert.equal($("create-session").open, false);
+    assert.equal(requests.findLast((req) => req.type === "session.presets.delete").presetId, "p4");
+    assert.deepEqual(presetNames(), ["审查预设", "沙盒预设", "失效预设"]);
+    // 失效能力启动：launching 确认表单，修改仅本次有效，不回写预设。
+    lastCreation = undefined;
+    const savesAtLaunch = presetSaves();
+    window.document.querySelectorAll(".preset-group .preset-launch")[2].click();
+    await settle();
+    assert.equal($("create-session").open, true, "unavailable capabilities open the launch confirmation");
+    assert.equal($("create-title").textContent, "启动预设：失效预设");
+    assert.equal($("create-submit").textContent, "创建会话");
+    assert.equal($("preset-fields").hidden, true, "launching never edits the preset");
+    assert.equal($("create-submit").disabled, false, "launching submit is only blocked by needsTrust");
+    assert.match($("create-agents").textContent, /当前目录不可用 · gone-skill/);
+    const goneBox = [...window.document.querySelectorAll('.capability-agent:first-child input[data-kind="skills"]')].find((box) => box.checked);
+    assert.notEqual(goneBox, undefined, "unavailable selections survive into the confirmation");
+    goneBox.checked = false;
+    goneBox.dispatchEvent(new window.Event("change"));
+    $("create-form").requestSubmit();
+    await settle();
+    assert.equal($("create-session").open, false);
+    assert.equal(lastCreation.useDefaults, false);
+    assert.deepEqual(lastCreation.capabilities.skills, [], "launch-time edits apply to this run only");
+    assert.equal(lastCreation.trustProject, false);
+    assert.equal(lastCreation.cwd, "C:\\work");
+    assert.equal(presetSaves(), savesAtLaunch, "launching never rewrites the preset");
+    assert.deepEqual(presetNames(), ["审查预设", "沙盒预设", "失效预设"]);
+    // 未信任目录启动：确认信任后仅本次携带 trustProject。
+    lastCreation = undefined;
+    window.document.querySelectorAll(".preset-group .preset-launch")[1].click();
+    await settle();
+    assert.equal($("create-session").open, true, "untrusted presets open a trust confirmation");
+    assert.equal($("create-title").textContent, "启动预设：沙盒预设");
+    assert.equal($("preset-fields").hidden, true);
+    assert.equal($("create-submit").disabled, true, "creation waits for explicit trust while launching");
+    assert.equal(lastCreation, undefined);
+    $("create-trust").checked = true;
+    $("create-trust").dispatchEvent(new window.Event("change"));
+    await settle();
     assert.equal($("create-submit").disabled, false);
-    failCreation = false;
-    $("create-session").close();
+    $("create-form").requestSubmit();
+    await settle();
+    assert.equal($("create-session").open, false);
+    assert.equal(lastCreation.useDefaults, false);
+    assert.equal(lastCreation.trustProject, true, "trust is granted for this launch only");
+    assert.equal(lastCreation.cwd, "C:\\untrusted");
     input("first draft\nsecond line");
     assert.equal($("send").disabled, false);
     window.document.querySelectorAll(".session-item")[1].click();
@@ -727,6 +871,31 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape" }));
     await settle();
     assert.equal(requests.filter((r) => r.type === "cancel").length, cancels + 1, "double Esc cancels");
+    // 三次 Esc：把已进入上下文的输入退回输入框（服务端回退分支，客户端按新快照重绘消息区）。
+    states[0].messages = [{ agentId: "main", entryId: "u1", message: { role: "user", content: "撤回的输入" } }];
+    emit("session.state", { status: "idle" });
+    await settle();
+    input("撤回的输入");
+    $("composer").requestSubmit();
+    await settle();
+    assert.match($("output").textContent, /撤回的输入/);
+    emit("session.state", { status: "running" });
+    const attaches = () => requests.filter((r) => r.type === "session.attach").length;
+    const attachCount = attaches();
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape" }));
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape" }));
+    await new Promise((resolve) => setTimeout(resolve, 330));
+    await settle();
+    assert.equal(requests.findLast((r) => r.type === "queue.withdraw").recall, undefined, "double Esc stops without touching the context");
+    assert.equal(attaches(), attachCount);
+    for (let i = 0; i < 3; i++) window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape" }));
+    await new Promise((resolve) => setTimeout(resolve, 330));
+    await settle();
+    paint();
+    assert.equal(requests.findLast((r) => r.type === "queue.withdraw").recall, true, "triple Esc recalls the sent input");
+    assert.equal(attaches(), attachCount + 1, "transcript is redrawn from the rewound session");
+    assert.match($("prompt").value, /撤回的输入/, "recalled input goes back into the box");
+    assert.doesNotMatch($("output").textContent, /撤回的输入/, "the recalled message is gone from the transcript");
     input("");
     emit(
       "task.state",
@@ -973,6 +1142,19 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("search").value = "missing";
     $("search").dispatchEvent(new window.Event("input"));
     assert.match($("sessions").textContent, /没有找到/);
+    // 导入 pi 会话：选择器从 pi 会话目录开始，确认后按服务端路径导入并切换工作空间。
+    $("search").value = "";
+    $("search").dispatchEvent(new window.Event("input"));
+    $("import-session").click(); await settle();
+    assert.equal($("file-picker").open, true);
+    assert.equal(requests.findLast((req) => req.type === "files.browse").path, "C:\\pi\\sessions");
+    assert.match($("file-picker-results").textContent, /pi\.jsonl/);
+    $("file-picker-results").querySelector("button").click();
+    $("file-picker-confirm").click(); await settle();
+    assert.equal(lastImport.type, "session.import");
+    assert.equal(lastImport.path, "C:\\pi\\sessions\\pi.jsonl");
+    assert.equal($("session-title").textContent, "imported");
+    assert.equal($("workspace-label").textContent, "C:\\pi", "导入后跟随会话自身工作空间");
   } finally {
     dom.window.close();
   }
@@ -1033,7 +1215,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     compactions: [],
   };
   let defaults = { compaction: { ...compactionDefaults, tokenThreshold: 50000 }, model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
-  let lastDefaults, lastCreation;
+  let lastDefaults, lastCreation, lastPresetSave;
   const requests = [];
   const sockets = [];
   class Socket {
@@ -1099,6 +1281,13 @@ test("compaction settings edit per scope and fold transcripts in place", async (
             break;
           case "capabilities.list":
             data = { needsTrust: false, warnings: [], skills: [], mcp: [], plugins: [] };
+            break;
+          case "session.presets.list":
+            data = { presets: [] };
+            break;
+          case "session.presets.save":
+            lastPresetSave = req;
+            data = {};
             break;
           case "prompt": {
             const entryId = `m${state.messages.length + 1}`;
@@ -1301,22 +1490,26 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     assert.equal(lastDefaults.compaction.tokenThreshold, 60000, "invalid defaults are not saved");
     assert.match($("defaults-preview").textContent, /自动压缩 · 未设阈值 触发 · 保留最近 20,000 tokens/);
 
-    // 自定义新会话：沿用当前会话压缩配置，提交时随 session.create 发送。
+    // 预设保存：压缩配置随 selection 保存，保存预设不再直接创建会话。
     $("settings").close();
     $("custom-new").click();
     await settle();
     assert.equal($("create-session").open, true);
+    assert.equal($("create-submit").textContent, "保存预设");
     const customEditor = $("create-compaction");
     assert.equal(customEditor.querySelector("input[type=checkbox]").checked, false, "defaults edits do not change the running session");
     customEditor.querySelector("input[type=checkbox]").checked = true;
     customEditor.querySelectorAll("input[type=number]")[0].value = "70000";
     customEditor.querySelectorAll("input[type=number]")[0].dispatchEvent(new window.Event("change", { bubbles: true }));
+    $("preset-name").value = "压缩预设";
     $("create-form").requestSubmit();
     await settle();
-    assert.equal(lastCreation.useDefaults, false);
-    assert.equal(lastCreation.compaction.enabled, true);
-    assert.equal(lastCreation.compaction.tokenThreshold, 70000);
     assert.equal($("create-session").open, false);
+    assert.equal(lastPresetSave.name, "压缩预设");
+    assert.equal(Object.hasOwn(lastPresetSave, "cwd"), false);
+    assert.equal(lastPresetSave.selection.compaction.enabled, true, "compaction edits travel with the saved selection");
+    assert.equal(lastPresetSave.selection.compaction.tokenThreshold, 70000);
+    assert.equal(lastCreation, undefined, "saving a preset never creates a session");
   } finally {
     dom.window.close();
   }

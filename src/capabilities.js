@@ -65,14 +65,19 @@ export async function discoverCapabilities(cwd, { agentDir = getAgentDir(), load
   return { catalog, settingsManager, paths, adapter, mcpConfig, createMcpAdapter, agentDir, cwd };
 }
 
-export function resolveCapabilities(selection, catalog) {
+export function resolveCapabilities(selection, catalog, { allowUnavailable = false, warnings = [] } = {}) {
   const result = {};
   for (const kind of ["skills", "plugins", "mcp"]) {
     const available = catalog[kind].map((r) => r.id);
     const selected = selection == null ? available : selection[kind];
-    if (!Array.isArray(selected) || selected.some((id) => !available.includes(id)))
-      throw new Error(`未知或已不可用的能力：${kind}`);
-    result[kind] = [...new Set(selected)];
+    if (!Array.isArray(selected)) throw new Error(`无效的能力选择：${kind}`);
+    const missing = selected.filter((id) => !available.includes(id));
+    if (missing.length) {
+      const message = `未知或已不可用的能力：${kind}：${missing.join("、")}`;
+      if (!allowUnavailable) throw new Error(message);
+      warnings.push(`已跳过${message}`);
+    }
+    result[kind] = [...new Set(selected.filter((id) => available.includes(id)))];
   }
   return result;
 }

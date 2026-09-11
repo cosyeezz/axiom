@@ -4,7 +4,7 @@ import { realpath, stat, readFile, mkdir, writeFile, rename, rm, readdir } from 
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, isAbsolute, resolve, sep, parse } from "node:path";
 
-import { selection as selectionSchema, compaction as compactionSchema, compactionDefaults, assertPromptImages } from "./protocol.js";
+import { selection as selectionSchema, presetStore, compaction as compactionSchema, compactionDefaults, assertPromptImages } from "./protocol.js";
 import { Tasks } from "./tasks.js";
 import { delegationTools } from "./tools.js";
 import { resolveCapabilities } from "./capabilities.js";
@@ -53,6 +53,28 @@ function absoluteCrumbs(slashPath) {
   return crumbs;
 }
 
+// 导入 pi 会话的标题：优先 pi 里的会话名，其次首条用户消息（去掉开头注入的标签），最后文件名。
+function importedTitle(lines, source) {
+  let name = "",
+    first = "";
+  for (const line of lines) {
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (entry?.type === "session_info" && typeof entry.name === "string" && entry.name.trim()) name = entry.name.trim();
+    if (!first && entry?.type === "message" && entry.message?.role === "user") {
+      const { content } = entry.message;
+      const text = Array.isArray(content) ? content.filter((block) => block?.type === "text").map((block) => block.text).join(" ") : String(content ?? "");
+      // 去掉注入的 Skill 正文与残留标签，剩下真实任务正文当标题。
+      first = text.replace(/<skill\b[^>]*>[\s\S]*?<\/skill>/gi, " ").replace(/<[^<>]*>/g, " ").replace(/\s+/g, " ").trim();
+    }
+  }
+  return (name || first || basename(source).replace(/\.jsonl$/i, "")).slice(0, 60);
+}
+
 // 主机快速位置：主目录 + 文件系统根；Windows 盘符仅全局模式用 fs stat 探测，不 shell。
 async function hostLocations() {
   const home = homedir().split(sep).join("/");
@@ -74,6 +96,7 @@ export class Sessions {
     this.storagePath = storagePath;
     this.defaultsPath = defaultsPath;
     this.savingDefaults = Promise.resolve();
+    this.savingPresets = Promise.resolve();
     this.createAgent = createAgent;
     this.items = new Map();
     this.recentConfig = {};
@@ -115,7 +138,7 @@ export class Sessions {
     this.defaultSelection = next;
     return this.getDefaults();
   }
-  async validateSelection(workspace = this.createAgent.cwd || process.cwd(), selection) {
+  async validateSelection(workspace = this.createAgent.cwd || process.cwd(), selection, inherited = []) {
     const cwd = await realpath(workspace);
     if (!(await stat(cwd)).isDirectory()) throw new Error("工作空间必须是目录");
     for (const key of ["model", "subagentModel"])
@@ -123,12 +146,17 @@ export class Sessions {
         throw new Error(key === "model" ? "Unknown model" : "Unknown subagent model");
     if (selection.compaction) this.validateCompaction(selection.compaction, selection.model);
     let catalog;
+    const warnings = [];
     if (this.createAgent.capabilities) {
       catalog = await this.createAgent.capabilities(cwd, selection.trustProject === true);
-      resolveCapabilities(selection.capabilities, catalog);
-      resolveCapabilities(selection.subagentCapabilities === "inherit" ? selection.capabilities : selection.subagentCapabilities, catalog);
+      for (const key of ["capabilities", "subagentCapabilities"]) {
+        if (key === "subagentCapabilities" && selection[key] === "inherit") continue;
+        const resolved = resolveCapabilities(selection[key], catalog, { allowUnavailable: inherited.includes(key), warnings });
+        // null 仍表示全部；自定义空集合不能扩大为全部能力。
+        if (selection[key] != null && inherited.includes(key)) selection[key] = resolved;
+      }
     }
-    return { cwd, catalog };
+    return { cwd, catalog, warnings };
   }
 
   validateCompaction(value, mainModel) {
@@ -143,16 +171,84 @@ export class Sessions {
     return config;
   }
 
+  // —— 具名会话预设：沿用 selection schema，持久化 defaultsPath 同目录 presets.json。
+  // 保存只做 schema 校验（selection.parse 剥离 trustProject/useDefaults）；目录或能力失效
+  // 留给会话创建时报错，不阻止保存与列表读取。
+  get presetsPath() {
+    return this.defaultsPath ? join(dirname(this.defaultsPath), "presets.json") : null;
+  }
+  async listPresets() {
+    const path = this.presetsPath;
+    if (!path) return { presets: [] };
+    try {
+      return presetStore.parse(JSON.parse(await readFile(path, "utf8")));
+    } catch (error) {
+      if (error.code === "ENOENT") return { presets: [] };
+      throw new Error(`会话预设读取失败：${error.message}`);
+    }
+  }
+  // 串行读-改-写：并发保存走同一 promise 链避免相互覆盖；临时文件 + rename 原子落盘。
+  mutatePresets(mutate) {
+    const path = this.presetsPath;
+    if (!path) return Promise.reject(new Error("未启用会话预设持久化"));
+    const work = this.savingPresets.catch(() => {}).then(async () => {
+      const presets = (await this.listPresets()).presets;
+      const resultId = mutate(presets);
+      // 写前整包自检：不合规数据（含手工编辑的坏 name/selection）在落盘前拦截。
+      const store = presetStore.parse({ presets });
+      const temporary = `${path}.${randomUUID()}.tmp`;
+      await mkdir(dirname(path), { recursive: true });
+      try {
+        await writeFile(temporary, JSON.stringify(store, null, 2) + "\n", { mode: 0o600 });
+        await rename(temporary, path);
+      } finally {
+        await rm(temporary, { force: true });
+      }
+      return resultId ? store.presets.find((preset) => preset.id === resultId) : null;
+    });
+    this.savingPresets = work.catch(() => {});
+    return work;
+  }
+  savePreset({ presetId, name, cwd, selection }) {
+    return this.mutatePresets((presets) => {
+      const entry = {
+        id: presetId || randomUUID(),
+        name: name.trim(),
+        selection: selectionSchema.parse(selection ?? {}),
+        ...(cwd ? { cwd } : {}),
+      };
+      const index = presets.findIndex((preset) => preset.id === entry.id);
+      if (presetId && index < 0) throw new Error("Unknown preset");
+      if (index >= 0) presets[index] = entry;
+      else presets.push(entry);
+      return entry.id;
+    });
+  }
+  deletePreset(presetId) {
+    return this.mutatePresets((presets) => {
+      const index = presets.findIndex((preset) => preset.id === presetId);
+      if (index < 0) throw new Error("Unknown preset");
+      presets.splice(index, 1);
+      return null;
+    }).then(() => ({ deleted: presetId }));
+  }
+
   async load() {
     if (!this.storagePath) return;
     await mkdir(this.storagePath, { recursive: true });
-    for (const workspace of await readdir(this.storagePath)) {
-      for (const file of await readdir(join(this.storagePath, workspace))) {
+    for (const workspace of await readdir(this.storagePath, { withFileTypes: true })) {
+      if (!workspace.isDirectory()) continue;
+      for (const file of await readdir(join(this.storagePath, workspace.name))) {
         if (!file.endsWith(".json")) continue;
-        const saved = JSON.parse(await readFile(join(this.storagePath, workspace, file), "utf8"));
-        // 重启时统一采用最新默认压缩配置，其余会话配置保持原样。
-        saved.selection.compaction = structuredClone(this.defaultSelection.compaction);
-        await this.create(saved.cwd, saved.selection, saved);
+        const path = join(this.storagePath, workspace.name, file);
+        try {
+          const saved = JSON.parse(await readFile(path, "utf8"));
+          // 重启时统一采用最新默认压缩配置，其余会话配置保持原样。
+          saved.selection.compaction = structuredClone(this.defaultSelection.compaction);
+          await this.create(saved.cwd, saved.selection, saved);
+        } catch (error) {
+          console.warn(`会话恢复失败，保留原文件 ${path}：${error.message}`);
+        }
       }
     }
   }
@@ -194,12 +290,45 @@ export class Sessions {
     return { sessionId: id, title };
   }
 
+  // 导入 pi 的 .jsonl 会话：原文件原样复制到本工作空间存储目录，原文件保持不变（删除 Axiom 会话不动 pi 历史）。
+  async importSession(file) {
+    if (!this.storagePath) throw new Error("当前实例未启用会话存储，无法导入会话");
+    const source = resolve(String(file || "").trim());
+    let text;
+    try {
+      text = await readFile(source, "utf8");
+    } catch (error) {
+      if (error.code === "ENOENT" || error.code === "EISDIR") throw new Error(`会话文件不存在或不是文件：${source}`);
+      throw error;
+    }
+    const lines = text.split("\n").filter((line) => line.trim());
+    let header = null;
+    try {
+      header = JSON.parse(lines[0]);
+    } catch {}
+    if (header?.type !== "session" || typeof header.cwd !== "string" || !header.cwd.trim())
+      throw new Error("不是有效的 pi 会话文件：缺少 session 头或 cwd 字段");
+    // 会话来自其它机器或目录已删除时，退回到本实例的工作空间，会话内容与历史不受影响。
+    const workspace = await stat(header.cwd).then((info) => (info.isDirectory() ? header.cwd : null)).catch(() => null);
+    return this.create(workspace || this.createAgent.cwd, {}, {
+      id: randomUUID(),
+      title: importedTitle(lines, source),
+      imported: true,
+      importText: text,
+      messages: [],
+    });
+  }
+
   async create(workspace, selection = {}, saved) {
+    const inherited = ["capabilities", "subagentCapabilities"].filter((key) =>
+      saved || (selection.useDefaults !== false && selection[key] === undefined));
     selection = structuredClone({ ...(selection.useDefaults === false ? {} : this.defaultSelection), ...selection });
-    const { cwd, catalog } = await this.validateSelection(workspace, selection);
+    const { cwd, catalog, warnings } = await this.validateSelection(workspace, selection, inherited);
+    for (const warning of warnings) console.warn(`${cwd}：${warning}`);
     const id = saved?.id || randomUUID();
     const storageDir = this.storagePath && join(this.storagePath, createHash("sha256").update(process.platform === "win32" ? cwd.toLowerCase() : cwd).digest("hex"));
     if (storageDir) await mkdir(storageDir, { recursive: true });
+    const importedFile = saved?.importText != null && storageDir ? join(storageDir, `${id}.jsonl`) : null;
     const item = {
       id,
       cwd,
@@ -310,17 +439,26 @@ export class Sessions {
         error: interrupted ? "服务已重启，子任务已停止" : task.error,
         resultId: task.resultId || randomUUID(), notified: task.notified ?? false });
     }
-    item.agent = await this.createAgent(delegationTools(item.tasks), {
-      ...this.recentConfig,
-      ...(selection.model ? { model: selection.model } : {}),
-      ...(selection.thinking ? { thinking: selection.thinking } : {}),
-      capabilities: item.capabilities,
-      compaction: selection.compaction,
-      trustProject: item.trustProject,
-      cwd,
-      sessionDir: storageDir,
-      sessionFile: saved?.sessionFile,
-    });
+    try {
+      if (importedFile) await writeFile(importedFile, saved.importText, { mode: 0o600 });
+      item.agent = await this.createAgent(delegationTools(item.tasks), {
+        ...this.recentConfig,
+        ...(selection.model ? { model: selection.model } : {}),
+        ...(selection.thinking ? { thinking: selection.thinking } : {}),
+        capabilities: item.capabilities,
+        compaction: selection.compaction,
+        trustProject: item.trustProject,
+        cwd,
+        sessionDir: storageDir,
+        sessionFile: saved?.sessionFile ?? importedFile,
+      });
+    } catch (error) {
+      if (importedFile) await rm(importedFile, { force: true });
+      throw error;
+    }
+    // 导入会话没有网页快照：历史直接取 JSONL 分支，保留 entryId 用于压缩折叠与后续续聊。
+    if (importedFile)
+      item.messages = (item.agent.historyEntries?.() || []).map((entry) => ({ agentId: "main", message: entry.message, entryId: entry.id }));
     // Upgrade legacy web history IDs and recover compaction commits saved in Pi JSONL
     // before a crash could persist the web snapshot. Match in order, never by timestamp alone.
     const history = item.agent.historyEntries?.() || [];
@@ -335,8 +473,11 @@ export class Sessions {
         historyIndex = index + 1;
       }
     }
-    for (const record of item.agent.compactions?.() || [])
-      if (!item.compactions.some((entry) => entry.id === record.id)) item.compactions.push(record);
+    for (const record of item.agent.compactions?.() || []) {
+      const saved = item.compactions.find((entry) => entry.id === record.id);
+      if (saved) Object.assign(saved, record);
+      else item.compactions.push(record);
+    }
     item.unsubscribe = item.agent.subscribe((event) =>
       item.emit({ ...event, agentId: "main", runId: item.runId }),
     );
@@ -484,6 +625,7 @@ export class Sessions {
       runId: item.runId,
       messages: item.messages,
       compactions: item.compactions,
+      compactionStatus: item.agent.compactionStatus?.() ?? null,
       retries: item.retries,
       live: item.live,
       tools: item.tools,
@@ -576,6 +718,23 @@ export class Sessions {
       }
     })();
     return item.runId;
+  }
+
+  // 撤回：recall 时把这一轮已进入上下文的输入退回输入框（先停稳、无模型输出才允许）；
+  // 队列撤回放在 recall 之后，recall 被拒绝时队列原样保留，不会丢消息。
+  async withdraw(id, recall = false) {
+    const item = this.get(id);
+    if (!recall) return item.agent.withdraw();
+    if (item.status !== "idle" || item.cancelling) await this.cancel(id);
+    const recalled = await item.agent.recall();
+    if (recalled) {
+      // 网页历史跟着回退：否则重新 attach 仍会画出被撤回的输入和被打断的半截回答。
+      const cut = item.messages.findIndex((record) => record.agentId === "main" && record.entryId === recalled.entryId);
+      if (cut >= 0) item.messages.length = cut;
+      delete item.live.main;
+      await this.persist(item);
+    }
+    return { ...item.agent.withdraw(), recalled };
   }
 
   async cancel(id) {

@@ -25,6 +25,7 @@ const views = new Map();
 const compactionDefaults = { enabled: false, tokenThreshold: 100000, percentThreshold: 70, model: null, thinking: "off", keepRecentTokens: 20000 };
 const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 let compactions = [], mainItems = [];
+const compactionNodes = new Map(), taskEntries = new Map();
 let images = [], imageLoading = false;
 let completionVersion = 0, completionToken, completionEntries = [], completionIndex = 0;
 let selectedSkill = "", contextFiles = [], pickingWorkspace = false, currentCwd = "";
@@ -147,7 +148,8 @@ function controls() {
   $("settings-feedback").textContent = unavailable
     ? (changing ? "正在保存或切换配置…" : "连接断开，暂时无法修改配置")
     : "更改自动保存，模型在下一次请求生效";
-  $("create-submit").disabled = unavailable || !creation?.main || creation.loading || (!creation.defaults && creation.needsTrust);
+  $("create-submit").disabled = unavailable || !creation?.main || creation.loading || (creation.launching && creation.needsTrust);
+  for (const button of $("preset-list").querySelectorAll("button")) button.disabled = unavailable;
   if (creation?.defaults) for (const fieldset of $("create-agents").children) fieldset.disabled = unavailable;
   $("queue-type").disabled = unavailable;
   $("composer-skill").disabled = unavailable || !config?.skills?.length;
@@ -683,7 +685,45 @@ function renderMessage(item, message) {
   updateActivity(item, ["error", "aborted", "length"].includes(message.stopReason) ? (message.errorMessage || "响应中断") : undefined);
   renderer.flush(item);
 }
+function renderCompactionStatus(data) {
+  const node = $("compaction-progress");
+  const labels = { summarizing: "后台压缩：正在生成摘要…", ready: "后台压缩：摘要已就绪，等待下一次请求前应用", applied: "后台压缩：已完成", failed: "后台压缩：失败，保留原文", skipped: "后台压缩：已跳过", cancelled: "后台压缩：已取消" };
+  node.replaceChildren();
+  node.hidden = !labels[data?.status];
+  node.dataset.status = data?.status || "";
+  if (node.hidden) return;
+  if (data.status === "summarizing") {
+    const icon = document.createElement("span");
+    icon.className = "task-run-spin";
+    icon.setAttribute("aria-hidden", "true");
+    node.append(icon);
+  }
+  const label = document.createElement("span");
+  label.textContent = `${labels[data.status]}${data.message ? ` · ${data.message}` : ""}`;
+  node.append(label);
+}
+function trackTaskEntries(message, entryId) {
+  if (!entryId || message.isError || message.role !== "toolResult" || message.toolName?.replace(/^functions\./, "") !== "delegate") return;
+  for (const block of Array.isArray(message.content) ? message.content : []) {
+    if (block.type !== "text") continue;
+    try {
+      const ids = JSON.parse(block.text).taskIds;
+      if (Array.isArray(ids)) for (const id of ids)
+        if (typeof id === "string" && !taskEntries.has(id)) taskEntries.set(id, entryId);
+    } catch {}
+  }
+}
+function placeCompactedTasks() {
+  for (const [id, task] of tasks) {
+    const entryId = taskEntries.get(id);
+    if (!entryId) continue;
+    const record = compactions.find((record) => record.compactedMessageIds?.includes(entryId));
+    const container = compactionNodes.get(record?.id)?.querySelector(".compaction-tasks");
+    if (container && task.trigger.parentElement !== container) container.append(task.trigger);
+  }
+}
 function compactionCard(data) {
+  if (compactionNodes.has(data.id)) return compactionNodes.get(data.id);
   const node = document.createElement("details");
   node.className = "compaction-card";
   const label = document.createElement("summary");
@@ -695,7 +735,10 @@ function compactionCard(data) {
   const body = document.createElement("div");
   body.className = "markdown compaction-summary";
   label.append(badge, meta, disclosureHint("查看摘要"));
-  node.append(label, body);
+  const taskList = document.createElement("div");
+  taskList.className = "compaction-tasks";
+  node.append(label, body, taskList);
+  compactionNodes.set(data.id, node);
   // renderMarkdown 走 DOMPurify 白名单，摘要里的富文本不会执行。
   renderMarkdown(body, data.summary || "");
   return node;
@@ -703,9 +746,15 @@ function compactionCard(data) {
 function foldCompaction(data) {
   const ids = new Set(data.compactedMessageIds || []);
   const items = mainItems
-    .filter(({ item, entryId }) => entryId && ids.has(entryId) && item.node.isConnected && (!item.node.hidden || (item.skillBlocks?.isConnected && !item.skillBlocks.hidden)))
+    .filter(({ item, entryId }) => entryId && ids.has(entryId) && item.node.isConnected )
     .sort((a, b) => (a.item.node.compareDocumentPosition(b.item.node) & 4 ? -1 : 1));
-  if (!items.length) return;
+  if (!items.length) {
+    const previous = compactionNodes.get(compactions[compactions.indexOf(data) - 1]?.id);
+    if (previous) previous.after(compactionCard(data));
+    else $("output").prepend(compactionCard(data));
+    placeCompactedTasks();
+    return;
+  }
   const anchor = items.at(-1).item.node.nextElementSibling;
   const top = anchor?.getBoundingClientRect().top ?? 0;
   const first = items[0].item;
@@ -714,6 +763,7 @@ function foldCompaction(data) {
     item.node.hidden = true;
     if (item.skillBlocks) item.skillBlocks.hidden = true;
   }
+  placeCompactedTasks();
   mergeThoughts($("output"));
   // 折叠改变上方高度，按保留消息的位移补偿滚动位置，保持阅读锚点而不强制到底部。
   if (anchor) $("transcript").scrollTop += anchor.getBoundingClientRect().top - top;
@@ -801,6 +851,8 @@ function renderTaskRuns() {
     row.onclick = () => {
       follow = false;
       $("latest").hidden = false;
+      for (let parent = task.trigger.parentElement; parent; parent = parent.parentElement)
+        if (parent.tagName === "DETAILS") parent.open = true;
       task.trigger.scrollIntoView({ block: "center" });
       locatedScroll = $("transcript").scrollTop;
       task.trigger.focus({ preventScroll: true });
@@ -877,6 +929,11 @@ function renderRetry(agentId, data) {
 function event(message) {
   if (message.sessionId !== sessionId) return;
   const { type, agentId = "main", data } = message;
+  if (type === "agent.compaction.status" && agentId === "main") renderCompactionStatus(data);
+  if (type === "agent.message.end" && agentId === "main") {
+    trackTaskEntries(data.message, data.entryId);
+    placeCompactedTasks();
+  }
   if (type === "agent.retry") {
     stopActivity(agentId, data.status === "waiting" ? "等待重试" : "已停止");
     renderRetry(agentId, data);
@@ -1010,6 +1067,7 @@ function event(message) {
     item.failure.textContent = data.error || "";
     item.failure.hidden = !data.error;
     updateTaskRuntime(item, data.runtime);
+    placeCompactedTasks();
     renderTaskRuns();
     if (["starting", "running"].includes(data.status)) waiting(message.taskId);
     else stopActivity(message.taskId, status);
@@ -1021,6 +1079,7 @@ function snapshot(state) {
   locatedScroll = undefined;
   clearTimeout(escapeTimer);
   escapeTimer = undefined;
+  recallArmedUntil = 0;
   activeTask?.node.close();
   activeTask = undefined;
   $("task-overlays").replaceChildren();
@@ -1044,6 +1103,11 @@ function snapshot(state) {
   retryCards.clear();
   retryFailures.clear();
   compactions = state.compactions || [];
+  compactionNodes.clear();
+  taskEntries.clear();
+  renderCompactionStatus(state.compactionStatus);
+  for (const { agentId, message, entryId } of state.messages)
+    if (agentId === "main") trackTaskEntries(message, entryId);
   mainItems = [];
   for (const task of state.tasks) {
     event({ type: "task.state", sessionId, taskId: task.id, data: task });
@@ -1109,6 +1173,11 @@ function snapshot(state) {
   else stopActivity("main", "已结束");
   for (const task of tasks.values())
     if (!task.trigger.isConnected) $("output").append(task.trigger);
+  for (const record of compactions)
+    if (!compactionNodes.has(record.id)) $("output").prepend(compactionCard(record));
+  // 摘要按记录顺序集中在历史顶部；原任务入口移动而非复制，弹窗与状态保持不变。
+  $("output").prepend(...compactions.map((record) => compactionNodes.get(record.id)));
+  placeCompactedTasks();
   for (const record of state.retries || []) renderRetry(record.agentId, record);
   if (!$("output").children.length) {
     const empty = document.createElement("div");
@@ -1188,6 +1257,7 @@ $("login").onsubmit = async (e) => {
     const service = await request("service.status");
     serviceManaged = service.managed;
     serviceVersion = service.version || "";
+    importDir = service.importDir || "";
     $("service-version").hidden = !serviceVersion;
     $("service-version").textContent = serviceVersion ? `v${serviceVersion}` : "";
     restarting = false;
@@ -1219,6 +1289,7 @@ $("login").onsubmit = async (e) => {
     $("login").hidden = true;
     $("workspace").hidden = false;
     connected = true;
+    void refreshPresets().catch(error);
     reconnectDelay = 1000;
     resizePrompt();
     controls();
@@ -1239,6 +1310,7 @@ function scheduleReconnect() {
   reconnectDelay = Math.min(reconnectDelay * 2, 15000);
 }
 let serviceVersion = "";
+let importDir = "";
 const restartNames = { quick: "快速重启", rebuild: "重建重启", update: "检查更新" };
 const restartDescriptions = {
   quick: "仅重新启动服务，不安装依赖。所有页面会暂时断开连接，随后自动重连。",
@@ -1441,6 +1513,41 @@ $("image-files").onchange = async () => {
   $("image-files").value = "";
   await loadImages(files);
 };
+let selectionCopy = true;
+try { selectionCopy = localStorage.getItem("axiom.selectionCopy") !== "off"; } catch {}
+$("selection-copy").value = selectionCopy ? "on" : "off";
+$("selection-copy").onchange = () => {
+  selectionCopy = $("selection-copy").value === "on";
+  try {
+    localStorage.setItem("axiom.selectionCopy", selectionCopy ? "on" : "off");
+    $("selection-copy-feedback").textContent = "已保存";
+  } catch {
+    $("selection-copy-feedback").textContent = "浏览器无法保存设置，本次页面内已生效。";
+  }
+};
+async function copySelection(e) {
+  if (!selectionCopy || e.isComposing || (e.type === "pointerup" && e.button !== 0)) return;
+  if (e.type === "keyup" && !["Shift", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "a", "A"].includes(e.key)) return;
+  let text;
+  const input = $("prompt");
+  if (e.target === input) {
+    text = input.value.slice(input.selectionStart, input.selectionEnd);
+  } else {
+    if (!e.target.closest?.("#output, .task-dialog") || e.target.closest("input, textarea, select, button")) return;
+    const selection = window.getSelection();
+    if (!selection?.rangeCount || selection.isCollapsed) return;
+    const range = selection.getRangeAt(0);
+    const root = range.commonAncestorContainer.nodeType === 1
+      ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement;
+    if (!root?.closest("#output, .task-dialog")) return;
+    text = selection.toString();
+  }
+  if (!text.trim()) return;
+  try { await navigator.clipboard.writeText(text); }
+  catch { error(new Error("自动复制失败，请使用右键菜单复制。")); }
+}
+document.addEventListener("pointerup", copySelection);
+document.addEventListener("keyup", copySelection);
 $("prompt").onpaste = (e) => {
   const files = [...(e.clipboardData?.items || [])].filter((item) => item.kind === "file" && item.type.startsWith("image/")).map((item) => item.getAsFile()).filter(Boolean);
   if (!files.length) return;
@@ -1449,6 +1556,15 @@ $("prompt").onpaste = (e) => {
 };
 $("prompt").onkeydown = (e) => {
   if (e.isComposing || e.keyCode === 229) return;
+  if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "c") {
+    e.preventDefault();
+    const input = e.currentTarget;
+    if (input.disabled || input.readOnly || !input.value) return;
+    input.select();
+    // Native deletion keeps Ctrl+Z undo (including restoring a cleared draft).
+    document.execCommand("delete");
+    return;
+  }
   if (!$("prompt-completion").hidden && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
     if (["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape", "ArrowRight"].includes(e.key)) {
       if (e.key === "ArrowRight" && !completionEntries[completionIndex]?.directory) return;
@@ -1472,22 +1588,32 @@ $("prompt").onkeydown = (e) => {
     $("composer").requestSubmit();
   }
 };
-let escapeTimer, withdrawing;
-async function withdrawQueue() {
+let escapeTimer, withdrawing, recallArmedUntil = 0;
+async function withdrawQueue(recall = false) {
   if (withdrawing || imageLoading || !connected || changing) return;
   const target = sessionId;
   withdrawing = true;
   try {
-    const queue = await request("queue.withdraw", { sessionId: target });
-    const queuedImages = [...(queue.images?.steering || queue.steering.map(() => null)), ...(queue.images?.followUp || queue.followUp.map(() => null))];
+    const queue = await request("queue.withdraw", { sessionId: target, ...(recall ? { recall: true } : {}) });
+    const recalled = queue.recalled ? [queue.recalled] : [];
+    const queuedImages = [
+      ...(queue.images?.steering || queue.steering.map(() => null)),
+      ...(queue.images?.followUp || queue.followUp.map(() => null)),
+      ...recalled.map((entry) => entry.images?.length ? entry.images : null),
+    ];
     let imageOffset = (sessionId === target ? images : views.get(target)?.images || []).length;
-    const text = [...queue.steering, ...queue.followUp].map((text, index) => {
+    const text = [...queue.steering, ...queue.followUp, ...recalled.map((entry) => entry.text)].map((text, index) => {
       const shifted = text.replace(/\[image(\d+)\]/g, (_, n) => `[image${Number(n) + imageOffset}]`);
       imageOffset += queuedImages[index]?.length || 0;
       return shifted;
     }).filter(Boolean).join("\n\n");
     const restored = queuedImages.flat().filter(Boolean);
     if (!text && !restored.length) return;
+    // 上下文里的输入被撤回后，叶子已回退：重新取快照重绘消息区（saveView 先保住当前草稿与附件）。
+    if (recalled.length && sessionId === target) {
+      saveView();
+      snapshot(await request("session.attach", { sessionId: target }));
+    }
     if (sessionId === target) {
       $("prompt").value = [$("prompt").value, text].filter(Boolean).join("\n\n");
       images = [...images, ...restored];
@@ -1514,9 +1640,13 @@ document.addEventListener("keydown", (e) => {
     if (escapeTimer) {
       clearTimeout(escapeTimer);
       escapeTimer = undefined;
+      recallArmedUntil = Date.now() + 300;
       if (busy) $("stop").click();
     } else {
-      escapeTimer = setTimeout(() => { escapeTimer = undefined; void withdrawQueue(); }, 300);
+      // 单按撤回队列；300ms 内连按三次（第二次起就在 300ms 窗口内）才连带撤回已进入上下文的输入。
+      const recall = Date.now() < recallArmedUntil;
+      recallArmedUntil = 0;
+      escapeTimer = setTimeout(() => { escapeTimer = undefined; void withdrawQueue(recall); }, 300);
     }
   }
 });
@@ -1912,7 +2042,51 @@ $("reveal-workspace").onclick = async () => {
 $("new").onclick = () =>
   switchSession(() => request("session.create", { cwd: currentCwd }));
 
+// 导入 pi 的 .jsonl 会话：共享文件选择器从 pi 会话目录开始，服务端复制文件并重建历史。
+$("import-session").onclick = async () => {
+  if (!connected || changing) return;
+  const original = sessionId;
+  const entry = await filePicker.open({ title: "导入 pi 会话（.jsonl）", mode: "file", path: importDir });
+  if (!entry || original !== sessionId || !connected || changing) return;
+  await switchSession(() => request("session.import", { path: entry.path }));
+};
+
 let creationLoad = 0;
+async function refreshPresets() {
+  const { presets } = await request("session.presets.list");
+  $("preset-list").replaceChildren();
+  for (const preset of presets) {
+    const row = document.createElement("div");
+    row.className = "preset-row";
+    const launch = document.createElement("button");
+    launch.className = "secondary preset-launch";
+    launch.textContent = preset.name;
+    launch.title = preset.cwd || "使用当前工作目录";
+    launch.onclick = async () => {
+      if (!connected || changing) return;
+      launch.disabled = true;
+      try {
+        const cwd = preset.cwd || currentCwd;
+        const catalog = await request("capabilities.list", { cwd, trustProject: false });
+        const unavailable = [preset.selection.capabilities, preset.selection.subagentCapabilities].some((selection) =>
+          selection && selection !== "inherit" && ["skills", "mcp", "plugins"].some((kind) =>
+            selection[kind]?.some((id) => !catalog[kind].some((entry) => entry.id === id))));
+        if (!connected || changing) return;
+        if (catalog.needsTrust || unavailable) openCreation(false, { ...preset, cwd }, true);
+        else await switchSession(() => request("session.create", { ...preset.selection, cwd, useDefaults: false }));
+      } catch (e) { error(e); }
+      finally { launch.disabled = !connected || changing; }
+    };
+    const edit = document.createElement("button");
+    edit.className = "secondary preset-edit";
+    edit.textContent = "编辑";
+    edit.setAttribute("aria-label", `编辑预设 ${preset.name}`);
+    edit.onclick = () => { if (connected && !changing) openCreation(false, preset); };
+    row.append(launch, edit);
+    $("preset-list").append(row);
+  }
+}
+
 function createAgentPicker(role, title, catalog, initial) {
   const fieldset = document.createElement("fieldset");
   fieldset.className = "capability-agent";
@@ -2008,7 +2182,7 @@ async function loadCreation() {
   try {
     const [catalog, selected] = await Promise.all([
       request("capabilities.list", { cwd: current.cwd, trustProject: !current.defaults && $("create-trust").checked }),
-      current.defaults ? request("session.defaults.get") : { model: config?.model, subagentModel: config?.subagentModel },
+      current.defaults ? request("session.defaults.get") : current.selection || { model: config?.model, subagentModel: config?.subagentModel },
     ]);
     if (creation !== current || load !== creationLoad) return;
     current.loading = false;
@@ -2017,7 +2191,7 @@ async function loadCreation() {
     current.main = createAgentPicker("main", "主代理", catalog, { model: selected.model, thinking: selected.thinking, capabilities: selected.capabilities });
     current.subagent = createAgentPicker("subagent", "子代理", catalog, { model: selected.subagentModel, thinking: selected.subagentThinking, capabilities: selected.subagentCapabilities });
     current.compaction = compactionEditor(
-      current.defaults ? selected.compaction || compactionDefaults : config?.compaction || compactionDefaults,
+      selected.compaction || (current.defaults ? compactionDefaults : config?.compaction || compactionDefaults),
       () => $("create-main-model").value,
     );
     $("create-compaction").replaceChildren(current.compaction.node);
@@ -2025,7 +2199,7 @@ async function loadCreation() {
     current.catalog = catalog;
     updateDefaultsPreview();
     $("create-trust-row").hidden = current.defaults || (!catalog.needsTrust && !$("create-trust").checked);
-    $("create-submit").disabled = (!current.defaults && catalog.needsTrust) || !connected || changing;
+    $("create-submit").disabled = (current.launching && catalog.needsTrust) || !connected || changing;
     $("create-feedback").textContent = catalog.needsTrust
       ? (current.defaults ? "此目录包含未信任的配置；默认配置仅使用已信任的能力，不保存目录信任。" : "此目录包含未信任的配置；确认信任后加载完整列表。")
       : catalog.warnings.join("\n");
@@ -2033,10 +2207,15 @@ async function loadCreation() {
     if (creation === current && load === creationLoad) $("create-feedback").textContent = `加载失败：${e.message}`;
   }
 }
-function openCreation(defaults = false) {
-  creation = { cwd: currentCwd, defaults };
-  $("create-title").textContent = defaults ? "默认新会话配置" : "自定义新会话";
-  $("create-submit").textContent = defaults ? "保存默认配置" : "创建会话";
+function openCreation(defaults = false, preset, launching = false) {
+  creation = { cwd: preset?.cwd || currentCwd, defaults, launching, presetId: preset?.id, selection: preset?.selection };
+  $("preset-fields").hidden = defaults || launching;
+  $("preset-name").value = preset?.name || "";
+  $("preset-name").required = !defaults && !launching;
+  $("preset-fixed-cwd").checked = !!preset?.cwd;
+  $("preset-delete").hidden = !preset;
+  $("create-title").textContent = defaults ? "默认新会话配置" : launching ? `启动预设：${preset.name}` : "预设会话配置";
+  $("create-submit").textContent = defaults ? "保存默认配置" : launching ? "创建会话" : "保存预设";
   $("create-submit").hidden = defaults;
   $("defaults-preview").textContent = "";
   $("create-defaults-help").hidden = !defaults;
@@ -2049,7 +2228,38 @@ function openCreation(defaults = false) {
   void loadCreation();
 }
 $("custom-new").onclick = () => openCreation();
-$("create-trust").onchange = () => { void loadCreation(); };
+const rememberCreation = () => {
+  if (!creation?.main) return;
+  const main = creation.main(), child = creation.subagent();
+  creation.selection = { ...creation.selection, model: main.model, thinking: main.thinking, capabilities: main.capabilities,
+    subagentModel: child.model, subagentThinking: child.thinking, subagentCapabilities: child.capabilities,
+    compaction: creation.compaction.read() };
+};
+$("create-trust").onchange = () => { rememberCreation(); void loadCreation(); };
+$("preset-directory").onclick = async () => {
+  const current = creation;
+  try {
+    const entry = await filePicker.open({ title: "预设工作目录", mode: "folder", path: current.cwd });
+    if (!entry || creation !== current) return;
+    rememberCreation();
+    current.cwd = entry.path;
+    $("preset-fixed-cwd").checked = true;
+    $("create-workspace").textContent = current.cwd;
+    $("create-trust").checked = false;
+    await loadCreation();
+  } catch (e) { error(e); }
+};
+$("preset-delete").onclick = async () => {
+  if (!creation?.presetId || changing || !connected) return;
+  const button = $("preset-delete");
+  button.disabled = true;
+  try {
+    await request("session.presets.delete", { presetId: creation.presetId });
+    $("create-session").close();
+    await refreshPresets();
+  } catch (e) { $("create-feedback").textContent = `删除失败：${e.message}`; }
+  finally { button.disabled = false; }
+};
 function updateDefaultsPreview() {
   if (!creation?.defaults || !creation.main) return;
   const main = creation.main(), child = creation.subagent();
@@ -2083,6 +2293,7 @@ $("create-form").onsubmit = async (e) => {
   }
   const main = creation.main(), child = creation.subagent();
   const data = {
+    ...(creation.selection?.queueType ? { queueType: creation.selection.queueType } : {}),
     cwd: creation.cwd,
     model: main.model,
     subagentModel: child.model,
@@ -2109,16 +2320,30 @@ $("create-form").onsubmit = async (e) => {
     }
     return;
   }
-  $("create-feedback").textContent = "正在加载能力并创建会话…";
-  await switchSession(async () => {
-    try {
-      const state = await request("session.create", { ...data, useDefaults: false, trustProject: $("create-trust").checked });
-      $("create-session").close();
-      return state;
-    } catch (e) {
-      $("create-feedback").textContent = `创建失败：${e.message}`;
-      throw e;
-    }
-  });
-  $("create-submit").disabled = !connected;
+  if (creation.launching) {
+    $("create-feedback").textContent = "正在创建会话…";
+    await switchSession(async () => {
+      try {
+        const state = await request("session.create", { ...data, useDefaults: false, trustProject: $("create-trust").checked });
+        $("create-session").close();
+        return state;
+      } catch (e) { $("create-feedback").textContent = `创建失败：${e.message}`; throw e; }
+    });
+    controls();
+    return;
+  }
+  $("create-feedback").textContent = "正在保存预设…";
+  changing = true;
+  controls();
+  try {
+    const { cwd, ...selection } = data;
+    await request("session.presets.save", {
+      ...(creation.presetId ? { presetId: creation.presetId } : {}),
+      name: $("preset-name").value.trim(),
+      ...($("preset-fixed-cwd").checked ? { cwd } : {}), selection,
+    });
+    $("create-session").close();
+    await refreshPresets();
+  } catch (e) { $("create-feedback").textContent = `保存失败：${e.message}`; }
+  finally { changing = false; controls(); }
 };
