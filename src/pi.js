@@ -43,11 +43,47 @@ export function queueStateOf(steeringQueue, followUpQueue) {
   };
 }
 
+// 该条目算不算“模型已经产出”：被中断（或失败）且没发起工具调用的空回答可以随输入一起丢弃。
+function hasModelOutput(entry) {
+  if (entry.type !== "message") return false;
+  const { role, content = [], stopReason } = entry.message;
+  if (role === "toolResult") return true;
+  if (role !== "assistant") return false;
+  if (content.some((block) => block.type === "toolCall")) return true;
+  return !["aborted", "error"].includes(stopReason);
+}
+
 // 撤回 = 先快照真实队列再 clearQueue：clearQueue 会同步清空队列并发出 queue_update，事后取不到图。
 export function withdrawQueue(session) {
   const queued = queueStateOf(session.agent.steeringQueue, session.agent.followUpQueue);
   session.clearQueue();
   return queued;
+}
+
+// 撤回已进入上下文的最后一条输入：只在该条之后没有模型输出（回答/工具调用）时允许。
+// 实现只把叶子回退到该条之前（随后补一条不参与上下文的自定义条目让分支落盘），
+// 历史前缀逐字节不变：供应商前缀缓存对更早的内容继续命中，只丢弃这一条自身的缓存写入。
+// 代价：本条之后的半截输出（含被中断的思考）不再留在上下文里。
+export async function recallLastMessage(session) {
+  if (session.isStreaming) await session.abort(); // 兜底：中途撤回先停稳，navigateTree 拒绝流式中回退
+  const entries = session.sessionManager.getBranch();
+  const index = entries.findLastIndex((entry) => entry.type === "message" && entry.message.role === "user");
+  if (index < 0) return null;
+  // 工具调用/工具结果一旦落盘就不能回退掉：副作用已经发生，孤立的结果还会破坏下一轮请求。
+  if (entries.slice(index + 1).some(hasModelOutput))
+    throw new Error("本轮已经产生了模型输出，无法撤回输入");
+  const { id, message } = entries[index];
+  const content = Array.isArray(message.content) ? message.content : [];
+  const { cancelled } = await session.navigateTree(id);
+  if (cancelled) return null;
+  session.sessionManager.appendCustomEntry("axiom_recall", { entryId: id });
+  return {
+    entryId: id,
+    text: typeof message.content === "string"
+      ? message.content
+      : content.filter((block) => block.type === "text").map((block) => block.text).join("\n"),
+    images: content.filter((block) => block.type === "image").map((block) => ({ ...block })),
+  };
 }
 
 export async function createPiFactory({ cwd, model: requested }) {
@@ -178,6 +214,7 @@ export async function createPiFactory({ cwd, model: requested }) {
       compactions: compactionRecords,
       queue: queueState,
       withdraw: () => withdrawQueue(session),
+      recall: () => recallLastMessage(session),
       enqueue: (text, type, images) => (type === "steer" ? session.steer(text, images) : session.followUp(text, images)),
       async configure({ model: key, thinking, compaction }) {
         const selected = available.find((m) => `${m.provider}/${m.id}` === key);

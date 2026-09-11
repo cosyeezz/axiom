@@ -222,6 +222,10 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
             break;
           case "queue.withdraw":
             data = { steering: ["撤回插话"], followUp: ["撤回追加"], ...(withdrawnImages ? { images: withdrawnImages } : {}) };
+            if (req.recall) {
+              states.find((s) => s.sessionId === req.sessionId).messages = [];
+              data = { steering: [], followUp: [], recalled: { entryId: "u1", text: "撤回的输入", images: null } };
+            }
             this.receive({ type: "session.queue", sessionId: req.sessionId, data: { steering: [], followUp: [] } });
             break;
           case "prompt":
@@ -749,6 +753,31 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape" }));
     await settle();
     assert.equal(requests.filter((r) => r.type === "cancel").length, cancels + 1, "double Esc cancels");
+    // 三次 Esc：把已进入上下文的输入退回输入框（服务端回退分支，客户端按新快照重绘消息区）。
+    states[0].messages = [{ agentId: "main", entryId: "u1", message: { role: "user", content: "撤回的输入" } }];
+    emit("session.state", { status: "idle" });
+    await settle();
+    input("撤回的输入");
+    $("composer").requestSubmit();
+    await settle();
+    assert.match($("output").textContent, /撤回的输入/);
+    emit("session.state", { status: "running" });
+    const attaches = () => requests.filter((r) => r.type === "session.attach").length;
+    const attachCount = attaches();
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape" }));
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape" }));
+    await new Promise((resolve) => setTimeout(resolve, 330));
+    await settle();
+    assert.equal(requests.findLast((r) => r.type === "queue.withdraw").recall, undefined, "double Esc stops without touching the context");
+    assert.equal(attaches(), attachCount);
+    for (let i = 0; i < 3; i++) window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape" }));
+    await new Promise((resolve) => setTimeout(resolve, 330));
+    await settle();
+    paint();
+    assert.equal(requests.findLast((r) => r.type === "queue.withdraw").recall, true, "triple Esc recalls the sent input");
+    assert.equal(attaches(), attachCount + 1, "transcript is redrawn from the rewound session");
+    assert.match($("prompt").value, /撤回的输入/, "recalled input goes back into the box");
+    assert.doesNotMatch($("output").textContent, /撤回的输入/, "the recalled message is gone from the transcript");
     input("");
     emit(
       "task.state",
