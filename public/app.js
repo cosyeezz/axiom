@@ -1987,10 +1987,19 @@ function renderSessions() {
     more.setAttribute("aria-label", more.title);
     menu.append(more);
     menu.addEventListener("toggle", () => {
-      if (menu.open) document.querySelectorAll(".session-options[open]").forEach((other) => { if (other !== menu) other.open = false; });
+      if (!menu.isConnected) return;
+      if (!menu.open) { actions.hidePopover?.(); return; }
+      document.querySelectorAll(".session-options[open]").forEach((other) => { if (other !== menu) other.open = false; });
+      actions.showPopover?.();
+      const trigger = more.getBoundingClientRect(), box = actions.getBoundingClientRect();
+      const left = trigger.right + 8 + box.width <= innerWidth - 8 ? trigger.right + 8 : Math.max(8, trigger.left - box.width - 8);
+      actions.style.left = `${left}px`;
+      actions.style.top = `${Math.max(8, Math.min(trigger.top, innerHeight - box.height - 8))}px`;
     });
     const actions = document.createElement("div");
     actions.className = "session-actions";
+    actions.setAttribute("popover", "manual");
+    actions.setAttribute("aria-label", `会话操作：${s.title}`);
     for (const [kind, label, path] of [
       ["hide", hidden ? "移回待继续" : "标记已完成", hidden ? 'M12 20V4M5 11l7-7 7 7' : 'M5 12l4 4L19 6'],
       ["open", "在新标签页打开", 'M14 3h7v7M21 3l-10 10M10 3H3v18h18v-7'],
@@ -2008,6 +2017,7 @@ function renderSessions() {
       action.append(document.createTextNode(label));
       action.onclick = () => {
         menu.open = false;
+        actions.hidePopover?.();
         more.focus();
         if (kind === "open") window.open(`/#${new URLSearchParams({ session: s.id })}`, "_blank", "noopener");
         else if (kind === "hide") void setSessionHidden(s.id, !hidden);

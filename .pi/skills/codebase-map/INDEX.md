@@ -1,17 +1,17 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/11 12:02:50）
+# Axiom 多级代码索引（生成于 2026/9/11 12:17:43）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| public/app.js | 2653 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, sessionMissing |
+| public/app.js | 2663 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, sessionMissing |
 | public/file-picker.css | 269 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 351 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/index.html | 258 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown.js | 75 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, renderMarkdown |
 | public/stream-renderer.js | 46 | 流式增量渲染状态机 | createStreamRenderer |
-| public/style.css | 1207 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1208 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | public/text-contrast.css | 46 | 文字专用对比度档位与调节面板 | - |
 | public/text-contrast.js | 113 | 文字对比度按钮、实时调节与本地偏好 | KEY, MIN, MAX, STEP |
 | public/tooltip.css | 50 | 共享暗色悬停说明样式 | - |
@@ -62,7 +62,7 @@
 | tests/service.test.js | 212 | node --test 测试（npm test） | - |
 | tests/session-created-at.test.js | 44 | node --test 测试（npm test） | factory |
 | tests/session-flow.test.js | 179 | node --test 测试（npm test） | flowFactory |
-| tests/session-sidebar-ui.py | 55 | node --test 测试（npm test） | - |
+| tests/session-sidebar-ui.py | 61 | node --test 测试（npm test） | - |
 | tests/smoke.js | 67 | node --test 测试（npm test） | TIMEOUT, sessions |
 | tests/stream-renderer.test.js | 99 | node --test 测试（npm test） | - |
 | tests/task-notifications.test.js | 129 | node --test 测试（npm test） | factoryFixture, tick, until |
@@ -76,7 +76,7 @@
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
-### public/app.js（2653 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
+### public/app.js（2663 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -237,41 +237,41 @@
 | saveView | method | 1926 |
 | controls | method | 1929 |
 | renderSessions | function | 1951 |
-| sessionAction | const | 2054 |
-| openSessionAction | function | 2055 |
-| contextIcon | function | 2096 |
-| renderContextChips | function | 2099 |
-| renderContextResults | function | 2117 |
-| showContextSkills | function | 2137 |
-| positionContextSkills | function | 2142 |
-| showContextSkills | method | 2154 |
-| controls | method | 2189 |
-| skillTrigger | const | 2191 |
-| showContextSkills | method | 2207 |
-| resizePrompt | method | 2216 |
-| controls | method | 2217 |
-| closeCompletion | function | 2220 |
-| highlightCompletion | function | 2228 |
-| chooseCompletion | function | 2237 |
-| closeCompletion | method | 2247 |
-| updateCompletion | function | 2250 |
-| closeCompletion | method | 2251 |
-| resizePrompt | method | 2304 |
-| controls | method | 2305 |
-| switchSession | method | 2345 |
-| creationLoad | const | 2356 |
-| refreshPresets | function | 2357 |
-| createAgentPicker | function | 2392 |
-| options | method | 2414 |
-| fill | method | 2422 |
-| fillThinking | method | 2430 |
-| options | method | 2432 |
-| loadCreation | function | 2479 |
-| openCreation | function | 2513 |
-| rememberCreation | const | 2534 |
-| updateDefaultsPreview | function | 2566 |
-| updateDefaultsPreview | method | 2586 |
-| controls | method | 2640 |
+| sessionAction | const | 2064 |
+| openSessionAction | function | 2065 |
+| contextIcon | function | 2106 |
+| renderContextChips | function | 2109 |
+| renderContextResults | function | 2127 |
+| showContextSkills | function | 2147 |
+| positionContextSkills | function | 2152 |
+| showContextSkills | method | 2164 |
+| controls | method | 2199 |
+| skillTrigger | const | 2201 |
+| showContextSkills | method | 2217 |
+| resizePrompt | method | 2226 |
+| controls | method | 2227 |
+| closeCompletion | function | 2230 |
+| highlightCompletion | function | 2238 |
+| chooseCompletion | function | 2247 |
+| closeCompletion | method | 2257 |
+| updateCompletion | function | 2260 |
+| closeCompletion | method | 2261 |
+| resizePrompt | method | 2314 |
+| controls | method | 2315 |
+| switchSession | method | 2355 |
+| creationLoad | const | 2366 |
+| refreshPresets | function | 2367 |
+| createAgentPicker | function | 2402 |
+| options | method | 2424 |
+| fill | method | 2432 |
+| fillThinking | method | 2440 |
+| options | method | 2442 |
+| loadCreation | function | 2489 |
+| openCreation | function | 2523 |
+| rememberCreation | const | 2544 |
+| updateDefaultsPreview | function | 2576 |
+| updateDefaultsPreview | method | 2596 |
+| controls | method | 2650 |
 
 ### public/file-picker.js（351 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 

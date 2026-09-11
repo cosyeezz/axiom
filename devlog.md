@@ -468,6 +468,11 @@
 - 验证：npm test 121 项全绿（新增 tests/recall.test.js：无输出可撤回、流式中先停、有回答/工具调用/工具结果拒绝、无用户消息与取消导航返回 null、Sessions 截断历史与被拒绝时不吞队列）；tests/app.test.js 补真实按键序列，确认双按不撤回、三按带 `recall` 并重绘。另用真实 SDK 跑 SessionManager 脚本验证「分支 + 自定义标记」重启后仍生效（含被中断的半截回答不复活）。
 - 文件：src/{pi.js,sessions.js,server.js,protocol.js}、public/app.js、tests/{recall.test.js,app.test.js}、README.md、devlog.md、codebase-map 索引与 knowledge.md。
 
+## 2026-09-12 会话操作浮动菜单
+- 根据截图反馈，将列表内展开操作改为三点右侧原生 Popover，窄屏向内避让；触发三点保持高亮，菜单使用现有 Linear raised/line/ink 与 8px 圆角，不挤动下方会话标题。
+- 文件：public/app.js、public/style.css、tests/session-sidebar-ui.py、README.md、devlog.md、codebase-map 索引及知识库。
+- 验证：Chromium 1440px/320px 检查位置、后续标题坐标不变、键盘/Esc/外部关闭通过；npm test 140 通过、3 项原有消息渲染失败、1 跳过。
+
 ## 2026-09-12 侧栏合并上线
 - 按用户明确要求，将 feat/session-sidebar 合并到最新 origin/master（基线 2e47423），在独立集成 worktree 处理知识库追加冲突并重建生成索引，保留两边功能。
 - 验证：侧栏相关 9 项测试全部通过；全量测试有 3 项消息/思考渲染失败，在未修改的最新 master 同样复现。记录既有失败后按用户要求合并推送，不声称全绿；主仓库未提交文件不动。
