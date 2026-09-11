@@ -1188,6 +1188,7 @@ $("login").onsubmit = async (e) => {
     const service = await request("service.status");
     serviceManaged = service.managed;
     serviceVersion = service.version || "";
+    importDir = service.importDir || "";
     $("service-version").hidden = !serviceVersion;
     $("service-version").textContent = serviceVersion ? `v${serviceVersion}` : "";
     restarting = false;
@@ -1239,6 +1240,7 @@ function scheduleReconnect() {
   reconnectDelay = Math.min(reconnectDelay * 2, 15000);
 }
 let serviceVersion = "";
+let importDir = "";
 const restartNames = { quick: "快速重启", rebuild: "重建重启", update: "检查更新" };
 const restartDescriptions = {
   quick: "仅重新启动服务，不安装依赖。所有页面会暂时断开连接，随后自动重连。",
@@ -1911,6 +1913,15 @@ $("reveal-workspace").onclick = async () => {
 };
 $("new").onclick = () =>
   switchSession(() => request("session.create", { cwd: currentCwd }));
+
+// 导入 pi 的 .jsonl 会话：共享文件选择器从 pi 会话目录开始，服务端复制文件并重建历史。
+$("import-session").onclick = async () => {
+  if (!connected || changing) return;
+  const original = sessionId;
+  const entry = await filePicker.open({ title: "导入 pi 会话（.jsonl）", mode: "file", path: importDir });
+  if (!entry || original !== sessionId || !connected || changing) return;
+  await switchSession(() => request("session.import", { path: entry.path }));
+};
 
 let creationLoad = 0;
 function createAgentPicker(role, title, catalog, initial) {

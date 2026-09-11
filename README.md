@@ -107,6 +107,25 @@ Axiom 使用原生 JavaScript，目前没有编译脚本，因此重建时不会
 
 `session.defaults.get` 返回 `{model,subagentModel,thinking,subagentThinking,capabilities,subagentCapabilities}`；`session.defaults.configure` 接收上述可选字段及 `cwd?`（仅用于校验目录里的可用能力），省略字段保留原值，保存失败保留全部旧值。主模型 `null` 使用最近主模型/启动模型，子模型 `null` 跟随主代理；`thinking:null` 沿用最近/启动思考等级，`subagentThinking:null` 跟随主代理；`subagentCapabilities:"inherit"` 跟随主代理能力，`null` 仍表示全部能力；默认配置不接收 `trustProject`。`session.create` 的显式字段优先于默认值，`useDefaults:false` 完全绕过这份默认配置，网页自定义入口使用该标记；最近主模型和思考程度的原有继承规则不变。
 
+## 导入 pi 会话
+
+侧栏「导入 pi 会话…」用共享文件选择器挑选 `.jsonl`，默认从 pi 的会话目录（`service.status` 的 `importDir`）开始浏览；确认后立即成为当前对话，可继续提问。首行缺少 `session` 头或 `cwd` 无效时报错，不创建会话。
+
+```text
+pi 会话 .jsonl（~/.pi/agent/sessions/...）
+        │ 选中
+        ▼
+复制到 ~/.axiom/workspaces/<工作空间>/<会话 ID>.jsonl ── 读回历史 ── 成为当前会话
+        │
+        └─ 原文件保持不动：继续对话、重命名、删除 Axiom 会话都不改动它
+```
+
+- 导入是复制而非引用：JSONL 原样写入 Axiom 存储目录，与网页快照并存。删除 Axiom 会话只删副本，不影响原 pi 文件；创建失败时副本一并清理。
+- 工作空间取会话头的 `cwd`；目录不存在（换了机器或已删除）时退回本实例工作空间，历史与内容不变。导入其它目录的会话会切换当前工作空间，侧栏随之只列出该工作空间的会话。
+- 标题优先用 pi 会话名，其次首条用户消息正文（去掉注入的 Skill 正文与标签），最后退回文件名。
+- 历史直接读 JSONL 分支，保留原文与消息 ID，压缩记录按原折叠关系显示。能力与模型沿用「默认新会话设置」，不读取原会话在 pi 里的供应商/模型选择。
+- 新增 `session.import({path})`：`path` 是服务端文件路径（不是上传），返回与 `session.create` 相同的快照；`service.status` 返回 `importDir` 供网页定位选择器。
+
 ## 图片上传与放大预览
 
 输入区支持点击图片按钮上传，或在输入框粘贴系统截图（Windows 可用 `Win + Shift + S`）；不再提供浏览器截图按钮或屏幕共享。待发送附件、消息和历史中的图片均可点击放大，也可通过 Tab 聚焦后按 Enter / 空格打开；点击关闭按钮、遮罩空白处或按 Esc 关闭预览。
@@ -205,7 +224,7 @@ Axiom 使用原生 JavaScript，目前没有编译脚本，因此重建时不会
 
 ### 统一文件 / 文件夹选择器
 
-「打开工作空间」和「＋ → 文件 / 文件夹」共用 `public/file-picker.js` 原生网页弹窗，与现有主题保持一致，不再启动 PowerShell。支持地址输入、面包屑、上一级、刷新、常用位置、当前目录搜索和确认/取消；目录单击进入，文件选中后确认或双击添加。支持 Tab、上下箭头和 Esc，窄屏自动收拢位置栏。代码、配置、文档、图片、音视频、压缩包、PDF、字体和项目目录使用本地分类 SVG 图标，不加载远程图标或字体。
+「打开工作空间」、「导入 pi 会话」和「＋ → 文件 / 文件夹」共用 `public/file-picker.js` 原生网页弹窗，与现有主题保持一致，不再启动 PowerShell。支持地址输入、面包屑、上一级、刷新、常用位置、当前目录搜索和确认/取消；目录单击进入，文件选中后确认或双击添加。支持 Tab、上下箭头和 Esc，窄屏自动收拢位置栏。代码、配置、文档、图片、音视频、压缩包、PDF、字体和项目目录使用本地分类 SVG 图标，不加载远程图标或字体。
 
 ```text
 打开工作空间 ─┐                    ┌─ 主机目录（绝对路径）

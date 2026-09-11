@@ -196,3 +196,9 @@
 - 根因：src/server.js 的 assets 映射在启动时固定构建，启动后新增的文件不在路由表里。
 - 处理：新文件在 assets 表登记后走「服务 → 快速重启」；更新已注册文件同样需重启载入（ETag 缓存不变）。
 - 防再犯：新增静态资源 = 登记 assets + 快速重启，两步缺一不可。
+
+### 2026-09-11 导入的 pi 会话必须是副本，且会切走当前工作空间
+- 症状（潜在）：把 pi 原始 `.jsonl` 路径直接当 `sessionFile` 引用时，删除 Axiom 会话会连用户的 pi 历史一起删；导入后侧栏列表看着像"空了"。
+- 根因：`Sessions.remove(id, deleting)` 会删 `agent.sessionFile()`；`renderSessions()` 只显示 `cwd === 当前工作空间` 的会话，导入其它目录的会话会切换当前工作空间。
+- 处理：`importSession` 把 JSONL 内容复制到 `~/.axiom/workspaces/<sha256(cwd)>/<id>.jsonl`（`create()` 失败时删副本）；`load()` 只读 `.json`，遗留副本无副作用。侧栏筛选行为保留，属预期。
+- 防再犯：tests/session-flow.test.js 断言删除会话后原文件仍在、副本已删；tests/app.test.js 断言导入后标题与 `workspace-label` 跟随会话，`service-api.test.js` 覆盖 `service.status.importDir`。

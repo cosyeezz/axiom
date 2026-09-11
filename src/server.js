@@ -107,7 +107,7 @@ export function createServerApp(sessions, service = {}) {
           let data;
           switch (request.type) {
             case "service.status":
-              data = { managed: Boolean(service.restart), error: service.error || "", version: service.version || "" };
+              data = { managed: Boolean(service.restart), error: service.error || "", version: service.version || "", importDir: service.importDir || "" };
               break;
             case "service.restart":
               if (!service.restart) throw new Error("请通过 npm start 启动服务后再使用重启功能");
@@ -152,6 +152,15 @@ export function createServerApp(sessions, service = {}) {
               break;
             case "session.create": {
               const id = await sessions.create(request.cwd, request);
+              if (ws.readyState !== WebSocket.OPEN) {
+                await sessions.remove(id);
+                return;
+              }
+              data = attach(id);
+              break;
+            }
+            case "session.import": {
+              const id = await sessions.importSession(request.path);
               if (ws.readyState !== WebSocket.OPEN) {
                 await sessions.remove(id);
                 return;

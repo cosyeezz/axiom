@@ -8,7 +8,7 @@ test("service restart validates mode, rejects active work and duplicate requests
   let status = "running";
   const modes = [];
   const app = createServerApp({ list: () => [{ status }], close: async () => {} }, {
-    restart: async (mode) => modes.push(mode), error: "previous build failed",
+    restart: async (mode) => modes.push(mode), error: "previous build failed", importDir: "C:\\pi\\sessions",
   });
   app.server.listen(0, "127.0.0.1");
   await once(app.server, "listening");
@@ -20,7 +20,7 @@ test("service restart validates mode, rejects active work and duplicate requests
     return JSON.parse((await response)[0]);
   };
   try {
-    assert.deepEqual((await request("service.status")).data, { managed: true, error: "previous build failed", version: "" });
+    assert.deepEqual((await request("service.status")).data, { managed: true, error: "previous build failed", version: "", importDir: "C:\\pi\\sessions" });
     assert.equal((await request("service.restart", { mode: "shell" })).ok, false);
     assert.match((await request("service.restart", { mode: "quick" })).error, /正在运行/);
     assert.equal(modes.length, 0);

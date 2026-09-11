@@ -53,6 +53,28 @@ function absoluteCrumbs(slashPath) {
   return crumbs;
 }
 
+// 导入 pi 会话的标题：优先 pi 里的会话名，其次首条用户消息（去掉开头注入的标签），最后文件名。
+function importedTitle(lines, source) {
+  let name = "",
+    first = "";
+  for (const line of lines) {
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (entry?.type === "session_info" && typeof entry.name === "string" && entry.name.trim()) name = entry.name.trim();
+    if (!first && entry?.type === "message" && entry.message?.role === "user") {
+      const { content } = entry.message;
+      const text = Array.isArray(content) ? content.filter((block) => block?.type === "text").map((block) => block.text).join(" ") : String(content ?? "");
+      // 去掉注入的 Skill 正文与残留标签，剩下真实任务正文当标题。
+      first = text.replace(/<skill\b[^>]*>[\s\S]*?<\/skill>/gi, " ").replace(/<[^<>]*>/g, " ").replace(/\s+/g, " ").trim();
+    }
+  }
+  return (name || first || basename(source).replace(/\.jsonl$/i, "")).slice(0, 60);
+}
+
 // 主机快速位置：主目录 + 文件系统根；Windows 盘符仅全局模式用 fs stat 探测，不 shell。
 async function hostLocations() {
   const home = homedir().split(sep).join("/");
@@ -194,12 +216,42 @@ export class Sessions {
     return { sessionId: id, title };
   }
 
+  // 导入 pi 的 .jsonl 会话：原文件原样复制到本工作空间存储目录，原文件保持不变（删除 Axiom 会话不动 pi 历史）。
+  async importSession(file) {
+    if (!this.storagePath) throw new Error("当前实例未启用会话存储，无法导入会话");
+    const source = resolve(String(file || "").trim());
+    let text;
+    try {
+      text = await readFile(source, "utf8");
+    } catch (error) {
+      if (error.code === "ENOENT" || error.code === "EISDIR") throw new Error(`会话文件不存在或不是文件：${source}`);
+      throw error;
+    }
+    const lines = text.split("\n").filter((line) => line.trim());
+    let header = null;
+    try {
+      header = JSON.parse(lines[0]);
+    } catch {}
+    if (header?.type !== "session" || typeof header.cwd !== "string" || !header.cwd.trim())
+      throw new Error("不是有效的 pi 会话文件：缺少 session 头或 cwd 字段");
+    // 会话来自其它机器或目录已删除时，退回到本实例的工作空间，会话内容与历史不受影响。
+    const workspace = await stat(header.cwd).then((info) => (info.isDirectory() ? header.cwd : null)).catch(() => null);
+    return this.create(workspace || this.createAgent.cwd, {}, {
+      id: randomUUID(),
+      title: importedTitle(lines, source),
+      imported: true,
+      importText: text,
+      messages: [],
+    });
+  }
+
   async create(workspace, selection = {}, saved) {
     selection = structuredClone({ ...(selection.useDefaults === false ? {} : this.defaultSelection), ...selection });
     const { cwd, catalog } = await this.validateSelection(workspace, selection);
     const id = saved?.id || randomUUID();
     const storageDir = this.storagePath && join(this.storagePath, createHash("sha256").update(process.platform === "win32" ? cwd.toLowerCase() : cwd).digest("hex"));
     if (storageDir) await mkdir(storageDir, { recursive: true });
+    const importedFile = saved?.importText != null && storageDir ? join(storageDir, `${id}.jsonl`) : null;
     const item = {
       id,
       cwd,
@@ -310,17 +362,26 @@ export class Sessions {
         error: interrupted ? "服务已重启，子任务已停止" : task.error,
         resultId: task.resultId || randomUUID(), notified: task.notified ?? false });
     }
-    item.agent = await this.createAgent(delegationTools(item.tasks), {
-      ...this.recentConfig,
-      ...(selection.model ? { model: selection.model } : {}),
-      ...(selection.thinking ? { thinking: selection.thinking } : {}),
-      capabilities: item.capabilities,
-      compaction: selection.compaction,
-      trustProject: item.trustProject,
-      cwd,
-      sessionDir: storageDir,
-      sessionFile: saved?.sessionFile,
-    });
+    try {
+      if (importedFile) await writeFile(importedFile, saved.importText, { mode: 0o600 });
+      item.agent = await this.createAgent(delegationTools(item.tasks), {
+        ...this.recentConfig,
+        ...(selection.model ? { model: selection.model } : {}),
+        ...(selection.thinking ? { thinking: selection.thinking } : {}),
+        capabilities: item.capabilities,
+        compaction: selection.compaction,
+        trustProject: item.trustProject,
+        cwd,
+        sessionDir: storageDir,
+        sessionFile: saved?.sessionFile ?? importedFile,
+      });
+    } catch (error) {
+      if (importedFile) await rm(importedFile, { force: true });
+      throw error;
+    }
+    // 导入会话没有网页快照：历史直接取 JSONL 分支，保留 entryId 用于压缩折叠与后续续聊。
+    if (importedFile)
+      item.messages = (item.agent.historyEntries?.() || []).map((entry) => ({ agentId: "main", message: entry.message, entryId: entry.id }));
     // Upgrade legacy web history IDs and recover compaction commits saved in Pi JSONL
     // before a crash could persist the web snapshot. Match in order, never by timestamp alone.
     const history = item.agent.historyEntries?.() || [];

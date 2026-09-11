@@ -28,6 +28,8 @@ await sessions.loadDefaults();
 await sessions.load();
 const app = createServerApp(sessions, {
   error: process.env.AXIOM_SERVICE_ERROR,
+  // pi 的会话目录：网页「导入 pi 会话」的默认浏览位置。
+  importDir: join(getAgentDir(), "sessions"),
   version: JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8")).version,
   restart: process.send ? (mode) => new Promise((resolve, reject) => {
     (async () => {
