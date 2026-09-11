@@ -1,5 +1,10 @@
 # 开发记录
 
+## 2026-09-11 — 桌面发布最终验证
+- 修正 tests/app.test.js、tests/message-activity.test.js 过时断言：精准选择 thinking-record 而非新增外层 details；按已实现的思考自动展开/结束收起、逐消息模型用量、工具状态规则验证；保留历史思考懒渲染、XSS 与错误状态覆盖。未修改产品行为。
+- 最终 npm test：144 项，143 通过、0 失败、1 原有跳过；第二批发布 MSI 再次通过解包/进程/窗口与页面标题验收。两平台安装包 SHA256 检查通过。
+- 功能分支提交推送后以 PR 合并 master，发布 desktop-v0.1.0（MSI/DMG/SHA256），清理两个功能 worktree；主工作区未跟踪用户文件保持不动。
+
 ## 2026-09-11 — 完成桌面安装包构建与验收
 - 用户要求完整交付：继续执行分支 CI，而非停留在配置；两次 macOS Universal / Windows x64 构建成功。第二次运行 https://github.com/cosyeezz/axiom/actions/runs/34639536557 额外通过 hdiutil DMG 校验与 lipo arm64/x86_64 架构校验。
 - Windows MSI 管理解包返回 0；启动解包后的 pake-axiom.exe，进程正常、主窗口标题 Axiom，UI Automation 读到 Axiom 页面标题；随后关闭本次启动的窗口，未停止后台服务。当前桌面会话无法截图，未声称完成全部交互验收。
