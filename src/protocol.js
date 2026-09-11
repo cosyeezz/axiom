@@ -137,8 +137,8 @@ export const command = z.discriminatedUnion("type", [
       id,
       type: z.literal("tasks.read"),
       sessionId: id,
-      taskIds: z.array(id).min(1),
-      wait: z.boolean().default(false),
+      taskId: id,
+      resultId: z.string().uuid(),
     })
     .strict(),
 ]);

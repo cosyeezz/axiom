@@ -74,7 +74,6 @@ export function createServerApp(sessions, service = {}) {
   });
   wss.on("connection", (ws) => {
     let unsubscribe;
-    const disconnected = new AbortController();
     const send = (message) => {
       if (ws.readyState !== WebSocket.OPEN) return;
       // Bound network buffering, not task output; reconnect retrieves the current snapshot.
@@ -93,7 +92,6 @@ export function createServerApp(sessions, service = {}) {
     };
     ws.on("error", () => {});
     ws.on("close", () => {
-      disconnected.abort();
       unsubscribe?.();
     });
     ws.on("message", (raw) => {
@@ -177,7 +175,7 @@ export function createServerApp(sessions, service = {}) {
             case "tasks.read":
               data = await sessions
                 .get(request.sessionId)
-                .tasks.read(request.taskIds, request.wait, disconnected.signal);
+                .tasks.read(request.taskId, request.resultId);
               break;
           }
           send({ type: "response", id: request.id, ok: true, data });

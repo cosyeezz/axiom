@@ -106,7 +106,7 @@ export function capabilityLoader(resources, selection, customTools) {
       // Preserve the custom allowlist even when an extension contributes more skills on startup.
       skillsOverride: (current) => ({ ...current, skills: current.skills.filter((s) => selection == null || selected.skills.includes(s.filePath)) }),
       appendSystemPromptOverride: (current) => [...current, customTools.length
-        ? "Delegate independent work with delegate, then collect results with read_result. Avoid concurrent edits to the same files. Report task failures honestly."
+        ? "Delegate independent work with delegate. Wait for the proactive completion notification that reports each finished task's taskId and resultId, then read that result once with read_result; do not poll. Use append to add instructions to a running subtask. Avoid concurrent edits to the same files. Report task failures honestly."
         : "Complete the delegated task. Return concise findings and changes with evidence."],
     }),
   };
