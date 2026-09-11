@@ -140,6 +140,9 @@ summary {
 .session-actions { display: flex; flex: 0 0 auto; gap: 2px; }
 .session-actions button { display: grid; place-items: center; width: 28px; min-height: 32px; padding: 5px; background: transparent; border-color: transparent; color: var(--muted); }
 .session-actions button:hover:not(:disabled) { background: var(--raised); }
+@media (hover: hover) and (pointer: fine) {
+  .session-row:not(:hover):not(:focus-within) .session-actions { display: none; }
+}
 .session-actions svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .session-item {
   min-width: 0;
