@@ -1048,9 +1048,6 @@ textarea {
 .call-preview .tool-activity { grid-template-columns: 20px auto minmax(0, 1fr) auto; gap: 8px; padding-block: 4px; }
 .call-preview .tool-activity .activity-icon, .call-preview .tool-target, .call-preview .tool-status { grid-row: auto; grid-column: auto; }
 .call-group[data-active="true"] > summary .activity-icon svg { animation: activity-spin 1.6s linear infinite; }
-.call-group > summary .activity-icon[data-icon="circle-failed"] { color: var(--danger); }
-.call-group[data-failed="true"] > summary::after { content: "FAILED"; color: var(--danger); font-size: 12px; margin-left: 8px; }
-.call-group[data-failed="true"] > summary .tool-status { display: none; }
 .call-list { padding-left: 20px; }
 .call-list .message.activity-only { margin: 0; }
 .call-list .tool-record[open] > summary, .call-list .thinking-record[open] > summary { top: var(--call-row-height); }

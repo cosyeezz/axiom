@@ -330,7 +330,6 @@ const messageItems = new WeakMap(), toolItems = new Map(), waitingItems = new Ma
 const activityPaths = {
   'circle-done': "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0M8 12l3 3 5-6",
   'circle-stopped': "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0M9 9v6m6-6v6",
-  'circle-failed': "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0M12 7v6m0 4h.01",
   waiting: "M20 12a8 8 0 1 1-8-8",
   thinking: "M9 18h6m-5 3h4M8.5 15.5a6 6 0 1 1 7 0L15 18H9z",
   read: "M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8m-8 4h5",
@@ -395,8 +394,7 @@ function paintCallGroup(group) {
   const running = group.dataset.messageFolded !== 'true' &&
     (!!active.length || (group.dataset.active === 'true' && ownerRunning));
   const label = running ? 'Working' : rows.some(row => row.dataset.state === 'stopped') ? 'Stopped' : 'Completed';
-  const failed = rows.some(row => row.dataset.state === 'failed');
-  const icon = running ? 'waiting' : failed ? 'circle-failed' : label === 'Stopped' ? 'circle-stopped' : 'circle-done';
+  const icon = running ? 'waiting' : label === 'Stopped' ? 'circle-stopped' : 'circle-done';
   const preview = group.firstElementChild.firstElementChild;
   const signature = `${label}:${icon}`;
   if (preview.dataset.signature !== signature) {
@@ -408,7 +406,6 @@ function paintCallGroup(group) {
   }
   // Status controls the icon only; visible messages control automatic folding.
   group.dataset.active = String(running);
-  group.dataset.failed = String(failed);
 }
 function refreshCallGroups(output) {
   // Keep the actual records (and their open state); only move their containers.
