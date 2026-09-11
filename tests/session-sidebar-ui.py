@@ -36,17 +36,23 @@ with sync_playwright() as p:
             page.locator('#toggle-sidebar').click()
         row = page.locator('[data-session-id="new"]')
         assert not row.locator('.session-rename').is_visible()
+        before = page.locator('[data-session-id="old"]').bounding_box()
         row.locator('.session-more').click(timeout=2000)
+        page.wait_for_timeout(100)
         assert row.locator('.session-rename').is_visible()
+        assert page.locator('[data-session-id="old"]').bounding_box()['y'] == before['y'], 'menu must not push the next title down'
         assert row.locator('.session-delete').is_visible()
         box = row.locator('.session-delete').bounding_box()
-        side = page.locator('#sidebar').bounding_box()
-        assert box['x'] >= side['x'] and box['x'] + box['width'] <= side['x'] + side['width']
+        assert box['x'] >= 0 and box['x'] + box['width'] <= width
+        if width == 1440:
+            trigger = row.locator('.session-more').bounding_box()
+            assert box['x'] >= trigger['x'] + trigger['width'], 'menu opens to the right of its own dots'
         page.keyboard.press('Escape')
         assert not row.locator('.session-delete').is_visible()
         assert row.locator('.session-more').evaluate('(el) => el === document.activeElement')
         row.locator('.session-more').focus()
         page.keyboard.press('Enter')
+        page.wait_for_timeout(100)
         assert row.locator('.session-rename').is_visible()
         page.locator('.session-group').first.click()
         assert not row.locator('.session-delete').is_visible()
