@@ -45,7 +45,8 @@ test("runtime snapshots use actual agent state, survive disposal and stay out of
     assert(events.some((event) => event.type === "agent.runtime" && event.agentId === "main"));
     const tasks = sessions.get(id).tasks;
     const ids = tasks.start(["child"]);
-    const [result] = await tasks.read(ids);
+    await Promise.all(ids.map((taskId) => tasks.jobs.get(taskId).done));
+    const result = tasks.read(ids[0], tasks.jobs.get(ids[0]).resultId);
     assert.equal(result.text, "done");
     assert.equal(Object.hasOwn(result, "runtime"), false, "read_result must not feed system prompts back into the parent's context");
     const [child] = sessions.snapshot(id).tasks;
@@ -83,13 +84,14 @@ test("configuration applies to the main agent and is inherited by delegated chil
   const id = await sessions.create();
   try {
     await sessions.configure(id, { model: "c/d", thinking: "high" });
-    const ids = sessions.get(id).tasks.start(["test"]);
-    await sessions.get(id).tasks.read(ids);
+    const tasks = sessions.get(id).tasks;
+    await Promise.all(tasks.start(["test"]).map((taskId) => tasks.jobs.get(taskId).done));
     assert.equal(selections[1].model, "c/d");
     assert.equal(selections[1].thinking, "high");
     await sessions.configure(id, { model: "c/d", subagentModel: "a/b" });
     assert.equal(sessions.snapshot(id).config.subagentModel, "a/b");
-    await sessions.get(id).tasks.read(sessions.get(id).tasks.start(["override"]));
+    await Promise.all(sessions.get(id).tasks.start(["override"])
+      .map((taskId) => sessions.get(id).tasks.jobs.get(taskId).done));
     assert.equal(selections[2].model, "a/b");
     assert.equal(selections[2].cwd, selections[1].cwd);
     await sessions.configure(id, { model: "c/d" });
@@ -101,7 +103,8 @@ test("configuration applies to the main agent and is inherited by delegated chil
     assert.equal(sessions.snapshot(id).config.model, "c/d");
     assert.equal(sessions.snapshot(id).config.subagentModel, "a/b");
     await sessions.configure(id, { model: "c/d", subagentModel: null });
-    await sessions.get(id).tasks.read(sessions.get(id).tasks.start(["inherit"]));
+    await Promise.all(sessions.get(id).tasks.start(["inherit"])
+      .map((taskId) => sessions.get(id).tasks.jobs.get(taskId).done));
     assert.equal(selections[3].model, "c/d");
     const other = await sessions.create();
     assert.equal(sessions.snapshot(other).config.subagentModel, null);
@@ -136,7 +139,8 @@ test("configuration applies to the main agent and is inherited by delegated chil
     assert.equal(normalConfig.subagentModel, "a/b");
     assert.deepEqual(normalConfig.capabilitySelection, defaults.capabilities);
     assert.deepEqual(normalConfig.subagentCapabilities, defaults.subagentCapabilities);
-    await sessions.get(normal).tasks.read(sessions.get(normal).tasks.start(["default child"]));
+    await Promise.all(sessions.get(normal).tasks.start(["default child"])
+      .map((taskId) => sessions.get(normal).tasks.jobs.get(taskId).done));
     assert.deepEqual(selections.at(-1).capabilities, defaults.subagentCapabilities);
     assert.equal(selections.at(-1).model, "a/b");
     assert.equal(selections.at(-1).trustProject, false, "defaults never grant project trust");
@@ -172,7 +176,8 @@ test("configuration applies to the main agent and is inherited by delegated chil
     const following = await sessions.create();
     assert.equal(sessions.snapshot(following).config.thinking, "high");
     assert.equal(sessions.snapshot(following).config.subagentCapabilities, "inherit");
-    await sessions.get(following).tasks.read(sessions.get(following).tasks.start(["follow main"]));
+    await Promise.all(sessions.get(following).tasks.start(["follow main"])
+      .map((taskId) => sessions.get(following).tasks.jobs.get(taskId).done));
     assert.equal(selections.at(-1).model, "c/d");
     assert.equal(selections.at(-1).thinking, "off");
     assert.deepEqual(selections.at(-1).capabilities, defaults.capabilities);

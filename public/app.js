@@ -483,6 +483,24 @@ function compactionEditor(initial, mainModel) {
   node.append(legend, toggle, selectors, hint);
   return { node, read, valid, error, fillThinking };
 }
+// 运行摘要与任务详情共用 tasks map，只读 status/title，不改动原详情渲染。
+function renderTaskRuns() {
+  const active = [...tasks.values()].filter((task) => ["starting", "running"].includes(task.trigger.dataset.status));
+  $("task-runs").replaceChildren(...active.map((task) => {
+    const row = document.createElement("span");
+    row.className = "task-run";
+    row.title = `子代理运行中：${task.trigger.title}`;
+    const icon = document.createElement("span");
+    icon.className = "task-run-spin";
+    icon.setAttribute("aria-hidden", "true");
+    const label = document.createElement("span");
+    label.className = "task-run-text";
+    label.textContent = task.trigger.title;
+    row.append(icon, label);
+    return row;
+  }));
+  $("task-runs").hidden = !active.length;
+}
 function renderQueue(queue = {}) {
   const entries = [["Steer", "steering"], ["Follow-up", "followUp"]];
   $("message-queue").replaceChildren(...entries.flatMap(([type, key]) => (queue[key] || []).map((text, index) => {
@@ -645,6 +663,7 @@ function event(message) {
     item.failure.textContent = data.error || "";
     item.failure.hidden = !data.error;
     updateTaskRuntime(item, data.runtime);
+    renderTaskRuns();
     scrollLatest();
   }
   if (type === "error") error(data.message);
@@ -669,6 +688,7 @@ function snapshot(state) {
   $("output").replaceChildren();
   live.clear();
   tasks.clear();
+  renderTaskRuns();
   retryCards.clear();
   retryFailures.clear();
   compactions = state.compactions || [];

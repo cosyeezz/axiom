@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 
 export class Tasks {
-  constructor(createAgent, emit) {
+  constructor(createAgent, emit, onComplete = async () => {}) {
     this.createAgent = createAgent;
     this.emit = emit;
+    this.onComplete = onComplete;
     this.jobs = new Map();
   }
 
@@ -25,7 +26,8 @@ export class Tasks {
     return { id, task, status, text, error };
   }
   snapshot() {
-    return [...this.jobs.values()].map((job) => ({ ...this.view(job), runtime: job.runtime }));
+    return [...this.jobs.values()].map((job) => ({ ...this.view(job), runtime: job.runtime,
+      resultId: job.resultId, notified: job.notified }));
   }
 
   async run(job) {
@@ -62,33 +64,30 @@ export class Tasks {
         job.error = `子代理清理失败：${error.message || error}`;
       } finally {
         delete job.agent;
+        job.resultId = randomUUID();
+        job.notified = false;
         this.publish(job);
+        try { await this.onComplete(job); }
+        catch (error) { this.emit({ type: "error", data: { message: `子任务通知失败：${error.message}` } }); }
       }
     }
   }
 
-  async read(ids, wait = true, signal) {
-    const jobs = ids.map((id) => {
-      const job = this.jobs.get(id);
-      if (!job) throw new Error(`Unknown task: ${id}`);
-      return job;
-    });
-    if (wait) {
-      signal?.throwIfAborted();
-      let abort;
-      try {
-        await Promise.race([
-          Promise.all(jobs.map((job) => job.done)),
-          new Promise((_, reject) => {
-            abort = () => reject(signal.reason);
-            signal?.addEventListener("abort", abort, { once: true });
-          }),
-        ]);
-      } finally {
-        if (abort) signal?.removeEventListener("abort", abort);
-      }
-    }
-    return jobs.map((job) => this.view(job));
+  read(id, resultId) {
+    const job = this.jobs.get(id);
+    if (!job || !resultId || job.resultId !== resultId || ["starting", "running"].includes(job.status))
+      throw new Error("请等待任务完成通知，并使用通知中的 taskId 和 resultId 读取；不要轮询。");
+    return this.view(job);
+  }
+
+  async append(id, text, mode = "steer") {
+    if (typeof text !== "string" || !text.trim() || !["steer", "followUp"].includes(mode))
+      throw new Error("追加内容不能为空，mode 必须是 steer 或 followUp");
+    const job = this.jobs.get(id);
+    if (this.cancelling || job?.cancelled || job?.status !== "running")
+      throw new Error("只能向运行中的子任务追加内容");
+    await job.agent.enqueue(text.trim(), mode);
+    return { taskId: id, accepted: true, mode };
   }
 
   async cancel() {

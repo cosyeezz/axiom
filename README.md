@@ -4,7 +4,7 @@
 
 ## 启动
 
-需要 Node.js >=22.5，以及已配置好凭据和所需扩展包的 Pi。未修改默认新会话配置时，主 Agent 和子 Agent 加载本机 Pi 已启用的 Skills、插件、MCP、提示词模板及目录上下文；基础编码工具为 read/bash/edit/write，主 Agent 额外获得两个委派工具。默认能力与终端持久配置对齐，不继承另一终端进程的临时参数、会话状态或已执行的模式命令。纯 TUI 组件和终端快捷键不适用于网页；当前无插件交互 UI 桥，需要审批的 MCP 调用按适配器规则拒绝，不自动批准。
+需要 Node.js >=22.5，以及已配置好凭据和所需扩展包的 Pi。未修改默认新会话配置时，主 Agent 和子 Agent 加载本机 Pi 已启用的 Skills、插件、MCP、提示词模板及目录上下文；基础编码工具为 read/bash/edit/write，主 Agent 额外获得 delegate/read_result/append 三个协作工具。默认能力与终端持久配置对齐，不继承另一终端进程的临时参数、会话状态或已执行的模式命令。纯 TUI 组件和终端快捷键不适用于网页；当前无插件交互 UI 桥，需要审批的 MCP 调用按适配器规则拒绝，不自动批准。
 
 ### 一键安装（macOS / Windows）
 
@@ -208,7 +208,7 @@ ws.onopen = () => ws.send(JSON.stringify({id:'1', type:'session.create'}));
 // 从响应 data.sessionId 取得会话 ID 后发送：
 // {id:'2', type:'prompt', sessionId, text:'并行检查两个模块，读取结果并总结'}
 // {id:'3', type:'session.attach', sessionId}  // 重连，返回快照并订阅
-// {id:'4', type:'tasks.read', sessionId, taskIds:['...'], wait:false}
+// {id:'4', type:'tasks.read', sessionId, taskId:'...', resultId:'通知中的 UUID'}
 // {id:'5', type:'cancel', sessionId}          // 取消主 Agent 与当前子任务
 // {id:'6', type:'session.close', sessionId}   // 释放会话与结果
 ```
@@ -222,7 +222,12 @@ ws.onopen = () => ws.send(JSON.stringify({id:'1', type:'session.create'}));
 ## 委派工具
 
 - `delegate({tasks:[{task:'任务 A'},{task:'任务 B'}]})`：并行启动，立即返回 `{taskIds:[...]}`。
-- `read_result({taskIds:[...],wait:true})`：等待并返回各任务结果；`wait:false` 查询当前状态。重复读取保留结果，失败与成功分别返回。
+- `read_result({taskId:'...',resultId:'...'})`：仅在收到完成通知后，用通知中的随机 UUID 读取该任务结果。移除 `wait` 和批量 ID 参数，不提供轮询/等待入口；错配、跨会话或未完成均拒绝。重复读取保留结果，失败与取消也有可读结果。
+- `append({taskId:'...',text:'补充指令',mode:'steer'})`：给运行中的子代理追加内容，默认 `steer`（下一安全点插话），可选 `followUp`（当前工作告一段落后接续）。回执只表示入队，不表示已执行；启动中、已结束或取消中的任务拒绝追加。
+
+子任务结束后生成独立 `resultId`，先把结果和待通知状态落盘，再主动触达主代理。通知只带 taskId/resultId/status，不塞完整结果或子代理系统提示词。当前主代理还在运行时先保留通知，等该次运行结束后合并通知并启动新一轮；空闲时直接唤醒，不进入可撤回的用户队列。主代理收到通知再调用 read_result，不轮询。停止会话会暂停自动唤醒，下一条用户消息恢复；服务关闭不再唤醒。重启会补发未确认送达的通知（崩溃窗口可能重复，同一 resultId 可重复读取），不会重跑子任务；旧任务缺少凭证时在加载时补发凭证。通知状态表示通知轮已处理完，不保证模型一定读取了结果。
+
+输入框「＋」上方显示当前会话进行中的子代理摘要：启动中/运行中每个一行，转圈图标与单行省略文本；任务结束自动移除，无任务时隐藏，切换会话不混入其他会话任务。
 
 无固定并发上限、任务超时、只读限制或结果截断。子 Agent 没有递归委派工具。并行修改同一文件可能冲突，应让主 Agent 分配不同文件，或使用不同工作目录/worktree。取消不回滚已发生的文件修改。主代理与子代理遇到模型限流、可恢复网络异常或意外中断时自动避让续跑，最多重试 30 次；间隔为 `3、3、3、6、6、12、24、48、96、192……秒`，48 秒之后持续翻倍，不封顶（后期可能等待很久）。Stop 会立即取消等待；凭证、权限、计费等永久错误不重试。重试保留已完成工具结果，不重新发送原始任务；正常结束不凭空判断“任务未完成”，仅对明确的可恢复失败重试。重试详情显示次数、错误和预计继续时间，成功后折叠，可手动展开；记录随会话保存，服务重启不会自动继续执行。
 
@@ -235,7 +240,7 @@ main.js     配置与组装
 server.js   HTTP / WebSocket / 鉴权
 protocol.js 请求校验
 sessions.js 主会话、订阅、快照、取消
-  tools.js  两个工具的参数和适配
+  tools.js  委派、凭证读取、追加指令的参数和适配
   tasks.js  子任务状态、并行执行、结果
 pi.js       Pi SDK 创建、事件适配与释放
 compaction.js 后台摘要、检查点校验与安全轮次提交

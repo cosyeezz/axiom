@@ -64,7 +64,7 @@ test("main and delegated agents receive independent capability and model selecti
   try {
     const id = await sessions.create(process.cwd(), { capabilities: main, subagentCapabilities: child, subagentModel: "b/child" });
     const item = sessions.get(id);
-    await item.tasks.read(item.tasks.start(["test"]));
+    await Promise.all(item.tasks.start(["test"]).map((taskId) => item.tasks.jobs.get(taskId).done));
     assert.deepEqual(calls[0].selection.capabilities, main);
     assert.deepEqual(calls[1].selection.capabilities, child);
     assert.equal(calls[1].selection.model, "b/child");

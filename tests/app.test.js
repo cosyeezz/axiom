@@ -23,6 +23,13 @@ test("header path icons do not inherit the global button minimum height", async 
       assert.equal(computed(`#${id}`).height, "24px");
       assert.equal(computed(`#${id}`).minHeight, "24px");
     }
+    const runs = dom.window.document.getElementById("task-runs");
+    assert.equal(runs.hidden, true, "run summary ships hidden until a subagent starts");
+    runs.hidden = false;
+    runs.innerHTML = '<span class="task-run"><span class="task-run-spin"></span><span class="task-run-text">任务</span></span>';
+    assert.equal(computed(".task-run-text").textOverflow, "ellipsis", "run rows truncate long task text");
+    assert.equal(computed(".task-run-text").whiteSpace, "nowrap");
+    assert.equal(computed(".task-run-spin").animationName, "task-run-spin", "spinner is a CSS animation, no inline style");
   } finally { dom.window.close(); }
 });
 
@@ -722,6 +729,11 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       { task: "Inspect code", status: "running" },
       { taskId: "child" },
     );
+    assert.equal($("task-runs").hidden, false, "active subagents get one summary row above the composer");
+    assert.equal($("task-runs").children.length, 1);
+    assert.match($("task-runs").firstElementChild.textContent, /Inspect code/);
+    assert.notEqual($("task-runs").querySelector(".task-run-spin"), null);
+    assert.equal($("task-runs").firstElementChild.title, "子代理运行中：Inspect code");
     const runtime = {
       model: "other/child", thinking: "high", systemPrompt: '<img src=x onerror="alert(1)">\nSystem instructions',
       usage: { input: 100, cacheRead: 800, cacheWrite: 100 },
@@ -812,9 +824,16 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(task.open, true, "updates preserve the open overlay");
     assert.equal(body.scrollTop, 100, "runtime updates do not pull readers back to the bottom");
     assert.equal(trigger.dataset.status, "failed");
+    assert.equal($("task-runs").hidden, true, "finished tasks leave the summary");
+    assert.equal($("task-runs").children.length, 0);
     assert.equal(task.querySelector(".task-error").textContent, "Provider failed");
     assert.equal(task.querySelector(".task-error").hidden, false);
     emit("task.state", { task: "Second task", status: "running" }, { taskId: "sibling" });
+    assert.equal($("task-runs").children.length, 1, "starting/running tasks each keep one row");
+    emit("task.state", { task: "Third task", status: "starting" }, { taskId: "third" });
+    assert.equal($("task-runs").children.length, 2, "concurrent tasks have separate rows");
+    emit("task.state", { task: "Third task", status: "cancelled" }, { taskId: "third" });
+    assert.equal($("task-runs").children.length, 1, "cancellation removes only its own row");
     emit("agent.runtime", { model: "other/sibling", thinking: "low" }, { agentId: "sibling" });
     assert.equal(task.open, true, "new subagents never steal the active overlay");
     assert.doesNotMatch(task.textContent, /other · sibling/);
@@ -829,9 +848,15 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(sibling.open, true);
     assert.match(sibling.querySelector(".runtime-summary").textContent, /other · sibling · low/);
     assert.doesNotMatch(sibling.textContent, /System instructions|final result/);
+    emit("task.state", { task: "Second task", status: "completed" }, { taskId: "sibling" });
+    assert.equal($("task-runs").hidden, true, "the second finished task clears the summary too");
+    emit("task.state", { task: "Still running in old session", status: "running" }, { taskId: "third" });
+    assert.equal($("task-runs").children.length, 1);
     window.document.querySelectorAll(".session-item")[1].click();
     await settle();
     assert.match($("session-runtime").textContent, /暂无数据/, "switching sessions clears previous usage");
+    assert.equal($("task-runs").hidden, true, "switching sessions resets the run summary");
+    assert.equal($("task-runs").children.length, 0, "restored completed history never enters the summary");
     $("toggle-sidebar").click();
     assert.equal($("sidebar-backdrop").hidden, false);
     window.document.dispatchEvent(

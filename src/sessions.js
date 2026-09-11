@@ -298,9 +298,18 @@ export class Sessions {
           trustProject: item.trustProject,
         }),
       item.emit,
+      async () => {
+        await this.persist(item);
+        this.scheduleTaskNotifications(item);
+      },
     );
-    for (const task of saved?.tasks || [])
-      item.tasks.jobs.set(task.id, { ...task, status: ["starting", "running"].includes(task.status) ? "cancelled" : task.status });
+    for (const task of saved?.tasks || []) {
+      const interrupted = ["starting", "running"].includes(task.status);
+      item.tasks.jobs.set(task.id, { ...task,
+        status: interrupted ? "cancelled" : task.status,
+        error: interrupted ? "服务已重启，子任务已停止" : task.error,
+        resultId: task.resultId || randomUUID(), notified: task.notified ?? false });
+    }
     item.agent = await this.createAgent(delegationTools(item.tasks), {
       ...this.recentConfig,
       ...(selection.model ? { model: selection.model } : {}),
@@ -333,7 +342,42 @@ export class Sessions {
     );
     this.items.set(id, item);
     await this.persist(item);
+    this.scheduleTaskNotifications(item);
     return id;
+  }
+
+  scheduleTaskNotifications(item) {
+    // ponytail: 通知等当前主运行结束再唤醒，不打断工具；需要轮次内低延迟时再接 SDK 自定义消息。
+    if (item.notificationScheduled || item.closing || item.notificationsPaused) return;
+    item.notificationScheduled = true;
+    setImmediate(() => {
+      item.notificationScheduled = false;
+      if (item.notifying) return;
+      item.notificationWork = this.deliverTaskNotifications(item).catch((error) =>
+        item.emit({ type: "error", data: { message: `子任务通知失败：${error.message}` } }));
+    });
+  }
+
+  async deliverTaskNotifications(item) {
+    if (item.notifying || item.closing || item.notificationsPaused || item.configuring || item.status !== "idle") return;
+    const jobs = [...item.tasks.jobs.values()].filter((job) => job.resultId && !job.notified);
+    if (!jobs.length) return;
+    item.notifying = true;
+    try {
+      // 结果先落盘再触达；通知不放入可撤回的用户 steer/followUp 队列。
+      await this.persist(item);
+      if (item.closing || item.notificationsPaused || item.configuring || item.status !== "idle") return;
+      const text = "[Axiom 子任务完成通知] 以下任务已结束。使用各自的 taskId 和 resultId 调用 read_result 获取结果；不要轮询。\n" +
+        JSON.stringify(jobs.map((job) => ({ taskId: job.id, resultId: job.resultId, status: job.status })));
+      await this.prompt(item.id, text);
+      await item.work;
+      if (item.notificationsPaused || item.closing) return;
+      for (const job of jobs) job.notified = true;
+      await this.persist(item);
+    } finally {
+      item.notifying = false;
+    }
+    this.scheduleTaskNotifications(item);
   }
 
   get(id) {
@@ -482,6 +526,7 @@ export class Sessions {
       };
     } finally {
       item.configuring = false;
+      this.scheduleTaskNotifications(item);
     }
   }
 
@@ -499,7 +544,8 @@ export class Sessions {
       await item.agent.enqueue(text, queueType || item.queueType, images);
       return item.runId;
     }
-    if (item.status !== "idle" || item.configuring) throw new Error("Session is busy");
+    if (item.status !== "idle" || item.configuring || item.closing) throw new Error("Session is busy");
+    item.notificationsPaused = false;
     if (item.title === "新会话") item.title = (text.trim() || "[图片]").slice(0, 60);
     item.updatedAt = Date.now();
     item.runId = randomUUID();
@@ -525,6 +571,7 @@ export class Sessions {
             type: "session.state",
             data: { status: "idle", runId: item.runId },
           });
+          this.scheduleTaskNotifications(item);
         }
       }
     })();
@@ -534,6 +581,7 @@ export class Sessions {
   async cancel(id) {
     const item = this.get(id);
     if (item.cancelling) return item.cancelling;
+    item.notificationsPaused = true;
     item.status = "cancelling";
     item.emit({ type: "session.state", data: { status: "cancelling" } });
     item.cancelling = (async () => {
@@ -550,7 +598,9 @@ export class Sessions {
   }
   async remove(id, deleting = true) {
     const item = this.get(id);
+    item.closing = true;
     await this.cancel(id);
+    await item.notificationWork;
     item.unsubscribe();
     await item.agent.dispose();
     await this.persist(item);

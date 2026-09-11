@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-11 — 子任务主动通知、凭证读取与输入区运行摘要
+- worktree MyWorkbench-task-notifications / feat/task-notifications。完成任务随机生成 resultId，结果与待通知状态先落盘，再等主运行结束合并唤醒；通知不进入可撤回队列，取消暂停，重启补发（不保证 exactly-once、不重跑任务）。旧任务加载补齐凭证；取消通知轮不标记送达。
+- read_result / WS tasks.read 改单任务 taskId+resultId，删除 wait 和批量/轮询用法；新增 append，默认 steer、可选 followUp，仅允许运行中子任务追加。模型提示与 smoke 同步迁移。
+- 输入框＋上方添加当前会话启动中/运行中子代理的单行摘要，转圈图标、省略溢出，完成移除、切会话重置，复用现有任务状态；不增加依赖或后端接口。
+- 涉及 src/{tasks,sessions,tools,protocol,server,capabilities}.js、public/{app.js,index.html,style.css}、tests/{tasks,task-notifications,config,capabilities,app}.test.js、tests/smoke.js、README.md、索引及 knowledge.md。使用假代理与 DOM 回归验证；未调用付费模型运行 smoke、未做真实浏览器视觉验收。
+
 ## 2026-09-10 — 主/子代理自动避让重试
 - worktree MyWorkbench-auto-retry / feat/auto-retry。调研 OpenAI/Anthropic SDK 与 Pi SDK 后，在共享 factory 层统一重试，禁用底层重复计数；保留工具结果后继续，不重发用户任务。
 - 用户确认间隔 3、3、3、6、6、12、24、48、96、192…秒，持续翻倍、最多30次。长等待分段定时防32位溢出；主动停止立即取消；永久错误不重试。
