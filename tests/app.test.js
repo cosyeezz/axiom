@@ -403,7 +403,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(skillCard.node.previousElementSibling, skillCard.skillBlocks);
     assert.equal(skillCard.skillBlocks.parentElement, $("output"));
     assert.equal(skillCard.node.querySelector(".skill-invocation"), null);
-    assert.equal(skillCard.skillBlocks.querySelector("summary").textContent, "[skill] codebase-map");
+    assert.equal(skillCard.skillBlocks.querySelector("summary").firstChild.textContent, "[skill] codebase-map");
     const invocation = skillCard.skillBlocks.querySelector(".skill-invocation");
     assert.equal(invocation.open, false);
     assert.equal(skillCard.buffer, "检查项目");
@@ -597,7 +597,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.match(historicalTrigger.textContent, /SUBAGENT.*已完成/s);
     assert.equal($("task-overlays").contains(historicalTask), true);
     assert.equal(historicalTask.open, false);
-    assert.equal(historicalTask.querySelector(".markdown").textContent, "");
+    assert.equal(historicalTask.querySelector(".message > .markdown").textContent, "");
     assert.match(historicalTask.querySelector(".runtime-summary").textContent, /80.0%.*1,200 \/ 10,000 tokens · 12.0%.*other · child · high/);
     assert.equal(historicalTask.querySelector(".task-top .runtime-summary")?.parentElement.nextElementSibling.className, "task-body");
     assert.equal(historicalTask.querySelector(".task-system-prompt pre").textContent, "Historical system prompt");
@@ -606,7 +606,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     historicalTrigger.click();
     paint();
     assert.equal(historicalTask.open, true);
-    assert.equal(historicalTask.querySelector(".markdown").textContent.trim(), "historical result");
+    assert.equal(historicalTask.querySelector(".message > .markdown").textContent.trim(), "historical result");
     input("other draft");
     window.document.querySelectorAll(".session-item")[0].click();
     await settle();
@@ -658,7 +658,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       "whitespace must not prevent clearing acknowledged draft",
     );
     assert.equal(
-      window.document.querySelector(".message.user .markdown").textContent.trim(),
+      window.document.querySelector(".message.user > .markdown").textContent.trim(),
       "accepted task",
       "list refresh failure must not remove an accepted message",
     );
@@ -764,20 +764,20 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(trigger.querySelector(".runtime-summary"), null, "runtime information is pinned in the overlay, not duplicated in the transcript");
     assert.equal(task.querySelector(".task-system-prompt pre").textContent, runtime.systemPrompt);
     assert.equal(task.querySelector(".task-system-prompt img"), null, "system prompts are plain text, not executable markup");
-    assert.equal(task.querySelector(".markdown").textContent, "");
+    assert.equal(task.querySelector(".message > .markdown").textContent, "");
     trigger.click();
     paint();
     assert.equal(task.open, true);
-    const text = task.querySelector(".markdown");
+    const text = task.querySelector(".message > .markdown");
     for (const selector of ["h1", "strong", "li", "pre code", "table"]) assert(text.querySelector(selector), selector);
     assert.equal(text.querySelector("img,[onerror]"), null);
     const thought = task.querySelector(".message details");
     assert.equal(thought.hidden, false);
-    assert.equal(thought.querySelector("pre").textContent, "");
+    assert.equal(thought.querySelector(".thinking-content").textContent, "");
     thought.open = true;
     thought.dispatchEvent(new window.Event("toggle"));
     paint();
-    assert.equal(thought.querySelector("pre").textContent, "private thought");
+    assert.equal(thought.querySelector(".thinking-content").textContent.trim(), "private thought");
     const titleNode = text.querySelector("h1");
     emit("agent.delta", { type: "text_delta", delta: "\n\nnext paragraph" }, { agentId: "child" });
     paint();
@@ -798,9 +798,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     paint();
     assert.match(text.textContent, /final result/);
     assert.equal(text.querySelector("h1"), titleNode);
-    assert.equal(thought.querySelector("pre").textContent, "final thought");
+    assert.equal(thought.querySelector(".thinking-content").textContent.trim(), "final thought");
     emit("agent.message.end", { message: finalMessage });
-    assert.equal($("output").querySelector(".message:not(.user) .markdown").innerHTML, text.innerHTML, "main and child messages have identical Markdown rendering");
+    assert.equal($("output").querySelector(".message:not(.user) > .markdown").innerHTML, text.innerHTML, "main and child messages have identical Markdown rendering");
     const body = task.querySelector(".task-body");
     Object.defineProperties(body, { scrollHeight: { value: 1200 }, clientHeight: { value: 300 } });
     window.scrollLatest();
@@ -1143,7 +1143,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     assert.equal(cards()[0], $("output").firstElementChild, "summary card sits at the old boundary");
     assert.match($("output").lastElementChild.textContent, /回答二/, "kept messages follow the card in place");
     const visible = window.document.querySelectorAll("#output > .message:not([hidden])");
-    assert.deepEqual([...visible].map((node) => node.textContent.trim()), ["你思考过程问题二", "AXIOM思考过程回答二"]);
+    assert.deepEqual([...visible].map((node) => node.querySelector(":scope > .markdown").textContent.trim()), ["问题二", "回答二"]);
     const summaryBody = cards()[0].querySelector(".compaction-summary");
     assert.match(summaryBody.textContent, /早前/);
     assert.equal(summaryBody.querySelector("img"), null, "summaries render through the sanitizing pipeline");

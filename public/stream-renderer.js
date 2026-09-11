@@ -15,12 +15,7 @@ export function createStreamRenderer(
     }
     item.thinking.hidden = !item.reasoning;
     if (item.thinking.open && item.paintedReasoning !== item.reasoning) {
-      const node =
-        item.thought.firstChild ||
-        item.thought.appendChild(item.thought.ownerDocument.createTextNode(""));
-      if (item.reasoning.startsWith(node.data))
-        node.appendData(item.reasoning.slice(node.length));
-      else node.data = item.reasoning;
+      renderMarkdown(item.thought, item.reasoning);
       item.paintedReasoning = item.reasoning;
     }
   }

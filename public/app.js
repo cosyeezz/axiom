@@ -287,6 +287,43 @@ $("settings").onclick = (e) => {
     $("settings").close();
 };
 const messageItems = new WeakMap(), toolItems = new Map(), waitingItems = new Map();
+// One local stroke vocabulary: tool identity stays visible when its state changes.
+const activityPaths = {
+  waiting: "M20 12a8 8 0 1 1-8-8",
+  thinking: "M9 18h6m-5 3h4M8.5 15.5a6 6 0 1 1 7 0L15 18H9z",
+  read: "M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8m-8 4h5",
+  edit: "m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z",
+  write: "M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 15h8m-4-4v8",
+  bash: "m5 7 5 5-5 5m8 0h6",
+  search: "M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15ZM16 16l5 5",
+  web: "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18Z",
+  agents: "M12 4v6M5 20v-5h14v5M12 10v10M9 4h6M2 20h6m1 0h6m1 0h6",
+  tool: "m8 4-5 8 5 8m8-16 5 8-5 8M14 4l-4 16",
+  done: "m5 12 4 4L19 6",
+  failed: "m12 3 10 18H2zM12 9v5m0 3h.01",
+  stopped: "M8 5v14M16 5v14",
+};
+function setActivityIcon(icon, name) {
+  if (icon.dataset.icon === name) return;
+  icon.dataset.icon = name;
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  const path = document.createElementNS(svg.namespaceURI, "path");
+  path.setAttribute("d", activityPaths[name] || activityPaths.tool);
+  svg.append(path);
+  icon.replaceChildren(svg);
+}
+function disclosureHint(label = "详情") {
+  const hint = document.createElement("span");
+  hint.className = "disclosure-action";
+  for (const [className, text] of [["when-closed", label], ["when-open", "收起"]]) {
+    const span = document.createElement("span");
+    span.className = className;
+    span.textContent = text;
+    hint.append(span);
+  }
+  return hint;
+}
 function activityLine(label, state = "waiting") {
   const node = document.createElement("div");
   node.className = "activity-line";
@@ -295,14 +332,15 @@ function activityLine(label, state = "waiting") {
   icon.className = "activity-icon";
   icon.setAttribute("aria-hidden", "true");
   const text = document.createElement("span");
+  text.className = "activity-label";
   node.append(icon, text);
   setActivity(node, label, state);
   return node;
 }
-function setActivity(node, label, state) {
+function setActivity(node, label, state, icon) {
   node.dataset.state = state;
-  node.firstChild.textContent = { waiting: "◌", thinking: "✦", running: "⚙", done: "✓", failed: "!", stopped: "Ⅱ" }[state] || "";
-  node.lastChild.textContent = label;
+  setActivityIcon(node.firstChild, node.dataset.toolIcon || icon || (state === "running" ? "waiting" : state));
+  node.querySelector(node.classList.contains("tool-activity") ? ".tool-status" : ".activity-label").textContent = label;
 }
 function waiting(agentId) {
   if (waitingItems.has(agentId) || live.get(agentId)?.active || [...toolItems.values()].some((tool) => tool.agentId === agentId && tool.node.dataset.state === "running")) return;
@@ -331,9 +369,11 @@ function updateActivity(item, stopped) {
   const pure = !item.buffer.trim() && !item.tools.childElementCount;
   item.node.classList.toggle("activity-only", !item.buffer.trim());
   item.node.classList.toggle("pure-thought", pure && !!item.reasoning);
-  item.activity.hidden = !!item.buffer.trim() || !!item.tools.childElementCount || (!item.active && !item.reasoning && !stopped);
+  item.activity.hidden = !!item.reasoning || !!item.buffer.trim() || !!item.tools.childElementCount || (!item.active && !stopped);
   item.modelInfo.hidden = !item.buffer.trim();
-  setActivity(item.activity, stopped || (item.active ? (item.reasoning ? "思考中…" : "连接中…") : "已思考"), stopped ? "stopped" : item.active ? (item.reasoning ? "thinking" : "waiting") : "done");
+  const thinking = item.active && !item.buffer.trim();
+  setActivity(item.thinkingLine, stopped ? `思考过程 · ${stopped}` : thinking ? "思考中…" : "思考过程", stopped ? "stopped" : thinking ? "thinking" : "done", "thinking");
+  setActivity(item.activity, stopped || "连接中…", stopped ? "stopped" : "waiting");
   if (item.activity.hidden) setActivity(item.activity, "", "");
   item.node.hidden = !item.active && pure && !item.reasoning && !stopped;
 }
@@ -450,11 +490,17 @@ function toolState(agentId, data) {
   if (!tool) {
     const item = live.get(agentId);
     const node = activityLine("");
+    node.removeAttribute("role");
+    const detail = document.createElement("span");
+    detail.className = "tool-target";
+    const status = document.createElement("span");
+    status.className = "tool-status";
+    node.append(detail, status);
     node.classList.add("tool-activity");
     const container = document.createElement("details");
     container.className = "tool-record";
     const summary = document.createElement("summary");
-    summary.append(node);
+    summary.append(node, disclosureHint());
     const body = document.createElement("div");
     body.className = "tool-detail";
     container.append(summary, body);
@@ -468,12 +514,21 @@ function toolState(agentId, data) {
   if (data.result || data.partialResult) tool.result = data.result || data.partialResult;
   else if (data.content) tool.result = data;
   const args = tool.args || {};
-  const detail = args.path || args.file_path || args.command || args.query || args.url || "";
+  const detail = args.path || args.file_path || args.command || args.query || (Array.isArray(args.queries) ? args.queries.join(" · ") : "") || args.url || (Array.isArray(args.urls) ? args.urls.join(" · ") : "") || (Array.isArray(args.tasks) ? args.tasks.map((task) => task?.task).join(" · ") : "") || args.taskId || args.tool || args.search || "";
   if (data.toolName) tool.name = data.toolName;
-  if (typeof detail === "string" && detail) tool.detail = detail.replace(/\s+/g, " ").slice(0, 120);
+  const name = (tool.name || "").replace(/^functions\./, "");
+  const [label, icon] = ({ __proto__: null, read: ["读取文件", "read"], edit: ["编辑文件", "edit"], write: ["写入文件", "write"], bash: ["执行命令", "bash"], web_search: ["搜索网页", "search"], source_check: ["核查来源", "search"], fetch_content: ["读取网页", "web"], get_search_content: ["查看来源", "web"], delegate: ["委派任务", "agents"], read_result: ["读取结果", "agents"], append: ["补充指令", "agents"] })[name] || [tool.name || "工具", "tool"];
+  tool.node.dataset.toolIcon = icon;
+  tool.node.querySelector(".activity-label").textContent = label;
+  tool.node.querySelector(".activity-label").title = tool.name || "工具";
+  const target = tool.node.querySelector(".tool-target");
+  const fullDetail = typeof detail === "string" ? detail.replace(/\s+/g, " ").trim() : "";
+  const cwd = currentCwd.replaceAll("\\", "/").replace(/\/$/, "");
+  const normalized = fullDetail.replaceAll("\\", "/");
+  target.textContent = (args.path || args.file_path) && cwd && normalized.startsWith(`${cwd}/`) ? normalized.slice(cwd.length + 1) : fullDetail;
+  target.title = fullDetail;
   const state = data.phase === "end" ? (data.isError ? "failed" : "done") : data.phase === "history" ? "stopped" : "running";
-  const label = { running: "执行中", done: "已完成", failed: "失败", stopped: "结果未记录" }[state];
-  setActivity(tool.node, `${tool.name || "工具"}${tool.detail ? ` · ${tool.detail}` : ""} · ${label}`, state);
+  setActivity(tool.node, { running: "执行中", done: "已完成", failed: "失败", stopped: "结果未记录" }[state], state);
   renderToolDetail(tool);
   scrollLatest();
 }
@@ -485,9 +540,13 @@ function card(title, task) {
   heading.textContent = title;
   heading.hidden = title === "你";
   const thinking = document.createElement("details");
+  thinking.className = "thinking-record";
   const summary = document.createElement("summary");
-  summary.textContent = "思考过程";
-  const thought = document.createElement("pre");
+  const thinkingLine = activityLine("思考过程", "thinking");
+  thinkingLine.removeAttribute("role");
+  summary.append(thinkingLine, disclosureHint("查看"));
+  const thought = document.createElement("div");
+  thought.className = "markdown thinking-content";
   thinking.append(summary, thought);
   thinking.hidden = true;
   const text = document.createElement("div");
@@ -510,6 +569,7 @@ function card(title, task) {
     node,
     heading,
     thinking,
+    thinkingLine,
     thought,
     text,
     buffer: "",
@@ -557,6 +617,8 @@ function renderMessage(item, message) {
       const path = document.createElement("small");
       path.textContent = location;
       const content = document.createElement("div");
+      content.className = "markdown";
+      summary.append(disclosureHint("查看"));
       details.append(summary, path, content);
       let rendered = false;
       details.ontoggle = () => { if (details.open && !rendered) { renderMarkdown(content, body); rendered = true; } };
@@ -596,7 +658,7 @@ function compactionCard(data) {
   meta.textContent = `压缩前 ${tokens(data.tokensBefore)} tokens${Number.isFinite(data.estimatedTokensAfter) ? ` · 压缩后约 ${tokens(data.estimatedTokensAfter)} tokens` : ""}`;
   const body = document.createElement("div");
   body.className = "markdown compaction-summary";
-  label.append(badge, meta);
+  label.append(badge, meta, disclosureHint("查看摘要"));
   node.append(label, body);
   // renderMarkdown 走 DOMPurify 白名单，摘要里的富文本不会执行。
   renderMarkdown(body, data.summary || "");
@@ -742,7 +804,9 @@ function renderRetry(agentId, data) {
     const output = tasks.get(agentId)?.output || $("output");
     output.querySelector(".empty")?.remove();
     output.append(node);
-    record = { node, summary, history, status, attempts: new Set() };
+    const label = document.createElement("span");
+    summary.append(label, disclosureHint());
+    record = { node, summary: label, history, status, attempts: new Set() };
     retryCards.set(key, record);
   }
   for (const attempt of data.history || (data.status === "waiting" ? [data] : [])) {
@@ -892,7 +956,7 @@ function event(message) {
     }
     const item = tasks.get(message.taskId);
     item.trigger.dataset.status = item.node.dataset.status = data.status;
-    const status = { starting: "启动中", running: "Running", completed: "已完成", failed: "失败", cancelled: "已取消" }[data.status] || data.status;
+    const status = { starting: "启动中", running: "运行中", completed: "已完成", failed: "失败", cancelled: "已取消" }[data.status] || data.status;
     item.status.textContent = status;
     item.heading.textContent = `SUBAGENT · ${status}`;
     item.title.textContent = item.trigger.title = data.task;

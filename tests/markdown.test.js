@@ -29,6 +29,19 @@ test("shared Markdown renderer formats blocks and removes unsafe content", async
       node.querySelector('script,img,[onerror],a[href^="javascript:"]'),
       null,
     );
+    assert.equal(node.querySelector(".code-toolbar > span").textContent, "js");
+    const code = node.querySelector("pre code");
+    const copy = node.querySelector(".code-toolbar button");
+    let copied;
+    Object.defineProperty(window.navigator, "clipboard", { configurable: true, value: { writeText: async (text) => { copied = text; } } });
+    await copy.onclick();
+    assert.equal(copied, code.textContent, "copy preserves the exact code, excluding the toolbar");
+    assert.equal(copy.textContent, "已复制");
+    window.navigator.clipboard.writeText = async () => { throw new Error("denied"); };
+    await copy.onclick();
+    assert.match(copy.textContent, /复制失败/);
+    assert.equal(node.querySelector(".table-scroll").tabIndex, 0);
+    assert.equal(node.querySelector("pre").tabIndex, 0);
     const original = node.querySelector("h1");
     const sample = "# Title\n\nGrowing";
     render(node, sample);

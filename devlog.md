@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-11 — 会话信息层级与 Linear 视觉重设计
+- worktree MyWorkbench-conversation-ui / feat/conversation-ui。按用户反馈去掉执行记录默认三角、字符图标和重复思考状态：统一 20px SVG + 32px 底座，工具动作/对象/状态分列，完成保持工具身份；工作空间内路径缩短，手机对象换行，未知工具原名省略显示。
+- 思考入口合并为一行，展开复用安全 Markdown 与脏块渲染；正文/思考/重点/斜体分层。代码块新增语言/复制反馈，表格改原生布局加可聚焦滚动容器，修正右侧空框及窄屏单字换行；工具详情、Skill、重试与压缩统一文字展开提示。采用项目 design 的 Linear tokens 与系统字体回退，无新增依赖，不改 pending、回执、SDK 或模型上下文。
+- 涉及 public/{app.js,style.css,markdown.js,stream-renderer.js}、tests/{app,markdown,message-activity,stream-renderer}.test.js、tests/conversation-preview.mjs、README.md、devlog.md、codebase-map 索引/职责表与知识库。新增无模型/用户数据的本地预览入口，主代理完成 UI，子代理只读复核。
+- 验证：npm test 82 通过、1 原有跳过、0 失败；Chromium 148 实测桌面/390px/320px 无会话或浮层横向溢出，Enter/空格展开、思考 Markdown、代码真实剪贴板、diff 响应式、子任务与减少动态效果通过，页面/CSP 控制台无错误。JSDOM 微基准中位数 baseline 2457ms / optimized 340ms；折叠任务 0 帧/0 解析（仅本机微基准，非模型速度）。未调用付费模型；静态资源需服务重启后生效。
+
 ## 2026-09-11 — 子任务主动通知、凭证读取与输入区运行摘要
 - worktree MyWorkbench-task-notifications / feat/task-notifications。完成任务随机生成 resultId，结果与待通知状态先落盘，再等主运行结束合并唤醒；通知不进入可撤回队列，取消暂停，重启补发（不保证 exactly-once、不重跑任务）。旧任务加载补齐凭证；取消通知轮不标记送达。
 - read_result / WS tasks.read 改单任务 taskId+resultId，删除 wait 和批量/轮询用法；新增 append，默认 steer、可选 followUp，仅允许运行中子任务追加。模型提示与 smoke 同步迁移。

@@ -1,10 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
+import { readFile } from "node:fs/promises";
+import { marked } from "marked";
+import createPurify from "dompurify";
 import { createStreamRenderer } from "../public/stream-renderer.js";
 
-test("one frame, only dirty text, lazy thinking, final flush and switch cancellation", () => {
+test("one frame, shared Markdown for lazy thinking, final flush and switch cancellation", async () => {
   const dom = new JSDOM("");
+  const source = (await readFile(new URL("../public/markdown.js", import.meta.url), "utf8"))
+    .replace(/^import .*;\r?\n/gm, "").replace("export function", "function");
+  const render = new Function("marked", "DOMPurify", `${source}; return renderMarkdown;`)(marked, createPurify(dom.window));
   const document = dom.window.document;
   let scheduled,
     count = 0,
@@ -12,7 +18,7 @@ test("one frame, only dirty text, lazy thinking, final flush and switch cancella
   const renderer = createStreamRenderer(
     (el, text) => {
       writes++;
-      el.textContent = text;
+      render(el, text);
     },
     () => {},
     (fn) => {
@@ -26,7 +32,7 @@ test("one frame, only dirty text, lazy thinking, final flush and switch cancella
   );
   const item = {
     text: document.createElement("div"),
-    thought: document.createElement("pre"),
+    thought: document.createElement("div"),
     thinking: document.createElement("details"),
     buffer: "answer",
     reasoning: "",
@@ -36,7 +42,7 @@ test("one frame, only dirty text, lazy thinking, final flush and switch cancella
     assert.equal(count, 1);
     scheduled();
     assert.equal(writes, 1);
-    item.reasoning = "hidden thought";
+    item.reasoning = "## Plan\n\nhidden **thought**";
     renderer.mark(item);
     scheduled();
     assert.equal(writes, 1);
@@ -49,13 +55,15 @@ test("one frame, only dirty text, lazy thinking, final flush and switch cancella
     renderer.mark(item);
     scheduled();
     assert.equal(item.thought.firstChild, node);
-    assert.equal(node.data, "hidden thought more");
+    assert.equal(item.thought.querySelector("strong").textContent, "thought");
+    assert.match(item.thought.textContent, /hidden thought more/);
+    assert.equal(writes, 3, "only opened thinking parses Markdown");
     item.buffer = "final";
     renderer.mark(item);
     renderer.flush(item);
     scheduled();
-    assert.equal(writes, 2);
-    assert.equal(item.text.textContent, "final");
+    assert.equal(writes, 4);
+    assert.equal(item.text.textContent.trim(), "final");
     renderer.mark(item);
     renderer.clear();
     assert.equal(scheduled, undefined);
@@ -68,21 +76,21 @@ test("one frame, only dirty text, lazy thinking, final flush and switch cancella
     }
     renderer.flush(item);
     assert.equal(count, before, "collapsed tasks do not schedule frames");
-    assert.equal(writes, 2, "collapsed tasks skip Markdown parsing");
+    assert.equal(writes, 4, "collapsed tasks skip Markdown parsing");
     item.task.node.open = true;
     renderer.mark(item);
     scheduled();
-    assert.equal(writes, 3);
+    assert.equal(writes, 5);
     assert.equal(
-      item.text.textContent,
-      item.buffer,
+      item.text.textContent.trim(),
+      item.buffer.trim(),
       "opening paints the full result",
     );
     item.buffer = "closed before frame";
     renderer.mark(item);
     item.task.node.open = false;
     scheduled();
-    assert.equal(writes, 3);
+    assert.equal(writes, 5);
     renderer.clear();
   } finally {
     dom.window.close();
