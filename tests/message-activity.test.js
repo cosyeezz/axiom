@@ -11,6 +11,7 @@ async function page() {
   const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
   const source = (await readFile(new URL("../public/app.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "");
   const picker = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+  const contrast = (await readFile(new URL("../public/text-contrast.js", import.meta.url), "utf8")).replace(/^export /gm, "");
   const dom = new JSDOM(html, { url: "http://localhost", runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window;
   w.matchMedia = () => ({ matches: false });
@@ -25,7 +26,7 @@ async function page() {
   w.renderMarkdown = new Function("marked", "DOMPurify", `${markdown}; return renderMarkdown;`)(marked, createPurify(w));
   w.createStreamRenderer = (render, after) => createStreamRenderer(render, after, w.requestAnimationFrame, w.cancelAnimationFrame);
   w.WebSocket = class { static OPEN = 1; readyState = 1; send() {} };
-  w.eval(`${picker}\n${source}\nconnected = true;`);
+  w.eval(`${contrast}\n${picker}\n${source}\nconnected = true;`);
   const state = { sessionId: "activity", title: "Activity", cwd: "C:/work", status: "idle", config: { model: "test/model", thinking: "off", levels: ["off"], skills: [] }, messages: [], tasks: [], live: {}, tools: {} };
   const restore = (changes = {}) => w.snapshot({ ...state, ...changes });
   const emit = (type, data, agentId = "main") => w.event({ sessionId: state.sessionId, type, data, agentId });
@@ -95,6 +96,7 @@ test("live activity tracks thinking, tool completion, errors, cancellation and s
     start();
     emit("agent.delta", { type: "thinking_start" });
     assert.equal(output.querySelector('.message > [data-state="thinking"] .activity-label').textContent, "thinking...");
+    assert.equal(output.querySelector('.message > [data-state="thinking"] .thinking-dots').textContent, "...");
     emit("agent.delta", { type: "thinking_delta", delta: "第一段" });
     paint();
     assert.equal(output.querySelector('.thinking-record [data-state="thinking"] .activity-label').textContent, "thinking...");
@@ -103,6 +105,7 @@ test("live activity tracks thinking, tool completion, errors, cancellation and s
     assert.equal(output.querySelector('.thinking-content').childElementCount, 0, "collapsed thinking is lazy");
     emit("agent.message.end", { message: assistant([thought("第一段")]), entryId: "one" });
     assert.equal(output.querySelector('.thinking-record .activity-label').textContent, "thinking");
+    assert.equal(output.querySelector('.thinking-record .thinking-dots'), null);
     start();
     emit("agent.delta", { type: "thinking_delta", delta: "第二段" });
     emit("agent.message.end", { message: assistant([thought("第二段")]), entryId: "two" });

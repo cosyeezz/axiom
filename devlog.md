@@ -358,3 +358,16 @@
 - 删除 public/app.js 每条追加的编号说明；src/inline-images.js 经 capabilities.js 内置 context 扩展按标记首次位置插图，仅转换模型副本，保留队列/存储及重复、漏标兜底。
 - 更新 README、导航索引、knowledge；tests/inline-images.test.js 覆盖顺序与边界，app/capabilities 测试同步。
 - 验证：npm test 86 通过 / 0 失败 / 1 原有跳过；真实 SDK 扩展加载测试验证 context 注册，Codex Responses 转换器实测请求块顺序 text → image → text（不调用远端模型）。
+
+## 2026-09-11 00:10 活动动画统一、暗色提示与文字对比度
+
+- 原因：用户反馈各处「进行中」图标样式不一、图标整体偏大，且原生 title 提示与暗色 UI 割裂、正文文字对比度不可调。
+- 改动：
+  - public/style.css：所有进行中状态（连接/思考/准备与执行工具，子代理卡片、浮层标题、输入区摘要）统一为 12px 细环——conic 渐变细边、无光晕、1.6s 一圈，颜色随所在组件语义色；思考文字后的 `...` 动态点固定 3ch 宽、1.2s steps 循环，不跳动布局；reduce 媒体查询补齐 `.task-run-spin`、`.thinking-dots`。活动图标底座 24→20px、SVG 16→14px、工具行网格列同步 20px，手机 44px 点击区保留。
+  - public/tooltip.js + tooltip.css（新增）：事件委托接管全站原生 title，统一暗色浮层；悬停 0.5s/键盘聚焦显示，Esc/滚动/按下/移开关闭并恢复 title 与 aria 关联，触摸不干预，Popover API 优先，CSP 不放宽、无 inline style。
+  - public/text-contrast.js + text-contrast.css（新增）：右上角「A」按钮 + 原生 popover，100–150% 按 10% 一档，仅提亮正文文字 token（--body-ink/--muted，钉回非文字用途），档位存 localStorage、默认 100% 不落盘，非法输入钳位。
+  - public/app.js 接线两个模块并生成思考动态点；index.html 引入两份 CSS；src/server.js assets 表注册 4 个新静态文件。
+  - 系统动画关闭/RDP 使 prefers-reduced-motion 匹配、动画全部冻结：用户开启系统设置后确认恢复，保留无障碍媒体查询，不新增应用内开关。
+- 注意：新增静态文件必须注册 server.js assets 并快速重启服务，普通刷新拿不到新资源。
+- 最终验证：npm test 111 项——110 通过、1 原有跳过、0 失败；conversation-ui.py 在 1440/390/320px 全通过、browserErrors=[]，覆盖对比度持久化/重置、提示、图标尺寸、1.6s 旋转、动态点固定宽与 reduce 冻结。修复 tooltip 外部 CSSOM 定位、popover 断链及跨间隙悬停问题；修复 localStorage getter 抛错防护并增加回归。
+- 涉及文件：public/{app.js,index.html,style.css,tooltip.js,tooltip.css,text-contrast.js,text-contrast.css}、src/server.js、tests/{message-activity.test.js,conversation-ui.py,tooltip.test.js,text-contrast.test.js}、README.md、.pi/skills/codebase-map/{INDEX.md,knowledge.md,SKILL.md} 与本日志。

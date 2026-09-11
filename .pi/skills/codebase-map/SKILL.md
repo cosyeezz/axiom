@@ -32,9 +32,11 @@ INDEX.md 是生成物（勿手改）；knowledge.md 是人工沉淀物（勿删�
 ```
 浏览器 public/
   index.html ── app.js（唯一入口：视图栈/WS客户端/会话设置UI）
-                 ├─ file-picker.js     共享文件/目录选择、分类图标、按目录分页加载
-                 ├─ markdown.js        marked + DOMPurify（XSS 边界）
-                 └─ stream-renderer.js 流式增量渲染状态机
+                 ├─ file-picker.js       共享文件/目录选择、分类图标、按目录分页加载
+                 ├─ tooltip.js/css       全站统一暗色悬停提示（接管原生 title、键盘/Popover/Esc）
+                 ├─ text-contrast.js/css 文字对比度 100–150 十档，存 localStorage（右上角按钮）
+                 ├─ markdown.js          marked + DOMPurify（XSS 边界）
+                 └─ stream-renderer.js   流式增量渲染状态机
       │  WebSocket JSON（command，src/protocol.js zod 校验）
       ▼
 scripts/install.mjs    一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器

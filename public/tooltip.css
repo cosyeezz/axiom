@@ -1,0 +1,49 @@
+/* public/tooltip.css — 全站统一悬浮提示。
+   主题：Linear token（--raised 表面 #18191a + --line hairline #23252a + --ink 文本 #f7f8f8），
+   深/浅主题切换只需覆盖 :root 变量，本组件自动适配。
+   挂载与定位由 tooltip.js 负责；动态 left/top 走 CSSOM 写入，本文件不含定位。 */
+
+#ax-tooltip {
+  position: fixed;
+  margin: 0;
+  right: auto;
+  bottom: auto;
+  left: 0;
+  top: 0; /* 实际坐标由 tooltip.js 通过 CSSOM 写入（CSP 禁 inline style） */
+  z-index: 9999; /* 仅无 Popover API 的回退路径需要；top layer 下天然最上层 */
+  box-sizing: border-box;
+  max-width: min(360px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow: auto; /* 超长内容自身可滚动；tooltip.js 对其内部滚动不关闭 */
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--raised);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.45;
+  letter-spacing: 0;
+  white-space: pre-line; /* 保留 title 里的换行 */
+  overflow-wrap: anywhere; /* 长路径强制断行 */
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(2px);
+  pointer-events: none; /* 隐藏时不挡点击 */
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0s 0.12s;
+}
+
+#ax-tooltip.ax-show {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  pointer-events: auto; /* 可把指针移入提示内容 */
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #ax-tooltip,
+  #ax-tooltip.ax-show {
+    transition: none;
+  }
+}

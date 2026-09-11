@@ -1,0 +1,45 @@
+/* public/text-contrast.css — 中文文字对比度增强。
+   text-contrast.js 在 <html> 上写入 data-text-contrast="110…150"（100 为默认，不写属性）。
+   只提亮纯文字 token，不动背景、边框、状态图标：
+   - --body-ink：style.css 中 10 处全部为 color:，直接随档位提亮；
+   - --muted：41 处中仅 2 处非文字（.selectors 下拉箭头 border、.tool-activity 默认图标色），
+     提亮后由下方两条修正规则钉回原值；
+   - --ink 已近白，语义色（--info/--code-ink/--highlight/--thought/--danger）携带背景、
+     边框与图标语义，均不参与。 */
+
+:root {
+  /* style.css 文字 token 的原始值镜像（勿随 style.css 漂移）：
+     兼作 --muted 非文字用途的回退锚点，避免 color-mix 自引用循环。 */
+  --tcx-body-ink: #d0d6e0;
+  --tcx-muted: #8a8f98;
+}
+
+/* 离散档位 → 白色混入比例（每 +10% 档 ≈ +6% 白；150% 时 #8a8f98 ≈ 9:1，达 AAA） */
+html[data-text-contrast="110"] { --tc-l: 6%; }
+html[data-text-contrast="120"] { --tc-l: 12%; }
+html[data-text-contrast="130"] { --tc-l: 18%; }
+html[data-text-contrast="140"] { --tc-l: 24%; }
+html[data-text-contrast="150"] { --tc-l: 30%; }
+
+/* 仅重定义文字 token（经镜像值 color-mix，避免自引用） */
+html[data-text-contrast]:not([data-text-contrast="100"]) {
+  --body-ink: color-mix(in srgb, white var(--tc-l), var(--tcx-body-ink));
+  --muted: color-mix(in srgb, white var(--tc-l), var(--tcx-muted));
+}
+
+/* --muted 共享副作用的钉回修正（保持边框与工具图标原色） */
+html[data-text-contrast] .tool-activity:not([data-tool-icon]) { --activity-ink: var(--tcx-muted); }
+html[data-text-contrast] .selectors label:has(select)::after { border-color: var(--tcx-muted); }
+
+/* 控件：复用 .icon-button 外观，popover 仿 #service-menu（原生 popovertarget 开关，无 JS） */
+#text-contrast-button { font: 600 12px/1 var(--display); }
+#text-contrast-popover {
+  position: fixed; inset: 60px 12px auto auto; margin: 0;
+  width: min(240px, calc(100vw - 24px)); padding: 12px;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+}
+#text-contrast-popover label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 8px; }
+#text-contrast-range { width: 100%; margin: 0; accent-color: var(--accent); }
+#text-contrast-value { font-variant-numeric: tabular-nums; }
+#text-contrast-reset { display: block; width: 100%; margin-top: 8px; }
+#text-contrast-reset:disabled { opacity: .5; }

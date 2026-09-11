@@ -1004,9 +1004,9 @@ textarea {
 /* Transcript records: one identity icon, one label, one optional disclosure. */
 .activity-line { --activity-ink: var(--info); display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 36px; padding: 4px 0; color: var(--muted); font-size: 12px; font-weight: 400; line-height: 1.5; overflow-wrap: anywhere; }
 .activity-label { min-width: 0; }
-.activity-icon { position: relative; display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 24px; border-radius: 6px; background: color-mix(in srgb, var(--activity-ink) 10%, var(--surface)); color: var(--activity-ink); }
+.activity-icon { position: relative; display: grid; place-items: center; flex: 0 0 20px; width: 20px; height: 20px; border-radius: 5px; background: color-mix(in srgb, var(--activity-ink) 10%, var(--surface)); color: var(--activity-ink); }
 .activity-icon[data-icon="thinking"] { --activity-ink: var(--thought); }
-.activity-icon svg { display: block; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.activity-icon svg { display: block; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .activity-line:is([data-state="waiting"], [data-state="running"]) .activity-icon[data-icon="waiting"] svg { visibility: hidden; }
 .activity-line:is([data-state="waiting"], [data-state="running"]) .activity-icon[data-icon="waiting"]::after {
   content: ""; position: absolute; inset: 4px; border: 2px solid color-mix(in srgb, var(--activity-ink) 25%, transparent);
@@ -1051,7 +1051,7 @@ details[open] > summary .disclosure-action .when-open { display: inline-flex; al
 .disclosure-action svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 summary:hover > .disclosure-action { color: var(--ink); }
 .tool-record > summary .activity-line, .thinking-record > summary .activity-line { flex: 1; }
-.tool-activity { --activity-ink: var(--muted); display: grid; grid-template-columns: 24px auto minmax(0, 1fr) auto; column-gap: 8px; }
+.tool-activity { --activity-ink: var(--muted); display: grid; grid-template-columns: 20px auto minmax(0, 1fr) auto; column-gap: 8px; }
 .tool-activity:is([data-tool-icon="read"], [data-tool-icon="search"], [data-tool-icon="web"]) { --activity-ink: var(--info); }
 .tool-activity[data-tool-icon="bash"] { --activity-ink: var(--code-ink); }
 .tool-activity:is([data-tool-icon="edit"], [data-tool-icon="write"]) { --activity-ink: var(--highlight); }
@@ -1085,7 +1085,7 @@ summary:hover > .disclosure-action { color: var(--ink); }
   .diff-view-split .diff-unified { display: block; }
   .diff-view-split .diff-split { display: none; }
   .tool-record > summary, .thinking-record > summary, .activity-line { min-height: 44px; }
-  .tool-activity { grid-template-columns: 24px minmax(0, 1fr) auto; gap: 4px 8px; padding-block: 8px; }
+  .tool-activity { grid-template-columns: 20px minmax(0, 1fr) auto; gap: 4px 8px; padding-block: 8px; }
   .tool-activity .activity-icon { grid-row: 1 / 3; }
   .tool-target { grid-column: 2 / 4; grid-row: 2; }
   .tool-status { grid-column: 3; grid-row: 1; }
@@ -1099,8 +1099,33 @@ summary:hover > .disclosure-action { color: var(--ink); }
   .compaction-card > summary { gap: 4px 8px; }
   .compaction-card summary small { flex-basis: 100%; order: 1; }
 }
+/* Shared active-state motion: slim 12px ring, no halo, one turn per 1.6s. */
+.activity-line:is([data-state="waiting"], [data-state="running"]) .activity-icon[data-icon="waiting"]::after,
+.activity-line[data-state="thinking"] .activity-icon::after,
+.tool-activity[data-state="running"] .tool-status::before,
+.task-card:is([data-status="starting"], [data-status="running"]) .task-status::before,
+.task-dialog:is([data-status="starting"], [data-status="running"]) .task-top h2::before,
+.task-run-spin {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  background: conic-gradient(from 0deg, transparent 12%, currentColor 90%, transparent 92%);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 1.5px), #000 calc(100% - 1px));
+  animation: activity-spin 1.6s linear infinite;
+}
+.activity-line[data-state="thinking"] .activity-icon { color: var(--thought); }
+.activity-line:is([data-state="waiting"], [data-state="running"]) .activity-icon[data-icon="waiting"]::after,
+.activity-line[data-state="thinking"] .activity-icon::after { inset: 4px; }
+.activity-line[data-state="thinking"] .activity-icon svg { visibility: hidden; }
+.tool-activity[data-state="running"] .tool-status { color: var(--activity-ink); }
+.task-card:is([data-status="starting"], [data-status="running"]) .task-status,
+.task-dialog:is([data-status="starting"], [data-status="running"]) .task-top h2,
+.task-run-spin { color: var(--subagent); }
+.thinking-dots { display: inline-block; width: 3ch; font-family: var(--mono); vertical-align: bottom; clip-path: inset(0 0 0 0); }
+[data-state="thinking"] .thinking-dots { animation: thinking-dots 1.2s steps(1, end) infinite; }
+@keyframes thinking-dots { 0% { clip-path: inset(0 2ch 0 0); } 33.33% { clip-path: inset(0 1ch 0 0); } 66.67% { clip-path: inset(0 0 0 0); } }
 @keyframes activity-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
   .activity-icon, .activity-icon svg, .activity-icon::after, .tool-status::before,
-  .task-status::before, .task-top h2::before { animation: none !important; }
+  .task-status::before, .task-top h2::before, .task-run-spin, .thinking-dots { animation: none !important; }
 }

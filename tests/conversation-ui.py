@@ -41,6 +41,8 @@ with sync_playwright() as p:
 
     def rotating(el, pseudo=None):
         assert style(el, "animationName", pseudo) in ["activity-spin", "task-run-spin"]
+        assert style(el, "animationDuration", pseudo) == "1.6s"
+        assert style(el, "width", pseudo) == "12px"
         before = style(el, "transform", pseudo)
         page.wait_for_timeout(120)
         assert style(el, "transform", pseudo) != before, "spinner must actually move"
@@ -51,6 +53,21 @@ with sync_playwright() as p:
     for width in [1440, 390, 320]:
         page.set_viewport_size({"width": width, "height": 1000 if width == 1440 else 844})
         load("ui-review")
+        contrast = page.locator('#text-contrast-button')
+        contrast.hover()
+        expect(page.locator('#ax-tooltip.ax-show')).to_be_visible()
+        expect(page.locator('#ax-tooltip')).to_have_text('文字对比度')
+        page.keyboard.press('Escape')
+        contrast.click()
+        expect(page.locator('#text-contrast-popover')).to_be_visible()
+        page.locator('#text-contrast-range').fill('150')
+        assert page.locator('html').get_attribute('data-text-contrast') == '150'
+        page.reload()
+        page.wait_for_selector('#workspace:not([hidden])')
+        assert page.locator('html').get_attribute('data-text-contrast') == '150'
+        page.locator('#text-contrast-button').click()
+        page.locator('#text-contrast-reset').click()
+        page.keyboard.press('Escape')
         body = page.locator('#output .message > .markdown').filter(has=page.locator('h2')).first
         assert style(body, "fontSize") == "14px"
         assert style(body.locator('strong').first, "fontWeight") == "650"
@@ -61,8 +78,8 @@ with sync_playwright() as p:
             expect(row.locator('.activity-label')).to_have_text(label)
             assert style(row.locator('.activity-label'), 'fontSize') == '12px'
             assert style(row.locator('.activity-label'), 'fontWeight') == '400'
-            assert style(row.locator('.activity-icon'), 'width') == '24px'
-            assert style(row.locator('.activity-icon svg'), 'width') == '16px'
+            assert style(row.locator('.activity-icon'), 'width') == '20px'
+            assert style(row.locator('.activity-icon svg'), 'width') == '14px'
         row = page.locator('.tool-record').first
         assert row.bounding_box()['height'] <= (40 if width == 1440 else 60)
         assert row.locator('summary').bounding_box()['height'] >= (36 if width == 1440 else 44)
@@ -170,6 +187,16 @@ with sync_playwright() as p:
         el = page.locator(selector + ':visible').first
         handle = el.element_handle()
         rotating(el, pseudo)
+        if state == 'ui-thinking':
+            dots = page.locator('[data-state="thinking"] .thinking-dots').first
+            before = style(dots, 'clipPath')
+            width = dots.bounding_box()['width']
+            page.wait_for_timeout(450)
+            assert style(dots, 'clipPath') != before
+            assert dots.bounding_box()['width'] == width
+            page.emulate_media(reduced_motion='reduce')
+            assert style(dots, 'animationName') == 'none'
+            page.emulate_media(reduced_motion='no-preference')
         if state == 'ui-waiting':
             expect(page.locator('[data-state="waiting"] .activity-label')).to_have_text('connecting...')
             page.locator('[data-state="waiting"]').evaluate('(el) => el.dataset.state = "running"')

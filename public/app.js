@@ -1,6 +1,10 @@
 import { renderMarkdown } from "./markdown.js";
 import { createStreamRenderer } from "./stream-renderer.js";
 import { createFilePicker, fileIcon } from "./file-picker.js";
+import "./tooltip.js";
+import { initTextContrast } from "./text-contrast.js";
+
+initTextContrast();
 const filePicker = createFilePicker(request);
 const $ = (id) => document.getElementById(id);
 let ws,
@@ -353,7 +357,15 @@ function activityLine(label, state = "waiting") {
 function setActivity(node, label, state, icon) {
   node.dataset.state = state;
   setActivityIcon(node.firstChild, node.dataset.toolIcon || icon || (state === "running" ? "waiting" : state));
-  node.querySelector(node.classList.contains("tool-activity") ? ".tool-status" : ".activity-label").textContent = label;
+  const text = node.querySelector(node.classList.contains("tool-activity") ? ".tool-status" : ".activity-label");
+  if (text.textContent === label) return;
+  text.textContent = label;
+  if (state === "thinking" && label === "thinking...") {
+    const dots = document.createElement("span");
+    dots.className = "thinking-dots";
+    dots.textContent = "...";
+    text.replaceChildren("thinking", dots);
+  }
 }
 function waiting(agentId) {
   if (waitingItems.has(agentId) || live.get(agentId)?.active || [...toolItems.values()].some((tool) => tool.agentId === agentId && tool.node.dataset.state === "running")) return;

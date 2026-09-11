@@ -7,6 +7,7 @@ import createPurify from "dompurify";
 import { createStreamRenderer } from "../public/stream-renderer.js";
 
 const pickerSource = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+const contrastSource = (await readFile(new URL("../public/text-contrast.js", import.meta.url), "utf8")).replace(/^export /gm, "");
 
 test("header path icons do not inherit the global button minimum height", async () => {
   const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
@@ -239,7 +240,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("prompt").dispatchEvent(new window.Event("input"));
   };
   try {
-    window.eval(`${pickerSource}\n${source}`);
+    window.eval(`${contrastSource}\n${pickerSource}\n${source}`);
     sockets[0].close(); // Close before open: retry must not remain hidden.
     await settle();
     assert.equal($("login").hidden, false);
@@ -1119,7 +1120,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
   };
   const emit = (type, data) => sockets.at(-1).receive({ type, sessionId: state.sessionId, data });
   try {
-    window.eval(`${pickerSource}\n${source}`);
+    window.eval(`${contrastSource}\n${pickerSource}\n${source}`);
     sockets[0].open();
     await settle();
     paint();
