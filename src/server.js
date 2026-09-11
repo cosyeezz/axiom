@@ -180,7 +180,7 @@ export function createServerApp(sessions, service = {}) {
               };
               break;
             case "queue.withdraw":
-              data = sessions.get(request.sessionId).agent.withdraw();
+              data = await sessions.withdraw(request.sessionId, request.recall);
               break;
             case "cancel":
               await sessions.cancel(request.sessionId);

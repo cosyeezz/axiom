@@ -202,3 +202,19 @@
 - 根因：`Sessions.remove(id, deleting)` 会删 `agent.sessionFile()`；`renderSessions()` 只显示 `cwd === 当前工作空间` 的会话，导入其它目录的会话会切换当前工作空间。
 - 处理：`importSession` 把 JSONL 内容复制到 `~/.axiom/workspaces/<sha256(cwd)>/<id>.jsonl`（`create()` 失败时删副本）；`load()` 只读 `.json`，遗留副本无副作用。侧栏筛选行为保留，属预期。
 - 防再犯：tests/session-flow.test.js 断言删除会话后原文件仍在、副本已删；tests/app.test.js 断言导入后标题与 `workspace-label` 跟随会话，`service-api.test.js` 覆盖 `service.status.importDir`。
+
+### 2026-09-11 输入清空必须保留浏览器撤销记录
+- 场景：Ctrl+C 清空聊天文字后，需要 Ctrl+Z 恢复；直接设置 textarea.value 不会记录可撤销编辑。
+- 处理：public/app.js 使用 select() + execCommand("delete") 原生编辑命令，Ctrl+Z 不拦截，复用浏览器撤销历史；input 事件更新高度、按钮与补全。仅处理 Ctrl+C，跳过输入法组合、空文字、只读/禁用。
+- 防再犯：jsdom 不实现原生编辑历史，不用模拟命令证明撤销有效；tests/conversation-ui.py 在 Chromium 实测撤销/重做/清空恢复。预览服务启动时缓存静态资源，端口被旧进程占用时必须使用独立端口或重启自己启动的预览。
+
+### 2026-09-11 跨目录技能默认选择与历史恢复阻塞启动
+- 症状：macOS/Windows 换目录创建报「未知或已不可用的能力：skills」；任一旧会话技能失效后启动退出。
+- 根因：技能 ID 是绝对路径，默认配置跨目录共享却严格要求所有 ID 仍可用；Sessions.load 没有逐文件错误隔离。
+- 修复：capabilities.js 的 resolveCapabilities 仅在默认继承/历史恢复允许取交集并记录缺失 ID；sessions.js 保持显式输入严格、默认配置不被改写、空集合不扩权、子代理 inherit 不变；历史恢复失败保留原文件并继续。
+- 防再犯：不得按技能名称替换路径或以 null 代替空集合；不得自动信任新目录。tests/capabilities.test.js 用真实目录验证技能删除/跨目录和损坏历史隔离，tests/config.test.js 验证默认配置与显式提交区别。
+### 2026-09-11 会话树回退（撤回已发出的输入）的两个隐性约束
+- 症状：用 SDK 公开的 `AgentSession.navigateTree(用户消息 id)` 回退后一切正常，但重启后那条消息又出现在上下文里；即使不重启，网页历史仍显示被撤回的输入和被打断的半截回答。
+- 根因：① `SessionManager.branch()` 只移动内存里的叶子指针，文件是追加式的；只有再追加一条条目才会把新位置落盘，而重启时 `_buildIndex` 取「文件最后一条」当叶子。② axiom 自己还存了一份 `item.messages`（sessions.js 从 `agent.message.end` 累积，attach 快照就发它），SDK 上下文回退了这份副本不会跟着回退。
+- 修复：src/pi.js 回退后补一条 `appendCustomEntry("axiom_recall", …)`（`type:"custom"` 不参与 `buildSessionContext`，等于零上下文成本的持久化标记）；src/sessions.js 按 `entryId` 截断 `item.messages` 并 `delete item.live.main`，别忘 `persist`。
+- 防再犯：任何「改会话树/历史」的操作都要同时问三处——SDK 文件是否落盘（branch 不落盘）、axiom 的 `item.messages` 副本、客户端当前的 DOM/`views`。判断「本轮有没有模型输出」要看 `getBranch()` 里的持久化条目，且工具调用必须算已产出：工具副作用已发生，回退会让新的分支出现孤立 toolResult。
