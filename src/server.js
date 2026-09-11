@@ -31,6 +31,27 @@ export function createServerApp(sessions, service = {}) {
   let stopping = false;
   const pending = new Set();
   const server = createServer((req, res) => {
+    if (req.url === "/service/stop") {
+      const host = req.headers.host;
+      const port = server.address().port;
+      if (req.method !== "POST" || ![`127.0.0.1:${port}`, `localhost:${port}`].includes(host) ||
+          (req.headers.origin && req.headers.origin !== `http://${host}`)) {
+        res.writeHead(403); res.end(); return;
+      }
+      if (!service.stop || stopping) {
+        res.writeHead(409); res.end("服务不受守护进程管理或正在停止"); return;
+      }
+      if (sessions.list().some((item) => item.status !== "idle") ||
+          [...(sessions.items?.values() || [])].some((item) => item.configuring ||
+            [...item.tasks.jobs.values()].some((task) => ["starting", "running"].includes(task.status)))) {
+        res.writeHead(409); res.end("还有任务正在运行，请先停止任务再执行 axiom stop"); return;
+      }
+      stopping = true;
+      res.writeHead(202, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ service: "axiom", pid: service.supervisorPid }));
+      service.stop();
+      return;
+    }
     const asset = assets.get(req.url);
     if (asset) {
       const unchanged = req.headers["if-none-match"] === asset.etag;

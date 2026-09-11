@@ -44,6 +44,8 @@ git clone --depth 1 git@github.com:cosyeezz/axiom.git "$env:USERPROFILE\axiom"; 
 
 Windows 也可直接双击 `install.cmd`。更新版本：网页「服务 → 检查更新」（按 GitHub master 提交比对，内容变更即发现；npm 安装自动重装并重启；开发目录提示 git 拉取），或重跑安装命令。卸载自启：`npm run autostart:disable`。
 
+停止后台服务：终端运行 `axiom stop`（默认 4319；`AXIOM_PORT` 可指定其他端口）。有运行任务时拒绝停止；空闲时保存会话，退出服务及守护进程，命令等待退出确认，超时不强杀。只停止当前运行实例，不取消登录自启。旧版本没有停止接口，需要首次完整重启升级后才可使用。
+
 服务停止后重新拉起（守护进程 + 服务进程）：终端运行 `axiom`。已在运行时不重复启动；运行中打印访问地址与日志路径，`Ctrl+C` 停止。
 
 ### 维护：发布更新

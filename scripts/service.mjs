@@ -90,6 +90,11 @@ export async function supervise() {
       setTimeout(() => start(), delay);
     });
     child.on("message", (message) => {
+      if (message?.type === "service.shutdown" && !stopping && !restarting) {
+        stopping = true;
+        void stopChild().catch((error) => { console.error(error); process.exitCode = 1; });
+        return;
+      }
       if (message?.type !== "service.restart" || !["quick", "rebuild", "update"].includes(message.mode) || restarting || stopping) return;
       restarting = true;
       // Allow the WebSocket acknowledgment to flush before closing the worker.
@@ -139,4 +144,30 @@ export async function supervise() {
 }
 // npm 全局 bin 在类 Unix 系统是符号链接，argv[1] 需取 realpath 再比对
 const invoked = (() => { try { return realpathSync(process.argv[1] ?? ""); } catch { return ""; } })();
-if (invoked && invoked === realpathSync(fileURLToPath(import.meta.url))) supervise();
+export async function stopService(address = `http://127.0.0.1:${Number(process.env.AXIOM_PORT ?? 4319)}`) {
+  const response = await fetch(`${address}/service/stop`, { method: "POST", signal: AbortSignal.timeout(5000) });
+  const text = await response.text();
+  if (!response.ok) throw new Error(`停止失败：${text || response.status}（旧版本需先升级并完整重启一次）`);
+  const status = JSON.parse(text);
+  if (status.service !== "axiom" || !Number.isInteger(status.pid) || status.pid <= 0)
+    throw new Error("停止响应无效，无法确认守护进程状态");
+  const deadline = Date.now() + 65000;
+  while (true) {
+    try { process.kill(status.pid, 0); }
+    catch (error) { if (error.code === "ESRCH") break; throw error; }
+    if (Date.now() >= deadline) throw new Error("停止超时；未强杀进程，请查看 service.log");
+    await new Promise((done) => setTimeout(done, 200));
+  }
+  console.log("服务与守护进程已退出；保存异常请查看 service.log。");
+}
+if (invoked && invoked === realpathSync(fileURLToPath(import.meta.url))) {
+  const [command, ...extra] = process.argv.slice(2);
+  if (existsSync(join(root, ".env.local"))) process.loadEnvFile(join(root, ".env.local"));
+  if (extra.length || (command && command !== "stop")) {
+    console.error("用法：axiom [stop]"); process.exitCode = 1;
+  } else {
+    await (command === "stop" ? stopService() : supervise()).catch((error) => {
+      console.error(error.message); process.exitCode = 1;
+    });
+  }
+}

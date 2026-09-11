@@ -4,6 +4,28 @@ import { once } from "node:events";
 import { WebSocket } from "ws";
 import { createServerApp } from "../src/server.js";
 
+test("stop rejects foreign origins and busy sessions, accepts one managed shutdown", async () => {
+  let status = 'running', stopped = 0;
+  const app = createServerApp({ list: () => [{ status }], close: async () => {} }, {
+    stop: () => stopped++, supervisorPid: process.pid,
+  });
+  app.server.listen(0, '127.0.0.1');
+  await once(app.server, 'listening');
+  const url = `http://127.0.0.1:${app.server.address().port}/service/stop`;
+  try {
+    assert.equal((await fetch(url)).status, 403);
+    assert.equal((await fetch(url, { method: 'POST', headers: { Origin: 'https://evil.example' } })).status, 403);
+    assert.equal((await fetch(url, { method: 'POST' })).status, 409);
+    assert.equal(stopped, 0);
+    status = 'idle';
+    const response = await fetch(url, { method: 'POST' });
+    assert.equal(response.status, 202);
+    assert.deepEqual(await response.json(), { service: 'axiom', pid: process.pid });
+    assert.equal(stopped, 1);
+    assert.equal((await fetch(url, { method: 'POST' })).status, 409);
+  } finally { await app.close(); }
+});
+
 test("service restart validates mode, rejects active work and duplicate requests", async () => {
   let status = "running";
   const modes = [];
@@ -37,3 +59,4 @@ test("service restart validates mode, rejects active work and duplicate requests
     assert.equal(modes.length, 1);
   } finally { ws.terminate(); await app.close(); }
 });
+

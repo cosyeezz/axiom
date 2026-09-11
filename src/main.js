@@ -27,6 +27,8 @@ const sessions = new Sessions(factory, join(home, "defaults.json"), join(home, "
 await sessions.loadDefaults();
 await sessions.load();
 const app = createServerApp(sessions, {
+  supervisorPid: process.ppid,
+  stop: process.send ? () => process.send({ type: "service.shutdown" }) : undefined,
   error: process.env.AXIOM_SERVICE_ERROR,
   dev: process.env.AXIOM_DEV === "1",
   sourceDir: fileURLToPath(new URL("..", import.meta.url)),
