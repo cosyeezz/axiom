@@ -524,6 +524,13 @@ function card(title, task) {
   return item;
 }
 function renderMessage(item, message) {
+  const text = typeof message.content === "string" ? message.content
+    : (message.content || []).filter((block) => block?.type === "text").map((block) => block.text).join("\n");
+  // 内部唤醒消息保留在模型上下文，仅从会话展示隐藏（含历史记录）。
+  if (message.role === "user" && text.startsWith("[Axiom 子任务完成通知]")) {
+    item.node.hidden = true;
+    return;
+  }
   item.modelInfo.textContent = message.role === "assistant" && message.model
     ? `${message.provider || "未知供应商"} / ${message.model}${message.usage ? ` · 输入 ${message.usage.input} · 输出 ${message.usage.output}` : ""}` : "";
   const content =

@@ -322,3 +322,6 @@
 - 文件：public/app.js、public/style.css、tests/message-activity.test.js、README.md、索引与 knowledge.md。
 - 验证：页面回归与新增活动测试通过；全量 npm test 在提交前运行。
 - 追加决定：diff 支持统一/左右切换并记住手动选择；无已存偏好时窄屏默认统一、宽屏默认左右，窄屏展示强制统一。新增回归覆盖左右旧新配对与偏好保存。
+
+## 2026-09-10 — 隐藏内部任务通知
+- public/app.js 共享消息渲染入口隐藏内部任务完成通知，实时与历史共用，不改变模型上下文或后台投递。tests/app.test.js 覆盖字符串和内容块格式；同步 README 与索引。

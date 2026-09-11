@@ -1169,6 +1169,12 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     assert.equal(retryCard.open, true);
     retryCard.remove();
 
+    for (const content of ["[Axiom 子任务完成通知] 内部消息", [{ type: "text", text: "[Axiom 子任务完成通知] 内部消息" }]]) {
+      emit("agent.message.end", { message: { role: "user", content } });
+      assert.equal($("output").lastElementChild.hidden, true, "internal task notifications stay out of the transcript");
+      $("output").lastElementChild.remove();
+    }
+
     // 重复事件不重复。
     emit("agent.compaction", { id: "c1", summary: "dup", compactedMessageIds: ["m1", "m2"] });
     assert.equal(cards().length, 1);
