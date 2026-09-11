@@ -7,23 +7,27 @@ import { discoverCapabilities, capabilityLoader, resolveCapabilities } from "../
 import { command } from "../src/protocol.js";
 import { Sessions } from "../src/sessions.js";
 
-test("capability discovery respects trust, filters before plugin execution and leaves settings unchanged", async () => {
+test("selected workspaces load project skills by default, filter plugins and leave Pi settings unchanged", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-capabilities-"));
   const agentDir = join(root, "agent"), cwd = join(root, "project");
   try {
     await mkdir(join(agentDir, "skills", "sample"), { recursive: true });
     await mkdir(join(agentDir, "extensions"), { recursive: true });
     await mkdir(join(cwd, ".pi", "extensions"), { recursive: true });
+    await mkdir(join(cwd, ".pi", "skills", "project-sample"), { recursive: true });
+    await writeFile(join(cwd, ".pi", "skills", "project-sample", "SKILL.md"), "---\nname: project-sample\ndescription: Project skill\n---\nProject instructions");
     await writeFile(join(agentDir, "settings.json"), '{"defaultModel":"original"}');
     await writeFile(join(agentDir, "skills", "sample", "SKILL.md"), "---\nname: sample\ndescription: Test skill\n---\nSample instructions");
     await writeFile(join(agentDir, "extensions", "good.js"), "export default function(pi) { pi.registerCommand('sample', {handler: async()=>{}}); }");
     await writeFile(join(cwd, ".pi", "extensions", "bad.js"), "throw new Error('UNSELECTED_PLUGIN_EXECUTED');");
-    const untrusted = await discoverCapabilities(cwd, { agentDir });
-    assert.equal(untrusted.catalog.needsTrust, true);
-    assert.equal(untrusted.catalog.plugins.length, 1);
-    const resources = await discoverCapabilities(cwd, { agentDir, trustProject: true });
+    const resources = await discoverCapabilities(cwd, { agentDir });
+    assert.equal(resources.catalog.projectTrusted, true);
+    assert.equal(resources.catalog.needsTrust, false);
     assert.equal(resources.catalog.plugins.length, 2);
-    assert.equal(resources.catalog.skills.length, 1);
+    assert.deepEqual(resources.catalog.skills.map((s) => s.name).sort(), ["project-sample", "sample"]);
+    // 旧会话保存的 false 也不能让工作空间退回仅全局能力。
+    const restored = await discoverCapabilities(cwd, { agentDir, trustProject: false });
+    assert.deepEqual(restored.catalog, resources.catalog);
     const selected = {
       skills: resources.catalog.skills.map((s) => s.id),
       plugins: resources.catalog.plugins.filter((p) => p.id.endsWith("good.js")).map((p) => p.id), mcp: [],
@@ -39,7 +43,7 @@ test("capability discovery respects trust, filters before plugin execution and l
     assert.deepEqual(contextHook[0]({ messages: [message] }).messages[0].content, [
       { type: "text", text: "前[image1]" }, image, { type: "text", text: "后" },
     ]);
-    assert.equal(loader.getSkills().skills.length, 1);
+    assert.deepEqual(loader.getSkills().skills.map((s) => s.name).sort(), ["project-sample", "sample"]);
     resources.settingsManager.setDefaultModel("changed");
     await resources.settingsManager.flush();
     assert.equal(await readFile(join(agentDir, "settings.json"), "utf8"), '{"defaultModel":"original"}');

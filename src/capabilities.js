@@ -1,11 +1,10 @@
-import { existsSync } from "node:fs";
 import { inlineImagesExtension } from "./inline-images.js";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
 import {
   DefaultPackageManager, DefaultResourceLoader, getAgentDir,
-  hasTrustRequiringProjectResources, loadSkills, ProjectTrustStore, SettingsManager,
+  loadSkills, SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
 // Use the host SDK for TypeScript packages installed in Pi's separate npm directory.
@@ -33,14 +32,11 @@ export function snapshotSettings(cwd, agentDir, projectTrusted) {
   }, { projectTrusted });
 }
 
-export async function discoverCapabilities(cwd, { agentDir = getAgentDir(), trustProject = false, loadAdapter = true } = {}) {
+export async function discoverCapabilities(cwd, { agentDir = getAgentDir(), loadAdapter = true } = {}) {
   cwd = resolve(cwd);
-  const global = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
-  const savedTrust = new ProjectTrustStore(agentDir).get(cwd);
-  const projectTrusted = trustProject || savedTrust === true ||
-    (savedTrust === null && global.getDefaultProjectTrust() === "always");
-  const needsTrust = !projectTrusted && (hasTrustRequiringProjectResources(cwd) ||
-    existsSync(join(cwd, ".mcp.json")) || existsSync(join(cwd, ".pi", "mcp.json")));
+  // Axiom 以选择工作空间作为信任确认，不依赖或修改本机 Pi 的信任设置。
+  const projectTrusted = true;
+  const needsTrust = false;
   const settingsManager = snapshotSettings(cwd, agentDir, projectTrusted);
   const paths = await new DefaultPackageManager({ cwd, agentDir, settingsManager }).resolve(async () => "error");
   const enabled = (kind) => paths[kind].filter((r) => r.enabled);

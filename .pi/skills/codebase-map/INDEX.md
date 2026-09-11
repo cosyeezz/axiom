@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/11 00:33:56）
+# Axiom 多级代码索引（生成于 2026/9/11 02:48:21）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -19,7 +19,7 @@
 | scripts/autostart.mjs | 133 | Windows/macOS/Linux 当前用户登录自动启动安装/卸载 | run, projectDir, serviceEntry, label |
 | scripts/install.mjs | 86 | 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器 | root, parseArgs, nodeOk, openCommand |
 | scripts/service.mjs | 119 | 服务守护：IPC 快速/重建重启与安装构建失败反馈 | root, output, run, npmRun |
-| src/capabilities.js | 115 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
+| src/capabilities.js | 111 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/compaction.js | 351 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
 | src/main.js | 60 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, factory, home |
@@ -34,7 +34,7 @@
 | tests/app.test.js | 1324 | node --test 测试（npm test） | pickerSource, contrastSource |
 | tests/autostart.test.js | 60 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
-| tests/capabilities.test.js | 85 | node --test 测试（npm test） | - |
+| tests/capabilities.test.js | 89 | node --test 测试（npm test） | - |
 | tests/codebase-index.test.js | 20 | node --test 测试（npm test） | ROOT, SKILL |
 | tests/compaction-config.test.js | 105 | node --test 测试（npm test） | - |
 | tests/compaction.test.js | 737 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
@@ -373,18 +373,18 @@
 | start | method | 113 |
 | invoked | const | 117 |
 
-### src/capabilities.js（115 行） — 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities）
+### src/capabilities.js（111 行） — 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| sdkEntry | const | 12 |
-| resolver | const | 13 |
-| alias | const | 14 |
-| jiti | const | 21 |
-| snapshotSettings | function | 23 |
-| discoverCapabilities | function | 36 |
-| resolveCapabilities | function | 72 |
-| capabilityLoader | function | 84 |
+| sdkEntry | const | 11 |
+| resolver | const | 12 |
+| alias | const | 13 |
+| jiti | const | 20 |
+| snapshotSettings | function | 22 |
+| discoverCapabilities | function | 35 |
+| resolveCapabilities | function | 68 |
+| capabilityLoader | function | 80 |
 
 ### src/compaction.js（351 行） — 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交
 
