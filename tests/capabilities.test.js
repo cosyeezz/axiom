@@ -100,7 +100,8 @@ test("missing saved skills do not block another workspace or startup; broken his
     const id = await first.create(a);
     const other = await first.create(b);
     assert.deepEqual(first.get(other).capabilities.skills, []);
-    assert.deepEqual(first.getDefaults().capabilities, custom);
+    assert.deepEqual((await first.workspaceDefaults(a)).capabilities, custom);
+    assert.deepEqual(first.getDefaults().capabilities.skills, []);
     await first.rename(id, "history survives");
     await first.close();
     await rm(skill);

@@ -1,5 +1,6 @@
+import { realpath } from "node:fs/promises";
 import { inlineImagesExtension } from "./inline-images.js";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve, relative, isAbsolute, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
 import {
@@ -33,7 +34,8 @@ export function snapshotSettings(cwd, agentDir, projectTrusted) {
 }
 
 export async function discoverCapabilities(cwd, { agentDir = getAgentDir(), loadAdapter = true } = {}) {
-  cwd = resolve(cwd);
+  // 与保存配置/创建会话使用同一真实目录，避免符号链接产生两套技能 ID。
+  cwd = await realpath(resolve(cwd));
   // Axiom 以选择工作空间作为信任确认，不依赖或修改本机 Pi 的信任设置。
   const projectTrusted = true;
   const needsTrust = false;
@@ -53,7 +55,14 @@ export async function discoverCapabilities(cwd, { agentDir = getAgentDir(), load
   }
   const catalog = {
     cwd, projectTrusted, needsTrust,
-    skills: skills.skills.map((s) => ({ id: s.filePath, name: s.name, description: s.description })),
+    skills: skills.skills.map((s) => {
+      const source = enabled("skills").find((entry) => {
+        const path = relative(entry.path, s.filePath);
+        return path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path);
+      });
+      return { id: s.filePath, name: s.name, description: s.description,
+        scope: source?.metadata.scope === "project" ? "project" : "global" };
+    }),
     plugins: plugins.filter((r) => r !== adapter).map((r) => ({
       id: r.path,
       name: r.metadata.origin === "package" ? `${r.metadata.source} · ${basename(r.path)}` : basename(r.path),

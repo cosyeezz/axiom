@@ -1,11 +1,11 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/11 03:17:08）
+# Axiom 多级代码索引（生成于 2026/9/11 03:42:05）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| public/app.js | 2352 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, allSessions |
+| public/app.js | 2353 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, allSessions |
 | public/file-picker.css | 269 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 351 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/index.html | 262 | 页面骨架与元素 id（见 L3） | - |
@@ -20,7 +20,7 @@
 | scripts/dev.mjs | 12 | 开发入口：DEV 标识、4320 端口与独立数据目录 | - |
 | scripts/install.mjs | 86 | 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器 | root, parseArgs, nodeOk, openCommand |
 | scripts/service.mjs | 119 | 服务守护：IPC 快速/重建重启与安装构建失败反馈 | root, output, run, npmRun |
-| src/capabilities.js | 116 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
+| src/capabilities.js | 125 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/compaction.js | 374 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
 | src/main.js | 64 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, factory, home |
@@ -28,14 +28,14 @@
 | src/protocol.js | 167 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/retry.js | 149 | 模型失败重试：可取消退避、最多30次、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_RETRIES, delayFor, MAX_TIMEOUT_MS |
 | src/server.js | 230 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | assets, createServerApp |
-| src/sessions.js | 777 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | BROWSE_PAGE, resolveDir, parentOf, absoluteCrumbs |
+| src/sessions.js | 836 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | BROWSE_PAGE, resolveDir, parentOf, absoluteCrumbs |
 | src/tasks.js | 107 | Tasks：子任务（委托）生命周期 | Tasks |
 | src/tools.js | 97 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, greater, checkUpdate |
-| tests/app.test.js | 1519 | node --test 测试（npm test） | pickerSource, contrastSource |
+| tests/app.test.js | 1521 | node --test 测试（npm test） | pickerSource, contrastSource |
 | tests/autostart.test.js | 60 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
-| tests/capabilities.test.js | 161 | node --test 测试（npm test） | - |
+| tests/capabilities.test.js | 162 | node --test 测试（npm test） | - |
 | tests/codebase-index.test.js | 20 | node --test 测试（npm test） | ROOT, SKILL |
 | tests/compaction-config.test.js | 105 | node --test 测试（npm test） | - |
 | tests/compaction-ui.py | 57 | node --test 测试（npm test） | - |
@@ -52,6 +52,7 @@
 | tests/markdown.test.js | 72 | node --test 测试（npm test） | - |
 | tests/message-activity.test.js | 191 | node --test 测试（npm test） | page, assistant, thought, call |
 | tests/presets.test.js | 102 | node --test 测试（npm test） | makeFactory |
+| tests/project-skills.test.js | 57 | node --test 测试（npm test） | - |
 | tests/recall.test.js | 94 | node --test 测试（npm test） | user, assistant, thinking, fixture |
 | tests/retry.test.js | 340 | node --test 测试（npm test） | RATE_LIMIT, QUOTA, ABORTED, fakeSession |
 | tests/server.test.js | 125 | node --test 测试（npm test） | - |
@@ -69,7 +70,7 @@
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
-### public/app.js（2352 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
+### public/app.js（2353 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -238,12 +239,12 @@
 | fill | method | 2122 |
 | fillThinking | method | 2130 |
 | options | method | 2132 |
-| loadCreation | function | 2178 |
-| openCreation | function | 2212 |
-| rememberCreation | const | 2233 |
-| updateDefaultsPreview | function | 2265 |
-| updateDefaultsPreview | method | 2285 |
-| controls | method | 2339 |
+| loadCreation | function | 2179 |
+| openCreation | function | 2213 |
+| rememberCreation | const | 2234 |
+| updateDefaultsPreview | function | 2266 |
+| updateDefaultsPreview | method | 2286 |
+| controls | method | 2340 |
 
 ### public/file-picker.js（351 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 
@@ -391,18 +392,18 @@
 | start | method | 113 |
 | invoked | const | 117 |
 
-### src/capabilities.js（116 行） — 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities）
+### src/capabilities.js（125 行） — 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| sdkEntry | const | 11 |
-| resolver | const | 12 |
-| alias | const | 13 |
-| jiti | const | 20 |
-| snapshotSettings | function | 22 |
-| discoverCapabilities | function | 35 |
-| resolveCapabilities | function | 68 |
-| capabilityLoader | function | 85 |
+| sdkEntry | const | 12 |
+| resolver | const | 13 |
+| alias | const | 14 |
+| jiti | const | 21 |
+| snapshotSettings | function | 23 |
+| discoverCapabilities | function | 36 |
+| resolveCapabilities | function | 77 |
+| capabilityLoader | function | 94 |
 
 ### src/compaction.js（374 行） — 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交
 
@@ -494,7 +495,7 @@
 | assets | const | 7 |
 | createServerApp | function | 30 |
 
-### src/sessions.js（777 行） — Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化
+### src/sessions.js（836 行） — Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -506,36 +507,37 @@
 | hostLocations | function | 79 |
 | Sessions | class | 94 |
 | constructor | method | 95 |
-| loadDefaults | method | 106 |
-| getDefaults | method | 115 |
-| configureDefaults | method | 118 |
-| saveDefaults | method | 123 |
-| validateSelection | method | 141 |
-| validateCompaction | method | 162 |
-| listPresets | method | 180 |
-| mutatePresets | method | 191 |
-| savePreset | method | 212 |
-| deletePreset | method | 227 |
-| load | method | 236 |
-| persist | method | 255 |
-| list | method | 274 |
-| rename | method | 285 |
-| importSession | method | 294 |
-| create | method | 322 |
-| scheduleTaskNotifications | method | 490 |
-| deliverTaskNotifications | method | 502 |
-| get | method | 524 |
-| revealWorkspace | method | 529 |
-| browse | method | 543 |
-| listFiles | method | 549 |
-| snapshot | method | 607 |
-| subscribe | method | 635 |
-| configure | method | 641 |
-| prompt | method | 675 |
-| withdraw | method | 725 |
-| cancel | method | 740 |
-| remove | method | 758 |
-| close | method | 773 |
+| loadDefaults | method | 107 |
+| getDefaults | method | 126 |
+| workspaceDefaults | method | 129 |
+| configureDefaults | method | 147 |
+| saveDefaults | method | 152 |
+| validateSelection | method | 200 |
+| validateCompaction | method | 221 |
+| listPresets | method | 239 |
+| mutatePresets | method | 250 |
+| savePreset | method | 271 |
+| deletePreset | method | 286 |
+| load | method | 295 |
+| persist | method | 314 |
+| list | method | 333 |
+| rename | method | 344 |
+| importSession | method | 353 |
+| create | method | 381 |
+| scheduleTaskNotifications | method | 549 |
+| deliverTaskNotifications | method | 561 |
+| get | method | 583 |
+| revealWorkspace | method | 588 |
+| browse | method | 602 |
+| listFiles | method | 608 |
+| snapshot | method | 666 |
+| subscribe | method | 694 |
+| configure | method | 700 |
+| prompt | method | 734 |
+| withdraw | method | 784 |
+| cancel | method | 799 |
+| remove | method | 817 |
+| close | method | 832 |
 
 ### src/tasks.js（107 行） — Tasks：子任务（委托）生命周期
 
@@ -571,7 +573,7 @@
 | greater | const | 11 |
 | checkUpdate | function | 18 |
 
-### tests/app.test.js（1519 行） — node --test 测试（npm test）
+### tests/app.test.js（1521 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
