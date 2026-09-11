@@ -172,3 +172,9 @@
 - 症状：worktree 的 node_modules junction 无效；浏览器长内容验收误打开旧会话，截图偶现吸顶标题短暂空白；重复样例变成未解析 Markdown。
 - 根因：Python 普通字符串里的反斜杠 a 被转为 bell；预览初次异步恢复覆盖过早写入的 session ID；滚动后未等合成帧；Markdown 代码围栏与下段之间缺换行。
 - 修复/防再犯：junction 用 PowerShell New-Item -ItemType Junction；预览切换前等待初次工作区恢复，reload 后核验 ID；截图等待滚动稳定，动画选择可见元素并检查 transform 确实变化；长 Markdown 样例用双换行连接，修改 public/ 后重启预览。对应 tests/conversation-ui.py 与 conversation-preview.mjs。
+
+### 2026-09-10 图片占位不能只靠末尾说明关联
+- 症状：每条消息追加编号说明，模型附件仍堆在正文末尾。
+- 根因：SDK 普通发送及队列采用 [text,...images]，正文标记没有改变真实图片位置。
+- 修复：inline-images.js 内置 context 钩子只转换模型副本，按首次有效标记交错排列；app.js 不再追加说明。
+- 防再犯：保留原始存储与队列顺序；覆盖乱序、重复、悬空、漏标、纯图及不修改工具结果，已交错消息不重排。

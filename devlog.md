@@ -1,5 +1,9 @@
 # 开发记录
 
+## 2026-09-10 21:19 — 会话配色验收与合并
+- 用户确认合并并 push；三份只读复核已回收，无剩余阻塞。先在 feat/conversation-colors worktree 合入最新 origin/master，保留图片定位修复；knowledge.md 两侧记录均保留，INDEX.md 重新生成，不手工拼接行号。涉及这两份文档、本日志与仓库 devlog.md；不追加功能改动。
+- 合并后验证：npm test 86 通过、1 原有跳过、0 失败；重启静态预览后，Chromium 1440/390/320px 配色、吸顶、定位、转圈及减少动态效果检查通过，无浏览器错误。按流程推送功能分支、合并 master 并推送，再将截图/日志移出并清理 worktree；正式服务不在本次合并中重启。
+
 ## 2026-09-10 21:12 — 会话语义配色、动态状态与阅读体验
 - worktree MyWorkbench-conversation-colors / feat/conversation-colors。按用户三轮反馈保留 Linear 深色底，新增雾蓝读取/搜索、青绿命令/代码、暖金编辑/重点、柔紫思考/子代理；正文缩至 14px，思考 Markdown 斜体正常字重（代码保持正体）。状态改清晰旋转环，覆盖思考、连接、工具与子代理卡片/浮层/摘要，结束停止并尊重减少动态效果。
 - 去除工具输出、diff、系统提示词内部纵向限高，使用共享 sticky summary 和收起 SVG；原生键盘折叠、宽代码/表格横向滚动保留。子代理摘要改原生按钮，定位并聚焦会话内原卡片，不直接打开浮层；浏览器复现近底部跳转触发 onscroll 后重新跟随的问题，记录程序跳转位置并忽略同位置事件，实际滚动或回到最新可恢复，快照重置。
@@ -342,3 +346,9 @@
 
 ## 2026-09-10 — 隐藏内部任务通知
 - public/app.js 共享消息渲染入口隐藏内部任务完成通知，实时与历史共用，不改变模型上下文或后台投递。tests/app.test.js 覆盖字符串和内容块格式；同步 README 与索引。
+
+## 2026-09-10 图片按占位位置送入模型
+- 核实 Pi 0.85.1 TUI 粘贴：图片存临时文件，光标处插路径，正文原样提交，并非自动内联附件。
+- 删除 public/app.js 每条追加的编号说明；src/inline-images.js 经 capabilities.js 内置 context 扩展按标记首次位置插图，仅转换模型副本，保留队列/存储及重复、漏标兜底。
+- 更新 README、导航索引、knowledge；tests/inline-images.test.js 覆盖顺序与边界，app/capabilities 测试同步。
+- 验证：npm test 86 通过 / 0 失败 / 1 原有跳过；真实 SDK 扩展加载测试验证 context 注册，Codex Responses 转换器实测请求块顺序 text → image → text（不调用远端模型）。

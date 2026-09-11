@@ -46,6 +46,7 @@ scripts/autostart.mjs  Windows/macOS/Linux 用户登录自动启动注册
   │    └─ Tasks ── delegationTools（tools.js，注册给 pi 的委托工具）
   └─ pi.js createPiFactory → pi-coding-agent SDK（原生队列 + SessionManager JSONL）
        ├─ capabilities.js  模型/子代理/技能发现与解析
+       │    └─ inline-images.js  模型请求副本按正文占位交错排列图片
        └─ compaction.js    后台摘要 + 原生 turn 安全提交，保留检查点后的消息
 ```
 

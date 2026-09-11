@@ -911,7 +911,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("composer").requestSubmit();
     await settle();
     assert.equal(requests.findLast((req) => req.type === "prompt").images[0].mimeType, "image/png");
-    assert.match(requests.findLast((req) => req.type === "prompt").text, /^\[image1\]\n\n图片标记说明：/);
+    assert.equal(requests.findLast((req) => req.type === "prompt").text, "[image1]");
     assert.equal($("image-attachments").hidden, true);
     assert.equal($("output").querySelectorAll(".message-images img").length, 1);
     const sentImage = $("output").querySelector(".message-images img");

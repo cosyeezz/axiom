@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { inlineImagesExtension } from "./inline-images.js";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
@@ -83,7 +84,7 @@ export function resolveCapabilities(selection, catalog) {
 export function capabilityLoader(resources, selection, customTools) {
   const { catalog, settingsManager, paths, adapter, mcpConfig, createMcpAdapter, cwd, agentDir } = resources;
   const selected = resolveCapabilities(selection, catalog);
-  const factories = [];
+  const factories = [{ name: "axiom-inline-images", factory: inlineImagesExtension }];
   if (adapter && (selection == null || selected.mcp.length)) {
     factories.push({ name: "axiom-mcp", factory: createMcpAdapter({ config: {
       ...mcpConfig,
