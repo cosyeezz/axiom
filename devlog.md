@@ -1,5 +1,10 @@
 # 开发记录
 
+## 2026-09-11 — 中断与重启后的 Working 收尾
+- public/app.js：paintCallGroup 原先仅按后续正文 messageFolded 判断运行，末尾没有回答的中断记录在 idle 快照仍转圈。复用 waiting/stopActivity 统一记录各主/子代理输出区实际活动状态；状态控制 Working/Stopped/Completed，不改变正文边界折叠，不在工具间隙提前结束。
+- tests/message-activity.test.js 增加实际事件→工具失败→idle→重启快照回归，验证活动结束与展开选择保持；npm test 145 项：144 通过、0 失败、1 跳过。
+- README.md 同步行为，复用现有图标/样式，无新依赖。主动中断不自动重放有副作用的命令；继续使用现有消息入口。
+
 ## 2026-09-11 — 桌面发布最终验证
 - 修正 tests/app.test.js、tests/message-activity.test.js 过时断言：精准选择 thinking-record 而非新增外层 details；按已实现的思考自动展开/结束收起、逐消息模型用量、工具状态规则验证；保留历史思考懒渲染、XSS 与错误状态覆盖。未修改产品行为。
 - 最终 npm test：144 项，143 通过、0 失败、1 原有跳过；第二批发布 MSI 再次通过解包/进程/窗口与页面标题验收。两平台安装包 SHA256 检查通过。

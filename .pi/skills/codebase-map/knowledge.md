@@ -1,5 +1,12 @@
 # 坑与 bug 知识库（自成长：只追加，不删改历史）
 
+### 2026-09-11 强制中断重启后执行过程仍 Working
+- 症状：末尾工具调用失败或中断，没有最终正文，重启后仍显示 Working。
+- 根因：paintCallGroup 将“没有后续消息折叠”误当成“Agent 仍运行”；stopActivity 只停止内层记录，外层忽略代理状态。
+- 修复：waiting/stopActivity 在对应输出区记录实际活动状态，paintCallGroup 同时检查活动与消息边界；终态失败/停止显示 Stopped。
+- 防再犯：tests/message-activity.test.js 覆盖失败后工具间隙仍 Working、idle 收尾、快照重建不复活，不以每个工具完成判整轮结束。
+
+
 ### 2026-09-11 执行过程 UI 改版后测试仍假定旧 DOM
 - 症状：app.test.js、message-activity.test.js 三项基线失败，阻塞桌面打包集成。
 - 根因：测试选到了新外层 details，并仍假定思考流默认折叠、工具步骤隐藏模型信息、旧中文状态标签。

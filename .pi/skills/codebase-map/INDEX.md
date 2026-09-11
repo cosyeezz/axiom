@@ -1,11 +1,11 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/11 12:51:13）
+# Axiom 多级代码索引（生成于 2026/9/11 12:59:48）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| public/app.js | 2663 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, sessionMissing |
+| public/app.js | 2668 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, sessionMissing |
 | public/file-picker.css | 269 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 351 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/index.html | 258 | 页面骨架与元素 id（见 L3） | - |
@@ -52,7 +52,7 @@
 | tests/inline-images.test.js | 42 | node --test 测试（npm test） | text, a, b, user |
 | tests/install.test.js | 24 | node --test 测试（npm test） | - |
 | tests/markdown.test.js | 72 | node --test 测试（npm test） | - |
-| tests/message-activity.test.js | 202 | node --test 测试（npm test） | page, assistant, thought, call |
+| tests/message-activity.test.js | 224 | node --test 测试（npm test） | page, assistant, thought, call |
 | tests/presets.test.js | 102 | node --test 测试（npm test） | makeFactory |
 | tests/project-skills.test.js | 57 | node --test 测试（npm test） | - |
 | tests/recall.test.js | 94 | node --test 测试（npm test） | user, assistant, thinking, fixture |
@@ -76,7 +76,7 @@
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
-### public/app.js（2663 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
+### public/app.js（2668 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -140,138 +140,139 @@
 | scheduleCallGroups | function | 332 |
 | createCallGroup | function | 341 |
 | paintCallGroup | function | 355 |
-| refreshCallGroups | function | 380 |
-| foldCallsBeforeMessage | function | 464 |
-| paintCallGroup | method | 468 |
-| disclosureHint | function | 470 |
-| activityLine | function | 490 |
-| setActivity | method | 500 |
-| setActivity | function | 503 |
-| scheduleCallGroups | method | 504 |
-| setActivityIcon | method | 506 |
-| waiting | function | 517 |
-| scrollLatest | method | 523 |
-| clearWaiting | function | 525 |
-| stopActivity | function | 529 |
-| scheduleCallGroups | method | 530 |
-| clearWaiting | method | 531 |
-| updateActivity | function | 540 |
-| setActivity | method | 553 |
-| setActivity | method | 554 |
-| mergeThoughts | function | 558 |
-| diffView | const | 576 |
-| renderToolDetail | function | 581 |
-| section | method | 667 |
-| toolState | function | 669 |
-| clearWaiting | method | 671 |
-| setActivity | method | 715 |
-| renderToolDetail | method | 716 |
-| scrollLatest | method | 717 |
-| card | function | 719 |
-| renderMessage | function | 770 |
-| updateActivity | method | 863 |
-| renderCompactionStatus | function | 866 |
-| trackTaskEntries | function | 883 |
-| placeCompactedTasks | function | 894 |
-| compactionCard | function | 903 |
-| renderMarkdown | method | 921 |
-| foldCompaction | function | 924 |
-| placeCompactedTasks | method | 944 |
-| mergeThoughts | method | 945 |
-| compactionEditor | function | 949 |
-| options | method | 985 |
-| fillThinking | method | 1013 |
-| renderTaskRuns | function | 1021 |
-| renderQueue | function | 1049 |
-| retryCards | const | 1066 |
-| retryFailures | const | 1067 |
-| renderRetry | function | 1068 |
-| scrollLatest | method | 1105 |
-| event | function | 1107 |
-| snapshot | function | 1266 |
-| clearTimeout | method | 1268 |
-| updatePageTitle | method | 1286 |
-| renderTaskRuns | method | 1293 |
-| renderCompactionStatus | method | 1299 |
-| mergeThoughts | method | 1357 |
-| placeCompactedTasks | method | 1371 |
-| renderImages | method | 1384 |
-| closeCompletion | method | 1387 |
-| renderQueue | method | 1398 |
-| applyConfig | method | 1400 |
-| controls | method | 1402 |
-| reconnectTimer | const | 1404 |
-| clearTimeout | method | 1408 |
-| controls | method | 1411 |
-| scheduleReconnect | function | 1506 |
-| clearTimeout | method | 1507 |
-| serviceVersion | const | 1511 |
-| importDir | const | 1512 |
-| restartNames | const | 1513 |
-| restartDescriptions | const | 1514 |
-| controls | method | 1538 |
-| fillModels | method | 1550 |
-| fillSubagentModels | method | 1557 |
-| closeCompletion | method | 1574 |
-| controls | method | 1579 |
-| scrollLatest | method | 1584 |
-| enableImagePreview | function | 1616 |
-| renderImages | function | 1637 |
-| addImages | function | 1662 |
-| loadImages | function | 1683 |
-| renderImages | method | 1692 |
-| selectionCopy | const | 1715 |
-| copySelection | function | 1727 |
-| escapeTimer | const | 1790 |
-| withdrawQueue | function | 1791 |
-| refreshing | const | 1871 |
-| refreshSessions | function | 1872 |
-| updatePageTitle | function | 1883 |
-| updateSessions | function | 1887 |
-| updatePageTitle | method | 1899 |
-| renderSessions | method | 1900 |
-| recoverMissingSession | function | 1902 |
-| saveView | method | 1904 |
-| controls | method | 1908 |
-| switchSession | function | 1924 |
-| saveView | method | 1926 |
-| controls | method | 1929 |
-| renderSessions | function | 1951 |
-| sessionAction | const | 2064 |
-| openSessionAction | function | 2065 |
-| contextIcon | function | 2106 |
-| renderContextChips | function | 2109 |
-| renderContextResults | function | 2127 |
-| showContextSkills | function | 2147 |
-| positionContextSkills | function | 2152 |
-| showContextSkills | method | 2164 |
-| controls | method | 2199 |
-| skillTrigger | const | 2201 |
-| showContextSkills | method | 2217 |
-| resizePrompt | method | 2226 |
-| controls | method | 2227 |
-| closeCompletion | function | 2230 |
-| highlightCompletion | function | 2238 |
-| chooseCompletion | function | 2247 |
-| closeCompletion | method | 2257 |
-| updateCompletion | function | 2260 |
-| closeCompletion | method | 2261 |
-| resizePrompt | method | 2314 |
-| controls | method | 2315 |
-| switchSession | method | 2355 |
-| creationLoad | const | 2366 |
-| refreshPresets | function | 2367 |
-| createAgentPicker | function | 2402 |
-| options | method | 2424 |
-| fill | method | 2432 |
-| fillThinking | method | 2440 |
-| options | method | 2442 |
-| loadCreation | function | 2489 |
-| openCreation | function | 2523 |
-| rememberCreation | const | 2544 |
-| updateDefaultsPreview | function | 2576 |
-| updateDefaultsPreview | method | 2596 |
-| controls | method | 2650 |
+| refreshCallGroups | function | 382 |
+| foldCallsBeforeMessage | function | 466 |
+| paintCallGroup | method | 470 |
+| disclosureHint | function | 472 |
+| activityLine | function | 492 |
+| setActivity | method | 502 |
+| setActivity | function | 505 |
+| scheduleCallGroups | method | 506 |
+| setActivityIcon | method | 508 |
+| waiting | function | 519 |
+| scheduleCallGroups | method | 521 |
+| scrollLatest | method | 527 |
+| clearWaiting | function | 529 |
+| stopActivity | function | 533 |
+| scheduleCallGroups | method | 535 |
+| clearWaiting | method | 536 |
+| updateActivity | function | 545 |
+| setActivity | method | 558 |
+| setActivity | method | 559 |
+| mergeThoughts | function | 563 |
+| diffView | const | 581 |
+| renderToolDetail | function | 586 |
+| section | method | 672 |
+| toolState | function | 674 |
+| clearWaiting | method | 676 |
+| setActivity | method | 720 |
+| renderToolDetail | method | 721 |
+| scrollLatest | method | 722 |
+| card | function | 724 |
+| renderMessage | function | 775 |
+| updateActivity | method | 868 |
+| renderCompactionStatus | function | 871 |
+| trackTaskEntries | function | 888 |
+| placeCompactedTasks | function | 899 |
+| compactionCard | function | 908 |
+| renderMarkdown | method | 926 |
+| foldCompaction | function | 929 |
+| placeCompactedTasks | method | 949 |
+| mergeThoughts | method | 950 |
+| compactionEditor | function | 954 |
+| options | method | 990 |
+| fillThinking | method | 1018 |
+| renderTaskRuns | function | 1026 |
+| renderQueue | function | 1054 |
+| retryCards | const | 1071 |
+| retryFailures | const | 1072 |
+| renderRetry | function | 1073 |
+| scrollLatest | method | 1110 |
+| event | function | 1112 |
+| snapshot | function | 1271 |
+| clearTimeout | method | 1273 |
+| updatePageTitle | method | 1291 |
+| renderTaskRuns | method | 1298 |
+| renderCompactionStatus | method | 1304 |
+| mergeThoughts | method | 1362 |
+| placeCompactedTasks | method | 1376 |
+| renderImages | method | 1389 |
+| closeCompletion | method | 1392 |
+| renderQueue | method | 1403 |
+| applyConfig | method | 1405 |
+| controls | method | 1407 |
+| reconnectTimer | const | 1409 |
+| clearTimeout | method | 1413 |
+| controls | method | 1416 |
+| scheduleReconnect | function | 1511 |
+| clearTimeout | method | 1512 |
+| serviceVersion | const | 1516 |
+| importDir | const | 1517 |
+| restartNames | const | 1518 |
+| restartDescriptions | const | 1519 |
+| controls | method | 1543 |
+| fillModels | method | 1555 |
+| fillSubagentModels | method | 1562 |
+| closeCompletion | method | 1579 |
+| controls | method | 1584 |
+| scrollLatest | method | 1589 |
+| enableImagePreview | function | 1621 |
+| renderImages | function | 1642 |
+| addImages | function | 1667 |
+| loadImages | function | 1688 |
+| renderImages | method | 1697 |
+| selectionCopy | const | 1720 |
+| copySelection | function | 1732 |
+| escapeTimer | const | 1795 |
+| withdrawQueue | function | 1796 |
+| refreshing | const | 1876 |
+| refreshSessions | function | 1877 |
+| updatePageTitle | function | 1888 |
+| updateSessions | function | 1892 |
+| updatePageTitle | method | 1904 |
+| renderSessions | method | 1905 |
+| recoverMissingSession | function | 1907 |
+| saveView | method | 1909 |
+| controls | method | 1913 |
+| switchSession | function | 1929 |
+| saveView | method | 1931 |
+| controls | method | 1934 |
+| renderSessions | function | 1956 |
+| sessionAction | const | 2069 |
+| openSessionAction | function | 2070 |
+| contextIcon | function | 2111 |
+| renderContextChips | function | 2114 |
+| renderContextResults | function | 2132 |
+| showContextSkills | function | 2152 |
+| positionContextSkills | function | 2157 |
+| showContextSkills | method | 2169 |
+| controls | method | 2204 |
+| skillTrigger | const | 2206 |
+| showContextSkills | method | 2222 |
+| resizePrompt | method | 2231 |
+| controls | method | 2232 |
+| closeCompletion | function | 2235 |
+| highlightCompletion | function | 2243 |
+| chooseCompletion | function | 2252 |
+| closeCompletion | method | 2262 |
+| updateCompletion | function | 2265 |
+| closeCompletion | method | 2266 |
+| resizePrompt | method | 2319 |
+| controls | method | 2320 |
+| switchSession | method | 2360 |
+| creationLoad | const | 2371 |
+| refreshPresets | function | 2372 |
+| createAgentPicker | function | 2407 |
+| options | method | 2429 |
+| fill | method | 2437 |
+| fillThinking | method | 2445 |
+| options | method | 2447 |
+| loadCreation | function | 2494 |
+| openCreation | function | 2528 |
+| rememberCreation | const | 2549 |
+| updateDefaultsPreview | function | 2581 |
+| updateDefaultsPreview | method | 2601 |
+| controls | method | 2655 |
 
 ### public/file-picker.js（351 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 
@@ -713,7 +714,7 @@
 | user | const | 8 |
 | inlineImagesExtension | method | 32 |
 
-### tests/message-activity.test.js（202 行） — node --test 测试（npm test）
+### tests/message-activity.test.js（224 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
