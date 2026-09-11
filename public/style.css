@@ -132,6 +132,9 @@ summary {
   color: var(--muted);
   margin: 16px 8px 8px;
 }
+.workspace-group { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; border-top: 1px solid var(--line); padding-top: 12px; }
+.workspace-group[data-current="true"] { color: var(--accent-ink); }
+.workspace-group small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; font-weight: 400; }
 .session-row { display: flex; align-items: center; min-width: 0; padding-right: 4px; border: 1px solid transparent; border-radius: 8px; }
 .session-row:hover, .session-row:focus-within { background: var(--surface); }
 .session-actions { display: flex; flex: 0 0 auto; gap: 2px; }

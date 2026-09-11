@@ -30,7 +30,7 @@ let images = [], imageLoading = false;
 let completionVersion = 0, completionToken, completionEntries = [], completionIndex = 0;
 let selectedSkill = "", contextFiles = [], pickingWorkspace = false, currentCwd = "";
 try {
-  sessionId = localStorage.getItem("axiom.session") || undefined;
+  sessionId = new URLSearchParams(location.hash.slice(1)).get("session") || sessionStorage.getItem("axiom.session") || localStorage.getItem("axiom.session") || undefined;
 } catch {}
 let hiddenSessions = new Set();
 try {
@@ -43,7 +43,7 @@ try {
   if (Array.isArray(saved)) sessionOrder = saved.filter((id) => typeof id === "string");
 } catch {}
 function setSessionHidden(id, hidden) {
-  if (!allSessions.some((s) => s.id === id && s.cwd === $("workspace-label").textContent)) return;
+  if (!allSessions.some((s) => s.id === id)) return;
   hidden ? hiddenSessions.add(id) : hiddenSessions.delete(id);
   try { localStorage.setItem("axiom.hiddenSessions", JSON.stringify([...hiddenSessions])); }
   catch { error("无法保存隐藏状态，刷新后可能丢失"); }
@@ -1088,8 +1088,9 @@ function snapshot(state) {
   scrollFrame = undefined;
   sessionId = state.sessionId;
   try {
-    localStorage.setItem("axiom.session", sessionId);
+    sessionStorage.setItem("axiom.session", sessionId);
   } catch {}
+  history.replaceState(null, "", `#${new URLSearchParams({ session: sessionId })}`);
   $("session-title").textContent = state.title || "新会话";
   currentCwd = state.cwd;
   $("workspace-label").textContent = state.cwd;
@@ -1669,8 +1670,15 @@ function refreshSessions() {
   });
   return refreshing;
 }
+// ponytail: 可见页面每 5 秒刷新后台状态；需要即时通知时再增加列表事件订阅。
+setInterval(() => {
+  if (connected && !changing && !document.hidden) void refreshSessions().catch(error);
+}, 5000);
 async function updateSessions() {
-  allSessions = await request("sessions.list");
+  const sessions = await request("sessions.list");
+  const listState = (items) => JSON.stringify(items.map(({ id, title, cwd, status }) => ({ id, title, cwd, status })));
+  if (listState(sessions) === listState(allSessions)) return;
+  allSessions = sessions;
   const active = allSessions.find((s) => s.id === sessionId);
   if (active) $("session-title").textContent = active.title;
   renderSessions();
@@ -1683,6 +1691,7 @@ async function switchSession(action) {
   controls();
   try {
     snapshot(await action());
+    renderSessions();
     if (mobile.matches) sidebar(false);
     await refreshSessions();
   } catch (e) {
@@ -1701,8 +1710,7 @@ function renderSessions() {
   today.setHours(0, 0, 0, 0);
   const matched = allSessions.filter(
     (s) =>
-      s.cwd === $("workspace-label").textContent &&
-      s.title.toLowerCase().includes(query),
+      `${s.title} ${s.cwd}`.toLowerCase().includes(query),
   );
   const rank = (s) => {
     const at = sessionOrder.indexOf(s.id);
@@ -1775,6 +1783,7 @@ function renderSessions() {
     actions.className = "session-actions";
     for (const [kind, label, path] of [
       ["hide", hidden ? "恢复会话" : "完成并隐藏", hidden ? 'M12 20V4M5 11l7-7 7 7' : 'M5 12l4 4L19 6'],
+      ["open", "在新标签页打开", 'M14 3h7v7M21 3l-10 10M10 3H3v18h18v-7'],
       ["rename", "重命名", 'M16 3l5 5L8 21H3v-5L16 3zM13 6l5 5M3 16l5 5'],
       ["delete", "删除会话", 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7'],
     ]) {
@@ -1783,24 +1792,53 @@ function renderSessions() {
       action.className = `session-${kind}`;
       action.title = label;
       action.setAttribute("aria-label", `${label}：${s.title}`);
-      if (kind !== "hide") action.setAttribute("aria-haspopup", "dialog");
+      if (["rename", "delete"].includes(kind)) action.setAttribute("aria-haspopup", "dialog");
       action.disabled = kind !== "hide" && (!connected || changing);
       action.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
-      action.onclick = () => kind === "hide" ? setSessionHidden(s.id, !hidden) : openSessionAction(kind, s);
+      action.onclick = () => kind === "open"
+        ? window.open(`/#${new URLSearchParams({ session: s.id })}`, "_blank", "noopener")
+        : kind === "hide" ? setSessionHidden(s.id, !hidden) : openSessionAction(kind, s);
       actions.append(action);
     }
     row.append(button, actions);
     (hidden ? hiddenFragment : fragment).append(row);
   };
-  for (const s of idle) addRow(s);
-  if (active.length) {
+  const workspaces = [...new Set(allSessions.map((s) => s.cwd))];
+  const heading = (cwd, target) => {
     const label = document.createElement("p");
-    label.className = "session-group";
-    label.textContent = "待处理";
-    fragment.append(label);
-    for (const s of active) addRow(s);
+    label.className = "session-group workspace-group";
+    label.textContent = cwd.replaceAll("\\", "/").replace(/\/$/, "").split("/").pop() || cwd;
+    label.title = cwd;
+    label.dataset.current = String(cwd === currentCwd);
+    const running = allSessions.filter((s) => s.cwd === cwd && s.status !== "idle").length;
+    if (running) label.append(document.createTextNode(` · ${running} 运行中`));
+    const path = document.createElement("small");
+    path.textContent = cwd;
+    label.append(path);
+    target.append(label);
+  };
+  for (const cwd of workspaces) {
+    const visible = idle.filter((s) => s.cwd === cwd);
+    const running = active.filter((s) => s.cwd === cwd);
+    const hidden = done.filter((s) => s.cwd === cwd);
+    if (visible.length || running.length) {
+      heading(cwd, fragment);
+      group = undefined;
+      for (const s of visible) addRow(s);
+      if (running.length) {
+        const label = document.createElement("p");
+        label.className = "session-group";
+        label.textContent = "待处理";
+        fragment.append(label);
+        group = "今天";
+        for (const s of running) addRow(s);
+      }
+    }
+    if (hidden.length) {
+      heading(cwd, hiddenFragment);
+      for (const s of hidden) addRow(s);
+    }
   }
-  for (const s of done) addRow(s);
   $("hidden-session-summary").textContent = `已完成`;
   $("hidden-sessions").replaceChildren(hiddenFragment);
   if (!fragment.childNodes.length) {
