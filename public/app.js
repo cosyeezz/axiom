@@ -368,6 +368,7 @@ function scheduleCallGroups() {
 function createCallGroup() {
   const group = document.createElement('details');
   group.className = 'call-group';
+  group.open = true;
   const summary = document.createElement('summary');
   summary.setAttribute('aria-label', '展开或收起执行过程');
   const viewport = document.createElement('span');
@@ -388,9 +389,14 @@ function paintCallGroup(group) {
   group.hidden = !rows.length;
   if (!rows.length) return;
   const active = rows.filter(row => ['running', 'waiting', 'thinking'].includes(row.dataset.state));
-  const label = active.length ? 'Working' : rows.some(row => row.dataset.state === 'stopped') ? 'Stopped' : 'Completed';
+  const task = [...tasks.values()].find(task => task.output.contains(group));
+  const ownerRunning = task ? ['starting', 'running'].includes(task.node.dataset.status) : busy;
+  // Tool gaps are not turn completion: latch an active group until its owner finishes.
+  const running = group.dataset.messageFolded !== 'true' &&
+    (!!active.length || (group.dataset.active === 'true' && ownerRunning));
+  const label = running ? 'Working' : rows.some(row => row.dataset.state === 'stopped') ? 'Stopped' : 'Completed';
   const failed = rows.some(row => row.dataset.state === 'failed');
-  const icon = active.length ? 'waiting' : failed ? 'circle-failed' : label === 'Stopped' ? 'circle-stopped' : 'circle-done';
+  const icon = running ? 'waiting' : failed ? 'circle-failed' : label === 'Stopped' ? 'circle-stopped' : 'circle-done';
   const preview = group.firstElementChild.firstElementChild;
   const signature = `${label}:${icon}`;
   if (preview.dataset.signature !== signature) {
@@ -400,10 +406,8 @@ function paintCallGroup(group) {
     setActivityIcon(line.firstChild, icon);
     preview.replaceChildren(line);
   }
-  const running = String(!!active.length);
-  // Toggle only on lifecycle changes so manual expand/collapse stays usable.
-  if (group.dataset.active !== running) group.open = !!active.length;
-  group.dataset.active = running;
+  // Status controls the icon only; visible messages control automatic folding.
+  group.dataset.active = String(running);
   group.dataset.failed = String(failed);
 }
 function refreshCallGroups(output) {
@@ -465,6 +469,23 @@ function refreshCallGroups(output) {
     if (!node.lastElementChild.childElementCount) node.remove();
     else paintCallGroup(node);
   }
+  let hasFollowingMessage = false;
+  for (const node of [...output.children].reverse()) {
+    const item = messageItems.get(node);
+    // A message's own calls render after its prose, so only later messages close them.
+    if (hasFollowingMessage) {
+      if (node.classList.contains('call-group')) foldCallsBeforeMessage(node);
+      if (item?.callGroup) foldCallsBeforeMessage(item.callGroup);
+    }
+    if (item && !node.hidden && (item.buffer.trim() || item.images?.childElementCount))
+      hasFollowingMessage = true;
+  }
+}
+function foldCallsBeforeMessage(group) {
+  if (group.dataset.messageFolded === 'true') return;
+  group.dataset.messageFolded = 'true';
+  group.open = false;
+  paintCallGroup(group);
 }
 function disclosureHint(label = "详情") {
   const hint = document.createElement("span");
@@ -526,6 +547,7 @@ function clearWaiting(agentId) {
   waitingItems.delete(agentId);
 }
 function stopActivity(agentId, label = "已停止") {
+  scheduleCallGroups();
   clearWaiting(agentId);
   const item = live.get(agentId);
   if (item) {
