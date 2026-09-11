@@ -1673,7 +1673,7 @@ function refreshSessions() {
 }
 // ponytail: 可见页面每 5 秒刷新后台状态；需要即时通知时再增加列表事件订阅。
 setInterval(() => {
-  if (connected && !changing && !document.hidden) void refreshSessions().catch(error);
+  if (connected && !changing && !draggedSession && !document.hidden) void refreshSessions().catch(error);
 }, 5000);
 function updatePageTitle() {
   const workspace = currentCwd.replaceAll("\\", "/").replace(/\/$/, "").split("/").pop() || currentCwd;
@@ -1681,7 +1681,7 @@ function updatePageTitle() {
 }
 async function updateSessions() {
   const sessions = await request("sessions.list");
-  const listState = (items) => JSON.stringify(items.map(({ id, title, cwd, status }) => ({ id, title, cwd, status })));
+  const listState = (items) => JSON.stringify(items.map(({ id, title, cwd, status, updatedAt }) => ({ id, title, cwd, status, day: new Date(updatedAt).toDateString() })));
   if (listState(sessions) === listState(allSessions)) return;
   allSessions = sessions;
   const active = allSessions.find((s) => s.id === sessionId);
