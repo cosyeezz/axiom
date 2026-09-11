@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-11 01:30 — 跨目录能力继承与启动恢复隔离
+- 原因：默认/历史能力以绝对路径持久化，跨目录或卸载后与新清单不符；Sessions.load 将单会话失败传播至 main，导致服务退出，macOS/Windows 共用此缺陷。
+- src/capabilities.js 增加仅供默认继承/历史恢复使用的收窄选项，保持显式输入严格校验，错误包含具体 ID；src/sessions.js 对主/子选择取交集，保留 null/空集合/inherit 语义，不改写全局默认、不按名称替换或授予信任。load 逐文件隔离恢复失败并保留原文件，警告写服务日志。
+- tests/capabilities.test.js、tests/config.test.js 覆盖真实项目技能跨目录、删除技能后恢复、子代理继承、坏 JSON/目录消失隔离、Windows/POSIX 旧 ID 和显式提交拒绝。同步 README.md、codebase-map/knowledge.md 与生成索引；不新增依赖、不修改用户数据。
+- 验证：Windows 本机 npm test 114 通过、1 原有跳过、0 失败；git diff --check 通过。macOS 未实机运行，测试同时覆盖 Windows/POSIX 旧路径。
+
 ## 2026-09-10 21:52 — 紧凑原名工具行与模块强调
 - worktree MyWorkbench-conversation-labels / feat/conversation-labels。按用户六项反馈将工具/思考行缩至 12px/400、SVG 16px/底座 24px；工具显示原名（仅省略 functions. 前缀，完整名保留 title），powershell/pwsh 复用命令图标。思考/连接/准备调用使用 thinking / thinking... / connecting... / calling...，中文结果状态保留。
 - waiting/running 的等待图标隐藏 SVG，使用高低亮度分段 CSS 旋转环；不增加定时器，尊重 reduced-motion。SKILL 与 SUBAGENT 使用描边标识、语义底色和左侧色条，任务状态行允许换行；桌面工具行最小 36px，手机 44px 点击区域不变。缩短消息/角色标题/用量间距，正文 14px、1.8 行高不动，不改安全 Markdown、流式脏块或折叠惰性渲染。

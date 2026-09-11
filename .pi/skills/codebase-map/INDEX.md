@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/11 00:33:56）
+# Axiom 多级代码索引（生成于 2026/9/11 01:25:51）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -19,7 +19,7 @@
 | scripts/autostart.mjs | 133 | Windows/macOS/Linux 当前用户登录自动启动安装/卸载 | run, projectDir, serviceEntry, label |
 | scripts/install.mjs | 86 | 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器 | root, parseArgs, nodeOk, openCommand |
 | scripts/service.mjs | 119 | 服务守护：IPC 快速/重建重启与安装构建失败反馈 | root, output, run, npmRun |
-| src/capabilities.js | 115 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
+| src/capabilities.js | 120 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/compaction.js | 351 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
 | src/main.js | 60 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, factory, home |
@@ -27,18 +27,18 @@
 | src/protocol.js | 145 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/retry.js | 149 | 模型失败重试：可取消退避、最多30次、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_RETRIES, delayFor, MAX_TIMEOUT_MS |
 | src/server.js | 212 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | assets, createServerApp |
-| src/sessions.js | 618 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | BROWSE_PAGE, resolveDir, parentOf, absoluteCrumbs |
+| src/sessions.js | 632 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | BROWSE_PAGE, resolveDir, parentOf, absoluteCrumbs |
 | src/tasks.js | 107 | Tasks：子任务（委托）生命周期 | Tasks |
 | src/tools.js | 97 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, greater, checkUpdate |
 | tests/app.test.js | 1324 | node --test 测试（npm test） | pickerSource, contrastSource |
 | tests/autostart.test.js | 60 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
-| tests/capabilities.test.js | 85 | node --test 测试（npm test） | - |
+| tests/capabilities.test.js | 157 | node --test 测试（npm test） | - |
 | tests/codebase-index.test.js | 20 | node --test 测试（npm test） | ROOT, SKILL |
 | tests/compaction-config.test.js | 105 | node --test 测试（npm test） | - |
 | tests/compaction.test.js | 737 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
-| tests/config.test.js | 220 | node --test 测试（npm test） | - |
+| tests/config.test.js | 223 | node --test 测试（npm test） | - |
 | tests/conversation-preview.mjs | 99 | node --test 测试（npm test） | markdown, message, thinking, state |
 | tests/conversation-ui.py | 210 | node --test 测试（npm test） | - |
 | tests/defaults.test.js | 33 | node --test 测试（npm test） | - |
@@ -373,7 +373,7 @@
 | start | method | 113 |
 | invoked | const | 117 |
 
-### src/capabilities.js（115 行） — 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities）
+### src/capabilities.js（120 行） — 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -384,7 +384,7 @@
 | snapshotSettings | function | 23 |
 | discoverCapabilities | function | 36 |
 | resolveCapabilities | function | 72 |
-| capabilityLoader | function | 84 |
+| capabilityLoader | function | 89 |
 
 ### src/compaction.js（351 行） — 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交
 
@@ -472,7 +472,7 @@
 | assets | const | 7 |
 | createServerApp | function | 30 |
 
-### src/sessions.js（618 行） — Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化
+### src/sessions.js（632 行） — Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -488,25 +488,25 @@
 | configureDefaults | method | 95 |
 | saveDefaults | method | 100 |
 | validateSelection | method | 118 |
-| validateCompaction | method | 134 |
-| load | method | 146 |
-| persist | method | 159 |
-| list | method | 178 |
-| rename | method | 189 |
-| create | method | 197 |
-| scheduleTaskNotifications | method | 349 |
-| deliverTaskNotifications | method | 361 |
-| get | method | 383 |
-| revealWorkspace | method | 388 |
-| browse | method | 402 |
-| listFiles | method | 408 |
-| snapshot | method | 466 |
-| subscribe | method | 493 |
-| configure | method | 499 |
-| prompt | method | 533 |
-| cancel | method | 581 |
-| remove | method | 599 |
-| close | method | 614 |
+| validateCompaction | method | 139 |
+| load | method | 151 |
+| persist | method | 170 |
+| list | method | 189 |
+| rename | method | 200 |
+| create | method | 208 |
+| scheduleTaskNotifications | method | 363 |
+| deliverTaskNotifications | method | 375 |
+| get | method | 397 |
+| revealWorkspace | method | 402 |
+| browse | method | 416 |
+| listFiles | method | 422 |
+| snapshot | method | 480 |
+| subscribe | method | 507 |
+| configure | method | 513 |
+| prompt | method | 547 |
+| cancel | method | 595 |
+| remove | method | 613 |
+| close | method | 628 |
 
 ### src/tasks.js（107 行） — Tasks：子任务（委托）生命周期
 

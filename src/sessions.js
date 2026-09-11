@@ -115,7 +115,7 @@ export class Sessions {
     this.defaultSelection = next;
     return this.getDefaults();
   }
-  async validateSelection(workspace = this.createAgent.cwd || process.cwd(), selection) {
+  async validateSelection(workspace = this.createAgent.cwd || process.cwd(), selection, inherited = []) {
     const cwd = await realpath(workspace);
     if (!(await stat(cwd)).isDirectory()) throw new Error("工作空间必须是目录");
     for (const key of ["model", "subagentModel"])
@@ -123,12 +123,17 @@ export class Sessions {
         throw new Error(key === "model" ? "Unknown model" : "Unknown subagent model");
     if (selection.compaction) this.validateCompaction(selection.compaction, selection.model);
     let catalog;
+    const warnings = [];
     if (this.createAgent.capabilities) {
       catalog = await this.createAgent.capabilities(cwd, selection.trustProject === true);
-      resolveCapabilities(selection.capabilities, catalog);
-      resolveCapabilities(selection.subagentCapabilities === "inherit" ? selection.capabilities : selection.subagentCapabilities, catalog);
+      for (const key of ["capabilities", "subagentCapabilities"]) {
+        if (key === "subagentCapabilities" && selection[key] === "inherit") continue;
+        const resolved = resolveCapabilities(selection[key], catalog, { allowUnavailable: inherited.includes(key), warnings });
+        // null 仍表示全部；自定义空集合不能扩大为全部能力。
+        if (selection[key] != null && inherited.includes(key)) selection[key] = resolved;
+      }
     }
-    return { cwd, catalog };
+    return { cwd, catalog, warnings };
   }
 
   validateCompaction(value, mainModel) {
@@ -146,13 +151,19 @@ export class Sessions {
   async load() {
     if (!this.storagePath) return;
     await mkdir(this.storagePath, { recursive: true });
-    for (const workspace of await readdir(this.storagePath)) {
-      for (const file of await readdir(join(this.storagePath, workspace))) {
+    for (const workspace of await readdir(this.storagePath, { withFileTypes: true })) {
+      if (!workspace.isDirectory()) continue;
+      for (const file of await readdir(join(this.storagePath, workspace.name))) {
         if (!file.endsWith(".json")) continue;
-        const saved = JSON.parse(await readFile(join(this.storagePath, workspace, file), "utf8"));
-        // 重启时统一采用最新默认压缩配置，其余会话配置保持原样。
-        saved.selection.compaction = structuredClone(this.defaultSelection.compaction);
-        await this.create(saved.cwd, saved.selection, saved);
+        const path = join(this.storagePath, workspace.name, file);
+        try {
+          const saved = JSON.parse(await readFile(path, "utf8"));
+          // 重启时统一采用最新默认压缩配置，其余会话配置保持原样。
+          saved.selection.compaction = structuredClone(this.defaultSelection.compaction);
+          await this.create(saved.cwd, saved.selection, saved);
+        } catch (error) {
+          console.warn(`会话恢复失败，保留原文件 ${path}：${error.message}`);
+        }
       }
     }
   }
@@ -195,8 +206,11 @@ export class Sessions {
   }
 
   async create(workspace, selection = {}, saved) {
+    const inherited = ["capabilities", "subagentCapabilities"].filter((key) =>
+      saved || (selection.useDefaults !== false && selection[key] === undefined));
     selection = structuredClone({ ...(selection.useDefaults === false ? {} : this.defaultSelection), ...selection });
-    const { cwd, catalog } = await this.validateSelection(workspace, selection);
+    const { cwd, catalog, warnings } = await this.validateSelection(workspace, selection, inherited);
+    for (const warning of warnings) console.warn(`${cwd}：${warning}`);
     const id = saved?.id || randomUUID();
     const storageDir = this.storagePath && join(this.storagePath, createHash("sha256").update(process.platform === "win32" ? cwd.toLowerCase() : cwd).digest("hex"));
     if (storageDir) await mkdir(storageDir, { recursive: true });
