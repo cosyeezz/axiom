@@ -32,6 +32,8 @@ const MODULE_INFO = {
   "src/capabilities.js": "模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities）",
   "src/tasks.js": "Tasks：子任务（委托）生命周期",
   "src/tools.js": "delegationTools：委托/凭证读取/追加工具定义（zod 入参）",
+  "tests/compaction-ui.test.js": "压缩进度与任务归属：实时/快照/多轮摘要的 UI 回归",
+  "tests/compaction-ui.py": "压缩界面真实浏览器验收：摘要分层、子代理弹窗与窄屏状态",
   "tests/task-notifications.test.js": "子任务通知落盘、批量唤醒、取消抑制与重启补发回归",
   "public/app.js": "前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度",
   "public/markdown.js": "marked + DOMPurify 渲染（XSS 边界）",

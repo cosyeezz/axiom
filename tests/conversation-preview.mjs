@@ -87,6 +87,29 @@ for (const { message } of longState.messages) {
   }
 }
 states.push(longState);
+// 压缩验收：两轮摘要、各自的委托任务，以及仍保留的近期对话。
+const compactState = structuredClone(state);
+compactState.sessionId = "ui-compaction";
+compactState.title = "压缩验收 · 摘要分层与后台进度";
+compactState.compactionStatus = { status: "summarizing", startedAt: Date.now() };
+compactState.tasks = [
+  { id: "compact-a", task: "第一阶段：检查约束与路径", status: "completed" },
+  { id: "compact-b", task: "第二阶段：验证连续压缩", status: "completed" },
+];
+compactState.messages = [];
+compactState.compactions = [];
+for (const [index, task] of compactState.tasks.entries()) {
+  const prefix = `compact-${index}`;
+  compactState.messages.push(
+    { agentId: "main", entryId: `${prefix}-u`, message: { role: "user", content: task.task } },
+    { agentId: "main", entryId: `${prefix}-a`, message: assistant([{ type: "toolCall", id: prefix, name: "delegate", arguments: { tasks: [{ task: task.task }] } }]) },
+    { agentId: "main", entryId: `${prefix}-r`, message: { role: "toolResult", toolCallId: prefix, toolName: "delegate", content: [{ type: "text", text: JSON.stringify({ taskIds: [task.id] }) }] } },
+    { agentId: task.id, message: assistant([{ type: "text", text: `已完成：${task.task}。这里是仍可查看的子代理原始结果。` }]) },
+  );
+  compactState.compactions.push({ id: prefix, summary: `## 第 ${index + 1} 次摘要\n\n保留用户约束、关键决策与下一步。`, compactedMessageIds: [`${prefix}-u`, `${prefix}-a`, `${prefix}-r`], tokensBefore: 100000, estimatedTokensAfter: 22000 });
+}
+compactState.messages.push({ agentId: "main", entryId: "compact-recent", message: { role: "user", content: "继续下一阶段，之前的摘要和子代理结果都要能查看。" } });
+states.push(compactState);
 const sessions = {
   createAgent: { catalog: () => [{ provider: "preview", id: "axiom", key: "preview/axiom", name: "Axiom Preview", levels: ["off", "high"] }] },
   list: () => states.map((s) => ({ id: s.sessionId, cwd: s.cwd, title: s.title, status: s.status, updatedAt: Date.now() })),

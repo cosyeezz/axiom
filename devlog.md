@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-11 — 后台摘要保留规则、输入区进度与子代理归档
+- worktree `axiom-compaction-ux` / `feat/compaction-ux`。保持 Pi SDK 后台生成、安全点应用和滚动更新摘要；显式要求保留仍有效的旧目标、约束、决策、未完成项与准确上下文，不把未再次提及视为失效。提示词降低遗漏风险，不声称无损。
+- 输入框上方增加后台压缩真实阶段提示，不虚构百分比；状态按主会话隔离并纳入快照，取消/失败/拒绝应用均有反馈。已压缩的委托任务按真实工具结果 ID 归入对应摘要，保留子代理详情和运行入口定位；多次压缩不再夹杂已归档任务。
+- 验证：`npm test` 116 通过、1 原有跳过、0 失败；真实 Chromium 1440/390/320px 摘要分层、任务弹窗、进度位置、旋转和 reduced-motion 通过，无页面/CSP 错误。仓库无 build 脚本，采用现有测试和真实浏览器检查；未调用付费模型，提示词测试仅证明传参及保留规则，不证明摘要语义无损。委托两次被外部服务重启取消，核心代码由主任务直接完成。正式服务未由本任务重启。
+- 涉及 `src/{compaction,pi,sessions}.js`、`public/{app.js,index.html,style.css}`、压缩后端/UI 测试、`tests/conversation-preview.mjs`、两级 README/devlog 与 codebase-map 索引/知识库。使用现有依赖，不安装或重装运行实例依赖；保留主工作区原有改动。
+
 ## 2026-09-10 21:52 — 紧凑原名工具行与模块强调
 - worktree MyWorkbench-conversation-labels / feat/conversation-labels。按用户六项反馈将工具/思考行缩至 12px/400、SVG 16px/底座 24px；工具显示原名（仅省略 functions. 前缀，完整名保留 title），powershell/pwsh 复用命令图标。思考/连接/准备调用使用 thinking / thinking... / connecting... / calling...，中文结果状态保留。
 - waiting/running 的等待图标隐藏 SVG，使用高低亮度分段 CSS 旋转环；不增加定时器，尊重 reduced-motion。SKILL 与 SUBAGENT 使用描边标识、语义底色和左侧色条，任务状态行允许换行；桌面工具行最小 36px，手机 44px 点击区域不变。缩短消息/角色标题/用量间距，正文 14px、1.8 行高不动，不改安全 Markdown、流式脏块或折叠惰性渲染。

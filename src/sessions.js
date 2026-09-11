@@ -335,8 +335,11 @@ export class Sessions {
         historyIndex = index + 1;
       }
     }
-    for (const record of item.agent.compactions?.() || [])
-      if (!item.compactions.some((entry) => entry.id === record.id)) item.compactions.push(record);
+    for (const record of item.agent.compactions?.() || []) {
+      const saved = item.compactions.find((entry) => entry.id === record.id);
+      if (saved) Object.assign(saved, record);
+      else item.compactions.push(record);
+    }
     item.unsubscribe = item.agent.subscribe((event) =>
       item.emit({ ...event, agentId: "main", runId: item.runId }),
     );
@@ -484,6 +487,7 @@ export class Sessions {
       runId: item.runId,
       messages: item.messages,
       compactions: item.compactions,
+      compactionStatus: item.agent.compactionStatus?.() ?? null,
       retries: item.retries,
       live: item.live,
       tools: item.tools,

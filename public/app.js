@@ -25,6 +25,7 @@ const views = new Map();
 const compactionDefaults = { enabled: false, tokenThreshold: 100000, percentThreshold: 70, model: null, thinking: "off", keepRecentTokens: 20000 };
 const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 let compactions = [], mainItems = [];
+const compactionNodes = new Map(), taskEntries = new Map();
 let images = [], imageLoading = false;
 let completionVersion = 0, completionToken, completionEntries = [], completionIndex = 0;
 let selectedSkill = "", contextFiles = [], pickingWorkspace = false, currentCwd = "";
@@ -683,7 +684,45 @@ function renderMessage(item, message) {
   updateActivity(item, ["error", "aborted", "length"].includes(message.stopReason) ? (message.errorMessage || "响应中断") : undefined);
   renderer.flush(item);
 }
+function renderCompactionStatus(data) {
+  const node = $("compaction-progress");
+  const labels = { summarizing: "后台压缩：正在生成摘要…", ready: "后台压缩：摘要已就绪，等待下一次请求前应用", applied: "后台压缩：已完成", failed: "后台压缩：失败，保留原文", skipped: "后台压缩：已跳过", cancelled: "后台压缩：已取消" };
+  node.replaceChildren();
+  node.hidden = !labels[data?.status];
+  node.dataset.status = data?.status || "";
+  if (node.hidden) return;
+  if (data.status === "summarizing") {
+    const icon = document.createElement("span");
+    icon.className = "task-run-spin";
+    icon.setAttribute("aria-hidden", "true");
+    node.append(icon);
+  }
+  const label = document.createElement("span");
+  label.textContent = `${labels[data.status]}${data.message ? ` · ${data.message}` : ""}`;
+  node.append(label);
+}
+function trackTaskEntries(message, entryId) {
+  if (!entryId || message.isError || message.role !== "toolResult" || message.toolName?.replace(/^functions\./, "") !== "delegate") return;
+  for (const block of Array.isArray(message.content) ? message.content : []) {
+    if (block.type !== "text") continue;
+    try {
+      const ids = JSON.parse(block.text).taskIds;
+      if (Array.isArray(ids)) for (const id of ids)
+        if (typeof id === "string" && !taskEntries.has(id)) taskEntries.set(id, entryId);
+    } catch {}
+  }
+}
+function placeCompactedTasks() {
+  for (const [id, task] of tasks) {
+    const entryId = taskEntries.get(id);
+    if (!entryId) continue;
+    const record = compactions.find((record) => record.compactedMessageIds?.includes(entryId));
+    const container = compactionNodes.get(record?.id)?.querySelector(".compaction-tasks");
+    if (container && task.trigger.parentElement !== container) container.append(task.trigger);
+  }
+}
 function compactionCard(data) {
+  if (compactionNodes.has(data.id)) return compactionNodes.get(data.id);
   const node = document.createElement("details");
   node.className = "compaction-card";
   const label = document.createElement("summary");
@@ -695,7 +734,10 @@ function compactionCard(data) {
   const body = document.createElement("div");
   body.className = "markdown compaction-summary";
   label.append(badge, meta, disclosureHint("查看摘要"));
-  node.append(label, body);
+  const taskList = document.createElement("div");
+  taskList.className = "compaction-tasks";
+  node.append(label, body, taskList);
+  compactionNodes.set(data.id, node);
   // renderMarkdown 走 DOMPurify 白名单，摘要里的富文本不会执行。
   renderMarkdown(body, data.summary || "");
   return node;
@@ -703,9 +745,15 @@ function compactionCard(data) {
 function foldCompaction(data) {
   const ids = new Set(data.compactedMessageIds || []);
   const items = mainItems
-    .filter(({ item, entryId }) => entryId && ids.has(entryId) && item.node.isConnected && (!item.node.hidden || (item.skillBlocks?.isConnected && !item.skillBlocks.hidden)))
+    .filter(({ item, entryId }) => entryId && ids.has(entryId) && item.node.isConnected )
     .sort((a, b) => (a.item.node.compareDocumentPosition(b.item.node) & 4 ? -1 : 1));
-  if (!items.length) return;
+  if (!items.length) {
+    const previous = compactionNodes.get(compactions[compactions.indexOf(data) - 1]?.id);
+    if (previous) previous.after(compactionCard(data));
+    else $("output").prepend(compactionCard(data));
+    placeCompactedTasks();
+    return;
+  }
   const anchor = items.at(-1).item.node.nextElementSibling;
   const top = anchor?.getBoundingClientRect().top ?? 0;
   const first = items[0].item;
@@ -714,6 +762,7 @@ function foldCompaction(data) {
     item.node.hidden = true;
     if (item.skillBlocks) item.skillBlocks.hidden = true;
   }
+  placeCompactedTasks();
   mergeThoughts($("output"));
   // 折叠改变上方高度，按保留消息的位移补偿滚动位置，保持阅读锚点而不强制到底部。
   if (anchor) $("transcript").scrollTop += anchor.getBoundingClientRect().top - top;
@@ -801,6 +850,8 @@ function renderTaskRuns() {
     row.onclick = () => {
       follow = false;
       $("latest").hidden = false;
+      for (let parent = task.trigger.parentElement; parent; parent = parent.parentElement)
+        if (parent.tagName === "DETAILS") parent.open = true;
       task.trigger.scrollIntoView({ block: "center" });
       locatedScroll = $("transcript").scrollTop;
       task.trigger.focus({ preventScroll: true });
@@ -877,6 +928,11 @@ function renderRetry(agentId, data) {
 function event(message) {
   if (message.sessionId !== sessionId) return;
   const { type, agentId = "main", data } = message;
+  if (type === "agent.compaction.status" && agentId === "main") renderCompactionStatus(data);
+  if (type === "agent.message.end" && agentId === "main") {
+    trackTaskEntries(data.message, data.entryId);
+    placeCompactedTasks();
+  }
   if (type === "agent.retry") {
     stopActivity(agentId, data.status === "waiting" ? "等待重试" : "已停止");
     renderRetry(agentId, data);
@@ -1010,6 +1066,7 @@ function event(message) {
     item.failure.textContent = data.error || "";
     item.failure.hidden = !data.error;
     updateTaskRuntime(item, data.runtime);
+    placeCompactedTasks();
     renderTaskRuns();
     if (["starting", "running"].includes(data.status)) waiting(message.taskId);
     else stopActivity(message.taskId, status);
@@ -1044,6 +1101,11 @@ function snapshot(state) {
   retryCards.clear();
   retryFailures.clear();
   compactions = state.compactions || [];
+  compactionNodes.clear();
+  taskEntries.clear();
+  renderCompactionStatus(state.compactionStatus);
+  for (const { agentId, message, entryId } of state.messages)
+    if (agentId === "main") trackTaskEntries(message, entryId);
   mainItems = [];
   for (const task of state.tasks) {
     event({ type: "task.state", sessionId, taskId: task.id, data: task });
@@ -1109,6 +1171,11 @@ function snapshot(state) {
   else stopActivity("main", "已结束");
   for (const task of tasks.values())
     if (!task.trigger.isConnected) $("output").append(task.trigger);
+  for (const record of compactions)
+    if (!compactionNodes.has(record.id)) $("output").prepend(compactionCard(record));
+  // 摘要按记录顺序集中在历史顶部；原任务入口移动而非复制，弹窗与状态保持不变。
+  $("output").prepend(...compactions.map((record) => compactionNodes.get(record.id)));
+  placeCompactedTasks();
   for (const record of state.retries || []) renderRetry(record.agentId, record);
   if (!$("output").children.length) {
     const empty = document.createElement("div");

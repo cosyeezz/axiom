@@ -127,7 +127,9 @@ Axiom 使用原生 JavaScript，目前没有编译脚本，因此重建时不会
 
 在默认新会话设置或自定义新会话中配置后台压缩，不再提供当前会话的独立压缩设置。修改默认压缩配置后，新会话直接使用；已有会话在服务重启后统一使用最新默认压缩配置（覆盖原来的会话压缩值），其他会话配置不变。初始关闭；开启后可设置 token 阈值（默认 100000）和上下文窗口占比（默认 70%），**任一先达到即触发**。留空表示不使用该阈值，开启时至少填写一个。占比使用当前主模型窗口，统计为当前上下文估算，不是会话累计消耗。近期保留量默认 20000 token，按安全消息边界保留，不拆散工具调用与结果。
 
-可单独选择压缩模型（留空跟随主模型）和模型支持的思考等级。摘要由独立内存 Pi 会话生成，不出现在子任务列表；固定禁用全部工具、MCP、插件、Skills 和项目上下文，只接收摘要指令、上次摘要和历史快照，不执行历史中的指令。
+可单独选择压缩模型（留空跟随主模型）和模型支持的思考等级。摘要由独立内存 Pi 会话生成，不出现在子任务列表；固定禁用全部工具、MCP、插件、Skills 和项目上下文，只接收摘要指令、上次摘要和历史快照，不执行历史中的指令。仍使用滚动更新摘要，不永久追加旧摘要；提示词明确要求保留未再次提及但仍有效的目标、用户约束、关键决策、未完成事项及准确路径/数值/验收条件，仅在有明确变更时替换旧要求，并输出完整交接摘要。这能降低遗漏风险，不保证语义无损。
+
+输入框上方显示后台压缩的真实阶段：正在生成摘要、摘要就绪等待安全点、已应用、失败、跳过或取消，不显示虚构百分比。状态按主会话隔离，切换会话和重连可恢复当前状态；服务重启不会继续显示已中断的后台任务。
 
 ```text
 完整 turn 结束 -> 达到任一阈值 -> 固定快照 -> 后台生成摘要
@@ -138,9 +140,11 @@ Axiom 使用原生 JavaScript，目前没有编译脚本，因此重建时不会
 
 每会话最多一个后台摘要任务；任务完成不立即修改运行中的上下文。应用时使用 Pi `prepareNextTurnWithContext` 安全入口，并保留其原生轮次刷新；用户排队输入仍由原队列投递。摘要过期、失败或取消时不删除原历史。接近模型窗口硬上限仍以 Pi 原生压缩兜底，必要时会等待，并非任何情况下都零延迟。摘要是有损的，也可能影响模型缓存命中率。
 
-每次成功压缩保存独立记录，前端只隐藏本次覆盖的历史，保留近期和后台期间新增消息，不重建整个会话或清空输入。重连/重启恢复已保存摘要，未完成的后台摘要不会恢复；Pi JSONL 仍保留原文。
+每次成功压缩保存独立记录，前端只隐藏本次覆盖的历史，保留近期和后台期间新增消息，不重建整个会话或清空输入。被压缩的委托记录所对应的子代理入口收进该次摘要，展开摘要后仍能打开原有子代理详情；多次压缩在历史顶部逐层排列，关联不明的旧任务保守保留。归属依据真实委托工具结果的任务 ID，而非时间猜测。重连/重启恢复相同归属，未完成的后台摘要不会恢复；Pi JSONL 仍保留原文。
 
-协议：`session.create`、`session.configure`、`session.defaults.configure` 支持 `compaction: {enabled,tokenThreshold,percentThreshold,model,thinking,keepRecentTokens}`，两个阈值和 model 可为 `null`。配置返回实际 compaction；快照包含 `compactions`，消息记录包含 `entryId`。成功事件 `agent.compaction` 包含摘要 ID、正文、保留边界和 `compactedMessageIds`，客户端按消息 ID 折叠而非按时间猜测。未启用此功能时仍保留 Pi 原生窗口保护。
+协议：`session.create`、`session.configure`、`session.defaults.configure` 支持 `compaction: {enabled,tokenThreshold,percentThreshold,model,thinking,keepRecentTokens}`，两个阈值和 model 可为 `null`。配置返回实际 compaction；快照包含 `compactions`，消息记录包含 `entryId`。成功事件 `agent.compaction` 包含摘要 ID、正文、保留边界和 `compactedMessageIds`，客户端按消息 ID 折叠而非按时间猜测。进度事件 `agent.compaction.status` 与快照 `compactionStatus` 使用相同阶段数据。未启用此功能时仍保留 Pi 原生窗口保护。
+
+界面回归：运行 `node tests/conversation-preview.mjs` 后，在已有 Python Playwright/Chromium 的环境执行 `python tests/compaction-ui.py`，检查两层摘要、子代理详情、输入区进度与桌面/390px/320px 布局；样例不调用模型或读取用户历史。
 
 ## 会话与子代理运行信息
 
