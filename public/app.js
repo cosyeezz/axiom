@@ -114,6 +114,7 @@ function resizePrompt() {
 }
 let scrollFrame, locatedScroll;
 function scrollLatest() {
+  scheduleCallGroups();
   if (changing || scrollFrame !== undefined || (!follow && !activeTask?.follow)) return;
   scrollFrame = requestAnimationFrame(() => {
     scrollFrame = undefined;
@@ -327,6 +328,9 @@ $("settings").onclick = (e) => {
 const messageItems = new WeakMap(), toolItems = new Map(), waitingItems = new Map();
 // One local stroke vocabulary: tool identity stays visible when its state changes.
 const activityPaths = {
+  'circle-done': "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0M8 12l3 3 5-6",
+  'circle-stopped': "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0M9 9v6m6-6v6",
+  'circle-failed': "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0M12 7v6m0 4h.01",
   waiting: "M20 12a8 8 0 1 1-8-8",
   thinking: "M9 18h6m-5 3h4M8.5 15.5a6 6 0 1 1 7 0L15 18H9z",
   read: "M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8m-8 4h5",
@@ -350,6 +354,117 @@ function setActivityIcon(icon, name) {
   path.setAttribute("d", activityPaths[name] || activityPaths.tool);
   svg.append(path);
   icon.replaceChildren(svg);
+}
+let callGroupsFrame;
+function scheduleCallGroups() {
+  if (callGroupsFrame !== undefined) return;
+  callGroupsFrame = requestAnimationFrame(() => {
+    callGroupsFrame = undefined;
+    for (const output of [$('output'), ...[...tasks.values()].map(task => task.output)]) {
+      if (output?.isConnected) refreshCallGroups(output);
+    }
+  });
+}
+function createCallGroup() {
+  const group = document.createElement('details');
+  group.className = 'call-group';
+  const summary = document.createElement('summary');
+  summary.setAttribute('aria-label', '展开或收起执行过程');
+  const viewport = document.createElement('span');
+  viewport.className = 'call-preview';
+  const body = document.createElement('div');
+  body.className = 'call-list';
+  summary.append(viewport);
+  group.append(summary, body);
+  return group;
+}
+function paintCallGroup(group) {
+  const body = group.lastElementChild;
+  const rows = [...body.querySelectorAll('.activity-line')].filter(row => {
+    for (let node = row; node && node !== body; node = node.parentElement)
+      if (node.hidden || node.classList.contains('merged-thought')) return false;
+    return true;
+  });
+  group.hidden = !rows.length;
+  if (!rows.length) return;
+  const active = rows.filter(row => ['running', 'waiting', 'thinking'].includes(row.dataset.state));
+  const label = active.length ? 'Working' : rows.some(row => row.dataset.state === 'stopped') ? 'Stopped' : 'Completed';
+  const failed = rows.some(row => row.dataset.state === 'failed');
+  const icon = active.length ? 'waiting' : failed ? 'circle-failed' : label === 'Stopped' ? 'circle-stopped' : 'circle-done';
+  const preview = group.firstElementChild.firstElementChild;
+  const signature = `${label}:${icon}`;
+  if (preview.dataset.signature !== signature) {
+    preview.dataset.signature = signature;
+    const line = activityLine(label, '');
+    line.removeAttribute('role');
+    setActivityIcon(line.firstChild, icon);
+    preview.replaceChildren(line);
+  }
+  const running = String(!!active.length);
+  // Toggle only on lifecycle changes so manual expand/collapse stays usable.
+  if (group.dataset.active !== running) group.open = !!active.length;
+  group.dataset.active = running;
+  group.dataset.failed = String(failed);
+}
+function refreshCallGroups(output) {
+  // Keep the actual records (and their open state); only move their containers.
+  const nodes = [...output.children].flatMap(node => node.classList.contains('call-group')
+    ? [...node.lastElementChild.children] : [node]);
+  let group;
+  for (const node of nodes) {
+    const item = messageItems.get(node);
+    const isCall = item ? item.heading.textContent !== '你' && !item.buffer.trim()
+      : node.matches('.tool-record, .activity-line');
+    // Consecutive tool-only messages belong to one group, not one group per message.
+    if (isCall && item?.callGroup) {
+      item.text.before(item.thinking);
+      item.text.after(item.tools);
+      item.callGroup.remove();
+      item.callGroup = undefined;
+    }
+    if (isCall) {
+      if (!group) {
+        group = node.parentElement.classList.contains('call-list') ? node.parentElement.parentElement : createCallGroup();
+        if (!group.isConnected) node.before(group);
+      }
+      if (node.parentElement !== group.lastElementChild) group.lastElementChild.append(node);
+    } else {
+      if (group) paintCallGroup(group);
+      group = undefined;
+      if (node.parentElement.classList.contains('call-list')) {
+        const previous = node.parentElement.parentElement;
+        const following = [];
+        for (let next = node.nextElementSibling; next; next = next.nextElementSibling) following.push(next);
+        previous.after(node);
+        if (following.length) {
+          const tail = createCallGroup();
+          tail.lastElementChild.append(...following);
+          node.after(tail);
+        }
+      }
+    }
+    if (item) {
+      // Thinking and tools share the disclosure; prose stays outside.
+      if (!isCall && (item.reasoning || item.tools.childElementCount) && item.heading.textContent !== '你') {
+        if (!item.callGroup) {
+          item.callGroup = createCallGroup();
+          item.text.after(item.callGroup);
+          item.callGroup.lastElementChild.append(item.thinking, item.tools);
+        }
+        paintCallGroup(item.callGroup);
+      } else if (item.callGroup) {
+        item.text.before(item.thinking);
+        item.text.after(item.tools);
+        item.callGroup.remove();
+        item.callGroup = undefined;
+      }
+    }
+  }
+  if (group) paintCallGroup(group);
+  for (const node of [...output.children]) if (node.classList.contains('call-group')) {
+    if (!node.lastElementChild.childElementCount) node.remove();
+    else paintCallGroup(node);
+  }
 }
 function disclosureHint(label = "详情") {
   const hint = document.createElement("span");
@@ -385,6 +500,7 @@ function activityLine(label, state = "waiting") {
   return node;
 }
 function setActivity(node, label, state, icon) {
+  scheduleCallGroups();
   node.dataset.state = state;
   setActivityIcon(node.firstChild, node.dataset.toolIcon || icon || (state === "running" ? "waiting" : state));
   const text = node.querySelector(node.classList.contains("tool-activity") ? ".tool-status" : ".activity-label");
@@ -426,7 +542,12 @@ function updateActivity(item, stopped) {
   item.node.classList.toggle("pure-thought", pure && !!item.reasoning);
   item.activity.hidden = !!item.reasoning || !!item.buffer.trim() || !!item.tools.childElementCount || (!item.active && !stopped);
   item.modelInfo.hidden = !item.buffer.trim();
-  const thinking = item.active && !item.buffer.trim();
+  const thinking = item.active && !item.buffer.trim() && !stopped;
+  // Apply defaults on state changes without overriding the user's toggle every delta.
+  if (item.thinking.dataset.active !== String(thinking)) {
+    item.thinking.open = thinking;
+    item.thinking.dataset.active = String(thinking);
+  }
   setActivity(item.thinkingLine, stopped ? `thinking · ${stopped}` : thinking ? "thinking..." : "thinking", stopped ? "stopped" : thinking ? "thinking" : "done", "thinking");
   setActivity(item.activity, stopped || "connecting...", stopped ? "stopped" : "waiting");
   if (item.activity.hidden) setActivity(item.activity, "", "");
@@ -434,7 +555,8 @@ function updateActivity(item, stopped) {
 }
 function mergeThoughts(output) {
   let first;
-  for (const node of output.children) {
+  const root = output.classList.contains('call-list') ? output.parentElement.parentElement : output;
+  for (const node of [...root.children].flatMap(node => node.classList.contains('call-group') ? [...node.lastElementChild.children] : [node])) {
     const item = messageItems.get(node);
     if (!item) { first = undefined; continue; }
     node.classList.remove("merged-thought");
@@ -560,7 +682,7 @@ function toolState(agentId, data) {
     const container = document.createElement("details");
     container.className = "tool-record";
     const summary = document.createElement("summary");
-    summary.append(node, disclosureHint());
+    summary.append(node);
     const body = document.createElement("div");
     body.className = "tool-detail";
     container.append(summary, body);
@@ -588,7 +710,7 @@ function toolState(agentId, data) {
   target.textContent = (args.path || args.file_path) && cwd && normalized.startsWith(`${cwd}/`) ? normalized.slice(cwd.length + 1) : fullDetail;
   target.title = fullDetail;
   const state = data.phase === "end" ? (data.isError ? "failed" : "done") : data.phase === "history" ? "stopped" : "running";
-  setActivity(tool.node, { running: "执行中", done: "已完成", failed: "失败", stopped: "结果未记录" }[state], state);
+  setActivity(tool.node, { running: "", done: "", failed: "FAILED", stopped: "" }[state], state);
   renderToolDetail(tool);
   scrollLatest();
 }
@@ -598,13 +720,13 @@ function card(title, task) {
   node.className = title === "你" ? "message user" : "message";
   const heading = document.createElement("h3");
   heading.textContent = title;
-  heading.hidden = title === "你";
+  heading.hidden = title === "你" || title === "AXIOM";
   const thinking = document.createElement("details");
   thinking.className = "thinking-record";
   const summary = document.createElement("summary");
   const thinkingLine = activityLine("thinking", "thinking");
   thinkingLine.removeAttribute("role");
-  summary.append(thinkingLine, disclosureHint("查看"));
+  summary.append(thinkingLine);
   const thought = document.createElement("div");
   thought.className = "markdown thinking-content";
   thinking.append(summary, thought);

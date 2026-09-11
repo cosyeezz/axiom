@@ -1032,6 +1032,36 @@ textarea {
   }
 }
 
+/* Collapsed calls reuse the transcript rows; expanded calls stay in the scroll flow. */
+.call-group { --call-row-height: 36px; min-width: 0; margin: 4px 0; }
+.call-group > summary { display: flex; align-items: center; min-width: 0; height: var(--call-row-height); list-style: none; cursor: pointer; border-radius: 0; }
+.call-group > summary::marker { content: ""; }
+.call-group > summary::-webkit-details-marker { display: none; }
+.call-group > summary:hover .activity-label { color: var(--ink); }
+.call-group > summary .activity-icon { background: transparent; }
+/* The parent already communicates connection progress; keep only useful inner rows. */
+.call-list > .activity-line, .call-list .message > .activity-line { display: none; }
+.call-group > summary:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.call-group[open] > summary { position: sticky; top: 0; z-index: 3; background: var(--canvas); box-shadow: none; }
+.call-preview { display: block; flex: 1; min-width: 0; height: var(--call-row-height); overflow: hidden; }
+.call-preview-row { height: var(--call-row-height); animation: call-roll .2s ease-out; }
+.call-preview .tool-activity { grid-template-columns: 20px auto minmax(0, 1fr) auto; gap: 8px; padding-block: 4px; }
+.call-preview .tool-activity .activity-icon, .call-preview .tool-target, .call-preview .tool-status { grid-row: auto; grid-column: auto; }
+.call-group[data-active="true"] > summary .activity-icon svg { animation: activity-spin 1.6s linear infinite; }
+.call-group > summary .activity-icon[data-icon="circle-failed"] { color: var(--danger); }
+.call-group[data-failed="true"] > summary::after { content: "FAILED"; color: var(--danger); font-size: 12px; margin-left: 8px; }
+.call-group[data-failed="true"] > summary .tool-status { display: none; }
+.call-list { padding-left: 20px; }
+.call-list .message.activity-only { margin: 0; }
+.call-list .tool-record[open] > summary, .call-list .thinking-record[open] > summary { top: var(--call-row-height); }
+.call-list .tool-status:not(:empty) { display: none; }
+.tool-activity:not([data-state="failed"]) .tool-status { display: none; }
+.tool-activity[data-state="failed"] :is(.activity-icon, .activity-label, .tool-target, .tool-status) { color: var(--danger); }
+.call-list .tool-activity[data-state="failed"] .tool-status { display: flex; }
+@keyframes call-roll { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@media (max-width: 700px) { .call-group { --call-row-height: 44px; } .call-list { padding-left: 12px; } }
+@media (prefers-reduced-motion: reduce) { .call-preview-row, .call-group > summary .activity-icon svg { animation: none !important; } }
+
 /* Transcript records: one identity icon, one label, one optional disclosure. */
 .activity-line { --activity-ink: var(--info); display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 36px; padding: 4px 0; color: var(--muted); font-size: 12px; font-weight: 400; line-height: 1.5; overflow-wrap: anywhere; }
 .activity-label { min-width: 0; }
