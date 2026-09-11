@@ -131,6 +131,9 @@ sidebar(!mobile.matches);
 const pending = new Map(),
   live = new Map(),
   tasks = new Map();
+// 非安全上下文（如 Tailscale 的 http://100.x 地址）没有 crypto.randomUUID；
+// 请求 id 只需本页内唯一用于匹配回执，用自增序号即可（协议仅要求非空字符串）。
+let requestSeq = 0;
 function error(e) {
   $("error").textContent = e.message || String(e);
 }
@@ -138,7 +141,7 @@ function request(type, data = {}) {
   return new Promise((resolve, reject) => {
     if (ws?.readyState !== WebSocket.OPEN)
       return reject(new Error("连接已断开，请重新连接"));
-    const id = crypto.randomUUID();
+    const id = String(++requestSeq);
     pending.set(id, { resolve, reject });
     ws.send(JSON.stringify({ id, type, ...data }));
   });
@@ -155,6 +158,10 @@ function controls() {
   for (const button of $("preset-list").querySelectorAll("button")) button.disabled = unavailable;
   if (creation?.defaults) for (const fieldset of $("create-agents").children) fieldset.disabled = unavailable;
   $("queue-type").disabled = unavailable;
+  const remoteLocked = remoteView.local === false;
+  for (const id of ["remote-enabled", "remote-email", "remote-save"])
+    $(id).disabled = unavailable || remoteLocked;
+  $("remote-refresh").disabled = unavailable;
   $("composer-skill").disabled = unavailable || !config?.skills?.length;
   $("composer-skill").value = selectedSkill;
   if (unavailable) closeCompletion();
@@ -289,6 +296,7 @@ async function configure(thinking) {
   }
 }
 $("open-settings").onclick = () => {
+  settingsTab(false);
   controls();
   $("settings").showModal();
   openCreation(true);
@@ -298,6 +306,151 @@ $("settings").onclick = (e) => {
   const rect = $("settings").getBoundingClientRect();
   if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom)
     $("settings").close();
+};
+// Tailscale 远程控制：安全配置显式保存；打开面板才请求，重连后已加载过才刷新。
+const remoteView = {};
+let remoteLoaded = false;
+function remoteAnchor(href, text) {
+  const a = document.createElement("a");
+  a.href = href;
+  a.textContent = text;
+  a.target = "_blank";
+  a.rel = "noreferrer";
+  return a;
+}
+function remoteRender(data) {
+  Object.assign(remoteView, data);
+  const status = $("remote-status");
+  status.replaceChildren();
+  if (data.installed === false) {
+    status.append("本机未安装 Tailscale：", remoteAnchor("https://tailscale.com/download", "官方下载安装"), "，安装并登录同一账号后刷新。");
+  } else if (!data.enabled) {
+    // online 仅在开启后有监听意义，关闭时不断言 Tailscale 状态，避免误报
+    status.append("远程访问未开启");
+  } else {
+    status.append(data.active ? "远程访问已开启，监听中" : "远程访问已开启，但监听未运行：请刷新或在本机检查服务与 Tailscale");
+  }
+  const login = $("remote-login");
+  login.replaceChildren();
+  if (data.loginEmail) {
+    const code = document.createElement("code");
+    code.textContent = data.loginEmail;
+    login.append("本机登录邮箱：", code, "（允许的邮箱须与此一致）");
+    $("remote-auth").replaceChildren();
+  } else if (data.installed !== false) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.id = "remote-login-button";
+    button.className = "secondary";
+    button.textContent = "获取登录授权链接";
+    button.title = "打开链接完成授权即本机 Tailscale 登录；管理台网页登录不等于本机登录";
+    button.onclick = () => void remoteLogin();
+    login.append(button, " 未登录时点击生成授权链接，打开完成授权后回到本页或点击刷新自动带入邮箱。");
+  }
+  const url = $("remote-url");
+  url.replaceChildren("访问地址：");
+  if (data.url && /^https?:\/\//i.test(data.url)) {
+    url.append(remoteAnchor(data.url, data.url));
+  } else if (data.url) {
+    // ponytail: 后端只应发 http(s)；非安全协议仅展示文本不生成链接，待后端校验后可删除
+    const code = document.createElement("code");
+    code.textContent = data.url;
+    url.append(code);
+  } else url.append("开启并保存后生成");
+  $("remote-note").hidden = data.local !== false;
+  $("remote-enabled").value = data.enabled ? "on" : "off";
+  $("remote-email").value = data.loginEmail || "";
+  $("remote-feedback").textContent = data.error || "";
+  const auth = remoteAuthUrl(data.authUrl);
+  if (!data.loginEmail && auth && data.local === true)
+    $("remote-auth").replaceChildren(remoteAnchor(auth, "打开 Tailscale 登录授权"));
+  controls();
+}
+async function remoteLoad() {
+  if (!connected) return;
+  remoteLoaded = true;
+  $("remote-feedback").textContent = "";
+  $("remote-status").textContent = "正在读取远程访问状态…";
+  $("remote-refresh").disabled = true;
+  try {
+    remoteRender(await request("remote.get"));
+  } catch (e) {
+    $("remote-status").textContent = "状态读取失败";
+    $("remote-feedback").textContent = `读取失败：${e.message}`;
+  } finally {
+    controls();
+  }
+}
+// 授权链接只信 https://login.tailscale.com/a/…（默认 443、无凭据），其余一律不渲染。
+function remoteAuthUrl(authUrl) {
+  try {
+    const url = new URL(authUrl);
+    const ok = url.protocol === "https:" && url.hostname === "login.tailscale.com"
+      && url.port === "" && url.pathname.startsWith("/a/") && !url.username && !url.password;
+    return ok ? url.href : "";
+  } catch { return ""; }
+}
+async function remoteLogin() {
+  const button = $("remote-login-button");
+  if (!button || !connected || remoteView.local !== true) return;
+  button.disabled = true;
+  $("remote-feedback").textContent = "正在获取授权链接…";
+  try {
+    const data = await request("remote.login");
+    remoteRender({ ...remoteView, ...data });
+    const authUrl = remoteAuthUrl(data.authUrl);
+    if (data.loginEmail) {
+      $("remote-feedback").textContent = "Tailscale 已登录，请确认后手动开启远程访问";
+    } else if (authUrl) {
+      $("remote-auth").replaceChildren(
+        "授权链接（打开并完成授权即本机登录，完成后回到本页或点击刷新更新账号）：",
+        remoteAnchor(authUrl, "打开 Tailscale 登录授权"));
+    } else {
+      $("remote-feedback").textContent = data.error || data.guidance || "授权链接仍在获取中，请稍后重试";
+    }
+  } catch (e) {
+    $("remote-feedback").textContent = `获取授权链接失败：${e.message}`;
+    const retry = $("remote-login-button");
+    if (retry) retry.disabled = false;
+  }
+}
+// 无轮询：回到页面 focus 或手动刷新时更新账号。
+window.addEventListener("focus", () => { if (remoteLoaded) void remoteLoad(); });
+function remoteOnReconnect() {
+  if (remoteLoaded) void remoteLoad();
+}
+function settingsTab(remote) {
+  $("nav-defaults").setAttribute("aria-current", remote ? "false" : "page");
+  $("nav-remote").setAttribute("aria-current", remote ? "page" : "false");
+  $("defaults-panel").hidden = remote;
+  $("remote-panel").hidden = !remote;
+  if (remote) void remoteLoad();
+}
+$("nav-defaults").onclick = () => settingsTab(false);
+$("nav-remote").onclick = () => settingsTab(true);
+$("remote-refresh").onclick = () => void remoteLoad();
+$("remote-form").onsubmit = async (e) => {
+  e.preventDefault();
+  if (!connected || changing || remoteView.local === false) return;
+  const enabled = $("remote-enabled").value === "on";
+  const email = $("remote-email").value.trim();
+  if (enabled && !email) {
+    $("remote-feedback").textContent = "请先在本机登录 Tailscale（登录后刷新自动带入邮箱）";
+    return;
+  }
+  changing = true;
+  controls();
+  $("remote-feedback").textContent = "正在保存…";
+  try {
+    const data = await request("remote.configure", { enabled, email });
+    remoteRender(data);
+    if (!data.error) $("remote-feedback").textContent = "已保存远程访问配置";
+  } catch (e2) {
+    $("remote-feedback").textContent = `保存失败：${e2.message}`;
+  } finally {
+    changing = false;
+    controls();
+  }
 };
 const messageItems = new WeakMap(), toolItems = new Map(), waitingItems = new Map();
 // One local stroke vocabulary: tool identity stays visible when its state changes.
@@ -1489,6 +1642,7 @@ $("login").onsubmit = async (e) => {
     $("workspace").hidden = false;
     connected = true;
     void refreshPresets().catch(error);
+    remoteOnReconnect();
     reconnectDelay = 1000;
     resizePrompt();
     controls();

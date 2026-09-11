@@ -74,6 +74,17 @@ export const presetStore = z.object({ presets: z.array(preset) }).strict();
 export const command = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("service.status") }).strict(),
   z.object({ id, type: z.literal("service.restart"), mode: z.enum(["quick", "rebuild", "update"]) }).strict(),
+  // 远程访问（Tailscale）：get 本地/远程均可读；configure/login 仅限本地连接（server.js 内拦截远程）。
+  z.object({ id, type: z.literal("remote.get") }).strict(),
+  z.object({ id, type: z.literal("remote.login") }).strict(),
+  z
+    .object({
+      id,
+      type: z.literal("remote.configure"),
+      enabled: z.boolean(),
+      email: z.string().trim().max(254),
+    })
+    .strict(),
   z
     .object({
       id,

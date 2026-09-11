@@ -190,7 +190,7 @@
         <form method="dialog"><button class="secondary" aria-label="关闭设置" autofocus>✕</button></form>
       </header>
       <div class="settings-layout">
-      <nav class="settings-nav" aria-label="设置分类"><button type="button" class="secondary" aria-current="page">默认新会话设置</button></nav>
+      <nav class="settings-nav" aria-label="设置分类"><button type="button" id="nav-defaults" class="secondary" aria-current="page">默认新会话设置</button><button type="button" id="nav-remote" class="secondary" aria-current="false">远程控制</button></nav>
       <div class="settings-body" id="defaults-panel">
         <section aria-labelledby="selection-copy-title">
           <h3 id="selection-copy-title">输入与复制</h3>
@@ -226,6 +226,26 @@
           <p>选择后自动保存到本机，用于之后的普通新会话；自动压缩配置也会在服务重启后应用到已有会话，其他配置不变。</p>
           <div id="defaults-editor"></div>
         </section>
+      </div>
+      <div class="settings-body" id="remote-panel" hidden>
+        <section aria-labelledby="remote-status-title">
+          <h3 id="remote-status-title">Tailscale 状态</h3>
+          <p>远程访问经 Tailscale 加密组网：只允许 Tailscale 已验证登录邮箱匹配的用户打开本页；本机直连不受影响。其他电脑或手机需安装并登录同一 Tailscale 账号，WiFi 与移动流量均经 Tailscale 转发；远程连接可正常操作 Axiom 会话，仅此远程控制配置需在服务所在电脑本机修改。</p>
+          <p id="remote-status">尚未加载</p>
+          <p id="remote-login"></p>
+          <p id="remote-auth"></p>
+          <p id="remote-url"></p>
+        </section>
+        <form id="remote-form">
+          <p id="remote-note" role="status" hidden>远程连接只能查看此远程控制配置，需在电脑本机修改。</p>
+          <div class="selectors settings-selectors"><label for="remote-enabled"><span>Tailscale 远程访问</span>
+          <select id="remote-enabled" aria-describedby="remote-email-help"><option value="off">关闭</option><option value="on">开启</option></select></label></div>
+          <label for="remote-email">允许的登录邮箱（自动使用本机 Tailscale 登录邮箱）</label>
+          <input id="remote-email" type="text" readonly placeholder="本机登录 Tailscale 后自动带入（如 name@github）" autocomplete="off" spellcheck="false" aria-describedby="remote-email-help" />
+          <p id="remote-email-help">自动使用本机 Tailscale 登录邮箱，无需手填；仅允许与该已验证邮箱匹配的用户访问。安全相关配置不会自动生效，需点击保存。</p>
+          <p id="remote-feedback" role="status" aria-live="polite"></p>
+          <div class="dialog-actions"><button type="button" id="remote-refresh" class="secondary">刷新状态</button><button id="remote-save">保存</button></div>
+        </form>
       </div>
       </div>
     </dialog>

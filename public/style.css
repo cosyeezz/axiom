@@ -744,6 +744,12 @@ textarea {
 .settings-nav button { width: 100%; white-space: normal; }
 #defaults-panel { min-width: 0; }
 #defaults-editor .settings-body { padding: 0; }
+.settings-nav { display: flex; flex-direction: column; gap: 4px; }
+#remote-form { margin-top: 16px; }
+#remote-form > label { display: block; margin-bottom: 8px; color: var(--body-ink); font-size: 12px; }
+#remote-status a, #remote-url a { color: var(--accent-ink); overflow-wrap: anywhere; }
+#remote-login code { font-family: var(--mono); font-size: 12px; color: var(--ink); overflow-wrap: anywhere; }
+#remote-login button { margin-right: 8px; }
 #defaults-preview { white-space: pre-wrap; overflow-wrap: anywhere; }
 .capability-agent .selectors label { display: grid; gap: 6px; min-width: 0; flex: 1 1 180px; font-size: 12px; }
 .capability-agent select { width: 100%; min-width: 0; }

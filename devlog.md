@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-11 Tailscale 同账号远程控制
+
+- 内容：设置左侧默认新会话设置下新增远程控制；自动读取本机 Tailscale 登录名，显式开启后仅允许同账号设备访问。电脑本机继续走 loopback，远程可正常操作会话，但远程访问配置和登录操作仅允许本机管理。
+- 原因与决策：手机在 Wi-Fi/流量之间切换无需维护两套 IP 白名单；使用本机 Tailscale CLI 的 whois 验证真实连接身份，不信客户端邮箱/代理身份头，不保存密码，不开放公网或整个局域网。单独绑定 Tailscale 地址，不要求 Serve/Funnel。默认关闭，账号变更与关闭后撤销旧连接。
+- 涉及文件：`src/remote.js`、`src/server.js`、`src/main.js`、`src/protocol.js`、`public/app.js`、`public/index.html`、`public/style.css`、`tests/remote.test.js`、`tests/remote-ui.test.js`、`README.md` 与代码索引技能。设置复用 Linear 的 #0f1011 面板、#23252a 边框、#5e6ad2 操作强调及系统字体，不新增依赖。
+- 验证边界：使用模拟 Tailscale 身份与本地 HTTP/WebSocket 验证，不替用户执行真实登录或开启远程监听；实际手机端双设备连通需用户登录后验收。HTTP 由 Tailscale 加密传输，但浏览器非安全上下文，请求 ID 不应依赖 crypto.randomUUID，剪贴板功能可能受限。
+
 ## 消息元信息紧凑排版
 - public/app.js、public/style.css：供应商、模型、消息记录的 thinkingLevel 用间隔点分开；输入/输出用千分位和 ↑/↓，保留悬停说明与无障碍名称；纯工具消息的统计留在展开区域，不分隔调用组。
 - tests/activity-groups-ui.py：Chromium 验证示例数字、级别和 390px 窄屏无横向溢出；README.md 同步。缺失思考级别不使用当前会话设置补写历史。

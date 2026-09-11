@@ -29,9 +29,18 @@ const assets = new Map(
 
 export function createServerApp(sessions, service = {}) {
   let stopping = false;
+  let remoteServer = null;
+  let remoteAuthorize = null;
+  let generation = 0; // 每次停用/变更递增，作废在途的异步鉴权
   const pending = new Set();
-  const server = createServer((req, res) => {
+  const remoteClients = new Set();
+  const handleRequest = (req, res, isLocal) => {
     if (req.url === "/service/stop") {
+      if (!isLocal) {
+        res.writeHead(403);
+        res.end();
+        return;
+      }
       const host = req.headers.host;
       const port = server.address().port;
       if (req.method !== "POST" || ![`127.0.0.1:${port}`, `localhost:${port}`].includes(host) ||
@@ -76,7 +85,8 @@ export function createServerApp(sessions, service = {}) {
         status: req.url === "/health" ? "ok" : "not_found",
       }),
     );
-  });
+  };
+  const server = createServer((req, res) => handleRequest(req, res, true));
   const wss = new WebSocketServer({
     noServer: true,
     // 4 张 × 5MiB 图片 base64 后约 27MiB，预留 JSON 结构余量。
@@ -84,6 +94,21 @@ export function createServerApp(sessions, service = {}) {
     perMessageDeflate: false,
     handleProtocols: () => "axiom",
   });
+  const acceptUpgrade = (req, socket, head, isRemote) => {
+    if (stopping || req.url !== "/ws") {
+      socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      if (isRemote) {
+        ws.isRemote = true;
+        ws.upgradeSocket = socket; // 供连接后周期重验读取对端地址（ws 包不暴露 .socket）
+        remoteClients.add(ws);
+        ws.on("close", () => remoteClients.delete(ws));
+      }
+      wss.emit("connection", ws, req); // 传递 upgrade 请求供远程连接周期性重验
+    });
+  };
   server.on("upgrade", (req, socket, head) => {
     const port = server.address().port;
     const hosts = [`127.0.0.1:${port}`, `localhost:${port}`];
@@ -91,14 +116,89 @@ export function createServerApp(sessions, service = {}) {
       hosts.includes(req.headers.host) &&
       (!req.headers.origin ||
         req.headers.origin === `http://${req.headers.host}`);
-    if (stopping || req.url !== "/ws" || !localRequest) {
+    if (!localRequest) {
       socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
       return;
     }
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws));
+    acceptUpgrade(req, socket, head, false);
   });
-  wss.on("connection", (ws) => {
+  // 远程 server 与本地共用同一请求处理与 wss；准入前多一道 tailscale whois 验证。
+  const createRemoteServer = (authorize) => {
+    if (remoteServer) throw new Error("远程 server 已在运行");
+    remoteAuthorize = authorize;
+    const rejectSocket = (socket) =>
+      socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+    // 异步鉴权等待期间若发生停用/许可变更（generation 变化），不得再放行。
+    const guarded = async (req) => {
+      const atStart = generation;
+      const ok = await authorize(req);
+      return ok && atStart === generation;
+    };
+    const rs = createServer((req, res) => {
+      guarded(req).then(
+        (ok) => {
+          if (!ok) {
+            res.writeHead(403);
+            res.end();
+            return;
+          }
+          handleRequest(req, res, false);
+        },
+        () => {
+          res.writeHead(403);
+          res.end();
+        },
+      );
+    });
+    rs.on("upgrade", (req, socket, head) => {
+      guarded(req).then(
+        (ok) => {
+          if (ok) acceptUpgrade(req, socket, head, true);
+          else rejectSocket(socket);
+        },
+        () => rejectSocket(socket),
+      );
+    });
+    rs.on("close", () => {
+      if (remoteServer === rs) remoteServer = null;
+    });
+    remoteServer = rs;
+    return rs;
+  };
+  const dropRemote = () => {
+    generation += 1; // 停用/变更即作废在途鉴权
+    for (const ws of remoteClients) ws.terminate();
+  };
+  wss.on("connection", (ws, source) => {
     let unsubscribe;
+    // 远程连接：每条消息与每 30s 重验身份（whois/status 按 IP 短 TTL 缓存，代价有界），
+    // 撤权后的旧连接最多存活一个 TTL。
+    const reauth = async () => {
+      if (!ws.isRemote) return true;
+      if (!remoteAuthorize || ws.readyState !== WebSocket.OPEN) return false;
+      const atStart = generation;
+      try {
+        const allowed = await remoteAuthorize({
+          headers: { host: source?.headers?.host },
+          socket: {
+            remoteAddress: ws.upgradeSocket?.remoteAddress,
+            remotePort: ws.upgradeSocket?.remotePort,
+          },
+        });
+        return allowed && atStart === generation && ws.readyState === WebSocket.OPEN;
+      } catch {
+        return false;
+      }
+    };
+    let reauthTimer;
+    if (ws.isRemote) {
+      reauthTimer = setInterval(() => {
+        reauth().then((ok) => {
+          if (!ok) ws.terminate();
+        });
+      }, 30_000);
+      ws.on("close", () => clearInterval(reauthTimer));
+    }
     const send = (message) => {
       if (ws.readyState !== WebSocket.OPEN) return;
       // Bound network buffering, not task output; reconnect retrieves the current snapshot.
@@ -124,6 +224,10 @@ export function createServerApp(sessions, service = {}) {
         let request;
         try {
           if (stopping) throw new Error("Service is stopping");
+          if (!(await reauth())) {
+            ws.terminate(); // 撤权/变更后旧远程连接立即失效
+            return;
+          }
           request = command.parse(JSON.parse(raw.toString()));
           let data;
           switch (request.type) {
@@ -131,6 +235,7 @@ export function createServerApp(sessions, service = {}) {
               data = { managed: Boolean(service.restart), error: service.error || "", version: service.version || "", importDir: service.importDir || "", ...(service.dev ? { dev: true, sourceDir: service.sourceDir } : {}) };
               break;
             case "service.restart":
+              if (ws.isRemote) throw new Error("远程连接不允许重启服务");
               if (!service.restart) throw new Error("请通过 npm start 启动服务后再使用重启功能");
               if (sessions.list().some((item) => item.status !== "idle") ||
                   [...(sessions.items?.values() || [])].some((item) => item.configuring ||
@@ -226,6 +331,35 @@ export function createServerApp(sessions, service = {}) {
                 .get(request.sessionId)
                 .tasks.read(request.taskId, request.resultId);
               break;
+            case "remote.get":
+              data = {
+                enabled: false,
+                email: "",
+                url: null,
+                installed: false,
+                online: false,
+                active: false,
+                loginEmail: "",
+                error: "",
+                backend: "",
+                tagged: false,
+                authUrl: null,
+                ...(service.remoteStatus ? await service.remoteStatus() : {}),
+                // 本地连接 true；经 Tailscale 远程 server 接入的连接为 false，
+                // 前端据此隐藏远程配置管理入口（远程用户也不允许调用 remote.configure/login）。
+                local: !ws.isRemote,
+              };
+              break;
+            case "remote.configure":
+              if (ws.isRemote) throw new Error("远程连接不允许修改远程访问配置");
+              if (!service.remoteConfigure) throw new Error("远程访问功能不可用");
+              data = { ...await service.remoteConfigure(request), local: true };
+              break;
+            case "remote.login":
+              if (ws.isRemote) throw new Error("远程连接不允许触发登录");
+              if (!service.remoteLogin) throw new Error("远程访问功能不可用");
+              data = { ...await service.remoteLogin(), local: true };
+              break;
           }
           send({ type: "response", id: request.id, ok: true, data });
         } catch (error) {
@@ -243,13 +377,24 @@ export function createServerApp(sessions, service = {}) {
   });
   return {
     server,
+    createRemoteServer,
+    dropRemote,
     async close() {
       stopping = true;
+      service.remoteShutdown?.(); // 清理登录子进程
+      dropRemote();
+      const remoteClosed = remoteServer
+        ? new Promise((done) => {
+            remoteServer.closeAllConnections();
+            remoteServer.close(done);
+          })
+        : null;
       const stopped = new Promise((done) => server.close(done));
       for (const ws of wss.clients) ws.terminate();
       await Promise.all([...pending]);
       await sessions.close();
       await stopped;
+      if (remoteClosed) await remoteClosed;
       await new Promise((done) => wss.close(done));
     },
   };
