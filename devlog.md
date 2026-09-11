@@ -314,3 +314,11 @@
 - 改动：public/file-picker.js、file-picker.css 共用导航、地址、搜索、分页、确认、分类 SVG 图标和手机布局；app.js 统一工作空间/文件/文件夹入口，保留 Skill 与图片上传各自语义；src/sessions.js、protocol.js、server.js 增加 files.browse 和跨平台系统打开，删除 PowerShell picker；工作空间内 realpath 限界，主机模式可浏览可访问目录，每页 200 项。
 - 防回归：tests/file-picker.test.js、app.test.js、workspace-picker.test.js、session-flow.test.js、server.test.js；README.md、导航架构/索引和坑库同步。
 - 验证：npm test 初次 55 项中 54 通过；同步 master 的安装器/图片占位改动后复验 58 项中 57 通过、1 个非 Windows 平台测试跳过、0 失败；Windows Chromium 真浏览器 1280×900 / 320×640 检查文件浏览、图标、Esc 和弹窗无横向溢出，控制台无脚本/CSP 错误。macOS/Linux 桌面及 UNC 网络共享未实机验证。
+
+
+### 2026-09-11 消息活动状态与工具详情
+- 原因：中间工具/纯思考消息显示为空 AXIOM 卡片，用户无法判断进度与文件改动。
+- 内容：连接/思考/工具动态状态，终态静态标识；连续纯思考显示合并但保留原消息 ID；工具默认紧凑并可展开参数、文本输出和实际/请求 diff。历史、子代理、取消、断线、重试、压缩边界同步处理。详情按需纯文本渲染，单节显示上限 60000 字符，保留完整持久化记录；write 不虚构新建/覆盖判断。
+- 文件：public/app.js、public/style.css、tests/message-activity.test.js、README.md、索引与 knowledge.md。
+- 验证：页面回归与新增活动测试通过；全量 npm test 在提交前运行。
+- 追加决定：diff 支持统一/左右切换并记住手动选择；无已存偏好时窄屏默认统一、宽屏默认左右，窄屏展示强制统一。新增回归覆盖左右旧新配对与偏好保存。

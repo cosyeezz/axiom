@@ -143,3 +143,9 @@
 - 根因：SDK 队列最终排空早于外层 work finally；用户队列并非可靠通知存储。
 - 修复：Tasks 落盘 resultId/notified，Sessions 在空闲、配置完成与运行 finally 调度新通知轮；取消暂停，关闭等待通知清理，重启补发，旧任务补凭证。
 - 防再犯：tests/task-notifications.test.js 覆盖忙时合并、空闲唤醒、持久化失败、取消通知与重启补发；摘要 UI 只复用当前会话任务状态，快照清理同步隐藏。
+
+### 2026-09-11 空助手卡片与工具过程不可见
+- 症状：会话大量只有模型用量或思考的 AXIOM 卡片，工具执行内容不可见。
+- 根因：每条 assistant 建卡，仅提取 text/thinking，忽略 toolCall/toolResult/tool.state。
+- 修复：public/app.js 共享活动状态与工具折叠详情，保留消息节点/entryId 仅展示合并；历史读取工具结果和 snapshot.tools，压缩不复活已折叠工具。
+- 防再犯：实时与快照共用工具渲染，按 agentId+toolCallId 隔离；终止/断线停止动画但不虚构工具成功；diff 优先真实结果，否则标注请求预览；纯文本输出不使用 innerHTML。tests/message-activity.test.js 覆盖合并、压缩保留边界、安全展开和状态恢复。

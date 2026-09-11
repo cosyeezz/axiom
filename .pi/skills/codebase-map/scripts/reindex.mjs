@@ -36,6 +36,7 @@ const MODULE_INFO = {
   "public/stream-renderer.js": "流式增量渲染状态机",
   "public/file-picker.js": "共享文件/目录选择弹窗、懒加载与分类 SVG 图标",
   "public/file-picker.css": "文件选择弹窗主题与响应式布局",
+  "tests/message-activity.test.js": "消息活动状态、连续思考合并、工具历史与终态回归",
   "tests/file-picker.test.js": "共享选择器懒加载、分页、竞态和键盘交互回归",
   "public/index.html": "页面骨架与元素 id（见 L3）",
   "public/style.css": "全局样式（CSP 禁 inline style，样式一律进这里）",

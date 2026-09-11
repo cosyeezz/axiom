@@ -286,6 +286,197 @@ $("settings").onclick = (e) => {
   if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom)
     $("settings").close();
 };
+const messageItems = new WeakMap(), toolItems = new Map(), waitingItems = new Map();
+function activityLine(label, state = "waiting") {
+  const node = document.createElement("div");
+  node.className = "activity-line";
+  node.setAttribute("role", "status");
+  const icon = document.createElement("span");
+  icon.className = "activity-icon";
+  icon.setAttribute("aria-hidden", "true");
+  const text = document.createElement("span");
+  node.append(icon, text);
+  setActivity(node, label, state);
+  return node;
+}
+function setActivity(node, label, state) {
+  node.dataset.state = state;
+  node.firstChild.textContent = { waiting: "◌", thinking: "✦", running: "⚙", done: "✓", failed: "!", stopped: "Ⅱ" }[state] || "";
+  node.lastChild.textContent = label;
+}
+function waiting(agentId) {
+  if (waitingItems.has(agentId) || live.get(agentId)?.active || [...toolItems.values()].some((tool) => tool.agentId === agentId && tool.node.dataset.state === "running")) return;
+  const task = tasks.get(agentId);
+  const node = activityLine("连接中…");
+  (task?.output || $("output")).append(node);
+  waitingItems.set(agentId, node);
+  scrollLatest();
+}
+function clearWaiting(agentId) {
+  waitingItems.get(agentId)?.remove();
+  waitingItems.delete(agentId);
+}
+function stopActivity(agentId, label = "已停止") {
+  clearWaiting(agentId);
+  const item = live.get(agentId);
+  if (item) {
+    item.active = false;
+    updateActivity(item, label);
+  }
+  for (const tool of toolItems.values()) if (tool.agentId === agentId && ["running", "waiting"].includes(tool.node.dataset.state))
+    setActivity(tool.node, label, "stopped");
+}
+function updateActivity(item, stopped) {
+  if (item.heading.textContent === "你") return;
+  const pure = !item.buffer.trim() && !item.tools.childElementCount;
+  item.node.classList.toggle("activity-only", !item.buffer.trim());
+  item.node.classList.toggle("pure-thought", pure && !!item.reasoning);
+  item.activity.hidden = !!item.buffer.trim() || !!item.tools.childElementCount || (!item.active && !item.reasoning && !stopped);
+  item.modelInfo.hidden = !item.buffer.trim();
+  setActivity(item.activity, stopped || (item.active ? (item.reasoning ? "思考中…" : "连接中…") : "已思考"), stopped ? "stopped" : item.active ? (item.reasoning ? "thinking" : "waiting") : "done");
+  if (item.activity.hidden) setActivity(item.activity, "", "");
+  item.node.hidden = !item.active && pure && !item.reasoning && !stopped;
+}
+function mergeThoughts(output) {
+  let first;
+  for (const node of output.children) {
+    const item = messageItems.get(node);
+    if (!item) { first = undefined; continue; }
+    node.classList.remove("merged-thought");
+    if (item.ownReasoning !== undefined) item.reasoning = item.ownReasoning;
+    if (node.hidden) continue;
+    if (!node.classList.contains("pure-thought") || item.active) { first = undefined; continue; }
+    if (first) {
+      first.reasoning += `\n\n${item.reasoning}`;
+      node.classList.add("merged-thought");
+      renderer.flush(first);
+    } else first = item;
+    renderer.flush(item);
+  }
+}
+let diffView = mobile.matches ? "unified" : "split";
+try {
+  const saved = localStorage.getItem("axiom.diffView");
+  if (["split", "unified"].includes(saved)) diffView = saved;
+} catch {}
+function renderToolDetail(tool) {
+  if (!tool.container.open || !tool.container.isConnected) return;
+  tool.body.replaceChildren();
+  const section = (label, text, diff = false) => {
+    if (!text) return;
+    const heading = document.createElement("h4");
+    heading.textContent = label;
+    const pre = document.createElement("pre");
+    if (diff) {
+      const select = document.createElement("select");
+      select.setAttribute("aria-label", "代码对比展示方式");
+      select.append(new Option("统一视图", "unified"), new Option("左右对比", "split"));
+      select.value = diffView;
+      select.onchange = () => {
+        diffView = select.value;
+        try { localStorage.setItem("axiom.diffView", diffView); } catch {}
+        for (const record of toolItems.values()) renderToolDetail(record);
+      };
+      heading.append(select);
+    }
+    // Bound expanded DOM size; the full original tool result stays in session history.
+    const visible = String(text).slice(0, 60000);
+    if (diff) for (const line of visible.split("\n")) {
+      const row = document.createElement("span");
+      row.className = line.startsWith("+") ? "diff-add" : line.startsWith("-") ? "diff-remove" : "diff-context";
+      row.textContent = `${line}\n`;
+      pre.append(row);
+    } else pre.textContent = visible;
+    if (diff) {
+      pre.className = "diff-unified";
+      const split = document.createElement("div");
+      split.className = "diff-split";
+      split.setAttribute("aria-label", "左侧修改前，右侧修改后");
+      const cell = (line, kind) => {
+        const node = document.createElement("pre");
+        node.className = kind;
+        node.textContent = line || " ";
+        split.append(node);
+      };
+      cell("修改前", "diff-column-title");
+      cell("修改后", "diff-column-title");
+      let removed = [], added = [];
+      const flush = () => {
+        for (let i = 0; i < Math.max(removed.length, added.length); i++) {
+          cell(removed[i], removed[i] === undefined ? "diff-context" : "diff-remove");
+          cell(added[i], added[i] === undefined ? "diff-context" : "diff-add");
+        }
+        removed = []; added = [];
+      };
+      for (const line of visible.split("\n")) {
+        if (line.startsWith("-")) removed.push(line);
+        else if (line.startsWith("+")) added.push(line);
+        else { flush(); cell(line, "diff-context"); cell(line, "diff-context"); }
+      }
+      flush();
+      const comparison = document.createElement("div");
+      comparison.className = `diff-comparison diff-view-${diffView}`;
+      comparison.append(pre, split);
+      tool.body.append(heading, comparison);
+    }
+    if (String(text).length > visible.length) pre.append("\n…内容过长，仅显示前 60,000 字符；完整记录仍保存在会话中。");
+    if (!diff) tool.body.append(heading, pre);
+  };
+  const args = tool.args || {};
+  const result = tool.result;
+  const diff = result?.details?.diff;
+  if (typeof diff === "string" && diff) section("实际改动", diff, true);
+  else if (tool.name === "edit") {
+    const edits = args.edits || (typeof args.oldText === "string" ? [args] : []);
+    const preview = edits.map((edit) => [
+      ...String(edit.oldText ?? "").split("\n").map((line) => `- ${line}`),
+      ...String(edit.newText ?? "").split("\n").map((line) => `+ ${line}`),
+    ].join("\n")).join("\n\n");
+    section("请求改动（是否成功以执行结果为准）", preview, true);
+  }
+  if (tool.name === "write" && typeof args.content === "string") section("写入内容（可能新建或覆盖文件）", args.content);
+  else if (tool.name !== "edit") section("调用参数", JSON.stringify(args, null, 2));
+  else section("文件", args.path || args.file_path);
+  const content = result?.content;
+  const text = typeof content === "string" ? content : Array.isArray(content)
+    ? content.map((block) => block.type === "text" ? block.text : `[${block.type || "非文本"}内容]`).join("\n") : "";
+  section("执行输出", text || (tool.node.dataset.state === "running" ? "等待工具返回…" : "没有文本输出记录"));
+}
+function toolState(agentId, data) {
+  if (!data.toolCallId) return;
+  clearWaiting(agentId);
+  const key = `${agentId}:${data.toolCallId}`;
+  let tool = toolItems.get(key);
+  if (!tool) {
+    const item = live.get(agentId);
+    const node = activityLine("");
+    node.classList.add("tool-activity");
+    const container = document.createElement("details");
+    container.className = "tool-record";
+    const summary = document.createElement("summary");
+    summary.append(node);
+    const body = document.createElement("div");
+    body.className = "tool-detail";
+    container.append(summary, body);
+    (item?.tools || tasks.get(agentId)?.output || $("output")).append(container);
+    tool = { node, agentId, container, body };
+    container.ontoggle = () => { renderToolDetail(tool); scrollLatest(); };
+    toolItems.set(key, tool);
+    if (item) updateActivity(item);
+  }
+  if (data.args) tool.args = data.args;
+  if (data.result || data.partialResult) tool.result = data.result || data.partialResult;
+  else if (data.content) tool.result = data;
+  const args = tool.args || {};
+  const detail = args.path || args.file_path || args.command || args.query || args.url || "";
+  if (data.toolName) tool.name = data.toolName;
+  if (typeof detail === "string" && detail) tool.detail = detail.replace(/\s+/g, " ").slice(0, 120);
+  const state = data.phase === "end" ? (data.isError ? "failed" : "done") : data.phase === "history" ? "stopped" : "running";
+  const label = { running: "执行中", done: "已完成", failed: "失败", stopped: "结果未记录" }[state];
+  setActivity(tool.node, `${tool.name || "工具"}${tool.detail ? ` · ${tool.detail}` : ""} · ${label}`, state);
+  renderToolDetail(tool);
+  scrollLatest();
+}
 function card(title, task) {
   $("output").querySelector(".empty")?.remove();
   const node = document.createElement("article");
@@ -303,12 +494,18 @@ function card(title, task) {
   text.className = "markdown";
   const modelInfo = document.createElement("small");
   modelInfo.className = "message-model";
-  node.append(heading, thinking, text, modelInfo);
+  const activity = activityLine("连接中…");
+  activity.hidden = title === "你";
+  if (activity.hidden) setActivity(activity, "", "");
+  const tools = document.createElement("div");
+  tools.className = "message-tools";
+  node.append(heading, activity, thinking, text, tools, modelInfo);
   if (task && !task.trigger.isConnected) $("output").append(task.trigger);
   (task?.output || $("output")).append(node);
   if (!task || task.node.open) scrollLatest();
   const item = {
     task,
+    activity, tools, active: false,
     modelInfo,
     node,
     heading,
@@ -319,6 +516,7 @@ function card(title, task) {
     reasoning: "",
     paintedText: "",
   };
+  messageItems.set(node, item);
   task?.messages.push(item);
   thinking.ontoggle = () => {
     if (thinking.open) renderer.mark(item);
@@ -361,6 +559,7 @@ function renderMessage(item, message) {
     item.skillBlocks = blocks;
     if (blocks.childElementCount) item.node.before(blocks);
   }
+  item.ownReasoning = item.reasoning;
   item.images?.remove();
   item.images = document.createElement("div");
   item.images.className = "message-images";
@@ -376,6 +575,7 @@ function renderMessage(item, message) {
   }
   item.node.append(item.images);
   item.node.hidden = message.role === "user" && !item.buffer && !item.images.childElementCount;
+  updateActivity(item, ["error", "aborted", "length"].includes(message.stopReason) ? (message.errorMessage || "响应中断") : undefined);
   renderer.flush(item);
 }
 function compactionCard(data) {
@@ -409,6 +609,7 @@ function foldCompaction(data) {
     item.node.hidden = true;
     if (item.skillBlocks) item.skillBlocks.hidden = true;
   }
+  mergeThoughts($("output"));
   // 折叠改变上方高度，按保留消息的位移补偿滚动位置，保持阅读锚点而不强制到底部。
   if (anchor) $("transcript").scrollTop += anchor.getBoundingClientRect().top - top;
 }
@@ -560,12 +761,25 @@ function renderRetry(agentId, data) {
 function event(message) {
   if (message.sessionId !== sessionId) return;
   const { type, agentId = "main", data } = message;
-  if (type === "agent.retry") renderRetry(agentId, data);
+  if (type === "agent.retry") {
+    stopActivity(agentId, data.status === "waiting" ? "等待重试" : "已停止");
+    renderRetry(agentId, data);
+    if (data.status === "running") waiting(agentId);
+  }
+  if (type === "tool.state") {
+    toolState(agentId, data);
+    if (data.phase === "end" && (agentId === "main" ? busy : tasks.get(agentId)?.node.dataset.status === "running")) waiting(agentId);
+  }
+  if (type === "agent.message.end" && data.message.role === "toolResult") {
+    toolState(agentId, { ...data.message, phase: "end" });
+  }
   if (type === "session.queue" && agentId === "main") renderQueue(data);
   if (type === "agent.message.end" && data.message.role === "user") {
+    clearWaiting(agentId);
     const item = card("你", tasks.get(agentId));
     renderMessage(item, data.message);
     if (agentId === "main") mainItems.push({ item, entryId: data.entryId });
+    if (busy) waiting(agentId);
   }
   if (type === "agent.runtime") {
     if (agentId === "main") {
@@ -576,9 +790,12 @@ function event(message) {
   if (type === "session.state") {
     void refreshSessions().catch(error);
     busy = data.status !== "idle";
+    if (data.status === "running") waiting("main");
+    else stopActivity("main", data.status === "cancelling" ? "正在停止…" : "已结束");
     controls();
   }
-  if (type === "agent.message.start" && data.message.role === "assistant")
+  if (type === "agent.message.start" && data.message.role === "assistant") {
+    clearWaiting(agentId);
     live.set(
       agentId,
       card(
@@ -586,19 +803,32 @@ function event(message) {
         tasks.get(agentId),
       ),
     );
+    live.get(agentId).active = true;
+    updateActivity(live.get(agentId));
+  }
   if (type === "agent.delta") {
     const item = live.get(agentId);
     if (!item) return;
     if (data.type === "text_delta") item.buffer += data.delta;
     else if (data.type === "thinking_delta") item.reasoning += data.delta;
+    else if (data.type === "thinking_start") { setActivity(item.activity, "思考中…", "thinking"); return; }
+    else if (data.type === "toolcall_start" || data.type === "toolcall_delta") { setActivity(item.activity, "准备调用工具…", "running"); return; }
+    else if (data.type === "toolcall_end") { toolState(agentId, { phase: "start", toolCallId: data.toolCall.id, toolName: data.toolCall.name, args: data.toolCall.arguments }); return; }
     else return;
+    updateActivity(item);
     renderer.mark(item);
   }
   if (type === "agent.message.end" && data.message.role === "assistant") {
     const item =
       live.get(agentId) ||
       card(agentId === "main" ? "AXIOM" : "子 Agent", tasks.get(agentId));
+    clearWaiting(agentId);
+    item.active = false;
+    live.set(agentId, item);
+    for (const call of Array.isArray(data.message.content) ? data.message.content : [])
+      if (call.type === "toolCall") toolState(agentId, { phase: "start", toolCallId: call.id, toolName: call.name, args: call.arguments });
     renderMessage(item, data.message);
+    mergeThoughts(item.node.parentElement);
     if (["error", "aborted", "length"].includes(data.message.stopReason)) retryFailures.set(agentId, item);
     live.delete(agentId);
     if (agentId === "main") mainItems.push({ item, entryId: data.entryId });
@@ -664,6 +894,8 @@ function event(message) {
     item.failure.hidden = !data.error;
     updateTaskRuntime(item, data.runtime);
     renderTaskRuns();
+    if (["starting", "running"].includes(data.status)) waiting(message.taskId);
+    else stopActivity(message.taskId, status);
     scrollLatest();
   }
   if (type === "error") error(data.message);
@@ -687,6 +919,8 @@ function snapshot(state) {
   busy = state.status !== "idle";
   $("output").replaceChildren();
   live.clear();
+  toolItems.clear();
+  waitingItems.clear();
   tasks.clear();
   renderTaskRuns();
   retryCards.clear();
@@ -701,11 +935,16 @@ function snapshot(state) {
   for (const record of compactions)
     for (const entryId of record.compactedMessageIds || [])
       if (!folded.has(entryId)) folded.set(entryId, record);
-  const placed = new Set();
-  for (const { agentId, message, entryId } of state.messages)
+  const placed = new Set(), foldedTools = new Set();
+  for (const { agentId, message, entryId } of state.messages) {
+    if (message.role === "toolResult") {
+      if (toolItems.has(`${agentId}:${message.toolCallId}`)) toolState(agentId, { ...message, phase: "end" });
+    }
     if (["assistant", "user"].includes(message.role)) {
       if (agentId === "main" && entryId && folded.has(entryId)) {
         const record = folded.get(entryId);
+        for (const call of Array.isArray(message.content) ? message.content : [])
+          if (call.type === "toolCall") foldedTools.add(`${agentId}:${call.id}`);
         if (!placed.has(record.id)) {
           placed.add(record.id);
           $("output").append(compactionCard(record));
@@ -720,18 +959,36 @@ function snapshot(state) {
             : "子 Agent",
         tasks.get(agentId),
       );
+      clearWaiting(agentId);
+      live.set(agentId, item);
+      for (const call of Array.isArray(message.content) ? message.content : [])
+        if (call.type === "toolCall") toolState(agentId, { phase: "history", toolCallId: call.id, toolName: call.name, args: call.arguments });
+      live.delete(agentId);
       renderMessage(item, message);
       if (agentId === "main") mainItems.push({ item, entryId });
     }
+  }
   for (const [agentId, message] of Object.entries(state.live))
     if (message.role === "assistant") {
       const item = card(
         agentId === "main" ? "AXIOM" : "子 Agent",
         tasks.get(agentId),
       );
+      clearWaiting(agentId);
+      item.active = true;
       renderMessage(item, message);
       live.set(agentId, item);
     }
+  for (const tool of Object.values(state.tools || {}))
+    if (!foldedTools.has(`${tool.agentId || "main"}:${tool.toolCallId}`)) toolState(tool.agentId || "main", tool);
+  mergeThoughts($("output"));
+  for (const [id, task] of tasks) {
+    mergeThoughts(task.output);
+    if (!["starting", "running"].includes(task.node.dataset.status)) stopActivity(id, "已结束");
+    else waiting(id);
+  }
+  if (state.status === "running") waiting("main");
+  else stopActivity("main", "已结束");
   for (const task of tasks.values())
     if (!task.trigger.isConnected) $("output").append(task.trigger);
   for (const record of state.retries || []) renderRetry(record.agentId, record);
@@ -799,6 +1056,7 @@ $("login").onsubmit = async (e) => {
       ws.onerror = () => reject(new Error("连接失败，请检查服务是否运行"));
       ws.onclose = () => {
         connected = false;
+        for (const id of new Set(["main", ...tasks.keys(), ...waitingItems.keys()])) stopActivity(id, "连接断开，等待恢复");
         if (!$("workspace").hidden) saveView();
         reject(new Error("连接断开"));
         for (const p of pending.values()) p.reject(new Error("连接断开"));
