@@ -1,10 +1,24 @@
 # 开发记录
 
+## 2026-09-11 — 后台压缩增强合并验收
+- 用户确认合并 master。功能 worktree 合入最新 master，保留技能恢复及三按 Esc 撤回功能；日志/知识库冲突保留两侧记录，索引按合并后源码重建。
+- 验证：npm test 123 通过、1 原有跳过、0 失败。功能分支推送后合并并推送 master；保留主工作区 package-lock.json 和未跟踪文件，不安装依赖、不重启正式服务。
+
 ## 2026-09-11 — 后台摘要保留规则、输入区进度与子代理归档
 - worktree `axiom-compaction-ux` / `feat/compaction-ux`。保持 Pi SDK 后台生成、安全点应用和滚动更新摘要；显式要求保留仍有效的旧目标、约束、决策、未完成项与准确上下文，不把未再次提及视为失效。提示词降低遗漏风险，不声称无损。
 - 输入框上方增加后台压缩真实阶段提示，不虚构百分比；状态按主会话隔离并纳入快照，取消/失败/拒绝应用均有反馈。已压缩的委托任务按真实工具结果 ID 归入对应摘要，保留子代理详情和运行入口定位；多次压缩不再夹杂已归档任务。
 - 验证：`npm test` 116 通过、1 原有跳过、0 失败；真实 Chromium 1440/390/320px 摘要分层、任务弹窗、进度位置、旋转和 reduced-motion 通过，无页面/CSP 错误。仓库无 build 脚本，采用现有测试和真实浏览器检查；未调用付费模型，提示词测试仅证明传参及保留规则，不证明摘要语义无损。委托两次被外部服务重启取消，核心代码由主任务直接完成。正式服务未由本任务重启。
 - 涉及 `src/{compaction,pi,sessions}.js`、`public/{app.js,index.html,style.css}`、压缩后端/UI 测试、`tests/conversation-preview.mjs`、两级 README/devlog 与 codebase-map 索引/知识库。使用现有依赖，不安装或重装运行实例依赖；保留主工作区原有改动。
+
+## 2026-09-11 — 技能恢复修复发布 0.1.3
+- 用户确认合并与同步独立仓库。package.json 升至 0.1.3，发布跨目录默认能力收窄与逐会话恢复隔离修复；README 已同步恢复规则。
+- 在功能 worktree 复验后合并 MyWorkbench/master，并以 subtree 推送 axiom/ 至 cosyeezz/axiom master。保留主工作区未提交改动，不重启本机服务，不执行 npm ci。
+
+## 2026-09-11 01:30 — 跨目录能力继承与启动恢复隔离
+- 原因：默认/历史能力以绝对路径持久化，跨目录或卸载后与新清单不符；Sessions.load 将单会话失败传播至 main，导致服务退出，macOS/Windows 共用此缺陷。
+- src/capabilities.js 增加仅供默认继承/历史恢复使用的收窄选项，保持显式输入严格校验，错误包含具体 ID；src/sessions.js 对主/子选择取交集，保留 null/空集合/inherit 语义，不改写全局默认、不按名称替换或授予信任。load 逐文件隔离恢复失败并保留原文件，警告写服务日志。
+- tests/capabilities.test.js、tests/config.test.js 覆盖真实项目技能跨目录、删除技能后恢复、子代理继承、坏 JSON/目录消失隔离、Windows/POSIX 旧 ID 和显式提交拒绝。同步 README.md、codebase-map/knowledge.md 与生成索引；不新增依赖、不修改用户数据。
+- 验证：Windows 本机 npm test 114 通过、1 原有跳过、0 失败；git diff --check 通过。macOS 未实机运行，测试同时覆盖 Windows/POSIX 旧路径。
 
 ## 2026-09-10 21:52 — 紧凑原名工具行与模块强调
 - worktree MyWorkbench-conversation-labels / feat/conversation-labels。按用户六项反馈将工具/思考行缩至 12px/400、SVG 16px/底座 24px；工具显示原名（仅省略 functions. 前缀，完整名保留 title），powershell/pwsh 复用命令图标。思考/连接/准备调用使用 thinking / thinking... / connecting... / calling...，中文结果状态保留。
@@ -377,3 +391,12 @@
 - 注意：新增静态文件必须注册 server.js assets 并快速重启服务，普通刷新拿不到新资源。
 - 最终验证：npm test 111 项——110 通过、1 原有跳过、0 失败；conversation-ui.py 在 1440/390/320px 全通过、browserErrors=[]，覆盖对比度持久化/重置、提示、图标尺寸、1.6s 旋转、动态点固定宽与 reduce 冻结。修复 tooltip 外部 CSSOM 定位、popover 断链及跨间隙悬停问题；修复 localStorage getter 抛错防护并增加回归。
 - 涉及文件：public/{app.js,index.html,style.css,tooltip.js,tooltip.css,text-contrast.js,text-contrast.css}、src/server.js、tests/{message-activity.test.js,conversation-ui.py,tooltip.test.js,text-contrast.test.js}、README.md、.pi/skills/codebase-map/{INDEX.md,knowledge.md,SKILL.md} 与本日志。
+
+## 2026-09-11 三按 Esc 收回已发出的输入
+- 需求：发送后模型还没回复时，三次 Esc 把这条输入（含图片）收回输入框，避免重打；用户特别关心是否会打断供应商前缀缓存。
+- 实现：只做后缀回退。SDK 公开接口 `AgentSession.navigateTree(用户消息 id)` 把叶子移回该条之前并重建内存消息，再补一条不参与上下文的自定义条目（`axiom_recall`）让分支落盘；历史前缀逐字节不变，之前的前缀缓存继续命中，重发同文本还能命中热缓存，代价只是被打断那一轮的缓存写入（编辑消息本来也要丢）。刻意不写「已撤回」占位、不摘要、不碰系统提示词与工具集。
+- 门槛（不额外存标志、重启后仍成立）：这条之后出现回答、工具调用或工具结果就拒绝，只停止并保留原消息；被中断/失败的半截回答可以随输入一起丢弃（否则三按 Esc 在最常见场景下永远失败）。工具调用一律拒绝，避免回退后出现孤立 toolResult 与已发生的副作用。
+- 手势：沿用原 300ms 计时结构。第一次按下开计时器；第二次按下取消计时器、记 300ms 窗口并保留原「停止」点击；窗口内的第三次按下才把 `recall: true` 带进那次队列撤回。单按、双按语义完全不变。
+- 接线：protocol 的 `queue.withdraw` 增加可选 `recall`；`Sessions.withdraw(id, recall)` 先停稳再 recall、最后才清队列（被拒绝时队列原样保留，不吞消息），并按 `entryId` 截断网页历史；客户端撤回后重新 attach 重绘消息区（先 `saveView()` 保住草稿与附件），图片编号按草稿附件数重新对齐。
+- 验证：npm test 121 项全绿（新增 tests/recall.test.js：无输出可撤回、流式中先停、有回答/工具调用/工具结果拒绝、无用户消息与取消导航返回 null、Sessions 截断历史与被拒绝时不吞队列）；tests/app.test.js 补真实按键序列，确认双按不撤回、三按带 `recall` 并重绘。另用真实 SDK 跑 SessionManager 脚本验证「分支 + 自定义标记」重启后仍生效（含被中断的半截回答不复活）。
+- 文件：src/{pi.js,sessions.js,server.js,protocol.js}、public/app.js、tests/{recall.test.js,app.test.js}、README.md、devlog.md、codebase-map 索引与 knowledge.md。

@@ -1078,6 +1078,7 @@ function snapshot(state) {
   locatedScroll = undefined;
   clearTimeout(escapeTimer);
   escapeTimer = undefined;
+  recallArmedUntil = 0;
   activeTask?.node.close();
   activeTask = undefined;
   $("task-overlays").replaceChildren();
@@ -1539,22 +1540,32 @@ $("prompt").onkeydown = (e) => {
     $("composer").requestSubmit();
   }
 };
-let escapeTimer, withdrawing;
-async function withdrawQueue() {
+let escapeTimer, withdrawing, recallArmedUntil = 0;
+async function withdrawQueue(recall = false) {
   if (withdrawing || imageLoading || !connected || changing) return;
   const target = sessionId;
   withdrawing = true;
   try {
-    const queue = await request("queue.withdraw", { sessionId: target });
-    const queuedImages = [...(queue.images?.steering || queue.steering.map(() => null)), ...(queue.images?.followUp || queue.followUp.map(() => null))];
+    const queue = await request("queue.withdraw", { sessionId: target, ...(recall ? { recall: true } : {}) });
+    const recalled = queue.recalled ? [queue.recalled] : [];
+    const queuedImages = [
+      ...(queue.images?.steering || queue.steering.map(() => null)),
+      ...(queue.images?.followUp || queue.followUp.map(() => null)),
+      ...recalled.map((entry) => entry.images?.length ? entry.images : null),
+    ];
     let imageOffset = (sessionId === target ? images : views.get(target)?.images || []).length;
-    const text = [...queue.steering, ...queue.followUp].map((text, index) => {
+    const text = [...queue.steering, ...queue.followUp, ...recalled.map((entry) => entry.text)].map((text, index) => {
       const shifted = text.replace(/\[image(\d+)\]/g, (_, n) => `[image${Number(n) + imageOffset}]`);
       imageOffset += queuedImages[index]?.length || 0;
       return shifted;
     }).filter(Boolean).join("\n\n");
     const restored = queuedImages.flat().filter(Boolean);
     if (!text && !restored.length) return;
+    // 上下文里的输入被撤回后，叶子已回退：重新取快照重绘消息区（saveView 先保住当前草稿与附件）。
+    if (recalled.length && sessionId === target) {
+      saveView();
+      snapshot(await request("session.attach", { sessionId: target }));
+    }
     if (sessionId === target) {
       $("prompt").value = [$("prompt").value, text].filter(Boolean).join("\n\n");
       images = [...images, ...restored];
@@ -1581,9 +1592,13 @@ document.addEventListener("keydown", (e) => {
     if (escapeTimer) {
       clearTimeout(escapeTimer);
       escapeTimer = undefined;
+      recallArmedUntil = Date.now() + 300;
       if (busy) $("stop").click();
     } else {
-      escapeTimer = setTimeout(() => { escapeTimer = undefined; void withdrawQueue(); }, 300);
+      // 单按撤回队列；300ms 内连按三次（第二次起就在 300ms 窗口内）才连带撤回已进入上下文的输入。
+      const recall = Date.now() < recallArmedUntil;
+      recallArmedUntil = 0;
+      escapeTimer = setTimeout(() => { escapeTimer = undefined; void withdrawQueue(recall); }, 300);
     }
   }
 });

@@ -1,11 +1,11 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/11 01:13:41）
+# Axiom 多级代码索引（生成于 2026/9/11 02:13:43）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| public/app.js | 2192 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, allSessions |
+| public/app.js | 2207 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, allSessions |
 | public/file-picker.css | 269 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 351 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/index.html | 243 | 页面骨架与元素 id（见 L3） | - |
@@ -19,28 +19,28 @@
 | scripts/autostart.mjs | 133 | Windows/macOS/Linux 当前用户登录自动启动安装/卸载 | run, projectDir, serviceEntry, label |
 | scripts/install.mjs | 86 | 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器 | root, parseArgs, nodeOk, openCommand |
 | scripts/service.mjs | 119 | 服务守护：IPC 快速/重建重启与安装构建失败反馈 | root, output, run, npmRun |
-| src/capabilities.js | 115 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
+| src/capabilities.js | 120 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/compaction.js | 374 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
 | src/main.js | 60 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, factory, home |
-| src/pi.js | 261 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, queueStateOf, withdrawQueue, createPiFactory |
+| src/pi.js | 298 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, queueStateOf, hasModelOutput, withdrawQueue |
 | src/protocol.js | 145 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/retry.js | 149 | 模型失败重试：可取消退避、最多30次、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_RETRIES, delayFor, MAX_TIMEOUT_MS |
 | src/server.js | 212 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | assets, createServerApp |
-| src/sessions.js | 622 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | BROWSE_PAGE, resolveDir, parentOf, absoluteCrumbs |
+| src/sessions.js | 653 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | BROWSE_PAGE, resolveDir, parentOf, absoluteCrumbs |
 | src/tasks.js | 107 | Tasks：子任务（委托）生命周期 | Tasks |
 | src/tools.js | 97 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, greater, checkUpdate |
-| tests/app.test.js | 1324 | node --test 测试（npm test） | pickerSource, contrastSource |
+| tests/app.test.js | 1353 | node --test 测试（npm test） | pickerSource, contrastSource |
 | tests/autostart.test.js | 60 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
-| tests/capabilities.test.js | 85 | node --test 测试（npm test） | - |
+| tests/capabilities.test.js | 157 | node --test 测试（npm test） | - |
 | tests/codebase-index.test.js | 20 | node --test 测试（npm test） | ROOT, SKILL |
 | tests/compaction-config.test.js | 105 | node --test 测试（npm test） | - |
 | tests/compaction-ui.py | 57 | node --test 测试（npm test） | - |
 | tests/compaction-ui.test.js | 93 | node --test 测试（npm test） | page |
 | tests/compaction.test.js | 781 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
-| tests/config.test.js | 220 | node --test 测试（npm test） | - |
+| tests/config.test.js | 223 | node --test 测试（npm test） | - |
 | tests/conversation-preview.mjs | 122 | node --test 测试（npm test） | markdown, message, thinking, state |
 | tests/conversation-ui.py | 210 | node --test 测试（npm test） | - |
 | tests/defaults.test.js | 33 | node --test 测试（npm test） | - |
@@ -50,6 +50,7 @@
 | tests/install.test.js | 24 | node --test 测试（npm test） | - |
 | tests/markdown.test.js | 72 | node --test 测试（npm test） | - |
 | tests/message-activity.test.js | 191 | node --test 测试（npm test） | page, assistant, thought, call |
+| tests/recall.test.js | 94 | node --test 测试（npm test） | user, assistant, thinking, fixture |
 | tests/retry.test.js | 340 | node --test 测试（npm test） | RATE_LIMIT, QUOTA, ABORTED, fakeSession |
 | tests/server.test.js | 125 | node --test 测试（npm test） | - |
 | tests/service-api.test.js | 34 | node --test 测试（npm test） | - |
@@ -66,7 +67,7 @@
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
-### public/app.js（2192 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
+### public/app.js（2207 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -170,71 +171,71 @@
 | event | function | 928 |
 | snapshot | function | 1077 |
 | clearTimeout | method | 1079 |
-| renderTaskRuns | method | 1100 |
-| renderCompactionStatus | method | 1106 |
-| mergeThoughts | method | 1164 |
-| placeCompactedTasks | method | 1178 |
-| renderImages | method | 1191 |
-| closeCompletion | method | 1194 |
-| renderQueue | method | 1205 |
-| applyConfig | method | 1207 |
-| controls | method | 1209 |
-| reconnectTimer | const | 1211 |
-| clearTimeout | method | 1215 |
-| controls | method | 1218 |
-| scheduleReconnect | function | 1303 |
-| clearTimeout | method | 1304 |
-| serviceVersion | const | 1308 |
-| restartNames | const | 1309 |
-| restartDescriptions | const | 1310 |
-| controls | method | 1334 |
-| fillModels | method | 1346 |
-| fillSubagentModels | method | 1353 |
-| closeCompletion | method | 1370 |
-| controls | method | 1375 |
-| scrollLatest | method | 1380 |
-| enableImagePreview | function | 1412 |
-| renderImages | function | 1433 |
-| addImages | function | 1458 |
-| loadImages | function | 1479 |
-| renderImages | method | 1488 |
-| escapeTimer | const | 1542 |
-| withdrawQueue | function | 1543 |
-| refreshing | const | 1599 |
-| refreshSessions | function | 1600 |
-| updateSessions | function | 1607 |
-| renderSessions | method | 1611 |
-| switchSession | function | 1613 |
-| saveView | method | 1615 |
-| controls | method | 1618 |
-| renderSessions | function | 1630 |
-| sessionAction | const | 1750 |
-| openSessionAction | function | 1751 |
-| contextIcon | function | 1792 |
-| renderContextChips | function | 1795 |
-| renderContextResults | function | 1813 |
-| controls | method | 1845 |
-| resizePrompt | method | 1851 |
-| controls | method | 1852 |
-| closeCompletion | function | 1855 |
-| highlightCompletion | function | 1863 |
-| chooseCompletion | function | 1872 |
-| closeCompletion | method | 1882 |
-| updateCompletion | function | 1885 |
-| closeCompletion | method | 1886 |
-| resizePrompt | method | 1939 |
-| controls | method | 1940 |
-| switchSession | method | 1980 |
-| creationLoad | const | 1982 |
-| createAgentPicker | function | 1983 |
-| options | method | 2005 |
-| fill | method | 2013 |
-| fillThinking | method | 2021 |
-| options | method | 2023 |
-| loadCreation | function | 2069 |
-| openCreation | function | 2103 |
-| updateDefaultsPreview | function | 2120 |
-| updateDefaultsPreview | method | 2140 |
+| renderTaskRuns | method | 1101 |
+| renderCompactionStatus | method | 1107 |
+| mergeThoughts | method | 1165 |
+| placeCompactedTasks | method | 1179 |
+| renderImages | method | 1192 |
+| closeCompletion | method | 1195 |
+| renderQueue | method | 1206 |
+| applyConfig | method | 1208 |
+| controls | method | 1210 |
+| reconnectTimer | const | 1212 |
+| clearTimeout | method | 1216 |
+| controls | method | 1219 |
+| scheduleReconnect | function | 1304 |
+| clearTimeout | method | 1305 |
+| serviceVersion | const | 1309 |
+| restartNames | const | 1310 |
+| restartDescriptions | const | 1311 |
+| controls | method | 1335 |
+| fillModels | method | 1347 |
+| fillSubagentModels | method | 1354 |
+| closeCompletion | method | 1371 |
+| controls | method | 1376 |
+| scrollLatest | method | 1381 |
+| enableImagePreview | function | 1413 |
+| renderImages | function | 1434 |
+| addImages | function | 1459 |
+| loadImages | function | 1480 |
+| renderImages | method | 1489 |
+| escapeTimer | const | 1543 |
+| withdrawQueue | function | 1544 |
+| refreshing | const | 1614 |
+| refreshSessions | function | 1615 |
+| updateSessions | function | 1622 |
+| renderSessions | method | 1626 |
+| switchSession | function | 1628 |
+| saveView | method | 1630 |
+| controls | method | 1633 |
+| renderSessions | function | 1645 |
+| sessionAction | const | 1765 |
+| openSessionAction | function | 1766 |
+| contextIcon | function | 1807 |
+| renderContextChips | function | 1810 |
+| renderContextResults | function | 1828 |
+| controls | method | 1860 |
+| resizePrompt | method | 1866 |
+| controls | method | 1867 |
+| closeCompletion | function | 1870 |
+| highlightCompletion | function | 1878 |
+| chooseCompletion | function | 1887 |
+| closeCompletion | method | 1897 |
+| updateCompletion | function | 1900 |
+| closeCompletion | method | 1901 |
+| resizePrompt | method | 1954 |
+| controls | method | 1955 |
+| switchSession | method | 1995 |
+| creationLoad | const | 1997 |
+| createAgentPicker | function | 1998 |
+| options | method | 2020 |
+| fill | method | 2028 |
+| fillThinking | method | 2036 |
+| options | method | 2038 |
+| loadCreation | function | 2084 |
+| openCreation | function | 2118 |
+| updateDefaultsPreview | function | 2135 |
+| updateDefaultsPreview | method | 2155 |
 
 ### public/file-picker.js（351 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 
@@ -382,7 +383,7 @@
 | start | method | 113 |
 | invoked | const | 117 |
 
-### src/capabilities.js（115 行） — 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities）
+### src/capabilities.js（120 行） — 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -393,7 +394,7 @@
 | snapshotSettings | function | 23 |
 | discoverCapabilities | function | 36 |
 | resolveCapabilities | function | 72 |
-| capabilityLoader | function | 84 |
+| capabilityLoader | function | 89 |
 
 ### src/compaction.js（374 行） — 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交
 
@@ -433,14 +434,16 @@
 | closing | const | 48 |
 | stop | function | 49 |
 
-### src/pi.js（261 行） — createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）
+### src/pi.js（298 行） — createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | agentRuntime | function | 12 |
 | queueStateOf | function | 28 |
-| withdrawQueue | function | 47 |
-| createPiFactory | function | 53 |
+| hasModelOutput | function | 47 |
+| withdrawQueue | function | 57 |
+| recallLastMessage | function | 67 |
+| createPiFactory | function | 89 |
 
 ### src/protocol.js（145 行） — zod 协议：selection / command 判别联合（消息类型见 L3）
 
@@ -481,7 +484,7 @@
 | assets | const | 7 |
 | createServerApp | function | 30 |
 
-### src/sessions.js（622 行） — Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化
+### src/sessions.js（653 行） — Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -497,25 +500,26 @@
 | configureDefaults | method | 95 |
 | saveDefaults | method | 100 |
 | validateSelection | method | 118 |
-| validateCompaction | method | 134 |
-| load | method | 146 |
-| persist | method | 159 |
-| list | method | 178 |
-| rename | method | 189 |
-| create | method | 197 |
-| scheduleTaskNotifications | method | 352 |
-| deliverTaskNotifications | method | 364 |
-| get | method | 386 |
-| revealWorkspace | method | 391 |
-| browse | method | 405 |
-| listFiles | method | 411 |
-| snapshot | method | 469 |
-| subscribe | method | 497 |
-| configure | method | 503 |
-| prompt | method | 537 |
-| cancel | method | 585 |
-| remove | method | 603 |
-| close | method | 618 |
+| validateCompaction | method | 139 |
+| load | method | 151 |
+| persist | method | 170 |
+| list | method | 189 |
+| rename | method | 200 |
+| create | method | 208 |
+| scheduleTaskNotifications | method | 366 |
+| deliverTaskNotifications | method | 378 |
+| get | method | 400 |
+| revealWorkspace | method | 405 |
+| browse | method | 419 |
+| listFiles | method | 425 |
+| snapshot | method | 483 |
+| subscribe | method | 511 |
+| configure | method | 517 |
+| prompt | method | 551 |
+| withdraw | method | 601 |
+| cancel | method | 616 |
+| remove | method | 634 |
+| close | method | 649 |
 
 ### src/tasks.js（107 行） — Tasks：子任务（委托）生命周期
 
@@ -551,7 +555,7 @@
 | greater | const | 11 |
 | checkUpdate | function | 18 |
 
-### tests/app.test.js（1324 行） — node --test 测试（npm test）
+### tests/app.test.js（1353 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -669,6 +673,15 @@
 | thought | const | 39 |
 | call | const | 40 |
 | entry | const | 41 |
+
+### tests/recall.test.js（94 行） — node --test 测试（npm test）
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| user | const | 9 |
+| assistant | const | 10 |
+| thinking | const | 11 |
+| fixture | function | 13 |
 
 ### tests/retry.test.js（340 行） — node --test 测试（npm test）
 
