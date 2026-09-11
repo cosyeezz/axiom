@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-11 Tailscale 同账号远程控制
+
+- 内容：设置左侧默认新会话设置下新增远程控制；自动读取本机 Tailscale 登录名，显式开启后仅允许同账号设备访问。电脑本机继续走 loopback，远程可正常操作会话，但远程访问配置和登录操作仅允许本机管理。
+- 原因与决策：手机在 Wi-Fi/流量之间切换无需维护两套 IP 白名单；使用本机 Tailscale CLI 的 whois 验证真实连接身份，不信客户端邮箱/代理身份头，不保存密码，不开放公网或整个局域网。单独绑定 Tailscale 地址，不要求 Serve/Funnel。默认关闭，账号变更与关闭后撤销旧连接。
+- 涉及文件：`src/remote.js`、`src/server.js`、`src/main.js`、`src/protocol.js`、`public/app.js`、`public/index.html`、`public/style.css`、`tests/remote.test.js`、`tests/remote-ui.test.js`、`README.md` 与代码索引技能。设置复用 Linear 的 #0f1011 面板、#23252a 边框、#5e6ad2 操作强调及系统字体，不新增依赖。
+- 最终验证：`npm test` 184 项，183 通过、0 失败、1 原有跳过；`python tests/remote-ui.py` 的 1440/390/320px 全通过。远程验证使用模拟身份，未进行真实手机连通或真实登录操作。
+- 联调：同步模型供应商设置的新导航；修正远程 active/online 状态区分、切换本机账号后只读邮箱刷新、登录授权部分回执合并及在途 WS 撤权检查。新建 `tests/remote-ui.py` 覆盖 1440/390/320px。
+- 验证边界：使用模拟 Tailscale 身份与本地 HTTP/WebSocket 验证，不替用户执行真实登录或开启远程监听；实际手机端双设备连通需用户登录后验收。HTTP 由 Tailscale 加密传输，但浏览器非安全上下文，请求 ID 不应依赖 crypto.randomUUID，剪贴板功能可能受限。
 ## 2026-09-11 — 统一模型收藏与 Pi 模型管理
 - 在独立 worktree `../worktrees/Axiom-model-favorites` / `feat/model-favorites` 实现；主仓库未跟踪的用户文件保持不动。
 - 调研 Linear Favorites、WAI-ARIA Listbox 与触屏收藏交互。选择项与星标分开，收藏不切换、不关闭，稳定置顶；未收藏悬停/焦点显示，触屏常显。沿用现有 Linear 暗色 token、细边框与蓝紫焦点，黄色仅表达收藏。

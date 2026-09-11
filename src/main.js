@@ -8,6 +8,7 @@ import { createPiFactory } from "./pi.js";
 import { Sessions } from "./sessions.js";
 import { createModelsService } from "./model-config.js";
 import { createServerApp } from "./server.js";
+import { createRemoteAccess, createTailscale } from "./remote.js";
 import { checkUpdate } from "./update.js";
 
 const port = Number(process.env.AXIOM_PORT || 4319);
@@ -29,7 +30,7 @@ const sessions = new Sessions(factory, join(home, "defaults.json"), join(home, "
 const models = createModelsService({ factory, favoritesPath: join(home, "models-favorites.json") });
 await sessions.loadDefaults();
 await sessions.load();
-const app = createServerApp(sessions, {
+const service = {
   supervisorPid: process.ppid,
   stop: process.send ? () => process.send({ type: "service.shutdown" }) : undefined,
   error: process.env.AXIOM_SERVICE_ERROR,
@@ -53,10 +54,23 @@ const app = createServerApp(sessions, {
       process.send({ type: "service.restart", mode, sha }, (error) => error ? reject(error) : resolve());
     })().catch(reject);
   }) : undefined,
+};
+const app = createServerApp(sessions, service);
+app.server.listen(port, "127.0.0.1", () => {
+  console.log(`Axiom listening on http://127.0.0.1:${port}; workspace: ${cwd}`);
+  // 本地端口确定后再初始化远程访问：远程 server 与本地共用端口号（绑定 IP 不同不冲突）。
+  initRemote().catch((error) => console.error("远程访问初始化失败：", error));
 });
-app.server.listen(port, "127.0.0.1", () =>
-  console.log(`Axiom listening on http://127.0.0.1:${port}; workspace: ${cwd}`),
-);
+async function initRemote() {
+  const remote = await createRemoteAccess({ home, app, tailscale: createTailscale() });
+  service.remoteStatus = remote.status;
+  service.remoteConfigure = remote.configure;
+  service.remoteLogin = remote.login;
+  service.remoteShutdown = remote.shutdown;
+  const status = await remote.status();
+  if (status.enabled && !status.active)
+    console.error(`Tailscale 远程访问未启动：${status.error || "原因未知"}`);
+}
 let closing;
 function stop() {
   closing ||= app.close().then(() => process.exit(0)).catch((error) => {

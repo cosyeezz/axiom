@@ -584,7 +584,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("create-submit").textContent, "保存默认配置");
     assert.equal($("create-main-provider").value, "", "defaults do not take the current model implicitly");
     assert.equal($("create-trust-row").hidden, true);
-    assert.equal(window.document.querySelectorAll('.settings-nav button').length, 2);
+    assert.equal(window.document.querySelectorAll('.settings-nav button').length, 3, "默认新会话设置 + 远程控制 + 模型与供应商");
     assert.equal($("create-subagent-mode").querySelector('option[value="inherit"]').textContent, "跟随主代理能力");
     assert.equal($("create-subagent-thinking").querySelector('option[value="max"]').textContent, "max");
     $("create-main-thinking").value = "high";

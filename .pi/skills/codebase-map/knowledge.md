@@ -1,5 +1,10 @@
 # 坑与 bug 知识库（自成长：只追加，不删改历史）
 
+### 2026-09-11 Tailscale HTTP 地址不是浏览器安全上下文
+- 症状：本机 localhost 可用，换成 Tailscale HTTP 地址后请求可能全部失效，自动复制不可用。
+- 根因：Tailscale 的隧道加密不改变浏览器对 HTTP 非 loopback 地址的 secure context 判定，crypto.randomUUID 和剪贴板能力并非处处可用。
+- 修复：public/app.js 请求 ID 使用页内递增序号，只用于匹配回执，无需密码学随机数；剪贴板继续保留错误提示与系统复制回退。
+- 防再犯：tests/remote-ui.test.js 去掉 randomUUID 后验证请求与乱序回执；远程功能不以本机 localhost 浏览器能力作为全部验收依据。
 ### 2026-09-11 强制中断重启后执行过程仍 Working
 - 症状：末尾工具调用失败或中断，没有最终正文，重启后仍显示 Working。
 - 根因：paintCallGroup 将“没有后续消息折叠”误当成“Agent 仍运行”；stopActivity 只停止内层记录，外层忽略代理状态。

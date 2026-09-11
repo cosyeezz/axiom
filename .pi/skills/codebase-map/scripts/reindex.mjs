@@ -17,6 +17,10 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  * 未登记的文件会在 INDEX.md 里标 ⚠ 提醒补充。
  */
 const MODULE_INFO = {
+  "src/remote.js": "Tailscale 登录身份、远程监听、同账号授权与本机配置持久化",
+  "tests/remote.test.js": "Tailscale 远程访问身份、撤权、持久化与来源校验回归",
+  "tests/remote-ui.test.js": "远程设置导航、状态、保存、登录与断线回归",
+  "tests/remote-ui.py": "远程设置真实浏览器布局、分类切换与键盘关闭回归",
   "tests/session-created-at.test.js": "会话创建时间稳定、持久化与旧记录兼容回归",
   "tests/session-sidebar-ui.py": "浏览器侧栏验收：单工作空间、分组日期、绿点与操作展开",
 
