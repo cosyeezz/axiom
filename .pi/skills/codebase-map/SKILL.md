@@ -30,8 +30,13 @@ INDEX.md 是生成物（勿手改）；knowledge.md 是人工沉淀物（勿删�
 ## 架构图（L0）
 
 ```
+desktop/pake.json ── Pake 独立桌面壳（macOS Universal / Windows x64）
+  └─ 打开 http://127.0.0.1:4319（不内置/启动后端，复用以下网页）
+     .github/workflows/desktop.yml 分平台打包
 浏览器 public/
   index.html ── app.js（唯一入口：视图栈/WS客户端/会话设置UI）
+                 ├─ model-picker.js      共享供应商/模型/思考下拉，星标收藏与键盘操作
+                 ├─ model-manager.js     设置页 Pi 供应商/模型管理，模板与安全编辑
                  ├─ file-picker.js       共享文件/目录选择、分类图标、按目录分页加载
                  ├─ tooltip.js/css       全站统一暗色悬停提示（接管原生 title、键盘/Popover/Esc）
                  ├─ text-contrast.js/css 文字对比度 100–150 十档，存 localStorage（右上角按钮）
@@ -45,6 +50,7 @@ scripts/autostart.mjs  Windows/macOS/Linux 用户登录自动启动注册
        └─ src/main.js  入口：端口/cwd 校验，组装并 listen(127.0.0.1)
   ├─ server.js       HTTP 静态路由 + /health + WS 升级分发
   │    └─ remote.js  可选 Tailscale 独立监听、同账号 whois 验证、本机远程配置
+  ├─ model-config.js Pi models.json 无损读写、版本冲突保护与全局收藏持久化
   ├─ Sessions        会话生命周期/队列 + ~/.axiom 工作空间历史、默认配置与具名预设
   │    └─ Tasks ── delegationTools（tools.js，注册给 pi 的委托工具）
   └─ pi.js createPiFactory → pi-coding-agent SDK（原生队列 + SessionManager JSONL）

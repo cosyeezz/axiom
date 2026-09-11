@@ -27,6 +27,19 @@ const assets = new Map(
   }),
 );
 
+// 模型管理器/选择器（前端可选资源）：落地后重启生效，缺失时安全跳过、请求 404。
+for (const [route, file, type = "text/javascript"] of [
+  ["/model-manager.js", "public/model-manager.js"],
+  ["/model-manager.css", "public/model-manager.css", "text/css"],
+  ["/model-picker.js", "public/model-picker.js"],
+  ["/model-picker.css", "public/model-picker.css", "text/css"],
+]) {
+  try {
+    const body = readFileSync(new URL(`../${file}`, import.meta.url));
+    assets.set(route, { type, body, etag: `"${createHash("sha256").update(body).digest("base64url")}"` });
+  } catch {} // 未落地：不注册路由
+}
+
 export function createServerApp(sessions, service = {}) {
   let stopping = false;
   let remoteServer = null;
@@ -108,6 +121,12 @@ export function createServerApp(sessions, service = {}) {
       }
       wss.emit("connection", ws, req); // 传递 upgrade 请求供远程连接周期性重验
     });
+  };
+  // 广播给所有客户端（跨窗口共享）：models.config.changed / models.favorites.changed。
+  const broadcast = (message) => {
+    const raw = JSON.stringify(message);
+    for (const client of wss.clients)
+      if (client.readyState === WebSocket.OPEN) client.send(raw);
   };
   server.on("upgrade", (req, socket, head) => {
     const port = server.address().port;
@@ -261,6 +280,22 @@ export function createServerApp(sessions, service = {}) {
             case "models.list":
               data = sessions.createAgent.catalog();
               break;
+            case "models.config.get":
+            case "models.provider.save":
+            case "models.provider.delete":
+            case "models.model.save":
+            case "models.model.delete":
+            case "models.favorites.get":
+            case "models.favorites.set": {
+              if (!service.models) throw new Error("模型配置服务未启用");
+              data = await service.models.handle(request);
+              if (request.type !== "models.config.get" && request.type !== "models.favorites.get") {
+                if (request.type === "models.favorites.set")
+                  broadcast({ type: "models.favorites.changed", data });
+                else broadcast({ type: "models.config.changed" });
+              }
+              break;
+            }
             case "sessions.list":
               data = sessions.list();
               break;
@@ -348,6 +383,7 @@ export function createServerApp(sessions, service = {}) {
                 // 本地连接 true；经 Tailscale 远程 server 接入的连接为 false，
                 // 前端据此隐藏远程配置管理入口（远程用户也不允许调用 remote.configure/login）。
                 local: !ws.isRemote,
+                ...(ws.isRemote ? { authUrl: null } : {}),
               };
               break;
             case "remote.configure":

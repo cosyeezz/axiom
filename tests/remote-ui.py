@@ -30,12 +30,15 @@ try:
             if width < 700:
                 page.locator("#toggle-sidebar").click()
             page.locator("#open-settings").click()
-            page.locator("#nav-remote").click()
+            page.locator("#settings-remote-tab").click()
             assert page.locator("#remote-panel").is_visible()
             assert not page.locator("#defaults-panel").is_visible()
             assert page.locator("#remote-email").get_attribute("readonly") is not None
             assert page.evaluate("document.querySelector('#settings').scrollWidth <= document.querySelector('#settings').clientWidth")
-            page.locator("#nav-defaults").click()
+            page.locator("#settings-models-tab").click()
+            assert page.locator("#models-panel").is_visible()
+            assert not page.locator("#remote-panel").is_visible()
+            page.locator("#settings-defaults-tab").click()
             assert page.locator("#defaults-panel").is_visible()
             page.keyboard.press("Escape")
             assert not page.locator("#settings").is_visible()

@@ -12,6 +12,12 @@ async function page(extra = "") {
   const source = (await readFile(new URL("../public/app.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "");
   const picker = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
   const contrast = (await readFile(new URL("../public/text-contrast.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+// master 模型模块脚手架（同 tests/app.test.js）：app.js 顶层调用 initModelManager，缺它会 ReferenceError
+const modelSources = await Promise.all(["model-picker", "model-manager"].map(async (name) => {
+  const source = await readFile(new URL(`../public/${name}.js`, import.meta.url), "utf8");
+  const exports = [...source.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
+  return `Object.assign(window, (() => { ${source.replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`;
+})).then((parts) => parts.join("\n"));
   const dom = new JSDOM(html, { url: "http://localhost", runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window;
   w.matchMedia = () => ({ matches: false });
@@ -26,7 +32,7 @@ async function page(extra = "") {
   w.renderMarkdown = new Function("marked", "DOMPurify", `${markdown}; return renderMarkdown;`)(marked, createPurify(w));
   w.createStreamRenderer = (render, after) => createStreamRenderer(render, after, w.requestAnimationFrame, w.cancelAnimationFrame);
   w.WebSocket = class { static OPEN = 1; readyState = 1; send(data) { (this.sent ||= []).push(data); } };
-  w.eval(`${contrast}\n${picker}\n${source}\nconnected = true;\n${extra}`);
+  w.eval(`${modelSources}\n${contrast}\n${picker}\n${source}\nconnected = true;\n${extra}`);
   const state = { sessionId: "remote", title: "Remote", cwd: "C:/work", status: "idle", config: { model: "test/model", thinking: "off", levels: ["off"], skills: [] }, messages: [], tasks: [], live: {}, tools: {} };
   w.snapshot(state);
   return { w, $: (id) => w.document.getElementById(id) };
@@ -53,12 +59,13 @@ test("远程控制：打开才请求、渲染状态、协议白名单、默认�
     w.remoteOnReconnect();
     assert.equal(calls.length, 0);
     // 打开远程面板 → remote.get
-    $("nav-remote").click();
+    $("settings-remote-tab").click();
     await flush();
     assert.equal(calls.at(-1)[0], "remote.get");
     assert.equal($("remote-panel").hidden, false);
     assert.equal($("defaults-panel").hidden, true);
-    assert.equal($("nav-remote").getAttribute("aria-current"), "page");
+    assert.equal($("settings-remote-tab").getAttribute("aria-current"), "page");
+    assert.equal($("settings-defaults-tab").getAttribute("aria-current"), null, "三页签互斥高亮");
     // 已登录：状态、本机邮箱、存储邮箱优先、https 链接
     respond.data = { enabled: true, email: "team@example.com", url: "https://axiom.example.com", installed: true, online: true, loginEmail: "me@example.com", local: true };
     $("remote-refresh").click();
@@ -128,7 +135,7 @@ test("远程控制：断线反馈、保存成功与失败、local false 表单�
     const { calls, respond } = stubRequest(w);
     // 断线：读取失败反馈
     respond.throw = new Error("连接已断开，请重新连接");
-    $("nav-remote").click();
+    $("settings-remote-tab").click();
     await flush();
     assert.match($("remote-feedback").textContent, /读取失败：连接已断开/);
     // 重连后已加载过 → 自动刷新

@@ -8,6 +8,11 @@ import { createStreamRenderer } from "../public/stream-renderer.js";
 
 const pickerSource = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
 const contrastSource = (await readFile(new URL("../public/text-contrast.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+const modelSources = await Promise.all(["model-picker", "model-manager"].map(async (name) => {
+  const source = await readFile(new URL(`../public/${name}.js`, import.meta.url), "utf8");
+  const exports = [...source.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
+  return `Object.assign(window, (() => { ${source.replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`;
+})).then((parts) => parts.join("\n"));
 
 test("header path icons do not inherit the global button minimum height", async () => {
   const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
@@ -205,6 +210,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
           case "service.restart":
             this.receive({ type: "response", id: req.id, ok: false, error: "请先停止正在运行的会话" });
             return;
+          case "models.favorites.get":
+            data = { provider: [], model: [], thinking: [] };
+            break;
           case "models.list":
             data = [
               { key: "test/model", provider: "test", name: "Model" },
@@ -269,7 +277,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("prompt").dispatchEvent(new window.Event("input"));
   };
   try {
-    window.eval(`${contrastSource}\n${pickerSource}\n${source}`);
+    window.eval(`${modelSources}\n${contrastSource}\n${pickerSource}\n${source}`);
     const copySelection = window.eval("copySelection");
     $("prompt").value = "copy selected text";
     $("prompt").setSelectionRange(5, 13);
@@ -576,7 +584,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("create-submit").textContent, "保存默认配置");
     assert.equal($("create-main-provider").value, "", "defaults do not take the current model implicitly");
     assert.equal($("create-trust-row").hidden, true);
-    assert.equal(window.document.querySelectorAll('.settings-nav button').length, 2, "默认新会话设置 + 远程控制");
+    assert.equal(window.document.querySelectorAll('.settings-nav button').length, 3, "默认新会话设置 + 远程控制 + 模型与供应商");
     assert.equal($("create-subagent-mode").querySelector('option[value="inherit"]').textContent, "跟随主代理能力");
     assert.equal($("create-subagent-thinking").querySelector('option[value="max"]').textContent, "max");
     $("create-main-thinking").value = "high";
@@ -987,7 +995,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     const text = task.querySelector(".message > .markdown");
     for (const selector of ["h1", "strong", "li", "pre code", "table"]) assert(text.querySelector(selector), selector);
     assert.equal(text.querySelector("img,[onerror]"), null);
-    const thought = task.querySelector(".message details");
+    const thought = task.querySelector(".message details.thinking-record");
     assert.equal(thought.hidden, false);
     assert.equal(thought.querySelector(".thinking-content").textContent, "");
     thought.open = true;
@@ -1274,6 +1282,9 @@ test("compaction settings edit per scope and fold transcripts in place", async (
           case "service.status":
             data = { managed: true, error: "" };
             break;
+          case "models.favorites.get":
+            data = { provider: [], model: [], thinking: [] };
+            break;
           case "models.list":
             data = [
               { key: "test/model", provider: "test", name: "Model", levels: ["off", "low"] },
@@ -1339,7 +1350,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
   };
   const emit = (type, data) => sockets.at(-1).receive({ type, sessionId: state.sessionId, data });
   try {
-    window.eval(`${contrastSource}\n${pickerSource}\n${source}`);
+    window.eval(`${modelSources}\n${contrastSource}\n${pickerSource}\n${source}`);
     sockets[0].open();
     await settle();
     paint();

@@ -5,6 +5,25 @@
 - 根因：Tailscale 的隧道加密不改变浏览器对 HTTP 非 loopback 地址的 secure context 判定，crypto.randomUUID 和剪贴板能力并非处处可用。
 - 修复：public/app.js 请求 ID 使用页内递增序号，只用于匹配回执，无需密码学随机数；剪贴板继续保留错误提示与系统复制回退。
 - 防再犯：tests/remote-ui.test.js 去掉 randomUUID 后验证请求与乱序回执；远程功能不以本机 localhost 浏览器能力作为全部验收依据。
+### 2026-09-11 强制中断重启后执行过程仍 Working
+- 症状：末尾工具调用失败或中断，没有最终正文，重启后仍显示 Working。
+- 根因：paintCallGroup 将“没有后续消息折叠”误当成“Agent 仍运行”；stopActivity 只停止内层记录，外层忽略代理状态。
+- 修复：waiting/stopActivity 在对应输出区记录实际活动状态，paintCallGroup 同时检查活动与消息边界；终态失败/停止显示 Stopped。
+- 防再犯：tests/message-activity.test.js 覆盖失败后工具间隙仍 Working、idle 收尾、快照重建不复活，不以每个工具完成判整轮结束。
+
+
+### 2026-09-11 执行过程 UI 改版后测试仍假定旧 DOM
+- 症状：app.test.js、message-activity.test.js 三项基线失败，阻塞桌面打包集成。
+- 根因：测试选到了新外层 details，并仍假定思考流默认折叠、工具步骤隐藏模型信息、旧中文状态标签。
+- 修复：限定 .thinking-record；验证流中自动展开/结束收起与历史懒渲染，逐消息元信息与实际工具状态，不改产品代码。
+- 防再犯：组件选择器按职责定位，状态语义与文字分别断言；UI 改版同步运行并维护测试。最终 143 通过、1 跳过。
+
+### 2026-09-11 首次桌面 workflow 无法手动触发
+- 症状：功能分支新增 workflow_dispatch 后，gh workflow run --ref feat/pake-desktop 返回 404。
+- 根因：GitHub 手动工作流须先存在于默认分支；指定 ref 不能跳过首次注册条件。
+- 修复：.github/workflows/desktop.yml 对打包配置变更提供 push 触发，在功能分支先构建验证再合并；macOS 额外校验 DMG 完整性与 arm64/x86_64 双架构。
+- 防再犯：首次发布先使用分支 push 验证，不为触发构建提前合并未经验证的配置；产物发布 Release 并附 SHA256，不能只留有过期时间的 Artifact。
+
 
 ### 执行过程分组在工具间隙反复折叠
 - 症状：Working 下的记录在连续调用之间反复收起、展开。

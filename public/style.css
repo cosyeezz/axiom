@@ -741,8 +741,9 @@ textarea {
 .task-dialog { width: min(880px, calc(100% - var(--sidebar-width) - 32px)); border-color: #42455f; }
 .settings-layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); }
 .settings-nav { padding: 20px 12px; border-right: 1px solid var(--line); }
-.settings-nav button { width: 100%; white-space: normal; }
-#defaults-panel { min-width: 0; }
+.settings-nav button { width: 100%; white-space: normal; margin-bottom: 8px; text-align: left; }
+.settings-nav button[aria-current="page"] { background: var(--raised); color: var(--ink); border-color: var(--accent); }
+#defaults-panel, #remote-panel, #models-panel { min-width: 0; }
 #defaults-editor .settings-body { padding: 0; }
 .settings-nav { display: flex; flex-direction: column; gap: 4px; }
 #remote-form { margin-top: 16px; }

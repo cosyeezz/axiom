@@ -10,6 +10,8 @@
     <link rel="stylesheet" href="/file-picker.css" />
     <link rel="stylesheet" href="/tooltip.css" />
     <link rel="stylesheet" href="/text-contrast.css" />
+    <link rel="stylesheet" href="/model-picker.css" />
+    <link rel="stylesheet" href="/model-manager.css" />
     <script type="module" src="/app.js"></script>
   </head>
   <body>
@@ -190,7 +192,11 @@
         <form method="dialog"><button class="secondary" aria-label="关闭设置" autofocus>✕</button></form>
       </header>
       <div class="settings-layout">
-      <nav class="settings-nav" aria-label="设置分类"><button type="button" id="nav-defaults" class="secondary" aria-current="page">默认新会话设置</button><button type="button" id="nav-remote" class="secondary" aria-current="false">远程控制</button></nav>
+      <nav class="settings-nav" aria-label="设置分类">
+        <button id="settings-defaults-tab" type="button" class="secondary" aria-current="page" aria-controls="defaults-panel">默认新会话设置</button>
+        <button id="settings-remote-tab" type="button" class="secondary" aria-controls="remote-panel">远程控制</button>
+        <button id="settings-models-tab" type="button" class="secondary" aria-controls="models-panel">模型与供应商</button>
+      </nav>
       <div class="settings-body" id="defaults-panel">
         <section aria-labelledby="selection-copy-title">
           <h3 id="selection-copy-title">输入与复制</h3>
@@ -247,6 +253,7 @@
           <div class="dialog-actions"><button type="button" id="remote-refresh" class="secondary">刷新状态</button><button id="remote-save">保存</button></div>
         </form>
       </div>
+      <div class="settings-body" id="models-panel" hidden></div>
       </div>
     </dialog>
     <dialog id="create-session" aria-labelledby="create-title">

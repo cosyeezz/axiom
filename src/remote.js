@@ -442,7 +442,7 @@ export async function createRemoteAccess({
     const attach = (stream) => {
       if (!stream?.on) return;
       const state = { rest: "" };
-      scanners.push({
+      const scanner = {
         feed(chunk) {
           state.rest += chunk.toString("utf8");
           const lines = state.rest.split("\n"); // chunk 可能截断 URL，按完整行提取
@@ -452,14 +452,17 @@ export async function createRemoteAccess({
         flush() {
           scanLine(state.rest);
         },
-      });
+      };
+      scanners.push(scanner);
       stream.on("data", (chunk) => {
         session.output += chunk.length;
         if (session.output > LOGIN_OUTPUT_CAP) {
+          session.closed = true;
+          session.wake?.();
           endLogin(); // 有界：输出异常膨胀即终止
           return;
         }
-        for (const scanner of scanners) scanner.feed(chunk);
+        scanner.feed(chunk);
         if (session.url) session.wake?.(); // 收到完整行即返回，不空等窗口
       });
     };
@@ -473,7 +476,9 @@ export async function createRemoteAccess({
     };
     child.on?.("error", finish);
     child.on?.("close", finish);
-    await Promise.race([waitForUrl, new Promise((done) => setTimeout(done, urlWaitMs))]);
+    let waitTimer;
+    await Promise.race([waitForUrl, new Promise((done) => { waitTimer = setTimeout(done, urlWaitMs); })]);
+    clearTimeout(waitTimer);
     if (!session.url && session.closed)
       return {
         state: "unavailable",

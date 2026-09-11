@@ -2,7 +2,7 @@
 
 多智能体协作的可靠基础。独立 Node.js 服务，通过 Pi SDK 运行主 Agent，以 `delegate` 并行启动子 Agent、以 `read_result` 读取结果，通过 WebSocket 输出实时事件。
 
-执行过程按正文分段：连续思考与工具调用共用一行 `Working`，模型名和用量统计不分组；出现后续用户消息或模型正文后，前段变为 `Completed` 并自动收起。工具返回不会触发完成或折叠。消息底部以 `供应商 · 模型 · 思考级别    113,494↑  1,234↓` 展示元信息；思考级别只在消息有记录时显示，箭头分别代表输入/输出 tokens，窄屏整体换行。
+执行过程按正文分段：连续思考与工具调用共用一行 `Working`，模型名和用量统计不分组；出现后续用户消息或模型正文后，前段变为 `Completed` 并自动收起。工具返回不会触发完成或折叠。执行过程的 Working 还受 Agent 实际状态约束：中断、结束、断线或恢复空闲快照后不再转圈；有失败/停止记录时显示 Stopped，否则显示 Completed。状态变化不会强制折叠用户正在查看的记录。主动中断后不会自动重放命令，发送“继续完成任务”可让 Agent 根据历史接着处理。消息底部以 `供应商 · 模型 · 思考级别    113,494↑  1,234↓` 展示元信息；思考级别只在消息有记录时显示，箭头分别代表输入/输出 tokens，窄屏整体换行。
 
 ## 项目技能与全局技能
 
@@ -49,6 +49,36 @@ Windows 也可直接双击 `install.cmd`。更新版本：网页「服务 → �
 停止后台服务：终端运行 `axiom stop`（默认 4319；`AXIOM_PORT` 可指定其他端口）。有运行任务时拒绝停止；空闲时保存会话，退出服务及守护进程，命令等待退出确认，超时不强杀。只停止当前运行实例，不取消登录自启。旧版本没有停止接口，需要首次完整重启升级后才可使用。
 
 服务停止后重新拉起（守护进程 + 服务进程）：终端运行 `axiom`。已在运行时不重复启动；运行中打印访问地址与日志路径，`Ctrl+C` 停止。
+
+### 独立桌面壳（Pake / macOS + Windows）
+
+```text
+Axiom（npm 安装、独立更新） <-- http://127.0.0.1:4319 -- Pake 桌面窗口
+```
+
+桌面壳只打开本地正式服务，不内置 Node.js、Pi、网页副本或后端，不启动/停止服务。Axiom 更新后刷新窗口即可，通常无需重打壳；关闭窗口不停止后台任务。壳的版本在 `desktop/pake.json` 独立维护，不跟随 npm 包版本。
+
+使用：先按上文 `npm install -g github:cosyeezz/axiom` 安装本体，再运行 `axiom-setup --no-browser`（可注册登录自启），最后安装并打开桌面壳。服务未启动时窗口无法加载，先运行 `axiom`，再重新打开窗口。桌面窗口与浏览器的 localStorage 不共享，但会话仍由同一本地服务保存。
+
+下载已构建安装包：[Desktop v0.1.0](https://github.com/cosyeezz/axiom/releases/tag/desktop-v0.1.0)（含 Windows MSI、macOS Universal DMG 与 SHA256 校验文件）。安装桌面壳不需要 Rust。
+
+打包（无需在自己电脑安装 Rust）：在本仓库 GitHub **Actions → Build Axiom Desktop → Run workflow** 手动运行。成功后从该次运行的 Artifacts 下载并解压：
+
+- `Axiom-Windows-x64`：`Axiom.msi`，Windows x64，运行需要 WebView2。
+- `Axiom-macOS-universal`：`Axiom.dmg`，同时支持 Apple Silicon 与 Intel，打开后拖入 Applications。
+
+目前产物未配置代码签名/公证，系统可能提示未知发布者或拦截；仅安装可信来源的产物，不建议关闭系统安全机制。macOS 若拦截可信下载，可在「系统设置 → 隐私与安全性」批准打开。Actions 产物保存 30 天，正式包另行发布到 Release，不自动更新壳。
+
+本机打包（在仓库根目录执行，两平台通用）：
+
+```sh
+npm install -g pake-cli@3.16.2
+pake --config desktop/pake.json
+```
+
+macOS 同时支持两种芯片时，先执行 `rustup target add aarch64-apple-darwin x86_64-apple-darwin`，然后 `pake --config desktop/pake.json --targets universal`；Windows x64 可显式加 `--targets x64`。需要 Node.js 22、Rust ≥1.85；macOS 需要 Xcode Command Line Tools，Windows 需要 Visual Studio Build Tools 的 C++ 桌面开发组件。npm 安装的是打包工具，不是免编译的桌面客户端。详见 [Pake CLI 文档](https://github.com/tw93/Pake/blob/main/docs/cli-usage.md)。
+
+配置复用 `public/favicon.svg`，保留系统标题栏，允许新窗口与拖放；无需启动 Axiom 就能打包。默认连接 `4319`，不会误连 `npm run dev` 的 `4320`。自定义服务端口需修改 `desktop/pake.json` 的 `url` 后重新打包；不要将本地 Agent 服务暴露到公网。Pake 只作为构建工具安装，不加入 Axiom 运行依赖。
 
 ### 维护：发布更新
 
@@ -115,7 +145,8 @@ Axiom 使用原生 JavaScript，目前没有编译脚本，因此重建时不会
 
 - 默认关闭；远程入口只绑定本机 Tailscale 地址，不开放 `0.0.0.0` 或普通局域网监听。
 - 服务通过本机 `tailscale whois` 验证连接来源的登录名，拒绝其他用户和 tag 设备，不相信浏览器传入的邮箱或身份请求头。同一 tailnet 不代表同一用户；登录名也可能是 `name@github` 这样的标识。
-- 远程控制配置只允许在电脑本机修改。关闭或更改许可会断开已有远程连接，不停止后台会话任务。
+- 远程控制配置只允许在电脑本机修改。关闭或更改许可会立即断开已有远程连接，不停止后台会话任务；Tailscale 身份变化使用短缓存并周期复核，不代表即时同步 Tailscale 控制台的撤权操作。
+- 配置保存在 Axiom 数据目录的 `remote.json`；远程与本机使用相同端口（默认 4319，开发模式 4320）。特殊安装位置可通过 `AXIOM_TAILSCALE_BIN` 指定 CLI。登录失败时可在官方客户端完成授权，再回到面板刷新。
 - 不保存 Tailscale 密码或登录凭据。不使用 Funnel，也不需要配置 Serve；建议同时用 Tailscale 访问规则限制 Axiom 端口。
 - 地址虽然是 HTTP，但设备间流量由 Tailscale 加密。浏览器仍将其视为非安全上下文，自动复制等剪贴板能力可能受限，可使用系统复制菜单。
 - 电脑需要保持开机、联网并运行 Axiom。Tailscale 未安装、未登录或无法验证身份时，不允许远程访问。
@@ -130,6 +161,15 @@ Axiom 使用原生 JavaScript，目前没有编译脚本，因此重建时不会
 - 创建时间写入会话 JSON，后续消息与重命名不改变排序；旧记录缺少创建时间时，以已有最后更新时间作为固定兼容值，无法还原真实创建日期。
 - 侧栏浏览器验收：启动 `node tests/conversation-preview.mjs`，再运行 `python tests/session-sidebar-ui.py`（需安装 Playwright）。默认端口 4321；端口占用时给预览设置 `PREVIEW_PORT`，给测试设置对应的 `AXIOM_PREVIEW_URL`。
 - 隐藏只整理列表，不删除记录、不停止任务，也不切换当前对话。状态保存在当前浏览器的 localStorage，刷新保留，不跨浏览器同步；清除网站数据会重置。
+
+## 模型收藏与供应商管理
+
+- 输入区、默认新会话设置、预设、主/子代理和自动压缩的模型选择共用一份目录与收藏。供应商、模型、思考程度分别收藏；模型按 `provider/id` 区分，避免同名模型串用。收藏仅调整下拉顺序，不改变当前选择，不自动切换模型。
+- 每个选项右侧预留五角星位置：鼠标移入或键盘聚焦显示黄色星标，已收藏常显；触屏直接显示按钮。点击星标不会选中条目或关闭菜单；再次点击取消。收藏项稳定置顶，其余保持原顺序。支持方向键、Home/End、输入查找、Enter 选择、Esc 关闭和键盘访问星标。
+- 「设置 → 模型与供应商」管理 Pi 的 `models.json`：查看已有配置、添加常见供应商或自定义地址、修改 API 协议和模型参数。它不同于会话默认配置，修改的是本机 Pi 模型文件；使用 `PI_CODING_AGENT_DIR` 时跟随该目录，否则为 `~/.pi/agent/models.json`。
+- 配置保存保留未编辑的高级字段和已有凭据；密钥不回传明文，编辑时留空表示保持。支持 `$ENV_VAR` 环境变量引用，不允许从网页添加执行命令型凭据。删除只移除自定义配置，不会删除 Pi 内置模型或登录凭据。保存前检测文件版本冲突，避免覆盖外部修改。
+- 保存后更新模型目录；新建会话或重新选择模型使用新配置。已经运行的会话不会强制换掉已绑定模型，避免中断当前请求。
+- 设计依据：[Linear 收藏](https://linear.app/docs/favorites)的星标切换与置顶入口；[WAI-ARIA Listbox](https://www.w3.org/WAI/ARIA/apg/patterns/listbox/)明确选项不适合嵌入额外按钮，因此选择与收藏采用独立控件。沿用现有近黑表面、细边框、`#5e6ad2` 焦点色，黄色只用于收藏状态，不增加装饰色。
 
 ## 新会话与能力选择
 

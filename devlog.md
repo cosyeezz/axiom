@@ -5,7 +5,38 @@
 - 内容：设置左侧默认新会话设置下新增远程控制；自动读取本机 Tailscale 登录名，显式开启后仅允许同账号设备访问。电脑本机继续走 loopback，远程可正常操作会话，但远程访问配置和登录操作仅允许本机管理。
 - 原因与决策：手机在 Wi-Fi/流量之间切换无需维护两套 IP 白名单；使用本机 Tailscale CLI 的 whois 验证真实连接身份，不信客户端邮箱/代理身份头，不保存密码，不开放公网或整个局域网。单独绑定 Tailscale 地址，不要求 Serve/Funnel。默认关闭，账号变更与关闭后撤销旧连接。
 - 涉及文件：`src/remote.js`、`src/server.js`、`src/main.js`、`src/protocol.js`、`public/app.js`、`public/index.html`、`public/style.css`、`tests/remote.test.js`、`tests/remote-ui.test.js`、`README.md` 与代码索引技能。设置复用 Linear 的 #0f1011 面板、#23252a 边框、#5e6ad2 操作强调及系统字体，不新增依赖。
+- 最终验证：`npm test` 184 项，183 通过、0 失败、1 原有跳过；`python tests/remote-ui.py` 的 1440/390/320px 全通过。远程验证使用模拟身份，未进行真实手机连通或真实登录操作。
+- 联调：同步模型供应商设置的新导航；修正远程 active/online 状态区分、切换本机账号后只读邮箱刷新、登录授权部分回执合并及在途 WS 撤权检查。新建 `tests/remote-ui.py` 覆盖 1440/390/320px。
 - 验证边界：使用模拟 Tailscale 身份与本地 HTTP/WebSocket 验证，不替用户执行真实登录或开启远程监听；实际手机端双设备连通需用户登录后验收。HTTP 由 Tailscale 加密传输，但浏览器非安全上下文，请求 ID 不应依赖 crypto.randomUUID，剪贴板功能可能受限。
+## 2026-09-11 — 统一模型收藏与 Pi 模型管理
+- 在独立 worktree `../worktrees/Axiom-model-favorites` / `feat/model-favorites` 实现；主仓库未跟踪的用户文件保持不动。
+- 调研 Linear Favorites、WAI-ARIA Listbox 与触屏收藏交互。选择项与星标分开，收藏不切换、不关闭，稳定置顶；未收藏悬停/焦点显示，触屏常显。沿用现有 Linear 暗色 token、细边框与蓝紫焦点，黄色仅表达收藏。
+- `public/model-picker.js/.css` 与 `public/app.js`：供应商、模型和思考等级统一组件/目录/收藏，覆盖输入区、默认设置、预设、子代理和压缩模型；刷新目录保留当前选择，不能因收藏或刷新隐式保存会话配置。
+- `public/model-manager.js/.css`、`public/index.html`：设置侧栏增加「模型与供应商」，集中查看/编辑 Pi 配置，常见模板和自定义 API 地址，密钥留空保留，明确保存/刷新/删除反馈。
+- 后端新增模型配置与收藏协议，直接操作 Pi models.json，保留未编辑高级字段，保护凭据、检测外部版本冲突并备份；收藏与 Pi 配置分离，使用 Axiom 全局数据目录。
+- `README.md`、codebase-map 架构/索引同步；增加组件、持久化和隔离浏览器验收，测试数据不访问真实模型或用户凭据。验证：完整 npm test 172 项（171 通过、0 失败、1 原有跳过）；隔离 Chromium 验证收藏不改选中、跨页共享、设置导航及 390/320px 无横向溢出，截图位于本地 artifacts/model-selection。
+
+## 2026-09-11 — 中断与重启后的 Working 收尾
+- public/app.js：paintCallGroup 原先仅按后续正文 messageFolded 判断运行，末尾没有回答的中断记录在 idle 快照仍转圈。复用 waiting/stopActivity 统一记录各主/子代理输出区实际活动状态；状态控制 Working/Stopped/Completed，不改变正文边界折叠，不在工具间隙提前结束。
+- tests/message-activity.test.js 增加实际事件→工具失败→idle→重启快照回归，验证活动结束与展开选择保持；npm test 145 项：144 通过、0 失败、1 跳过。
+- README.md 同步行为，复用现有图标/样式，无新依赖。主动中断不自动重放有副作用的命令；继续使用现有消息入口。
+
+## 2026-09-11 — 桌面发布最终验证
+- 修正 tests/app.test.js、tests/message-activity.test.js 过时断言：精准选择 thinking-record 而非新增外层 details；按已实现的思考自动展开/结束收起、逐消息模型用量、工具状态规则验证；保留历史思考懒渲染、XSS 与错误状态覆盖。未修改产品行为。
+- 最终 npm test：144 项，143 通过、0 失败、1 原有跳过；第二批发布 MSI 再次通过解包/进程/窗口与页面标题验收。两平台安装包 SHA256 检查通过。
+- 功能分支提交推送后以 PR 合并 master，发布 desktop-v0.1.0（MSI/DMG/SHA256），清理两个功能 worktree；主工作区未跟踪用户文件保持不动。
+
+## 2026-09-11 — 完成桌面安装包构建与验收
+- 用户要求完整交付：继续执行分支 CI，而非停留在配置；两次 macOS Universal / Windows x64 构建成功。第二次运行 https://github.com/cosyeezz/axiom/actions/runs/34639536557 额外通过 hdiutil DMG 校验与 lipo arm64/x86_64 架构校验。
+- Windows MSI 管理解包返回 0；启动解包后的 pake-axiom.exe，进程正常、主窗口标题 Axiom，UI Automation 读到 Axiom 页面标题；随后关闭本次启动的窗口，未停止后台服务。当前桌面会话无法截图，未声称完成全部交互验收。
+- 打包文件保存到 ../releases/Axiom-desktop-v0.1.0/，生成 SHA256SUMS.txt 并上传 Release 草稿；README.md 增加正式下载地址，codebase-map 架构图与 workflow 首次触发知识同步。安装包未签名/公证，需使用者批准可信应用；不擅自关闭安全机制。
+
+## 2026-09-11 — Pake 独立桌面壳
+- 用户确认本体与壳独立：新增 desktop/pake.json，仅连接 http://127.0.0.1:4319，壳版本 0.1.0；复用现有 favicon，允许新窗口与拖放，不改后端或 npm 运行依赖，不附带服务生命周期管理。
+- 新增 .github/workflows/desktop.yml：手动触发、固定 pake-cli 3.16.2，Windows x64 MSI 与 macOS Universal DMG，构建结果作为 30 天 Artifact 保存；未配置签名、公证或自动发布。
+- README.md 记录安装、分离更新、端口、编译环境与未签名限制；.gitignore 排除本机产物；重建代码索引。
+- 验证：npm ci --ignore-scripts 成功；实际 pake-cli --help 确认参数；读取配置后返回 ENV_MISSING（本机无 Rust），未产出安装包。npm test：140 通过、3 失败、1 跳过；在原主工作区只读复跑对应测试，同样复现 app.test.js / message-activity.test.js 三项已有失败，不修改无关断言。因基线不全绿，暂不合并 master，保留功能 worktree 待处理。
+
 
 ## 消息元信息紧凑排版
 - public/app.js、public/style.css：供应商、模型、消息记录的 thinkingLevel 用间隔点分开；输入/输出用千分位和 ↑/↓，保留悬停说明与无障碍名称；纯工具消息的统计留在展开区域，不分隔调用组。
