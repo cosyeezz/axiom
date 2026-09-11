@@ -17,6 +17,9 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  * 未登记的文件会在 INDEX.md 里标 ⚠ 提醒补充。
  */
 const MODULE_INFO = {
+  "tests/session-created-at.test.js": "会话创建时间稳定、持久化与旧记录兼容回归",
+  "tests/session-sidebar-ui.py": "浏览器侧栏验收：单工作空间、分组日期、绿点与操作展开",
+
   "src/inline-images.js": "模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列",
   "scripts/dev.mjs": "开发入口：DEV 标识、4320 端口与独立数据目录",
   "scripts/service.mjs": "服务守护：IPC 快速/重建重启与安装构建失败反馈",

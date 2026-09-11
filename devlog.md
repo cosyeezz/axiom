@@ -467,3 +467,13 @@
 - 接线：protocol 的 `queue.withdraw` 增加可选 `recall`；`Sessions.withdraw(id, recall)` 先停稳再 recall、最后才清队列（被拒绝时队列原样保留，不吞消息），并按 `entryId` 截断网页历史；客户端撤回后重新 attach 重绘消息区（先 `saveView()` 保住草稿与附件），图片编号按草稿附件数重新对齐。
 - 验证：npm test 121 项全绿（新增 tests/recall.test.js：无输出可撤回、流式中先停、有回答/工具调用/工具结果拒绝、无用户消息与取消导航返回 null、Sessions 截断历史与被拒绝时不吞队列）；tests/app.test.js 补真实按键序列，确认双按不撤回、三按带 `recall` 并重绘。另用真实 SDK 跑 SessionManager 脚本验证「分支 + 自定义标记」重启后仍生效（含被中断的半截回答不复活）。
 - 文件：src/{pi.js,sessions.js,server.js,protocol.js}、public/app.js、tests/{recall.test.js,app.test.js}、README.md、devlog.md、codebase-map 索引与 knowledge.md。
+
+## 2026-09-12 侧栏合并上线
+- 按用户明确要求，将 feat/session-sidebar 合并到最新 origin/master（基线 2e47423），在独立集成 worktree 处理知识库追加冲突并重建生成索引，保留两边功能。
+- 验证：侧栏相关 9 项测试全部通过；全量测试有 3 项消息/思考渲染失败，在未修改的最新 master 同样复现。记录既有失败后按用户要求合并推送，不声称全绿；主仓库未提交文件不动。
+
+## 2026-09-12 会话侧栏整理与页签工作空间隔离
+- 内容：每页签只展示当前工作空间；跨目录打开、预设启动和导入统一另开页签并提供被拦截时的链接，保留原草稿。固定「执行中 → 待继续 → 已完成」，按创建时间倒序逐日分隔，移除拖动和分组折叠；运行中优先展示，标题前使用 Linear success #27a644 绿色圆点。
+- 决策：复用原完成标记 localStorage 与跨页锁，不新增依赖；会话操作收进原生 details，支持键盘、Esc、外部点击和手机触控。创建时间独立持久化，旧历史以 updatedAt 兼容，不能还原过去未保存的创建时间。
+- 验证：创建时间与页签回归通过，Chromium 1440px/320px 验证分组、日期、绿点、操作展开/收起与边界；全量测试的思考展开和 collapsed-thinking 两处失败在干净基线 159d62a 同样复现，未冒充全绿。预览使用 PREVIEW_PORT=4397，未重启正式服务。
+- 文件：public/{app.js,index.html,style.css}、src/sessions.js、tests/{app.test.js,workspace-tabs.test.js,session-created-at.test.js,session-sidebar-ui.py,conversation-preview.mjs}、README.md、devlog.md、codebase-map 索引/生成脚本/knowledge.md。

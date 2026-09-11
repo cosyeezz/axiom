@@ -314,7 +314,7 @@ export class Sessions {
   persist(item) {
     if (!item.storageDir) return Promise.resolve();
     const data = JSON.stringify({ id: item.id, cwd: item.cwd, title: item.title,
-      updatedAt: item.updatedAt, messages: item.messages, compactions: item.compactions, retries: item.retries, tasks: item.tasks.snapshot(),
+      createdAt: item.createdAt, updatedAt: item.updatedAt, messages: item.messages, compactions: item.compactions, retries: item.retries, tasks: item.tasks.snapshot(),
       sessionFile: item.agent.sessionFile?.(),
       selection: { ...item.agent.config?.(), capabilities: item.capabilities,
         subagentCapabilities: item.subagentCapabilities, subagentModel: item.subagentModel,
@@ -332,11 +332,12 @@ export class Sessions {
 
   list() {
     return [...this.items.values()]
-      .map(({ id, title, cwd, status, updatedAt }) => ({
+      .map(({ id, title, cwd, status, updatedAt, createdAt }) => ({
         id,
         title,
         cwd,
         status,
+        createdAt,
         updatedAt,
       }))
       .sort((a, b) => b.updatedAt - a.updatedAt);
@@ -394,6 +395,8 @@ export class Sessions {
       storageDir,
       queueType: selection.queueType || "steer",
       title: saved?.title || "新会话",
+      // 老记录无 createdAt，回退 updatedAt 兜底（历史文件未存创建时间，无法还原真实值）。
+      createdAt: saved?.createdAt || saved?.updatedAt || Date.now(),
       updatedAt: saved?.updatedAt || Date.now(),
       seq: 0,
       status: "idle",

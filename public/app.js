@@ -38,11 +38,6 @@ try {
   const saved = JSON.parse(localStorage.getItem("axiom.hiddenSessions") || "[]");
   if (Array.isArray(saved)) hiddenSessions = new Set(saved.filter((id) => typeof id === "string"));
 } catch {}
-let sessionOrder = [];
-try {
-  const saved = JSON.parse(localStorage.getItem("axiom.sessionOrder") || "[]");
-  if (Array.isArray(saved)) sessionOrder = saved.filter((id) => typeof id === "string");
-} catch {}
 function readSessionPreference(key) {
   const saved = JSON.parse(localStorage.getItem(key) || "[]");
   return Array.isArray(saved) ? saved.filter((id) => typeof id === "string") : [];
@@ -52,7 +47,6 @@ async function changeSessionPreference(key, change) {
     const next = change(readSessionPreference(key));
     localStorage.setItem(key, JSON.stringify(next));
     if (key === "axiom.hiddenSessions") hiddenSessions = new Set(next);
-    else sessionOrder = next;
     renderSessions();
   };
   try {
@@ -68,35 +62,15 @@ function setSessionHidden(id, hidden) {
     const next = new Set(saved);
     hidden ? next.add(id) : next.delete(id);
     return [...next];
-  }).then(() => $("hidden-session-summary").focus());
+  }).then(() => [...document.querySelectorAll(".session-row")].find((row) => row.dataset.sessionId === id)?.querySelector(".session-more").focus());
 }
 window.addEventListener("storage", (event) => {
-  if (event.key !== null && !["axiom.hiddenSessions", "axiom.sessionOrder"].includes(event.key)) return;
+  if (event.key !== null && event.key !== "axiom.hiddenSessions") return;
   try {
     hiddenSessions = new Set(readSessionPreference("axiom.hiddenSessions"));
-    sessionOrder = readSessionPreference("axiom.sessionOrder");
     renderSessions();
   } catch { error("会话列表设置同步失败"); }
 });
-let draggedSession;
-for (const [target, hidden] of [["hidden-session-area", true], ["sessions", false]]) {
-  const area = $(target);
-  area.ondragover = (e) => {
-    if (!draggedSession) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    area.classList.add("session-drop-target");
-  };
-  area.ondragleave = (e) => {
-    if (!area.contains(e.relatedTarget)) area.classList.remove("session-drop-target");
-  };
-  area.ondrop = (e) => {
-    e.preventDefault();
-    area.classList.remove("session-drop-target");
-    if (draggedSession) setSessionHidden(draggedSession, hidden);
-    draggedSession = undefined;
-  };
-}
 function saveView() {
   if (sessionId)
     views.set(sessionId, {
@@ -1852,8 +1826,18 @@ async function withdrawQueue(recall = false) {
   } catch (e) { error(e); }
   finally { withdrawing = false; }
 }
+document.addEventListener("click", (e) => {
+  document.querySelectorAll(".session-options[open]").forEach((menu) => { if (!menu.contains(e.target)) menu.open = false; });
+});
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || e.isComposing || document.querySelector("dialog[open]")) return;
+  const menu = document.querySelector(".session-options[open]");
+  if (menu) {
+    e.preventDefault();
+    menu.open = false;
+    menu.querySelector("summary").focus();
+    return;
+  }
   if (
     mobile.matches &&
     $("toggle-sidebar").getAttribute("aria-expanded") === "true"
@@ -1894,7 +1878,7 @@ function refreshSessions() {
 }
 // ponytail: 可见页面每 5 秒刷新后台状态；需要即时通知时再增加列表事件订阅。
 setInterval(() => {
-  if (connected && !changing && !draggedSession && !document.hidden) void refreshSessions().catch(error);
+  if (connected && !changing && !document.querySelector(".session-options[open]") && !document.hidden) void refreshSessions().catch(error);
 }, 5000);
 function updatePageTitle() {
   const workspace = currentCwd.replaceAll("\\", "/").replace(/\/$/, "").split("/").pop() || currentCwd;
@@ -1902,7 +1886,7 @@ function updatePageTitle() {
 }
 async function updateSessions() {
   const sessions = await request("sessions.list");
-  const listState = (items) => JSON.stringify(items.map(({ id, title, cwd, status, updatedAt }) => ({ id, title, cwd, status, day: new Date(updatedAt).toDateString() })));
+  const listState = (items) => JSON.stringify(items.map(({ id, title, cwd, status, createdAt, updatedAt }) => ({ id, title, cwd, status, createdAt: createdAt ?? updatedAt })));
   const active = sessions.find((s) => s.id === sessionId);
   if (!active && sessionId && connected && !changing) {
     allSessions = sessions;
@@ -1944,7 +1928,16 @@ async function switchSession(action) {
   $("error").textContent = "";
   controls();
   try {
-    snapshot(await action());
+    const state = await action();
+    if (currentCwd && state.cwd !== currentCwd) {
+      const url = `/#${new URLSearchParams({ session: state.sessionId })}`;
+      window.open(url, "_blank", "noopener");
+      $("error").textContent = "其他工作空间已请求在新页签打开。若被浏览器拦截，请点击：";
+      const link = document.createElement("a");
+      link.href = url; link.target = "_blank"; link.rel = "noopener";
+      link.textContent = "打开工作空间";
+      $("error").append(link);
+    } else snapshot(state);
     renderSessions();
     if (mobile.matches) sidebar(false);
     await refreshSessions();
@@ -1957,37 +1950,18 @@ async function switchSession(action) {
 }
 function renderSessions() {
   const fragment = document.createDocumentFragment();
-  const hiddenFragment = document.createDocumentFragment();
   const query = $("search").value.trim().toLowerCase();
-  let group;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const matched = allSessions.filter(
-    (s) =>
-      `${s.title} ${s.cwd}`.toLowerCase().includes(query),
-  );
-  const rank = (s) => {
-    const at = sessionOrder.indexOf(s.id);
-    return at === -1 ? sessionOrder.length : at;
-  };
-  const idle = matched.filter((s) => s.status === "idle" && !hiddenSessions.has(s.id)).sort((a, b) => rank(a) - rank(b));
-  const active = matched.filter((s) => s.status !== "idle" && !hiddenSessions.has(s.id)).sort((a, b) => rank(a) - rank(b));
-  const done = matched.filter((s) => hiddenSessions.has(s.id)).sort((a, b) => rank(a) - rank(b));
+  const createdAt = (s) => s.createdAt ?? s.updatedAt;
+  const matched = allSessions.filter((s) => s.cwd === currentCwd && s.title.toLowerCase().includes(query))
+    .sort((a, b) => createdAt(b) - createdAt(a) || a.id.localeCompare(b.id));
+  const running = (s) => s.status !== "idle";
+  const groups = [
+    ["执行中", matched.filter(running)],
+    ["待继续", matched.filter((s) => !running(s) && !hiddenSessions.has(s.id))],
+    ["已完成", matched.filter((s) => !running(s) && hiddenSessions.has(s.id))],
+  ];
   const addRow = (s) => {
     const hidden = hiddenSessions.has(s.id);
-    const name =
-      s.updatedAt >= +today
-        ? "今天"
-        : s.updatedAt >= +today - 86400000
-          ? "昨天"
-          : "更早";
-    if (!hidden && group !== name) {
-      group = name;
-      const label = document.createElement("p");
-      label.className = "session-group";
-      label.textContent = name;
-      fragment.append(label);
-    }
     const button = document.createElement("button");
     button.className = "session-item";
     button.setAttribute("aria-current", s.id === sessionId ? "page" : "false");
@@ -1995,48 +1969,30 @@ function renderSessions() {
     title.textContent = s.title;
     button.title = s.title;
     const status = document.createElement("small");
-    status.textContent = s.status === "idle" ? "" : "Running";
-    button.append(title, status);
+    status.className = "session-running-dot";
+    status.hidden = s.status === "idle";
+    status.setAttribute("aria-label", "执行中");
+    button.append(status, title);
     button.onclick = () =>
       switchSession(() => request("session.attach", { sessionId: s.id }));
     const row = document.createElement("div");
     row.className = "session-row";
-    row.draggable = true;
-    row.ondragstart = (e) => {
-      draggedSession = s.id;
-      e.dataTransfer.setData("text/plain", s.id);
-      e.dataTransfer.effectAllowed = "move";
-    };
-    row.ondragend = () => {
-      draggedSession = undefined;
-      document.querySelectorAll(".session-drop-target, .session-reorder-target").forEach((node) => node.classList.remove("session-drop-target", "session-reorder-target"));
-    };
-    row.ondragover = (e) => {
-      if (!draggedSession || draggedSession === s.id) return;
-      e.preventDefault();
-      e.stopPropagation();
-      e.dataTransfer.dropEffect = "move";
-      row.classList.add("session-reorder-target");
-    };
-    row.ondragleave = () => row.classList.remove("session-reorder-target");
-    row.ondrop = (e) => {
-      if (!draggedSession || draggedSession === s.id) return;
-      e.preventDefault();
-      e.stopPropagation();
-      row.classList.remove("session-reorder-target");
-      const moving = draggedSession;
-      void changeSessionPreference("axiom.sessionOrder", (saved) => {
-        const liveIds = allSessions.map((item) => item.id);
-        const ids = [...new Set([...saved, ...liveIds])].filter((id) => id !== moving && liveIds.includes(id));
-        const at = ids.indexOf(s.id);
-        ids.splice(at === -1 ? ids.length : at, 0, moving);
-        return ids;
-      });
-    };
+    row.dataset.sessionId = s.id;
+    const menu = document.createElement("details");
+    menu.className = "session-options";
+    const more = document.createElement("summary");
+    more.className = "session-more";
+    more.textContent = "⋯";
+    more.title = `会话操作：${s.title}`;
+    more.setAttribute("aria-label", more.title);
+    menu.append(more);
+    menu.addEventListener("toggle", () => {
+      if (menu.open) document.querySelectorAll(".session-options[open]").forEach((other) => { if (other !== menu) other.open = false; });
+    });
     const actions = document.createElement("div");
     actions.className = "session-actions";
     for (const [kind, label, path] of [
-      ["hide", hidden ? "恢复会话" : "完成并隐藏", hidden ? 'M12 20V4M5 11l7-7 7 7' : 'M5 12l4 4L19 6'],
+      ["hide", hidden ? "移回待继续" : "标记已完成", hidden ? 'M12 20V4M5 11l7-7 7 7' : 'M5 12l4 4L19 6'],
       ["open", "在新标签页打开", 'M14 3h7v7M21 3l-10 10M10 3H3v18h18v-7'],
       ["rename", "重命名", 'M16 3l5 5L8 21H3v-5L16 3zM13 6l5 5M3 16l5 5'],
       ["delete", "删除会话", 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7'],
@@ -2049,57 +2005,48 @@ function renderSessions() {
       if (["rename", "delete"].includes(kind)) action.setAttribute("aria-haspopup", "dialog");
       action.disabled = kind !== "hide" && (!connected || changing);
       action.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
-      action.onclick = () => kind === "open"
-        ? window.open(`/#${new URLSearchParams({ session: s.id })}`, "_blank", "noopener")
-        : kind === "hide" ? setSessionHidden(s.id, !hidden) : openSessionAction(kind, s);
+      action.append(document.createTextNode(label));
+      action.onclick = () => {
+        menu.open = false;
+        more.focus();
+        if (kind === "open") window.open(`/#${new URLSearchParams({ session: s.id })}`, "_blank", "noopener");
+        else if (kind === "hide") void setSessionHidden(s.id, !hidden);
+        else openSessionAction(kind, s);
+      };
       actions.append(action);
     }
-    row.append(button, actions);
-    (hidden ? hiddenFragment : fragment).append(row);
+    menu.append(actions);
+    row.append(button, menu);
+    return row;
   };
-  const workspaces = [...new Set(allSessions.map((s) => s.cwd))];
-  const heading = (cwd, target) => {
-    const label = document.createElement("p");
-    label.className = "session-group workspace-group";
-    label.textContent = cwd.replaceAll("\\", "/").replace(/\/$/, "").split("/").pop() || cwd;
-    label.title = cwd;
-    label.dataset.current = String(cwd === currentCwd);
-    const running = allSessions.filter((s) => s.cwd === cwd && s.status !== "idle").length;
-    if (running) label.append(document.createTextNode(` · ${running} 运行中`));
-    const path = document.createElement("small");
-    path.textContent = cwd;
-    label.append(path);
-    target.append(label);
-  };
-  for (const cwd of workspaces) {
-    const visible = idle.filter((s) => s.cwd === cwd);
-    const running = active.filter((s) => s.cwd === cwd);
-    const hidden = done.filter((s) => s.cwd === cwd);
-    if (visible.length || running.length) {
-      heading(cwd, fragment);
-      group = undefined;
-      for (const s of visible) addRow(s);
-      if (running.length) {
-        const label = document.createElement("p");
-        label.className = "session-group";
-        label.textContent = "待处理";
-        fragment.append(label);
-        group = "今天";
-        for (const s of running) addRow(s);
+  for (const [name, sessions] of groups) {
+    const section = document.createElement("section");
+    section.className = "session-section";
+    section.setAttribute("aria-label", name);
+    const heading = document.createElement("h2");
+    heading.className = "session-group";
+    heading.textContent = name;
+    section.append(heading);
+    let day;
+    for (const s of sessions) {
+      const date = new Date(createdAt(s));
+      const label = Number.isNaN(+date) ? "日期未知" : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+      if (day !== label) {
+        day = label;
+        const divider = document.createElement("p");
+        divider.className = "session-day";
+        divider.textContent = label;
+        section.append(divider);
       }
+      section.append(addRow(s));
     }
-    if (hidden.length) {
-      heading(cwd, hiddenFragment);
-      for (const s of hidden) addRow(s);
+    if (!sessions.length) {
+      const empty = document.createElement("p");
+      empty.className = "session-empty";
+      empty.textContent = query ? "没有匹配的会话" : "暂无会话";
+      section.append(empty);
     }
-  }
-  $("hidden-session-summary").textContent = `已完成`;
-  $("hidden-sessions").replaceChildren(hiddenFragment);
-  if (!fragment.childNodes.length) {
-    const empty = document.createElement("p");
-    empty.className = "session-group";
-    empty.textContent = query ? "没有找到匹配的会话" : "还没有会话";
-    fragment.append(empty);
+    fragment.append(section);
   }
   $("sessions").replaceChildren(fragment);
 }

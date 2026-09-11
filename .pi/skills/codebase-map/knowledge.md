@@ -256,3 +256,9 @@
 ### 2026-09-11 后台服务缺少优雅停止命令
 - 修复：axiom stop 请求本机 POST /service/stop，校验 Host/Origin 与空闲状态，经 IPC 通知守护进程停止；等待子进程保存退出后守护退出，CLI 仅查询 PID 存活不强杀。
 - 防再犯：tests/service-api.test.js 验证跨站/忙碌/重复停止拒绝；tests/service.test.js 验证延迟保存后父子退出，旧服务无接口明确报错。
+
+### 2026-09-12 侧栏状态、完成标记与创建时间不能混用
+- 症状：全部目录混排、运行中会话靠后，手动排序和最后活动时间让列表反复移动，完成区折叠且图标容易误触。
+- 根因：renderSessions 未限定当前 cwd，把完成标记当隐藏优先级，updatedAt 并非创建时间，操作按钮直接常驻。
+- 修复：public/app.js 固定当前工作空间和三组顺序；运行优先于完成标记；src/sessions.js 独立持久化 createdAt；操作通过原生 details 展开。跨 cwd 在 switchSession 统一新开页签，不替换当前草稿。
+- 防再犯：tests/session-sidebar-ui.py 实测桌面/手机、日期与排序、绿点及键盘；tests/workspace-tabs.test.js 检查跨目录保留草稿。resize 后等待媒体查询事件再操作侧栏，预览端口冲突用 PREVIEW_PORT，不能误测旧服务。基线原有两项思考渲染失败已单独复现，不应归因侧栏。
