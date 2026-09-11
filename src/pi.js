@@ -87,8 +87,10 @@ export async function recallLastMessage(session) {
 }
 
 export async function createPiFactory({ cwd, model: requested }) {
-  const modelRuntime = await ModelRuntime.create();
-  const available = await modelRuntime.getAvailable();
+  // 模型目录可被模型配置页刷新（models.json 写入后）：available 用可变绑定，
+  // 旧会话的 configure/压缩模型校验才能看到新目录；已绑定的模型对象本身不热更新（SDK 行为）。
+  let modelRuntime = await ModelRuntime.create();
+  let available = await modelRuntime.getAvailable();
   const startup = await discoverCapabilities(cwd, { loadAdapter: false });
   const defaultKey = requested || `${startup.settingsManager.getDefaultProvider()}/${startup.settingsManager.getDefaultModel()}`;
   const model = available.find((m) => `${m.provider}/${m.id}` === defaultKey) || (!requested && available[0]);
@@ -100,7 +102,7 @@ export async function createPiFactory({ cwd, model: requested }) {
     const workspace = selection.cwd || cwd;
     const selected = selection.model
       ? available.find((m) => `${m.provider}/${m.id}` === selection.model)
-      : model;
+      : available.find((m) => `${m.provider}/${m.id}` === `${model.provider}/${model.id}`);
     if (!selected) throw new Error("Unknown model");
     const validateCompaction = (value, mainModel) => {
       const config = normalizeCompaction(value);
@@ -288,6 +290,11 @@ export async function createPiFactory({ cwd, model: requested }) {
   factory.cwd = cwd;
   factory.capabilities = async (workspace = cwd, trustProject = false) =>
     (await discoverCapabilities(workspace, { trustProject, loadAdapter: false })).catalog;
+  factory.refreshModels = async () => {
+    modelRuntime = await ModelRuntime.create();
+    available = await modelRuntime.getAvailable();
+    return factory.catalog();
+  };
   factory.catalog = () =>
     available.map((m) => ({
       provider: m.provider,

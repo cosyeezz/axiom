@@ -6,6 +6,7 @@ import { stat, mkdir, copyFile } from "node:fs/promises";
 import { constants, readFileSync } from "node:fs";
 import { createPiFactory } from "./pi.js";
 import { Sessions } from "./sessions.js";
+import { createModelsService } from "./model-config.js";
 import { createServerApp } from "./server.js";
 import { checkUpdate } from "./update.js";
 
@@ -24,6 +25,8 @@ try {
   if (!["ENOENT", "EEXIST"].includes(error.code)) throw error;
 }
 const sessions = new Sessions(factory, join(home, "defaults.json"), join(home, "workspaces"));
+// 模型配置（models.json）编辑与收藏：路径注入便于测试与数据目录适配。
+const models = createModelsService({ factory, favoritesPath: join(home, "models-favorites.json") });
 await sessions.loadDefaults();
 await sessions.load();
 const app = createServerApp(sessions, {
@@ -34,6 +37,7 @@ const app = createServerApp(sessions, {
   sourceDir: fileURLToPath(new URL("..", import.meta.url)),
   // pi 的会话目录：网页「导入 pi 会话」的默认浏览位置。
   importDir: join(getAgentDir(), "sessions"),
+  models,
   version: JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8")).version,
   restart: process.send ? (mode) => new Promise((resolve, reject) => {
     (async () => {

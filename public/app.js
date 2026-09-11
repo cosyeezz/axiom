@@ -3,6 +3,8 @@ import { createStreamRenderer } from "./stream-renderer.js";
 import { createFilePicker, fileIcon } from "./file-picker.js";
 import "./tooltip.js";
 import { initTextContrast } from "./text-contrast.js";
+import { createModelPicker } from "./model-picker.js";
+import { initModelManager } from "./model-manager.js";
 
 initTextContrast();
 const filePicker = createFilePicker(request);
@@ -25,6 +27,21 @@ let allSessions = [],
 const views = new Map();
 const compactionDefaults = { enabled: false, tokenThreshold: 100000, percentThreshold: 70, model: null, thinking: "off", keepRecentTokens: 20000 };
 const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+let modelFavorites = { provider: [], model: [], thinking: [] };
+const modelPicker = createModelPicker({
+  getFavorites: () => modelFavorites,
+  onToggle: async (kind, key, favorite) => {
+    modelFavorites = await request("models.favorites.set", { kind, key, favorite });
+    modelPicker.syncAll();
+  },
+  onError: error,
+});
+for (const id of ["provider", "model", "thinking", "subagent-provider", "subagent-model"]) {
+  const kind = id.split("-").at(-1);
+  $(id).dataset.modelKind = kind;
+  modelPicker.enhance($(id), kind);
+}
+const modelManager = initModelManager({ root: $("models-panel"), request, onSaved: refreshModelCatalog });
 let compactions = [], mainItems = [];
 const compactionNodes = new Map(), taskEntries = new Map();
 let images = [], imageLoading = false;
@@ -177,6 +194,7 @@ function controls() {
   $("status").textContent = restarting ? "正在重启…" : connected ? "已连接" : "连接断开";
   for (const id of ["restart-quick", "restart-rebuild", "restart-update"])
     $(id).disabled = !connected || !serviceManaged || restarting;
+  modelPicker.syncAll();
 }
 function options(select, entries, selected) {
   select.replaceChildren(
@@ -184,13 +202,38 @@ function options(select, entries, selected) {
       ([value, text]) => new Option(text, value, false, value === selected),
     ),
   );
+  modelPicker.sync(select);
+}
+// 所有入口共用同一份模型目录；收藏只改变展示顺序，不改变会话选择。
+const providerEntries = () => [...new Set(models.map((m) => m.provider))].map((p) => [p, p]);
+const modelEntries = (provider) => models.filter((m) => provider === undefined || m.provider === provider)
+  .map((m) => [m.key, m.name || m.id]);
+async function refreshModelCatalog() {
+  models = await request("models.list");
+  // 原选择失效时保留并标明；刷新目录不能悄悄切换用户的模型或触发自动保存。
+  const refill = (select, entries) => {
+    const value = select.value;
+    const empty = [...select.options].find((option) => !option.value);
+    if (empty) entries = [["", empty.textContent], ...entries];
+    if (value && !entries.some(([key]) => key === value)) entries.push([value, `${value}（当前不可用）`]);
+    options(select, entries, value);
+  };
+  for (const select of document.querySelectorAll('select[data-model-kind="provider"]')) refill(select, providerEntries());
+  for (const select of document.querySelectorAll('select[data-model-kind="model"]')) {
+    const provider = select.closest(".selectors")?.querySelector('select[data-model-kind="provider"]');
+    refill(select, provider ? (provider.value ? modelEntries(provider.value) : []) : modelEntries());
+  }
+  for (const select of document.querySelectorAll('select[data-model-kind="thinking"]')) {
+    const model = select.closest(".selectors")?.querySelector('select[data-model-kind="model"]');
+    const levels = models.find((entry) => entry.key === model?.value)?.levels;
+    if (levels) refill(select, levels.map((level) => [level, level]));
+  }
+  modelPicker.syncAll();
 }
 function fillModels() {
   options(
     $("model"),
-    models
-      .filter((m) => m.provider === $("provider").value)
-      .map((m) => [m.key, m.name || m.id]),
+    modelEntries($("provider").value),
     config?.model,
   );
 }
@@ -199,7 +242,7 @@ function fillSubagentModels() {
   options(
     $("subagent-model"),
     provider
-      ? models.filter((m) => m.provider === provider).map((m) => [m.key, m.name || m.id])
+      ? modelEntries(provider)
       : [["", "跟随主代理模型"]],
     config?.subagentModel || "",
   );
@@ -251,7 +294,7 @@ function applyConfig(value) {
   renderRuntime($("session-runtime"), runtime);
   options(
     $("subagent-provider"),
-    [["", "跟随主代理"], ...[...new Set(models.map((m) => m.provider))].map((p) => [p, p])],
+    [["", "跟随主代理"], ...providerEntries()],
     models.find((m) => m.key === value.subagentModel)?.provider || "",
   );
   fillSubagentModels();
@@ -288,9 +331,23 @@ async function configure(thinking) {
     if (failure) $("settings-feedback").textContent = `保存失败：${failure}`;
   }
 }
+function showSettingsPanel(panel) {
+  const modelPanel = panel === "models";
+  $("defaults-panel").hidden = modelPanel;
+  $("models-panel").hidden = !modelPanel;
+  for (const name of ["defaults", "models"]) {
+    const button = $(`settings-${name}-tab`);
+    if (name === panel) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  }
+  if (modelPanel) void modelManager.load();
+}
+$("settings-defaults-tab").onclick = () => showSettingsPanel("defaults");
+$("settings-models-tab").onclick = () => showSettingsPanel("models");
 $("open-settings").onclick = () => {
   controls();
   $("settings").showModal();
+  showSettingsPanel("defaults");
   openCreation(true);
 };
 $("settings").onclick = (e) => {
@@ -987,8 +1044,12 @@ function compactionEditor(initial, mainModel) {
   const keep = field("保留最近 tokens", Object.assign(document.createElement("input"), { type: "number", min: "1" }));
   keep.value = initial.keepRecentTokens;
   const model = field("压缩模型", document.createElement("select"));
-  options(model, [["", "跟随主代理模型"], ...models.map((m) => [m.key, m.name || m.id])], initial.model || "");
+  model.dataset.modelKind = "model";
+  modelPicker.enhance(model, "model");
+  options(model, [["", "跟随主代理模型"], ...modelEntries()], initial.model || "");
   const thinking = field("压缩思考等级", document.createElement("select"));
+  thinking.dataset.modelKind = "thinking";
+  modelPicker.enhance(thinking, "thinking");
   const read = () => {
     const kept = number(keep, Number.MAX_SAFE_INTEGER);
     return {
@@ -1432,6 +1493,11 @@ $("login").onsubmit = async (e) => {
             ? p.resolve(message.data)
             : p.reject(new Error(message.error));
         }
+      } else if (message.type === "models.favorites.changed") {
+        modelFavorites = message.data;
+        modelPicker.syncAll();
+      } else if (message.type === "models.config.changed") {
+        void refreshModelCatalog().catch(error);
       } else event(message);
     };
     await new Promise((resolve, reject) => {
@@ -1463,9 +1529,12 @@ $("login").onsubmit = async (e) => {
       ? "重启前请停止所有会话任务；页面会自动重连。"
       : "当前为直接启动，请改用 npm start 以启用重启。");
     models = await request("models.list");
+    try { modelFavorites = await request("models.favorites.get"); }
+    catch (e) { error(`收藏读取失败：${e.message}`); }
+    modelPicker.syncAll();
     options(
       $("provider"),
-      [...new Set(models.map((m) => m.provider))].map((p) => [p, p]),
+      providerEntries(),
     );
     let state;
     if (sessionId) {
@@ -2420,6 +2489,10 @@ function createAgentPicker(role, title, catalog, initial) {
     node.id = `create-${role}-${name}`;
     node.title = labelText;
     label.append(text, node);
+    if (["provider", "model", "thinking"].includes(name)) {
+      node.dataset.modelKind = name;
+      modelPicker.enhance(node, name);
+    }
     selectors.append(label);
     return node;
   };
@@ -2427,17 +2500,17 @@ function createAgentPicker(role, title, catalog, initial) {
   const model = select("model", `${title}模型`);
   const key = initial.model;
   options(provider, [["", role === "main" ? "默认主代理模型" : "跟随主代理"],
-    ...[...new Set(models.map((m) => m.provider))].map((p) => [p, p])],
+    ...providerEntries()],
     models.find((m) => m.key === key)?.provider || "");
   const fill = () => {
-    options(model, provider.value ? models.filter((m) => m.provider === provider.value).map((m) => [m.key, m.name || m.id]) : [["", "使用默认模型"]], key);
+    options(model, provider.value ? modelEntries(provider.value) : [["", "使用默认模型"]], key);
     model.disabled = !provider.value;
   };
   provider.onchange = fill;
   fill();
   const thinking = select("thinking", `${title}思考等级`);
   const fillThinking = () => {
-    const levels = models.find((m) => m.key === model.value)?.levels || ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+    const levels = models.find((m) => m.key === model.value)?.levels || thinkingLevels;
     options(thinking, [["", role === "main" ? "沿用默认思考等级" : "跟随主代理思考等级"], ...levels.map((v) => [v, v])], thinking.value || initial.thinking || "");
   };
   model.onchange = fillThinking;

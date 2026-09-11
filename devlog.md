@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-11 — 统一模型收藏与 Pi 模型管理
+- 在独立 worktree `../worktrees/Axiom-model-favorites` / `feat/model-favorites` 实现；主仓库未跟踪的用户文件保持不动。
+- 调研 Linear Favorites、WAI-ARIA Listbox 与触屏收藏交互。选择项与星标分开，收藏不切换、不关闭，稳定置顶；未收藏悬停/焦点显示，触屏常显。沿用现有 Linear 暗色 token、细边框与蓝紫焦点，黄色仅表达收藏。
+- `public/model-picker.js/.css` 与 `public/app.js`：供应商、模型和思考等级统一组件/目录/收藏，覆盖输入区、默认设置、预设、子代理和压缩模型；刷新目录保留当前选择，不能因收藏或刷新隐式保存会话配置。
+- `public/model-manager.js/.css`、`public/index.html`：设置侧栏增加「模型与供应商」，集中查看/编辑 Pi 配置，常见模板和自定义 API 地址，密钥留空保留，明确保存/刷新/删除反馈。
+- 后端新增模型配置与收藏协议，直接操作 Pi models.json，保留未编辑高级字段，保护凭据、检测外部版本冲突并备份；收藏与 Pi 配置分离，使用 Axiom 全局数据目录。
+- `README.md`、codebase-map 架构/索引同步；增加组件、持久化和隔离浏览器验收，测试数据不访问真实模型或用户凭据。验证：完整 npm test 172 项（171 通过、0 失败、1 原有跳过）；隔离 Chromium 验证收藏不改选中、跨页共享、设置导航及 390/320px 无横向溢出，截图位于本地 artifacts/model-selection。
+
 ## 2026-09-11 — 中断与重启后的 Working 收尾
 - public/app.js：paintCallGroup 原先仅按后续正文 messageFolded 判断运行，末尾没有回答的中断记录在 idle 快照仍转圈。复用 waiting/stopActivity 统一记录各主/子代理输出区实际活动状态；状态控制 Working/Stopped/Completed，不改变正文边界折叠，不在工具间隙提前结束。
 - tests/message-activity.test.js 增加实际事件→工具失败→idle→重启快照回归，验证活动结束与展开选择保持；npm test 145 项：144 通过、0 失败、1 跳过。

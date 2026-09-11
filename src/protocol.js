@@ -71,6 +71,84 @@ export const preset = z.object({
   selection,
 }).strict();
 export const presetStore = z.object({ presets: z.array(preset) }).strict();
+// —— 模型配置（models.json）与收藏，协议：docs/model-config-protocol.md ——
+export const providerKey = z
+  .string()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/, "供应商 id 只能包含字母、数字与 ._-");
+export const modelKey = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .refine((value) => !/[\0\r\n]/.test(value), "模型 id 含非法字符");
+// 密钥写入值：字符串=新值（服务端拒绝 ！ 前导命令型）、{keep:true}=保留现值、null=删除；读取时以 {masked:true,kind} 脱敏。
+export const secretValueIn = z.union([
+  z.string().max(4096),
+  z.object({ keep: z.literal(true) }).strict(),
+  z.null(),
+]);
+const secretHeadersIn = z.record(z.string().min(1).max(256), secretValueIn);
+const thinkingLevelMapIn = z.object(
+  Object.fromEntries(
+    ["off", "minimal", "low", "medium", "high", "xhigh", "max"].map((level) => [
+      level,
+      z.union([z.string().max(200), z.null()]).optional(),
+    ]),
+  ),
+);
+const costIn = z.object({
+  input: z.number().min(0).max(1e6).optional(),
+  output: z.number().min(0).max(1e6).optional(),
+  cacheRead: z.number().min(0).max(1e6).optional(),
+  cacheWrite: z.number().min(0).max(1e6).optional(),
+  tiers: z
+    .array(
+      z.object({
+        inputTokensAbove: z.number().min(0).max(1e9),
+        input: z.number().min(0).max(1e6),
+        output: z.number().min(0).max(1e6),
+        cacheRead: z.number().min(0).max(1e6),
+        cacheWrite: z.number().min(0).max(1e6),
+      }),
+    )
+    .max(20)
+    .optional(),
+});
+// 保存为合并语义：未知顶层字段原样保留；models/modelOverrides 由独立命令管理，出现即拒绝。
+export const providerConfigIn = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional().nullable(),
+    baseUrl: z.string().trim().min(1).max(2048).optional().nullable(),
+    apiKey: secretValueIn.optional(),
+    api: z.string().trim().min(1).max(64).optional().nullable(),
+    oauth: z.literal("radius").optional().nullable(),
+    authHeader: z.boolean().optional().nullable(),
+    headers: secretHeadersIn.optional().nullable(),
+    compat: z.record(z.string(), z.unknown()).optional().nullable(),
+  })
+  .passthrough()
+  .refine(
+    (provider) => !("models" in provider) && !("modelOverrides" in provider),
+    "模型列表请使用 models.model.save / models.model.delete 管理",
+  );
+export const modelConfigIn = z
+  .object({
+    id: modelKey,
+    name: z.string().trim().min(1).max(200).optional().nullable(),
+    api: z.string().trim().min(1).max(64).optional().nullable(),
+    baseUrl: z.string().trim().min(1).max(2048).optional().nullable(),
+    reasoning: z.boolean().optional().nullable(),
+    thinkingLevelMap: thinkingLevelMapIn.optional().nullable(),
+    input: z.array(z.enum(["text", "image"])).max(8).optional().nullable(),
+    cost: costIn.optional().nullable(),
+    contextWindow: z.number().int().positive().max(1e9).optional().nullable(),
+    maxTokens: z.number().int().positive().max(1e9).optional().nullable(),
+    samplingParams: z.record(z.string(), z.unknown()).optional().nullable(),
+    headers: secretHeadersIn.optional().nullable(),
+    compat: z.record(z.string(), z.unknown()).optional().nullable(),
+  })
+  .passthrough();
+const fingerprintIn = z.string().min(1).max(128);
 export const command = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("service.status") }).strict(),
   z.object({ id, type: z.literal("service.restart"), mode: z.enum(["quick", "rebuild", "update"]) }).strict(),
@@ -97,6 +175,52 @@ export const command = z.discriminatedUnion("type", [
     })
     .strict(),
   z.object({ id, type: z.literal("models.list") }).strict(),
+  z.object({ id, type: z.literal("models.config.get") }).strict(),
+  z
+    .object({
+      id,
+      type: z.literal("models.provider.save"),
+      providerId: providerKey,
+      provider: providerConfigIn,
+      baseFingerprint: fingerprintIn,
+    })
+    .strict(),
+  z
+    .object({
+      id,
+      type: z.literal("models.provider.delete"),
+      providerId: providerKey,
+      baseFingerprint: fingerprintIn,
+    })
+    .strict(),
+  z
+    .object({
+      id,
+      type: z.literal("models.model.save"),
+      providerId: providerKey,
+      model: modelConfigIn,
+      baseFingerprint: fingerprintIn,
+    })
+    .strict(),
+  z
+    .object({
+      id,
+      type: z.literal("models.model.delete"),
+      providerId: providerKey,
+      modelId: modelKey,
+      baseFingerprint: fingerprintIn,
+    })
+    .strict(),
+  z.object({ id, type: z.literal("models.favorites.get") }).strict(),
+  z
+    .object({
+      id,
+      type: z.literal("models.favorites.set"),
+      kind: z.enum(["provider", "model", "thinking"]),
+      key: z.string().trim().min(1).max(300),
+      favorite: z.boolean(),
+    })
+    .strict(),
   z.object({
     id, type: z.literal("capabilities.list"),
     cwd: workspace, trustProject: z.boolean().optional(),
