@@ -2,6 +2,11 @@ name: Build Axiom Desktop
 
 on:
   workflow_dispatch:
+  push:
+    branches: [feat/pake-desktop]
+    paths:
+      - '.github/workflows/desktop.yml'
+      - 'desktop/**'
 
 permissions:
   contents: read
