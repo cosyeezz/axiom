@@ -124,25 +124,31 @@ summary {
   min-height: 60px;
   overflow: auto;
 }
-#hidden-session-area { flex: 0 1 auto; min-height: 40px; max-height: 35%; overflow: auto; border-top: 1px solid var(--line); }
-#hidden-session-summary { padding: 12px 8px; color: var(--muted); font-size: 12px; }
-.session-drop-target { outline: 2px dashed var(--accent); outline-offset: -2px; background: var(--surface); }
 .session-group {
   font-size: 12px;
   color: var(--muted);
   margin: 16px 8px 8px;
 }
-.workspace-group { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; border-top: 1px solid var(--line); padding-top: 12px; }
-.workspace-group[data-current="true"] { color: var(--accent-ink); }
-.workspace-group small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; font-weight: 400; }
-.session-row { display: flex; align-items: center; min-width: 0; padding-right: 4px; border: 1px solid transparent; border-radius: 8px; }
+.session-section + .session-section { border-top: 1px solid var(--line); margin-top: 16px; }
+.session-section > .session-group { color: var(--ink); font-weight: 600; }
+.session-day { display: flex; align-items: center; gap: 8px; margin: 12px 8px 4px; font-size: 12px; color: var(--muted); }
+.session-day::after { content: ""; height: 1px; flex: 1; background: var(--line); }
+.session-empty { margin: 8px; color: var(--muted); font-size: 12px; }
+.session-row { display: flex; flex-wrap: wrap; align-items: center; min-width: 0; padding-right: 4px; border: 1px solid transparent; border-radius: 8px; }
 .session-row:hover, .session-row:focus-within { background: var(--surface); }
-.session-actions { display: flex; flex: 0 0 auto; gap: 2px; }
-.session-actions button { display: grid; place-items: center; width: 28px; min-height: 32px; padding: 5px; background: transparent; border-color: transparent; color: var(--muted); }
+.session-row { position: relative; }
+.session-row > .session-item { flex-basis: 100%; padding-right: 44px; }
+.session-options { width: 100%; }
+.session-more { position: absolute; top: 0; right: 4px; display: grid; place-items: center; width: 40px; min-height: 40px; cursor: pointer; list-style: none; color: var(--muted); border-radius: 8px; font-size: 20px; }
+.session-more::marker { content: ""; }
+.session-more::-webkit-details-marker { display: none; }
+.session-more:hover { background: var(--raised); color: var(--ink); }
+.session-more:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.session-actions { flex-basis: 100%; padding: 4px; background: var(--surface); border-top: 1px solid var(--line); }
+.session-options:not([open]) > .session-actions { display: none; }
+.session-actions button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 8px; background: transparent; border-color: transparent; color: var(--ink); text-align: left; font-weight: 400; }
 .session-actions button:hover:not(:disabled) { background: var(--raised); }
-@media (hover: hover) and (pointer: fine) {
-  .session-row:not(:hover):not(:focus-within) .session-actions { display: none; }
-}
+@media (pointer: coarse) { .session-more, .session-actions button { min-height: 44px; } .session-more { width: 44px; } }
 .session-actions svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .session-item {
   min-width: 0;
@@ -161,22 +167,24 @@ summary {
 .session-item:hover:not(:disabled) {
   background: transparent;
 }
-.session-row.session-reorder-target { border-top-color: var(--accent); }
 .session-row:has(.session-item[aria-current="page"]) {
   background: #5e6ad214;
   border-color: #5e6ad22b;
   box-shadow: inset 2px 0 var(--accent);
 }
 .session-item span {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.session-item small {
+.session-running-dot {
   flex-shrink: 0;
-  color: var(--muted);
-  font-size: 11px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #27a644;
 }
 .preset-group { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; flex-shrink: 0; }
 .preset-group #custom-new { width: 100%; margin: 0; border: 0; border-radius: 0; }

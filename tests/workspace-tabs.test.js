@@ -77,6 +77,23 @@ async function bootPage(url, { hash, session, local } = {}) {
 
 const attachCalls = (requests) => requests.filter((r) => r.type === "session.attach").map((r) => r.sessionId);
 
+test("跨目录操作在新页签打开，保留当前会话和草稿，提供拦截后的打开链接", async () => {
+  const page = await bootPage("http://localhost/", { hash: "session=s-a" });
+  try {
+    await page.connect();
+    const opened = [];
+    page.window.open = (...args) => { opened.push(args); return null; };
+    page.$("prompt").value = "保留草稿";
+    await page.window.eval('switchSession(() => request("session.attach", { sessionId: "s-b" }))');
+    assert.deepEqual(opened, [["/#session=s-b", "_blank", "noopener"]]);
+    assert.equal(page.$("workspace-label").textContent, "C:\\wa");
+    assert.equal(page.$("prompt").value, "保留草稿");
+    assert.equal(page.window.location.hash, "#session=s-a");
+    assert.equal(page.$("error").querySelector("a").hash, "#session=s-b");
+    assert.doesNotMatch(page.$("sessions").textContent, /会话B/);
+  } finally { page.dom.window.close(); }
+});
+
 test("两个页面携带不同 hash 各自 attach 自己的会话，localStorage 保持只读", async () => {
   const a = await bootPage("http://localhost/", { hash: "session=s-a", local: "s-legacy" });
   const b = await bootPage("http://localhost/", { hash: "session=s-b", local: "s-legacy" });
@@ -177,7 +194,7 @@ test("漏掉删除通知时列表刷新也会恢复，且不会卡在刷新锁�
   } finally { STATES.set("s-a", original); STATES.delete("recovered"); page.dom.window.close(); }
 });
 
-test("storage 同步隐藏与排序，不切换当前会话；本地更新合并最新存储", async () => {
+test("storage 同步完成标记且只显示当前工作空间；忽略旧排序",  async () => {
   const page = await bootPage("http://localhost/", { hash: "session=s-a" });
   try {
     await page.connect();
@@ -186,7 +203,7 @@ test("storage 同步隐藏与排序，不切换当前会话；本地更新合并
       page.window.dispatchEvent(new page.window.StorageEvent("storage", { key }));
     };
     emit("axiom.hiddenSessions", ["s-b"]);
-    assert.match(page.$("hidden-sessions").textContent, /会话B/);
+    assert.doesNotMatch(page.$("sessions").textContent, /会话B/);
     assert.equal(page.window.location.hash, "#session=s-a");
     // 未收到另一页的 storage 事件时，写入也必须读取最新状态。
     page.window.localStorage.setItem("axiom.hiddenSessions", JSON.stringify(["s-b", "s-legacy"]));
@@ -194,11 +211,10 @@ test("storage 同步隐藏与排序，不切换当前会话；本地更新合并
     assert.deepEqual(JSON.parse(page.window.localStorage.getItem("axiom.hiddenSessions")), ["s-b", "s-legacy", "s-a"]);
     emit("axiom.hiddenSessions", []);
     emit("axiom.sessionOrder", ["s-b", "s-a"]);
-    await page.window.eval('changeSessionPreference("axiom.sessionOrder", (ids) => [...ids, "s-legacy"])');
-    assert.deepEqual(JSON.parse(page.window.localStorage.getItem("axiom.sessionOrder")), ["s-b", "s-a", "s-legacy"]);
+    assert.deepEqual([...page.$("sessions").querySelectorAll(".session-item span")].map((n) => n.textContent), ["会话A"]);
     page.window.localStorage.clear();
     page.window.dispatchEvent(new page.window.StorageEvent("storage", { key: null }));
-    assert.equal(page.$("hidden-sessions").children.length, 0);
+    assert.equal(page.$("sessions").querySelector('[aria-label="已完成"]').querySelectorAll('.session-row').length, 0);
     let lock = Promise.resolve();
     Object.defineProperty(page.window.navigator, "locks", { value: {
       request: (_key, fn) => { const next = lock.then(fn); lock = next.catch(() => {}); return next; },

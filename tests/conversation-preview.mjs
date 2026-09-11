@@ -118,4 +118,5 @@ const sessions = {
   subscribe: () => () => {},
 };
 const app = createServerApp(sessions);
-app.server.listen(4321, "127.0.0.1", () => console.log("UI preview: http://127.0.0.1:4321 (Ctrl+C to stop)"));
+const port = Number(process.env.PREVIEW_PORT || 4321);
+app.server.listen(port, "127.0.0.1", () => console.log(`UI preview: http://127.0.0.1:${port} (Ctrl+C to stop)`));

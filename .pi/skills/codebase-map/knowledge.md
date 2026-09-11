@@ -252,3 +252,9 @@
 - 风险：多 Node/npm prefix 下全局安装成功但代码落在另一个目录，旧目录写入新 SHA 后永久误报已最新。
 - 修复：scripts/service.mjs 安装前后查询同一个 npm root -g，realpath 比对目标包目录与运行根目录；不同就拒绝，不写提交记录。
 - 防再犯：tests/service.test.js 验证安装前错位不执行安装、安装后错位保留旧 SHA、目录别名允许同一真实路径；npm 安装仍非原子，不承诺失败完整回滚。
+
+### 2026-09-12 侧栏状态、完成标记与创建时间不能混用
+- 症状：全部目录混排、运行中会话靠后，手动排序和最后活动时间让列表反复移动，完成区折叠且图标容易误触。
+- 根因：renderSessions 未限定当前 cwd，把完成标记当隐藏优先级，updatedAt 并非创建时间，操作按钮直接常驻。
+- 修复：public/app.js 固定当前工作空间和三组顺序；运行优先于完成标记；src/sessions.js 独立持久化 createdAt；操作通过原生 details 展开。跨 cwd 在 switchSession 统一新开页签，不替换当前草稿。
+- 防再犯：tests/session-sidebar-ui.py 实测桌面/手机、日期与排序、绿点及键盘；tests/workspace-tabs.test.js 检查跨目录保留草稿。resize 后等待媒体查询事件再操作侧栏，预览端口冲突用 PREVIEW_PORT，不能误测旧服务。基线原有两项思考渲染失败已单独复现，不应归因侧栏。
