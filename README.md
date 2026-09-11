@@ -60,12 +60,14 @@ Axiom（npm 安装、独立更新） <-- http://127.0.0.1:4319 -- Pake 桌面窗
 
 使用：先按上文 `npm install -g github:cosyeezz/axiom` 安装本体，再运行 `axiom-setup --no-browser`（可注册登录自启），最后安装并打开桌面壳。服务未启动时窗口无法加载，先运行 `axiom`，再重新打开窗口。桌面窗口与浏览器的 localStorage 不共享，但会话仍由同一本地服务保存。
 
+下载已构建安装包：[Desktop v0.1.0](https://github.com/cosyeezz/axiom/releases/tag/desktop-v0.1.0)（含 Windows MSI、macOS Universal DMG 与 SHA256 校验文件）。安装桌面壳不需要 Rust。
+
 打包（无需在自己电脑安装 Rust）：在本仓库 GitHub **Actions → Build Axiom Desktop → Run workflow** 手动运行。成功后从该次运行的 Artifacts 下载并解压：
 
 - `Axiom-Windows-x64`：`Axiom.msi`，Windows x64，运行需要 WebView2。
 - `Axiom-macOS-universal`：`Axiom.dmg`，同时支持 Apple Silicon 与 Intel，打开后拖入 Applications。
 
-目前产物未配置代码签名/公证，系统可能提示未知发布者或拦截；仅安装可信来源的产物，不建议关闭系统安全机制。Actions 产物保存 30 天，暂不自动发布 Release 或自动更新壳。
+目前产物未配置代码签名/公证，系统可能提示未知发布者或拦截；仅安装可信来源的产物，不建议关闭系统安全机制。macOS 若拦截可信下载，可在「系统设置 → 隐私与安全性」批准打开。Actions 产物保存 30 天，正式包另行发布到 Release，不自动更新壳。
 
 本机打包（在仓库根目录执行，两平台通用）：
 

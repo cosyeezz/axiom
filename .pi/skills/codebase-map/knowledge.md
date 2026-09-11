@@ -1,5 +1,12 @@
 # 坑与 bug 知识库（自成长：只追加，不删改历史）
 
+### 2026-09-11 首次桌面 workflow 无法手动触发
+- 症状：功能分支新增 workflow_dispatch 后，gh workflow run --ref feat/pake-desktop 返回 404。
+- 根因：GitHub 手动工作流须先存在于默认分支；指定 ref 不能跳过首次注册条件。
+- 修复：.github/workflows/desktop.yml 对打包配置变更提供 push 触发，在功能分支先构建验证再合并；macOS 额外校验 DMG 完整性与 arm64/x86_64 双架构。
+- 防再犯：首次发布先使用分支 push 验证，不为触发构建提前合并未经验证的配置；产物发布 Release 并附 SHA256，不能只留有过期时间的 Artifact。
+
+
 ### 执行过程分组在工具间隙反复折叠
 - 症状：Working 下的记录在连续调用之间反复收起、展开。
 - 根因：paintCallGroup 用当前是否存在运行行判断整轮结束，工具结束与下一条消息之间的空隙被误判为完成。
