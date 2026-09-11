@@ -3,7 +3,7 @@
 ## 2026-09-10 20:40 — 会话 UI 复核修补
 - 根据已回收的只读复核，确认左右 diff 把截断提示放在隐藏的统一视图里；public/app.js 将提示移到该节下方，activityLine 改 span 满足 summary 内容约束。public/markdown.js 避免 JS 查询依赖 :has，保留无 code 的 pre。public/style.css 清理旧强调色与未定义 --text，输入菜单使用同一套 Linear 表面/文字 token。
 - tests/message-activity.test.js 覆盖长 diff/输出与双视图提示，tests/markdown.test.js 覆盖原始 pre；README.md、codebase-map 索引/knowledge.md 与仓库日志同步。侧栏/设置折叠三角不属于会话执行记录，保留原生交互；不新增工具归组、状态机或依赖。
-- 验证：npm test 83 通过、1 原有跳过、0 失败；Chromium 桌面/390px/320px 全套 UI 检查通过，额外验证 1440px/320px 双 diff 视图截断提示及输入菜单颜色，无浏览器/CSP 错误。预览仍为静态样例，正式服务未重启，最终一份复核尚未取得结果。
+- 验证：npm test 83 通过、1 原有跳过、0 失败；Chromium 桌面/390px/320px 全套 UI 检查通过，额外验证 1440px/320px 双 diff 视图截断提示及输入菜单颜色，无浏览器/CSP 错误。预览仍为静态样例，正式服务未重启。最终只读复核已回收：主体改动未发现功能/性能/安全回归；后续补修由主代理以上述 83 项测试与浏览器检查验证。复制反馈的失焦边界、纯 pre 的标签措辞和无害死选择器三项非阻塞建议暂留，避免扩大本轮范围；按仓库流程合并，验收截图移出工作树保留。
 
 ## 2026-09-11 — 会话信息层级与 Linear 视觉重设计
 - worktree MyWorkbench-conversation-ui / feat/conversation-ui。按用户反馈去掉执行记录默认三角、字符图标和重复思考状态：统一 20px SVG + 32px 底座，工具动作/对象/状态分列，完成保持工具身份；工作空间内路径缩短，手机对象换行，未知工具原名省略显示。
