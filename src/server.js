@@ -103,7 +103,7 @@ export function createServerApp(sessions, service = {}) {
           let data;
           switch (request.type) {
             case "service.status":
-              data = { managed: Boolean(service.restart), error: service.error || "" };
+              data = { managed: Boolean(service.restart), error: service.error || "", version: service.version || "" };
               break;
             case "service.restart":
               if (!service.restart) throw new Error("请通过 npm start 启动服务后再使用重启功能");

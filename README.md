@@ -29,7 +29,15 @@ Windows（PowerShell）：
 git clone --depth 1 git@github.com:cosyeezz/axiom.git "$env:USERPROFILE\axiom"; & "$env:USERPROFILE\axiom\install.ps1"
 ```
 
-Windows 也可直接双击 `install.cmd`。更新版本：网页「服务 → 检查更新」（npm 安装自动重装并重启；开发目录提示 git 拉取），或重跑安装命令。卸载自启：`npm run autostart:disable`。
+Windows 也可直接双击 `install.cmd`。更新版本：网页「服务 → 检查更新」（按 GitHub master 提交比对，内容变更即发现；npm 安装自动重装并重启；开发目录提示 git 拉取），或重跑安装命令。卸载自启：`npm run autostart:disable`。
+
+### 维护：发布更新
+
+公开仓库是 MyWorkbench 内 `axiom/` 的镜像（git subtree）。改动合并到 MyWorkbench master 后需手动同步镜像，同步后各安装实例的「检查更新」即可发现并自动升级（按提交比对，内容变更即发现）。发布时顺手把 `axiom/package.json` 的 `version` 升一档——页面服务菜单会显示当前版本，便于确认更新生效（检测本身不依赖它）：
+
+```sh
+git subtree push --prefix=axiom git@github.com:cosyeezz/axiom.git master
+```
 
 ### 手动启动
 
@@ -67,7 +75,7 @@ npm run autostart:disable
 |---|---|
 | 快速重启 | 保存会话、停止服务并重新启动，不安装依赖 |
 | 重建重启 | 停止服务 → `npm ci` 安装锁定版本 → `npm run build --if-present` → 启动 |
-| 检查更新 | 比对 GitHub 公开仓库最新版本：npm 安装自动重装并重启；开发目录提示 git 拉取；已是最新不重启 |
+| 检查更新 | 按 GitHub master 提交比对（内容变更即发现）：npm 安装自动重装并重启；开发目录提示 git 拉取；已是最新不重启 |
 
 Axiom 使用原生 JavaScript，目前没有编译脚本，因此重建时不会假装执行编译。安装可能访问网络并执行依赖安装脚本；失败信息会记录到日志并反馈到菜单。安装前暂存原依赖目录，安装/构建失败会恢复原依赖并尝试重新启动；构建脚本自身修改的产物不自动回滚。重启不拉取 Git 更新、不改变锁文件，也不删除会话历史。运行中的会话会阻止重启，请先停止任务；页面保留草稿并自动重连。
 

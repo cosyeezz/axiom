@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { stat, mkdir, copyFile } from "node:fs/promises";
-import { constants } from "node:fs";
+import { constants, readFileSync } from "node:fs";
 import { createPiFactory } from "./pi.js";
 import { Sessions } from "./sessions.js";
 import { createServerApp } from "./server.js";
@@ -28,6 +28,7 @@ await sessions.loadDefaults();
 await sessions.load();
 const app = createServerApp(sessions, {
   error: process.env.AXIOM_SERVICE_ERROR,
+  version: JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8")).version,
   restart: process.send ? (mode) => new Promise((resolve, reject) => {
     (async () => {
       if (mode === "update") {

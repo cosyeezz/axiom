@@ -1,5 +1,6 @@
-// 检查更新：本地 package.json 版本比对 GitHub 公开仓库 master 的 package.json（git 为唯一更新源，npm 仅发布渠道）。
-// 应用：npm 全局安装的实例由 supervisor 执行 npm install -g 重装（含依赖）；开发目录不自动覆盖，由 git 工作流负责。
+// 检查更新：比对本地安装与 GitHub 公开仓库 master。
+// npm 从 github 安装的实例按 package.json _resolved 里的提交 SHA 比对（内容变更即可发现，无需改版本号）；
+// 开发目录等无 SHA 时退回版本号比对。GitHub API 未认证限流 60 次/时/IP，个人使用足够。
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,12 +18,23 @@ const greater = (a, b) => {
 export async function checkUpdate({
   root = fileURLToPath(new URL("..", import.meta.url)),
   version,
+  sha,
   fetchJson = (url) => fetch(url).then((r) => {
     if (!r.ok) throw new Error(`GitHub 请求失败 ${r.status}`);
     return r.json();
   }),
 } = {}) {
-  const local = version ?? JSON.parse(await readFile(join(root, "package.json"), "utf8")).version;
+  const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+  version ??= pkg.version;
+  sha ??= pkg._resolved?.match(/#([0-9a-f]{7,40})$/i)?.[1];
+  if (sha) {
+    const commit = (await fetchJson(`https://api.github.com/repos/${repo}/commits/master`)).sha;
+    return {
+      available: commit.slice(0, sha.length) !== sha,
+      local: `${version} (${sha.slice(0, 7)})`,
+      remote: commit.slice(0, 7),
+    };
+  }
   const remote = (await fetchJson(`https://raw.githubusercontent.com/${repo}/master/package.json`)).version;
-  return { available: greater(remote, local), local, remote };
+  return { available: greater(remote, version), local: version, remote };
 }

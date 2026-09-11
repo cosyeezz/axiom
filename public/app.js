@@ -1175,6 +1175,9 @@ $("login").onsubmit = async (e) => {
     });
     const service = await request("service.status");
     serviceManaged = service.managed;
+    serviceVersion = service.version || "";
+    $("service-version").hidden = !serviceVersion;
+    $("service-version").textContent = serviceVersion ? `v${serviceVersion}` : "";
     restarting = false;
     $("service-feedback").textContent = service.error || (serviceManaged
       ? "重启前请停止所有会话任务；页面会自动重连。"
@@ -1223,6 +1226,7 @@ function scheduleReconnect() {
   reconnectTimer = setTimeout(() => $("login").requestSubmit(), reconnectDelay);
   reconnectDelay = Math.min(reconnectDelay * 2, 15000);
 }
+let serviceVersion = "";
 const restartNames = { quick: "快速重启", rebuild: "重建重启", update: "检查更新" };
 const restartDescriptions = {
   quick: "仅重新启动服务，不安装依赖。所有页面会暂时断开连接，随后自动重连。",
@@ -1232,7 +1236,9 @@ const restartDescriptions = {
 for (const mode of Object.keys(restartNames)) $(`restart-${mode}`).onclick = () => {
   $("restart-dialog").dataset.mode = mode;
   $("restart-title").textContent = restartNames[mode];
-  $("restart-description").textContent = restartDescriptions[mode];
+  $("restart-description").textContent = mode === "update" && serviceVersion
+    ? `${restartDescriptions[mode]}当前版本 v${serviceVersion}。`
+    : restartDescriptions[mode];
   $("restart-submit").textContent = `确认${restartNames[mode]}`;
   $("restart-dialog").showModal();
   $("restart-cancel").focus();
