@@ -3,7 +3,7 @@ name: Build Axiom Desktop
 on:
   workflow_dispatch:
   push:
-    branches: [feat/pake-desktop]
+    branches: [master, feat/pake-desktop]
     paths:
       - '.github/workflows/desktop.yml'
       - 'desktop/**'
@@ -40,6 +40,16 @@ jobs:
         run: npm install --global pake-cli@3.16.2
       - name: Build desktop shell
         run: pake --config desktop/pake.json --targets ${{ matrix.target }}
+      - name: Verify macOS installer and both architectures
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          hdiutil verify Axiom.dmg
+          hdiutil attach Axiom.dmg -nobrowse -mountpoint "$RUNNER_TEMP/axiom-dmg"
+          trap 'hdiutil detach "$RUNNER_TEMP/axiom-dmg"' EXIT
+          APP="$RUNNER_TEMP/axiom-dmg/Axiom.app"
+          EXEC=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$APP/Contents/Info.plist")
+          lipo "$APP/Contents/MacOS/$EXEC" -verify_arch arm64 x86_64
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
