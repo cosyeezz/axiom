@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-11 — Pake 独立桌面壳
+- 用户确认本体与壳独立：新增 desktop/pake.json，仅连接 http://127.0.0.1:4319，壳版本 0.1.0；复用现有 favicon，允许新窗口与拖放，不改后端或 npm 运行依赖，不附带服务生命周期管理。
+- 新增 .github/workflows/desktop.yml：手动触发、固定 pake-cli 3.16.2，Windows x64 MSI 与 macOS Universal DMG，构建结果作为 30 天 Artifact 保存；未配置签名、公证或自动发布。
+- README.md 记录安装、分离更新、端口、编译环境与未签名限制；.gitignore 排除本机产物；重建代码索引。
+- 验证：npm ci --ignore-scripts 成功；实际 pake-cli --help 确认参数；读取配置后返回 ENV_MISSING（本机无 Rust），未产出安装包。npm test：140 通过、3 失败、1 跳过；在原主工作区只读复跑对应测试，同样复现 app.test.js / message-activity.test.js 三项已有失败，不修改无关断言。因基线不全绿，暂不合并 master，保留功能 worktree 待处理。
+
+
 ## 消息元信息紧凑排版
 - public/app.js、public/style.css：供应商、模型、消息记录的 thinkingLevel 用间隔点分开；输入/输出用千分位和 ↑/↓，保留悬停说明与无障碍名称；纯工具消息的统计留在展开区域，不分隔调用组。
 - tests/activity-groups-ui.py：Chromium 验证示例数字、级别和 390px 窄屏无横向溢出；README.md 同步。缺失思考级别不使用当前会话设置补写历史。
