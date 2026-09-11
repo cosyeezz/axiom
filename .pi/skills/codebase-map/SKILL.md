@@ -30,6 +30,9 @@ INDEX.md 是生成物（勿手改）；knowledge.md 是人工沉淀物（勿删�
 ## 架构图（L0）
 
 ```
+desktop/pake.json ── Pake 独立桌面壳（macOS Universal / Windows x64）
+  └─ 打开 http://127.0.0.1:4319（不内置/启动后端，复用以下网页）
+     .github/workflows/desktop.yml 分平台打包
 浏览器 public/
   index.html ── app.js（唯一入口：视图栈/WS客户端/会话设置UI）
                  ├─ file-picker.js       共享文件/目录选择、分类图标、按目录分页加载

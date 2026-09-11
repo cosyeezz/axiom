@@ -1,5 +1,22 @@
 # 开发记录
 
+## 2026-09-11 — 桌面发布最终验证
+- 修正 tests/app.test.js、tests/message-activity.test.js 过时断言：精准选择 thinking-record 而非新增外层 details；按已实现的思考自动展开/结束收起、逐消息模型用量、工具状态规则验证；保留历史思考懒渲染、XSS 与错误状态覆盖。未修改产品行为。
+- 最终 npm test：144 项，143 通过、0 失败、1 原有跳过；第二批发布 MSI 再次通过解包/进程/窗口与页面标题验收。两平台安装包 SHA256 检查通过。
+- 功能分支提交推送后以 PR 合并 master，发布 desktop-v0.1.0（MSI/DMG/SHA256），清理两个功能 worktree；主工作区未跟踪用户文件保持不动。
+
+## 2026-09-11 — 完成桌面安装包构建与验收
+- 用户要求完整交付：继续执行分支 CI，而非停留在配置；两次 macOS Universal / Windows x64 构建成功。第二次运行 https://github.com/cosyeezz/axiom/actions/runs/34639536557 额外通过 hdiutil DMG 校验与 lipo arm64/x86_64 架构校验。
+- Windows MSI 管理解包返回 0；启动解包后的 pake-axiom.exe，进程正常、主窗口标题 Axiom，UI Automation 读到 Axiom 页面标题；随后关闭本次启动的窗口，未停止后台服务。当前桌面会话无法截图，未声称完成全部交互验收。
+- 打包文件保存到 ../releases/Axiom-desktop-v0.1.0/，生成 SHA256SUMS.txt 并上传 Release 草稿；README.md 增加正式下载地址，codebase-map 架构图与 workflow 首次触发知识同步。安装包未签名/公证，需使用者批准可信应用；不擅自关闭安全机制。
+
+## 2026-09-11 — Pake 独立桌面壳
+- 用户确认本体与壳独立：新增 desktop/pake.json，仅连接 http://127.0.0.1:4319，壳版本 0.1.0；复用现有 favicon，允许新窗口与拖放，不改后端或 npm 运行依赖，不附带服务生命周期管理。
+- 新增 .github/workflows/desktop.yml：手动触发、固定 pake-cli 3.16.2，Windows x64 MSI 与 macOS Universal DMG，构建结果作为 30 天 Artifact 保存；未配置签名、公证或自动发布。
+- README.md 记录安装、分离更新、端口、编译环境与未签名限制；.gitignore 排除本机产物；重建代码索引。
+- 验证：npm ci --ignore-scripts 成功；实际 pake-cli --help 确认参数；读取配置后返回 ENV_MISSING（本机无 Rust），未产出安装包。npm test：140 通过、3 失败、1 跳过；在原主工作区只读复跑对应测试，同样复现 app.test.js / message-activity.test.js 三项已有失败，不修改无关断言。因基线不全绿，暂不合并 master，保留功能 worktree 待处理。
+
+
 ## 消息元信息紧凑排版
 - public/app.js、public/style.css：供应商、模型、消息记录的 thinkingLevel 用间隔点分开；输入/输出用千分位和 ↑/↓，保留悬停说明与无障碍名称；纯工具消息的统计留在展开区域，不分隔调用组。
 - tests/activity-groups-ui.py：Chromium 验证示例数字、级别和 390px 窄屏无横向溢出；README.md 同步。缺失思考级别不使用当前会话设置补写历史。

@@ -50,6 +50,36 @@ Windows 也可直接双击 `install.cmd`。更新版本：网页「服务 → �
 
 服务停止后重新拉起（守护进程 + 服务进程）：终端运行 `axiom`。已在运行时不重复启动；运行中打印访问地址与日志路径，`Ctrl+C` 停止。
 
+### 独立桌面壳（Pake / macOS + Windows）
+
+```text
+Axiom（npm 安装、独立更新） <-- http://127.0.0.1:4319 -- Pake 桌面窗口
+```
+
+桌面壳只打开本地正式服务，不内置 Node.js、Pi、网页副本或后端，不启动/停止服务。Axiom 更新后刷新窗口即可，通常无需重打壳；关闭窗口不停止后台任务。壳的版本在 `desktop/pake.json` 独立维护，不跟随 npm 包版本。
+
+使用：先按上文 `npm install -g github:cosyeezz/axiom` 安装本体，再运行 `axiom-setup --no-browser`（可注册登录自启），最后安装并打开桌面壳。服务未启动时窗口无法加载，先运行 `axiom`，再重新打开窗口。桌面窗口与浏览器的 localStorage 不共享，但会话仍由同一本地服务保存。
+
+下载已构建安装包：[Desktop v0.1.0](https://github.com/cosyeezz/axiom/releases/tag/desktop-v0.1.0)（含 Windows MSI、macOS Universal DMG 与 SHA256 校验文件）。安装桌面壳不需要 Rust。
+
+打包（无需在自己电脑安装 Rust）：在本仓库 GitHub **Actions → Build Axiom Desktop → Run workflow** 手动运行。成功后从该次运行的 Artifacts 下载并解压：
+
+- `Axiom-Windows-x64`：`Axiom.msi`，Windows x64，运行需要 WebView2。
+- `Axiom-macOS-universal`：`Axiom.dmg`，同时支持 Apple Silicon 与 Intel，打开后拖入 Applications。
+
+目前产物未配置代码签名/公证，系统可能提示未知发布者或拦截；仅安装可信来源的产物，不建议关闭系统安全机制。macOS 若拦截可信下载，可在「系统设置 → 隐私与安全性」批准打开。Actions 产物保存 30 天，正式包另行发布到 Release，不自动更新壳。
+
+本机打包（在仓库根目录执行，两平台通用）：
+
+```sh
+npm install -g pake-cli@3.16.2
+pake --config desktop/pake.json
+```
+
+macOS 同时支持两种芯片时，先执行 `rustup target add aarch64-apple-darwin x86_64-apple-darwin`，然后 `pake --config desktop/pake.json --targets universal`；Windows x64 可显式加 `--targets x64`。需要 Node.js 22、Rust ≥1.85；macOS 需要 Xcode Command Line Tools，Windows 需要 Visual Studio Build Tools 的 C++ 桌面开发组件。npm 安装的是打包工具，不是免编译的桌面客户端。详见 [Pake CLI 文档](https://github.com/tw93/Pake/blob/main/docs/cli-usage.md)。
+
+配置复用 `public/favicon.svg`，保留系统标题栏，允许新窗口与拖放；无需启动 Axiom 就能打包。默认连接 `4319`，不会误连 `npm run dev` 的 `4320`。自定义服务端口需修改 `desktop/pake.json` 的 `url` 后重新打包；不要将本地 Agent 服务暴露到公网。Pake 只作为构建工具安装，不加入 Axiom 运行依赖。
+
 ### 维护：发布更新
 
 公开仓库是 MyWorkbench 内 `axiom/` 的镜像（git subtree）。改动合并到 MyWorkbench master 后需手动同步镜像，同步后各安装实例的「检查更新」即可发现并自动升级（按提交比对，内容变更即发现）。发布时顺手把 `axiom/package.json` 的 `version` 升一档——页面服务菜单会显示当前版本，便于确认更新生效（检测本身不依赖它）：

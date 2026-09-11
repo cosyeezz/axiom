@@ -3,3 +3,6 @@ node_modules/
 .env.local
 *.log
 .axiom.pid
+/Axiom.msi
+/Axiom.dmg
+/Axiom.app/
