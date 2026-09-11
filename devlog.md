@@ -336,3 +336,9 @@
 
 ## 2026-09-10 — 隐藏内部任务通知
 - public/app.js 共享消息渲染入口隐藏内部任务完成通知，实时与历史共用，不改变模型上下文或后台投递。tests/app.test.js 覆盖字符串和内容块格式；同步 README 与索引。
+
+## 2026-09-10 图片按占位位置送入模型
+- 核实 Pi 0.85.1 TUI 粘贴：图片存临时文件，光标处插路径，正文原样提交，并非自动内联附件。
+- 删除 public/app.js 每条追加的编号说明；src/inline-images.js 经 capabilities.js 内置 context 扩展按标记首次位置插图，仅转换模型副本，保留队列/存储及重复、漏标兜底。
+- 更新 README、导航索引、knowledge；tests/inline-images.test.js 覆盖顺序与边界，app/capabilities 测试同步。
+- 验证：npm test 86 通过 / 0 失败 / 1 原有跳过；真实 SDK 扩展加载测试验证 context 注册，Codex Responses 转换器实测请求块顺序 text → image → text（不调用远端模型）。

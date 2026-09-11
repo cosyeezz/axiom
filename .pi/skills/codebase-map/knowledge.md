@@ -161,3 +161,9 @@
 - 根因：renderToolDetail 将提示附到 .diff-unified，而桌面默认隐藏该视图。
 - 修复：public/app.js 把 .tool-truncation 作为该节下方的独立元素，适用于 diff 与普通输出；public/style.css 共用说明文字样式。
 - 防再犯：tests/message-activity.test.js 验证两种视图切换后提示仍在 .tool-detail 直属层，普通输出上限不变；浏览器验证 1440px/320px 可见。共享 summary 使用 span 活动行，JS Markdown 查询不依赖 :has（不支持时会抛错，而非仅丢样式）。
+
+### 2026-09-10 图片占位不能只靠末尾说明关联
+- 症状：每条消息追加编号说明，模型附件仍堆在正文末尾。
+- 根因：SDK 普通发送及队列采用 [text,...images]，正文标记没有改变真实图片位置。
+- 修复：inline-images.js 内置 context 钩子只转换模型副本，按首次有效标记交错排列；app.js 不再追加说明。
+- 防再犯：保留原始存储与队列顺序；覆盖乱序、重复、悬空、漏标、纯图及不修改工具结果，已交错消息不重排。

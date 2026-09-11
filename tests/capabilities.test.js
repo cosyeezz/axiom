@@ -31,7 +31,14 @@ test("capability discovery respects trust, filters before plugin execution and l
     const { loader } = capabilityLoader(resources, selected, []);
     await loader.reload();
     assert.deepEqual(loader.getExtensions().errors, []);
-    assert.equal(loader.getExtensions().extensions.length, 1);
+    assert.equal(loader.getExtensions().extensions.length, 2);
+    const contextHook = loader.getExtensions().extensions.flatMap((ext) => ext.handlers.get("context") || []);
+    assert.equal(contextHook.length, 1);
+    const image = { type: "image", mimeType: "image/png", data: "AA==" };
+    const message = { role: "user", content: [{ type: "text", text: "前[image1]后" }, image] };
+    assert.deepEqual(contextHook[0]({ messages: [message] }).messages[0].content, [
+      { type: "text", text: "前[image1]" }, image, { type: "text", text: "后" },
+    ]);
     assert.equal(loader.getSkills().skills.length, 1);
     resources.settingsManager.setDefaultModel("changed");
     await resources.settingsManager.flush();

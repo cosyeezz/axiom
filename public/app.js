@@ -1249,7 +1249,7 @@ $("composer").onsubmit = async (e) => {
   e.preventDefault();
   const draft = $("prompt").value;
   const files = [...contextFiles], skill = selectedSkill, sentImages = [...images];
-  const body = [draft.trim(), sentImages.length ? "图片标记说明：[imageN] 对应本条消息附件顺序中的第 N 张图片（从 1 开始）。" : "", files.length ? `工作空间引用（按需读取；文件夹不代表已读取全部内容）：\n${files.map((file) => `- ${file.directory ? "文件夹" : "文件"}：${JSON.stringify(file.path)}`).join("\n")}` : ""].filter(Boolean).join("\n\n");
+  const body = [draft.trim(), files.length ? `工作空间引用（按需读取；文件夹不代表已读取全部内容）：\n${files.map((file) => `- ${file.directory ? "文件夹" : "文件"}：${JSON.stringify(file.path)}`).join("\n")}` : ""].filter(Boolean).join("\n\n");
   const text = skill ? `/skill:${skill} ${body}` : body;
   if ((!draft.trim() && !skill && !sentImages.length && !files.length) || imageLoading || changing || !connected) return;
   closeCompletion();
