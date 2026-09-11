@@ -4,7 +4,7 @@ import {
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { capabilityLoader, discoverCapabilities } from "./capabilities.js";
-import { createBackgroundCompaction, entryIdFor, normalizeCompaction } from "./compaction.js";
+import { createBackgroundCompaction, entryIdFor, normalizeCompaction, summarizedEntryIds } from "./compaction.js";
 import { createAutoRetry } from "./retry.js";
 import { createJiti } from "jiti";
 const { getSupportedThinkingLevels } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai/compat");
@@ -154,9 +154,8 @@ export async function createPiFactory({ cwd, model: requested }) {
     const messageEntries = () => session.sessionManager.getBranch().filter((entry) => entry.type === "message");
     const compactionRecords = () => session.sessionManager.getBranch().filter((entry) => entry.type === "compaction").map((entry) => {
       const branch = session.sessionManager.getBranch(entry.id);
-      const cut = branch.findIndex((item) => item.id === entry.firstKeptEntryId);
       return { id: entry.id, summary: entry.summary, firstKeptEntryId: entry.firstKeptEntryId,
-        compactedMessageIds: branch.slice(0, Math.max(0, cut)).filter((item) => item.type === "message").map((item) => item.id),
+        compactedMessageIds: summarizedEntryIds(branch.filter((item) => item.id !== entry.id), entry.firstKeptEntryId),
         tokensBefore: entry.tokensBefore };
     });
     const listeners = new Set();
@@ -212,6 +211,7 @@ export async function createPiFactory({ cwd, model: requested }) {
       sessionFile: () => session.sessionFile,
       historyEntries: messageEntries,
       compactions: compactionRecords,
+      compactionStatus: () => compactionCtrl.getStatus(),
       queue: queueState,
       withdraw: () => withdrawQueue(session),
       recall: () => recallLastMessage(session),

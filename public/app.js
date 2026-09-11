@@ -25,6 +25,7 @@ const views = new Map();
 const compactionDefaults = { enabled: false, tokenThreshold: 100000, percentThreshold: 70, model: null, thinking: "off", keepRecentTokens: 20000 };
 const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 let compactions = [], mainItems = [];
+const compactionNodes = new Map(), taskEntries = new Map();
 let images = [], imageLoading = false;
 let completionVersion = 0, completionToken, completionEntries = [], completionIndex = 0;
 let selectedSkill = "", contextFiles = [], pickingWorkspace = false, currentCwd = "";
@@ -684,7 +685,45 @@ function renderMessage(item, message) {
   updateActivity(item, ["error", "aborted", "length"].includes(message.stopReason) ? (message.errorMessage || "响应中断") : undefined);
   renderer.flush(item);
 }
+function renderCompactionStatus(data) {
+  const node = $("compaction-progress");
+  const labels = { summarizing: "后台压缩：正在生成摘要…", ready: "后台压缩：摘要已就绪，等待下一次请求前应用", applied: "后台压缩：已完成", failed: "后台压缩：失败，保留原文", skipped: "后台压缩：已跳过", cancelled: "后台压缩：已取消" };
+  node.replaceChildren();
+  node.hidden = !labels[data?.status];
+  node.dataset.status = data?.status || "";
+  if (node.hidden) return;
+  if (data.status === "summarizing") {
+    const icon = document.createElement("span");
+    icon.className = "task-run-spin";
+    icon.setAttribute("aria-hidden", "true");
+    node.append(icon);
+  }
+  const label = document.createElement("span");
+  label.textContent = `${labels[data.status]}${data.message ? ` · ${data.message}` : ""}`;
+  node.append(label);
+}
+function trackTaskEntries(message, entryId) {
+  if (!entryId || message.isError || message.role !== "toolResult" || message.toolName?.replace(/^functions\./, "") !== "delegate") return;
+  for (const block of Array.isArray(message.content) ? message.content : []) {
+    if (block.type !== "text") continue;
+    try {
+      const ids = JSON.parse(block.text).taskIds;
+      if (Array.isArray(ids)) for (const id of ids)
+        if (typeof id === "string" && !taskEntries.has(id)) taskEntries.set(id, entryId);
+    } catch {}
+  }
+}
+function placeCompactedTasks() {
+  for (const [id, task] of tasks) {
+    const entryId = taskEntries.get(id);
+    if (!entryId) continue;
+    const record = compactions.find((record) => record.compactedMessageIds?.includes(entryId));
+    const container = compactionNodes.get(record?.id)?.querySelector(".compaction-tasks");
+    if (container && task.trigger.parentElement !== container) container.append(task.trigger);
+  }
+}
 function compactionCard(data) {
+  if (compactionNodes.has(data.id)) return compactionNodes.get(data.id);
   const node = document.createElement("details");
   node.className = "compaction-card";
   const label = document.createElement("summary");
@@ -696,7 +735,10 @@ function compactionCard(data) {
   const body = document.createElement("div");
   body.className = "markdown compaction-summary";
   label.append(badge, meta, disclosureHint("查看摘要"));
-  node.append(label, body);
+  const taskList = document.createElement("div");
+  taskList.className = "compaction-tasks";
+  node.append(label, body, taskList);
+  compactionNodes.set(data.id, node);
   // renderMarkdown 走 DOMPurify 白名单，摘要里的富文本不会执行。
   renderMarkdown(body, data.summary || "");
   return node;
@@ -704,9 +746,15 @@ function compactionCard(data) {
 function foldCompaction(data) {
   const ids = new Set(data.compactedMessageIds || []);
   const items = mainItems
-    .filter(({ item, entryId }) => entryId && ids.has(entryId) && item.node.isConnected && (!item.node.hidden || (item.skillBlocks?.isConnected && !item.skillBlocks.hidden)))
+    .filter(({ item, entryId }) => entryId && ids.has(entryId) && item.node.isConnected )
     .sort((a, b) => (a.item.node.compareDocumentPosition(b.item.node) & 4 ? -1 : 1));
-  if (!items.length) return;
+  if (!items.length) {
+    const previous = compactionNodes.get(compactions[compactions.indexOf(data) - 1]?.id);
+    if (previous) previous.after(compactionCard(data));
+    else $("output").prepend(compactionCard(data));
+    placeCompactedTasks();
+    return;
+  }
   const anchor = items.at(-1).item.node.nextElementSibling;
   const top = anchor?.getBoundingClientRect().top ?? 0;
   const first = items[0].item;
@@ -715,6 +763,7 @@ function foldCompaction(data) {
     item.node.hidden = true;
     if (item.skillBlocks) item.skillBlocks.hidden = true;
   }
+  placeCompactedTasks();
   mergeThoughts($("output"));
   // 折叠改变上方高度，按保留消息的位移补偿滚动位置，保持阅读锚点而不强制到底部。
   if (anchor) $("transcript").scrollTop += anchor.getBoundingClientRect().top - top;
@@ -802,6 +851,8 @@ function renderTaskRuns() {
     row.onclick = () => {
       follow = false;
       $("latest").hidden = false;
+      for (let parent = task.trigger.parentElement; parent; parent = parent.parentElement)
+        if (parent.tagName === "DETAILS") parent.open = true;
       task.trigger.scrollIntoView({ block: "center" });
       locatedScroll = $("transcript").scrollTop;
       task.trigger.focus({ preventScroll: true });
@@ -878,6 +929,11 @@ function renderRetry(agentId, data) {
 function event(message) {
   if (message.sessionId !== sessionId) return;
   const { type, agentId = "main", data } = message;
+  if (type === "agent.compaction.status" && agentId === "main") renderCompactionStatus(data);
+  if (type === "agent.message.end" && agentId === "main") {
+    trackTaskEntries(data.message, data.entryId);
+    placeCompactedTasks();
+  }
   if (type === "agent.retry") {
     stopActivity(agentId, data.status === "waiting" ? "等待重试" : "已停止");
     renderRetry(agentId, data);
@@ -1011,6 +1067,7 @@ function event(message) {
     item.failure.textContent = data.error || "";
     item.failure.hidden = !data.error;
     updateTaskRuntime(item, data.runtime);
+    placeCompactedTasks();
     renderTaskRuns();
     if (["starting", "running"].includes(data.status)) waiting(message.taskId);
     else stopActivity(message.taskId, status);
@@ -1046,6 +1103,11 @@ function snapshot(state) {
   retryCards.clear();
   retryFailures.clear();
   compactions = state.compactions || [];
+  compactionNodes.clear();
+  taskEntries.clear();
+  renderCompactionStatus(state.compactionStatus);
+  for (const { agentId, message, entryId } of state.messages)
+    if (agentId === "main") trackTaskEntries(message, entryId);
   mainItems = [];
   for (const task of state.tasks) {
     event({ type: "task.state", sessionId, taskId: task.id, data: task });
@@ -1111,6 +1173,11 @@ function snapshot(state) {
   else stopActivity("main", "已结束");
   for (const task of tasks.values())
     if (!task.trigger.isConnected) $("output").append(task.trigger);
+  for (const record of compactions)
+    if (!compactionNodes.has(record.id)) $("output").prepend(compactionCard(record));
+  // 摘要按记录顺序集中在历史顶部；原任务入口移动而非复制，弹窗与状态保持不变。
+  $("output").prepend(...compactions.map((record) => compactionNodes.get(record.id)));
+  placeCompactedTasks();
   for (const record of state.retries || []) renderRetry(record.agentId, record);
   if (!$("output").children.length) {
     const empty = document.createElement("div");
@@ -1190,6 +1257,7 @@ $("login").onsubmit = async (e) => {
     const service = await request("service.status");
     serviceManaged = service.managed;
     serviceVersion = service.version || "";
+    importDir = service.importDir || "";
     $("service-version").hidden = !serviceVersion;
     $("service-version").textContent = serviceVersion ? `v${serviceVersion}` : "";
     restarting = false;
@@ -1242,6 +1310,7 @@ function scheduleReconnect() {
   reconnectDelay = Math.min(reconnectDelay * 2, 15000);
 }
 let serviceVersion = "";
+let importDir = "";
 const restartNames = { quick: "快速重启", rebuild: "重建重启", update: "检查更新" };
 const restartDescriptions = {
   quick: "仅重新启动服务，不安装依赖。所有页面会暂时断开连接，随后自动重连。",
@@ -1444,6 +1513,41 @@ $("image-files").onchange = async () => {
   $("image-files").value = "";
   await loadImages(files);
 };
+let selectionCopy = true;
+try { selectionCopy = localStorage.getItem("axiom.selectionCopy") !== "off"; } catch {}
+$("selection-copy").value = selectionCopy ? "on" : "off";
+$("selection-copy").onchange = () => {
+  selectionCopy = $("selection-copy").value === "on";
+  try {
+    localStorage.setItem("axiom.selectionCopy", selectionCopy ? "on" : "off");
+    $("selection-copy-feedback").textContent = "已保存";
+  } catch {
+    $("selection-copy-feedback").textContent = "浏览器无法保存设置，本次页面内已生效。";
+  }
+};
+async function copySelection(e) {
+  if (!selectionCopy || e.isComposing || (e.type === "pointerup" && e.button !== 0)) return;
+  if (e.type === "keyup" && !["Shift", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "a", "A"].includes(e.key)) return;
+  let text;
+  const input = $("prompt");
+  if (e.target === input) {
+    text = input.value.slice(input.selectionStart, input.selectionEnd);
+  } else {
+    if (!e.target.closest?.("#output, .task-dialog") || e.target.closest("input, textarea, select, button")) return;
+    const selection = window.getSelection();
+    if (!selection?.rangeCount || selection.isCollapsed) return;
+    const range = selection.getRangeAt(0);
+    const root = range.commonAncestorContainer.nodeType === 1
+      ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement;
+    if (!root?.closest("#output, .task-dialog")) return;
+    text = selection.toString();
+  }
+  if (!text.trim()) return;
+  try { await navigator.clipboard.writeText(text); }
+  catch { error(new Error("自动复制失败，请使用右键菜单复制。")); }
+}
+document.addEventListener("pointerup", copySelection);
+document.addEventListener("keyup", copySelection);
 $("prompt").onpaste = (e) => {
   const files = [...(e.clipboardData?.items || [])].filter((item) => item.kind === "file" && item.type.startsWith("image/")).map((item) => item.getAsFile()).filter(Boolean);
   if (!files.length) return;
@@ -1452,6 +1556,15 @@ $("prompt").onpaste = (e) => {
 };
 $("prompt").onkeydown = (e) => {
   if (e.isComposing || e.keyCode === 229) return;
+  if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "c") {
+    e.preventDefault();
+    const input = e.currentTarget;
+    if (input.disabled || input.readOnly || !input.value) return;
+    input.select();
+    // Native deletion keeps Ctrl+Z undo (including restoring a cleared draft).
+    document.execCommand("delete");
+    return;
+  }
   if (!$("prompt-completion").hidden && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
     if (["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape", "ArrowRight"].includes(e.key)) {
       if (e.key === "ArrowRight" && !completionEntries[completionIndex]?.directory) return;
@@ -1928,6 +2041,15 @@ $("reveal-workspace").onclick = async () => {
 };
 $("new").onclick = () =>
   switchSession(() => request("session.create", { cwd: currentCwd }));
+
+// 导入 pi 的 .jsonl 会话：共享文件选择器从 pi 会话目录开始，服务端复制文件并重建历史。
+$("import-session").onclick = async () => {
+  if (!connected || changing) return;
+  const original = sessionId;
+  const entry = await filePicker.open({ title: "导入 pi 会话（.jsonl）", mode: "file", path: importDir });
+  if (!entry || original !== sessionId || !connected || changing) return;
+  await switchSession(() => request("session.import", { path: entry.path }));
+};
 
 let creationLoad = 0;
 async function refreshPresets() {

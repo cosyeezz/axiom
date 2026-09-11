@@ -1,10 +1,38 @@
 # 开发记录
 
+## 2026-09-11 — 预设会话合并发布 0.1.4
+- 用户确认合并；功能分支先同步最新 master，保留导入 pi 会话入口、压缩与输入快捷键，文档两侧记录保留，代码索引重建。package.json patch 升至 0.1.4，以便独立仓库更新识别。
+- 合并后 npm test：130 项，129 通过、1 原有跳过、0 失败。推送功能分支并合并 master，再 subtree 同步 cosyeezz/axiom；主工作区未提交改动保留，不重启服务。全局/项目配置分层和工具进度条不在此次预设分支内。
+
 ## 2026-09-11 — 侧栏具名预设会话
 - 按用户要求将自定义新会话入口改为「预设会话配置」，保存的预设按钮显示在其下方，共享背景框；复用现有主/子模型、能力与压缩表单，支持名称、可选固定目录、编辑、删除、点击启动。
 - 后端通过 session.presets.list/save/delete 管理本机 presets.json，严格输入校验与串行原子持久化，不保存信任授权。前端启动先检查目标目录信任，需要时复用确认表单；不自动信任，不按名替换缺失技能。
 - 涉及 public/app.js、index.html、style.css、src/sessions.js、server.js、protocol.js、tests/app.test.js、presets.test.js、README 与代码索引。此项不包含全局/项目默认配置分层，也不包含自动 Shell 启动命令。
 - 验证：后端持久化/并发/输入校验与前端保存失败、编辑删除、失效能力确认、仅本次信任路径通过；全量 npm test 为 125 项，124 通过、1 原有跳过、0 失败；未重启本机服务，未做 macOS 实机验证。
+
+## 2026-09-11 — 后台压缩增强合并验收
+- 用户确认合并 master。功能 worktree 合入最新 master，保留技能恢复及三按 Esc 撤回功能；日志/知识库冲突保留两侧记录，索引按合并后源码重建。
+- 验证：npm test 123 通过、1 原有跳过、0 失败。功能分支推送后合并并推送 master；保留主工作区 package-lock.json 和未跟踪文件，不安装依赖、不重启正式服务。
+
+## 2026-09-11 — 后台摘要保留规则、输入区进度与子代理归档
+- worktree `axiom-compaction-ux` / `feat/compaction-ux`。保持 Pi SDK 后台生成、安全点应用和滚动更新摘要；显式要求保留仍有效的旧目标、约束、决策、未完成项与准确上下文，不把未再次提及视为失效。提示词降低遗漏风险，不声称无损。
+- 输入框上方增加后台压缩真实阶段提示，不虚构百分比；状态按主会话隔离并纳入快照，取消/失败/拒绝应用均有反馈。已压缩的委托任务按真实工具结果 ID 归入对应摘要，保留子代理详情和运行入口定位；多次压缩不再夹杂已归档任务。
+- 验证：`npm test` 116 通过、1 原有跳过、0 失败；真实 Chromium 1440/390/320px 摘要分层、任务弹窗、进度位置、旋转和 reduced-motion 通过，无页面/CSP 错误。仓库无 build 脚本，采用现有测试和真实浏览器检查；未调用付费模型，提示词测试仅证明传参及保留规则，不证明摘要语义无损。委托两次被外部服务重启取消，核心代码由主任务直接完成。正式服务未由本任务重启。
+- 涉及 `src/{compaction,pi,sessions}.js`、`public/{app.js,index.html,style.css}`、压缩后端/UI 测试、`tests/conversation-preview.mjs`、两级 README/devlog 与 codebase-map 索引/知识库。使用现有依赖，不安装或重装运行实例依赖；保留主工作区原有改动。
+
+## 2026-09-11 — 输入快捷键与自动复制合并验收
+- 用户要求合并 master；在 feat/input-shortcuts worktree 先合入最新 origin/master，保留三按 Esc 收回输入与能力恢复修复。README 合并两侧功能说明，devlog/knowledge 保留两侧记录，INDEX 重建解决生成文件冲突；未触碰主工作区 package-lock.json 等用户未提交内容。
+- 验证：npm test 119 通过、1 原有跳过；独立 4327 预览下 Chromium 1440/390/320px 检查及真实剪贴板/开关持久化/撤销恢复通过，无浏览器错误。功能分支推送后合并 master 并推送，清理本次 worktree；不主动重启正式服务。
+
+## 2026-09-11 — 选中自动复制与本地开关
+- 在 feat/input-shortcuts 独立 worktree 继续实现：聊天输入框、会话正文及子任务详情支持 pointerup/选区相关 keyup 后自动复制非空白选区；不监听连续 selectionchange、不改变焦点/选区，不处理右键、清空快捷键、其他表单与跨区域选区。使用原生 Clipboard API，失败提示右键复制，无新增依赖。
+- 按用户追加要求，设置页增加「输入与复制 → 选中自动复制」开启/关闭，默认开启；localStorage 保存当前浏览器偏好，保存受限仍在本页生效并提示，不进入服务端会话配置或断线禁用列表。手机系统手柄事件不保证送到页面，README 明示可用系统复制菜单。
+- 涉及 public/app.js、public/index.html、tests/app.test.js、tests/conversation-ui.py、README.md、本日志及生成索引。验证 npm test 112 通过、1 原有跳过；真实 Chromium 剪贴板验证输入框/正文复制、关闭后均不复制、刷新保留关闭及原有撤销清空，1440/390/320px UI 检查通过、无页面错误。正式服务未重启。
+
+## 2026-09-11 01:23 — 输入框撤销与清空快捷键
+- 独立 worktree axiom-input-shortcuts / feat/input-shortcuts：聊天输入框 Ctrl+C 全选并调用原生删除，保留 Ctrl+Z 撤销/恢复清空；不影响图片、文件、Skill 附件及任务。不添加自建历史栈或依赖；输入法组合、只读/禁用及空文字不删除。
+- 涉及 public/app.js、public/index.html、README.md、tests/conversation-ui.py、本日志及 codebase-map 索引/坑库；页面提示及 README 说明 Ctrl+C 在此处替代复制，右键仍可复制。
+- 验证：npm test 112 通过、1 原有跳过；真实 Chromium 原生输入撤销/重做、部分选中后清空、重复清空后撤销恢复、输入法保护通过，1440/390/320px 既有 UI 检查通过、无浏览器错误。首次误连已有 4321 旧预览，改用独立 4327 端口后验证通过；未重启正式服务。
 
 ## 2026-09-11 — 技能恢复修复发布 0.1.3
 - 用户确认合并与同步独立仓库。package.json 升至 0.1.3，发布跨目录默认能力收窄与逐会话恢复隔离修复；README 已同步恢复规则。
@@ -387,6 +415,17 @@
 - 注意：新增静态文件必须注册 server.js assets 并快速重启服务，普通刷新拿不到新资源。
 - 最终验证：npm test 111 项——110 通过、1 原有跳过、0 失败；conversation-ui.py 在 1440/390/320px 全通过、browserErrors=[]，覆盖对比度持久化/重置、提示、图标尺寸、1.6s 旋转、动态点固定宽与 reduce 冻结。修复 tooltip 外部 CSSOM 定位、popover 断链及跨间隙悬停问题；修复 localStorage getter 抛错防护并增加回归。
 - 涉及文件：public/{app.js,index.html,style.css,tooltip.js,tooltip.css,text-contrast.js,text-contrast.css}、src/server.js、tests/{message-activity.test.js,conversation-ui.py,tooltip.test.js,text-contrast.test.js}、README.md、.pi/skills/codebase-map/{INDEX.md,knowledge.md,SKILL.md} 与本日志。
+
+## 2026-09-11 01:30 导入 pi JSONL 会话
+
+- 原因：Axiom 只能管理自己创建的会话，用户在 pi TUI / 其它入口积累的 `.jsonl` 历史无法过来继续对话。
+- 内容：
+  - 侧栏「导入 pi 会话…」复用共享文件选择器，默认从 pi 会话目录（`service.status` 新增 `importDir`）开始浏览；协议新增 `session.import({path})`，返回与 `session.create` 相同的快照，前端走原有 `switchSession` 链路。
+  - `Sessions.importSession(file)` 校验首行 `session` 头与 `cwd`，工作空间取 `cwd`（目录不存在时退回本实例工作空间）；标题按「pi 会话名 → 首条用户正文（剥掉注入的 Skill 正文与标签）→ 文件名」取。
+  - 导入是复制：JSONL 写入 `~/.axiom/workspaces/<sha256(cwd)>/<id>.jsonl`，与网页快照并存；`create()` 里代理创建失败会删除副本。`historyEntries()` 重建网页历史（带 entryId，压缩折叠关系保持）。删除 Axiom 会话只删副本，原 pi 文件不动。
+  - 能力与模型沿用「默认新会话设置」，不读取原会话在 pi 里的供应商/模型选择。
+- 文件：src/{protocol.js,sessions.js,server.js,main.js}、public/{index.html,app.js}、tests/{session-flow.test.js,app.test.js,service-api.test.js}、README.md、导航索引、knowledge.md 与本日志。
+- 验证：npm test 114 项——113 通过、1 原有跳过、0 失败；新增用例覆盖复制文件、标题、历史 entryId、删除不触碰原文件、非法文件报错，以及页面导入按钮到工作空间切换。
 
 ## 2026-09-11 三按 Esc 收回已发出的输入
 - 需求：发送后模型还没回复时，三次 Esc 把这条输入（含图片）收回输入框，避免重打；用户特别关心是否会打断供应商前缀缓存。

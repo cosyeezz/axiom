@@ -639,7 +639,7 @@ button.danger:hover:not(:disabled) { background: #c13e50; }
   padding: 8px 16px;
   margin-bottom: 24px;
 }
-.compaction-card summary {
+.compaction-card > summary {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -647,8 +647,14 @@ button.danger:hover:not(:disabled) { background: #c13e50; }
   font-size: 12px;
   color: var(--body-ink);
 }
-.compaction-card summary small { color: var(--muted); font-variant-numeric: tabular-nums; }
+.compaction-card > summary small { color: var(--muted); font-variant-numeric: tabular-nums; }
 .compaction-summary { margin-top: 10px; font-size: 13px; overflow-wrap: anywhere; }
+.compaction-tasks { display: grid; gap: 8px; margin-top: 12px; }
+.compaction-tasks:empty { display: none; }
+.compaction-tasks .task-card { margin: 0; }
+#compaction-progress { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+#compaction-progress[data-status="failed"] { color: var(--danger); }
+#compaction-progress .task-run-spin { flex-shrink: 0; }
 .compaction-settings .selectors { flex-wrap: wrap; overflow: visible; margin-top: 8px; }
 .compaction-settings input,
 .compaction-settings select { width: 100%; min-width: 0; }
@@ -1107,7 +1113,7 @@ summary:hover > .disclosure-action { color: var(--ink); }
   .markdown pre { padding: 12px; }
   .code-toolbar button { min-height: 40px; }
   .compaction-card > summary { gap: 4px 8px; }
-  .compaction-card summary small { flex-basis: 100%; order: 1; }
+  .compaction-card > summary small { flex-basis: 100%; order: 1; }
 }
 /* Shared active-state motion: slim 12px ring, no halo, one turn per 1.6s. */
 .activity-line:is([data-state="waiting"], [data-state="running"]) .activity-icon[data-icon="waiting"]::after,

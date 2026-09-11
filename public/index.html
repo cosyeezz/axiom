@@ -22,6 +22,7 @@
           <button id="custom-new" class="secondary" aria-haspopup="dialog" aria-controls="create-session">预设会话配置</button>
           <div id="preset-list"></div>
         </section>
+        <button id="import-session" class="secondary" title="导入 pi 的 .jsonl 会话文件">导入 pi 会话…</button>
         <label class="sr-only" for="search">搜索会话</label
         ><input id="search" type="search" placeholder="搜索会话…" />
         <nav id="sessions" aria-label="会话历史"></nav>
@@ -78,6 +79,7 @@
             <button id="latest" class="secondary" hidden>回到最新消息 ↓</button>
             <div id="message-queue" aria-label="待发送队列" aria-live="polite" hidden></div>
             <div id="task-runs" role="status" aria-label="运行中的子代理任务" hidden></div>
+            <div id="compaction-progress" role="status" aria-live="polite" aria-atomic="true" aria-label="后台上下文压缩进度" hidden></div>
             <div class="context-bar">
               <button type="button" id="add-context" class="icon-button" popovertarget="context-menu" title="添加上下文" aria-label="添加 Skill、文件或文件夹"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
               <button type="button" id="add-image" class="icon-button" title="上传图片，也可在输入框粘贴截图" aria-label="上传图片"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h18v18H3ZM3 17l6-6 4 4 3-3 5 5M15 7h2"/></svg></button>
@@ -129,7 +131,7 @@
               <div id="session-runtime" class="runtime-summary" role="status" aria-live="polite"></div>
             </form>
             <div class="composer-footer" id="composer-help">
-              <span>/ Skill · @ 文件/文件夹 · Enter 发送 · Shift / Ctrl / ⌘ + Enter 换行</span
+              <span>/ Skill · @ 文件/文件夹 · Enter 发送 · Shift / Ctrl / ⌘ + Enter 换行 · Ctrl+Z 撤销 · Ctrl+C 清空文字</span
               ><span>Esc 撤回队列 · 双按 Esc 停止</span>
             </div>
           </div>
@@ -193,6 +195,13 @@
       <div class="settings-layout">
       <nav class="settings-nav" aria-label="设置分类"><button type="button" class="secondary" aria-current="page">默认新会话设置</button></nav>
       <div class="settings-body" id="defaults-panel">
+        <section aria-labelledby="selection-copy-title">
+          <h3 id="selection-copy-title">输入与复制</h3>
+          <div class="selectors settings-selectors"><label for="selection-copy"><span>选中自动复制</span>
+          <select id="selection-copy" aria-describedby="selection-copy-help"><option value="on">开启</option><option value="off">关闭</option></select></label></div>
+          <p id="selection-copy-help">选中会话正文或输入框文字后自动复制，会覆盖剪贴板；仅保存在当前浏览器。关闭不影响手动复制和 Ctrl+C 清空输入。</p>
+          <p id="selection-copy-feedback" role="status" aria-live="polite"></p>
+        </section>
         <section>
           <div class="selectors settings-selectors"><label for="queue-type"><span>Running 时 Enter 默认发送类型</span>
           <select id="queue-type" aria-describedby="steer-help followup-help"><option value="steer">Steer</option><option value="followUp">Follow-up</option></select></label></div>

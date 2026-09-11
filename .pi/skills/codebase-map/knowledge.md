@@ -197,6 +197,23 @@
 - 处理：新文件在 assets 表登记后走「服务 → 快速重启」；更新已注册文件同样需重启载入（ETag 缓存不变）。
 - 防再犯：新增静态资源 = 登记 assets + 快速重启，两步缺一不可。
 
+### 2026-09-11 导入的 pi 会话必须是副本，且会切走当前工作空间
+- 症状（潜在）：把 pi 原始 `.jsonl` 路径直接当 `sessionFile` 引用时，删除 Axiom 会话会连用户的 pi 历史一起删；导入后侧栏列表看着像"空了"。
+- 根因：`Sessions.remove(id, deleting)` 会删 `agent.sessionFile()`；`renderSessions()` 只显示 `cwd === 当前工作空间` 的会话，导入其它目录的会话会切换当前工作空间。
+- 处理：`importSession` 把 JSONL 内容复制到 `~/.axiom/workspaces/<sha256(cwd)>/<id>.jsonl`（`create()` 失败时删副本）；`load()` 只读 `.json`，遗留副本无副作用。侧栏筛选行为保留，属预期。
+- 防再犯：tests/session-flow.test.js 断言删除会话后原文件仍在、副本已删；tests/app.test.js 断言导入后标题与 `workspace-label` 跟随会话，`service-api.test.js` 覆盖 `service.status.importDir`。
+
+### 2026-09-11 多轮压缩后子代理入口夹杂、后台摘要无状态
+- 症状：主消息折叠后独立 task trigger 仍留在摘要之间；刷新后排列不同；后台生成或失败不可见。
+- 根因：压缩仅按主消息 entryId 隐藏节点，没有维护委托工具结果 taskIds 与消息区间的关系；SDK 恢复的压缩区间曾从头累计；后台仅发布成功落盘事件。
+- 修复：`public/app.js` 按真实委托结果建立归属，把原入口移到对应摘要的任务区，弹窗继续放在独立 overlays，快照重建同一归属；`src/pi.js` 按每次保留边界还原区间。后台发布真实阶段并由快照恢复，已取消任务的异步完成不能覆盖新任务状态。
+- 防再犯：不要按时间或可见位置猜任务归属，不丢弃无法关联的旧任务；覆盖实时/快照/连续压缩、折叠摘要里的运行入口定位和迟到状态。新增进度不要伪造百分比，UI 状态/错误走 textContent。`tests/compaction-ui.test.js` 和真实浏览器 `tests/compaction-ui.py` 验证分层与弹窗仍可用。
+
+### 2026-09-11 输入清空必须保留浏览器撤销记录
+- 场景：Ctrl+C 清空聊天文字后，需要 Ctrl+Z 恢复；直接设置 textarea.value 不会记录可撤销编辑。
+- 处理：public/app.js 使用 select() + execCommand("delete") 原生编辑命令，Ctrl+Z 不拦截，复用浏览器撤销历史；input 事件更新高度、按钮与补全。仅处理 Ctrl+C，跳过输入法组合、空文字、只读/禁用。
+- 防再犯：jsdom 不实现原生编辑历史，不用模拟命令证明撤销有效；tests/conversation-ui.py 在 Chromium 实测撤销/重做/清空恢复。预览服务启动时缓存静态资源，端口被旧进程占用时必须使用独立端口或重启自己启动的预览。
+
 ### 2026-09-11 跨目录技能默认选择与历史恢复阻塞启动
 - 症状：macOS/Windows 换目录创建报「未知或已不可用的能力：skills」；任一旧会话技能失效后启动退出。
 - 根因：技能 ID 是绝对路径，默认配置跨目录共享却严格要求所有 ID 仍可用；Sessions.load 没有逐文件错误隔离。

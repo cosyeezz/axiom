@@ -113,7 +113,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       message: { role: "assistant", content: "historical result" },
     },
   ];
-  let lastCreation, lastDefaults, copiedPath;
+  let lastCreation, lastDefaults, lastImport, copiedPath;
   Object.defineProperty(window.navigator, "clipboard", { value: { writeText: async (text) => { copiedPath = text; } } });
   let defaults = { model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
   let failDefaults = false, needsTrust = false;
@@ -152,7 +152,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
         switch (req.type) {
           case "files.browse":
             data = { path: req.sessionId ? req.path : "C:\\other", parent: req.path ? "" : null,
-              entries: req.sessionId ? (req.path ? [{ name: "app.js", path: "src/app.js", directory: false }] : [{ name: "src", path: "src", directory: true }]) : [],
+              entries: req.sessionId ? (req.path ? [{ name: "app.js", path: "src/app.js", directory: false }] : [{ name: "src", path: "src", directory: true }]) : [{ name: "pi.jsonl", path: "C:\\pi\\sessions\\pi.jsonl", directory: false }],
               nextOffset: null, breadcrumbs: [], locations: [] };
             break;
           case "workspace.reveal": data = { opened: true }; break;
@@ -197,7 +197,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
             data = { ...states[0], config: { ...config, model: selected.model || config.model, subagentModel: selected.subagentModel ?? null, capabilitySelection: selected.capabilities ?? null, subagentCapabilities: selected.subagentCapabilities ?? null } };
             break;
           case "service.status":
-            data = { managed: true, error: "", version: "9.9.9" };
+            data = { managed: true, error: "", version: "9.9.9", importDir: "C:\\pi\\sessions" };
             break;
           case "service.restart":
             this.receive({ type: "response", id: req.id, ok: false, error: "请先停止正在运行的会话" });
@@ -235,6 +235,10 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
           case "session.attach":
             data = states.find((s) => s.sessionId === req.sessionId);
             break;
+          case "session.import":
+            lastImport = req;
+            data = { sessionId: "imported", title: "imported", cwd: "C:\\pi", status: "idle", config, messages: [], tasks: [], live: {} };
+            break;
           case "session.rename":
             states.find((s) => s.sessionId === req.sessionId).title = req.title;
             break;
@@ -263,6 +267,28 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
   };
   try {
     window.eval(`${contrastSource}\n${pickerSource}\n${source}`);
+    const copySelection = window.eval("copySelection");
+    $("prompt").value = "copy selected text";
+    $("prompt").setSelectionRange(5, 13);
+    await copySelection({ type: "pointerup", button: 0, target: $("prompt") });
+    assert.equal(copiedPath, "selected");
+    $("selection-copy").value = "off";
+    $("selection-copy").onchange();
+    assert.equal(window.localStorage.getItem("axiom.selectionCopy"), "off");
+    copiedPath = "unchanged";
+    await copySelection({ type: "pointerup", button: 0, target: $("prompt") });
+    assert.equal(copiedPath, "unchanged");
+    $("selection-copy").value = "on";
+    $("selection-copy").onchange();
+    await copySelection({ type: "keyup", key: "c", target: $("prompt") });
+    await copySelection({ type: "pointerup", button: 2, target: $("prompt") });
+    assert.equal(copiedPath, "unchanged", "clear shortcut and context menu do not copy");
+    const originalWriteText = window.navigator.clipboard.writeText;
+    window.navigator.clipboard.writeText = async () => { throw new Error("denied"); };
+    await copySelection({ type: "keyup", key: "Shift", target: $("prompt") });
+    assert.match($("error").textContent, /右键菜单复制/);
+    window.navigator.clipboard.writeText = originalWriteText;
+    $("prompt").value = "";
     sockets[0].close(); // Close before open: retry must not remain hidden.
     await settle();
     assert.equal($("login").hidden, false);
@@ -1116,6 +1142,19 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("search").value = "missing";
     $("search").dispatchEvent(new window.Event("input"));
     assert.match($("sessions").textContent, /没有找到/);
+    // 导入 pi 会话：选择器从 pi 会话目录开始，确认后按服务端路径导入并切换工作空间。
+    $("search").value = "";
+    $("search").dispatchEvent(new window.Event("input"));
+    $("import-session").click(); await settle();
+    assert.equal($("file-picker").open, true);
+    assert.equal(requests.findLast((req) => req.type === "files.browse").path, "C:\\pi\\sessions");
+    assert.match($("file-picker-results").textContent, /pi\.jsonl/);
+    $("file-picker-results").querySelector("button").click();
+    $("file-picker-confirm").click(); await settle();
+    assert.equal(lastImport.type, "session.import");
+    assert.equal(lastImport.path, "C:\\pi\\sessions\\pi.jsonl");
+    assert.equal($("session-title").textContent, "imported");
+    assert.equal($("workspace-label").textContent, "C:\\pi", "导入后跟随会话自身工作空间");
   } finally {
     dom.window.close();
   }
