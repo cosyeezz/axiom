@@ -3,9 +3,45 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, readFile, rm, chmod, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { rebuild, update } from "../scripts/service.mjs";
+import { rebuild, update, stopService } from "../scripts/service.mjs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { createServer } from "node:http";
+
+test("axiom stop waits for supervisor exit after graceful worker save", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'axiom-stop-'));
+  let child;
+  const server = createServer((req, res) => {
+    assert.equal(req.method, 'POST');
+    assert.equal(req.url, '/service/stop');
+    res.writeHead(202, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ service: 'axiom', pid: child.pid }));
+    void writeFile(join(cwd, 'shutdown'), '1');
+  });
+  try {
+    await mkdir(join(cwd, 'scripts')); await mkdir(join(cwd, 'src'));
+    await writeFile(join(cwd, 'scripts/service.mjs'), await readFile(new URL('../scripts/service.mjs', import.meta.url)));
+    await writeFile(join(cwd, 'src/update.js'), await readFile(new URL('../src/update.js', import.meta.url)));
+    await writeFile(join(cwd, 'src/main.js'), `
+      const fs = require('node:fs');
+      process.on('message', m => {
+        if (m.type === 'service.stop') setTimeout(() => { fs.writeFileSync('saved', 'yes'); process.exit(0); }, 200);
+      });
+      const timer = setInterval(() => {
+        if (fs.existsSync('shutdown')) { clearInterval(timer); process.send({ type: 'service.shutdown' }); }
+      }, 20);
+    `);
+    child = spawn(process.execPath, [join(cwd, 'scripts/service.mjs')], { stdio: 'ignore', env: { ...process.env, AXIOM_PORT: '0' } });
+    server.listen(0, '127.0.0.1'); await once(server, 'listening');
+    await stopService(`http://127.0.0.1:${server.address().port}`);
+    assert.equal(await readFile(join(cwd, 'saved'), 'utf8'), 'yes');
+    assert.throws(() => process.kill(child.pid, 0), { code: 'ESRCH' });
+  } finally {
+    child?.kill();
+    await new Promise(done => server.close(done));
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
 
 test("supervisor quick restart waits for graceful stop then starts a new worker", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "axiom-supervisor-"));

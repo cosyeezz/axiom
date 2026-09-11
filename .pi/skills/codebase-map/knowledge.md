@@ -252,3 +252,7 @@
 - 风险：多 Node/npm prefix 下全局安装成功但代码落在另一个目录，旧目录写入新 SHA 后永久误报已最新。
 - 修复：scripts/service.mjs 安装前后查询同一个 npm root -g，realpath 比对目标包目录与运行根目录；不同就拒绝，不写提交记录。
 - 防再犯：tests/service.test.js 验证安装前错位不执行安装、安装后错位保留旧 SHA、目录别名允许同一真实路径；npm 安装仍非原子，不承诺失败完整回滚。
+
+### 2026-09-11 后台服务缺少优雅停止命令
+- 修复：axiom stop 请求本机 POST /service/stop，校验 Host/Origin 与空闲状态，经 IPC 通知守护进程停止；等待子进程保存退出后守护退出，CLI 仅查询 PID 存活不强杀。
+- 防再犯：tests/service-api.test.js 验证跨站/忙碌/重复停止拒绝；tests/service.test.js 验证延迟保存后父子退出，旧服务无接口明确报错。
