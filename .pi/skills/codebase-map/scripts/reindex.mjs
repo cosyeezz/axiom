@@ -55,6 +55,7 @@ const MODULE_INFO = {
   "public/style.css": "全局样式（CSP 禁 inline style，样式一律进这里）",
   "tests/image-input.test.js": "图片协议/签名/模型限制、真实队列附件快照与撤回、大图 WS 回归",
   "tests/workspace-picker.test.js": "Windows 原生目录选择置顶 owner、取消/超时/失败释放锁回归",
+  "tests/project-skills.test.js": "项目技能来源、工作空间默认隔离、旧配置迁移与目录链接加载回归",
   "tests/session-flow.test.js": "会话落盘/恢复/删除、队列和运行中模型切换回归",
   "tests/presets.test.js": "具名预设协议、原子持久化与安全边界回归",
   "tests/": "node --test 测试（npm test）",

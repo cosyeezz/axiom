@@ -2183,14 +2183,15 @@ function createAgentPicker(role, title, catalog, initial) {
     const update = () => heading.textContent = `${labelText} · 已选 ${list.querySelectorAll("input:checked").length} / ${entries.length}`;
     for (const entry of entries) {
       const label = document.createElement("label");
-      label.title = entry.description || entry.id;
+      label.title = [entry.description, entry.id].filter(Boolean).join("\n");
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
       checkbox.checked = initial.capabilities == null || initial.capabilities === "inherit" || initial.capabilities[kind].includes(entry.id);
       checkbox.value = entry.id;
       checkbox.dataset.kind = kind;
       checkbox.onchange = update;
-      label.append(checkbox, document.createTextNode(entry.name));
+      label.append(checkbox, document.createTextNode(kind === "skills" && entry.scope
+        ? `${entry.scope === "project" ? "[当前项目]" : "[全局]"} ${entry.name}` : entry.name));
       list.append(label);
     }
     if (!entries.length) {
@@ -2222,7 +2223,7 @@ async function loadCreation() {
   try {
     const [catalog, selected] = await Promise.all([
       request("capabilities.list", { cwd: current.cwd, trustProject: !current.defaults && $("create-trust").checked }),
-      current.defaults ? request("session.defaults.get") : current.selection || { model: config?.model, subagentModel: config?.subagentModel },
+      current.defaults ? request("session.defaults.get", { cwd: current.cwd }) : current.selection || { model: config?.model, subagentModel: config?.subagentModel },
     ]);
     if (creation !== current || load !== creationLoad) return;
     current.loading = false;

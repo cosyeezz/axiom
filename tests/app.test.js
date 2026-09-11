@@ -160,7 +160,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
             data = { path: req.path, entries: req.path ? [{ name: "app.js", path: "src/app.js", directory: false }] : [{ name: "src", path: "src", directory: true }] };
             break;
           case "capabilities.list":
-            data = { needsTrust: req.trustProject ? false : needsTrust || req.cwd === "C:\\untrusted", warnings: [], skills: [{ id: "skill-a", name: "Skill A" }, { id: "skill-b", name: "Skill B" }], mcp: [{ id: "browser", name: "Browser" }], plugins: [{ id: "search", name: "Search" }] };
+            data = { needsTrust: req.trustProject ? false : needsTrust || req.cwd === "C:\\untrusted", warnings: [], skills: [{ id: "skill-a", name: "Skill A", scope: "global" }, { id: "skill-b", name: "Skill B", scope: "project" }], mcp: [{ id: "browser", name: "Browser" }], plugins: [{ id: "search", name: "Search" }] };
             break;
           case "session.presets.list":
             data = { presets };
@@ -571,6 +571,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     await settle();
     await settle();
     assert.equal($("defaults-editor").contains($("create-form")), true);
+    assert.match($("create-agents").textContent, /\[全局\] Skill A/);
+    assert.match($("create-agents").textContent, /\[当前项目\] Skill B/);
     assert.equal($("create-session").open, false);
     assert.equal($("create-title").textContent, "默认新会话配置");
     assert.equal($("create-submit").textContent, "保存默认配置");

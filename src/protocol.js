@@ -101,7 +101,7 @@ export const command = z.discriminatedUnion("type", [
     id, type: z.literal("capabilities.list"),
     cwd: workspace, trustProject: z.boolean().optional(),
   }).strict(),
-  z.object({ id, type: z.literal("session.defaults.get") }).strict(),
+  z.object({ id, type: z.literal("session.defaults.get"), cwd: workspace }).strict(),
   selection.extend({ id, type: z.literal("session.defaults.configure"), cwd: workspace }).strict(),
   z.object({ id, type: z.literal("session.presets.list") }).strict(),
   z

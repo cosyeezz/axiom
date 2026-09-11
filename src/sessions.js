@@ -96,6 +96,7 @@ export class Sessions {
     this.storagePath = storagePath;
     this.defaultsPath = defaultsPath;
     this.savingDefaults = Promise.resolve();
+    this.projectSkills = {};
     this.savingPresets = Promise.resolve();
     this.createAgent = createAgent;
     this.items = new Map();
@@ -106,7 +107,17 @@ export class Sessions {
   async loadDefaults() {
     if (!this.defaultsPath) return;
     try {
-      const saved = selectionSchema.strict().parse(JSON.parse(await readFile(this.defaultsPath, "utf8")));
+      const { projectSkills = {}, ...data } = JSON.parse(await readFile(this.defaultsPath, "utf8"));
+      const saved = selectionSchema.strict().parse(data);
+      if (!projectSkills || typeof projectSkills !== "object" || Array.isArray(projectSkills)) throw new Error("无效的项目技能配置");
+      for (const entry of Object.values(projectSkills)) {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("无效的项目技能配置");
+        for (const [role, ids] of Object.entries(entry)) {
+          if (!["capabilities", "subagentCapabilities"].includes(role) || !Array.isArray(ids) || ids.some((id) => typeof id !== "string"))
+            throw new Error("无效的项目技能选择");
+        }
+      }
+      this.projectSkills = projectSkills;
       Object.assign(this.defaultSelection, saved);
     } catch (error) {
       if (error.code !== "ENOENT") throw new Error(`默认新会话配置读取失败：${error.message}`);
@@ -115,28 +126,76 @@ export class Sessions {
   getDefaults() {
     return structuredClone(this.defaultSelection);
   }
+  async workspaceDefaults(workspace = this.createAgent.cwd || process.cwd()) {
+    const cwd = await realpath(workspace);
+    const key = process.platform === "win32" ? cwd.toLowerCase() : cwd;
+    const next = this.getDefaults();
+    if (!this.createAgent.capabilities) return next;
+    const catalog = await this.createAgent.capabilities(cwd);
+    for (const role of ["capabilities", "subagentCapabilities"]) {
+      const selection = next[role];
+      if (!selection || selection === "inherit") continue;
+      selection.skills = await Promise.all(selection.skills.map((id) => realpath(id).catch(() => id)));
+      const current = catalog.skills.filter((s) => s.scope === "project").map((s) => s.id);
+      // 旧版全局配置里的项目路径仅在所属项目保留，绝不按同名技能替换。
+      const globals = selection.skills.filter((id) => !current.includes(id) &&
+        (!/[/\\](?:\.pi|\.agents)[/\\]skills[/\\]/.test(id) || catalog.skills.some((s) => s.id === id && s.scope !== "project")));
+      selection.skills = [...globals, ...(this.projectSkills[key]?.[role] ?? selection.skills.filter((id) => current.includes(id)))];
+    }
+    return next;
+  }
   configureDefaults(workspace, selection) {
     const save = this.savingDefaults.then(() => this.saveDefaults(workspace, selection));
     this.savingDefaults = save.catch(() => {});
     return save;
   }
   async saveDefaults(workspace, selection) {
-    const next = this.getDefaults();
+    const cwd = await realpath(workspace || this.createAgent.cwd || process.cwd());
+    const workspaceKey = process.platform === "win32" ? cwd.toLowerCase() : cwd;
+    const next = await this.workspaceDefaults(cwd);
     for (const key of Object.keys(next))
       if (selection[key] !== undefined) next[key] = structuredClone(selection[key]);
-    await this.validateSelection(workspace, next);
+    const { catalog } = await this.validateSelection(cwd, next);
+    const result = structuredClone(next);
+    const projectSkills = structuredClone(this.projectSkills);
+    // 首次写入新版配置前，保留旧版默认值中其他工作空间的项目技能。
+    for (const role of ["capabilities", "subagentCapabilities"]) {
+      for (const id of this.defaultSelection[role]?.skills || []) {
+        const match = /^(.*)[/\\](?:\.pi|\.agents)[/\\]skills[/\\]/.exec(id);
+        if (!match || catalog?.skills.some((s) => s.id === id && s.scope === "global")) continue;
+        const path = await realpath(match[1]).catch(() => resolve(match[1]));
+        const key = process.platform === "win32" ? path.toLowerCase() : path;
+        if (Object.hasOwn(this.projectSkills[key] || {}, role)) continue;
+        projectSkills[key] ||= {};
+        projectSkills[key][role] ||= [];
+        const skillPath = await realpath(id).catch(() => id);
+        if (!projectSkills[key][role].includes(skillPath)) projectSkills[key][role].push(skillPath);
+      }
+    }
+    if (catalog) {
+      const entry = {};
+      for (const role of ["capabilities", "subagentCapabilities"]) {
+        const selected = next[role];
+        if (!selected || selected === "inherit") continue;
+        const projectIds = catalog.skills.filter((s) => s.scope === "project").map((s) => s.id);
+        entry[role] = selected.skills.filter((id) => projectIds.includes(id));
+        selected.skills = selected.skills.filter((id) => !projectIds.includes(id));
+      }
+      projectSkills[workspaceKey] = entry;
+    }
     if (this.defaultsPath) {
       const temporary = `${this.defaultsPath}.${randomUUID()}.tmp`;
       await mkdir(dirname(this.defaultsPath), { recursive: true });
       try {
-        await writeFile(temporary, JSON.stringify(next, null, 2) + "\n", { mode: 0o600 });
+        await writeFile(temporary, JSON.stringify({ ...next, projectSkills }, null, 2) + "\n", { mode: 0o600 });
         await rename(temporary, this.defaultsPath);
       } finally {
         await rm(temporary, { force: true });
       }
     }
     this.defaultSelection = next;
-    return this.getDefaults();
+    this.projectSkills = projectSkills;
+    return result;
   }
   async validateSelection(workspace = this.createAgent.cwd || process.cwd(), selection, inherited = []) {
     const cwd = await realpath(workspace);
@@ -322,7 +381,7 @@ export class Sessions {
   async create(workspace, selection = {}, saved) {
     const inherited = ["capabilities", "subagentCapabilities"].filter((key) =>
       saved || (selection.useDefaults !== false && selection[key] === undefined));
-    selection = structuredClone({ ...(selection.useDefaults === false ? {} : this.defaultSelection), ...selection });
+    selection = structuredClone({ ...(selection.useDefaults === false ? {} : await this.workspaceDefaults(workspace)), ...selection });
     const { cwd, catalog, warnings } = await this.validateSelection(workspace, selection, inherited);
     for (const warning of warnings) console.warn(`${cwd}：${warning}`);
     const id = saved?.id || randomUUID();
