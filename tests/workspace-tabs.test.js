@@ -9,6 +9,11 @@ import { createStreamRenderer } from "../public/stream-renderer.js";
 const appSource = (await readFile(new URL("../public/app.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "");
 const pickerSource = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
 const contrastSource = (await readFile(new URL("../public/text-contrast.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+const modelSources = await Promise.all(["model-picker", "model-manager"].map(async (name) => {
+  const source = await readFile(new URL(`../public/${name}.js`, import.meta.url), "utf8");
+  const exports = [...source.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
+  return `Object.assign(window, (() => { ${source.replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`;
+})).then((parts) => parts.join("\n"));
 const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
 
 const state = (id, title, cwd) => ({
@@ -51,6 +56,7 @@ async function bootPage(url, { hash, session, local } = {}) {
         let data;
         switch (req.type) {
           case "service.status": data = { managed: true, error: "", version: "0.0.0", importDir: "" }; break;
+          case "models.favorites.get": data = { provider: [], model: [], thinking: [] }; break;
           case "models.list": data = [{ key: "m", provider: "p", name: "M" }]; break;
           case "session.attach": {
             const attached = STATES.get(req.sessionId);
@@ -69,7 +75,7 @@ async function bootPage(url, { hash, session, local } = {}) {
       });
     }
   };
-  window.eval(`${contrastSource}\n${pickerSource}\n${appSource}`);
+  window.eval(`${modelSources}\n${contrastSource}\n${pickerSource}\n${appSource}`);
   const drain = async () => { for (let i = 0; i < 6; i++) await new Promise(setImmediate); };
   const connect = async () => { sockets.at(-1).open(); await drain(); };
   return { dom, window, $, requests, connect, drain, sockets };
