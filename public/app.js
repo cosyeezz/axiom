@@ -361,9 +361,11 @@ function paintCallGroup(group) {
   });
   group.hidden = !rows.length;
   if (!rows.length) return;
-  // The same text boundary ends the segment and folds it; tool gaps and usage do neither.
-  const running = group.dataset.messageFolded !== 'true';
-  const label = running ? 'Working' : 'Completed';
+  // Message boundaries fold segments; agent state ends activity even without a final answer.
+  const output = group.closest('#output') || [...tasks.values()].find(task => task.output.contains(group))?.output;
+  const running = group.dataset.messageFolded !== 'true' && output?.dataset.activityState === 'running';
+  const stopped = rows.some(row => ['stopped', 'failed'].includes(row.dataset.state));
+  const label = running ? 'Working' : stopped ? 'Stopped' : 'Completed';
   const icon = running ? 'waiting' : label === 'Stopped' ? 'circle-stopped' : 'circle-done';
   const preview = group.firstElementChild.firstElementChild;
   const signature = `${label}:${icon}`;
@@ -515,6 +517,8 @@ function setActivity(node, label, state, icon) {
   }
 }
 function waiting(agentId) {
+  (tasks.get(agentId)?.output || $('output')).dataset.activityState = 'running';
+  scheduleCallGroups();
   if (waitingItems.has(agentId) || live.get(agentId)?.active || [...toolItems.values()].some((tool) => tool.agentId === agentId && tool.node.dataset.state === "running")) return;
   const task = tasks.get(agentId);
   const node = activityLine("connecting...");
@@ -527,6 +531,7 @@ function clearWaiting(agentId) {
   waitingItems.delete(agentId);
 }
 function stopActivity(agentId, label = "已停止") {
+  (tasks.get(agentId)?.output || $('output')).dataset.activityState = 'stopped';
   scheduleCallGroups();
   clearWaiting(agentId);
   const item = live.get(agentId);

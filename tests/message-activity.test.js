@@ -74,6 +74,28 @@ test("activity history hides empty shells and retains tool summaries without raw
   } finally { dom.window.close(); }
 });
 
+test("activity groups stop after interruption and idle restore without a final answer", async () => {
+  const { dom, emit, restore, paint, output } = await page();
+  const label = () => output.querySelector('.call-preview .activity-label')?.textContent;
+  try {
+    emit('session.state', { status: 'running' });
+    emit('tool.state', { phase: 'start', toolCallId: 'watch', toolName: 'bash', args: { command: 'gh run watch' } });
+    paint();
+    assert.equal(label(), 'Working');
+    emit('tool.state', { phase: 'end', toolCallId: 'watch', toolName: 'bash', isError: true });
+    paint();
+    assert.equal(label(), 'Working', 'a tool gap must not end the active turn');
+    emit('session.state', { status: 'idle' });
+    paint();
+    assert.equal(label(), 'Stopped');
+    assert.equal(output.querySelector('.call-group').open, true, 'terminal status does not override disclosure choice');
+    restore({ messages: [entry(assistant([call('watch')]), 'call'), entry({ role: 'toolResult', toolCallId: 'watch', toolName: 'read', content: 'aborted', isError: true }, 'result')] });
+    paint();
+    assert.equal(label(), 'Stopped', 'idle snapshot cannot resurrect Working');
+    assert.equal(output.querySelector('.call-group').dataset.active, 'false');
+  } finally { dom.window.close(); }
+});
+
 test("expanded tool sections keep truncation notices outside both diff views", async () => {
   const { dom, w, emit, output } = await page();
   try {
