@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/10 23:24:39）
+# Axiom 多级代码索引（生成于 2026/9/11 00:32:36）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -14,7 +14,7 @@
 | public/style.css | 1107 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | scripts/autostart.mjs | 133 | Windows/macOS/Linux 当前用户登录自动启动安装/卸载 | run, projectDir, serviceEntry, label |
 | scripts/install.mjs | 86 | 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器 | root, parseArgs, nodeOk, openCommand |
-| scripts/service.mjs | 100 | 服务守护：IPC 快速/重建重启与安装构建失败反馈 | root, output, run, rebuild |
+| scripts/service.mjs | 119 | 服务守护：IPC 快速/重建重启与安装构建失败反馈 | root, output, run, npmRun |
 | src/capabilities.js | 115 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/compaction.js | 351 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
@@ -47,7 +47,7 @@
 | tests/retry.test.js | 340 | node --test 测试（npm test） | RATE_LIMIT, QUOTA, ABORTED, fakeSession |
 | tests/server.test.js | 125 | node --test 测试（npm test） | - |
 | tests/service-api.test.js | 34 | node --test 测试（npm test） | - |
-| tests/service.test.js | 81 | node --test 测试（npm test） | - |
+| tests/service.test.js | 138 | node --test 测试（npm test） | - |
 | tests/session-flow.test.js | 128 | node --test 测试（npm test） | flowFactory |
 | tests/smoke.js | 67 | node --test 测试（npm test） | TIMEOUT, sessions |
 | tests/stream-renderer.test.js | 99 | node --test 测试（npm test） | - |
@@ -301,17 +301,20 @@
 | install | function | 47 |
 | invoked | const | 83 |
 
-### scripts/service.mjs（100 行） — 服务守护：IPC 快速/重建重启与安装构建失败反馈
+### scripts/service.mjs（119 行） — 服务守护：IPC 快速/重建重启与安装构建失败反馈
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| root | const | 8 |
-| output | const | 9 |
-| run | function | 10 |
-| rebuild | function | 17 |
-| supervise | function | 36 |
-| mkdirSync | method | 40 |
-| start | method | 97 |
+| root | const | 10 |
+| output | const | 11 |
+| run | function | 12 |
+| npmRun | const | 20 |
+| update | const | 27 |
+| rebuild | function | 29 |
+| supervise | function | 46 |
+| mkdirSync | method | 54 |
+| start | method | 113 |
+| invoked | const | 117 |
 
 ### src/capabilities.js（115 行） — 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities）
 

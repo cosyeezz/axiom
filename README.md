@@ -31,6 +31,8 @@ git clone --depth 1 git@github.com:cosyeezz/axiom.git "$env:USERPROFILE\axiom"; 
 
 Windows 也可直接双击 `install.cmd`。更新版本：网页「服务 → 检查更新」（按 GitHub master 提交比对，内容变更即发现；npm 安装自动重装并重启；开发目录提示 git 拉取），或重跑安装命令。卸载自启：`npm run autostart:disable`。
 
+服务停止后重新拉起（守护进程 + 服务进程）：终端运行 `axiom`。已在运行时不重复启动；运行中打印访问地址与日志路径，`Ctrl+C` 停止。
+
 ### 维护：发布更新
 
 公开仓库是 MyWorkbench 内 `axiom/` 的镜像（git subtree）。改动合并到 MyWorkbench master 后需手动同步镜像，同步后各安装实例的「检查更新」即可发现并自动升级（按提交比对，内容变更即发现）。发布时顺手把 `axiom/package.json` 的 `version` 升一档——页面服务菜单会显示当前版本，便于确认更新生效（检测本身不依赖它）：

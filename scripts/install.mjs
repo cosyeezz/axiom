@@ -76,7 +76,7 @@ export async function install(argv = process.argv.slice(2), io = console, isTTY 
     spawn(opener.command, [...opener.lead, address], { stdio: "ignore", windowsHide: true }).unref();
   }
   io.log(`完成：${address}`);
-  io.log(`日志 ${join(homedir(), ".axiom", "service.log")}；取消自启：npm run autostart:disable`);
+  io.log(`日志 ${join(homedir(), ".axiom", "service.log")}；服务停止后在终端运行 axiom 重新启动；取消自启：npm run autostart:disable`);
 }
 
 // npm 全局 bin 在类 Unix 系统是符号链接，argv[1] 需取 realpath 再比对
