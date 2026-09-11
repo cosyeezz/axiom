@@ -35,14 +35,16 @@ const app = createServerApp(sessions, {
   version: JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8")).version,
   restart: process.send ? (mode) => new Promise((resolve, reject) => {
     (async () => {
+      let sha;
       if (mode === "update") {
         const status = await checkUpdate();
         if (!status.available) throw new Error("已是最新版本，无需更新");
+        sha = status.sha;
         // ponytail: 开发目录（非 npm 全局安装）不自动覆盖工作区代码，由 git 工作流负责更新
         if (!fileURLToPath(new URL("..", import.meta.url)).includes("node_modules"))
           throw new Error(`发现新版本 ${status.remote}（本地 ${status.local}）：开发目录请 git 拉取更新后重建重启`);
       }
-      process.send({ type: "service.restart", mode }, (error) => error ? reject(error) : resolve());
+      process.send({ type: "service.restart", mode, sha }, (error) => error ? reject(error) : resolve());
     })().catch(reject);
   }) : undefined,
 });
