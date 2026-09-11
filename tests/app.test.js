@@ -735,7 +735,22 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("task-runs").children.length, 1);
     assert.match($("task-runs").firstElementChild.textContent, /Inspect code/);
     assert.notEqual($("task-runs").querySelector(".task-run-spin"), null);
-    assert.equal($("task-runs").firstElementChild.title, "子代理运行中：Inspect code");
+    assert.equal($("task-runs").firstElementChild.title, "定位子代理：Inspect code");
+    const run = $("task-runs").firstElementChild;
+    const targetCard = window.document.querySelector('[aria-controls="task-child"]');
+    let scrolled;
+    targetCard.scrollIntoView = (options) => { scrolled = options; };
+    assert.equal(run.tagName, "BUTTON", "run summary supports keyboard activation");
+    run.click();
+    $("transcript").dispatchEvent(new window.Event("scroll"));
+    assert.equal($("latest").hidden, false, "programmatic scroll does not resume follow near the bottom");
+    assert.equal(scrolled.block, "center");
+    assert.equal(window.document.activeElement, targetCard);
+    assert.equal($("task-child").open, false, "summary locates the original card without opening the dialog");
+    $("transcript").scrollTop = 123;
+    window.scrollLatest();
+    paint();
+    assert.equal($("transcript").scrollTop, 123, "jump pauses auto-follow");
     const runtime = {
       model: "other/child", thinking: "high", systemPrompt: '<img src=x onerror="alert(1)">\nSystem instructions',
       usage: { input: 100, cacheRead: 800, cacheWrite: 100 },

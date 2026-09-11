@@ -79,7 +79,7 @@ function resizePrompt() {
   $("prompt").style.height = "auto";
   $("prompt").style.height = Math.min($("prompt").scrollHeight, 240) + "px";
 }
-let scrollFrame;
+let scrollFrame, locatedScroll;
 function scrollLatest() {
   if (changing || scrollFrame !== undefined || (!follow && !activeTask?.follow)) return;
   scrollFrame = requestAnimationFrame(() => {
@@ -93,10 +93,14 @@ function scrollLatest() {
 const renderer = createStreamRenderer(renderMarkdown, scrollLatest);
 $("transcript").onscroll = () => {
   const el = $("transcript");
+  // A programmatic jump near the bottom must not re-enable follow.
+  if (el.scrollTop === locatedScroll) return;
+  locatedScroll = undefined;
   follow = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   $("latest").hidden = follow;
 };
 $("latest").onclick = () => {
+  locatedScroll = undefined;
   follow = true;
   $("latest").hidden = true;
   scrollLatest();
@@ -320,6 +324,15 @@ function disclosureHint(label = "详情") {
     const span = document.createElement("span");
     span.className = className;
     span.textContent = text;
+    if (className === "when-open") {
+      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      icon.setAttribute("viewBox", "0 0 24 24");
+      icon.setAttribute("aria-hidden", "true");
+      const path = document.createElementNS(icon.namespaceURI, "path");
+      path.setAttribute("d", "M5 4h14M6 14l6-6 6 6M12 8v12");
+      icon.append(path);
+      span.prepend(icon);
+    }
     hint.append(span);
   }
   return hint;
@@ -758,13 +771,22 @@ function compactionEditor(initial, mainModel) {
   node.append(legend, toggle, selectors, hint);
   return { node, read, valid, error, fillThinking };
 }
-// 运行摘要与任务详情共用 tasks map，只读 status/title，不改动原详情渲染。
+// 运行摘要复用 tasks map，点击定位原卡片，不复制详情渲染。
 function renderTaskRuns() {
   const active = [...tasks.values()].filter((task) => ["starting", "running"].includes(task.trigger.dataset.status));
   $("task-runs").replaceChildren(...active.map((task) => {
-    const row = document.createElement("span");
+    const row = document.createElement("button");
+    row.type = "button";
     row.className = "task-run";
-    row.title = `子代理运行中：${task.trigger.title}`;
+    row.title = `定位子代理：${task.trigger.title}`;
+    row.setAttribute("aria-label", row.title);
+    row.onclick = () => {
+      follow = false;
+      $("latest").hidden = false;
+      task.trigger.scrollIntoView({ block: "center" });
+      locatedScroll = $("transcript").scrollTop;
+      task.trigger.focus({ preventScroll: true });
+    };
     const icon = document.createElement("span");
     icon.className = "task-run-spin";
     icon.setAttribute("aria-hidden", "true");
@@ -922,6 +944,7 @@ function event(message) {
       node.id = `task-${message.taskId}`;
       heading.id = `${node.id}-title`;
       node.setAttribute("aria-labelledby", heading.id);
+      node.querySelector(".task-system-prompt > summary").append(disclosureHint("查看"));
       trigger.setAttribute("aria-controls", node.id);
       const task = {
         node, trigger, heading, messages: [], follow: true,
@@ -977,6 +1000,7 @@ function event(message) {
   if (type === "error") error(data.message);
 }
 function snapshot(state) {
+  locatedScroll = undefined;
   clearTimeout(escapeTimer);
   escapeTimer = undefined;
   activeTask?.node.close();

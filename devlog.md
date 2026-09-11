@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-10 21:12 — 会话语义配色、动态状态与阅读体验
+- worktree MyWorkbench-conversation-colors / feat/conversation-colors。按用户三轮反馈保留 Linear 深色底，新增雾蓝读取/搜索、青绿命令/代码、暖金编辑/重点、柔紫思考/子代理；正文缩至 14px，思考 Markdown 斜体正常字重（代码保持正体）。状态改清晰旋转环，覆盖思考、连接、工具与子代理卡片/浮层/摘要，结束停止并尊重减少动态效果。
+- 去除工具输出、diff、系统提示词内部纵向限高，使用共享 sticky summary 和收起 SVG；原生键盘折叠、宽代码/表格横向滚动保留。子代理摘要改原生按钮，定位并聚焦会话内原卡片，不直接打开浮层；浏览器复现近底部跳转触发 onscroll 后重新跟随的问题，记录程序跳转位置并忽略同位置事件，实际滚动或回到最新可恢复，快照重置。
+- 涉及 public/{app.js,style.css}、tests/{app.test.js,conversation-preview.mjs,conversation-ui.py}、README.md、本日志、仓库 devlog.md、codebase-map 的索引/职责表与 knowledge.md。不加运行依赖，不改 SDK、消息协议、安全 Markdown 或折叠渲染策略。
+- 验证：npm test 83 通过、1 原有跳过、0 失败；已有 Python Playwright + Chromium 实测 1440/390/320px 配色、字号/字重、主/子长内容吸顶收起、无内部纵向滚动、键盘定位及回到最新；检查旋转实际运动、结束停止及 reduced-motion，无页面/CSP 错误。新增脚本可重复验收并输出截图，静态样例不调用模型、不读取用户数据；截图前等待滚动合成稳定，避免拍到短暂空白标题。正式服务未重启，先保留功能分支供用户看预览。
+
 ## 2026-09-10 20:40 — 会话 UI 复核修补
 - 根据已回收的只读复核，确认左右 diff 把截断提示放在隐藏的统一视图里；public/app.js 将提示移到该节下方，activityLine 改 span 满足 summary 内容约束。public/markdown.js 避免 JS 查询依赖 :has，保留无 code 的 pre。public/style.css 清理旧强调色与未定义 --text，输入菜单使用同一套 Linear 表面/文字 token。
 - tests/message-activity.test.js 覆盖长 diff/输出与双视图提示，tests/markdown.test.js 覆盖原始 pre；README.md、codebase-map 索引/knowledge.md 与仓库日志同步。侧栏/设置折叠三角不属于会话执行记录，保留原生交互；不新增工具归组、状态机或依赖。

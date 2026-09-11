@@ -7,7 +7,7 @@ const markdown = `## 会话展示，回到内容本身
 
 - 工具记录：动作、对象、状态各自对齐
 - 思考过程：只保留一条入口，展开后支持 **Markdown**
-- 长内容：表格和代码独立滚动，不撑破会话
+- 长内容：随会话阅读，宽表格和代码仅横向滚动
 
 > 执行过程可以收起，重要结论应当一眼能找到。
 
@@ -51,7 +51,7 @@ for (const [name, args, isError, output] of [
   ["read", { path: `${state.cwd}/public/app.js`, offset: 289, limit: 80 }, false, "const tools = new Map();\n// 读取文件内容"],
   ["bash", { command: "npm test" }, false, "示例输出：Tests passed（静态预览，不代表真实执行）"],
   ["web_search", { queries: ["Linear typography", "Accessible disclosure patterns"] }, false, "Design references found."],
-  ["edit", { path: "public/style.css", edits: [{ oldText: "font-size: 12px;", newText: "font-size: 16px;" }] }, false, "Updated public/style.css"],
+  ["edit", { path: "public/style.css", edits: [{ oldText: "font-size: 16px;", newText: "font-size: 14px;" }] }, false, "Updated public/style.css"],
   ["bash", { command: "npm run lint" }, true, 'Missing script: "lint". Run npm test instead.'],
 ]) {
   const id = `tool-${sequence}`;
@@ -61,12 +61,31 @@ for (const [name, args, isError, output] of [
 add(assistant([{ type: "text", text: markdown }]));
 add(assistant([{ type: "thinking", thinking }, { type: "text", text: markdown }]), "review");
 const states = [state,
+  { ...state, sessionId: "ui-agents", title: "状态验收 · 子代理运行中", status: "running", messages: state.messages,
+    tasks: [{ id: "review", task: "检查会话配色、思考 Markdown 和移动端长路径的阅读体验", status: "running" }, { id: "queued", task: "复核动态状态与减少动态效果设置", status: "starting" }],
+    live: { main: assistant([{ type: "thinking", thinking }]), review: assistant([{ type: "thinking", thinking }]) },
+  },
   { ...state, sessionId: "ui-thinking", title: "状态验收 · 思考中", status: "running", messages: state.messages.slice(0, 1), tasks: [], live: { main: assistant([{ type: "thinking", thinking }]) } },
   { ...state, sessionId: "ui-waiting", title: "状态验收 · 连接中", status: "running", messages: state.messages.slice(0, 1), tasks: [] },
   { ...state, sessionId: "ui-tools", title: "状态验收 · 执行中", status: "running", messages: state.messages.slice(0, 1), tasks: [], tools: {
     live: { agentId: "main", phase: "start", toolCallId: "long", toolName: "read", args: { path: `${state.cwd}/a-very-long-directory-name/another-directory/一个很长的目录名称/这是为了验证省略和窄屏布局的文件名称.test.js` } },
   } },
 ];
+const longState = structuredClone(state);
+longState.sessionId = "ui-long";
+longState.title = "阅读验收 · 长内容与随手收起";
+longState.tasks[0].runtime = { systemPrompt: "系统提示词：只读检查，不执行更改。\n".repeat(150) };
+for (const { message } of longState.messages) {
+  for (const block of Array.isArray(message.content) ? message.content : []) {
+    if (block.type === "thinking") block.thinking = (thinking + "\n\n").repeat(40);
+    if (block.type === "text" && message.role === "toolResult") block.text = (block.text + "\n").repeat(150);
+    if (block.type === "toolCall" && block.name === "edit") {
+      block.arguments.edits[0].oldText = "font-size: 16px;\n".repeat(150);
+      block.arguments.edits[0].newText = "font-size: 14px;\n".repeat(150);
+    }
+  }
+}
+states.push(longState);
 const sessions = {
   createAgent: { catalog: () => [{ provider: "preview", id: "axiom", key: "preview/axiom", name: "Axiom Preview", levels: ["off", "high"] }] },
   list: () => states.map((s) => ({ id: s.sessionId, cwd: s.cwd, title: s.title, status: s.status, updatedAt: Date.now() })),

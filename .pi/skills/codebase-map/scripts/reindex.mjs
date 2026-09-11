@@ -38,6 +38,7 @@ const MODULE_INFO = {
   "public/file-picker.js": "共享文件/目录选择弹窗、懒加载与分类 SVG 图标",
   "public/file-picker.css": "文件选择弹窗主题与响应式布局",
   "tests/conversation-preview.mjs": "无模型本地 UI 验收：思考、工具状态、Markdown、子任务与窄屏样例",
+  "tests/conversation-ui.py": "可选 Playwright 浏览器回归：配色、字重、吸顶收起、无内滚动、子代理定位与动态状态",
   "tests/message-activity.test.js": "消息活动状态、连续思考合并、工具历史与终态回归",
   "tests/file-picker.test.js": "共享选择器懒加载、分页、竞态和键盘交互回归",
   "public/index.html": "页面骨架与元素 id（见 L3）",

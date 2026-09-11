@@ -161,3 +161,14 @@
 - 根因：renderToolDetail 将提示附到 .diff-unified，而桌面默认隐藏该视图。
 - 修复：public/app.js 把 .tool-truncation 作为该节下方的独立元素，适用于 diff 与普通输出；public/style.css 共用说明文字样式。
 - 防再犯：tests/message-activity.test.js 验证两种视图切换后提示仍在 .tool-detail 直属层，普通输出上限不变；浏览器验证 1440px/320px 可见。共享 summary 使用 span 活动行，JS Markdown 查询不依赖 :has（不支持时会抛错，而非仅丢样式）。
+
+### 2026-09-10 21:12 程序跳转被滚动事件误判为恢复跟随
+- 症状：子代理摘要先设 follow=false 再 scrollIntoView，目标靠近底部时「回到最新」立即隐藏，新输出又把阅读位置拉走。
+- 根因：浏览器异步 scroll 事件按距底部 <80px 无条件恢复 follow；JSDOM 不自动触发真实布局滚动，单测只检查 click 会漏掉。
+- 修复：public/app.js 记录定位后的 scrollTop，同位置事件不改变暂停状态；实际不同位置的滚动仍按原逻辑处理，回到最新和快照清除标记。
+- 防再犯：tests/app.test.js 显式派发定位后的 scroll，再验证 scrollLatest 不改位置；tests/conversation-ui.py 从顶部跳到近底卡片后等待事件，验证按钮/焦点/最新入口及恢复跟随。
+
+### 2026-09-10 21:12 静态 UI 预览与 Windows 路径转义
+- 症状：worktree 的 node_modules junction 无效；浏览器长内容验收误打开旧会话，截图偶现吸顶标题短暂空白；重复样例变成未解析 Markdown。
+- 根因：Python 普通字符串里的反斜杠 a 被转为 bell；预览初次异步恢复覆盖过早写入的 session ID；滚动后未等合成帧；Markdown 代码围栏与下段之间缺换行。
+- 修复/防再犯：junction 用 PowerShell New-Item -ItemType Junction；预览切换前等待初次工作区恢复，reload 后核验 ID；截图等待滚动稳定，动画选择可见元素并检查 transform 确实变化；长 Markdown 样例用双换行连接，修改 public/ 后重启预览。对应 tests/conversation-ui.py 与 conversation-preview.mjs。

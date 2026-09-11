@@ -1,0 +1,148 @@
+"""Visual regression: run conversation-preview.mjs, then python tests/conversation-ui.py [artifact-dir].
+Requires an existing Playwright Python + Chromium installation; no live model or user data.
+"""
+from pathlib import Path
+from playwright.sync_api import sync_playwright, expect
+import json
+import sys
+
+out = Path(sys.argv[1]) if len(sys.argv) > 1 else None
+if out:
+    out.mkdir(parents=True, exist_ok=True)
+
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+    page = browser.new_page(viewport={"width": 1440, "height": 1000})
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+
+    def load(id):
+        page.goto("http://127.0.0.1:4321")
+        page.wait_for_selector("#workspace:not([hidden])")
+        page.wait_for_timeout(150)
+        page.evaluate('(id) => localStorage.setItem("axiom.session", id)', id)
+        page.reload()
+        page.wait_for_selector("#workspace:not([hidden])")
+        page.wait_for_timeout(150)
+        assert page.evaluate('() => localStorage.getItem("axiom.session")') == id
+
+    def style(el, key, pseudo=None):
+        return el.evaluate('(el, args) => getComputedStyle(el, args[1])[args[0]]', [key, pseudo])
+
+    def shot(name):
+        if out:
+            page.wait_for_timeout(150)
+            page.screenshot(path=str(out / (name + ".png")))
+
+    def overflow():
+        assert page.evaluate('''() => document.documentElement.scrollWidth <= innerWidth &&
+            [...document.querySelectorAll('#output, .task-dialog[open]')].every(el => el.scrollWidth <= el.clientWidth)''')
+
+    def rotating(el, pseudo=None):
+        assert style(el, "animationName", pseudo) in ["activity-spin", "task-run-spin"]
+        before = style(el, "transform", pseudo)
+        page.wait_for_timeout(120)
+        assert style(el, "transform", pseudo) != before, "spinner must actually move"
+        page.emulate_media(reduced_motion="reduce")
+        assert style(el, "animationName", pseudo) == "none"
+        page.emulate_media(reduced_motion="no-preference")
+
+    for width in [1440, 390, 320]:
+        page.set_viewport_size({"width": width, "height": 1000 if width == 1440 else 844})
+        load("ui-review")
+        body = page.locator('#output .message > .markdown').filter(has=page.locator('h2')).first
+        assert style(body, "fontSize") == "14px"
+        assert style(body.locator('strong').first, "fontWeight") == "650"
+        colors = [style(page.locator(f'.tool-activity[data-tool-icon="{kind}"] .activity-icon').first, "color") for kind in ['read', 'bash', 'edit']]
+        assert len(set(colors)) == 3
+        page.locator('#transcript').evaluate('(el) => el.scrollTop = 0')
+        shot(f"conversation-{width}")
+        thought = page.locator('#output .thinking-record:not([hidden])').first
+        thought.locator('summary').click()
+        expect(thought.locator('h3')).to_be_visible()
+        for tag in ['h3', 'strong', 'p']:
+            assert style(thought.locator(tag).first, "fontStyle") == "italic"
+            assert style(thought.locator(tag).first, "fontWeight") == "400"
+        assert style(thought.locator('code').first, "fontStyle") == "normal"
+        overflow()
+        page.locator('#transcript').evaluate('(el) => el.scrollTop = 0')
+        shot(f"thinking-{width}")
+
+        # Real long content: sticky summaries stay in view, inner regions do not scroll vertically.
+        load('ui-long')
+        for scope, scroll in [('#output', '#transcript'), ('.task-dialog', '.task-body')]:
+            if scope == '.task-dialog':
+                page.locator('.task-card').click()
+            for kind in (['.thinking-record:not([hidden])', '.tool-record'] if scope == '#output' else ['.thinking-record:not([hidden])', '.task-system-prompt']):
+                record = page.locator(f'{scope} {kind}').first
+                record.locator('summary').click()
+                page.wait_for_timeout(120)
+                record.evaluate('''(el, selector) => {
+                    const scroller = document.querySelector(selector);
+                    scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + 650;
+                }''', scroll)
+                page.wait_for_timeout(120)
+                summary = record.locator('summary')
+                scroller = page.locator(scroll)
+                sticky_top = scroller.bounding_box()['y'] + float(style(scroller, 'paddingTop').removesuffix('px'))
+                assert abs(summary.bounding_box()['y'] - sticky_top) <= 2, (width, scope, kind, summary.bounding_box(), sticky_top)
+                expect(summary.locator('.when-open svg')).to_be_visible()
+                assert record.evaluate('''el => [...el.querySelectorAll('pre, .diff-split')].every(node =>
+                    node.scrollHeight <= node.clientHeight + 1)'''), "no nested vertical scrolling"
+                overflow()
+                shot(f"sticky-{width}-{'main' if scope == '#output' else 'task'}-{kind.split(':')[0][1:]}")
+                summary.locator('.when-open').click()
+                assert not record.evaluate('(el) => el.open')
+            if scope == '.task-dialog':
+                page.keyboard.press('Escape')
+        # Long split/unified diffs use the transcript's vertical scroll too.
+        edit = page.locator('.tool-record').nth(3)
+        edit.locator('summary').click()
+        page.wait_for_timeout(100)
+        assert edit.evaluate('''el => [...el.querySelectorAll('pre, .diff-split')].every(node =>
+            getComputedStyle(node).display === 'none' || node.scrollHeight <= node.clientHeight + 1)''')
+        overflow()
+
+        load('ui-agents')
+        page.locator('#transcript').evaluate('(el) => el.scrollTop = 0')
+        page.wait_for_timeout(100)
+        run = page.locator('.task-run').first
+        run.focus()
+        page.keyboard.press('Enter')
+        card = page.locator('[aria-controls="task-review"]')
+        expect(card).to_be_focused()
+        page.wait_for_timeout(150)
+        expect(page.locator('#latest')).to_be_visible()
+        assert page.locator('.task-dialog[open]').count() == 0
+        rect, viewport = card.bounding_box(), page.locator('#transcript').bounding_box()
+        assert viewport['y'] <= rect['y'] < viewport['y'] + viewport['height']
+        rotating(run.locator('.task-run-spin'))
+        rotating(card.locator('.task-status'), '::before')
+        rotating(page.locator('[aria-controls="task-queued"] .task-status'), '::before')
+        shot(f"agent-jump-{width}")
+        page.locator('#latest').click()
+        expect(page.locator('#latest')).to_be_hidden()
+        card.click()
+        rotating(page.locator('.task-dialog[open] .task-top h2'), '::before')
+        rotating(page.locator('.task-dialog[open] [data-state="thinking"] .activity-icon'), '::after')
+        page.locator('.task-dialog[open]').evaluate('(el) => el.dataset.status = "completed"')
+        assert style(page.locator('.task-dialog[open] .task-top h2'), 'animationName', '::before') == 'none'
+        overflow()
+        page.keyboard.press('Escape')
+
+    for state, selector, pseudo in [
+        ('ui-thinking', '[data-state="thinking"] .activity-icon', '::after'),
+        ('ui-waiting', '[data-state="waiting"] .activity-icon svg', None),
+        ('ui-tools', '[data-state="running"] .tool-status', '::before'),
+    ]:
+        load(state)
+        el = page.locator(selector + ':visible').first
+        rotating(el, pseudo)
+        shot(state)
+        handle = el.element_handle()
+        page.locator('[data-state]').evaluate_all('(els) => els.forEach(el => el.dataset.state = "done")')
+        assert style(handle, 'animationName', pseudo) == 'none'
+    assert not errors, errors
+    print(json.dumps({"viewports": [1440, 390, 320], "checks": "palette/typography/sticky/no-inner-scroll/jump/animation/reduced-motion", "browserErrors": errors}))
+    browser.close()
