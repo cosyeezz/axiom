@@ -196,3 +196,9 @@
 - 根因：src/server.js 的 assets 映射在启动时固定构建，启动后新增的文件不在路由表里。
 - 处理：新文件在 assets 表登记后走「服务 → 快速重启」；更新已注册文件同样需重启载入（ETag 缓存不变）。
 - 防再犯：新增静态资源 = 登记 assets + 快速重启，两步缺一不可。
+
+### 2026-09-11 会话树回退（撤回已发出的输入）的两个隐性约束
+- 症状：用 SDK 公开的 `AgentSession.navigateTree(用户消息 id)` 回退后一切正常，但重启后那条消息又出现在上下文里；即使不重启，网页历史仍显示被撤回的输入和被打断的半截回答。
+- 根因：① `SessionManager.branch()` 只移动内存里的叶子指针，文件是追加式的；只有再追加一条条目才会把新位置落盘，而重启时 `_buildIndex` 取「文件最后一条」当叶子。② axiom 自己还存了一份 `item.messages`（sessions.js 从 `agent.message.end` 累积，attach 快照就发它），SDK 上下文回退了这份副本不会跟着回退。
+- 修复：src/pi.js 回退后补一条 `appendCustomEntry("axiom_recall", …)`（`type:"custom"` 不参与 `buildSessionContext`，等于零上下文成本的持久化标记）；src/sessions.js 按 `entryId` 截断 `item.messages` 并 `delete item.live.main`，别忘 `persist`。
+- 防再犯：任何「改会话树/历史」的操作都要同时问三处——SDK 文件是否落盘（branch 不落盘）、axiom 的 `item.messages` 副本、客户端当前的 DOM/`views`。判断「本轮有没有模型输出」要看 `getBranch()` 里的持久化条目，且工具调用必须算已产出：工具副作用已发生，回退会让新的分支出现孤立 toolResult。

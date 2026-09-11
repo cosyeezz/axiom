@@ -131,7 +131,7 @@ export const command = z.discriminatedUnion("type", [
     })
     .strict(),
   z.object({ id, type: z.literal("cancel"), sessionId: id }).strict(),
-  z.object({ id, type: z.literal("queue.withdraw"), sessionId: id }).strict(),
+  z.object({ id, type: z.literal("queue.withdraw"), sessionId: id, recall: z.boolean().optional() }).strict(),
   z
     .object({
       id,

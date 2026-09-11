@@ -578,6 +578,23 @@ export class Sessions {
     return item.runId;
   }
 
+  // 撤回：recall 时把这一轮已进入上下文的输入退回输入框（先停稳、无模型输出才允许）；
+  // 队列撤回放在 recall 之后，recall 被拒绝时队列原样保留，不会丢消息。
+  async withdraw(id, recall = false) {
+    const item = this.get(id);
+    if (!recall) return item.agent.withdraw();
+    if (item.status !== "idle" || item.cancelling) await this.cancel(id);
+    const recalled = await item.agent.recall();
+    if (recalled) {
+      // 网页历史跟着回退：否则重新 attach 仍会画出被撤回的输入和被打断的半截回答。
+      const cut = item.messages.findIndex((record) => record.agentId === "main" && record.entryId === recalled.entryId);
+      if (cut >= 0) item.messages.length = cut;
+      delete item.live.main;
+      await this.persist(item);
+    }
+    return { ...item.agent.withdraw(), recalled };
+  }
+
   async cancel(id) {
     const item = this.get(id);
     if (item.cancelling) return item.cancelling;
