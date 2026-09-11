@@ -203,6 +203,12 @@
 - 处理：`importSession` 把 JSONL 内容复制到 `~/.axiom/workspaces/<sha256(cwd)>/<id>.jsonl`（`create()` 失败时删副本）；`load()` 只读 `.json`，遗留副本无副作用。侧栏筛选行为保留，属预期。
 - 防再犯：tests/session-flow.test.js 断言删除会话后原文件仍在、副本已删；tests/app.test.js 断言导入后标题与 `workspace-label` 跟随会话，`service-api.test.js` 覆盖 `service.status.importDir`。
 
+### 2026-09-11 多轮压缩后子代理入口夹杂、后台摘要无状态
+- 症状：主消息折叠后独立 task trigger 仍留在摘要之间；刷新后排列不同；后台生成或失败不可见。
+- 根因：压缩仅按主消息 entryId 隐藏节点，没有维护委托工具结果 taskIds 与消息区间的关系；SDK 恢复的压缩区间曾从头累计；后台仅发布成功落盘事件。
+- 修复：`public/app.js` 按真实委托结果建立归属，把原入口移到对应摘要的任务区，弹窗继续放在独立 overlays，快照重建同一归属；`src/pi.js` 按每次保留边界还原区间。后台发布真实阶段并由快照恢复，已取消任务的异步完成不能覆盖新任务状态。
+- 防再犯：不要按时间或可见位置猜任务归属，不丢弃无法关联的旧任务；覆盖实时/快照/连续压缩、折叠摘要里的运行入口定位和迟到状态。新增进度不要伪造百分比，UI 状态/错误走 textContent。`tests/compaction-ui.test.js` 和真实浏览器 `tests/compaction-ui.py` 验证分层与弹窗仍可用。
+
 ### 2026-09-11 输入清空必须保留浏览器撤销记录
 - 场景：Ctrl+C 清空聊天文字后，需要 Ctrl+Z 恢复；直接设置 textarea.value 不会记录可撤销编辑。
 - 处理：public/app.js 使用 select() + execCommand("delete") 原生编辑命令，Ctrl+Z 不拦截，复用浏览器撤销历史；input 事件更新高度、按钮与补全。仅处理 Ctrl+C，跳过输入法组合、空文字、只读/禁用。

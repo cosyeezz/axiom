@@ -17,8 +17,48 @@ import {
   normalizeCompaction,
   overCompactionThreshold,
   summarizeWithPiSession,
+  summarizedEntryIds,
+  summaryRequest,
   DEFAULT_COMPACTION_CONFIG,
 } from "../src/compaction.js";
+
+test("连续摘要请求完整传入旧约束并要求保留，而非仅输出增量", () => {
+  for (const previous of ["约束A：禁止新增依赖", "约束A：禁止新增依赖；已完成B"]) {
+    const request = summaryRequest("只讨论新方案C", previous);
+    assert(request.includes(`<previous-summary>\n${previous}\n</previous-summary>`));
+    assert.match(request, /Silence does not mean a requirement has expired/);
+    assert.match(request, /complete handoff, not just an incremental update/);
+    assert.match(request, /only when the conversation explicitly changes/);
+  }
+});
+
+test("恢复摘要区间不累计之前已折叠的消息", () => {
+  const branch = ["a", "b", "c", "d"].map((id) => ({ id, type: "message" }));
+  assert.deepEqual(summarizedEntryIds(branch, "c"), ["a", "b"]);
+  branch.push({ id: "s1", type: "compaction", firstKeptEntryId: "c" });
+  branch.push({ id: "e", type: "message" });
+  assert.deepEqual(summarizedEntryIds(branch, "e"), ["c", "d"]);
+});
+
+test("取消旧摘要后迟到结果不覆盖新任务状态", async () => {
+  const { session, cleanup } = await createTestSession();
+  let compaction;
+  try {
+    seed(session, [userMsg(big("a")), assistantMsg(big("b")), userMsg(big("c"))]);
+    const resolve = [];
+    compaction = createBackgroundCompaction({ session, config: enabledConfig, summarize: () => new Promise((done) => resolve.push(done)) });
+    compaction.onTurnEnd();
+    compaction.cancel();
+    compaction.onTurnEnd();
+    resolve[0]({ summary: "old" });
+    await settle();
+    assert.equal(compaction.getStatus().status, "summarizing");
+    resolve[1]({ summary: "new" });
+    await settle();
+    assert.equal(compaction.getStatus().status, "ready");
+    assert.equal((await compaction.maybeApply()).summary, "new");
+  } finally { compaction?.dispose(); cleanup(); }
+});
 
 // —— 测试基建：真实 SDK 会话（真实钩子/SessionManager），不调用真实模型（摘要注入 fake）——
 
@@ -253,9 +293,8 @@ test("turn_end 快照后摘要，安全点应用：保留 recent 与快照后新
     assert.equal(leaf.firstKeptEntryId, data.firstKeptEntryId);
 
     // 事件：agent.compaction 与落盘一致
-    assert.equal(events.length, 1);
-    assert.equal(events[0].type, "agent.compaction");
-    assert.deepEqual(events[0].data, data);
+    assert.deepEqual(events.filter((e) => e.type === "agent.compaction.status").map((e) => e.data.status), ["summarizing", "ready", "applied"]);
+    assert.deepEqual(events.find((e) => e.type === "agent.compaction").data, data);
   } finally {
     compaction?.dispose();
     cleanup();
@@ -384,7 +423,7 @@ test("单 flight：同一段时间多次 turn_end 只发起一次摘要", async 
   }
 });
 
-test("摘要失败：保留原文，不落盘、不发事件", async () => {
+test("摘要失败：保留原文，不落盘，及时报告失败", async () => {
   const { session, cleanup } = await createTestSession();
   let compaction;
   try {
@@ -405,7 +444,8 @@ test("摘要失败：保留原文，不落盘、不发事件", async () => {
     assert.equal(await compaction.maybeApply(), null);
     assert.deepEqual(session.messages, before);
     assert.ok(!session.sessionManager.getBranch().some((entry) => entry.type === "compaction"));
-    assert.equal(events.length, 0);
+    assert.equal(events.filter((e) => e.type === "agent.compaction").length, 0);
+    assert.equal(compaction.getStatus().status, "failed");
     // 失败后 flight 释放，可以再次触发
     await compaction.onTurnEnd();
     await settle();
@@ -443,7 +483,8 @@ test("提交验证：空摘要不落盘；压缩后没有真的变小也不落�
     await settle();
     assert.equal(await compaction.maybeApply(), null, "没有变小不提交");
     assert.ok(!session.sessionManager.getBranch().some((entry) => entry.type === "compaction"));
-    assert.equal(events.length, 0);
+    assert.equal(events.filter((e) => e.type === "agent.compaction").length, 0);
+    assert.equal(compaction.getStatus().status, "skipped");
   } finally {
     compaction?.dispose();
     cleanup();
@@ -467,7 +508,8 @@ test("快照后出现新的压缩条目（如原生兜底）：结果作废，�
     await settle();
     session.sessionManager.appendCompaction("native-summary", session.sessionManager.getBranch()[0].id, 1);
     assert.equal(await compaction.maybeApply(), null);
-    assert.equal(events.length, 0);
+    assert.equal(events.filter((e) => e.type === "agent.compaction").length, 0);
+    assert.equal(compaction.getStatus().status, "skipped");
     assert.equal(session.messages.some((m) => m.summary === "S:3"), false);
   } finally {
     compaction?.dispose();
@@ -527,7 +569,9 @@ test("dispose 取消在途摘要：signal 中止、结果不落地", async () =>
     compaction.dispose();
     assert.equal(signals[0].aborted, true, "dispose 必须中止后台真实 LLM 的 signal");
     assert.equal(await compaction.maybeApply(), null);
-    assert.equal(events.length, 0);
+    await settle();
+    assert.equal(events.filter((e) => e.type === "agent.compaction").length, 0);
+    assert.equal(compaction.getStatus().status, "cancelled");
     assert.ok(!session.sessionManager.getBranch().some((entry) => entry.type === "compaction"));
   } finally {
     compaction?.dispose();

@@ -1,5 +1,15 @@
 # 开发记录
 
+## 2026-09-11 — 后台压缩增强合并验收
+- 用户确认合并 master。功能 worktree 合入最新 master，保留技能恢复及三按 Esc 撤回功能；日志/知识库冲突保留两侧记录，索引按合并后源码重建。
+- 验证：npm test 123 通过、1 原有跳过、0 失败。功能分支推送后合并并推送 master；保留主工作区 package-lock.json 和未跟踪文件，不安装依赖、不重启正式服务。
+
+## 2026-09-11 — 后台摘要保留规则、输入区进度与子代理归档
+- worktree `axiom-compaction-ux` / `feat/compaction-ux`。保持 Pi SDK 后台生成、安全点应用和滚动更新摘要；显式要求保留仍有效的旧目标、约束、决策、未完成项与准确上下文，不把未再次提及视为失效。提示词降低遗漏风险，不声称无损。
+- 输入框上方增加后台压缩真实阶段提示，不虚构百分比；状态按主会话隔离并纳入快照，取消/失败/拒绝应用均有反馈。已压缩的委托任务按真实工具结果 ID 归入对应摘要，保留子代理详情和运行入口定位；多次压缩不再夹杂已归档任务。
+- 验证：`npm test` 116 通过、1 原有跳过、0 失败；真实 Chromium 1440/390/320px 摘要分层、任务弹窗、进度位置、旋转和 reduced-motion 通过，无页面/CSP 错误。仓库无 build 脚本，采用现有测试和真实浏览器检查；未调用付费模型，提示词测试仅证明传参及保留规则，不证明摘要语义无损。委托两次被外部服务重启取消，核心代码由主任务直接完成。正式服务未由本任务重启。
+- 涉及 `src/{compaction,pi,sessions}.js`、`public/{app.js,index.html,style.css}`、压缩后端/UI 测试、`tests/conversation-preview.mjs`、两级 README/devlog 与 codebase-map 索引/知识库。使用现有依赖，不安装或重装运行实例依赖；保留主工作区原有改动。
+
 ## 2026-09-11 — 输入快捷键与自动复制合并验收
 - 用户要求合并 master；在 feat/input-shortcuts worktree 先合入最新 origin/master，保留三按 Esc 收回输入与能力恢复修复。README 合并两侧功能说明，devlog/knowledge 保留两侧记录，INDEX 重建解决生成文件冲突；未触碰主工作区 package-lock.json 等用户未提交内容。
 - 验证：npm test 119 通过、1 原有跳过；独立 4327 预览下 Chromium 1440/390/320px 检查及真实剪贴板/开关持久化/撤销恢复通过，无浏览器错误。功能分支推送后合并 master 并推送，清理本次 worktree；不主动重启正式服务。
