@@ -162,7 +162,7 @@ function controls() {
   for (const button of document.querySelectorAll(".session-actions button")) button.disabled = unavailable;
   $("status").dataset.connected = String(connected);
   $("status").textContent = restarting ? "正在重启…" : connected ? "已连接" : "连接断开";
-  for (const id of ["restart-quick", "restart-rebuild"])
+  for (const id of ["restart-quick", "restart-rebuild", "restart-update"])
     $(id).disabled = !connected || !serviceManaged || restarting;
 }
 function options(select, entries, selected) {
@@ -1117,13 +1117,17 @@ function scheduleReconnect() {
   reconnectTimer = setTimeout(() => $("login").requestSubmit(), reconnectDelay);
   reconnectDelay = Math.min(reconnectDelay * 2, 15000);
 }
-for (const mode of ["quick", "rebuild"]) $(`restart-${mode}`).onclick = () => {
+const restartNames = { quick: "快速重启", rebuild: "重建重启", update: "检查更新" };
+const restartDescriptions = {
+  quick: "仅重新启动服务，不安装依赖。所有页面会暂时断开连接，随后自动重连。",
+  rebuild: "重新安装依赖、执行构建后启动，可能需要数分钟。所有页面会暂时断开连接，随后自动重连。",
+  update: "联网比对 GitHub 公开仓库最新版本，有更新则重装并自动重启；已是最新则仅提示，不重启。",
+};
+for (const mode of Object.keys(restartNames)) $(`restart-${mode}`).onclick = () => {
   $("restart-dialog").dataset.mode = mode;
-  $("restart-title").textContent = mode === "quick" ? "快速重启" : "重建重启";
-  $("restart-description").textContent = mode === "quick"
-    ? "仅重新启动服务，不安装依赖。所有页面会暂时断开连接，随后自动重连。"
-    : "重新安装依赖、执行构建后启动，可能需要数分钟。所有页面会暂时断开连接，随后自动重连。";
-  $("restart-submit").textContent = `确认${$("restart-title").textContent}`;
+  $("restart-title").textContent = restartNames[mode];
+  $("restart-description").textContent = restartDescriptions[mode];
+  $("restart-submit").textContent = `确认${restartNames[mode]}`;
   $("restart-dialog").showModal();
   $("restart-cancel").focus();
 };
@@ -1132,7 +1136,7 @@ $("restart-form").onsubmit = async (e) => {
   e.preventDefault();
   if (!$("restart-dialog").open) return;
   const mode = $("restart-dialog").dataset.mode;
-  const name = mode === "quick" ? "快速重启" : "重建重启";
+  const name = restartNames[mode];
   $("restart-dialog").close();
   if (!connected || !serviceManaged || restarting) return;
   restarting = true;

@@ -27,6 +27,7 @@ const MODULE_INFO = {
   "src/sessions.js": "Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化",
   "src/server.js": "createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发",
   "src/protocol.js": "zod 协议：selection / command 判别联合（消息类型见 L3）",
+  "src/update.js": "检查更新：本地版本比对 GitHub 公开仓库 master，npm 安装实例可自动重装",
   "src/capabilities.js": "模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities）",
   "src/tasks.js": "Tasks：子任务（委托）生命周期",
   "src/tools.js": "delegationTools：委托/凭证读取/追加工具定义（zod 入参）",

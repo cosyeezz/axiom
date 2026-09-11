@@ -3,11 +3,11 @@
 // 选项：--no-autostart 跳过注册自启；--no-browser 跳过打开浏览器；交互终端且未给参数时逐项询问，默认是。
 // 自定义端口写项目根 .env.local（AXIOM_PORT=…），本脚本与 service.mjs、自启注册读取同一来源。
 import { fork, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { rebuild } from "./service.mjs";
 import { main as autostart } from "./autostart.mjs";
 
@@ -55,8 +55,8 @@ export async function install(argv = process.argv.slice(2), io = console, isTTY 
       if (opts.browser) opts.browser = await ask(rl, "完成后打开浏览器？");
     } finally { rl.close(); }
   }
-  io.log("安装依赖（npm ci；已装依赖先备份，失败自动回滚）…");
-  await rebuild();
+  if (root.includes("node_modules")) io.log("npm 安装：依赖已就绪，跳过重装。");
+  else { io.log("安装依赖（npm ci；已装依赖先备份，失败自动回滚）…"); await rebuild(); }
   if (opts.autostart) await autostart(["enable"]);
   const address = `http://127.0.0.1:${Number(process.env.AXIOM_PORT || 4319)}`;
   const health = `${address}/health`;
@@ -79,5 +79,7 @@ export async function install(argv = process.argv.slice(2), io = console, isTTY 
   io.log(`日志 ${join(homedir(), ".axiom", "service.log")}；取消自启：npm run autostart:disable`);
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href)
+// npm 全局 bin 在类 Unix 系统是符号链接，argv[1] 需取 realpath 再比对
+const invoked = (() => { try { return realpathSync(process.argv[1] ?? ""); } catch { return ""; } })();
+if (invoked && invoked === realpathSync(fileURLToPath(import.meta.url)))
   await install().catch((error) => { console.error(`安装失败：${error.message}`); process.exitCode = 1; });

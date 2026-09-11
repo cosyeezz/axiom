@@ -1,11 +1,33 @@
 {
   "name": "@myworkbench/axiom",
   "version": "0.1.0",
-  "private": true,
+  "description": "多智能体协作的可靠基础：基于 Pi SDK 的网页 Agent 工作台",
+  "license": "MIT",
+  "author": "cosyeezz",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cosyeezz/axiom.git"
+  },
   "engines": {
     "node": ">=22.5"
   },
+  "bin": {
+    "axiom": "scripts/service.mjs",
+    "axiom-setup": "scripts/install.mjs"
+  },
+  "files": [
+    "src",
+    "public",
+    "scripts",
+    "tests",
+    "package-lock.json",
+    "README.md",
+    "LICENSE",
+    "install.sh",
+    "install.ps1",
+    "install.cmd"
+  ],
   "scripts": {
     "start": "node scripts/service.mjs",
     "autostart:enable": "node scripts/autostart.mjs enable",

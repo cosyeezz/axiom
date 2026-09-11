@@ -1,4 +1,5 @@
 import { resolve, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { stat, mkdir, copyFile } from "node:fs/promises";
@@ -6,6 +7,7 @@ import { constants } from "node:fs";
 import { createPiFactory } from "./pi.js";
 import { Sessions } from "./sessions.js";
 import { createServerApp } from "./server.js";
+import { checkUpdate } from "./update.js";
 
 const port = Number(process.env.AXIOM_PORT || 4319);
 if (!Number.isInteger(port) || port < 1 || port > 65535)
@@ -27,7 +29,16 @@ await sessions.load();
 const app = createServerApp(sessions, {
   error: process.env.AXIOM_SERVICE_ERROR,
   restart: process.send ? (mode) => new Promise((resolve, reject) => {
-    process.send({ type: "service.restart", mode }, (error) => error ? reject(error) : resolve());
+    (async () => {
+      if (mode === "update") {
+        const status = await checkUpdate();
+        if (!status.available) throw new Error("已是最新版本，无需更新");
+        // ponytail: 开发目录（非 npm 全局安装）不自动覆盖工作区代码，由 git 工作流负责更新
+        if (!fileURLToPath(new URL("..", import.meta.url)).includes("node_modules"))
+          throw new Error(`发现新版本 ${status.remote}（本地 ${status.local}）：开发目录请 git 拉取更新后重建重启`);
+      }
+      process.send({ type: "service.restart", mode }, (error) => error ? reject(error) : resolve());
+    })().catch(reject);
   }) : undefined,
 });
 app.server.listen(port, "127.0.0.1", () =>

@@ -669,14 +669,16 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("status").textContent, "已连接");
     assert.equal($("restart-quick").disabled, false);
     assert.equal($("restart-rebuild").disabled, false);
+    assert.equal($("restart-update").disabled, false);
     const restartRequests = () => requests.filter((r) => r.type === "service.restart");
     window.confirm = () => { throw new Error("must use styled dialog"); };
-    for (const mode of ["quick", "rebuild"]) {
+    for (const mode of ["quick", "rebuild", "update"]) {
       const before = restartRequests().length;
       $(`restart-${mode}`).click();
       assert.equal($("restart-dialog").open, true);
       assert.equal(window.document.activeElement, $("restart-cancel"));
-      assert.match($("restart-description").textContent, mode === "quick" ? /不安装依赖/ : /数分钟/);
+      assert.match($("restart-description").textContent,
+        mode === "quick" ? /不安装依赖/ : mode === "update" ? /已是最新/ : /数分钟/);
       assert.equal(restartRequests().length, before);
       $("restart-cancel").click();
       assert.equal($("restart-dialog").open, false);

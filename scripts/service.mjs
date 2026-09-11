@@ -65,7 +65,11 @@ export function supervise() {
         try {
           await stopChild();
           let error = "";
-          if (message.mode === "rebuild") {
+          if (message.mode === "update") {
+            // ponytail: 只更新代码与依赖，监督进程自身仍是旧代码，子进程即刻生效；完全换血等下次登录自启
+            try { await npmRun(run, ["install", "-g", npmSpec]); }
+            catch (cause) { error = `更新失败：${cause.message}`; console.error(error); }
+          } else if (message.mode === "rebuild") {
             try { await rebuild(); }
             catch (cause) { error = `重建失败：${cause.message}`; console.error(error); }
           }

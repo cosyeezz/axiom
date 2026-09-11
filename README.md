@@ -8,21 +8,28 @@
 
 ### 一键安装（macOS / Windows）
 
-前提：已装 git 并能访问本仓库（当前为私有仓库，需先配置 SSH key）。命令克隆到 `~/MyWorkbench`（已存在则直接复用，不自动拉取更新），缺 Node 时经 Homebrew / winget 自动安装，随后装依赖、启动服务并在就绪后打开浏览器。交互终端逐项确认（默认注册登录自启、打开浏览器）；脚本调用可用 `--no-autostart` / `--no-browser` 关闭。自定义端口写项目根 `.env.local`（`AXIOM_PORT=…`），安装、自启、服务读取同一来源。
+本仓库即 npm 包，两种路线任选；缺 Node 时安装脚本会经 Homebrew / winget 自动安装，随后装依赖、启动服务并在就绪后打开浏览器。交互终端逐项确认（默认注册登录自启、打开浏览器）；脚本调用可用 `--no-autostart` / `--no-browser` 关闭。自定义端口写项目根 `.env.local`（`AXIOM_PORT=…`），安装、自启、服务读取同一来源。
 
-macOS（终端）：
+npm 路线（推荐）：
 
 ```sh
-git clone --depth 1 git@github.com:cosyeezz/MyWorkbench.git ~/MyWorkbench; sh ~/MyWorkbench/axiom/install.sh
+npm install -g github:cosyeezz/axiom
+axiom-setup
+```
+
+git 路线（macOS 终端）：
+
+```sh
+git clone --depth 1 git@github.com:cosyeezz/axiom.git ~/axiom; sh ~/axiom/install.sh
 ```
 
 Windows（PowerShell）：
 
 ```powershell
-git clone --depth 1 git@github.com:cosyeezz/MyWorkbench.git "$env:USERPROFILE\MyWorkbench"; & "$env:USERPROFILE\MyWorkbench\axiom\install.ps1"
+git clone --depth 1 git@github.com:cosyeezz/axiom.git "$env:USERPROFILE\axiom"; & "$env:USERPROFILE\axiom\install.ps1"
 ```
 
-Windows 也可直接双击 `axiom\install.cmd`。更新版本：目录内 `git pull` 后重新运行安装脚本（依赖变更会自动重装）。卸载自启：`npm run autostart:disable`。
+Windows 也可直接双击 `install.cmd`。更新版本：网页「服务 → 检查更新」（npm 安装自动重装并重启；开发目录提示 git 拉取），或重跑安装命令。卸载自启：`npm run autostart:disable`。
 
 ### 手动启动
 
@@ -60,6 +67,7 @@ npm run autostart:disable
 |---|---|
 | 快速重启 | 保存会话、停止服务并重新启动，不安装依赖 |
 | 重建重启 | 停止服务 → `npm ci` 安装锁定版本 → `npm run build --if-present` → 启动 |
+| 检查更新 | 比对 GitHub 公开仓库最新版本：npm 安装自动重装并重启；开发目录提示 git 拉取；已是最新不重启 |
 
 Axiom 使用原生 JavaScript，目前没有编译脚本，因此重建时不会假装执行编译。安装可能访问网络并执行依赖安装脚本；失败信息会记录到日志并反馈到菜单。安装前暂存原依赖目录，安装/构建失败会恢复原依赖并尝试重新启动；构建脚本自身修改的产物不自动回滚。重启不拉取 Git 更新、不改变锁文件，也不删除会话历史。运行中的会话会阻止重启，请先停止任务；页面保留草稿并自动重连。
 
