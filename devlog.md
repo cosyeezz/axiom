@@ -1,5 +1,9 @@
 # 开发记录
 
+## 2026-09-11 — 技能恢复修复发布 0.1.3
+- 用户确认合并与同步独立仓库。package.json 升至 0.1.3，发布跨目录默认能力收窄与逐会话恢复隔离修复；README 已同步恢复规则。
+- 在功能 worktree 复验后合并 MyWorkbench/master，并以 subtree 推送 axiom/ 至 cosyeezz/axiom master。保留主工作区未提交改动，不重启本机服务，不执行 npm ci。
+
 ## 2026-09-11 01:30 — 跨目录能力继承与启动恢复隔离
 - 原因：默认/历史能力以绝对路径持久化，跨目录或卸载后与新清单不符；Sessions.load 将单会话失败传播至 main，导致服务退出，macOS/Windows 共用此缺陷。
 - src/capabilities.js 增加仅供默认继承/历史恢复使用的收窄选项，保持显式输入严格校验，错误包含具体 ID；src/sessions.js 对主/子选择取交集，保留 null/空集合/inherit 语义，不改写全局默认、不按名称替换或授予信任。load 逐文件隔离恢复失败并保留原文件，警告写服务日志。
