@@ -1,17 +1,17 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/10 21:19:32）
+# Axiom 多级代码索引（生成于 2026/9/10 21:51:38）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| public/app.js | 2101 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, allSessions |
+| public/app.js | 2107 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, allSessions |
 | public/file-picker.css | 269 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 351 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/index.html | 239 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown.js | 75 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, renderMarkdown |
 | public/stream-renderer.js | 46 | 流式增量渲染状态机 | createStreamRenderer |
-| public/style.css | 1094 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1102 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | scripts/autostart.mjs | 133 | Windows/macOS/Linux 当前用户登录自动启动安装/卸载 | run, projectDir, serviceEntry, label |
 | scripts/install.mjs | 86 | 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器 | root, parseArgs, nodeOk, openCommand |
 | scripts/service.mjs | 100 | 服务守护：IPC 快速/重建重启与安装构建失败反馈 | root, output, run, rebuild |
@@ -27,7 +27,7 @@
 | src/tasks.js | 107 | Tasks：子任务（委托）生命周期 | Tasks |
 | src/tools.js | 97 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 29 | 检查更新：本地版本比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, greater, checkUpdate |
-| tests/app.test.js | 1322 | node --test 测试（npm test） | pickerSource |
+| tests/app.test.js | 1323 | node --test 测试（npm test） | pickerSource |
 | tests/autostart.test.js | 60 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
 | tests/capabilities.test.js | 85 | node --test 测试（npm test） | - |
@@ -35,15 +35,15 @@
 | tests/compaction-config.test.js | 105 | node --test 测试（npm test） | - |
 | tests/compaction.test.js | 737 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
 | tests/config.test.js | 220 | node --test 测试（npm test） | - |
-| tests/conversation-preview.mjs | 98 | node --test 测试（npm test） | markdown, message, thinking, state |
-| tests/conversation-ui.py | 149 | node --test 测试（npm test） | - |
+| tests/conversation-preview.mjs | 99 | node --test 测试（npm test） | markdown, message, thinking, state |
+| tests/conversation-ui.py | 183 | node --test 测试（npm test） | - |
 | tests/defaults.test.js | 33 | node --test 测试（npm test） | - |
 | tests/file-picker.test.js | 67 | node --test 测试（npm test） | source, tick |
 | tests/image-input.test.js | 167 | node --test 测试（npm test） | pngBase64, jpegBase64, image, parsePrompt |
 | tests/inline-images.test.js | 42 | node --test 测试（npm test） | text, a, b, user |
 | tests/install.test.js | 24 | node --test 测试（npm test） | - |
 | tests/markdown.test.js | 72 | node --test 测试（npm test） | - |
-| tests/message-activity.test.js | 176 | node --test 测试（npm test） | page, assistant, thought, call |
+| tests/message-activity.test.js | 188 | node --test 测试（npm test） | page, assistant, thought, call |
 | tests/retry.test.js | 340 | node --test 测试（npm test） | RATE_LIMIT, QUOTA, ABORTED, fakeSession |
 | tests/server.test.js | 125 | node --test 测试（npm test） | - |
 | tests/service-api.test.js | 34 | node --test 测试（npm test） | - |
@@ -58,7 +58,7 @@
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
-### public/app.js（2101 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
+### public/app.js（2107 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -140,85 +140,85 @@
 | scrollLatest | method | 551 |
 | card | function | 553 |
 | renderMessage | function | 604 |
-| updateActivity | method | 665 |
-| compactionCard | function | 668 |
-| renderMarkdown | method | 682 |
-| foldCompaction | function | 685 |
-| mergeThoughts | method | 699 |
-| compactionEditor | function | 703 |
-| options | method | 739 |
-| fillThinking | method | 767 |
-| renderTaskRuns | function | 775 |
-| renderQueue | function | 801 |
-| retryCards | const | 818 |
-| retryFailures | const | 819 |
-| renderRetry | function | 820 |
-| scrollLatest | method | 857 |
-| event | function | 859 |
-| snapshot | function | 1002 |
-| clearTimeout | method | 1004 |
-| renderTaskRuns | method | 1025 |
-| mergeThoughts | method | 1084 |
-| renderImages | method | 1106 |
-| closeCompletion | method | 1109 |
-| renderQueue | method | 1120 |
-| applyConfig | method | 1122 |
-| controls | method | 1124 |
-| reconnectTimer | const | 1126 |
-| clearTimeout | method | 1130 |
-| controls | method | 1133 |
-| scheduleReconnect | function | 1215 |
-| clearTimeout | method | 1216 |
-| restartNames | const | 1220 |
-| restartDescriptions | const | 1221 |
-| controls | method | 1243 |
-| fillModels | method | 1255 |
-| fillSubagentModels | method | 1262 |
-| closeCompletion | method | 1279 |
-| controls | method | 1284 |
-| scrollLatest | method | 1289 |
-| enableImagePreview | function | 1321 |
-| renderImages | function | 1342 |
-| addImages | function | 1367 |
-| loadImages | function | 1388 |
-| renderImages | method | 1397 |
-| escapeTimer | const | 1451 |
-| withdrawQueue | function | 1452 |
-| refreshing | const | 1508 |
-| refreshSessions | function | 1509 |
-| updateSessions | function | 1516 |
-| renderSessions | method | 1520 |
-| switchSession | function | 1522 |
-| saveView | method | 1524 |
-| controls | method | 1527 |
-| renderSessions | function | 1539 |
-| sessionAction | const | 1659 |
-| openSessionAction | function | 1660 |
-| contextIcon | function | 1701 |
-| renderContextChips | function | 1704 |
-| renderContextResults | function | 1722 |
-| controls | method | 1754 |
-| resizePrompt | method | 1760 |
-| controls | method | 1761 |
-| closeCompletion | function | 1764 |
-| highlightCompletion | function | 1772 |
-| chooseCompletion | function | 1781 |
-| closeCompletion | method | 1791 |
-| updateCompletion | function | 1794 |
-| closeCompletion | method | 1795 |
-| resizePrompt | method | 1848 |
-| controls | method | 1849 |
-| switchSession | method | 1889 |
-| creationLoad | const | 1891 |
-| createAgentPicker | function | 1892 |
-| options | method | 1914 |
-| fill | method | 1922 |
-| fillThinking | method | 1930 |
-| options | method | 1932 |
-| loadCreation | function | 1978 |
-| openCreation | function | 2012 |
-| updateDefaultsPreview | function | 2029 |
-| updateDefaultsPreview | method | 2049 |
+| updateActivity | method | 671 |
+| compactionCard | function | 674 |
+| renderMarkdown | method | 688 |
+| foldCompaction | function | 691 |
+| mergeThoughts | method | 705 |
+| compactionEditor | function | 709 |
+| options | method | 745 |
+| fillThinking | method | 773 |
+| renderTaskRuns | function | 781 |
+| renderQueue | function | 807 |
+| retryCards | const | 824 |
+| retryFailures | const | 825 |
+| renderRetry | function | 826 |
+| scrollLatest | method | 863 |
+| event | function | 865 |
+| snapshot | function | 1008 |
+| clearTimeout | method | 1010 |
+| renderTaskRuns | method | 1031 |
+| mergeThoughts | method | 1090 |
+| renderImages | method | 1112 |
+| closeCompletion | method | 1115 |
+| renderQueue | method | 1126 |
+| applyConfig | method | 1128 |
+| controls | method | 1130 |
+| reconnectTimer | const | 1132 |
+| clearTimeout | method | 1136 |
+| controls | method | 1139 |
+| scheduleReconnect | function | 1221 |
+| clearTimeout | method | 1222 |
+| restartNames | const | 1226 |
+| restartDescriptions | const | 1227 |
+| controls | method | 1249 |
+| fillModels | method | 1261 |
+| fillSubagentModels | method | 1268 |
+| closeCompletion | method | 1285 |
+| controls | method | 1290 |
+| scrollLatest | method | 1295 |
+| enableImagePreview | function | 1327 |
+| renderImages | function | 1348 |
+| addImages | function | 1373 |
+| loadImages | function | 1394 |
+| renderImages | method | 1403 |
+| escapeTimer | const | 1457 |
+| withdrawQueue | function | 1458 |
+| refreshing | const | 1514 |
+| refreshSessions | function | 1515 |
+| updateSessions | function | 1522 |
+| renderSessions | method | 1526 |
+| switchSession | function | 1528 |
+| saveView | method | 1530 |
+| controls | method | 1533 |
+| renderSessions | function | 1545 |
+| sessionAction | const | 1665 |
+| openSessionAction | function | 1666 |
+| contextIcon | function | 1707 |
+| renderContextChips | function | 1710 |
+| renderContextResults | function | 1728 |
+| controls | method | 1760 |
+| resizePrompt | method | 1766 |
+| controls | method | 1767 |
+| closeCompletion | function | 1770 |
+| highlightCompletion | function | 1778 |
+| chooseCompletion | function | 1787 |
+| closeCompletion | method | 1797 |
+| updateCompletion | function | 1800 |
+| closeCompletion | method | 1801 |
+| resizePrompt | method | 1854 |
+| controls | method | 1855 |
+| switchSession | method | 1895 |
+| creationLoad | const | 1897 |
+| createAgentPicker | function | 1898 |
+| options | method | 1920 |
+| fill | method | 1928 |
+| fillThinking | method | 1936 |
+| options | method | 1938 |
+| loadCreation | function | 1984 |
+| openCreation | function | 2018 |
+| updateDefaultsPreview | function | 2035 |
+| updateDefaultsPreview | method | 2055 |
 
 ### public/file-picker.js（351 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 
@@ -481,7 +481,7 @@
 | greater | const | 10 |
 | checkUpdate | function | 17 |
 
-### tests/app.test.js（1322 行） — node --test 测试（npm test）
+### tests/app.test.js（1323 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -536,7 +536,7 @@
 | createLoopSession | function | 597 |
 | writeFileSync | method | 598 |
 
-### tests/conversation-preview.mjs（98 行） — node --test 测试（npm test）
+### tests/conversation-preview.mjs（99 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -547,12 +547,12 @@
 | sequence | const | 45 |
 | add | const | 46 |
 | assistant | const | 47 |
-| add | method | 58 |
 | add | method | 59 |
-| states | const | 63 |
-| longState | const | 74 |
-| sessions | const | 89 |
-| app | const | 96 |
+| add | method | 60 |
+| states | const | 64 |
+| longState | const | 75 |
+| sessions | const | 90 |
+| app | const | 97 |
 
 ### tests/file-picker.test.js（67 行） — node --test 测试（npm test）
 
@@ -580,7 +580,7 @@
 | user | const | 8 |
 | inlineImagesExtension | method | 32 |
 
-### tests/message-activity.test.js（176 行） — node --test 测试（npm test）
+### tests/message-activity.test.js（188 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|

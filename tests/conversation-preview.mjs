@@ -27,8 +27,8 @@ const thinking = `### 先看信息层级
 
 当前问题是 **相同状态出现两次**，而不是图标数量不够。*保留动作身份，弱化重复状态。*
 
-1. 合并“思考中”和“思考过程”。
-2. 工具使用 \`20px\` 线条图标，结果只保留文字。
+1. 用 \`thinking...\` 标记进行中的思考，完成后保留 \`thinking\`。
+2. 工具名称使用 12px 常规字重，配 16px 线条图标。
 
 > 思考与正文使用同一安全 Markdown 渲染器。
 
@@ -45,7 +45,7 @@ const state = {
 let sequence = 0;
 const add = (message, agentId = "main") => state.messages.push({ message, agentId, entryId: `preview-${++sequence}` });
 const assistant = (content) => ({ role: "assistant", content, provider: "preview", model: "axiom", usage: { input: 4200, output: 860 } });
-add({ role: "user", content: "把会话做得清晰、易读。去掉重复的展开箭头，工具图标和内容排版都要协调。" });
+add({ role: "user", content: '<skill name="codebase-map" location="/skills/codebase-map/SKILL.md">\n## 代码导航\n\n先定位，再修改；按需读取，不展开无关内容。\n</skill>\n\n把会话做得清晰、易读。工具行紧凑，模块清晰分隔，不要挤在一起。' });
 add(assistant([{ type: "thinking", thinking }]));
 for (const [name, args, isError, output] of [
   ["read", { path: `${state.cwd}/public/app.js`, offset: 289, limit: 80 }, false, "const tools = new Map();\n// 读取文件内容"],
@@ -53,6 +53,7 @@ for (const [name, args, isError, output] of [
   ["web_search", { queries: ["Linear typography", "Accessible disclosure patterns"] }, false, "Design references found."],
   ["edit", { path: "public/style.css", edits: [{ oldText: "font-size: 16px;", newText: "font-size: 14px;" }] }, false, "Updated public/style.css"],
   ["bash", { command: "npm run lint" }, true, 'Missing script: "lint". Run npm test instead.'],
+  ["powershell", { command: "Get-Date" }, false, "2026-09-10（静态预览）"],
 ]) {
   const id = `tool-${sequence}`;
   add(assistant([{ type: "toolCall", id, name, arguments: args }]));

@@ -60,7 +60,7 @@ test("activity history hides empty shells and retains tool summaries without raw
     record.dispatchEvent(new dom.window.Event("toggle"));
     assert.match(record.textContent, /PRIVATE_FILE_CONTENT/);
     const visible = [...output.querySelectorAll(".message")].filter((node) => !node.hidden);
-    assert(visible.every((node) => node.classList.contains("user") || node.querySelector(":scope > .markdown")?.textContent || /思考|read|读取/.test(node.textContent)), "no model/usage-only assistant cards");
+    assert(visible.every((node) => node.classList.contains("user") || node.querySelector(":scope > .markdown")?.textContent || /thinking|read/.test(node.textContent)), "no model/usage-only assistant cards");
     assert.equal(output.querySelectorAll(".message-model:not([hidden])").length <= 2, true, "intermediate steps do not repeat usage footers");
   } finally { dom.window.close(); }
 });
@@ -91,15 +91,18 @@ test("live activity tracks thinking, tool completion, errors, cancellation and s
   const start = () => emit("agent.message.start", { message: assistant([]) });
   try {
     emit("session.state", { status: "running" });
-    assert.match(output.textContent, /连接中/);
+    assert.equal(output.querySelector('[data-state="waiting"] .activity-label').textContent, "connecting...");
     start();
+    emit("agent.delta", { type: "thinking_start" });
+    assert.equal(output.querySelector('.message > [data-state="thinking"] .activity-label').textContent, "thinking...");
     emit("agent.delta", { type: "thinking_delta", delta: "第一段" });
     paint();
-    assert.match(output.querySelector('.thinking-record [data-state="thinking"]').textContent, /思考中/);
+    assert.equal(output.querySelector('.thinking-record [data-state="thinking"] .activity-label').textContent, "thinking...");
     assert.equal(output.querySelector('.message > .activity-line').hidden, true, "thinking has one disclosure row, not a second status line");
     assert(output.querySelector('.thinking-record .activity-icon svg'));
     assert.equal(output.querySelector('.thinking-content').childElementCount, 0, "collapsed thinking is lazy");
     emit("agent.message.end", { message: assistant([thought("第一段")]), entryId: "one" });
+    assert.equal(output.querySelector('.thinking-record .activity-label').textContent, "thinking");
     start();
     emit("agent.delta", { type: "thinking_delta", delta: "第二段" });
     emit("agent.message.end", { message: assistant([thought("第二段")]), entryId: "two" });
@@ -112,6 +115,8 @@ test("live activity tracks thinking, tool completion, errors, cancellation and s
     emit("agent.compaction", { id: "compact", summary: "第一段摘要", compactedMessageIds: ["one"] });
     assert.equal(output.querySelectorAll(".merged-thought").length, 0, "compacting first member must not hide the retained thought");
     start();
+    emit("agent.delta", { type: "toolcall_start" });
+    assert.equal(output.querySelector('.message > [data-state="running"] .activity-label').textContent, "calling...");
     emit("agent.message.end", { message: assistant([call("tool")]) });
     emit("tool.state", { phase: "start", toolCallId: "tool", toolName: "read", args: { path: "<img src=x onerror=alert(1)>" } });
     assert.equal(output.querySelectorAll(".tool-activity").length, 1);
@@ -141,7 +146,7 @@ test("live activity tracks thinking, tool completion, errors, cancellation and s
     assert.match(record.querySelector(".diff-remove").textContent, /old/);
     assert.match(record.querySelector(".diff-add").textContent, /new/);
     assert.equal(record.querySelector(".activity-icon").dataset.icon, "edit", "completion preserves tool identity instead of replacing it with a check");
-    assert.equal(record.querySelector(".activity-label").textContent, "编辑文件");
+    assert.equal(record.querySelector(".activity-label").textContent, "edit");
     assert.equal(record.querySelector(".tool-target").textContent, "app.js");
     assert.equal(record.querySelector(".tool-status").textContent, "已完成");
     const selector = record.querySelector('select[aria-label="代码对比展示方式"]');
@@ -171,5 +176,12 @@ test("live activity tracks thinking, tool completion, errors, cancellation and s
     assert.equal(output.querySelector(".tool-status").textContent, "正在停止…");
     emit("tool.state", { phase: "start", toolCallId: "custom", toolName: "constructor", args: { queries: "not-an-array" } });
     assert.equal(output.querySelectorAll(".tool-activity .activity-label")[1].textContent, "constructor", "unknown names cannot resolve Object.prototype properties");
+    for (const [name, label, icon] of [["functions.edit", "edit", "edit"], ["bash", "bash", "bash"], ["powershell", "powershell", "bash"], ["pwsh", "pwsh", "bash"], ["custom.tool", "custom.tool", "tool"]]) {
+      emit("tool.state", { phase: "start", toolCallId: name, toolName: name, args: { command: "Get-Date" } });
+      const row = output.querySelector(".tool-record:last-child .tool-activity");
+      assert.equal(row.querySelector(".activity-label").textContent, label);
+      assert.equal(row.querySelector(".activity-label").title, name);
+      assert.equal(row.dataset.toolIcon, icon);
+    }
   } finally { dom.window.close(); }
 });

@@ -403,7 +403,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(skillCard.node.previousElementSibling, skillCard.skillBlocks);
     assert.equal(skillCard.skillBlocks.parentElement, $("output"));
     assert.equal(skillCard.node.querySelector(".skill-invocation"), null);
-    assert.equal(skillCard.skillBlocks.querySelector("summary").firstChild.textContent, "[skill] codebase-map");
+    assert.equal(skillCard.skillBlocks.querySelector(".skill-badge").textContent, "SKILL");
+    assert.equal(skillCard.skillBlocks.querySelector(".skill-name").textContent, "codebase-map");
     const invocation = skillCard.skillBlocks.querySelector(".skill-invocation");
     assert.equal(invocation.open, false);
     assert.equal(skillCard.buffer, "检查项目");

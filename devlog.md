@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-10 21:52 — 紧凑原名工具行与模块强调
+- worktree MyWorkbench-conversation-labels / feat/conversation-labels。按用户六项反馈将工具/思考行缩至 12px/400、SVG 16px/底座 24px；工具显示原名（仅省略 functions. 前缀，完整名保留 title），powershell/pwsh 复用命令图标。思考/连接/准备调用使用 thinking / thinking... / connecting... / calling...，中文结果状态保留。
+- waiting/running 的等待图标隐藏 SVG，使用高低亮度分段 CSS 旋转环；不增加定时器，尊重 reduced-motion。SKILL 与 SUBAGENT 使用描边标识、语义底色和左侧色条，任务状态行允许换行；桌面工具行最小 36px，手机 44px 点击区域不变。缩短消息/角色标题/用量间距，正文 14px、1.8 行高不动，不改安全 Markdown、流式脏块或折叠惰性渲染。
+- 涉及 public/{app.js,style.css}、tests/{app.test.js,message-activity.test.js,conversation-preview.mjs,conversation-ui.py}、两级 README.md / devlog.md、codebase-map 索引及 knowledge.md。测试补原始工具名/完整 title/图标映射、Skill badge 和真实浏览器尺寸、键盘与伪元素旋转。
+- 验证：npm test 86 通过、1 原有跳过、0 失败；Chromium 1440/390/320px 全部通过，无页面/CSP 错误。相同内容对比桌面工具行从 44px 降至 36px（18.2%），录制实际浏览器 12 帧动画，未伪造动效。样例不调用模型/读取用户数据。只读比对确认正式 4319 CSS 仍为 8b186c6：src/server.js 启动时缓存静态资源，需合并后快速重启才载入新版；本轮不重启正式服务，保留分支和截图供验收。
+
 ## 2026-09-10 21:19 — 会话配色验收与合并
 - 用户确认合并并 push；三份只读复核已回收，无剩余阻塞。先在 feat/conversation-colors worktree 合入最新 origin/master，保留图片定位修复；knowledge.md 两侧记录均保留，INDEX.md 重新生成，不手工拼接行号。涉及这两份文档、本日志与仓库 devlog.md；不追加功能改动。
 - 合并后验证：npm test 86 通过、1 原有跳过、0 失败；重启静态预览后，Chromium 1440/390/320px 配色、吸顶、定位、转圈及减少动态效果检查通过，无浏览器错误。按流程推送功能分支、合并 master 并推送，再将截图/日志移出并清理 worktree；正式服务不在本次合并中重启。

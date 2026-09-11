@@ -259,10 +259,10 @@ h1 {
   overscroll-behavior: contain;
 }
 #output {
-  padding: 32px 5% 24px;
+  padding: 24px 5%;
 }
 .message {
-  margin-bottom: 32px;
+  margin-bottom: 24px;
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -270,12 +270,12 @@ h1 {
   font-size: 12px;
   font-weight: 600;
   color: var(--info);
-  margin: 0 0 16px;
+  margin: 0 0 8px;
   letter-spacing: 0.12em;
 }
 .message.user {
   background: color-mix(in srgb, var(--info) 5%, var(--surface));
-  padding: 16px 24px;
+  padding: 12px 16px;
   border: 1px solid color-mix(in srgb, var(--info) 20%, var(--line));
   border-radius: 12px;
   margin-left: 48px;
@@ -387,18 +387,19 @@ h1 {
   display: block;
   width: 100%;
   text-align: left;
-  background: color-mix(in srgb, var(--thought) 5%, var(--surface));
-  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--thought) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--subagent) 45%, var(--line));
   border-left: 3px solid var(--subagent);
-  padding: 16px;
+  padding: 12px 16px;
   border-radius: 8px;
   margin: 12px 0;
 }
-.task-card:hover:not(:disabled) { background: var(--raised); border-color: #34343a; }
+.task-card:hover:not(:disabled) { background: color-mix(in srgb, var(--thought) 15%, var(--surface)); border-color: var(--subagent); }
 .task-card:focus-visible,
 .task-dialog :focus-visible { outline-color: var(--subagent); }
-.task-meta { display: flex; align-items: center; gap: 12px; font-size: 11px; }
-.task-badge { color: var(--subagent); font-weight: 600; letter-spacing: 0.08em; }
+.task-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 11px; }
+.task-badge, .skill-badge { flex-shrink: 0; padding: 2px 6px; border: 1px solid currentColor; border-radius: 4px; color: var(--subagent); font: 500 11px/1.5 var(--mono); letter-spacing: 0.04em; }
+.skill-badge { color: var(--info); }
 .task-status { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 .task-card:is([data-status="starting"], [data-status="running"]) .task-status::before,
 .task-dialog:is([data-status="starting"], [data-status="running"]) .task-top h2::before {
@@ -412,11 +413,11 @@ h1 {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
-  margin-top: 8px;
+  margin-top: 6px;
   overflow: hidden;
   overflow-wrap: anywhere;
   white-space: normal;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.6;
   font-weight: 400;
 }
@@ -444,7 +445,7 @@ h1 {
   padding: 24px;
 }
 .task-body > h3 { margin: 0; font-size: 12px; color: var(--muted); }
-.task-body > .message { margin: 24px 0; }
+.task-body > .message { margin: 16px 0; }
 .task-body > .message:not(.user) > h3 { color: var(--subagent); }
 .runtime-summary {
   display: flex;
@@ -459,7 +460,7 @@ h1 {
 .runtime-summary > span { min-width: 0; }
 #session-runtime { padding: 0 16px 8px; }
 #composer { display: flex; flex-direction: column; }
-.message-model { display: block; margin-top: 16px; color: var(--muted); overflow-wrap: anywhere; font-size: 12px; font-variant-numeric: tabular-nums; }
+.message-model { display: block; margin-top: 8px; color: var(--muted); overflow-wrap: anywhere; font-size: 12px; font-variant-numeric: tabular-nums; }
 #message-queue { max-height: 180px; overflow: auto; margin-bottom: 8px; }
 #task-runs { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
 .task-run { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: 32px; padding: 4px 10px; border: 1px solid color-mix(in srgb, var(--subagent) 25%, var(--line)); border-radius: 8px; background: color-mix(in srgb, var(--subagent) 6%, var(--surface)); font-size: 12px; font-weight: 400; text-align: left; color: var(--body-ink); }
@@ -604,8 +605,11 @@ button.danger:hover:not(:disabled) { background: #c13e50; }
 #prompt-completion button { background: transparent; color: var(--ink); text-align: left; padding: 8px; border: 0; }
 #prompt-completion button:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 #prompt-completion button + button { flex-shrink: 0; color: var(--muted); }
-.skill-invocation { border: 1px solid var(--line); border-radius: 8px; padding: 4px 12px; margin-bottom: 12px; background: var(--surface); }
-.skill-invocation summary { color: var(--body-ink); font-size: 13px; cursor: pointer; min-height: 40px; }
+.skill-invocation { border: 1px solid color-mix(in srgb, var(--info) 45%, var(--line)); border-left: 3px solid var(--info); border-radius: 8px; padding: 4px 12px; margin-bottom: 12px; background: color-mix(in srgb, var(--info) 8%, var(--surface)); }
+.skill-invocation summary { color: var(--ink); font-size: 12px; cursor: pointer; min-height: 44px; }
+.skill-name { min-width: 0; overflow-wrap: anywhere; }
+.skill-invocation:has(> summary:hover) { border-color: var(--info); }
+.skill-invocation > summary:focus-visible { outline-color: var(--info); }
 .skill-invocation > small { display: block; color: var(--muted); overflow-wrap: anywhere; margin: 10px 0; }
 .skill-invocation > div { font-size: 13px; overflow-wrap: anywhere; }
 .retry-card { margin: 12px 0; padding: 8px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); overflow-wrap: anywhere; }
@@ -618,7 +622,7 @@ button.danger:hover:not(:disabled) { background: #c13e50; }
   background: var(--surface);
   border-radius: 8px;
   padding: 8px 16px;
-  margin-bottom: 32px;
+  margin-bottom: 24px;
 }
 .compaction-card summary {
   display: flex;
@@ -993,13 +997,16 @@ textarea {
 }
 
 /* Transcript records: one identity icon, one label, one optional disclosure. */
-.activity-line { --activity-ink: var(--info); display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 44px; padding: 4px 0; color: var(--muted); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.activity-line { --activity-ink: var(--info); display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 36px; padding: 4px 0; color: var(--muted); font-size: 12px; font-weight: 400; line-height: 1.5; overflow-wrap: anywhere; }
 .activity-label { min-width: 0; }
-.activity-icon { position: relative; display: grid; place-items: center; flex: 0 0 32px; width: 32px; height: 32px; border-radius: 8px; background: color-mix(in srgb, var(--activity-ink) 10%, var(--surface)); color: var(--activity-ink); }
+.activity-icon { position: relative; display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 24px; border-radius: 6px; background: color-mix(in srgb, var(--activity-ink) 10%, var(--surface)); color: var(--activity-ink); }
 .activity-icon[data-icon="thinking"] { --activity-ink: var(--thought); }
-.activity-icon svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.activity-line[data-state="waiting"] .activity-icon svg,
-.activity-line[data-state="running"] .activity-icon[data-icon="waiting"] svg { animation: activity-spin .8s linear infinite; }
+.activity-icon svg { display: block; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.activity-line:is([data-state="waiting"], [data-state="running"]) .activity-icon[data-icon="waiting"] svg { visibility: hidden; }
+.activity-line:is([data-state="waiting"], [data-state="running"]) .activity-icon[data-icon="waiting"]::after {
+  content: ""; position: absolute; inset: 4px; border: 2px solid color-mix(in srgb, var(--activity-ink) 25%, transparent);
+  border-top-color: var(--activity-ink); border-right-color: var(--activity-ink); border-radius: 50%; animation: activity-spin .8s linear infinite;
+}
 .activity-line[data-state="thinking"] .activity-icon::after {
   content: ""; position: absolute; inset: 0; border: 2px solid color-mix(in srgb, var(--thought) 20%, transparent);
   border-top-color: var(--thought); border-radius: 50%; animation: activity-spin .8s linear infinite;
@@ -1013,7 +1020,7 @@ textarea {
 .message-tools:empty { display: none; }
 .tool-record, .thinking-record { min-width: 0; }
 .message.activity-only > .thinking-record, .message-tools > .tool-record { margin-bottom: 0; }
-.message.activity-only + .message:not(.activity-only) { margin-top: 24px; }
+.message.activity-only + .message:not(.activity-only) { margin-top: 16px; }
 .tool-record > summary, .thinking-record > summary,
 .skill-invocation > summary, .retry-card > summary, .compaction-card > summary,
 .task-system-prompt > summary {
@@ -1029,35 +1036,35 @@ textarea {
 :is(.tool-record, .thinking-record, .skill-invocation, .retry-card, .compaction-card, .task-system-prompt)[open] > summary {
   position: sticky; top: 0; z-index: 1; background: var(--surface); box-shadow: 0 1px var(--line);
 }
-.tool-record > summary, .thinking-record > summary { padding: 0 8px; margin-inline: -8px; }
+.tool-record > summary, .thinking-record > summary { min-height: 36px; gap: 8px; padding: 0 8px; margin-inline: -8px; }
 .tool-record > summary:hover, .thinking-record > summary:hover { background: var(--surface); }
 .tool-record[open] > summary, .thinking-record[open] > summary { background: var(--surface); }
 .disclosure-action { flex: 0 0 auto; margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 400; white-space: nowrap; }
 .disclosure-action .when-open { display: none; }
 details[open] > summary .disclosure-action .when-closed { display: none; }
 details[open] > summary .disclosure-action .when-open { display: inline-flex; align-items: center; gap: 4px; }
-.disclosure-action svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.disclosure-action svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 summary:hover > .disclosure-action { color: var(--ink); }
 .tool-record > summary .activity-line, .thinking-record > summary .activity-line { flex: 1; }
-.tool-activity { --activity-ink: var(--muted); display: grid; grid-template-columns: 32px auto minmax(0, 1fr) auto; column-gap: 12px; }
+.tool-activity { --activity-ink: var(--muted); display: grid; grid-template-columns: 24px auto minmax(0, 1fr) auto; column-gap: 8px; }
 .tool-activity:is([data-tool-icon="read"], [data-tool-icon="search"], [data-tool-icon="web"]) { --activity-ink: var(--info); }
 .tool-activity[data-tool-icon="bash"] { --activity-ink: var(--code-ink); }
 .tool-activity:is([data-tool-icon="edit"], [data-tool-icon="write"]) { --activity-ink: var(--highlight); }
 .tool-activity[data-tool-icon="agents"] { --activity-ink: var(--thought); }
-.tool-activity .activity-label { max-width: 20ch; overflow: hidden; text-overflow: ellipsis; color: var(--activity-ink); font-weight: 500; white-space: nowrap; }
+.tool-activity .activity-label { max-width: 20ch; overflow: hidden; text-overflow: ellipsis; color: var(--activity-ink); font-weight: 400; white-space: nowrap; }
 .tool-target { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: 12px/1.6 var(--mono); }
 .tool-status { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; white-space: nowrap; }
 .tool-activity[data-state="running"] .tool-status { color: var(--activity-ink); }
 .tool-activity[data-state="running"] .tool-status::before { content: ""; width: 12px; height: 12px; border: 2px solid #34343a; border-top-color: var(--activity-ink); border-radius: 50%; animation: activity-spin .8s linear infinite; }
 .tool-activity[data-state="failed"] .tool-status { color: var(--danger); font-weight: 600; }
-.thinking-content { margin: 8px 0 16px 16px; padding: 12px 16px 12px 28px; border-left: 1px solid color-mix(in srgb, var(--thought) 50%, var(--line)); font-size: 14px; font-style: italic; font-weight: 400; }
+.thinking-content { margin: 8px 0 16px 12px; padding: 12px 16px 12px 20px; border-left: 1px solid color-mix(in srgb, var(--thought) 50%, var(--line)); font-size: 14px; font-style: italic; font-weight: 400; }
 .thinking-content :is(h1, h2, h3, h4, h5, h6, strong, b, th) { font-weight: 400; }
 .thinking-content :is(strong, b) { color: inherit; }
 .thinking-content :is(pre, code, kbd, .code-toolbar) { font-style: normal; }
 .thinking-content h1 { font-size: 22px; }
 .thinking-content h2 { font-size: 20px; }
 .thinking-content h3 { font-size: 16px; }
-.tool-detail { margin: 8px 0 16px 16px; padding: 4px 0 4px 28px; border-left: 1px solid #34343a; }
+.tool-detail { margin: 8px 0 16px 12px; padding: 4px 0 4px 20px; border-left: 1px solid #34343a; }
 .tool-detail h4 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; margin: 12px 0 8px; color: var(--body-ink); }
 .tool-detail pre { margin: 0 0 12px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--body-ink); overflow: visible; white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.7 var(--mono); }
 .tool-truncation { color: var(--muted); font-size: 12px; margin: 8px 0 16px; }
@@ -1072,7 +1079,8 @@ summary:hover > .disclosure-action { color: var(--ink); }
 @media (max-width: 700px) {
   .diff-view-split .diff-unified { display: block; }
   .diff-view-split .diff-split { display: none; }
-  .tool-activity { grid-template-columns: 32px minmax(0, 1fr) auto; gap: 4px 8px; padding-block: 8px; }
+  .tool-record > summary, .thinking-record > summary, .activity-line { min-height: 44px; }
+  .tool-activity { grid-template-columns: 24px minmax(0, 1fr) auto; gap: 4px 8px; padding-block: 8px; }
   .tool-activity .activity-icon { grid-row: 1 / 3; }
   .tool-target { grid-column: 2 / 4; grid-row: 2; }
   .tool-status { grid-column: 3; grid-row: 1; }

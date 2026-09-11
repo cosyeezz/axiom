@@ -56,9 +56,33 @@ with sync_playwright() as p:
         assert style(body.locator('strong').first, "fontWeight") == "650"
         colors = [style(page.locator(f'.tool-activity[data-tool-icon="{kind}"] .activity-icon').first, "color") for kind in ['read', 'bash', 'edit']]
         assert len(set(colors)) == 3
+        for label in ['read', 'bash', 'web_search', 'edit', 'powershell']:
+            row = page.locator('.tool-activity').filter(has=page.get_by_text(label, exact=True)).first
+            expect(row.locator('.activity-label')).to_have_text(label)
+            assert style(row.locator('.activity-label'), 'fontSize') == '12px'
+            assert style(row.locator('.activity-label'), 'fontWeight') == '400'
+            assert style(row.locator('.activity-icon'), 'width') == '24px'
+            assert style(row.locator('.activity-icon svg'), 'width') == '16px'
+        row = page.locator('.tool-record').first
+        assert row.bounding_box()['height'] <= (40 if width == 1440 else 60)
+        assert row.locator('summary').bounding_box()['height'] >= (36 if width == 1440 else 44)
+        skill = page.locator('.skill-invocation').first
+        expect(skill.locator('.skill-badge')).to_have_text('SKILL')
+        expect(skill.locator('.skill-name')).to_have_text('codebase-map')
+        assert style(skill, 'borderLeftWidth') == '3px'
+        assert style(skill, 'backgroundColor') != style(page.locator('body'), 'backgroundColor')
+        skill.locator('summary').focus()
+        page.keyboard.press('Enter')
+        expect(skill.locator('h2')).to_have_text('代码导航')
+        page.keyboard.press('Space')
+        assert not skill.evaluate('(el) => el.open')
+        skill.locator('summary').blur()
         page.locator('#transcript').evaluate('(el) => el.scrollTop = 0')
         shot(f"conversation-{width}")
         thought = page.locator('#output .thinking-record:not([hidden])').first
+        expect(thought.locator('.activity-label')).to_have_text('thinking')
+        assert style(thought.locator('.activity-label'), 'fontSize') == '12px'
+        assert style(thought.locator('.activity-label'), 'fontWeight') == '400'
         thought.locator('summary').click()
         expect(thought.locator('h3')).to_be_visible()
         for tag in ['h3', 'strong', 'p']:
@@ -117,6 +141,9 @@ with sync_playwright() as p:
         assert page.locator('.task-dialog[open]').count() == 0
         rect, viewport = card.bounding_box(), page.locator('#transcript').bounding_box()
         assert viewport['y'] <= rect['y'] < viewport['y'] + viewport['height']
+        expect(card.locator('.task-badge')).to_have_text('SUBAGENT')
+        assert style(card, 'borderLeftWidth') == '3px'
+        assert style(card, 'borderColor') != style(page.locator('body'), 'borderColor')
         rotating(run.locator('.task-run-spin'))
         rotating(card.locator('.task-status'), '::before')
         rotating(page.locator('[aria-controls="task-queued"] .task-status'), '::before')
@@ -124,6 +151,9 @@ with sync_playwright() as p:
         page.locator('#latest').click()
         expect(page.locator('#latest')).to_be_hidden()
         card.click()
+        task_label = page.locator('.task-dialog[open] .thinking-record:visible .activity-label').first
+        assert style(task_label, 'fontSize') == '12px'
+        assert style(task_label, 'fontWeight') == '400'
         rotating(page.locator('.task-dialog[open] .task-top h2'), '::before')
         rotating(page.locator('.task-dialog[open] [data-state="thinking"] .activity-icon'), '::after')
         page.locator('.task-dialog[open]').evaluate('(el) => el.dataset.status = "completed"')
@@ -133,16 +163,20 @@ with sync_playwright() as p:
 
     for state, selector, pseudo in [
         ('ui-thinking', '[data-state="thinking"] .activity-icon', '::after'),
-        ('ui-waiting', '[data-state="waiting"] .activity-icon svg', None),
+        ('ui-waiting', '[data-state="waiting"] .activity-icon', '::after'),
         ('ui-tools', '[data-state="running"] .tool-status', '::before'),
     ]:
         load(state)
         el = page.locator(selector + ':visible').first
-        rotating(el, pseudo)
-        shot(state)
         handle = el.element_handle()
+        rotating(el, pseudo)
+        if state == 'ui-waiting':
+            expect(page.locator('[data-state="waiting"] .activity-label')).to_have_text('connecting...')
+            page.locator('[data-state="waiting"]').evaluate('(el) => el.dataset.state = "running"')
+            rotating(page.locator('[data-state="running"] .activity-icon'), '::after')
+        shot(state)
         page.locator('[data-state]').evaluate_all('(els) => els.forEach(el => el.dataset.state = "done")')
         assert style(handle, 'animationName', pseudo) == 'none'
     assert not errors, errors
-    print(json.dumps({"viewports": [1440, 390, 320], "checks": "palette/typography/sticky/no-inner-scroll/jump/animation/reduced-motion", "browserErrors": errors}))
+    print(json.dumps({"viewports": [1440, 390, 320], "checks": "palette/typography/raw-labels/density/module-badges/touch-targets/sticky/no-inner-scroll/jump/animation/reduced-motion", "browserErrors": errors}))
     browser.close()

@@ -358,7 +358,7 @@ function setActivity(node, label, state, icon) {
 function waiting(agentId) {
   if (waitingItems.has(agentId) || live.get(agentId)?.active || [...toolItems.values()].some((tool) => tool.agentId === agentId && tool.node.dataset.state === "running")) return;
   const task = tasks.get(agentId);
-  const node = activityLine("连接中…");
+  const node = activityLine("connecting...");
   (task?.output || $("output")).append(node);
   waitingItems.set(agentId, node);
   scrollLatest();
@@ -385,8 +385,8 @@ function updateActivity(item, stopped) {
   item.activity.hidden = !!item.reasoning || !!item.buffer.trim() || !!item.tools.childElementCount || (!item.active && !stopped);
   item.modelInfo.hidden = !item.buffer.trim();
   const thinking = item.active && !item.buffer.trim();
-  setActivity(item.thinkingLine, stopped ? `思考过程 · ${stopped}` : thinking ? "思考中…" : "思考过程", stopped ? "stopped" : thinking ? "thinking" : "done", "thinking");
-  setActivity(item.activity, stopped || "连接中…", stopped ? "stopped" : "waiting");
+  setActivity(item.thinkingLine, stopped ? `thinking · ${stopped}` : thinking ? "thinking..." : "thinking", stopped ? "stopped" : thinking ? "thinking" : "done", "thinking");
+  setActivity(item.activity, stopped || "connecting...", stopped ? "stopped" : "waiting");
   if (item.activity.hidden) setActivity(item.activity, "", "");
   item.node.hidden = !item.active && pure && !item.reasoning && !stopped;
 }
@@ -535,9 +535,9 @@ function toolState(agentId, data) {
   const detail = args.path || args.file_path || args.command || args.query || (Array.isArray(args.queries) ? args.queries.join(" · ") : "") || args.url || (Array.isArray(args.urls) ? args.urls.join(" · ") : "") || (Array.isArray(args.tasks) ? args.tasks.map((task) => task?.task).join(" · ") : "") || args.taskId || args.tool || args.search || "";
   if (data.toolName) tool.name = data.toolName;
   const name = (tool.name || "").replace(/^functions\./, "");
-  const [label, icon] = ({ __proto__: null, read: ["读取文件", "read"], edit: ["编辑文件", "edit"], write: ["写入文件", "write"], bash: ["执行命令", "bash"], web_search: ["搜索网页", "search"], source_check: ["核查来源", "search"], fetch_content: ["读取网页", "web"], get_search_content: ["查看来源", "web"], delegate: ["委派任务", "agents"], read_result: ["读取结果", "agents"], append: ["补充指令", "agents"] })[name] || [tool.name || "工具", "tool"];
+  const icon = ({ __proto__: null, read: "read", edit: "edit", write: "write", bash: "bash", powershell: "bash", pwsh: "bash", web_search: "search", source_check: "search", fetch_content: "web", get_search_content: "web", delegate: "agents", read_result: "agents", append: "agents" })[name] || "tool";
   tool.node.dataset.toolIcon = icon;
-  tool.node.querySelector(".activity-label").textContent = label;
+  tool.node.querySelector(".activity-label").textContent = name || "tool";
   tool.node.querySelector(".activity-label").title = tool.name || "工具";
   const target = tool.node.querySelector(".tool-target");
   const fullDetail = typeof detail === "string" ? detail.replace(/\s+/g, " ").trim() : "";
@@ -560,7 +560,7 @@ function card(title, task) {
   const thinking = document.createElement("details");
   thinking.className = "thinking-record";
   const summary = document.createElement("summary");
-  const thinkingLine = activityLine("思考过程", "thinking");
+  const thinkingLine = activityLine("thinking", "thinking");
   thinkingLine.removeAttribute("role");
   summary.append(thinkingLine, disclosureHint("查看"));
   const thought = document.createElement("div");
@@ -571,7 +571,7 @@ function card(title, task) {
   text.className = "markdown";
   const modelInfo = document.createElement("small");
   modelInfo.className = "message-model";
-  const activity = activityLine("连接中…");
+  const activity = activityLine("connecting...");
   activity.hidden = title === "你";
   if (activity.hidden) setActivity(activity, "", "");
   const tools = document.createElement("div");
@@ -630,7 +630,13 @@ function renderMessage(item, message) {
       const details = document.createElement("details");
       details.className = "skill-invocation";
       const summary = document.createElement("summary");
-      summary.textContent = `[skill] ${name}`;
+      const badge = document.createElement("span");
+      badge.className = "skill-badge";
+      badge.textContent = "SKILL";
+      const label = document.createElement("span");
+      label.className = "skill-name";
+      label.textContent = name;
+      summary.append(badge, label);
       summary.title = "技能正文已加入本条消息，点击展开";
       const path = document.createElement("small");
       path.textContent = location;
@@ -909,8 +915,8 @@ function event(message) {
     if (!item) return;
     if (data.type === "text_delta") item.buffer += data.delta;
     else if (data.type === "thinking_delta") item.reasoning += data.delta;
-    else if (data.type === "thinking_start") { setActivity(item.activity, "思考中…", "thinking"); return; }
-    else if (data.type === "toolcall_start" || data.type === "toolcall_delta") { setActivity(item.activity, "准备调用工具…", "running"); return; }
+    else if (data.type === "thinking_start") { setActivity(item.activity, "thinking...", "thinking"); return; }
+    else if (data.type === "toolcall_start" || data.type === "toolcall_delta") { setActivity(item.activity, "calling...", "running"); return; }
     else if (data.type === "toolcall_end") { toolState(agentId, { phase: "start", toolCallId: data.toolCall.id, toolName: data.toolCall.name, args: data.toolCall.arguments }); return; }
     else return;
     updateActivity(item);
