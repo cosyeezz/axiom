@@ -490,7 +490,10 @@ h1 {
 .runtime-summary > span { min-width: 0; }
 #session-runtime { padding: 0 16px 8px; }
 #composer { display: flex; flex-direction: column; }
-.message-model { display: block; margin-top: 8px; color: var(--muted); overflow-wrap: anywhere; font-size: 12px; font-variant-numeric: tabular-nums; }
+.message-model { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin-top: 8px; color: var(--muted); overflow-wrap: anywhere; font-size: 12px; font-variant-numeric: tabular-nums; }
+.message-model-name { color: var(--body-ink); }
+.message-tokens { display: inline-flex; gap: 12px; white-space: nowrap; }
+.call-list .message.activity-only > .message-model:not([hidden]) { display: flex; padding-bottom: 8px; }
 #message-queue { max-height: 180px; overflow: auto; margin-bottom: 8px; }
 #task-runs { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
 .task-run { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: 32px; padding: 4px 10px; border: 1px solid color-mix(in srgb, var(--subagent) 25%, var(--line)); border-radius: 8px; background: color-mix(in srgb, var(--subagent) 6%, var(--surface)); font-size: 12px; font-weight: 400; text-align: left; color: var(--body-ink); }

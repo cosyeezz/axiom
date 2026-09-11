@@ -1,5 +1,15 @@
 # 开发记录
 
+## 消息元信息紧凑排版
+- public/app.js、public/style.css：供应商、模型、消息记录的 thinkingLevel 用间隔点分开；输入/输出用千分位和 ↑/↓，保留悬停说明与无障碍名称；纯工具消息的统计留在展开区域，不分隔调用组。
+- tests/activity-groups-ui.py：Chromium 验证示例数字、级别和 390px 窄屏无横向溢出；README.md 同步。缺失思考级别不使用当前会话设置补写历史。
+
+
+## 执行过程统一按正文边界结束
+- 在独立 worktree `Axiom-activity-text-boundary` 修改 public/app.js：状态和折叠共用 messageFolded；移出正文消息内部的后续工具分组，让下一条工具消息沿用同组，模型用量不再形成视觉隔离。
+- README.md 同步行为；tests/activity-groups-ui.py 新增带模型用量的连续工具回归，确认工具结束仍为 Working、分组数不增加；真实 Chromium 验证通过。
+
+
 ## 2026-09-11 — 增加 axiom stop
 - CLI 经本机 POST /service/stop 请求优雅停止：拒绝忙碌会话/子任务，IPC 通知守护进程，保存后退出父子进程；命令等待守护退出，超时不强杀，不取消登录自启。
 - Host/Origin 防跨站、仅 POST、重复请求拒绝；默认 4319，可用 AXIOM_PORT 指定端口。旧实例缺少停止接口时明确提示，不盲目杀进程。

@@ -387,10 +387,9 @@ function paintCallGroup(group) {
   });
   group.hidden = !rows.length;
   if (!rows.length) return;
-  const active = rows.filter(row => ['running', 'waiting', 'thinking'].includes(row.dataset.state));
-  // A later running group must not keep completed groups spinning.
-  const running = group.dataset.messageFolded !== 'true' && !!active.length;
-  const label = running ? 'Working' : rows.some(row => row.dataset.state === 'stopped') ? 'Stopped' : 'Completed';
+  // The same text boundary ends the segment and folds it; tool gaps and usage do neither.
+  const running = group.dataset.messageFolded !== 'true';
+  const label = running ? 'Working' : 'Completed';
   const icon = running ? 'waiting' : label === 'Stopped' ? 'circle-stopped' : 'circle-done';
   const preview = group.firstElementChild.firstElementChild;
   const signature = `${label}:${icon}`;
@@ -412,7 +411,7 @@ function refreshCallGroups(output) {
   for (const node of nodes) {
     const item = messageItems.get(node);
     const isCall = item ? item.heading.textContent !== '你' && !item.buffer.trim()
-      : node.matches('.tool-record, .activity-line');
+      : node.matches('.tool-record, .activity-line, .message-tools');
     // Consecutive tool-only messages belong to one group, not one group per message.
     if (isCall && item?.callGroup) {
       item.text.before(item.thinking);
@@ -459,10 +458,11 @@ function refreshCallGroups(output) {
       if (!isCall && item.tools.childElementCount && item.heading.textContent !== '你') {
         if (!item.callGroup) {
           item.callGroup = createCallGroup();
-          item.text.after(item.callGroup);
+          item.node.after(item.callGroup);
           item.callGroup.lastElementChild.append(item.tools);
         }
         paintCallGroup(item.callGroup);
+        group = item.callGroup;
       } else if (item.callGroup) {
         item.text.after(item.tools);
         item.callGroup.remove();
@@ -569,7 +569,7 @@ function updateActivity(item, stopped) {
   item.node.classList.toggle("activity-only", !item.buffer.trim());
   item.node.classList.toggle("pure-thought", pure && !!item.reasoning);
   item.activity.hidden = !!item.reasoning || !!item.buffer.trim() || !!item.tools.childElementCount || (!item.active && !stopped);
-  item.modelInfo.hidden = !item.buffer.trim();
+  item.modelInfo.hidden = !item.modelInfo.childElementCount;
   const thinking = item.active && !item.buffer.trim() && !stopped;
   // Apply defaults on state changes without overriding the user's toggle every delta.
   if (item.thinking.dataset.active !== String(thinking)) {
@@ -801,8 +801,34 @@ function renderMessage(item, message) {
     item.node.hidden = true;
     return;
   }
-  item.modelInfo.textContent = message.role === "assistant" && message.model
-    ? `${message.provider || "未知供应商"} / ${message.model}${message.usage ? ` · 输入 ${message.usage.input} · 输出 ${message.usage.output}` : ""}` : "";
+  item.modelInfo.replaceChildren();
+  if (message.role === 'assistant' && message.model) {
+    const identity = document.createElement('span');
+    identity.className = 'message-identity';
+    const model = document.createElement('span');
+    model.className = 'message-model-name';
+    model.textContent = message.model;
+    identity.append(`${message.provider || '未知供应商'} · `, model);
+    if (typeof message.thinkingLevel === 'string' && message.thinkingLevel) {
+      const level = document.createElement('span');
+      level.textContent = message.thinkingLevel;
+      level.title = '思考级别';
+      identity.append(' · ', level);
+    }
+    item.modelInfo.append(identity);
+    const tokens = document.createElement('span');
+    tokens.className = 'message-tokens';
+    for (const [key, arrow, label] of [['input', '↑', '输入 tokens'], ['output', '↓', '输出 tokens']]) {
+      const value = message.usage?.[key];
+      if (!Number.isFinite(value) || value < 0) continue;
+      const count = document.createElement('span');
+      count.textContent = `${value.toLocaleString('en-US')}${arrow}`;
+      count.title = label;
+      count.setAttribute('aria-label', `${label}: ${value}`);
+      tokens.append(count);
+    }
+    if (tokens.childElementCount) item.modelInfo.append(tokens);
+  }
   const content =
     typeof message.content === "string"
       ? [{ type: "text", text: message.content }]

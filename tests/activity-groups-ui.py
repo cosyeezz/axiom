@@ -75,7 +75,15 @@ try:
             {'type': 'toolCall', 'id': 'b', 'name': 'bash', 'arguments': {'command': 'example'}}]}})
         send('tool.state', {'phase': 'end', 'toolCallId': 'b', 'toolName': 'bash', 'isError': True, 'result': {'content': []}})
         shot('03-next-tools')
-        assert groups()[-1]['open'], groups()
+        assert groups()[-1]['open'] and groups()[-1]['label'] == 'Working', groups()
+        before = len(groups())
+        send('agent.message.start', {'message': {'role': 'assistant'}})
+        send('agent.message.end', {'message': {'role': 'assistant', 'provider': 'preview', 'model': 'axiom',
+            'usage': {'input': 100, 'output': 20}, 'content': [
+                {'type': 'toolCall', 'id': 'c', 'name': 'read', 'arguments': {'path': 'second.txt'}}]}})
+        send('tool.state', {'phase': 'end', 'toolCallId': 'c', 'toolName': 'read', 'result': {'content': []}})
+        assert len(groups()) == before, 'usage and consecutive tool messages must not split the group'
+        assert groups()[-1]['label'] == 'Working' and groups()[-1]['open'], groups()
         assert 'FAILED' not in groups()[-1]['label'], groups()
         assert page.locator('.tool-activity[data-state="failed"] .tool-status').inner_text() == 'FAILED'
         send('agent.message.start', {'message': {'role': 'assistant'}})
@@ -100,6 +108,17 @@ try:
                 text.classList.contains('markdown') && text.innerText.includes('这是最终回答。');
         }'''), 'same-message thinking must be collapsed before the final answer'
         shot('05-thinking-before-answer')
+        send('agent.message.start', {'message': {'role': 'assistant'}})
+        send('agent.message.end', {'message': {'role': 'assistant', 'provider': 'oa173',
+            'model': 'gpt-6-astra', 'thinkingLevel': 'medium', 'usage': {'input': 113494, 'output': 1234},
+            'content': [{'type': 'text', 'text': '元信息展示示例。'}]}})
+        meta = page.locator('#output .message-model').last
+        assert meta.inner_text() == 'oa173 · gpt-6-astra · medium113,494↑1,234↓' or (
+            'oa173 · gpt-6-astra · medium' in meta.inner_text() and '113,494↑' in meta.inner_text() and '1,234↓' in meta.inner_text())
+        assert meta.locator('.message-tokens span').first.get_attribute('title') == '输入 tokens'
+        page.set_viewport_size({'width': 390, 'height': 844})
+        assert meta.evaluate('(el) => el.scrollWidth <= el.clientWidth'), 'metadata must fit mobile width'
+        shot('06-message-metadata-mobile')
         assert not errors, errors
         print('PASS: tool gap, thinking expansion, prose boundaries, nested groups, failure row, manual reopen')
         print('Screenshots:', artifacts)
