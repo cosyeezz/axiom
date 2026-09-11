@@ -147,7 +147,8 @@ function controls() {
   $("settings-feedback").textContent = unavailable
     ? (changing ? "正在保存或切换配置…" : "连接断开，暂时无法修改配置")
     : "更改自动保存，模型在下一次请求生效";
-  $("create-submit").disabled = unavailable || !creation?.main || creation.loading || (!creation.defaults && creation.needsTrust);
+  $("create-submit").disabled = unavailable || !creation?.main || creation.loading || (creation.launching && creation.needsTrust);
+  for (const button of $("preset-list").querySelectorAll("button")) button.disabled = unavailable;
   if (creation?.defaults) for (const fieldset of $("create-agents").children) fieldset.disabled = unavailable;
   $("queue-type").disabled = unavailable;
   $("composer-skill").disabled = unavailable || !config?.skills?.length;
@@ -1220,6 +1221,7 @@ $("login").onsubmit = async (e) => {
     $("login").hidden = true;
     $("workspace").hidden = false;
     connected = true;
+    void refreshPresets().catch(error);
     reconnectDelay = 1000;
     resizePrompt();
     controls();
@@ -1928,6 +1930,41 @@ $("new").onclick = () =>
   switchSession(() => request("session.create", { cwd: currentCwd }));
 
 let creationLoad = 0;
+async function refreshPresets() {
+  const { presets } = await request("session.presets.list");
+  $("preset-list").replaceChildren();
+  for (const preset of presets) {
+    const row = document.createElement("div");
+    row.className = "preset-row";
+    const launch = document.createElement("button");
+    launch.className = "secondary preset-launch";
+    launch.textContent = preset.name;
+    launch.title = preset.cwd || "使用当前工作目录";
+    launch.onclick = async () => {
+      if (!connected || changing) return;
+      launch.disabled = true;
+      try {
+        const cwd = preset.cwd || currentCwd;
+        const catalog = await request("capabilities.list", { cwd, trustProject: false });
+        const unavailable = [preset.selection.capabilities, preset.selection.subagentCapabilities].some((selection) =>
+          selection && selection !== "inherit" && ["skills", "mcp", "plugins"].some((kind) =>
+            selection[kind]?.some((id) => !catalog[kind].some((entry) => entry.id === id))));
+        if (!connected || changing) return;
+        if (catalog.needsTrust || unavailable) openCreation(false, { ...preset, cwd }, true);
+        else await switchSession(() => request("session.create", { ...preset.selection, cwd, useDefaults: false }));
+      } catch (e) { error(e); }
+      finally { launch.disabled = !connected || changing; }
+    };
+    const edit = document.createElement("button");
+    edit.className = "secondary preset-edit";
+    edit.textContent = "编辑";
+    edit.setAttribute("aria-label", `编辑预设 ${preset.name}`);
+    edit.onclick = () => { if (connected && !changing) openCreation(false, preset); };
+    row.append(launch, edit);
+    $("preset-list").append(row);
+  }
+}
+
 function createAgentPicker(role, title, catalog, initial) {
   const fieldset = document.createElement("fieldset");
   fieldset.className = "capability-agent";
@@ -2023,7 +2060,7 @@ async function loadCreation() {
   try {
     const [catalog, selected] = await Promise.all([
       request("capabilities.list", { cwd: current.cwd, trustProject: !current.defaults && $("create-trust").checked }),
-      current.defaults ? request("session.defaults.get") : { model: config?.model, subagentModel: config?.subagentModel },
+      current.defaults ? request("session.defaults.get") : current.selection || { model: config?.model, subagentModel: config?.subagentModel },
     ]);
     if (creation !== current || load !== creationLoad) return;
     current.loading = false;
@@ -2032,7 +2069,7 @@ async function loadCreation() {
     current.main = createAgentPicker("main", "主代理", catalog, { model: selected.model, thinking: selected.thinking, capabilities: selected.capabilities });
     current.subagent = createAgentPicker("subagent", "子代理", catalog, { model: selected.subagentModel, thinking: selected.subagentThinking, capabilities: selected.subagentCapabilities });
     current.compaction = compactionEditor(
-      current.defaults ? selected.compaction || compactionDefaults : config?.compaction || compactionDefaults,
+      selected.compaction || (current.defaults ? compactionDefaults : config?.compaction || compactionDefaults),
       () => $("create-main-model").value,
     );
     $("create-compaction").replaceChildren(current.compaction.node);
@@ -2040,7 +2077,7 @@ async function loadCreation() {
     current.catalog = catalog;
     updateDefaultsPreview();
     $("create-trust-row").hidden = current.defaults || (!catalog.needsTrust && !$("create-trust").checked);
-    $("create-submit").disabled = (!current.defaults && catalog.needsTrust) || !connected || changing;
+    $("create-submit").disabled = (current.launching && catalog.needsTrust) || !connected || changing;
     $("create-feedback").textContent = catalog.needsTrust
       ? (current.defaults ? "此目录包含未信任的配置；默认配置仅使用已信任的能力，不保存目录信任。" : "此目录包含未信任的配置；确认信任后加载完整列表。")
       : catalog.warnings.join("\n");
@@ -2048,10 +2085,15 @@ async function loadCreation() {
     if (creation === current && load === creationLoad) $("create-feedback").textContent = `加载失败：${e.message}`;
   }
 }
-function openCreation(defaults = false) {
-  creation = { cwd: currentCwd, defaults };
-  $("create-title").textContent = defaults ? "默认新会话配置" : "自定义新会话";
-  $("create-submit").textContent = defaults ? "保存默认配置" : "创建会话";
+function openCreation(defaults = false, preset, launching = false) {
+  creation = { cwd: preset?.cwd || currentCwd, defaults, launching, presetId: preset?.id, selection: preset?.selection };
+  $("preset-fields").hidden = defaults || launching;
+  $("preset-name").value = preset?.name || "";
+  $("preset-name").required = !defaults && !launching;
+  $("preset-fixed-cwd").checked = !!preset?.cwd;
+  $("preset-delete").hidden = !preset;
+  $("create-title").textContent = defaults ? "默认新会话配置" : launching ? `启动预设：${preset.name}` : "预设会话配置";
+  $("create-submit").textContent = defaults ? "保存默认配置" : launching ? "创建会话" : "保存预设";
   $("create-submit").hidden = defaults;
   $("defaults-preview").textContent = "";
   $("create-defaults-help").hidden = !defaults;
@@ -2064,7 +2106,38 @@ function openCreation(defaults = false) {
   void loadCreation();
 }
 $("custom-new").onclick = () => openCreation();
-$("create-trust").onchange = () => { void loadCreation(); };
+const rememberCreation = () => {
+  if (!creation?.main) return;
+  const main = creation.main(), child = creation.subagent();
+  creation.selection = { ...creation.selection, model: main.model, thinking: main.thinking, capabilities: main.capabilities,
+    subagentModel: child.model, subagentThinking: child.thinking, subagentCapabilities: child.capabilities,
+    compaction: creation.compaction.read() };
+};
+$("create-trust").onchange = () => { rememberCreation(); void loadCreation(); };
+$("preset-directory").onclick = async () => {
+  const current = creation;
+  try {
+    const entry = await filePicker.open({ title: "预设工作目录", mode: "folder", path: current.cwd });
+    if (!entry || creation !== current) return;
+    rememberCreation();
+    current.cwd = entry.path;
+    $("preset-fixed-cwd").checked = true;
+    $("create-workspace").textContent = current.cwd;
+    $("create-trust").checked = false;
+    await loadCreation();
+  } catch (e) { error(e); }
+};
+$("preset-delete").onclick = async () => {
+  if (!creation?.presetId || changing || !connected) return;
+  const button = $("preset-delete");
+  button.disabled = true;
+  try {
+    await request("session.presets.delete", { presetId: creation.presetId });
+    $("create-session").close();
+    await refreshPresets();
+  } catch (e) { $("create-feedback").textContent = `删除失败：${e.message}`; }
+  finally { button.disabled = false; }
+};
 function updateDefaultsPreview() {
   if (!creation?.defaults || !creation.main) return;
   const main = creation.main(), child = creation.subagent();
@@ -2098,6 +2171,7 @@ $("create-form").onsubmit = async (e) => {
   }
   const main = creation.main(), child = creation.subagent();
   const data = {
+    ...(creation.selection?.queueType ? { queueType: creation.selection.queueType } : {}),
     cwd: creation.cwd,
     model: main.model,
     subagentModel: child.model,
@@ -2124,16 +2198,30 @@ $("create-form").onsubmit = async (e) => {
     }
     return;
   }
-  $("create-feedback").textContent = "正在加载能力并创建会话…";
-  await switchSession(async () => {
-    try {
-      const state = await request("session.create", { ...data, useDefaults: false, trustProject: $("create-trust").checked });
-      $("create-session").close();
-      return state;
-    } catch (e) {
-      $("create-feedback").textContent = `创建失败：${e.message}`;
-      throw e;
-    }
-  });
-  $("create-submit").disabled = !connected;
+  if (creation.launching) {
+    $("create-feedback").textContent = "正在创建会话…";
+    await switchSession(async () => {
+      try {
+        const state = await request("session.create", { ...data, useDefaults: false, trustProject: $("create-trust").checked });
+        $("create-session").close();
+        return state;
+      } catch (e) { $("create-feedback").textContent = `创建失败：${e.message}`; throw e; }
+    });
+    controls();
+    return;
+  }
+  $("create-feedback").textContent = "正在保存预设…";
+  changing = true;
+  controls();
+  try {
+    const { cwd, ...selection } = data;
+    await request("session.presets.save", {
+      ...(creation.presetId ? { presetId: creation.presetId } : {}),
+      name: $("preset-name").value.trim(),
+      ...($("preset-fixed-cwd").checked ? { cwd } : {}), selection,
+    });
+    $("create-session").close();
+    await refreshPresets();
+  } catch (e) { $("create-feedback").textContent = `保存失败：${e.message}`; }
+  finally { changing = false; controls(); }
 };

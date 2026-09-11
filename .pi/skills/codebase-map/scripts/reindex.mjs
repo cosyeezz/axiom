@@ -53,6 +53,7 @@ const MODULE_INFO = {
   "tests/image-input.test.js": "图片协议/签名/模型限制、真实队列附件快照与撤回、大图 WS 回归",
   "tests/workspace-picker.test.js": "Windows 原生目录选择置顶 owner、取消/超时/失败释放锁回归",
   "tests/session-flow.test.js": "会话落盘/恢复/删除、队列和运行中模型切换回归",
+  "tests/presets.test.js": "具名预设协议、原子持久化与安全边界回归",
   "tests/": "node --test 测试（npm test）",
 };
 

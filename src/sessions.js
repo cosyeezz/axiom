@@ -4,7 +4,7 @@ import { realpath, stat, readFile, mkdir, writeFile, rename, rm, readdir } from 
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, isAbsolute, resolve, sep, parse } from "node:path";
 
-import { selection as selectionSchema, compaction as compactionSchema, compactionDefaults, assertPromptImages } from "./protocol.js";
+import { selection as selectionSchema, presetStore, compaction as compactionSchema, compactionDefaults, assertPromptImages } from "./protocol.js";
 import { Tasks } from "./tasks.js";
 import { delegationTools } from "./tools.js";
 import { resolveCapabilities } from "./capabilities.js";
@@ -74,6 +74,7 @@ export class Sessions {
     this.storagePath = storagePath;
     this.defaultsPath = defaultsPath;
     this.savingDefaults = Promise.resolve();
+    this.savingPresets = Promise.resolve();
     this.createAgent = createAgent;
     this.items = new Map();
     this.recentConfig = {};
@@ -146,6 +147,68 @@ export class Sessions {
         throw new Error("Unsupported compaction thinking level");
     }
     return config;
+  }
+
+  // —— 具名会话预设：沿用 selection schema，持久化 defaultsPath 同目录 presets.json。
+  // 保存只做 schema 校验（selection.parse 剥离 trustProject/useDefaults）；目录或能力失效
+  // 留给会话创建时报错，不阻止保存与列表读取。
+  get presetsPath() {
+    return this.defaultsPath ? join(dirname(this.defaultsPath), "presets.json") : null;
+  }
+  async listPresets() {
+    const path = this.presetsPath;
+    if (!path) return { presets: [] };
+    try {
+      return presetStore.parse(JSON.parse(await readFile(path, "utf8")));
+    } catch (error) {
+      if (error.code === "ENOENT") return { presets: [] };
+      throw new Error(`会话预设读取失败：${error.message}`);
+    }
+  }
+  // 串行读-改-写：并发保存走同一 promise 链避免相互覆盖；临时文件 + rename 原子落盘。
+  mutatePresets(mutate) {
+    const path = this.presetsPath;
+    if (!path) return Promise.reject(new Error("未启用会话预设持久化"));
+    const work = this.savingPresets.catch(() => {}).then(async () => {
+      const presets = (await this.listPresets()).presets;
+      const resultId = mutate(presets);
+      // 写前整包自检：不合规数据（含手工编辑的坏 name/selection）在落盘前拦截。
+      const store = presetStore.parse({ presets });
+      const temporary = `${path}.${randomUUID()}.tmp`;
+      await mkdir(dirname(path), { recursive: true });
+      try {
+        await writeFile(temporary, JSON.stringify(store, null, 2) + "\n", { mode: 0o600 });
+        await rename(temporary, path);
+      } finally {
+        await rm(temporary, { force: true });
+      }
+      return resultId ? store.presets.find((preset) => preset.id === resultId) : null;
+    });
+    this.savingPresets = work.catch(() => {});
+    return work;
+  }
+  savePreset({ presetId, name, cwd, selection }) {
+    return this.mutatePresets((presets) => {
+      const entry = {
+        id: presetId || randomUUID(),
+        name: name.trim(),
+        selection: selectionSchema.parse(selection ?? {}),
+        ...(cwd ? { cwd } : {}),
+      };
+      const index = presets.findIndex((preset) => preset.id === entry.id);
+      if (presetId && index < 0) throw new Error("Unknown preset");
+      if (index >= 0) presets[index] = entry;
+      else presets.push(entry);
+      return entry.id;
+    });
+  }
+  deletePreset(presetId) {
+    return this.mutatePresets((presets) => {
+      const index = presets.findIndex((preset) => preset.id === presetId);
+      if (index < 0) throw new Error("Unknown preset");
+      presets.splice(index, 1);
+      return null;
+    }).then(() => ({ deleted: presetId }));
   }
 
   async load() {

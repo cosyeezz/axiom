@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-11 — 侧栏具名预设会话
+- 按用户要求将自定义新会话入口改为「预设会话配置」，保存的预设按钮显示在其下方，共享背景框；复用现有主/子模型、能力与压缩表单，支持名称、可选固定目录、编辑、删除、点击启动。
+- 后端通过 session.presets.list/save/delete 管理本机 presets.json，严格输入校验与串行原子持久化，不保存信任授权。前端启动先检查目标目录信任，需要时复用确认表单；不自动信任，不按名替换缺失技能。
+- 涉及 public/app.js、index.html、style.css、src/sessions.js、server.js、protocol.js、tests/app.test.js、presets.test.js、README 与代码索引。此项不包含全局/项目默认配置分层，也不包含自动 Shell 启动命令。
+- 验证：后端持久化/并发/输入校验与前端保存失败、编辑删除、失效能力确认、仅本次信任路径通过；全量 npm test 为 125 项，124 通过、1 原有跳过、0 失败；未重启本机服务，未做 macOS 实机验证。
+
 ## 2026-09-11 — 技能恢复修复发布 0.1.3
 - 用户确认合并与同步独立仓库。package.json 升至 0.1.3，发布跨目录默认能力收窄与逐会话恢复隔离修复；README 已同步恢复规则。
 - 在功能 worktree 复验后合并 MyWorkbench/master，并以 subtree 推送 axiom/ 至 cosyeezz/axiom master。保留主工作区未提交改动，不重启本机服务，不执行 npm ci。

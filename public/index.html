@@ -18,8 +18,11 @@
         <div class="brand">A<span>XIOM</span></div>
         <button id="open-workspace" class="secondary workspace-open"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l3 3h9v4M3 7v13h16l3-9H7l-4 9"/></svg>打开工作空间</button>
         <button id="new" class="secondary" title="使用设置中的默认新会话配置">＋ 新会话</button>
-        <button id="custom-new" class="secondary" aria-haspopup="dialog" aria-controls="create-session">自定义新会话…</button
-        ><label class="sr-only" for="search">搜索会话</label
+        <section class="preset-group" aria-label="预设会话">
+          <button id="custom-new" class="secondary" aria-haspopup="dialog" aria-controls="create-session">预设会话配置</button>
+          <div id="preset-list"></div>
+        </section>
+        <label class="sr-only" for="search">搜索会话</label
         ><input id="search" type="search" placeholder="搜索会话…" />
         <nav id="sessions" aria-label="会话历史"></nav>
         <details id="hidden-session-area">
@@ -222,10 +225,17 @@
     </dialog>
     <dialog id="create-session" aria-labelledby="create-title">
       <header>
-        <h2 id="create-title">自定义新会话</h2>
-        <form method="dialog"><button class="secondary" aria-label="关闭新会话设置" autofocus>✕</button></form>
+        <h2 id="create-title">预设会话配置</h2>
+        <form method="dialog"><button class="secondary" aria-label="关闭会话配置" autofocus>✕</button></form>
       </header>
       <form id="create-form" class="settings-body">
+        <div id="preset-fields" hidden>
+          <label>预设名称<input id="preset-name" maxlength="80" placeholder="例如：Axiom 开发"></label>
+          <label><input id="preset-fixed-cwd" type="checkbox">固定使用此工作目录（不勾选则使用当前目录）</label>
+          <button id="preset-directory" type="button" class="secondary">选择工作目录</button>
+          <button id="preset-delete" type="button" class="secondary" hidden>删除此预设</button>
+          <p class="settings-scope">预设只保存配置，不保存目录信任，也不会自动执行启动命令。</p>
+        </div>
         <p id="create-workspace" class="settings-scope"></p>
         <p id="create-defaults-help" hidden>自动保存成功后「新会话」使用此配置；默认主代理模型沿用最近成功调整的主模型。能力清单按当前目录读取，不保存目录信任；所选能力在其他目录不可用时会提示错误，不会自动改为全部能力。</p>
         <p>复用本机 Pi 已启用的能力；Skills 按需读取，MCP 按配置连接。未选能力不会自动加载，但这不是权限沙箱。</p>
