@@ -1,11 +1,11 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/11 00:33:56）
+# Axiom 多级代码索引（生成于 2026/9/11 01:24:01）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| public/app.js | 2125 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, allSessions |
+| public/app.js | 2134 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, allSessions |
 | public/file-picker.css | 269 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 351 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/index.html | 242 | 页面骨架与元素 id（见 L3） | - |
@@ -40,7 +40,7 @@
 | tests/compaction.test.js | 737 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
 | tests/config.test.js | 220 | node --test 测试（npm test） | - |
 | tests/conversation-preview.mjs | 99 | node --test 测试（npm test） | markdown, message, thinking, state |
-| tests/conversation-ui.py | 210 | node --test 测试（npm test） | - |
+| tests/conversation-ui.py | 231 | node --test 测试（npm test） | - |
 | tests/defaults.test.js | 33 | node --test 测试（npm test） | - |
 | tests/file-picker.test.js | 67 | node --test 测试（npm test） | source, tick |
 | tests/image-input.test.js | 167 | node --test 测试（npm test） | pngBase64, jpegBase64, image, parsePrompt |
@@ -64,7 +64,7 @@
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
-### public/app.js（2125 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
+### public/app.js（2134 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -189,43 +189,43 @@
 | addImages | function | 1391 |
 | loadImages | function | 1412 |
 | renderImages | method | 1421 |
-| escapeTimer | const | 1475 |
-| withdrawQueue | function | 1476 |
-| refreshing | const | 1532 |
-| refreshSessions | function | 1533 |
-| updateSessions | function | 1540 |
-| renderSessions | method | 1544 |
-| switchSession | function | 1546 |
-| saveView | method | 1548 |
-| controls | method | 1551 |
-| renderSessions | function | 1563 |
-| sessionAction | const | 1683 |
-| openSessionAction | function | 1684 |
-| contextIcon | function | 1725 |
-| renderContextChips | function | 1728 |
-| renderContextResults | function | 1746 |
-| controls | method | 1778 |
-| resizePrompt | method | 1784 |
-| controls | method | 1785 |
-| closeCompletion | function | 1788 |
-| highlightCompletion | function | 1796 |
-| chooseCompletion | function | 1805 |
-| closeCompletion | method | 1815 |
-| updateCompletion | function | 1818 |
-| closeCompletion | method | 1819 |
-| resizePrompt | method | 1872 |
-| controls | method | 1873 |
-| switchSession | method | 1913 |
-| creationLoad | const | 1915 |
-| createAgentPicker | function | 1916 |
-| options | method | 1938 |
-| fill | method | 1946 |
-| fillThinking | method | 1954 |
-| options | method | 1956 |
-| loadCreation | function | 2002 |
-| openCreation | function | 2036 |
-| updateDefaultsPreview | function | 2053 |
-| updateDefaultsPreview | method | 2073 |
+| escapeTimer | const | 1484 |
+| withdrawQueue | function | 1485 |
+| refreshing | const | 1541 |
+| refreshSessions | function | 1542 |
+| updateSessions | function | 1549 |
+| renderSessions | method | 1553 |
+| switchSession | function | 1555 |
+| saveView | method | 1557 |
+| controls | method | 1560 |
+| renderSessions | function | 1572 |
+| sessionAction | const | 1692 |
+| openSessionAction | function | 1693 |
+| contextIcon | function | 1734 |
+| renderContextChips | function | 1737 |
+| renderContextResults | function | 1755 |
+| controls | method | 1787 |
+| resizePrompt | method | 1793 |
+| controls | method | 1794 |
+| closeCompletion | function | 1797 |
+| highlightCompletion | function | 1805 |
+| chooseCompletion | function | 1814 |
+| closeCompletion | method | 1824 |
+| updateCompletion | function | 1827 |
+| closeCompletion | method | 1828 |
+| resizePrompt | method | 1881 |
+| controls | method | 1882 |
+| switchSession | method | 1922 |
+| creationLoad | const | 1924 |
+| createAgentPicker | function | 1925 |
+| options | method | 1947 |
+| fill | method | 1955 |
+| fillThinking | method | 1963 |
+| options | method | 1965 |
+| loadCreation | function | 2011 |
+| openCreation | function | 2045 |
+| updateDefaultsPreview | function | 2062 |
+| updateDefaultsPreview | method | 2082 |
 
 ### public/file-picker.js（351 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 

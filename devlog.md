@@ -1,5 +1,10 @@
 # 开发记录
 
+## 2026-09-11 01:23 — 输入框撤销与清空快捷键
+- 独立 worktree axiom-input-shortcuts / feat/input-shortcuts：聊天输入框 Ctrl+C 全选并调用原生删除，保留 Ctrl+Z 撤销/恢复清空；不影响图片、文件、Skill 附件及任务。不添加自建历史栈或依赖；输入法组合、只读/禁用及空文字不删除。
+- 涉及 public/app.js、public/index.html、README.md、tests/conversation-ui.py、本日志及 codebase-map 索引/坑库；页面提示及 README 说明 Ctrl+C 在此处替代复制，右键仍可复制。
+- 验证：npm test 112 通过、1 原有跳过；真实 Chromium 原生输入撤销/重做、部分选中后清空、重复清空后撤销恢复、输入法保护通过，1440/390/320px 既有 UI 检查通过、无浏览器错误。首次误连已有 4321 旧预览，改用独立 4327 端口后验证通过；未重启正式服务。
+
 ## 2026-09-10 21:52 — 紧凑原名工具行与模块强调
 - worktree MyWorkbench-conversation-labels / feat/conversation-labels。按用户六项反馈将工具/思考行缩至 12px/400、SVG 16px/底座 24px；工具显示原名（仅省略 functions. 前缀，完整名保留 title），powershell/pwsh 复用命令图标。思考/连接/准备调用使用 thinking / thinking... / connecting... / calling...，中文结果状态保留。
 - waiting/running 的等待图标隐藏 SVG，使用高低亮度分段 CSS 旋转环；不增加定时器，尊重 reduced-motion。SKILL 与 SUBAGENT 使用描边标识、语义底色和左侧色条，任务状态行允许换行；桌面工具行最小 36px，手机 44px 点击区域不变。缩短消息/角色标题/用量间距，正文 14px、1.8 行高不动，不改安全 Markdown、流式脏块或折叠惰性渲染。

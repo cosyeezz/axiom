@@ -1449,6 +1449,15 @@ $("prompt").onpaste = (e) => {
 };
 $("prompt").onkeydown = (e) => {
   if (e.isComposing || e.keyCode === 229) return;
+  if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "c") {
+    e.preventDefault();
+    const input = e.currentTarget;
+    if (input.disabled || input.readOnly || !input.value) return;
+    input.select();
+    // Native deletion keeps Ctrl+Z undo (including restoring a cleared draft).
+    document.execCommand("delete");
+    return;
+  }
   if (!$("prompt-completion").hidden && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
     if (["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape", "ArrowRight"].includes(e.key)) {
       if (e.key === "ArrowRight" && !completionEntries[completionIndex]?.directory) return;

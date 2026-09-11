@@ -50,6 +50,27 @@ with sync_playwright() as p:
         assert style(el, "animationName", pseudo) == "none"
         page.emulate_media(reduced_motion="no-preference")
 
+    load("ui-review")
+    prompt = page.locator('#prompt')
+    prompt.focus()
+    page.keyboard.insert_text('undo this draft')
+    page.keyboard.press('Control+z')
+    expect(prompt).to_have_value('')
+    page.keyboard.press('Control+Shift+z')
+    expect(prompt).to_have_value('undo this draft')
+    prompt.evaluate('(el) => el.setSelectionRange(0, 4)')
+    page.keyboard.press('Control+c')
+    expect(prompt).to_have_value('')
+    expect(page.locator('#prompt-completion')).to_be_hidden()
+    page.keyboard.press('Control+c')  # Empty clear must not add an undo step.
+    page.keyboard.press('Control+z')
+    expect(prompt).to_have_value('undo this draft')
+    prompt.evaluate('''el => el.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'c', ctrlKey: true, isComposing: true, bubbles: true, cancelable: true
+    }))''')
+    expect(prompt).to_have_value('undo this draft')
+    page.reload()
+
     for width in [1440, 390, 320]:
         page.set_viewport_size({"width": width, "height": 1000 if width == 1440 else 844})
         load("ui-review")
