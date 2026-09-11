@@ -1,5 +1,10 @@
 # 开发记录
 
+## 2026-09-11 — 选中自动复制与本地开关
+- 在 feat/input-shortcuts 独立 worktree 继续实现：聊天输入框、会话正文及子任务详情支持 pointerup/选区相关 keyup 后自动复制非空白选区；不监听连续 selectionchange、不改变焦点/选区，不处理右键、清空快捷键、其他表单与跨区域选区。使用原生 Clipboard API，失败提示右键复制，无新增依赖。
+- 按用户追加要求，设置页增加「输入与复制 → 选中自动复制」开启/关闭，默认开启；localStorage 保存当前浏览器偏好，保存受限仍在本页生效并提示，不进入服务端会话配置或断线禁用列表。手机系统手柄事件不保证送到页面，README 明示可用系统复制菜单。
+- 涉及 public/app.js、public/index.html、tests/app.test.js、tests/conversation-ui.py、README.md、本日志及生成索引。验证 npm test 112 通过、1 原有跳过；真实 Chromium 剪贴板验证输入框/正文复制、关闭后均不复制、刷新保留关闭及原有撤销清空，1440/390/320px UI 检查通过、无页面错误。正式服务未重启。
+
 ## 2026-09-11 01:23 — 输入框撤销与清空快捷键
 - 独立 worktree axiom-input-shortcuts / feat/input-shortcuts：聊天输入框 Ctrl+C 全选并调用原生删除，保留 Ctrl+Z 撤销/恢复清空；不影响图片、文件、Skill 附件及任务。不添加自建历史栈或依赖；输入法组合、只读/禁用及空文字不删除。
 - 涉及 public/app.js、public/index.html、README.md、tests/conversation-ui.py、本日志及 codebase-map 索引/坑库；页面提示及 README 说明 Ctrl+C 在此处替代复制，右键仍可复制。

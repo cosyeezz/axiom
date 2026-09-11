@@ -190,6 +190,13 @@
       <div class="settings-layout">
       <nav class="settings-nav" aria-label="设置分类"><button type="button" class="secondary" aria-current="page">默认新会话设置</button></nav>
       <div class="settings-body" id="defaults-panel">
+        <section aria-labelledby="selection-copy-title">
+          <h3 id="selection-copy-title">输入与复制</h3>
+          <div class="selectors settings-selectors"><label for="selection-copy"><span>选中自动复制</span>
+          <select id="selection-copy" aria-describedby="selection-copy-help"><option value="on">开启</option><option value="off">关闭</option></select></label></div>
+          <p id="selection-copy-help">选中会话正文或输入框文字后自动复制，会覆盖剪贴板；仅保存在当前浏览器。关闭不影响手动复制和 Ctrl+C 清空输入。</p>
+          <p id="selection-copy-feedback" role="status" aria-live="polite"></p>
+        </section>
         <section>
           <div class="selectors settings-selectors"><label for="queue-type"><span>Running 时 Enter 默认发送类型</span>
           <select id="queue-type" aria-describedby="steer-help followup-help"><option value="steer">Steer</option><option value="followUp">Follow-up</option></select></label></div>

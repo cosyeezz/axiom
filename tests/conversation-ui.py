@@ -51,7 +51,38 @@ with sync_playwright() as p:
         page.emulate_media(reduced_motion="no-preference")
 
     load("ui-review")
+    page.context.grant_permissions(['clipboard-read', 'clipboard-write'])
     prompt = page.locator('#prompt')
+    prompt.fill('automatic copy')
+    prompt.press('Control+a')
+    assert page.evaluate('navigator.clipboard.readText()') == 'automatic copy'
+    paragraph = page.locator('#output .markdown p').first
+    paragraph.evaluate('''el => {
+        const range = document.createRange(); range.selectNodeContents(el);
+        const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    }''')
+    paragraph.dispatch_event('pointerup', {'button': 0})
+    assert page.evaluate('navigator.clipboard.readText()') == paragraph.inner_text()
+    page.locator('#open-settings').click()
+    page.locator('#selection-copy').select_option('off')
+    page.reload()
+    page.wait_for_selector('#workspace:not([hidden])')
+    assert page.locator('#selection-copy').input_value() == 'off'
+    page.evaluate('navigator.clipboard.writeText("keep clipboard")')
+    prompt.fill('do not copy')
+    prompt.press('Control+a')
+    assert page.evaluate('navigator.clipboard.readText()') == 'keep clipboard'
+    paragraph = page.locator('#output .markdown p').first
+    paragraph.evaluate('''el => {
+        const range = document.createRange(); range.selectNodeContents(el);
+        const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    }''')
+    paragraph.dispatch_event('pointerup', {'button': 0})
+    assert page.evaluate('navigator.clipboard.readText()') == 'keep clipboard'
+    page.locator('#open-settings').click()
+    page.locator('#selection-copy').select_option('on')
+    page.keyboard.press('Escape')
+    prompt.fill('')
     prompt.focus()
     page.keyboard.insert_text('undo this draft')
     page.keyboard.press('Control+z')
