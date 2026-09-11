@@ -19,6 +19,7 @@ let ws,
   serviceManaged = false,
   restarting = false,
   creation;
+let sessionMissing = false;
 let allSessions = [],
   follow = true;
 const views = new Map();
@@ -30,7 +31,7 @@ let images = [], imageLoading = false;
 let completionVersion = 0, completionToken, completionEntries = [], completionIndex = 0;
 let selectedSkill = "", contextFiles = [], pickingWorkspace = false, currentCwd = "";
 try {
-  sessionId = localStorage.getItem("axiom.session") || undefined;
+  sessionId = new URLSearchParams(location.hash.slice(1)).get("session") || sessionStorage.getItem("axiom.session") || localStorage.getItem("axiom.session") || undefined;
 } catch {}
 let hiddenSessions = new Set();
 try {
@@ -42,14 +43,41 @@ try {
   const saved = JSON.parse(localStorage.getItem("axiom.sessionOrder") || "[]");
   if (Array.isArray(saved)) sessionOrder = saved.filter((id) => typeof id === "string");
 } catch {}
-function setSessionHidden(id, hidden) {
-  if (!allSessions.some((s) => s.id === id && s.cwd === $("workspace-label").textContent)) return;
-  hidden ? hiddenSessions.add(id) : hiddenSessions.delete(id);
-  try { localStorage.setItem("axiom.hiddenSessions", JSON.stringify([...hiddenSessions])); }
-  catch { error("无法保存隐藏状态，刷新后可能丢失"); }
-  renderSessions();
-  $("hidden-session-summary").focus();
+function readSessionPreference(key) {
+  const saved = JSON.parse(localStorage.getItem(key) || "[]");
+  return Array.isArray(saved) ? saved.filter((id) => typeof id === "string") : [];
 }
+async function changeSessionPreference(key, change) {
+  const save = () => {
+    const next = change(readSessionPreference(key));
+    localStorage.setItem(key, JSON.stringify(next));
+    if (key === "axiom.hiddenSessions") hiddenSessions = new Set(next);
+    else sessionOrder = next;
+    renderSessions();
+  };
+  try {
+    // 同源标签页串行读改写，避免同时操作不同会话时覆盖彼此。
+    if (navigator.locks) await navigator.locks.request(key, save);
+    // ponytail: 旧浏览器无 Web Locks 时尽力合并；现代浏览器使用上面的跨页锁。
+    else save();
+  } catch { error("无法保存会话列表设置，请重试"); }
+}
+function setSessionHidden(id, hidden) {
+  if (!allSessions.some((s) => s.id === id)) return;
+  return changeSessionPreference("axiom.hiddenSessions", (saved) => {
+    const next = new Set(saved);
+    hidden ? next.add(id) : next.delete(id);
+    return [...next];
+  }).then(() => $("hidden-session-summary").focus());
+}
+window.addEventListener("storage", (event) => {
+  if (event.key !== null && !["axiom.hiddenSessions", "axiom.sessionOrder"].includes(event.key)) return;
+  try {
+    hiddenSessions = new Set(readSessionPreference("axiom.hiddenSessions"));
+    sessionOrder = readSessionPreference("axiom.sessionOrder");
+    renderSessions();
+  } catch { error("会话列表设置同步失败"); }
+});
 let draggedSession;
 for (const [target, hidden] of [["hidden-session-area", true], ["sessions", false]]) {
   const area = $(target);
@@ -86,6 +114,7 @@ function resizePrompt() {
 }
 let scrollFrame, locatedScroll;
 function scrollLatest() {
+  scheduleCallGroups();
   if (changing || scrollFrame !== undefined || (!follow && !activeTask?.follow)) return;
   scrollFrame = requestAnimationFrame(() => {
     scrollFrame = undefined;
@@ -163,9 +192,9 @@ function controls() {
   $("copy-workspace").disabled = !$("workspace-label").textContent;
   renderContextChips();
   for (const id of ["send", "send-steer", "send-followup"])
-    $(id).disabled = unavailable || imageLoading || (!$("prompt").value.trim() && !selectedSkill && !images.length && !contextFiles.length);
+    $(id).disabled = unavailable || sessionMissing || imageLoading || (!$("prompt").value.trim() && !selectedSkill && !images.length && !contextFiles.length);
   $("send-steer").hidden = $("send-followup").hidden = !busy;
-  $("stop").disabled = !busy || unavailable;
+  $("stop").disabled = !busy || unavailable || sessionMissing;
   $("stop").hidden = !busy;
   $("send").hidden = busy;
   for (const id of ["new", "custom-new"]) $(id).disabled = unavailable;
@@ -299,6 +328,9 @@ $("settings").onclick = (e) => {
 const messageItems = new WeakMap(), toolItems = new Map(), waitingItems = new Map();
 // One local stroke vocabulary: tool identity stays visible when its state changes.
 const activityPaths = {
+  'circle-done': "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0M8 12l3 3 5-6",
+  'circle-stopped': "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0M9 9v6m6-6v6",
+  'circle-failed': "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0M12 7v6m0 4h.01",
   waiting: "M20 12a8 8 0 1 1-8-8",
   thinking: "M9 18h6m-5 3h4M8.5 15.5a6 6 0 1 1 7 0L15 18H9z",
   read: "M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8m-8 4h5",
@@ -322,6 +354,138 @@ function setActivityIcon(icon, name) {
   path.setAttribute("d", activityPaths[name] || activityPaths.tool);
   svg.append(path);
   icon.replaceChildren(svg);
+}
+let callGroupsFrame;
+function scheduleCallGroups() {
+  if (callGroupsFrame !== undefined) return;
+  callGroupsFrame = requestAnimationFrame(() => {
+    callGroupsFrame = undefined;
+    for (const output of [$('output'), ...[...tasks.values()].map(task => task.output)]) {
+      if (output?.isConnected) refreshCallGroups(output);
+    }
+  });
+}
+function createCallGroup() {
+  const group = document.createElement('details');
+  group.className = 'call-group';
+  group.open = true;
+  const summary = document.createElement('summary');
+  summary.setAttribute('aria-label', '展开或收起执行过程');
+  const viewport = document.createElement('span');
+  viewport.className = 'call-preview';
+  const body = document.createElement('div');
+  body.className = 'call-list';
+  summary.append(viewport);
+  group.append(summary, body);
+  return group;
+}
+function paintCallGroup(group) {
+  const body = group.lastElementChild;
+  const rows = [...body.querySelectorAll('.activity-line')].filter(row => {
+    for (let node = row; node && node !== body; node = node.parentElement)
+      if (node.hidden || node.classList.contains('merged-thought')) return false;
+    return true;
+  });
+  group.hidden = !rows.length;
+  if (!rows.length) return;
+  const active = rows.filter(row => ['running', 'waiting', 'thinking'].includes(row.dataset.state));
+  const task = [...tasks.values()].find(task => task.output.contains(group));
+  const ownerRunning = task ? ['starting', 'running'].includes(task.node.dataset.status) : busy;
+  // Tool gaps are not turn completion: latch an active group until its owner finishes.
+  const running = group.dataset.messageFolded !== 'true' &&
+    (!!active.length || (group.dataset.active === 'true' && ownerRunning));
+  const label = running ? 'Working' : rows.some(row => row.dataset.state === 'stopped') ? 'Stopped' : 'Completed';
+  const failed = rows.some(row => row.dataset.state === 'failed');
+  const icon = running ? 'waiting' : failed ? 'circle-failed' : label === 'Stopped' ? 'circle-stopped' : 'circle-done';
+  const preview = group.firstElementChild.firstElementChild;
+  const signature = `${label}:${icon}`;
+  if (preview.dataset.signature !== signature) {
+    preview.dataset.signature = signature;
+    const line = activityLine(label, '');
+    line.removeAttribute('role');
+    setActivityIcon(line.firstChild, icon);
+    preview.replaceChildren(line);
+  }
+  // Status controls the icon only; visible messages control automatic folding.
+  group.dataset.active = String(running);
+  group.dataset.failed = String(failed);
+}
+function refreshCallGroups(output) {
+  // Keep the actual records (and their open state); only move their containers.
+  const nodes = [...output.children].flatMap(node => node.classList.contains('call-group')
+    ? [...node.lastElementChild.children] : [node]);
+  let group;
+  for (const node of nodes) {
+    const item = messageItems.get(node);
+    const isCall = item ? item.heading.textContent !== '你' && !item.buffer.trim()
+      : node.matches('.tool-record, .activity-line');
+    // Consecutive tool-only messages belong to one group, not one group per message.
+    if (isCall && item?.callGroup) {
+      item.text.before(item.thinking);
+      item.text.after(item.tools);
+      item.callGroup.remove();
+      item.callGroup = undefined;
+    }
+    if (isCall) {
+      if (!group) {
+        group = node.parentElement.classList.contains('call-list') ? node.parentElement.parentElement : createCallGroup();
+        if (!group.isConnected) node.before(group);
+      }
+      if (node.parentElement !== group.lastElementChild) group.lastElementChild.append(node);
+    } else {
+      if (group) paintCallGroup(group);
+      group = undefined;
+      if (node.parentElement.classList.contains('call-list')) {
+        const previous = node.parentElement.parentElement;
+        const following = [];
+        for (let next = node.nextElementSibling; next; next = next.nextElementSibling) following.push(next);
+        previous.after(node);
+        if (following.length) {
+          const tail = createCallGroup();
+          tail.lastElementChild.append(...following);
+          node.after(tail);
+        }
+      }
+    }
+    if (item) {
+      // Thinking and tools share the disclosure; prose stays outside.
+      if (!isCall && (item.reasoning || item.tools.childElementCount) && item.heading.textContent !== '你') {
+        if (!item.callGroup) {
+          item.callGroup = createCallGroup();
+          item.text.after(item.callGroup);
+          item.callGroup.lastElementChild.append(item.thinking, item.tools);
+        }
+        paintCallGroup(item.callGroup);
+      } else if (item.callGroup) {
+        item.text.before(item.thinking);
+        item.text.after(item.tools);
+        item.callGroup.remove();
+        item.callGroup = undefined;
+      }
+    }
+  }
+  if (group) paintCallGroup(group);
+  for (const node of [...output.children]) if (node.classList.contains('call-group')) {
+    if (!node.lastElementChild.childElementCount) node.remove();
+    else paintCallGroup(node);
+  }
+  let hasFollowingMessage = false;
+  for (const node of [...output.children].reverse()) {
+    const item = messageItems.get(node);
+    // A message's own calls render after its prose, so only later messages close them.
+    if (hasFollowingMessage) {
+      if (node.classList.contains('call-group')) foldCallsBeforeMessage(node);
+      if (item?.callGroup) foldCallsBeforeMessage(item.callGroup);
+    }
+    if (item && !node.hidden && (item.buffer.trim() || item.images?.childElementCount))
+      hasFollowingMessage = true;
+  }
+}
+function foldCallsBeforeMessage(group) {
+  if (group.dataset.messageFolded === 'true') return;
+  group.dataset.messageFolded = 'true';
+  group.open = false;
+  paintCallGroup(group);
 }
 function disclosureHint(label = "详情") {
   const hint = document.createElement("span");
@@ -357,6 +521,7 @@ function activityLine(label, state = "waiting") {
   return node;
 }
 function setActivity(node, label, state, icon) {
+  scheduleCallGroups();
   node.dataset.state = state;
   setActivityIcon(node.firstChild, node.dataset.toolIcon || icon || (state === "running" ? "waiting" : state));
   const text = node.querySelector(node.classList.contains("tool-activity") ? ".tool-status" : ".activity-label");
@@ -382,6 +547,7 @@ function clearWaiting(agentId) {
   waitingItems.delete(agentId);
 }
 function stopActivity(agentId, label = "已停止") {
+  scheduleCallGroups();
   clearWaiting(agentId);
   const item = live.get(agentId);
   if (item) {
@@ -398,7 +564,12 @@ function updateActivity(item, stopped) {
   item.node.classList.toggle("pure-thought", pure && !!item.reasoning);
   item.activity.hidden = !!item.reasoning || !!item.buffer.trim() || !!item.tools.childElementCount || (!item.active && !stopped);
   item.modelInfo.hidden = !item.buffer.trim();
-  const thinking = item.active && !item.buffer.trim();
+  const thinking = item.active && !item.buffer.trim() && !stopped;
+  // Apply defaults on state changes without overriding the user's toggle every delta.
+  if (item.thinking.dataset.active !== String(thinking)) {
+    item.thinking.open = thinking;
+    item.thinking.dataset.active = String(thinking);
+  }
   setActivity(item.thinkingLine, stopped ? `thinking · ${stopped}` : thinking ? "thinking..." : "thinking", stopped ? "stopped" : thinking ? "thinking" : "done", "thinking");
   setActivity(item.activity, stopped || "connecting...", stopped ? "stopped" : "waiting");
   if (item.activity.hidden) setActivity(item.activity, "", "");
@@ -406,7 +577,8 @@ function updateActivity(item, stopped) {
 }
 function mergeThoughts(output) {
   let first;
-  for (const node of output.children) {
+  const root = output.classList.contains('call-list') ? output.parentElement.parentElement : output;
+  for (const node of [...root.children].flatMap(node => node.classList.contains('call-group') ? [...node.lastElementChild.children] : [node])) {
     const item = messageItems.get(node);
     if (!item) { first = undefined; continue; }
     node.classList.remove("merged-thought");
@@ -532,7 +704,7 @@ function toolState(agentId, data) {
     const container = document.createElement("details");
     container.className = "tool-record";
     const summary = document.createElement("summary");
-    summary.append(node, disclosureHint());
+    summary.append(node);
     const body = document.createElement("div");
     body.className = "tool-detail";
     container.append(summary, body);
@@ -560,7 +732,7 @@ function toolState(agentId, data) {
   target.textContent = (args.path || args.file_path) && cwd && normalized.startsWith(`${cwd}/`) ? normalized.slice(cwd.length + 1) : fullDetail;
   target.title = fullDetail;
   const state = data.phase === "end" ? (data.isError ? "failed" : "done") : data.phase === "history" ? "stopped" : "running";
-  setActivity(tool.node, { running: "执行中", done: "已完成", failed: "失败", stopped: "结果未记录" }[state], state);
+  setActivity(tool.node, { running: "", done: "", failed: "FAILED", stopped: "" }[state], state);
   renderToolDetail(tool);
   scrollLatest();
 }
@@ -570,13 +742,13 @@ function card(title, task) {
   node.className = title === "你" ? "message user" : "message";
   const heading = document.createElement("h3");
   heading.textContent = title;
-  heading.hidden = title === "你";
+  heading.hidden = title === "你" || title === "AXIOM";
   const thinking = document.createElement("details");
   thinking.className = "thinking-record";
   const summary = document.createElement("summary");
   const thinkingLine = activityLine("thinking", "thinking");
   thinkingLine.removeAttribute("role");
-  summary.append(thinkingLine, disclosureHint("查看"));
+  summary.append(thinkingLine);
   const thought = document.createElement("div");
   thought.className = "markdown thinking-content";
   thinking.append(summary, thought);
@@ -927,6 +1099,16 @@ function renderRetry(agentId, data) {
   scrollLatest();
 }
 function event(message) {
+  if (message.type === "session.deleted") {
+    if (message.sessionId === sessionId) {
+      sessionMissing = true;
+      saveView();
+      controls();
+      if (connected && !changing) void recoverMissingSession();
+    }
+    void refreshSessions().catch(error);
+    return;
+  }
   if (message.sessionId !== sessionId) return;
   const { type, agentId = "main", data } = message;
   if (type === "agent.compaction.status" && agentId === "main") renderCompactionStatus(data);
@@ -1086,13 +1268,16 @@ function snapshot(state) {
   renderer.clear();
   if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame);
   scrollFrame = undefined;
+  sessionMissing = false;
   sessionId = state.sessionId;
   try {
-    localStorage.setItem("axiom.session", sessionId);
+    sessionStorage.setItem("axiom.session", sessionId);
   } catch {}
+  history.replaceState(null, "", `#${new URLSearchParams({ session: sessionId })}`);
   $("session-title").textContent = state.title || "新会话";
   currentCwd = state.cwd;
   $("workspace-label").textContent = state.cwd;
+  updatePageTitle();
   busy = state.status !== "idle";
   $("output").replaceChildren();
   live.clear();
@@ -1275,8 +1460,14 @@ $("login").onsubmit = async (e) => {
     if (sessionId) {
       try {
         state = await request("session.attach", { sessionId });
-      } catch {
-        sessionId = undefined;
+      } catch (e) {
+        if (currentCwd) {
+          saveView();
+          const draft = views.get(sessionId);
+          state = await request("session.create", { cwd: currentCwd });
+          views.set(state.sessionId, draft);
+          error(`原会话无法恢复，已在原工作空间新建会话并保留草稿：${e.message}`);
+        } else sessionId = undefined;
       }
     }
     if (!state) {
@@ -1373,7 +1564,7 @@ $("composer").onsubmit = async (e) => {
   const files = [...contextFiles], skill = selectedSkill, sentImages = [...images];
   const body = [draft.trim(), files.length ? `工作空间引用（按需读取；文件夹不代表已读取全部内容）：\n${files.map((file) => `- ${file.directory ? "文件夹" : "文件"}：${JSON.stringify(file.path)}`).join("\n")}` : ""].filter(Boolean).join("\n\n");
   const text = skill ? `/skill:${skill} ${body}` : body;
-  if ((!draft.trim() && !skill && !sentImages.length && !files.length) || imageLoading || changing || !connected) return;
+  if ((!draft.trim() && !skill && !sentImages.length && !files.length) || imageLoading || changing || sessionMissing || !connected) return;
   closeCompletion();
   if (sentImages.length > 4) return error(new Error("每条消息最多发送 4 张图片，请移除多余附件后分批发送"));
   const wasBusy = busy;
@@ -1669,11 +1860,50 @@ function refreshSessions() {
   });
   return refreshing;
 }
+// ponytail: 可见页面每 5 秒刷新后台状态；需要即时通知时再增加列表事件订阅。
+setInterval(() => {
+  if (connected && !changing && !draggedSession && !document.hidden) void refreshSessions().catch(error);
+}, 5000);
+function updatePageTitle() {
+  const workspace = currentCwd.replaceAll("\\", "/").replace(/\/$/, "").split("/").pop() || currentCwd;
+  document.title = `${$("session-title").textContent} · ${workspace} — Axiom`;
+}
 async function updateSessions() {
-  allSessions = await request("sessions.list");
-  const active = allSessions.find((s) => s.id === sessionId);
+  const sessions = await request("sessions.list");
+  const listState = (items) => JSON.stringify(items.map(({ id, title, cwd, status, updatedAt }) => ({ id, title, cwd, status, day: new Date(updatedAt).toDateString() })));
+  const active = sessions.find((s) => s.id === sessionId);
+  if (!active && sessionId && connected && !changing) {
+    allSessions = sessions;
+    await recoverMissingSession();
+    return;
+  }
+  if (listState(sessions) === listState(allSessions)) return;
+  allSessions = sessions;
   if (active) $("session-title").textContent = active.title;
+  updatePageTitle();
   renderSessions();
+}
+async function recoverMissingSession() {
+  sessionMissing = true;
+  saveView();
+  const draft = views.get(sessionId);
+  const cwd = currentCwd;
+  changing = true;
+  controls();
+  try {
+    // 不把旧草稿塞入另一条已有会话；独立新建，且不自动发送。
+    const state = await request("session.create", { cwd });
+    views.set(state.sessionId, draft);
+    snapshot(state);
+    error("原会话已在其他页面删除，已在原工作空间新建会话并保留草稿，尚未发送。");
+    allSessions = await request("sessions.list");
+  } catch (e) {
+    error(`原会话已删除，草稿仍保留。请新建会话或切换工作空间：${e.message}`);
+  } finally {
+    changing = false;
+    renderSessions();
+    controls();
+  }
 }
 async function switchSession(action) {
   if (changing || !connected) return;
@@ -1683,6 +1913,7 @@ async function switchSession(action) {
   controls();
   try {
     snapshot(await action());
+    renderSessions();
     if (mobile.matches) sidebar(false);
     await refreshSessions();
   } catch (e) {
@@ -1701,8 +1932,7 @@ function renderSessions() {
   today.setHours(0, 0, 0, 0);
   const matched = allSessions.filter(
     (s) =>
-      s.cwd === $("workspace-label").textContent &&
-      s.title.toLowerCase().includes(query),
+      `${s.title} ${s.cwd}`.toLowerCase().includes(query),
   );
   const rank = (s) => {
     const at = sessionOrder.indexOf(s.id);
@@ -1762,19 +1992,20 @@ function renderSessions() {
       e.preventDefault();
       e.stopPropagation();
       row.classList.remove("session-reorder-target");
-      // ponytail: 全局顺序一次性物化，搜索/分组下拖动也不破坏其他工作区顺序
-      const ids = allSessions.map((item) => item.id).filter((id) => id !== draggedSession);
-      const at = ids.indexOf(s.id);
-      ids.splice(at === -1 ? ids.length : at, 0, draggedSession);
-      sessionOrder = ids;
-      try { localStorage.setItem("axiom.sessionOrder", JSON.stringify(sessionOrder)); }
-      catch { error("无法保存排序，刷新后可能丢失"); }
-      renderSessions();
+      const moving = draggedSession;
+      void changeSessionPreference("axiom.sessionOrder", (saved) => {
+        const liveIds = allSessions.map((item) => item.id);
+        const ids = [...new Set([...saved, ...liveIds])].filter((id) => id !== moving && liveIds.includes(id));
+        const at = ids.indexOf(s.id);
+        ids.splice(at === -1 ? ids.length : at, 0, moving);
+        return ids;
+      });
     };
     const actions = document.createElement("div");
     actions.className = "session-actions";
     for (const [kind, label, path] of [
       ["hide", hidden ? "恢复会话" : "完成并隐藏", hidden ? 'M12 20V4M5 11l7-7 7 7' : 'M5 12l4 4L19 6'],
+      ["open", "在新标签页打开", 'M14 3h7v7M21 3l-10 10M10 3H3v18h18v-7'],
       ["rename", "重命名", 'M16 3l5 5L8 21H3v-5L16 3zM13 6l5 5M3 16l5 5'],
       ["delete", "删除会话", 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7'],
     ]) {
@@ -1783,24 +2014,53 @@ function renderSessions() {
       action.className = `session-${kind}`;
       action.title = label;
       action.setAttribute("aria-label", `${label}：${s.title}`);
-      if (kind !== "hide") action.setAttribute("aria-haspopup", "dialog");
+      if (["rename", "delete"].includes(kind)) action.setAttribute("aria-haspopup", "dialog");
       action.disabled = kind !== "hide" && (!connected || changing);
       action.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
-      action.onclick = () => kind === "hide" ? setSessionHidden(s.id, !hidden) : openSessionAction(kind, s);
+      action.onclick = () => kind === "open"
+        ? window.open(`/#${new URLSearchParams({ session: s.id })}`, "_blank", "noopener")
+        : kind === "hide" ? setSessionHidden(s.id, !hidden) : openSessionAction(kind, s);
       actions.append(action);
     }
     row.append(button, actions);
     (hidden ? hiddenFragment : fragment).append(row);
   };
-  for (const s of idle) addRow(s);
-  if (active.length) {
+  const workspaces = [...new Set(allSessions.map((s) => s.cwd))];
+  const heading = (cwd, target) => {
     const label = document.createElement("p");
-    label.className = "session-group";
-    label.textContent = "待处理";
-    fragment.append(label);
-    for (const s of active) addRow(s);
+    label.className = "session-group workspace-group";
+    label.textContent = cwd.replaceAll("\\", "/").replace(/\/$/, "").split("/").pop() || cwd;
+    label.title = cwd;
+    label.dataset.current = String(cwd === currentCwd);
+    const running = allSessions.filter((s) => s.cwd === cwd && s.status !== "idle").length;
+    if (running) label.append(document.createTextNode(` · ${running} 运行中`));
+    const path = document.createElement("small");
+    path.textContent = cwd;
+    label.append(path);
+    target.append(label);
+  };
+  for (const cwd of workspaces) {
+    const visible = idle.filter((s) => s.cwd === cwd);
+    const running = active.filter((s) => s.cwd === cwd);
+    const hidden = done.filter((s) => s.cwd === cwd);
+    if (visible.length || running.length) {
+      heading(cwd, fragment);
+      group = undefined;
+      for (const s of visible) addRow(s);
+      if (running.length) {
+        const label = document.createElement("p");
+        label.className = "session-group";
+        label.textContent = "待处理";
+        fragment.append(label);
+        group = "今天";
+        for (const s of running) addRow(s);
+      }
+    }
+    if (hidden.length) {
+      heading(cwd, hiddenFragment);
+      for (const s of hidden) addRow(s);
+    }
   }
-  for (const s of done) addRow(s);
   $("hidden-session-summary").textContent = `已完成`;
   $("hidden-sessions").replaceChildren(hiddenFragment);
   if (!fragment.childNodes.length) {

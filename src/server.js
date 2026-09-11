@@ -182,6 +182,9 @@ export function createServerApp(sessions, service = {}) {
               break;
             case "session.close":
               await sessions.remove(request.sessionId);
+              for (const client of wss.clients)
+                if (client !== ws && client.readyState === WebSocket.OPEN)
+                  client.send(JSON.stringify({ type: "session.deleted", sessionId: request.sessionId }));
               break;
             case "prompt":
               data = {
