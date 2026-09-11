@@ -26,6 +26,8 @@ async function bootPage(url, { hash, session, local } = {}) {
   const dom = new JSDOM(html, { url: hash ? `${url}#${hash}` : url, runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   const $ = (id) => window.document.getElementById(id);
+  window.HTMLDialogElement.prototype.close = function () { this.open = false; };
+  window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
   if (session) window.sessionStorage.setItem("axiom.session", session);
   if (local) window.localStorage.setItem("axiom.session", local);
   window.matchMedia = () => ({ matches: true });
@@ -55,7 +57,11 @@ async function bootPage(url, { hash, session, local } = {}) {
             if (!attached) return this.receive({ type: "response", id: req.id, ok: false, error: "会话不存在" });
             data = attached; break;
           }
-          case "sessions.list": data = [...STATES.values()].map((s) => ({ ...s, updatedAt: Date.now() })); break;
+          case "sessions.list": data = [...STATES.values()].map((s) => ({ ...s, id: s.sessionId, updatedAt: Date.now() })); break;
+          case "session.create":
+            data = state("recovered", "恢复的会话", req.cwd);
+            STATES.set(data.sessionId, data);
+            break;
           case "session.presets.list": data = { presets: [] }; break;
           default: data = {};
         }
@@ -66,7 +72,7 @@ async function bootPage(url, { hash, session, local } = {}) {
   window.eval(`${contrastSource}\n${pickerSource}\n${appSource}`);
   const drain = async () => { for (let i = 0; i < 6; i++) await new Promise(setImmediate); };
   const connect = async () => { sockets.at(-1).open(); await drain(); };
-  return { dom, window, $, requests, connect };
+  return { dom, window, $, requests, connect, drain, sockets };
 }
 
 const attachCalls = (requests) => requests.filter((r) => r.type === "session.attach").map((r) => r.sessionId);
@@ -133,5 +139,74 @@ test("刷新恢复：丢掉 hash 后重跑页面脚本，由 sessionStorage 恢�
     assert.equal(page.$("session-title").textContent, "会话A");
     assert.equal(page.window.location.hash, "#session=s-a", "恢复后 hash 重新写回");
     assert.equal(page.window.localStorage.getItem("axiom.session"), "s-legacy");
+  } finally { page.dom.window.close(); }
+});
+
+
+test("另一页删除当前会话：立即禁发，在原目录恢复草稿且不自动发送", async () => {
+  const page = await bootPage("http://localhost/", { hash: "session=s-a" });
+  const original = STATES.get("s-a");
+  try {
+    await page.connect();
+    page.$("prompt").value = "不要丢掉这份草稿";
+    STATES.delete("s-a");
+    page.sockets[0].receive({ type: "session.deleted", sessionId: "s-a" });
+    assert.equal(page.$("send").disabled, true);
+    await page.drain();
+    assert.equal(page.$("workspace-label").textContent, "C:\\wa");
+    assert.equal(page.$("prompt").value, "不要丢掉这份草稿");
+    assert.equal(page.window.location.hash, "#session=recovered");
+    assert.match(page.$("error").textContent, /保留草稿/);
+    assert.equal(page.requests.filter((r) => r.type === "session.create").length, 1);
+    assert.equal(page.requests.some((r) => r.type === "prompt"), false);
+  } finally { STATES.set("s-a", original); STATES.delete("recovered"); page.dom.window.close(); }
+});
+
+test("漏掉删除通知时列表刷新也会恢复，且不会卡在刷新锁内", async () => {
+  const page = await bootPage("http://localhost/", { hash: "session=s-a" });
+  const original = STATES.get("s-a");
+  try {
+    await page.connect();
+    page.$("prompt").value = "轮询恢复草稿";
+    STATES.delete("s-a");
+    await page.window.eval("refreshSessions()");
+    assert.equal(page.window.location.hash, "#session=recovered");
+    assert.equal(page.$("prompt").value, "轮询恢复草稿");
+    await page.window.eval("refreshSessions()");
+    assert.equal(page.requests.filter((r) => r.type === "session.create").length, 1);
+  } finally { STATES.set("s-a", original); STATES.delete("recovered"); page.dom.window.close(); }
+});
+
+test("storage 同步隐藏与排序，不切换当前会话；本地更新合并最新存储", async () => {
+  const page = await bootPage("http://localhost/", { hash: "session=s-a" });
+  try {
+    await page.connect();
+    const emit = (key, value) => {
+      page.window.localStorage.setItem(key, JSON.stringify(value));
+      page.window.dispatchEvent(new page.window.StorageEvent("storage", { key }));
+    };
+    emit("axiom.hiddenSessions", ["s-b"]);
+    assert.match(page.$("hidden-sessions").textContent, /会话B/);
+    assert.equal(page.window.location.hash, "#session=s-a");
+    // 未收到另一页的 storage 事件时，写入也必须读取最新状态。
+    page.window.localStorage.setItem("axiom.hiddenSessions", JSON.stringify(["s-b", "s-legacy"]));
+    await page.window.eval('setSessionHidden("s-a", true)');
+    assert.deepEqual(JSON.parse(page.window.localStorage.getItem("axiom.hiddenSessions")), ["s-b", "s-legacy", "s-a"]);
+    emit("axiom.hiddenSessions", []);
+    emit("axiom.sessionOrder", ["s-b", "s-a"]);
+    await page.window.eval('changeSessionPreference("axiom.sessionOrder", (ids) => [...ids, "s-legacy"])');
+    assert.deepEqual(JSON.parse(page.window.localStorage.getItem("axiom.sessionOrder")), ["s-b", "s-a", "s-legacy"]);
+    page.window.localStorage.clear();
+    page.window.dispatchEvent(new page.window.StorageEvent("storage", { key: null }));
+    assert.equal(page.$("hidden-sessions").children.length, 0);
+    let lock = Promise.resolve();
+    Object.defineProperty(page.window.navigator, "locks", { value: {
+      request: (_key, fn) => { const next = lock.then(fn); lock = next.catch(() => {}); return next; },
+    } });
+    await Promise.all([
+      page.window.eval('setSessionHidden("s-a", true)'),
+      page.window.eval('setSessionHidden("s-b", true)'),
+    ]);
+    assert.deepEqual(JSON.parse(page.window.localStorage.getItem("axiom.hiddenSessions")), ["s-a", "s-b"], "locked read-modify-write preserves concurrent edits");
   } finally { page.dom.window.close(); }
 });

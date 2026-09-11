@@ -67,6 +67,10 @@ test("parallel workspaces keep agents, subscriptions, cancellation and files iso
     await request(sockets[1], "cancel", { sessionId: states[1].sessionId });
     assert.equal(sessions.get(states[0].sessionId).status, "running");
     assert.equal(sessions.get(states[1].sessionId).status, "idle");
+    await request(sockets[1], "session.close", { sessionId: states[1].sessionId });
+    await request(sockets[0], "sessions.list");
+    assert.ok(events[0].some((e) => e.type === "session.deleted" && e.sessionId === states[1].sessionId));
+    assert.equal(events[1].some((e) => e.type === "session.deleted"), false, "deleting tab uses its existing local recovery flow");
   } finally {
     sockets.forEach((ws) => ws.terminate());
     await app.close();
