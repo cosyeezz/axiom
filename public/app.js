@@ -388,11 +388,8 @@ function paintCallGroup(group) {
   group.hidden = !rows.length;
   if (!rows.length) return;
   const active = rows.filter(row => ['running', 'waiting', 'thinking'].includes(row.dataset.state));
-  const task = [...tasks.values()].find(task => task.output.contains(group));
-  const ownerRunning = task ? ['starting', 'running'].includes(task.node.dataset.status) : busy;
-  // Tool gaps are not turn completion: latch an active group until its owner finishes.
-  const running = group.dataset.messageFolded !== 'true' &&
-    (!!active.length || (group.dataset.active === 'true' && ownerRunning));
+  // A later running group must not keep completed groups spinning.
+  const running = group.dataset.messageFolded !== 'true' && !!active.length;
   const label = running ? 'Working' : rows.some(row => row.dataset.state === 'stopped') ? 'Stopped' : 'Completed';
   const icon = running ? 'waiting' : label === 'Stopped' ? 'circle-stopped' : 'circle-done';
   const preview = group.firstElementChild.firstElementChild;
@@ -445,16 +442,28 @@ function refreshCallGroups(output) {
       }
     }
     if (item) {
-      // Thinking and tools share the disclosure; prose stays outside.
-      if (!isCall && (item.reasoning || item.tools.childElementCount) && item.heading.textContent !== '你') {
+      // Thinking precedes the answer; tool calls emitted after prose stay after it.
+      if (!isCall && item.reasoning && item.heading.textContent !== '你') {
+        if (!item.thoughtGroup) {
+          item.thoughtGroup = createCallGroup();
+          item.text.before(item.thoughtGroup);
+          item.thoughtGroup.lastElementChild.append(item.thinking);
+        }
+        paintCallGroup(item.thoughtGroup);
+        foldCallsBeforeMessage(item.thoughtGroup);
+      } else if (item.thoughtGroup) {
+        item.text.before(item.thinking);
+        item.thoughtGroup.remove();
+        item.thoughtGroup = undefined;
+      }
+      if (!isCall && item.tools.childElementCount && item.heading.textContent !== '你') {
         if (!item.callGroup) {
           item.callGroup = createCallGroup();
           item.text.after(item.callGroup);
-          item.callGroup.lastElementChild.append(item.thinking, item.tools);
+          item.callGroup.lastElementChild.append(item.tools);
         }
         paintCallGroup(item.callGroup);
       } else if (item.callGroup) {
-        item.text.before(item.thinking);
         item.text.after(item.tools);
         item.callGroup.remove();
         item.callGroup = undefined;
