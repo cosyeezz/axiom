@@ -3,7 +3,7 @@ import {
   ModelRuntime,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
-import { capabilityLoader, discoverCapabilities } from "./capabilities.js";
+import { capabilityLoader, discoverCapabilities, refreshProjectSkills } from "./capabilities.js";
 import { createBackgroundCompaction, entryIdFor, normalizeCompaction, summarizedEntryIds } from "./compaction.js";
 import { createAutoRetry } from "./retry.js";
 import { createJiti } from "jiti";
@@ -233,6 +233,10 @@ export async function createPiFactory({ cwd, model: requested }) {
         if (thinking) session.setThinkingLevel(thinking);
         compactionCtrl.setConfig(nextCompaction);
         return { model: key, thinking: session.thinkingLevel, levels, compaction: compactionCtrl.getConfig() };
+      },
+      async refreshSkills() {
+        const fresh = await discoverCapabilities(workspace, { loadAdapter: false });
+        return refreshProjectSkills(loader, capabilities, fresh.catalog, selection.capabilities == null);
       },
       config: () => ({
         model: `${session.model.provider}/${session.model.id}`,

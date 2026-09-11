@@ -91,6 +91,16 @@ export function resolveCapabilities(selection, catalog, { allowUnavailable = fal
   return result;
 }
 
+export function refreshProjectSkills(loader, selected, catalog, all = false) {
+  // 项目技能可由 composer 手动调用，不受旧会话的全局技能快照限制。
+  const available = catalog.skills.filter((skill) => all || skill.scope === "project" || selected.skills.includes(skill.id));
+  selected.skills = [...new Set([...selected.skills, ...available.map((skill) => skill.id)])];
+  loader.extendResources({
+    skillPaths: available.map((skill) => ({ path: skill.id, metadata: { source: skill.scope, scope: skill.scope, origin: "top-level" } })),
+  });
+  return loader.getSkills().skills.map(({ name, description }) => ({ name, description }));
+}
+
 export function capabilityLoader(resources, selection, customTools) {
   const { catalog, settingsManager, paths, adapter, mcpConfig, createMcpAdapter, cwd, agentDir } = resources;
   const selected = resolveCapabilities(selection, catalog);

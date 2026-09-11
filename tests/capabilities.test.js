@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, readFile, rm, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { discoverCapabilities, capabilityLoader, resolveCapabilities } from "../src/capabilities.js";
+import { discoverCapabilities, capabilityLoader, resolveCapabilities, refreshProjectSkills } from "../src/capabilities.js";
 import { command } from "../src/protocol.js";
 import { Sessions } from "../src/sessions.js";
 
@@ -158,4 +158,49 @@ test("main and delegated agents receive independent capability and model selecti
     await assert.rejects(sessions.create(process.cwd(), { subagentCapabilities: { ...child, mcp: ["unknown"] } }), /未知/);
     assert.equal(calls.length, before);
   } finally { await sessions.close(); }
+});
+
+test("runtime-added project skills appear via extendResources refresh, allowlist still filters", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-refresh-skills-"));
+  const agentDir = join(root, "agent"), cwd = join(root, "project");
+  try {
+    await mkdir(join(agentDir, "skills", "global-sample"), { recursive: true });
+    await mkdir(cwd, { recursive: true });
+    await writeFile(join(agentDir, "settings.json"), "{}");
+    await writeFile(join(agentDir, "skills", "global-sample", "SKILL.md"), "---\nname: global-sample\ndescription: Global\n---\nGlobal");
+    const resources = await discoverCapabilities(cwd, { agentDir, loadAdapter: false });
+    // 全部模式：loader 初始看不到运行中才写入的项目技能
+    const allLoader = capabilityLoader(resources, null, []).loader;
+    try {
+      await allLoader.reload();
+      assert.deepEqual(allLoader.getSkills().skills.map((s) => s.name), ["global-sample"]);
+      await mkdir(join(cwd, ".pi", "skills", "late"), { recursive: true });
+      await writeFile(join(cwd, ".pi", "skills", "late", "SKILL.md"), "---\nname: late\ndescription: Added while running\n---\nLate");
+      // 与 pi.js refreshSkills 相同的刷新路径：重新发现 → diff → extendResources
+      const fresh = await discoverCapabilities(cwd, { agentDir, loadAdapter: false });
+      const known = new Set(allLoader.getSkills().skills.map((s) => s.filePath));
+      const added = fresh.catalog.skills.filter((s) => !known.has(s.id));
+      assert.equal(added.length, 1);
+      allLoader.extendResources({ skillPaths: added.map((s) => ({ path: s.id, metadata: { source: s.scope, scope: s.scope, origin: "top-level" } })) });
+      assert(allLoader.getSkills().skills.some((s) => s.name === "late"), "全部模式刷新后应可见新项目技能");
+    } finally { allLoader.getExtensions().runtime.invalidate(); }
+    // 自定义 allowlist：同样的注入路径，新技能仍被 skillsOverride 过滤（不绕过 allowlist）
+    const custom = capabilityLoader(resources, { skills: [], plugins: [], mcp: [] }, []);
+    try {
+      await custom.loader.reload();
+      assert.deepEqual(custom.loader.getSkills().skills.map((s) => s.name), []);
+      const fresh = await discoverCapabilities(cwd, { agentDir, loadAdapter: false });
+      custom.loader.extendResources({ skillPaths: fresh.catalog.skills.map((s) => ({ path: s.id, metadata: { source: s.scope, scope: s.scope, origin: "top-level" } })) });
+      assert.deepEqual(custom.loader.getSkills().skills.map((s) => s.name), []);
+      const visible = refreshProjectSkills(custom.loader, custom.selected, fresh.catalog);
+      assert.deepEqual(visible.map((s) => s.name), ["late"], "composer can select project skills despite an old custom snapshot");
+      assert(!visible.some((s) => s.name === "global-sample"), "unselected global skills remain excluded");
+      assert.deepEqual(custom.selected.plugins, []);
+      assert.deepEqual(custom.selected.mcp, []);
+      refreshProjectSkills(custom.loader, custom.selected, fresh.catalog);
+      assert.equal(custom.selected.skills.length, 1, "repeated refresh does not duplicate skill IDs");
+    } finally { custom.loader.getExtensions().runtime.invalidate(); }
+    assert.equal(command.safeParse({ id: "1", type: "session.skills.refresh", sessionId: "s" }).success, true);
+    assert.equal(command.safeParse({ id: "1", type: "session.skills.refresh" }).success, false);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

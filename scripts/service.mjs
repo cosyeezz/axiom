@@ -1,30 +1,48 @@
 #!/usr/bin/env node
 import { fork, spawn } from "node:child_process";
 import { mkdirSync, openSync, existsSync, realpathSync } from "node:fs";
-import { rename, rm } from "node:fs/promises";
+import { rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { npmSpec } from "../src/update.js";
+import { npmSpec, commitFile, validateCommit } from "../src/update.js";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 let output = "inherit";
-export function run(command, args, cwd = root) {
+export function run(command, args, cwd = root, capture = false) {
   return new Promise((done, fail) => {
-    const child = spawn(command, args, { cwd, stdio: output, windowsHide: true });
+    const child = spawn(command, args, { cwd, stdio: capture ? ["ignore", "pipe", "pipe"] : output, windowsHide: true });
+    let stdout = "", stderr = "";
+    if (capture) {
+      child.stdout.setEncoding("utf8").on("data", (text) => { stdout += text; });
+      child.stderr.setEncoding("utf8").on("data", (text) => { stderr += text; });
+    }
     child.once("error", fail);
-    child.once("exit", (code) => code === 0 ? done() : fail(new Error(`${command} exited ${code}`)));
+    child.once("close", (code) => code === 0 ? done(stdout) : fail(new Error(`${command} exited ${code}${stderr ? `: ${stderr.trim()}` : ""}`)));
   });
 }
-// Windows 的 npm 是 .cmd 垫片，必须经 cmd 包装；参数以空格拼接，仅传固定字面量。AXIOM_NPM 可指定 npm 可执行文件（测试注入假 npm）
-const npmRun = (execute, args, cwd = root) => {
+// Windows 的 npm 是 .cmd 垫片，必须经 cmd 包装；参数仅用固定字面量和经过白名单校验的 SHA。AXIOM_NPM 可指定 npm 可执行文件（测试注入假 npm）
+const npmRun = (execute, args, cwd = root, capture = false) => {
   const npm = process.env.AXIOM_NPM || "npm";
   return process.platform === "win32"
-    ? execute(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `${npm} ${args.join(" ")}`], cwd)
-    : execute(npm, args, cwd);
+    ? execute(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `${npm} ${args.join(" ")}`], cwd, capture)
+    : execute(npm, args, cwd, capture);
 };
-// 检查更新 = 全局重装最新 master（含依赖）
-export const update = (execute = run) => npmRun(execute, ["install", "-g", npmSpec]);
+// 固定完整 SHA，避免同版本号/浮动分支导致 npm 复用旧包；成功后才记录提交。
+export async function update(sha, execute = run, cwd = root) {
+  sha = validateCommit(sha);
+  const runningRoot = realpathSync(cwd);
+  const verifyTarget = async () => {
+    const globalRoot = (await npmRun(execute, ["root", "-g"], cwd, true)).trim();
+    const target = join(globalRoot, "@myworkbench", "axiom");
+    if (!globalRoot || !existsSync(target) || realpathSync(target) !== runningRoot)
+      throw new Error(`npm 全局安装目录与当前服务不一致：目标 ${target}；当前 ${runningRoot}。请使用启动本服务的 Node/npm 环境更新。`);
+  };
+  await verifyTarget();
+  await npmRun(execute, ["install", "-g", `${npmSpec}#${sha}`], cwd);
+  await verifyTarget();
+  await writeFile(join(cwd, commitFile), `${sha}\n`);
+}
 
 export async function rebuild(cwd = root, execute = run) {
   const modules = join(cwd, "node_modules"), backup = join(cwd, ".node_modules-backup");
@@ -77,11 +95,17 @@ export async function supervise() {
       // Allow the WebSocket acknowledgment to flush before closing the worker.
       setTimeout(async () => {
         try {
-          // 更新先装后停：安装期间旧子进程继续服务，装失败服务不中断（原因见 service.log）；重建需先停再换依赖。
+          // 更新先装后停；npm 原地安装非原子，失败后的重启是尽力恢复，不保证旧文件完整。
           if (message.mode === "update") {
             // ponytail: 只更新代码与依赖，监督进程自身仍是旧代码，子进程即刻生效；完全换血等下次登录自启
-            try { await update(run); }
-            catch (cause) { console.error(`更新失败：${cause.message}`); return; }
+            try { await update(message.sha, run); }
+            catch (cause) {
+              console.error(`更新失败：${cause.message}`);
+              // 重启旧服务以解除已接受更新时的 stopping 状态，并把失败原因带回页面。
+              await stopChild();
+              if (!stopping) start(`更新失败：${cause.message}`);
+              return;
+            }
           }
           await stopChild();
           let error = "";

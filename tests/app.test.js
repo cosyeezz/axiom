@@ -155,6 +155,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
               entries: req.sessionId ? (req.path ? [{ name: "app.js", path: "src/app.js", directory: false }] : [{ name: "src", path: "src", directory: true }]) : [{ name: "pi.jsonl", path: "C:\\pi\\sessions\\pi.jsonl", directory: false }],
               nextOffset: null, breadcrumbs: [], locations: [] };
             break;
+          case "session.skills.refresh":
+            data = { skills: [...config.skills, { name: "project-new", description: "新增项目技能" }] };
+            break;
           case "workspace.reveal": data = { opened: true }; break;
           case "workspace.browse":
             data = { path: req.path, entries: req.path ? [{ name: "app.js", path: "src/app.js", directory: false }] : [{ name: "src", path: "src", directory: true }] };
@@ -423,8 +426,35 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     states.pop();
     await window.eval("refreshSessions()");
     lastCreation = undefined;
+    const openContext = () => {
+      const event = new window.Event("beforetoggle");
+      event.newState = "open";
+      $("context-menu").dispatchEvent(event);
+    };
+    openContext();
+    assert.equal($("context-picker").hidden, true);
     window.document.querySelector('[data-context="skill"]').click();
-    assert.equal($("context-picker").open, true);
+    assert.equal($("context-picker").tagName, "SECTION", "skills stay inside the plus menu, not a modal");
+    assert.equal($("context-picker").parentElement, $("context-menu"));
+    assert.equal($("context-picker").hidden, false);
+    assert.equal(window.document.querySelector('[data-context="file"]').hidden, false, "category options stay beside the skill list");
+    assert.equal(window.document.querySelector('[data-context="skill"]').getAttribute("aria-expanded"), "true");
+    $("context-back").click();
+    assert.equal($("context-picker").hidden, true);
+    assert.equal(window.document.activeElement.dataset.context, "skill");
+    window.document.querySelector('[data-context="skill"]').click();
+    openContext();
+    assert.equal($("context-picker").hidden, true, "reopening plus resets the menu");
+    window.document.querySelector('[data-context="skill"]').click();
+    await settle();
+    assert.match($("context-results").textContent, /project-new/, "opening skills discovers new project skills");
+    $("context-search").value = "新增项目技能";
+    $("context-search").dispatchEvent(new window.Event("input"));
+    $("context-results").firstChild.click();
+    assert.match($("context-chips").textContent, /project-new/, "refreshed skills are selectable");
+    $("context-chips").firstChild.click();
+    window.document.querySelector('[data-context="skill"]').click();
+    await settle();
     $("context-search").value = "代码导航";
     $("context-search").dispatchEvent(new window.Event("input"));
     assert.equal($("context-results").children.length, 1);

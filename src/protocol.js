@@ -140,6 +140,8 @@ export const command = z.discriminatedUnion("type", [
   // 导入 pi 的 .jsonl 会话文件：服务端路径，复制进本实例存储后作为新会话打开。
   z.object({ id, type: z.literal("session.import"), path: z.string().trim().min(1).max(4096) }).strict(),
   z.object({ id, type: z.literal("session.attach"), sessionId: id }).strict(),
+  // 运行中重新发现项目技能（composer 打开技能列表时调用）；返回 { skills: [{name, description}] }。
+  z.object({ id, type: z.literal("session.skills.refresh"), sessionId: id }).strict(),
   z.object({ id, type: z.literal("session.close"), sessionId: id }).strict(),
   z
     .object({

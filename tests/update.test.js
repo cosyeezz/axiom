@@ -1,27 +1,37 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkUpdate, npmSpec } from "../src/update.js";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { checkUpdate, commitFile } from "../src/update.js";
 
-test("npm 安装实例按提交 SHA 比对：master 前进即发现更新", async () => {
-  const fetchJson = async () => ({ sha: "b".repeat(40) });
-  const newer = await checkUpdate({ version: "0.1.1", sha: "a".repeat(40), fetchJson });
-  assert.deepEqual(newer, { available: true, local: "0.1.1 (aaaaaaa)", remote: "bbbbbbb" });
-  const same = await checkUpdate({ version: "0.1.1", sha: "b".repeat(40), fetchJson });
-  assert.equal(same.available, false);
-  assert.equal(npmSpec, "github:cosyeezz/axiom");
+const old = "a".repeat(40), latest = "b".repeat(40);
+
+test("真实安装布局：无 _resolved、版本不变也更新，记录提交后仅新 master 触发", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-update-"));
+  try {
+    await writeFile(join(root, "package.json"), JSON.stringify({ version: "0.1.4" }));
+    const fetchJson = async (url) => {
+      assert.equal(url, "https://api.github.com/repos/cosyeezz/axiom/commits/master");
+      return { sha: latest };
+    };
+    const check = () => checkUpdate({ root, fetchJson });
+    assert.deepEqual(await check(), {
+      available: true, local: "0.1.4 (提交未知)", remote: "bbbbbbb", sha: latest,
+    });
+    await writeFile(join(root, commitFile), old);
+    assert.equal((await check()).available, true);
+    await writeFile(join(root, commitFile), latest);
+    assert.equal((await check()).available, false);
+    await writeFile(join(root, commitFile), "broken");
+    assert.equal((await check()).available, true);
+    await rm(join(root, commitFile));
+    await writeFile(join(root, "package.json"), JSON.stringify({ version: "0.1.4", _resolved: `git+https://github.com/cosyeezz/axiom.git#${latest}` }));
+    assert.equal((await check()).available, false);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("无提交记录时退回版本号比对：远端更新则可用，相同或更旧则不可用", async () => {
-  const fetchJson = async () => ({ version: "0.2.0" });
-  assert.deepEqual(await checkUpdate({ version: "0.1.0", fetchJson }),
-    { available: true, local: "0.1.0", remote: "0.2.0" });
-  assert.equal((await checkUpdate({ version: "0.2.0", fetchJson })).available, false);
-  assert.equal((await checkUpdate({ version: "0.3.0", fetchJson })).available, false);
-});
-
-test("checkUpdate 非 2xx 响应抛出错误", async () => {
-  await assert.rejects(
-    checkUpdate({ version: "0.1.0", fetchJson: async () => { throw new Error("GitHub 请求失败 404"); } }),
-    /404/,
-  );
+test("GitHub 失败或返回非法 SHA 时不伪报已是最新", async () => {
+  await assert.rejects(checkUpdate({ fetchJson: async () => { throw new Error("GitHub 请求失败 404"); } }), /404/);
+  await assert.rejects(checkUpdate({ fetchJson: async () => ({ sha: "master & echo bad" }) }), /无效/);
 });

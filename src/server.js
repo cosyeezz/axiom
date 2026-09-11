@@ -180,6 +180,9 @@ export function createServerApp(sessions, service = {}) {
             case "session.attach":
               data = attach(request.sessionId);
               break;
+            case "session.skills.refresh":
+              data = { skills: await sessions.refreshSkills(request.sessionId) };
+              break;
             case "session.close":
               await sessions.remove(request.sessionId);
               for (const client of wss.clients)

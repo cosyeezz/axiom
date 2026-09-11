@@ -1385,7 +1385,7 @@ function snapshot(state) {
   selectedSkill = view?.selectedSkill || "";
   filePicker.close();
   closeCompletion();
-  $("context-picker").close();
+  $("context-menu").hidePopover?.();
   follow = view?.follow ?? true;
   $("latest").hidden = follow;
   scrollFrame = requestAnimationFrame(() => {
@@ -2146,28 +2146,68 @@ function renderContextResults() {
   const shown = (config?.skills || []).filter((entry) => `${entry.name} ${entry.description || ""}`.toLocaleLowerCase().includes(query));
   $("context-results").replaceChildren(...shown.map((entry) => {
     const button = document.createElement("button"); button.type = "button";
-    const text = document.createElement("span"); text.textContent = entry.name;
+    const text = document.createElement("span");
+    const name = document.createElement("span"); name.textContent = entry.name;
     const description = document.createElement("small"); description.textContent = entry.description || "Skill";
-    text.append(description);
+    button.title = `${entry.name}\n${description.textContent}`;
+    text.append(name, description);
     button.append(contextIcon("skill"), text);
     button.onclick = () => {
       if (!connected || changing) return;
       $("composer-skill").value = entry.name; $("composer-skill").onchange();
-      $("context-picker").close();
+      $("context-menu").hidePopover?.();
     };
     return button;
   }));
   $("context-error").textContent = shown.length ? "" : "没有匹配项";
 }
-for (const button of document.querySelectorAll("[data-context]")) button.onclick = async () => {
-  $("context-menu").hidePopover?.();
+function showContextSkills(show) {
+  $("context-picker").hidden = !show;
+  document.querySelector('[data-context="skill"]').setAttribute("aria-expanded", String(show));
+  if (show) positionContextSkills();
+}
+function positionContextSkills() {
+  const menu = $("context-menu").getBoundingClientRect(), picker = $("context-picker");
+  const width = picker.getBoundingClientRect().width;
+  const right = window.innerWidth - menu.right - 8, left = menu.left - 8;
+  const beside = Math.max(right, left) >= width;
+  picker.style.left = `${beside ? (right >= width ? menu.right : menu.left - width) : Math.max(8, Math.min(menu.left, window.innerWidth - width - 8))}px`;
+  picker.style.maxHeight = `${beside ? window.innerHeight - 16 : Math.max(80, menu.top - 8)}px`;
+  const height = picker.getBoundingClientRect().height;
+  picker.style.top = `${Math.max(8, beside ? Math.min(menu.top, window.innerHeight - height - 8) : menu.top - height)}px`;
+}
+$("context-menu").addEventListener("beforetoggle", (event) => {
+  if (event.newState !== "open") return;
+  showContextSkills(false);
+  const rect = $("add-context").getBoundingClientRect();
+  $("context-menu").style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 192))}px`;
+  $("context-menu").style.bottom = `${window.innerHeight - rect.top + 8}px`;
+  $("context-menu").style.maxHeight = `${Math.max(80, rect.top - 16)}px`;
+});
+for (const button of document.querySelectorAll("[data-context]")) button.onclick = async (event) => {
   const mode = button.dataset.context;
   if (mode === "skill") {
-    $("context-title").textContent = "添加 Skill";
-    $("context-search").value = ""; $("context-picker").showModal();
-    renderContextResults(); $("context-search").focus();
+    showContextSkills(true);
+    $("context-search").value = "";
+    renderContextResults(); positionContextSkills();
+    if (event?.type !== "pointerenter") $("context-search").focus();
+    const target = sessionId;
+    try {
+      const { skills } = await request("session.skills.refresh", { sessionId: target });
+      if (target !== sessionId) return;
+      config.skills = skills;
+      options($("composer-skill"), [["", skills.length ? "选择 Skill（本次发送加载）" : "此会话无可用 Skill"], ...skills.map((skill) => [skill.name, skill.name])]);
+      for (const option of $("composer-skill").options)
+        option.title = skills.find((skill) => skill.name === option.value)?.description || "";
+      controls();
+      renderContextResults();
+      if (!$("context-picker").hidden) positionContextSkills();
+    } catch (error) {
+      if (target === sessionId) $("context-error").textContent = `刷新 Skill 失败：${error.message}`;
+    }
     return;
   }
+  $("context-menu").hidePopover?.();
   const target = sessionId;
   const entry = await filePicker.open({ title: mode === "file" ? "添加工作空间文件" : "添加工作空间文件夹", mode, sessionId: target, path: "" });
   if (!entry || target !== sessionId || !connected || changing) return;
@@ -2175,8 +2215,29 @@ for (const button of document.querySelectorAll("[data-context]")) button.onclick
   if (!contextFiles.some((file) => file.path === entry.path)) contextFiles.push(entry);
   controls(); $("prompt").focus();
 };
-$("context-search").oninput = renderContextResults;
-$("context-close").onclick = () => $("context-picker").close();
+const skillTrigger = document.querySelector('[data-context="skill"]');
+skillTrigger.removeAttribute("title");
+skillTrigger.setAttribute("aria-controls", "context-picker");
+skillTrigger.onpointerenter = (event) => {
+  if (event.pointerType === "mouse" && $("context-picker").hidden) skillTrigger.onclick(event);
+};
+skillTrigger.onkeydown = (event) => {
+  if (event.key === "ArrowRight") { event.preventDefault(); skillTrigger.onclick(event); }
+};
+$("context-picker").onkeydown = (event) => {
+  if (event.key === "Escape" || (event.key === "ArrowLeft" && event.target.tagName !== "INPUT")) {
+    event.preventDefault(); event.stopPropagation(); showContextSkills(false); skillTrigger.focus();
+  }
+};
+$("context-search").oninput = () => { renderContextResults(); positionContextSkills(); };
+$("context-back").onclick = () => {
+  showContextSkills(false);
+  document.querySelector('[data-context="skill"]').focus();
+};
+$("context-close").onclick = () => {
+  $("context-menu").hidePopover?.();
+  $("add-context").focus();
+};
 $("composer-skill").onchange = () => {
   selectedSkill = $("composer-skill").value;
   resizePrompt();

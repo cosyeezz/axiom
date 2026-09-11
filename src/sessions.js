@@ -663,6 +663,13 @@ export class Sessions {
     };
   }
 
+  // 运行中刷新会话可见技能（composer 下拉数据源）；旧 factory 无此能力时降级为当前列表。
+  async refreshSkills(id) {
+    const item = this.get(id);
+    if (!item.agent.refreshSkills) return item.agent.config?.()?.skills ?? [];
+    return item.agent.refreshSkills();
+  }
+
   snapshot(id) {
     const item = this.get(id);
     return structuredClone({

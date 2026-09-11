@@ -241,3 +241,14 @@
 - 风险：把会话配置完整保存成预设会将临时信任一起复用，换目录后可能加载未授权插件。
 - 处理：预设使用 selection schema 去除 trustProject/useDefaults；public/app.js 启动检查目标目录能力，未信任或失效选择打开确认表单，目录改变重置确认；名称使用 textContent，空集合不变成全部。
 - 防再犯：预设只是配置，不是授权；普通按钮不发送 trustProject。通过 tests/presets.test.js 和 tests/app.test.js 验证保存、启动与确认路径。
+
+### 2026-09-11 npm 安装缺少 _resolved 导致 master 更新漏检
+- 症状：master 有新提交但版本号不变时提示已是最新；本机 npm 11 全局包 package.json 没有 _resolved。
+- 根因：更新依赖 npm 未保证保留的提交字段，缺失后退回版本号；测试仅注入 SHA，未覆盖真实安装布局。
+- 修复：src/update.js 始终检查 master SHA，无本地提交记录时必须更新；src/main.js 传完整 SHA，scripts/service.mjs 按 SHA 安装成功后写 .axiom-commit。安装失败尝试重启并报告错误，避免旧服务一直 stopping。
+- 防再犯：tests/update.test.js 用实际临时 package.json（无 _resolved、版本不变）检查；tests/service.test.js 验证精确 SHA、成功才记提交、非法 SHA 不执行、失败反馈。首次迁移需完整重启守护进程；安装失败不保证 npm 原地修改可回滚。
+
+### 2026-09-11 npm 更新目标必须与运行目录一致
+- 风险：多 Node/npm prefix 下全局安装成功但代码落在另一个目录，旧目录写入新 SHA 后永久误报已最新。
+- 修复：scripts/service.mjs 安装前后查询同一个 npm root -g，realpath 比对目标包目录与运行根目录；不同就拒绝，不写提交记录。
+- 防再犯：tests/service.test.js 验证安装前错位不执行安装、安装后错位保留旧 SHA、目录别名允许同一真实路径；npm 安装仍非原子，不承诺失败完整回滚。
