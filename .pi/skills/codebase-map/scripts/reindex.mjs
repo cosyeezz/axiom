@@ -18,6 +18,7 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  */
 const MODULE_INFO = {
   "src/inline-images.js": "模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列",
+  "scripts/dev.mjs": "开发入口：DEV 标识、4320 端口与独立数据目录",
   "scripts/service.mjs": "服务守护：IPC 快速/重建重启与安装构建失败反馈",
   "scripts/autostart.mjs": "Windows/macOS/Linux 当前用户登录自动启动安装/卸载",
   "scripts/install.mjs": "一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器",

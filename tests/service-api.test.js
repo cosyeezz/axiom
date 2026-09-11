@@ -7,9 +7,10 @@ import { createServerApp } from "../src/server.js";
 test("service restart validates mode, rejects active work and duplicate requests", async () => {
   let status = "running";
   const modes = [];
-  const app = createServerApp({ list: () => [{ status }], close: async () => {} }, {
+  const service = {
     restart: async (mode) => modes.push(mode), error: "previous build failed", importDir: "C:\\pi\\sessions",
-  });
+  };
+  const app = createServerApp({ list: () => [{ status }], close: async () => {} }, service);
   app.server.listen(0, "127.0.0.1");
   await once(app.server, "listening");
   const ws = new WebSocket(`ws://127.0.0.1:${app.server.address().port}/ws`, ["axiom"]);
@@ -21,6 +22,11 @@ test("service restart validates mode, rejects active work and duplicate requests
   };
   try {
     assert.deepEqual((await request("service.status")).data, { managed: true, error: "previous build failed", version: "", importDir: "C:\\pi\\sessions" });
+    service.dev = true;
+    service.sourceDir = "/development/axiom";
+    const devStatus = (await request("service.status")).data;
+    assert.equal(devStatus.dev, true);
+    assert.equal(devStatus.sourceDir, service.sourceDir);
     assert.equal((await request("service.restart", { mode: "shell" })).ok, false);
     assert.match((await request("service.restart", { mode: "quick" })).error, /正在运行/);
     assert.equal(modes.length, 0);

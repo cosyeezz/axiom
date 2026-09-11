@@ -197,7 +197,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
             data = { ...states[0], config: { ...config, model: selected.model || config.model, subagentModel: selected.subagentModel ?? null, capabilitySelection: selected.capabilities ?? null, subagentCapabilities: selected.subagentCapabilities ?? null } };
             break;
           case "service.status":
-            data = { managed: true, error: "", version: "9.9.9", importDir: "C:\\pi\\sessions" };
+            data = { managed: true, error: "", version: "9.9.9", importDir: "C:\\pi\\sessions", dev: true, sourceDir: "F:/Axiom" };
             break;
           case "service.restart":
             this.receive({ type: "response", id: req.id, ok: false, error: "请先停止正在运行的会话" });
@@ -300,6 +300,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     sockets[1].open();
     await settle();
     paint();
+    assert.equal($("service-dev").hidden, false);
+    assert.match($("service-dev").title, /F:\/Axiom/);
     assert.equal($("workspace").hidden, false);
     assert.equal(requests.filter((req) => req.type === "session.presets.list").length, 1, "connect fetches the preset list");
     assert.equal($("send").disabled, true);

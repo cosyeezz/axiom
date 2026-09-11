@@ -50,7 +50,7 @@ export async function supervise() {
   // 已有服务在跑就不起第二个守护进程（避免端口抢占与互相拉起）
   const alive = await fetch(`${address}/health`, { signal: AbortSignal.timeout(1500) }).then((r) => r.ok).catch(() => false);
   if (alive) { console.log(`服务已在运行：${address}`); return; }
-  const logDir = join(homedir(), ".axiom");
+  const logDir = process.env.AXIOM_HOME || join(homedir(), ".axiom");
   mkdirSync(logDir, { recursive: true });
   const log = openSync(join(logDir, "service.log"), "a");
   output = ["ignore", log, log];

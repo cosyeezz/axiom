@@ -2,6 +2,13 @@
 
 多智能体协作的可靠基础。独立 Node.js 服务，通过 Pi SDK 运行主 Agent，以 `delegate` 并行启动子 Agent、以 `read_result` 读取结果，通过 WebSocket 输出实时事件。
 
+## 本地开发与安装版分离
+
+- 源码目录运行 `npm run dev`：默认 `http://localhost:4320`，右上角显示 `DEV`，悬停或键盘聚焦可查看实际代码目录；会话和日志放在 `~/.axiom-dev`，不影响日常数据。
+- npm 全局安装版运行 `axiom`：默认 `http://localhost:4319`，不显示 DEV，继续使用 `~/.axiom`。
+- 开发入口默认以当前源码为工作空间，不读取 `.env.local` 中的旧工作空间值；可在启动前显式设置 `AXIOM_PORT`、`AXIOM_CWD`、`AXIOM_HOME` 覆盖默认值。
+- 修改后端后重启开发服务，修改前端后刷新页面。开发测试通过后推送 master，Mac 安装版通过「检查更新」安装最新 master 并重启；不要直接修改全局安装目录，也不要把开发服务注册成日常自启动。
+
 ## 启动
 
 需要 Node.js >=22.5，以及已配置好凭据和所需扩展包的 Pi。未修改默认新会话配置时，主 Agent 和子 Agent 加载本机 Pi 已启用的 Skills、插件、MCP、提示词模板及目录上下文；基础编码工具为 read/bash/edit/write，主 Agent 额外获得 delegate/read_result/append 三个协作工具。默认能力与终端持久配置对齐，不继承另一终端进程的临时参数、会话状态或已执行的模式命令。纯 TUI 组件和终端快捷键不适用于网页；当前无插件交互 UI 桥，需要审批的 MCP 调用按适配器规则拒绝，不自动批准。

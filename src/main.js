@@ -16,7 +16,7 @@ const cwd = resolve(process.env.AXIOM_CWD || process.cwd());
 if (!(await stat(cwd)).isDirectory())
   throw new Error("AXIOM_CWD must be a directory");
 const factory = await createPiFactory({ cwd, model: process.env.AXIOM_MODEL });
-const home = join(homedir(), ".axiom");
+const home = resolve(process.env.AXIOM_HOME || join(homedir(), ".axiom"));
 await mkdir(home, { recursive: true });
 try {
   await copyFile(join(getAgentDir(), "axiom", "defaults.json"), join(home, "defaults.json"), constants.COPYFILE_EXCL);
@@ -28,6 +28,8 @@ await sessions.loadDefaults();
 await sessions.load();
 const app = createServerApp(sessions, {
   error: process.env.AXIOM_SERVICE_ERROR,
+  dev: process.env.AXIOM_DEV === "1",
+  sourceDir: fileURLToPath(new URL("..", import.meta.url)),
   // pi 的会话目录：网页「导入 pi 会话」的默认浏览位置。
   importDir: join(getAgentDir(), "sessions"),
   version: JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8")).version,

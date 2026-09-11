@@ -244,6 +244,15 @@ h1 {
   color: var(--muted);
   white-space: nowrap;
 }
+#service-dev {
+  color: var(--accent-ink);
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
 #service-version {
   font-size: 12px;
   color: var(--muted);

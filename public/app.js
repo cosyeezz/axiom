@@ -1255,6 +1255,8 @@ $("login").onsubmit = async (e) => {
       };
     });
     const service = await request("service.status");
+    $("service-dev").hidden = service.dev !== true;
+    $("service-dev").title = service.dev ? `开发环境 · ${location.host}\n代码目录：${service.sourceDir || "未知"}` : "";
     serviceManaged = service.managed;
     serviceVersion = service.version || "";
     importDir = service.importDir || "";

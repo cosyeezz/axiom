@@ -30,6 +30,7 @@
   ],
   "scripts": {
     "start": "node scripts/service.mjs",
+    "dev": "node scripts/dev.mjs",
     "autostart:enable": "node scripts/autostart.mjs enable",
     "autostart:disable": "node scripts/autostart.mjs disable",
     "test": "node --test tests/*.test.js",
