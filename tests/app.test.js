@@ -245,6 +245,28 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
   };
   try {
     window.eval(`${contrastSource}\n${pickerSource}\n${source}`);
+    const copySelection = window.eval("copySelection");
+    $("prompt").value = "copy selected text";
+    $("prompt").setSelectionRange(5, 13);
+    await copySelection({ type: "pointerup", button: 0, target: $("prompt") });
+    assert.equal(copiedPath, "selected");
+    $("selection-copy").value = "off";
+    $("selection-copy").onchange();
+    assert.equal(window.localStorage.getItem("axiom.selectionCopy"), "off");
+    copiedPath = "unchanged";
+    await copySelection({ type: "pointerup", button: 0, target: $("prompt") });
+    assert.equal(copiedPath, "unchanged");
+    $("selection-copy").value = "on";
+    $("selection-copy").onchange();
+    await copySelection({ type: "keyup", key: "c", target: $("prompt") });
+    await copySelection({ type: "pointerup", button: 2, target: $("prompt") });
+    assert.equal(copiedPath, "unchanged", "clear shortcut and context menu do not copy");
+    const originalWriteText = window.navigator.clipboard.writeText;
+    window.navigator.clipboard.writeText = async () => { throw new Error("denied"); };
+    await copySelection({ type: "keyup", key: "Shift", target: $("prompt") });
+    assert.match($("error").textContent, /右键菜单复制/);
+    window.navigator.clipboard.writeText = originalWriteText;
+    $("prompt").value = "";
     sockets[0].close(); // Close before open: retry must not remain hidden.
     await settle();
     assert.equal($("login").hidden, false);

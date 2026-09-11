@@ -10,6 +10,20 @@
 - 验证：`npm test` 116 通过、1 原有跳过、0 失败；真实 Chromium 1440/390/320px 摘要分层、任务弹窗、进度位置、旋转和 reduced-motion 通过，无页面/CSP 错误。仓库无 build 脚本，采用现有测试和真实浏览器检查；未调用付费模型，提示词测试仅证明传参及保留规则，不证明摘要语义无损。委托两次被外部服务重启取消，核心代码由主任务直接完成。正式服务未由本任务重启。
 - 涉及 `src/{compaction,pi,sessions}.js`、`public/{app.js,index.html,style.css}`、压缩后端/UI 测试、`tests/conversation-preview.mjs`、两级 README/devlog 与 codebase-map 索引/知识库。使用现有依赖，不安装或重装运行实例依赖；保留主工作区原有改动。
 
+## 2026-09-11 — 输入快捷键与自动复制合并验收
+- 用户要求合并 master；在 feat/input-shortcuts worktree 先合入最新 origin/master，保留三按 Esc 收回输入与能力恢复修复。README 合并两侧功能说明，devlog/knowledge 保留两侧记录，INDEX 重建解决生成文件冲突；未触碰主工作区 package-lock.json 等用户未提交内容。
+- 验证：npm test 119 通过、1 原有跳过；独立 4327 预览下 Chromium 1440/390/320px 检查及真实剪贴板/开关持久化/撤销恢复通过，无浏览器错误。功能分支推送后合并 master 并推送，清理本次 worktree；不主动重启正式服务。
+
+## 2026-09-11 — 选中自动复制与本地开关
+- 在 feat/input-shortcuts 独立 worktree 继续实现：聊天输入框、会话正文及子任务详情支持 pointerup/选区相关 keyup 后自动复制非空白选区；不监听连续 selectionchange、不改变焦点/选区，不处理右键、清空快捷键、其他表单与跨区域选区。使用原生 Clipboard API，失败提示右键复制，无新增依赖。
+- 按用户追加要求，设置页增加「输入与复制 → 选中自动复制」开启/关闭，默认开启；localStorage 保存当前浏览器偏好，保存受限仍在本页生效并提示，不进入服务端会话配置或断线禁用列表。手机系统手柄事件不保证送到页面，README 明示可用系统复制菜单。
+- 涉及 public/app.js、public/index.html、tests/app.test.js、tests/conversation-ui.py、README.md、本日志及生成索引。验证 npm test 112 通过、1 原有跳过；真实 Chromium 剪贴板验证输入框/正文复制、关闭后均不复制、刷新保留关闭及原有撤销清空，1440/390/320px UI 检查通过、无页面错误。正式服务未重启。
+
+## 2026-09-11 01:23 — 输入框撤销与清空快捷键
+- 独立 worktree axiom-input-shortcuts / feat/input-shortcuts：聊天输入框 Ctrl+C 全选并调用原生删除，保留 Ctrl+Z 撤销/恢复清空；不影响图片、文件、Skill 附件及任务。不添加自建历史栈或依赖；输入法组合、只读/禁用及空文字不删除。
+- 涉及 public/app.js、public/index.html、README.md、tests/conversation-ui.py、本日志及 codebase-map 索引/坑库；页面提示及 README 说明 Ctrl+C 在此处替代复制，右键仍可复制。
+- 验证：npm test 112 通过、1 原有跳过；真实 Chromium 原生输入撤销/重做、部分选中后清空、重复清空后撤销恢复、输入法保护通过，1440/390/320px 既有 UI 检查通过、无浏览器错误。首次误连已有 4321 旧预览，改用独立 4327 端口后验证通过；未重启正式服务。
+
 ## 2026-09-11 — 技能恢复修复发布 0.1.3
 - 用户确认合并与同步独立仓库。package.json 升至 0.1.3，发布跨目录默认能力收窄与逐会话恢复隔离修复；README 已同步恢复规则。
 - 在功能 worktree 复验后合并 MyWorkbench/master，并以 subtree 推送 axiom/ 至 cosyeezz/axiom master。保留主工作区未提交改动，不重启本机服务，不执行 npm ci。

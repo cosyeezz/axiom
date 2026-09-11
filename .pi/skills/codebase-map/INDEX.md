@@ -1,14 +1,14 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/11 02:13:43）
+# Axiom 多级代码索引（生成于 2026/9/11 02:14:48）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| public/app.js | 2207 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, allSessions |
+| public/app.js | 2251 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, allSessions |
 | public/file-picker.css | 269 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 351 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
-| public/index.html | 243 | 页面骨架与元素 id（见 L3） | - |
+| public/index.html | 250 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown.js | 75 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, renderMarkdown |
 | public/stream-renderer.js | 46 | 流式增量渲染状态机 | createStreamRenderer |
 | public/style.css | 1138 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
@@ -31,7 +31,7 @@
 | src/tasks.js | 107 | Tasks：子任务（委托）生命周期 | Tasks |
 | src/tools.js | 97 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, greater, checkUpdate |
-| tests/app.test.js | 1353 | node --test 测试（npm test） | pickerSource, contrastSource |
+| tests/app.test.js | 1375 | node --test 测试（npm test） | pickerSource, contrastSource |
 | tests/autostart.test.js | 60 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
 | tests/capabilities.test.js | 157 | node --test 测试（npm test） | - |
@@ -42,7 +42,7 @@
 | tests/compaction.test.js | 781 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
 | tests/config.test.js | 223 | node --test 测试（npm test） | - |
 | tests/conversation-preview.mjs | 122 | node --test 测试（npm test） | markdown, message, thinking, state |
-| tests/conversation-ui.py | 210 | node --test 测试（npm test） | - |
+| tests/conversation-ui.py | 262 | node --test 测试（npm test） | - |
 | tests/defaults.test.js | 33 | node --test 测试（npm test） | - |
 | tests/file-picker.test.js | 67 | node --test 测试（npm test） | source, tick |
 | tests/image-input.test.js | 167 | node --test 测试（npm test） | pngBase64, jpegBase64, image, parsePrompt |
@@ -67,7 +67,7 @@
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
-### public/app.js（2207 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
+### public/app.js（2251 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -199,43 +199,45 @@
 | addImages | function | 1459 |
 | loadImages | function | 1480 |
 | renderImages | method | 1489 |
-| escapeTimer | const | 1543 |
-| withdrawQueue | function | 1544 |
-| refreshing | const | 1614 |
-| refreshSessions | function | 1615 |
-| updateSessions | function | 1622 |
-| renderSessions | method | 1626 |
-| switchSession | function | 1628 |
-| saveView | method | 1630 |
-| controls | method | 1633 |
-| renderSessions | function | 1645 |
-| sessionAction | const | 1765 |
-| openSessionAction | function | 1766 |
-| contextIcon | function | 1807 |
-| renderContextChips | function | 1810 |
-| renderContextResults | function | 1828 |
-| controls | method | 1860 |
-| resizePrompt | method | 1866 |
-| controls | method | 1867 |
-| closeCompletion | function | 1870 |
-| highlightCompletion | function | 1878 |
-| chooseCompletion | function | 1887 |
-| closeCompletion | method | 1897 |
-| updateCompletion | function | 1900 |
-| closeCompletion | method | 1901 |
-| resizePrompt | method | 1954 |
-| controls | method | 1955 |
-| switchSession | method | 1995 |
-| creationLoad | const | 1997 |
-| createAgentPicker | function | 1998 |
-| options | method | 2020 |
-| fill | method | 2028 |
-| fillThinking | method | 2036 |
-| options | method | 2038 |
-| loadCreation | function | 2084 |
-| openCreation | function | 2118 |
-| updateDefaultsPreview | function | 2135 |
-| updateDefaultsPreview | method | 2155 |
+| selectionCopy | const | 1512 |
+| copySelection | function | 1524 |
+| escapeTimer | const | 1587 |
+| withdrawQueue | function | 1588 |
+| refreshing | const | 1658 |
+| refreshSessions | function | 1659 |
+| updateSessions | function | 1666 |
+| renderSessions | method | 1670 |
+| switchSession | function | 1672 |
+| saveView | method | 1674 |
+| controls | method | 1677 |
+| renderSessions | function | 1689 |
+| sessionAction | const | 1809 |
+| openSessionAction | function | 1810 |
+| contextIcon | function | 1851 |
+| renderContextChips | function | 1854 |
+| renderContextResults | function | 1872 |
+| controls | method | 1904 |
+| resizePrompt | method | 1910 |
+| controls | method | 1911 |
+| closeCompletion | function | 1914 |
+| highlightCompletion | function | 1922 |
+| chooseCompletion | function | 1931 |
+| closeCompletion | method | 1941 |
+| updateCompletion | function | 1944 |
+| closeCompletion | method | 1945 |
+| resizePrompt | method | 1998 |
+| controls | method | 1999 |
+| switchSession | method | 2039 |
+| creationLoad | const | 2041 |
+| createAgentPicker | function | 2042 |
+| options | method | 2064 |
+| fill | method | 2072 |
+| fillThinking | method | 2080 |
+| options | method | 2082 |
+| loadCreation | function | 2128 |
+| openCreation | function | 2162 |
+| updateDefaultsPreview | function | 2179 |
+| updateDefaultsPreview | method | 2199 |
 
 ### public/file-picker.js（351 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 
@@ -555,7 +557,7 @@
 | greater | const | 11 |
 | checkUpdate | function | 18 |
 
-### tests/app.test.js（1353 行） — node --test 测试（npm test）
+### tests/app.test.js（1375 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -782,7 +784,7 @@
 ## L3 横切常量（跨模块定位入口）
 
 - 协议 command.type：image、inherit、service.status、service.restart、session.rename、workspace.reveal、workspace.browse、files.browse、models.list、capabilities.list、session.defaults.get、session.defaults.configure、session.configure、sessions.list、session.create、session.attach、session.close、prompt、cancel、queue.withdraw、tasks.read（src/protocol.js）
-- HTML id：sidebar、open-workspace、new、custom-new、search、sessions、hidden-session-area、hidden-session-summary、hidden-sessions、open-settings、sidebar-backdrop、toggle-sidebar、session-title、workspace-label、copy-workspace、reveal-workspace、workspace-feedback、status、service-version、service-menu-button、service-menu、restart-quick、restart-rebuild、restart-update、service-feedback、login、connect、workspace、transcript、output、latest、message-queue、task-runs、compaction-progress、add-context、add-image、image-files、context-chips、context-menu、context-picker、context-title、context-close、context-search、context-results、context-error、image-attachments、composer、prompt、prompt-completion、composer-skill、provider、model、thinking、stop、send-steer、send-followup、send、session-runtime、composer-help、error、session-action、session-action-form、session-action-title、session-action-description、session-name-label、session-name、session-action-error、session-action-cancel、session-action-submit、image-preview、image-preview-close、image-preview-image、restart-dialog、restart-form、restart-title、restart-description、restart-warning、restart-cancel、restart-submit、task-overlays、task-template、settings、settings-title、defaults-panel、queue-type、steer-help、followup-help、defaults-preview、subagent-title、subagent-help、subagent-provider、subagent-model、settings-feedback、defaults-title、defaults-editor、create-session、create-title、create-form、create-workspace、create-defaults-help、create-agents、create-compaction、create-trust-row、create-trust、create-feedback、create-submit（public/index.html）
+- HTML id：sidebar、open-workspace、new、custom-new、search、sessions、hidden-session-area、hidden-session-summary、hidden-sessions、open-settings、sidebar-backdrop、toggle-sidebar、session-title、workspace-label、copy-workspace、reveal-workspace、workspace-feedback、status、service-version、service-menu-button、service-menu、restart-quick、restart-rebuild、restart-update、service-feedback、login、connect、workspace、transcript、output、latest、message-queue、task-runs、compaction-progress、add-context、add-image、image-files、context-chips、context-menu、context-picker、context-title、context-close、context-search、context-results、context-error、image-attachments、composer、prompt、prompt-completion、composer-skill、provider、model、thinking、stop、send-steer、send-followup、send、session-runtime、composer-help、error、session-action、session-action-form、session-action-title、session-action-description、session-name-label、session-name、session-action-error、session-action-cancel、session-action-submit、image-preview、image-preview-close、image-preview-image、restart-dialog、restart-form、restart-title、restart-description、restart-warning、restart-cancel、restart-submit、task-overlays、task-template、settings、settings-title、defaults-panel、selection-copy-title、selection-copy、selection-copy-help、selection-copy-feedback、queue-type、steer-help、followup-help、defaults-preview、subagent-title、subagent-help、subagent-provider、subagent-model、settings-feedback、defaults-title、defaults-editor、create-session、create-title、create-form、create-workspace、create-defaults-help、create-agents、create-compaction、create-trust-row、create-trust、create-feedback、create-submit（public/index.html）
 - HTTP 静态路由：/、/favicon.svg、/style.css、/app.js、/file-picker.js、/tooltip.js、/tooltip.css、/text-contrast.js、/text-contrast.css、/file-picker.css、/markdown.js、/stream-renderer.js、/vendor/marked.js、/vendor/purify.js、/health（src/server.js）
 
 ## ⚠ 未登记文件（0）

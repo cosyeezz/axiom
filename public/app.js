@@ -1509,6 +1509,41 @@ $("image-files").onchange = async () => {
   $("image-files").value = "";
   await loadImages(files);
 };
+let selectionCopy = true;
+try { selectionCopy = localStorage.getItem("axiom.selectionCopy") !== "off"; } catch {}
+$("selection-copy").value = selectionCopy ? "on" : "off";
+$("selection-copy").onchange = () => {
+  selectionCopy = $("selection-copy").value === "on";
+  try {
+    localStorage.setItem("axiom.selectionCopy", selectionCopy ? "on" : "off");
+    $("selection-copy-feedback").textContent = "已保存";
+  } catch {
+    $("selection-copy-feedback").textContent = "浏览器无法保存设置，本次页面内已生效。";
+  }
+};
+async function copySelection(e) {
+  if (!selectionCopy || e.isComposing || (e.type === "pointerup" && e.button !== 0)) return;
+  if (e.type === "keyup" && !["Shift", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "a", "A"].includes(e.key)) return;
+  let text;
+  const input = $("prompt");
+  if (e.target === input) {
+    text = input.value.slice(input.selectionStart, input.selectionEnd);
+  } else {
+    if (!e.target.closest?.("#output, .task-dialog") || e.target.closest("input, textarea, select, button")) return;
+    const selection = window.getSelection();
+    if (!selection?.rangeCount || selection.isCollapsed) return;
+    const range = selection.getRangeAt(0);
+    const root = range.commonAncestorContainer.nodeType === 1
+      ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement;
+    if (!root?.closest("#output, .task-dialog")) return;
+    text = selection.toString();
+  }
+  if (!text.trim()) return;
+  try { await navigator.clipboard.writeText(text); }
+  catch { error(new Error("自动复制失败，请使用右键菜单复制。")); }
+}
+document.addEventListener("pointerup", copySelection);
+document.addEventListener("keyup", copySelection);
 $("prompt").onpaste = (e) => {
   const files = [...(e.clipboardData?.items || [])].filter((item) => item.kind === "file" && item.type.startsWith("image/")).map((item) => item.getAsFile()).filter(Boolean);
   if (!files.length) return;
@@ -1517,6 +1552,15 @@ $("prompt").onpaste = (e) => {
 };
 $("prompt").onkeydown = (e) => {
   if (e.isComposing || e.keyCode === 229) return;
+  if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "c") {
+    e.preventDefault();
+    const input = e.currentTarget;
+    if (input.disabled || input.readOnly || !input.value) return;
+    input.select();
+    // Native deletion keeps Ctrl+Z undo (including restoring a cleared draft).
+    document.execCommand("delete");
+    return;
+  }
   if (!$("prompt-completion").hidden && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
     if (["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape", "ArrowRight"].includes(e.key)) {
       if (e.key === "ArrowRight" && !completionEntries[completionIndex]?.directory) return;
