@@ -61,6 +61,10 @@ test("shared Markdown renderer formats blocks and removes unsafe content", async
     render(node, "**partial");
     render(node, "**complete**");
     assert.equal(node.querySelector("strong").textContent, "complete");
+    render(node, "<pre>plain text without code</pre>");
+    assert.equal(node.querySelector("pre").textContent, "plain text without code");
+    assert.equal(node.querySelector(".code-toolbar"), null);
+    assert.equal(node.querySelector("pre").tabIndex, 0);
   } finally {
     window.close();
   }

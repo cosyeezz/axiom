@@ -152,8 +152,8 @@ summary {
 }
 .session-row.session-reorder-target { border-top-color: var(--accent); }
 .session-row:has(.session-item[aria-current="page"]) {
-  background: #717de514;
-  border-color: #717de52b;
+  background: #5e6ad214;
+  border-color: #5e6ad22b;
   box-shadow: inset 2px 0 var(--accent);
 }
 .session-item span {
@@ -450,14 +450,14 @@ h1 {
 #message-queue { max-height: 180px; overflow: auto; margin-bottom: 8px; }
 #task-runs { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
 .task-run { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 4px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-size: 12px; color: var(--muted); }
-.task-run-spin { width: 12px; height: 12px; flex-shrink: 0; border: 2px solid #717de533; border-top-color: var(--subagent); border-radius: 50%; animation-name: task-run-spin; animation-duration: 0.9s; animation-timing-function: linear; animation-iteration-count: infinite; }
+.task-run-spin { width: 12px; height: 12px; flex-shrink: 0; border: 2px solid #5e6ad233; border-top-color: var(--subagent); border-radius: 50%; animation-name: task-run-spin; animation-duration: 0.9s; animation-timing-function: linear; animation-iteration-count: infinite; }
 .task-run-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @keyframes task-run-spin { to { transform: rotate(1turn); } }
 @media (prefers-reduced-motion: reduce) {
   .task-run-spin { animation-name: none; }
 }
 #message-queue button { display: flex; gap: 12px; width: 100%; text-align: left; background: var(--raised); color: var(--ink); margin-top: 4px; }
-#message-queue strong { flex-shrink: 0; font-size: 11px; color: #a5afff; }
+#message-queue strong { flex-shrink: 0; font-size: 11px; color: var(--accent-ink); }
 #message-queue span { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 button.danger { background: #a53543; border-color: #c34b5b; color: white; }
@@ -553,38 +553,38 @@ button.danger:hover:not(:disabled) { background: #c13e50; }
 #add-image { display: grid; place-items: center; min-height: 28px; width: 28px; height: 28px; border: 0; background: transparent; }
 .context-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; min-width: 0; }
 .icon-button { width: 32px; height: 32px; padding: 0; flex-shrink: 0; border-radius: 9px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); font-size: 22px; }
-.icon-button:hover { color: var(--text); border-color: #717de580; background: #717de51a; }
+.icon-button:hover { color: var(--ink); border-color: #5e6ad280; background: #5e6ad21a; }
 #add-context { anchor-name: --context-add; display: grid; place-items: center; width: 28px; height: 28px; min-height: 28px; border: 0; border-radius: 7px; background: transparent; }
 #add-context svg { width: 18px; height: 18px; color: var(--muted); }
 #add-context:hover:not(:disabled), #add-context:focus-visible { background: var(--raised); }
 #add-context:hover svg { color: var(--ink); }
 #context-chips { display: flex; gap: 6px; overflow-x: auto; min-width: 0; }
-.context-chip { display: flex; align-items: center; gap: 6px; padding: 5px 9px; max-width: 240px; flex-shrink: 0; border: 1px solid #717de533; background: #717de510; color: var(--text); border-radius: 8px; font-size: 12px; }
+.context-chip { display: flex; align-items: center; gap: 6px; padding: 5px 9px; max-width: 240px; flex-shrink: 0; border: 1px solid #5e6ad233; background: #5e6ad210; color: var(--ink); border-radius: 8px; font-size: 12px; }
 .context-chip span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .context-chip span:last-child { color: var(--muted); }
-.context-bar svg, #context-menu svg, #context-picker svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; flex-shrink: 0; color: #a8afe8; }
-#context-menu { position: fixed; inset: auto; left: max(8px, 5vw); bottom: 260px; position-anchor: --context-add; margin: 0; width: 176px; padding: 4px; border: 1px solid #ffffff12; border-radius: 9px; background: #1c1d22; color: var(--ink); box-shadow: 0 8px 24px #0005; }
+.context-bar svg, #context-menu svg, #context-picker svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; flex-shrink: 0; color: var(--body-ink); }
+#context-menu { position: fixed; inset: auto; left: max(8px, 5vw); bottom: 260px; position-anchor: --context-add; margin: 0; width: 176px; padding: 4px; border: 1px solid var(--line); border-radius: 9px; background: var(--raised); color: var(--ink); box-shadow: 0 8px 24px #0005; }
 @supports (left: anchor(left)) { #context-menu { left: anchor(left); bottom: calc(anchor(top) + 8px); } }
 #context-menu > button { min-height: 32px; height: 32px; gap: 9px; padding: 0 9px; font-size: 12px; font-weight: 400; border-radius: 5px; }
-#context-menu button svg { width: 15px; height: 15px; color: #a5a8b6; }
-#context-menu .context-chevron { color: #737784; font-size: 16px; }
+#context-menu button svg { width: 15px; height: 15px; color: var(--body-ink); }
+#context-menu .context-chevron { color: var(--muted); font-size: 16px; }
 #context-menu button:hover:not(:disabled) { background: #ffffff09; }
 @media (pointer: coarse) { #add-context { width: 40px; height: 40px; } #context-menu button { height: 40px; min-height: 40px; } }
-#context-menu button, #context-results button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px; text-align: left; color: var(--text); background: transparent; border: 0; border-radius: 7px; }
-#context-menu button:hover, #context-results button:hover { background: #717de51a; }
+#context-menu button, #context-results button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px; text-align: left; color: var(--ink); background: transparent; border: 0; border-radius: 7px; }
+#context-menu button:hover, #context-results button:hover { background: #5e6ad21a; }
 #context-menu button > span:first-of-type, #context-results button > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 #context-menu small, #context-results small { display: block; color: var(--muted); font-size: 11px; font-weight: 400; margin-top: 3px; }
-#context-picker { width: min(480px, calc(100vw - 32px)); max-height: min(620px, 80dvh); padding: 18px; border: 1px solid #ffffff18; border-radius: 16px; background: #1c1d24; color: var(--text); box-shadow: 0 24px 80px #0008; }
+#context-picker { width: min(480px, calc(100vw - 32px)); max-height: min(620px, 80dvh); padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--raised); color: var(--ink); box-shadow: 0 24px 80px #0008; }
 #context-picker::backdrop { background: #0006; }
 #context-picker header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
 #context-title { font-size: 15px; margin: 0; }
 #context-search { width: 100%; margin-bottom: 10px; }
 #context-results { max-height: 360px; overflow-y: auto; margin-top: 8px; }
 #context-error { font-size: 12px; color: var(--muted); }
-#prompt-completion { max-height: 220px; overflow-y: auto; padding: 6px; margin: 0 8px 8px; border: 1px solid #717de533; border-radius: 8px; background: #1c1d24; font-size: 12px; }
+#prompt-completion { max-height: 220px; overflow-y: auto; padding: 6px; margin: 0 8px 8px; border: 1px solid #5e6ad233; border-radius: 8px; background: var(--raised); font-size: 12px; }
 #prompt-completion [role="option"] { display: flex; border-radius: 5px; }
-#prompt-completion [aria-selected="true"], #prompt-completion [role="option"]:hover { background: #717de52a; }
-#prompt-completion button { background: transparent; color: var(--text); text-align: left; padding: 8px; border: 0; }
+#prompt-completion [aria-selected="true"], #prompt-completion [role="option"]:hover { background: #5e6ad22a; }
+#prompt-completion button { background: transparent; color: var(--ink); text-align: left; padding: 8px; border: 0; }
 #prompt-completion button:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 #prompt-completion button + button { flex-shrink: 0; color: var(--muted); }
 .skill-invocation { border: 1px solid var(--line); border-radius: 8px; padding: 4px 12px; margin-bottom: 12px; background: var(--surface); }
@@ -627,9 +627,9 @@ button.danger:hover:not(:disabled) { background: #c13e50; }
 .compaction-toggle input { width: auto; min-height: 0; accent-color: var(--accent); }
 .compaction-hint { font-size: 12px; color: var(--muted); margin: 10px 0 0; }
 #composer:focus-within {
-  border-color: #717de580;
+  border-color: #5e6ad280;
   box-shadow:
-    0 0 0 3px #717de50d,
+    0 0 0 3px #5e6ad20d,
     0 8px 32px #0003;
 }
 textarea:focus-visible {
@@ -1024,6 +1024,7 @@ summary:hover > .disclosure-action { color: var(--ink); }
 .tool-detail { margin: 8px 0 16px 16px; padding: 4px 0 4px 28px; border-left: 1px solid #34343a; }
 .tool-detail h4 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; margin: 12px 0 8px; color: var(--body-ink); }
 .tool-detail pre { max-height: 420px; margin: 0 0 12px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--body-ink); overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.7 var(--mono); }
+.tool-truncation { color: var(--muted); font-size: 12px; margin: 8px 0 16px; }
 .tool-detail .diff-add { display: block; color: #a1dfb5; background: #173324; }
 .tool-detail .diff-remove { display: block; color: #f0b1b1; background: #3b2026; }
 .tool-detail h4 select { margin-left: 12px; font-size: 12px; min-height: 28px; padding: 2px 8px; }

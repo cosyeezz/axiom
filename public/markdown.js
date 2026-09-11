@@ -27,8 +27,9 @@ export function renderMarkdown(element, text = "") {
       policy,
     );
     // Controls are created after sanitizing; Markdown cannot inject buttons or handlers.
-    for (const pre of node.querySelectorAll("pre:has(code)")) {
+    for (const pre of node.querySelectorAll("pre")) {
       const code = pre.querySelector("code");
+      if (!code) continue;
       const language = [...code.classList].find((name) => name.startsWith("language-"))?.slice(9) || "纯文本";
       const block = element.ownerDocument.createElement("div");
       block.className = "code-block";

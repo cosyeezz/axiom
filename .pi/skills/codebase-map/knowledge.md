@@ -155,3 +155,9 @@
 - 根因：状态图标替代工具身份、两个组件同时表达思考；思考绕过 Markdown 渲染器；将 table 本体当滚动容器破坏原生表格布局。
 - 修复：public/app.js 合并思考入口、工具图标/对象/状态分离；stream-renderer.js 仅展开时共享 renderMarkdown。markdown.js 用独立 .table-scroll 保留 table 语义，生成净化后的复制控件；style.css 原生表格宽度与最小列宽、窄屏工具摘要分行。
 - 防再犯：正文定位使用 `.message > .markdown`，不能用命中思考的后代选择器；测试用真实 Markdown 验证思考/XSS/复制及未打开任务零解析。按钮在 DOMPurify 之后由程序生成，不放开脚本/inline style。浏览器截图必须等待 details toggle 和动画帧，不能把尚未渲染当为空内容；所有 display:flex 的 summary 显式隐藏 marker，保留键盘与文字展开提示。
+
+### 2026-09-10 20:40 diff 截断提示不能放在可切换的视图内部
+- 症状：超过 60,000 字符的 diff 在左右对比模式看不到截断提示，用户可能误以为结果完整。
+- 根因：renderToolDetail 将提示附到 .diff-unified，而桌面默认隐藏该视图。
+- 修复：public/app.js 把 .tool-truncation 作为该节下方的独立元素，适用于 diff 与普通输出；public/style.css 共用说明文字样式。
+- 防再犯：tests/message-activity.test.js 验证两种视图切换后提示仍在 .tool-detail 直属层，普通输出上限不变；浏览器验证 1440px/320px 可见。共享 summary 使用 span 活动行，JS Markdown 查询不依赖 :has（不支持时会抛错，而非仅丢样式）。

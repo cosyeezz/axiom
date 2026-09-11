@@ -65,6 +65,27 @@ test("activity history hides empty shells and retains tool summaries without raw
   } finally { dom.window.close(); }
 });
 
+test("expanded tool sections keep truncation notices outside both diff views", async () => {
+  const { dom, w, emit, output } = await page();
+  try {
+    const text = "- " + "x".repeat(60001);
+    emit("tool.state", { phase: "end", toolCallId: "long", toolName: "edit", result: { details: { diff: text }, content: text } });
+    const record = output.querySelector(".tool-record");
+    record.open = true;
+    record.dispatchEvent(new w.Event("toggle"));
+    for (const view of ["split", "unified"]) {
+      const select = record.querySelector("select");
+      select.value = view;
+      select.dispatchEvent(new w.Event("change"));
+      assert(record.querySelector(`.diff-view-${view}`));
+      assert.equal(record.querySelectorAll(".tool-detail > .tool-truncation").length, 2, "diff and output notices remain outside the switchable views");
+      assert.equal(record.querySelector(".diff-comparison .tool-truncation"), null);
+      assert.match(record.querySelector(".tool-truncation").textContent, /60,000/);
+      assert.equal(record.querySelector(".tool-detail > pre").textContent.length, 60000);
+    }
+  } finally { dom.window.close(); }
+});
+
 test("live activity tracks thinking, tool completion, errors, cancellation and snapshot boundaries", async () => {
   const { dom, w, emit, restore, paint, output } = await page();
   const start = () => emit("agent.message.start", { message: assistant([]) });

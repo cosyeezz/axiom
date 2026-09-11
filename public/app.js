@@ -325,7 +325,7 @@ function disclosureHint(label = "详情") {
   return hint;
 }
 function activityLine(label, state = "waiting") {
-  const node = document.createElement("div");
+  const node = document.createElement("span");
   node.className = "activity-line";
   node.setAttribute("role", "status");
   const icon = document.createElement("span");
@@ -459,8 +459,13 @@ function renderToolDetail(tool) {
       comparison.append(pre, split);
       tool.body.append(heading, comparison);
     }
-    if (String(text).length > visible.length) pre.append("\n…内容过长，仅显示前 60,000 字符；完整记录仍保存在会话中。");
     if (!diff) tool.body.append(heading, pre);
+    if (String(text).length > visible.length) {
+      const notice = document.createElement("p");
+      notice.className = "tool-truncation";
+      notice.textContent = "内容过长，仅显示前 60,000 字符；完整记录仍保存在会话中。";
+      tool.body.append(notice);
+    }
   };
   const args = tool.args || {};
   const result = tool.result;
