@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/11 12:41:17）
+# Axiom 多级代码索引（生成于 2026/9/11 12:51:13）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -52,7 +52,7 @@
 | tests/inline-images.test.js | 42 | node --test 测试（npm test） | text, a, b, user |
 | tests/install.test.js | 24 | node --test 测试（npm test） | - |
 | tests/markdown.test.js | 72 | node --test 测试（npm test） | - |
-| tests/message-activity.test.js | 191 | node --test 测试（npm test） | page, assistant, thought, call |
+| tests/message-activity.test.js | 202 | node --test 测试（npm test） | page, assistant, thought, call |
 | tests/presets.test.js | 102 | node --test 测试（npm test） | makeFactory |
 | tests/project-skills.test.js | 57 | node --test 测试（npm test） | - |
 | tests/recall.test.js | 94 | node --test 测试（npm test） | user, assistant, thinking, fixture |
@@ -713,7 +713,7 @@
 | user | const | 8 |
 | inlineImagesExtension | method | 32 |
 
-### tests/message-activity.test.js（191 行） — node --test 测试（npm test）
+### tests/message-activity.test.js（202 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
