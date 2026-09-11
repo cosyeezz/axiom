@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/11 03:42:05）
+# Axiom 多级代码索引（生成于 2026/9/11 10:36:02）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -19,11 +19,11 @@
 | scripts/autostart.mjs | 133 | Windows/macOS/Linux 当前用户登录自动启动安装/卸载 | run, projectDir, serviceEntry, label |
 | scripts/dev.mjs | 12 | 开发入口：DEV 标识、4320 端口与独立数据目录 | - |
 | scripts/install.mjs | 86 | 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器 | root, parseArgs, nodeOk, openCommand |
-| scripts/service.mjs | 119 | 服务守护：IPC 快速/重建重启与安装构建失败反馈 | root, output, run, npmRun |
+| scripts/service.mjs | 143 | 服务守护：IPC 快速/重建重启与安装构建失败反馈 | root, output, run, npmRun |
 | src/capabilities.js | 125 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/compaction.js | 374 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
-| src/main.js | 64 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, factory, home |
+| src/main.js | 66 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, factory, home |
 | src/pi.js | 298 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, queueStateOf, hasModelOutput, withdrawQueue |
 | src/protocol.js | 167 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/retry.js | 149 | 模型失败重试：可取消退避、最多30次、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_RETRIES, delayFor, MAX_TIMEOUT_MS |
@@ -31,7 +31,7 @@
 | src/sessions.js | 836 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | BROWSE_PAGE, resolveDir, parentOf, absoluteCrumbs |
 | src/tasks.js | 107 | Tasks：子任务（委托）生命周期 | Tasks |
 | src/tools.js | 97 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
-| src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, greater, checkUpdate |
+| src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
 | tests/app.test.js | 1521 | node --test 测试（npm test） | pickerSource, contrastSource |
 | tests/autostart.test.js | 60 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
@@ -57,7 +57,7 @@
 | tests/retry.test.js | 340 | node --test 测试（npm test） | RATE_LIMIT, QUOTA, ABORTED, fakeSession |
 | tests/server.test.js | 125 | node --test 测试（npm test） | - |
 | tests/service-api.test.js | 40 | node --test 测试（npm test） | - |
-| tests/service.test.js | 138 | node --test 测试（npm test） | - |
+| tests/service.test.js | 176 | node --test 测试（npm test） | - |
 | tests/session-flow.test.js | 179 | node --test 测试（npm test） | flowFactory |
 | tests/smoke.js | 67 | node --test 测试（npm test） | TIMEOUT, sessions |
 | tests/stream-renderer.test.js | 99 | node --test 测试（npm test） | - |
@@ -65,7 +65,7 @@
 | tests/tasks.test.js | 76 | node --test 测试（npm test） | fixture |
 | tests/text-contrast.test.js | 162 | node --test 测试（npm test） | source, css, fakeStorage, throwingStorage |
 | tests/tooltip.test.js | 282 | node --test 测试（npm test） | source, boot, fire, tip |
-| tests/update.test.js | 28 | node --test 测试（npm test） | - |
+| tests/update.test.js | 38 | node --test 测试（npm test） | old |
 | tests/workspace-picker.test.js | 96 | node --test 测试（npm test） | - |
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
@@ -377,20 +377,20 @@
 | install | function | 47 |
 | invoked | const | 83 |
 
-### scripts/service.mjs（119 行） — 服务守护：IPC 快速/重建重启与安装构建失败反馈
+### scripts/service.mjs（143 行） — 服务守护：IPC 快速/重建重启与安装构建失败反馈
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | root | const | 10 |
 | output | const | 11 |
 | run | function | 12 |
-| npmRun | const | 20 |
-| update | const | 27 |
-| rebuild | function | 29 |
-| supervise | function | 46 |
-| mkdirSync | method | 54 |
-| start | method | 113 |
-| invoked | const | 117 |
+| npmRun | const | 25 |
+| update | function | 32 |
+| rebuild | function | 47 |
+| supervise | function | 64 |
+| mkdirSync | method | 72 |
+| start | method | 137 |
+| invoked | const | 141 |
 
 ### src/capabilities.js（125 行） — 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities）
 
@@ -430,7 +430,7 @@
 | inlineImages | function | 2 |
 | inlineImagesExtension | function | 29 |
 
-### src/main.js（64 行） — 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理
+### src/main.js（66 行） — 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -440,8 +440,8 @@
 | home | const | 19 |
 | sessions | const | 26 |
 | app | const | 29 |
-| closing | const | 52 |
-| stop | function | 53 |
+| closing | const | 54 |
+| stop | function | 55 |
 
 ### src/pi.js（298 行） — createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）
 
@@ -568,10 +568,11 @@
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| repo | const | 8 |
-| npmSpec | const | 9 |
-| greater | const | 11 |
-| checkUpdate | function | 18 |
+| repo | const | 6 |
+| npmSpec | const | 7 |
+| commitFile | const | 8 |
+| validateCommit | function | 10 |
+| checkUpdate | function | 15 |
 
 ### tests/app.test.js（1521 行） — node --test 测试（npm test）
 
@@ -802,6 +803,12 @@
 | fire | method | 270 |
 | fire | method | 271 |
 | fire | method | 276 |
+
+### tests/update.test.js（38 行） — node --test 测试（npm test）
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| old | const | 8 |
 
 ## L3 横切常量（跨模块定位入口）
 
