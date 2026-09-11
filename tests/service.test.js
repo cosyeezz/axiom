@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, readFile, rm, chmod } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm, chmod, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { rebuild, update } from "../scripts/service.mjs";
@@ -59,15 +59,18 @@ test("supervisor respawns crashed workers with backoff until stopped", async () 
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
-test("supervisor update installs while old worker serves, then restarts; failure keeps service up", async () => {
+for (const failInstall of [false, true]) test(`supervisor update ${failInstall ? "failure restores requests via restart" : "installs the exact commit before restart"}`, async () => {
   const cwd = await mkdtemp(join(tmpdir(), "axiom-update-sup-"));
   try {
     await mkdir(join(cwd, "scripts")); await mkdir(join(cwd, "src"));
+    const globalRoot = join(cwd, "global");
+    await mkdir(join(globalRoot, "@myworkbench"), { recursive: true });
+    await symlink(cwd, join(globalRoot, "@myworkbench", "axiom"), "junction");
     const shim = join(cwd, "shim"); await mkdir(shim);
     if (process.platform === "win32") {
-      await writeFile(join(shim, "npm.cmd"), "@echo %* > \"%CD%\\npm-called\"\r\nif not exist stopped echo served > \"%CD%\\served-during-install\"\r\nexit /b 0\r\n");
+      await writeFile(join(shim, "npm.cmd"), `@if "%1"=="root" (echo ${globalRoot}& exit /b 0)\r\n@echo %* > "%CD%\\npm-called"\r\nif not exist stopped echo served > "%CD%\\served-during-install"\r\nexit /b ${failInstall ? 1 : 0}\r\n`);
     } else {
-      await writeFile(join(shim, "npm"), "#!/bin/sh\necho \"$@\" > npm-called\n[ ! -f stopped ] && echo served > served-during-install\nexit 0\n");
+      await writeFile(join(shim, "npm"), `#!/bin/sh\nif [ "$1" = root ]; then printf '%s\\n' '${globalRoot}'; exit 0; fi\necho "$@" > npm-called\n[ ! -f stopped ] && echo served > served-during-install\nexit ${failInstall ? 1 : 0}\n`);
       await chmod(join(shim, "npm"), 0o755);
     }
     await writeFile(join(cwd, "scripts/service.mjs"), await readFile(new URL("../scripts/service.mjs", import.meta.url)));
@@ -79,7 +82,8 @@ test("supervisor update installs while old worker serves, then restarts; failure
       process.on('message', message => {
         if (message.type === 'service.stop') { fs.writeFileSync('stopped', 'saved'); process.exit(0); }
       });
-      process.send({ type: 'service.restart', mode: 'update' });
+      fs.writeFileSync('service-error', process.env.AXIOM_SERVICE_ERROR || '');
+      if (!fs.existsSync('stopped')) process.send({ type: 'service.restart', mode: 'update', sha: '${"b".repeat(40)}' });
       setInterval(() => {}, 1000);
     `);
     const child = spawn(process.execPath, [join(cwd, "scripts/service.mjs")], {
@@ -97,7 +101,15 @@ test("supervisor update installs while old worker serves, then restarts; failure
       }
       killTree();
       await once(child, "exit");
-      assert.match(await readFile(join(cwd, "npm-called"), "utf8"), /install -g github:cosyeezz\/axiom/);
+      assert.ok((await readFile(join(cwd, "npm-called"), "utf8")).includes('install -g github:cosyeezz/axiom#' + 'b'.repeat(40)));
+      const error = await readFile(join(cwd, "service-error"), "utf8");
+      if (failInstall) {
+        assert.match(error, /更新失败/);
+        await assert.rejects(readFile(join(cwd, ".axiom-commit")), { code: "ENOENT" });
+      } else {
+        assert.equal(error, "");
+        assert.equal((await readFile(join(cwd, ".axiom-commit"), "utf8")).trim(), 'b'.repeat(40));
+      }
       // shim 只在 stopped 尚不存在（旧 worker 仍在服务）时写入此标记 → 证明先装后停
       assert.equal((await readFile(join(cwd, "served-during-install"), "utf8")).trim(), "served");
       assert.equal(await readFile(join(cwd, "stopped"), "utf8"), "saved");
@@ -106,12 +118,38 @@ test("supervisor update installs while old worker serves, then restarts; failure
   } finally { await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }).catch(() => {}); }
 });
 
-test("update runs a global npm install of the GitHub spec", async () => {
-  const calls = [];
-  await update(async (command, args) => { calls.push([command, ...args].join(" ")); });
-  assert.equal(calls.length, 1);
-  assert.match(calls[0], /npm install -g github:cosyeezz\/axiom/);
-  await assert.rejects(update(async () => { throw new Error("offline"); }), /offline/);
+test("update pins the full commit and records it only after successful installation", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "axiom-pinned-"));
+  const sha = "b".repeat(40), calls = [];
+  try {
+    const globalRoot = join(cwd, "global");
+    await mkdir(join(globalRoot, "@myworkbench"), { recursive: true });
+    await symlink(cwd, join(globalRoot, "@myworkbench", "axiom"), "junction");
+    const execute = async (command, args, dir, capture) => {
+      calls.push([command, ...args].join(" "));
+      return capture ? globalRoot + '\n' : '';
+    };
+    await update(sha, execute, cwd);
+    assert.equal(calls.length, 3);
+    assert.ok(calls[1].includes(`npm install -g github:cosyeezz/axiom#${sha}`));
+    assert.equal((await readFile(join(cwd, ".axiom-commit"), "utf8")).trim(), sha);
+    await assert.rejects(update("c".repeat(40), async (cmd, args, dir, capture) => {
+      if (capture) return globalRoot;
+      throw new Error("offline");
+    }, cwd), /offline/);
+    let installs = 0;
+    await assert.rejects(update(sha, async (cmd, args, dir, capture) => {
+      if (capture) return join(cwd, 'other-prefix');
+      installs++;
+    }, cwd), /目录与当前服务不一致/);
+    assert.equal(installs, 0, 'wrong prefix must be rejected before npm install');
+    let probes = 0;
+    await assert.rejects(update('c'.repeat(40), async (cmd, args, dir, capture) => {
+      if (capture) return ++probes === 1 ? globalRoot : join(cwd, 'changed-prefix');
+    }, cwd), /目录与当前服务不一致/);
+    assert.equal((await readFile(join(cwd, ".axiom-commit"), "utf8")).trim(), sha);
+    await assert.rejects(update("bad & command", async () => assert.fail("must not run npm"), cwd), /无效/);
+  } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
 test("rebuild installs then builds; failed install restores old dependencies", async () => {
