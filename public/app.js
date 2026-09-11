@@ -1094,6 +1094,7 @@ function snapshot(state) {
   $("session-title").textContent = state.title || "新会话";
   currentCwd = state.cwd;
   $("workspace-label").textContent = state.cwd;
+  updatePageTitle();
   busy = state.status !== "idle";
   $("output").replaceChildren();
   live.clear();
@@ -1674,6 +1675,10 @@ function refreshSessions() {
 setInterval(() => {
   if (connected && !changing && !document.hidden) void refreshSessions().catch(error);
 }, 5000);
+function updatePageTitle() {
+  const workspace = currentCwd.replaceAll("\\", "/").replace(/\/$/, "").split("/").pop() || currentCwd;
+  document.title = `${$("session-title").textContent} · ${workspace} — Axiom`;
+}
 async function updateSessions() {
   const sessions = await request("sessions.list");
   const listState = (items) => JSON.stringify(items.map(({ id, title, cwd, status }) => ({ id, title, cwd, status })));
@@ -1681,6 +1686,7 @@ async function updateSessions() {
   allSessions = sessions;
   const active = allSessions.find((s) => s.id === sessionId);
   if (active) $("session-title").textContent = active.title;
+  updatePageTitle();
   renderSessions();
 }
 async function switchSession(action) {

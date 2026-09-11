@@ -376,6 +376,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     await settle();
     assert.equal(requests.findLast((r) => r.type === "session.rename").sessionId, "b");
     assert.equal($("session-title").textContent, "a", "editing another row does not switch sessions");
+    assert.equal(window.document.title, "a · work — Axiom", "browser tabs identify the active conversation and workspace");
     window.document.querySelectorAll(".session-delete")[1].click();
     assert.match($("session-action-description").textContent, /Renamed other session/);
     assert.equal($("session-action-submit").classList.contains("danger"), true);
