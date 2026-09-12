@@ -45,7 +45,7 @@ test("compaction settings, message IDs and successful records survive restart; f
     await assert.rejects(sessions.configureDefaults(dir, { compaction: { ...config, model: "missing" } }), /compaction model/);
     const item = sessions.get(id);
     item.emit({ type: "agent.message.end", data: { entryId: "m1", message: { role: "user", content: "old" } } });
-    const record = { id: "c1", summary: "summary", firstKeptEntryId: "m2", compactedMessageIds: ["m1"], tokensBefore: 50000, estimatedTokensAfter: 20000 };
+    const record = { id: "c1", summary: "summary", progress: { title: "确认配置", description: "验证压缩配置保存与恢复。" }, firstKeptEntryId: "m2", compactedMessageIds: ["m1"], tokensBefore: 50000, estimatedTokensAfter: 20000 };
     item.emit({ type: "agent.compaction", data: record });
     item.emit({ type: "agent.compaction", data: record });
     await item.saving;
