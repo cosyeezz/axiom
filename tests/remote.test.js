@@ -66,7 +66,7 @@ const mockTailscale = () => {
       const peer = peers[ip] ?? (ip === "127.0.0.1" ? { LoginName: state.loginEmail } : null);
       if (!peer) throw new Error(`unable to determine peer for ${addr}`);
       return {
-        Node: { Tags: peer.tagged ? ["tag:server"] : [] },
+        Node: peer.tagged ? { Tags: ["tag:server"] } : {},
         UserProfile: { LoginName: peer.LoginName },
       };
     },
@@ -182,9 +182,10 @@ test("selfStatus/whoisUser/isTailnetIPv4 严密字段验证（status/whois 输�
     loginName: "a@b",
     tagged: false,
   });
-  // 缺 Node/Tags/LoginName 或类型非法 → 拒绝
+  // 普通设备真实输出省略 Tags；缺 Node/身份或非法标签仍不允许访问。
   assert.equal(whoisUser({}).tagged, true);
-  assert.equal(whoisUser({ Node: {} }).tagged, true);
+  assert.deepEqual(whoisUser({ Node: {}, UserProfile: { LoginName: "a@b" } }), { loginName: "a@b", tagged: false });
+  assert.equal(whoisUser({ Node: { Tags: null } }).tagged, true);
   assert.equal(whoisUser({ Node: { Tags: "x" }, UserProfile: { LoginName: 5 } }).tagged, true);
   assert.equal(whoisUser({ Node: { Tags: ["tag:x"] }, UserProfile: { LoginName: "a@b" } }).tagged, true);
   assert.equal(whoisUser().tagged, true);
