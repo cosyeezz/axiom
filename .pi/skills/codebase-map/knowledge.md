@@ -397,3 +397,13 @@
 - 根因：原生居中 dialog 仅限最大高度，实际高度随页签内容变化。
 - 修复：public/style.css 为 #settings 固定 80dvh，打开时采用纵向 flex，头部固定、settings-layout 内部滚动并预留滚动条位置。
 - 防再犯：tests/service-settings-ui.py 在桌面与窄屏比较四页签真实坐标，长内容验证内部滚动和固定关闭栏；display:flex 仅用于 [open]，避免已关闭弹窗仍显示。
+
+### 2026-09-12 子任务卡片分隔的旧执行段仍 Working
+- 根因：paintCallGroup 只看代理 running 与正文边界，子任务卡片将执行段拆开后，旧段无真实活动也继续转圈。
+- 修复：public/app.js 按输出区反向标记后续可见执行段，旧段须有 pending 记录才运行；最新段保留工具间隙等待，折叠策略不变。
+- 防再犯：tests/message-activity.test.js 覆盖 delegate 完成、卡片分隔、后续 read、旧工具确实未结束、idle 与快照，不混淆子任务状态和主代理工具完成。
+
+### 2026-09-12 子代理详情吸顶条叠层遮字
+- 根因：主会话全局 sticky 规则进入 task-dialog 的有界滚动区，Working 使用 canvas 黑底、thinking 再次吸顶，叠层覆盖正文。
+- 修复：public/style.css 在 task-dialog 内取消详情标题吸顶并使 Working 背景透明，主会话不变。
+- 防再犯：tests/ui-sticky-check.mjs 真实 Chromium 验证背景、主/子样式隔离、滚动坐标；最小 DOM 不等于完整 app 会话端到端验收。

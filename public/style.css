@@ -1189,6 +1189,10 @@ textarea {
 :is(.tool-record, .thinking-record, .skill-invocation, .retry-card, .compaction-card, .task-system-prompt)[open] > summary {
   position: sticky; top: 0; z-index: 1; background: var(--surface); box-shadow: 0 1px var(--line);
 }
+/* Subagent dialog is a bounded inspection view: sticky bars only stack over the transcript there. */
+.task-dialog .call-group[open] > summary,
+.task-dialog :is(.tool-record, .thinking-record, .skill-invocation, .retry-card, .compaction-card, .task-system-prompt)[open] > summary { position: static; }
+.task-dialog .call-group > summary { background: transparent; }
 .tool-record > summary, .thinking-record > summary { min-height: 36px; gap: 8px; padding: 0 8px; margin-inline: -8px; }
 .tool-record > summary:hover, .thinking-record > summary:hover { background: var(--surface); }
 .tool-record[open] > summary, .thinking-record[open] > summary { background: var(--surface); }

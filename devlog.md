@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-12 18:32 UTC 执行段 Working 状态隔离与子代理详情遮挡
+- 原因：子任务卡片分隔执行段后，所有未遇正文的旧段仍沿用整个代理的 running 状态，已返回的 delegate 与后续 read 同时转圈。
+- 修复：只有最新可见执行段持有工具间隙等待；旧段须有真实 pending 记录才显示 Working，状态变化不强制折叠，主代理与子任务状态保持独立。
+- 子代理详情：public/style.css 仅在 task-dialog 内取消执行/思考/工具等标题吸顶，Working 行背景透明，沿用 Linear surface 面板；主会话不变。新增 tests/ui-sticky-check.html/mjs，用真实 Chromium 检查样式及滚动坐标，支持 CHROME_PATH/CDP_PORT。
+- 涉及：public/app.js、public/style.css、tests/message-activity.test.js、tests/ui-sticky-check.*、README.md、codebase-map 索引/知识库与本日志。
+- 验证：新用例在旧代码复现双 Working，修复后覆盖旧段完成、真实未结束工具、最新工具间隙、idle 及快照；真实浏览器最小 DOM 检查 8 项通过（非实际会话端到端验收）。中途服务重建测试并发时序失败、随后共享 node_modules 缺依赖；移除本 worktree 的 junction，独立 npm ci 后最终 npm test 253 项，252 通过、1 跳过、0 失败。未重启正在运行的正式服务。
+
 ## 2026-09-12 18:10 UTC 设置页签切换高度稳定
 - 原因：设置弹窗随内容长度改变高度，居中布局导致切换分类上下跳动。
 - 修复：固定 80dvh 高度，头部不收缩，分类与正文区域内部滚动并预留滚动条宽度；仅使用 CSS，保留 Linear surface/line/accent token，不影响其他弹窗。

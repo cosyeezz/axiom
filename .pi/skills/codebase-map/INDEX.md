@@ -1,11 +1,11 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 11:08:46）
+# Axiom 多级代码索引（生成于 2026/9/12 11:59:28）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| public/app.js | 3135 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, sessionMissing |
+| public/app.js | 3144 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, sessionMissing |
 | public/file-picker.css | 269 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 351 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/index.html | 315 | 页面骨架与元素 id（见 L3） | - |
@@ -17,7 +17,7 @@
 | public/model-picker.js | 283 | 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互 | GAP, EDGE, TYPEAHEAD_MS, el |
 | public/service-settings.js | 278 | 设置页服务维护：真实进度、结果、更新确认与独立维护通道 | MAINT_URL_RE, POLL_MS, initServiceSettings |
 | public/stream-renderer.js | 46 | 流式增量渲染状态机 | createStreamRenderer |
-| public/style.css | 1280 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1284 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | public/text-contrast.css | 46 | 文字专用对比度档位与调节面板 | - |
 | public/text-contrast.js | 113 | 文字对比度按钮、实时调节与本地偏好 | KEY, MIN, MAX, STEP |
 | public/tooltip.css | 50 | 共享暗色悬停说明样式 | - |
@@ -70,7 +70,7 @@
 | tests/memory-preview.mjs | 24 | node --test 测试（npm test） | state, sessions, app |
 | tests/memory-tags.test.js | 58 | node --test 测试（npm test） | - |
 | tests/memory-ui.test.js | 159 | node --test 测试（npm test） | page, record |
-| tests/message-activity.test.js | 370 | node --test 测试（npm test） | page, assistant, thought, call |
+| tests/message-activity.test.js | 407 | node --test 测试（npm test） | page, assistant, thought, call |
 | tests/model-config.test.js | 463 | node --test 测试（npm test） | sha, EMPTY, tempDir, makeService |
 | tests/model-manager.test.js | 430 | node --test 测试（npm test） | source, tick, j, masked |
 | tests/model-onboarding-ui.test.js | 154 | node --test 测试（npm test） | stripImports, modelSources, contrastSource, pickerSource |
@@ -103,6 +103,8 @@
 | tests/text-contrast.test.js | 162 | node --test 测试（npm test） | source, css, fakeStorage, throwingStorage |
 | tests/text-diagram-ui.py | 36 | node --test 测试（npm test） | - |
 | tests/tooltip.test.js | 282 | node --test 测试（npm test） | source, boot, fire, tip |
+| tests/ui-sticky-check.html | 63 | node --test 测试（npm test） | checks, lines, ok |
+| tests/ui-sticky-check.mjs | 104 | node --test 测试（npm test） | here, candidates, browser, port |
 | tests/uninstall.test.js | 45 | node --test 测试（npm test） | - |
 | tests/update.test.js | 38 | node --test 测试（npm test） | old |
 | tests/workspace-isolation.test.js | 80 | node --test 测试（npm test） | - |
@@ -111,7 +113,7 @@
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
-### public/app.js（3135 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
+### public/app.js（3144 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -196,146 +198,146 @@
 | scheduleCallGroups | function | 554 |
 | createCallGroup | function | 563 |
 | paintCallGroup | function | 577 |
-| refreshCallGroups | function | 604 |
-| foldCallsBeforeMessage | function | 697 |
-| paintCallGroup | method | 701 |
-| disclosureHint | function | 703 |
-| activityLine | function | 723 |
-| setActivity | method | 733 |
-| setActivity | function | 736 |
-| scheduleCallGroups | method | 737 |
-| setActivityIcon | method | 739 |
-| waiting | function | 750 |
-| scheduleCallGroups | method | 752 |
-| scrollLatest | method | 758 |
-| clearWaiting | function | 760 |
-| stopActivity | function | 764 |
-| scheduleCallGroups | method | 766 |
-| clearWaiting | method | 767 |
-| updateActivity | function | 776 |
-| setActivity | method | 789 |
-| setActivity | method | 790 |
-| mergeThoughts | function | 794 |
-| diffView | const | 812 |
-| renderToolDetail | function | 817 |
-| section | method | 903 |
-| toolState | function | 905 |
-| clearWaiting | method | 907 |
-| setActivity | method | 951 |
-| renderToolDetail | method | 952 |
-| scrollLatest | method | 953 |
-| card | function | 955 |
-| renderMessage | function | 1006 |
-| updateActivity | method | 1101 |
-| renderCompactionStatus | function | 1104 |
-| trackTaskEntries | function | 1121 |
-| placeCompactedTasks | function | 1132 |
-| placeCompactedRetries | method | 1133 |
-| compactionCard | function | 1142 |
-| renderMarkdown | method | 1162 |
-| foldCompaction | function | 1165 |
-| placeCompactedTasks | method | 1185 |
-| mergeThoughts | method | 1186 |
-| compactionEditor | function | 1190 |
-| options | method | 1228 |
-| fillThinking | method | 1258 |
-| retryChipList | function | 1267 |
-| retryEditor | function | 1316 |
-| renderTaskRuns | function | 1336 |
-| renderQueue | function | 1364 |
-| retryCards | const | 1381 |
-| placeCompactedRetries | function | 1382 |
-| retryArchive | function | 1399 |
-| renderRetry | function | 1412 |
-| placeCompactedRetries | method | 1448 |
-| scrollLatest | method | 1449 |
-| event | function | 1451 |
-| snapshot | function | 1624 |
-| clearTimeout | method | 1626 |
-| updatePageTitle | method | 1644 |
-| renderTaskRuns | method | 1651 |
-| renderCompactionStatus | method | 1658 |
-| restoreRetries | method | 1719 |
-| mergeThoughts | method | 1733 |
-| placeCompactedTasks | method | 1747 |
-| renderImages | method | 1761 |
-| closeCompletion | method | 1764 |
-| renderQueue | method | 1775 |
-| applyConfig | method | 1777 |
-| controls | method | 1779 |
-| reconnectTimer | const | 1781 |
-| clearTimeout | method | 1785 |
+| refreshCallGroups | function | 606 |
+| foldCallsBeforeMessage | function | 706 |
+| paintCallGroup | method | 710 |
+| disclosureHint | function | 712 |
+| activityLine | function | 732 |
+| setActivity | method | 742 |
+| setActivity | function | 745 |
+| scheduleCallGroups | method | 746 |
+| setActivityIcon | method | 748 |
+| waiting | function | 759 |
+| scheduleCallGroups | method | 761 |
+| scrollLatest | method | 767 |
+| clearWaiting | function | 769 |
+| stopActivity | function | 773 |
+| scheduleCallGroups | method | 775 |
+| clearWaiting | method | 776 |
+| updateActivity | function | 785 |
+| setActivity | method | 798 |
+| setActivity | method | 799 |
+| mergeThoughts | function | 803 |
+| diffView | const | 821 |
+| renderToolDetail | function | 826 |
+| section | method | 912 |
+| toolState | function | 914 |
+| clearWaiting | method | 916 |
+| setActivity | method | 960 |
+| renderToolDetail | method | 961 |
+| scrollLatest | method | 962 |
+| card | function | 964 |
+| renderMessage | function | 1015 |
+| updateActivity | method | 1110 |
+| renderCompactionStatus | function | 1113 |
+| trackTaskEntries | function | 1130 |
+| placeCompactedTasks | function | 1141 |
+| placeCompactedRetries | method | 1142 |
+| compactionCard | function | 1151 |
+| renderMarkdown | method | 1171 |
+| foldCompaction | function | 1174 |
+| placeCompactedTasks | method | 1194 |
+| mergeThoughts | method | 1195 |
+| compactionEditor | function | 1199 |
+| options | method | 1237 |
+| fillThinking | method | 1267 |
+| retryChipList | function | 1276 |
+| retryEditor | function | 1325 |
+| renderTaskRuns | function | 1345 |
+| renderQueue | function | 1373 |
+| retryCards | const | 1390 |
+| placeCompactedRetries | function | 1391 |
+| retryArchive | function | 1408 |
+| renderRetry | function | 1421 |
+| placeCompactedRetries | method | 1457 |
+| scrollLatest | method | 1458 |
+| event | function | 1460 |
+| snapshot | function | 1633 |
+| clearTimeout | method | 1635 |
+| updatePageTitle | method | 1653 |
+| renderTaskRuns | method | 1660 |
+| renderCompactionStatus | method | 1667 |
+| restoreRetries | method | 1728 |
+| mergeThoughts | method | 1742 |
+| placeCompactedTasks | method | 1756 |
+| renderImages | method | 1770 |
+| closeCompletion | method | 1773 |
+| renderQueue | method | 1784 |
+| applyConfig | method | 1786 |
 | controls | method | 1788 |
-| scheduleReconnect | function | 1900 |
-| clearTimeout | method | 1901 |
-| importDir | const | 1905 |
-| fillModels | method | 1909 |
-| fillSubagentModels | method | 1916 |
-| closeCompletion | method | 1933 |
-| controls | method | 1938 |
-| scrollLatest | method | 1943 |
-| enableImagePreview | function | 1975 |
-| renderImages | function | 1996 |
-| addImages | function | 2021 |
-| loadImages | function | 2042 |
-| renderImages | method | 2051 |
-| selectionCopy | const | 2074 |
-| copySelection | function | 2086 |
-| escapeTimer | const | 2149 |
-| withdrawQueue | function | 2150 |
-| refreshing | const | 2232 |
-| refreshSessions | function | 2233 |
-| updatePageTitle | function | 2244 |
-| updateSessions | function | 2248 |
-| updatePageTitle | method | 2260 |
-| renderSessions | method | 2261 |
-| recoverMissingSession | function | 2263 |
-| controls | method | 2265 |
-| saveView | method | 2272 |
-| controls | method | 2276 |
-| switchSession | function | 2292 |
-| saveView | method | 2294 |
-| controls | method | 2297 |
-| copySessionFile | function | 2323 |
-| positionSessionMenu | function | 2336 |
-| renderSessions | function | 2342 |
-| sessionAction | const | 2494 |
-| renderSummaries | function | 2496 |
-| renderSummaries | method | 2522 |
-| openSessionAction | function | 2526 |
-| contextIcon | function | 2567 |
-| renderContextChips | function | 2570 |
-| renderContextResults | function | 2588 |
-| showContextSkills | function | 2608 |
-| positionContextSkills | function | 2613 |
-| showContextSkills | method | 2625 |
-| controls | method | 2660 |
-| skillTrigger | const | 2662 |
-| showContextSkills | method | 2678 |
-| resizePrompt | method | 2687 |
-| controls | method | 2688 |
-| closeCompletion | function | 2691 |
-| highlightCompletion | function | 2699 |
-| chooseCompletion | function | 2708 |
-| closeCompletion | method | 2718 |
-| updateCompletion | function | 2721 |
-| closeCompletion | method | 2722 |
-| resizePrompt | method | 2775 |
-| controls | method | 2776 |
-| switchSession | method | 2816 |
-| creationLoad | const | 2827 |
-| refreshPresets | function | 2828 |
-| createAgentPicker | function | 2863 |
-| options | method | 2889 |
-| fill | method | 2897 |
-| fillThinking | method | 2905 |
-| options | method | 2907 |
-| loadCreation | function | 2954 |
-| openCreation | function | 2990 |
-| rememberCreation | const | 3011 |
-| updateDefaultsPreview | function | 3043 |
-| updateDefaultsPreview | method | 3067 |
-| controls | method | 3122 |
+| reconnectTimer | const | 1790 |
+| clearTimeout | method | 1794 |
+| controls | method | 1797 |
+| scheduleReconnect | function | 1909 |
+| clearTimeout | method | 1910 |
+| importDir | const | 1914 |
+| fillModels | method | 1918 |
+| fillSubagentModels | method | 1925 |
+| closeCompletion | method | 1942 |
+| controls | method | 1947 |
+| scrollLatest | method | 1952 |
+| enableImagePreview | function | 1984 |
+| renderImages | function | 2005 |
+| addImages | function | 2030 |
+| loadImages | function | 2051 |
+| renderImages | method | 2060 |
+| selectionCopy | const | 2083 |
+| copySelection | function | 2095 |
+| escapeTimer | const | 2158 |
+| withdrawQueue | function | 2159 |
+| refreshing | const | 2241 |
+| refreshSessions | function | 2242 |
+| updatePageTitle | function | 2253 |
+| updateSessions | function | 2257 |
+| updatePageTitle | method | 2269 |
+| renderSessions | method | 2270 |
+| recoverMissingSession | function | 2272 |
+| controls | method | 2274 |
+| saveView | method | 2281 |
+| controls | method | 2285 |
+| switchSession | function | 2301 |
+| saveView | method | 2303 |
+| controls | method | 2306 |
+| copySessionFile | function | 2332 |
+| positionSessionMenu | function | 2345 |
+| renderSessions | function | 2351 |
+| sessionAction | const | 2503 |
+| renderSummaries | function | 2505 |
+| renderSummaries | method | 2531 |
+| openSessionAction | function | 2535 |
+| contextIcon | function | 2576 |
+| renderContextChips | function | 2579 |
+| renderContextResults | function | 2597 |
+| showContextSkills | function | 2617 |
+| positionContextSkills | function | 2622 |
+| showContextSkills | method | 2634 |
+| controls | method | 2669 |
+| skillTrigger | const | 2671 |
+| showContextSkills | method | 2687 |
+| resizePrompt | method | 2696 |
+| controls | method | 2697 |
+| closeCompletion | function | 2700 |
+| highlightCompletion | function | 2708 |
+| chooseCompletion | function | 2717 |
+| closeCompletion | method | 2727 |
+| updateCompletion | function | 2730 |
+| closeCompletion | method | 2731 |
+| resizePrompt | method | 2784 |
+| controls | method | 2785 |
+| switchSession | method | 2825 |
+| creationLoad | const | 2836 |
+| refreshPresets | function | 2837 |
+| createAgentPicker | function | 2872 |
+| options | method | 2898 |
+| fill | method | 2906 |
+| fillThinking | method | 2914 |
+| options | method | 2916 |
+| loadCreation | function | 2963 |
+| openCreation | function | 2999 |
+| rememberCreation | const | 3020 |
+| updateDefaultsPreview | function | 3052 |
+| updateDefaultsPreview | method | 3076 |
+| controls | method | 3131 |
 
 ### public/file-picker.js（351 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 
@@ -996,7 +998,7 @@
 | restore | method | 64 |
 | record | const | 68 |
 
-### tests/message-activity.test.js（370 行） — node --test 测试（npm test）
+### tests/message-activity.test.js（407 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1262,6 +1264,40 @@
 | fire | method | 270 |
 | fire | method | 271 |
 | fire | method | 276 |
+
+### tests/ui-sticky-check.html（63 行） — node --test 测试（npm test）
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| checks | const | 45 |
+| lines | const | 55 |
+| ok | const | 56 |
+
+### tests/ui-sticky-check.mjs（104 行） — node --test 测试（npm test）
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| here | const | 10 |
+| candidates | const | 11 |
+| browser | const | 18 |
+| port | const | 20 |
+| profile | const | 21 |
+| proc | const | 22 |
+| sleep | const | 27 |
+| target | const | 28 |
+| ws | const | 37 |
+| seq | const | 39 |
+| pending | const | 40 |
+| send | const | 45 |
+| waitEvent | const | 48 |
+| loaded | const | 54 |
+| expression | const | 59 |
+| result | const | 80 |
+| checks | const | 81 |
+| shotPath | const | 84 |
+| shot | const | 85 |
+| writeFileSync | method | 87 |
+| ok | const | 95 |
 
 ### tests/update.test.js（38 行） — node --test 测试（npm test）
 
