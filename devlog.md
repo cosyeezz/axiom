@@ -538,3 +538,10 @@
 - 决策：复用原完成标记 localStorage 与跨页锁，不新增依赖；会话操作收进原生 details，支持键盘、Esc、外部点击和手机触控。创建时间独立持久化，旧历史以 updatedAt 兼容，不能还原过去未保存的创建时间。
 - 验证：创建时间与页签回归通过，Chromium 1440px/320px 验证分组、日期、绿点、操作展开/收起与边界；全量测试的思考展开和 collapsed-thinking 两处失败在干净基线 159d62a 同样复现，未冒充全绿。预览使用 PREVIEW_PORT=4397，未重启正式服务。
 - 文件：public/{app.js,index.html,style.css}、src/sessions.js、tests/{app.test.js,workspace-tabs.test.js,session-created-at.test.js,session-sidebar-ui.py,conversation-preview.mjs}、README.md、devlog.md、codebase-map 索引/生成脚本/knowledge.md。
+
+### 2026-09-12 首装网页引导与统一卸载
+
+- 内容：空模型保持连接并复用模型设置；保留历史引用/草稿，配置后手动新建。新增 axiom uninstall 核对全局目录、安全停止、取消自启后仅卸载 Axiom。
+- 原因：避免首装会话失败重连；HTTP 未启动时通过本地守护通道停止崩溃重试，不强杀活跃 worker。
+- 涉及：public/app.js、scripts/service.mjs、scripts/uninstall.mjs、tests/model-onboarding-ui.test.js、tests/service.test.js、tests/uninstall.test.js、README.md、代码索引及坑库。
+- 决策：保留 ~/.axiom 与 ~/.pi；旧守护进程须完整重启后才有兜底通道。

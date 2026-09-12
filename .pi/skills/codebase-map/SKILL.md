@@ -45,6 +45,7 @@ desktop/pake.json ── Pake 独立桌面壳（macOS Universal / Windows x64）
       │  WebSocket JSON（command，src/protocol.js zod 校验）
       ▼
 scripts/install.mjs    一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器
+scripts/uninstall.mjs  核对安装目录 → 安全停止 → 取消自启 → 卸载（保留用户数据）
 scripts/autostart.mjs  Windows/macOS/Linux 用户登录自动启动注册
   └─ scripts/service.mjs  守护进程：快速重启 / 安装构建后重启
        └─ src/main.js  入口：端口/cwd 校验，组装并 listen(127.0.0.1)

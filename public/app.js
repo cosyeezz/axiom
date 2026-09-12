@@ -22,6 +22,7 @@ let ws,
   restarting = false,
   creation;
 let sessionMissing = false;
+let onboarding = false;
 let allSessions = [],
   follow = true;
 const views = new Map();
@@ -190,12 +191,12 @@ function controls() {
   $("copy-workspace").disabled = !$("workspace-label").textContent;
   renderContextChips();
   for (const id of ["send", "send-steer", "send-followup"])
-    $(id).disabled = unavailable || sessionMissing || imageLoading || (!$("prompt").value.trim() && !selectedSkill && !images.length && !contextFiles.length);
+    $(id).disabled = unavailable || !sessionId || sessionMissing || imageLoading || (!$("prompt").value.trim() && !selectedSkill && !images.length && !contextFiles.length);
   $("send-steer").hidden = $("send-followup").hidden = !busy;
   $("stop").disabled = !busy || unavailable || sessionMissing;
   $("stop").hidden = !busy;
   $("send").hidden = busy;
-  for (const id of ["new", "custom-new"]) $(id).disabled = unavailable;
+  for (const id of ["new", "custom-new"]) $(id).disabled = unavailable || !models.length;
   for (const button of document.querySelectorAll(".session-actions button")) button.disabled = unavailable;
   $("status").dataset.connected = String(connected);
   $("status").textContent = restarting ? "正在重启…" : connected ? "已连接" : "连接断开";
@@ -236,6 +237,12 @@ async function refreshModelCatalog() {
     if (levels) refill(select, levels.map((level) => [level, level]));
   }
   modelPicker.syncAll();
+  // 首次配置保存模型后解除引导态（并发重复刷新只在状态变化时执行一次）。
+  if (onboarding && models.length) {
+    onboarding = false;
+    controls();
+    error("模型已保存：点击「＋ 新会话」即可开始对话。");
+  }
 }
 function fillModels() {
   options(
@@ -352,10 +359,10 @@ $("settings-defaults-tab").onclick = () => showSettingsPanel("defaults");
 $("settings-remote-tab").onclick = () => showSettingsPanel("remote");
 $("settings-models-tab").onclick = () => showSettingsPanel("models");
 $("open-settings").onclick = () => {
-  showSettingsPanel("defaults");
+  showSettingsPanel(models.length ? "defaults" : "models");
   controls();
-  $("settings").showModal();
-  openCreation(true);
+  if (!$("settings").open) $("settings").showModal();
+  if (models.length) openCreation(true);
 };
 $("settings").onclick = (e) => {
   if (e.target !== $("settings")) return;
@@ -1679,6 +1686,21 @@ $("login").onsubmit = async (e) => {
       $("provider"),
       providerEntries(),
     );
+    if (!models.length) {
+      // 空模型目录启动：保持连接进入首次配置引导，不建会话、不断线重连。
+      onboarding = true;
+      sessionMissing = true;
+      connected = true;
+      controls();
+      $("login").hidden = true;
+      $("workspace").hidden = false;
+      error("尚无可用模型：请在「设置 → 模型与供应商」中添加并保存；保存后点击「＋ 新会话」即可开始，无需重启。");
+      showSettingsPanel("models");
+      if (!$("settings").open) $("settings").showModal();
+      reconnectDelay = 1000;
+      return;
+    }
+    onboarding = false;
     let state;
     if (sessionId) {
       try {
@@ -2096,7 +2118,7 @@ function refreshSessions() {
 }
 // ponytail: 可见页面每 5 秒刷新后台状态；需要即时通知时再增加列表事件订阅。
 setInterval(() => {
-  if (connected && !changing && !document.querySelector(".session-options[open]") && !document.hidden) void refreshSessions().catch(error);
+  if (connected && !sessionMissing && !changing && !document.querySelector(".session-options[open]") && !document.hidden) void refreshSessions().catch(error);
 }, 5000);
 function updatePageTitle() {
   const workspace = currentCwd.replaceAll("\\", "/").replace(/\/$/, "").split("/").pop() || currentCwd;
@@ -2118,6 +2140,13 @@ async function updateSessions() {
   renderSessions();
 }
 async function recoverMissingSession() {
+  sessionMissing = true;
+  controls();
+  // 空模型目录不等于历史已删除，保留引用与草稿。
+  if (!models.length) {
+    error("当前会话暂不可用；请先在「设置 → 模型与供应商」配置模型，再点击「＋ 新会话」。");
+    return;
+  }
   sessionMissing = true;
   saveView();
   const draft = views.get(sessionId);
@@ -2155,7 +2184,10 @@ async function switchSession(action) {
       link.href = url; link.target = "_blank"; link.rel = "noopener";
       link.textContent = "打开工作空间";
       $("error").append(link);
-    } else snapshot(state);
+    } else {
+      if (sessionMissing) views.set(state.sessionId, { draft: $("prompt").value, contextFiles: [...contextFiles], images: [...images], selectedSkill, follow: true, scroll: 0 });
+      snapshot(state);
+    }
     renderSessions();
     if (mobile.matches) sidebar(false);
     await refreshSessions();
