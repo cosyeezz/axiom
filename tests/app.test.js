@@ -383,6 +383,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("composer-skill").options[1].title, "代码导航");
     assert.equal($("composer-skill").hidden, true);
     assert.equal($("stop").textContent.trim(), "Stop ■");
+    assert.equal($("stop").querySelector('span[aria-hidden="true"]').textContent, "■");
     assert.equal(await window.sidebarCheck(), "C:\\axiom\\b.jsonl", "file-only changes refresh cached copy targets");
     window.sidebarConnected(false);
     assert.equal(row("b").querySelector(".session-copy").disabled, false);
