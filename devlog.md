@@ -4,7 +4,7 @@
 - 决策：按用户要求 Axiom 独立，去除与主工作区的现行从属关系；旧的子目录镜像发布方式不再使用，master 直接推送公开仓库。npm 包名定为 `@cosyeezz/axiom`，macOS 登录自启 Label 改为 `com.cosyeezz.axiom`。不改写 Git 历史，不删除另一仓库及其未提交改动；历史条目仅以中性表述（主工作区、旧发布方式）去除旧名称与具体路径，事件事实不变。
 - 文档：README 发布流程改为独立功能 worktree 验证 → 提交 push → 合并 master 推送发布；卸载说明按本机实际安装 package.json 的 name 确定包名，不保留旧名称字面量；新增「从旧包名迁移」一节：更名不支持原地自动迁移，旧版本先安全停止、取消自启、卸载旧包，再安装 github:cosyeezz/axiom 并 axiom-setup，~/.axiom 与 ~/.pi 保留，新旧服务不可同时运行。AGENTS 示例改用 Axiom。版本升至 0.1.5，更新与卸载核对新包目录，预览使用当前工作空间。
 - 本机配置：worktree `.env.local`（gitignore，不入库）已复制原配置并移除旧 AXIOM_CWD（改为注释），合并后部署回主源码目录并保留其他设置；在此记录该被忽略的本机配置修正，便于追溯。
-- 验证：npm test 197 项，196 通过、1 原有跳过、0 失败。
+- 验证：合入最新 origin/master 的卸载 CLI 循环等待修复后，npm test 198 项，197 通过、1 原有跳过、0 失败；npm pack --dry-run 核对独立包名且不含本机 .env.local；当前源码与文档的旧项目名称引用清零。
 - 涉及：README.md、devlog.md、AGENTS.md、package.json、package-lock.json、scripts/{service,uninstall,autostart}.mjs、tests/{service,uninstall,autostart}.test.js、tests/conversation-preview.mjs、代码索引及本机 .env.local。
 
 ## 2026-09-12 02:15 执行过程合组收尾与上下跳转
@@ -584,3 +584,9 @@
 - 文件：src/sessions.js、public/app.js、tests/app.test.js、README.md、devlog.md。
 - 内容/原因：自动重试节奏改为 2、2、5、5、10、10、30、60、120、240、480 秒，之后翻倍、16 分钟封顶，最多 45 次（全部耗尽纯等待约 9.3 小时）；原为翻倍不封顶、最多 30 次。涉及 src/retry.js（新增 MAX_DELAY_MS 上限）、tests/retry.test.js、README.md。时间：2025-06。文件：src/retry.js、tests/retry.test.js、README.md、devlog.md。
 - 内容/原因：重试支持自定义错误词表（会话配置 selection.retry）：白名单命中强制重试、黑名单命中不重试（黑名单>白名单>内建判定），字符串子串匹配、大小写不敏感；设置页新增芯片式编辑器（回车添加/× 删除/去重），子代理经会话配置继承；仅新建会话生效。涉及 src/protocol.js（retryPatterns schema）、src/retry.js（classify 词表）、src/pi.js、src/sessions.js（defaultSelection/item/子代理透传）、public/app.js、public/index.html、public/style.css。时间：2025-06。文件：上述 + tests/retry.test.js、tests/config.test.js、README.md、devlog.md。
+
+### 2026-09-12 修复卸载 CLI 循环等待
+- 症状：axiom uninstall 报 unsettled top-level await，未执行卸载。
+- 根因：service 顶层等待动态导入 uninstall，uninstall 又静态导入尚未完成求值的 service。
+- 修复：显式传入 run/stop/npm，删除反向导入；涉及 scripts/service.mjs、scripts/uninstall.mjs、tests/uninstall.test.js、README.md 及索引。
+- 验证：新增真实 CLI 子进程测试，以不存在的 npm 隔离实际安装和用户数据。

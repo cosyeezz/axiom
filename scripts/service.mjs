@@ -226,7 +226,7 @@ if (invoked && invoked === realpathSync(fileURLToPath(import.meta.url))) {
   if (extra.length || (command && !["stop", "uninstall"].includes(command))) {
     console.error("用法：axiom [stop|uninstall]"); process.exitCode = 1;
   } else {
-    await (command === "uninstall" ? import("./uninstall.mjs").then((m) => m.uninstall()) : command === "stop" ? stopService() : supervise()).catch((error) => {
+    await (command === "uninstall" ? import("./uninstall.mjs").then((m) => m.uninstall({ execute: run, stop: stopService, npm: npmRun })) : command === "stop" ? stopService() : supervise()).catch((error) => {
       console.error(error.message); process.exitCode = 1;
     });
   }
