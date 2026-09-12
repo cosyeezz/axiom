@@ -1064,8 +1064,23 @@ textarea {
 [hidden] {
   display: none !important;
 }
+.mobile-controls { display: none; }
 @media (max-width: 700px) {
   body { --sidebar-width: 0px; }
+  .shell:not(.mobile-expanded) main > header,
+  .shell:not(.mobile-expanded) #composer .selectors,
+  .shell:not(.mobile-expanded) #session-runtime,
+  .shell:not(.mobile-expanded) .context-bar,
+  .shell:not(.mobile-expanded) #task-runs { display: none; }
+  .shell:not(.mobile-expanded) .context-bar:has(.context-chip) { display: flex; }
+  .mobile-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px; }
+  #mobile-runtime { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  #mobile-expand { min-height: 40px; padding: 4px 8px; border: 0; background: transparent; color: var(--muted); font-size: 12px; }
+  .shell:not(.mobile-expanded) #composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+  .shell:not(.mobile-expanded) #composer .actions { align-self: end; }
+  .shell:not(.mobile-expanded) #composer :is(.mobile-controls, #prompt-completion) { grid-column: 1 / -1; }
+  .shell:not(.mobile-expanded) #composer:has(#stop:not([hidden])) #prompt { grid-column: 1 / -1; }
+  .shell:not(.mobile-expanded) #composer:has(#stop:not([hidden])) .actions { grid-column: 1 / -1; }
   .shell,
   .shell.collapsed {
     grid-template-columns: minmax(0, 1fr);
@@ -1100,11 +1115,34 @@ textarea {
   .task-navigation { padding: 0 12px 12px; }
   .task-navigation button { min-height: 40px; }
   .composer-wrap {
-    padding: 8px 5% max(12px, env(safe-area-inset-bottom));
+    padding: 4px 12px max(8px, env(safe-area-inset-bottom));
+    max-height: 50%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
-  textarea {
+  #composer { border-radius: 12px; }
+  #prompt {
     font-size: 16px;
+    line-height: 24px;
+    padding: 8px 12px;
+    min-height: 44px;
+    max-height: min(120px, 20dvh);
   }
+  .context-bar { margin-bottom: 4px; }
+  #add-context, #add-image { width: 40px; height: 40px; min-height: 40px; }
+  #composer .actions { gap: 4px; padding: 4px 8px; }
+  #composer .selectors { flex-basis: 100%; gap: 4px; padding: 0; }
+  #composer .selectors label { flex: 1; min-width: 0; }
+  #composer .selectors select { width: 100%; max-width: 100%; padding-left: 8px; }
+  #composer .actions > button { flex: 1; }
+  #session-runtime { flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; padding: 4px 8px; }
+  #session-runtime > span { flex-shrink: 0; }
+  #session-runtime:empty { display: none; }
+  .composer-footer { display: none; }
+  #task-runs { max-height: 88px; overflow-y: auto; }
+  #message-queue, #prompt-completion { max-height: 96px; }
+  #earliest, #latest { position: static; transform: none; display: block; margin: 4px auto; flex-shrink: 0; }
+  .image-attachments img { width: 64px; height: 48px; }
   .selectors select,
   .actions > button {
     height: 40px;
@@ -1241,6 +1279,9 @@ summary:hover > .disclosure-action { color: var(--ink); }
 .diff-column-title { font-weight: bold; }
 .diff-view-unified .diff-split, .diff-view-split .diff-unified { display: none; }
 @media (max-width: 700px) {
+  /* Phone reading takes priority over stacked sticky disclosure bars. */
+  .call-group[open] > summary,
+  :is(.tool-record, .thinking-record, .skill-invocation, .retry-card, .compaction-card, .task-system-prompt)[open] > summary { position: static; }
   .diff-view-split .diff-unified { display: block; }
   .diff-view-split .diff-split { display: none; }
   .tool-record > summary, .thinking-record > summary, .activity-line { min-height: 44px; }
