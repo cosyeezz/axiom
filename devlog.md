@@ -538,3 +538,4 @@
 - 实现：服务端 `Sessions.list()` 返回 `sessionFile`（取 `agent.sessionFile()`，未落盘为 null）；前端 `copySessionFile()` 走 `navigator.clipboard`，按钮悬停反馈「已复制」，无文件或复制失败走错误条。复制是纯前端操作，断连时保持可用。导入的会话返回的是存储目录里的副本路径（导入即复制，原文件不动）。
 - 验证：npm test 183 通过、1 跳过；tests/app.test.js 更新菜单子项断言并新增复制路径断言（`C:\axiom\b.jsonl`）。
 - 文件：src/sessions.js、public/app.js、tests/app.test.js、README.md、devlog.md。
+- 内容/原因：自动重试节奏改为 2、2、5、5、10、10、30、60、120、240、480 秒，之后翻倍、16 分钟封顶，最多 45 次（全部耗尽纯等待约 9.3 小时）；原为翻倍不封顶、最多 30 次。涉及 src/retry.js（新增 MAX_DELAY_MS 上限）、tests/retry.test.js、README.md。时间：2025-06。文件：src/retry.js、tests/retry.test.js、README.md、devlog.md。

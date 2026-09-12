@@ -73,29 +73,29 @@ const recordedSleep = () => {
 const lastAssistant = (session) =>
   session.agent.state.messages.findLast((message) => message.role === "assistant");
 
-test("退避常量符合规格：3,3,3,6,6,12,24,48 秒为基础表，之后翻倍不封顶，最多 30 次", () => {
-  assert.deepEqual(RETRY_DELAYS_MS, [3000, 3000, 3000, 6000, 6000, 12000, 24000, 48000]);
-  assert.equal(MAX_RETRIES, 30);
+test("退避常量符合规格：2,2,5,5,10,10,30,60,120,240,480 秒为基础表，之后翻倍封顶 16 分钟，最多 45 次", () => {
+  assert.deepEqual(RETRY_DELAYS_MS, [2000, 2000, 5000, 5000, 10000, 10000, 30000, 60000, 120000, 240000, 480000]);
+  assert.equal(MAX_RETRIES, 45);
 });
 
-test("全序列：30 次重试按 3,3,3,6,6,12,24,48 后 96,192 翻倍不封顶的节奏，耗尽前一次成功", async () => {
-  const steps = Array.from({ length: 30 }, () => RATE_LIMIT);
+test("全序列：45 次重试按 2,2,5,5,10,10,30,60,120,240,480 后翻倍封顶 16 分钟的节奏，耗尽前一次成功", async () => {
+  const steps = Array.from({ length: 45 }, () => RATE_LIMIT);
   steps.push({ stopReason: "stop", text: "finally" });
   const session = fakeSession(steps);
   const { emit, data } = recorder();
   const sleep = recordedSleep();
   const retry = createAutoRetry({ session, emit, sleep });
   await retry.run((text) => session.prompt(text || "hi"));
-  const expected = [...RETRY_DELAYS_MS, ...Array.from({ length: 22 }, (_, i) => 48000 * 2 ** (i + 1))];
-  assert.equal(expected.at(-1), 201326592000, "第 30 次等待 48s×2^22，不封顶");
+  const expected = [...RETRY_DELAYS_MS, ...Array.from({ length: 34 }, () => 960_000)];
+  assert.equal(expected.at(-1), 960_000, "第 12 次起等待封顶 16 分钟");
   assert.deepEqual(sleep.calls, expected);
   const waiting = data().filter((event) => event.status === "waiting");
   assert.deepEqual(waiting.map((event) => event.delayMs), expected);
-  assert.deepEqual(waiting.map((event) => event.attempt), Array.from({ length: 30 }, (_, i) => i + 1));
+  assert.deepEqual(waiting.map((event) => event.attempt), Array.from({ length: 45 }, (_, i) => i + 1));
   assert.ok(waiting[0].nextRetryAt > 0 && waiting.at(-1).nextRetryAt >= waiting[0].nextRetryAt, "waiting 携带 nextRetryAt");
   assert.equal(data().at(-1).status, "succeeded");
-  assert.equal(data().at(-1).attempt, 30);
-  assert.equal(session.log.length, 31);
+  assert.equal(data().at(-1).attempt, 45);
+  assert.equal(session.log.length, 46);
   assert.equal(session.log[0], "prompt");
   assert.ok(session.log.slice(1).every((kind) => kind === "continue"));
 });
