@@ -1,5 +1,11 @@
 # 坑与 bug 知识库（自成长：只追加，不删改历史）
 
+### 2026-09-11 Tailscale omitempty 字段不能当必填身份
+- 症状：同账号个人设备打开远程地址也返回 403。
+- 根因：真实 whois Node.Tags 使用 omitempty，无标签时省略；测试全手写 Tags:[]，未覆盖实际输出。
+- 修复：src/remote.js whoisUser 将省略 Tags 视为无标签，仍拒绝非数组、真实 tag、缺 Node 和无有效身份。
+- 防再犯：tests/remote.test.js 普通设备 mock 默认省略 Tags，真实形态贯穿 HTTP/WS 身份验证，不能只验证手工理想数据。
+
 ### 2026-09-11 Tailscale HTTP 地址不是浏览器安全上下文
 - 症状：本机 localhost 可用，换成 Tailscale HTTP 地址后请求可能全部失效，自动复制不可用。
 - 根因：Tailscale 的隧道加密不改变浏览器对 HTTP 非 loopback 地址的 secure context 判定，crypto.randomUUID 和剪贴板能力并非处处可用。

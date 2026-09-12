@@ -111,7 +111,8 @@ export function whoisUser(who) {
   const loginName = who?.UserProfile?.LoginName;
   return {
     loginName: typeof loginName === "string" ? loginName : "",
-    tagged: !node || !Array.isArray(tags) || tags.length > 0,
+    // Tailscale 对无标签设备省略 Tags（omitempty）；缺 Node 或非法 Tags 仍拒绝。
+    tagged: !node || (tags !== undefined && (!Array.isArray(tags) || tags.length > 0)),
   };
 }
 

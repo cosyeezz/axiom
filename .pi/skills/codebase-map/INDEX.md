@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/11 14:17:47）
+# Axiom 多级代码索引（生成于 2026/9/12 00:37:33）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -31,7 +31,7 @@
 | src/model-config.js | 369 | Pi models.json 无损配置读写与共享收藏持久化 | sdkModelConfig, EMPTY_FINGERPRINT, digest, LEVELS |
 | src/pi.js | 309 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, queueStateOf, hasModelOutput, withdrawQueue |
 | src/protocol.js | 304 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
-| src/remote.js | 500 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
+| src/remote.js | 501 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
 | src/retry.js | 149 | 模型失败重试：可取消退避、最多30次、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_RETRIES, delayFor, MAX_TIMEOUT_MS |
 | src/server.js | 438 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | assets, createServerApp |
 | src/sessions.js | 846 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | BROWSE_PAGE, resolveDir, parentOf, absoluteCrumbs |
@@ -69,7 +69,7 @@
 | tests/recall.test.js | 94 | node --test 测试（npm test） | user, assistant, thinking, fixture |
 | tests/remote-ui.py | 51 | node --test 测试（npm test） | - |
 | tests/remote-ui.test.js | 224 | node --test 测试（npm test） | page, modelSources, flush, stubRequest |
-| tests/remote.test.js | 597 | node --test 测试（npm test） | EMAIL, mockTailscale, fakeChild, setup |
+| tests/remote.test.js | 598 | node --test 测试（npm test） | EMAIL, mockTailscale, fakeChild, setup |
 | tests/retry.test.js | 340 | node --test 测试（npm test） | RATE_LIMIT, QUOTA, ABORTED, fakeSession |
 | tests/server.test.js | 125 | node --test 测试（npm test） | - |
 | tests/service-api.test.js | 63 | node --test 测试（npm test） | - |
@@ -610,7 +610,7 @@
 | fingerprintIn | const | 151 |
 | command | const | 152 |
 
-### src/remote.js（500 行） — Tailscale 登录身份、远程监听、同账号授权与本机配置持久化
+### src/remote.js（501 行） — Tailscale 登录身份、远程监听、同账号授权与本机配置持久化
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -623,13 +623,13 @@
 | isTailnetIPv4 | const | 75 |
 | selfStatus | function | 86 |
 | whoisUser | function | 108 |
-| describeError | const | 118 |
-| defaultSpawnLogin | const | 128 |
-| spawn | method | 129 |
-| AUTH_URL | const | 130 |
-| MAX_WHOIS | const | 133 |
-| LOGIN_OUTPUT_CAP | const | 134 |
-| createRemoteAccess | function | 136 |
+| describeError | const | 119 |
+| defaultSpawnLogin | const | 129 |
+| spawn | method | 130 |
+| AUTH_URL | const | 131 |
+| MAX_WHOIS | const | 134 |
+| LOGIN_OUTPUT_CAP | const | 135 |
+| createRemoteAccess | function | 137 |
 
 ### src/retry.js（149 行） — 模型失败重试：可取消退避、最多30次、保留已有工具结果继续
 
@@ -928,7 +928,7 @@
 | stubRequest | function | 41 |
 | submit | const | 51 |
 
-### tests/remote.test.js（597 行） — node --test 测试（npm test）
+### tests/remote.test.js（598 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -937,7 +937,7 @@
 | fakeChild | const | 76 |
 | setup | const | 93 |
 | wsRequest | const | 134 |
-| setTimeout | method | 423 |
+| setTimeout | method | 424 |
 
 ### tests/retry.test.js（340 行） — node --test 测试（npm test）
 
