@@ -1,11 +1,11 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 03:12:46）
+# Axiom 多级代码索引（生成于 2026/9/12 03:42:49）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| public/app.js | 3070 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, sessionMissing |
+| public/app.js | 3119 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, sessionMissing |
 | public/file-picker.css | 269 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 351 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/index.html | 287 | 页面骨架与元素 id（见 L3） | - |
@@ -15,7 +15,7 @@
 | public/model-picker.css | 88 | 共享收藏下拉：暗色浮层、星标、触屏与焦点样式 | - |
 | public/model-picker.js | 283 | 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互 | GAP, EDGE, TYPEAHEAD_MS, el |
 | public/stream-renderer.js | 46 | 流式增量渲染状态机 | createStreamRenderer |
-| public/style.css | 1239 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1250 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | public/text-contrast.css | 46 | 文字专用对比度档位与调节面板 | - |
 | public/text-contrast.js | 113 | 文字对比度按钮、实时调节与本地偏好 | KEY, MIN, MAX, STEP |
 | public/tooltip.css | 50 | 共享暗色悬停说明样式 | - |
@@ -40,7 +40,7 @@
 | src/tools.js | 97 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
 | tests/activity-groups-ui.py | 201 | node --test 测试（npm test） | activityHistory, sessions |
-| tests/app.test.js | 1562 | node --test 测试（npm test） | pickerSource, contrastSource, modelSources |
+| tests/app.test.js | 1597 | node --test 测试（npm test） | pickerSource, contrastSource, modelSources |
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
 | tests/capabilities.test.js | 207 | node --test 测试（npm test） | - |
@@ -80,7 +80,7 @@
 | tests/service.test.js | 236 | node --test 测试（npm test） | - |
 | tests/session-created-at.test.js | 44 | node --test 测试（npm test） | factory |
 | tests/session-flow.test.js | 308 | node --test 测试（npm test） | flowFactory, jsonlFactory |
-| tests/session-sidebar-ui.py | 61 | node --test 测试（npm test） | - |
+| tests/session-sidebar-ui.py | 104 | node --test 测试（npm test） | - |
 | tests/smoke.js | 67 | node --test 测试（npm test） | TIMEOUT, sessions |
 | tests/stream-renderer.test.js | 99 | node --test 测试（npm test） | - |
 | tests/task-notifications.test.js | 129 | node --test 测试（npm test） | factoryFixture, tick, until |
@@ -96,7 +96,7 @@
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
-### public/app.js（3070 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
+### public/app.js（3119 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -270,56 +270,57 @@
 | copySelection | function | 2101 |
 | escapeTimer | const | 2164 |
 | withdrawQueue | function | 2165 |
-| refreshing | const | 2245 |
-| refreshSessions | function | 2246 |
-| updatePageTitle | function | 2257 |
-| updateSessions | function | 2261 |
-| updatePageTitle | method | 2273 |
-| renderSessions | method | 2274 |
-| recoverMissingSession | function | 2276 |
-| controls | method | 2278 |
-| saveView | method | 2285 |
-| controls | method | 2289 |
-| switchSession | function | 2305 |
-| saveView | method | 2307 |
-| controls | method | 2310 |
-| copySessionFile | function | 2336 |
-| renderSessions | function | 2344 |
-| sessionAction | const | 2460 |
-| openSessionAction | function | 2461 |
-| contextIcon | function | 2502 |
-| renderContextChips | function | 2505 |
-| renderContextResults | function | 2523 |
-| showContextSkills | function | 2543 |
-| positionContextSkills | function | 2548 |
-| showContextSkills | method | 2560 |
-| controls | method | 2595 |
-| skillTrigger | const | 2597 |
-| showContextSkills | method | 2613 |
-| resizePrompt | method | 2622 |
-| controls | method | 2623 |
-| closeCompletion | function | 2626 |
-| highlightCompletion | function | 2634 |
-| chooseCompletion | function | 2643 |
-| closeCompletion | method | 2653 |
-| updateCompletion | function | 2656 |
-| closeCompletion | method | 2657 |
-| resizePrompt | method | 2710 |
-| controls | method | 2711 |
-| switchSession | method | 2751 |
-| creationLoad | const | 2762 |
-| refreshPresets | function | 2763 |
-| createAgentPicker | function | 2798 |
-| options | method | 2824 |
-| fill | method | 2832 |
-| fillThinking | method | 2840 |
-| options | method | 2842 |
-| loadCreation | function | 2889 |
-| openCreation | function | 2925 |
-| rememberCreation | const | 2946 |
-| updateDefaultsPreview | function | 2978 |
-| updateDefaultsPreview | method | 3002 |
-| controls | method | 3057 |
+| refreshing | const | 2247 |
+| refreshSessions | function | 2248 |
+| updatePageTitle | function | 2259 |
+| updateSessions | function | 2263 |
+| updatePageTitle | method | 2275 |
+| renderSessions | method | 2276 |
+| recoverMissingSession | function | 2278 |
+| controls | method | 2280 |
+| saveView | method | 2287 |
+| controls | method | 2291 |
+| switchSession | function | 2307 |
+| saveView | method | 2309 |
+| controls | method | 2312 |
+| copySessionFile | function | 2338 |
+| positionSessionMenu | function | 2351 |
+| renderSessions | function | 2357 |
+| sessionAction | const | 2509 |
+| openSessionAction | function | 2510 |
+| contextIcon | function | 2551 |
+| renderContextChips | function | 2554 |
+| renderContextResults | function | 2572 |
+| showContextSkills | function | 2592 |
+| positionContextSkills | function | 2597 |
+| showContextSkills | method | 2609 |
+| controls | method | 2644 |
+| skillTrigger | const | 2646 |
+| showContextSkills | method | 2662 |
+| resizePrompt | method | 2671 |
+| controls | method | 2672 |
+| closeCompletion | function | 2675 |
+| highlightCompletion | function | 2683 |
+| chooseCompletion | function | 2692 |
+| closeCompletion | method | 2702 |
+| updateCompletion | function | 2705 |
+| closeCompletion | method | 2706 |
+| resizePrompt | method | 2759 |
+| controls | method | 2760 |
+| switchSession | method | 2800 |
+| creationLoad | const | 2811 |
+| refreshPresets | function | 2812 |
+| createAgentPicker | function | 2847 |
+| options | method | 2873 |
+| fill | method | 2881 |
+| fillThinking | method | 2889 |
+| options | method | 2891 |
+| loadCreation | function | 2938 |
+| openCreation | function | 2974 |
+| rememberCreation | const | 2995 |
+| updateDefaultsPreview | function | 3027 |
+| updateDefaultsPreview | method | 3051 |
+| controls | method | 3106 |
 
 ### public/file-picker.js（351 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 
@@ -769,7 +770,7 @@
 | activityHistory | const | 16 |
 | sessions | const | 27 |
 
-### tests/app.test.js（1562 行） — node --test 测试（npm test）
+### tests/app.test.js（1597 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
