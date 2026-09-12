@@ -354,8 +354,8 @@ export class Sessions {
     return { sessionId: id, title };
   }
 
-  // 导入 pi 的 .jsonl 会话：原文件原样复制到本工作空间存储目录，原文件保持不变（删除 Axiom 会话不动 pi 历史）。
-  async importSession(file) {
+  // 导入 pi 的 .jsonl 会话：历史复制到目标工作空间，原文件保持不变（删除 Axiom 会话不动 pi 历史）。
+  async importSession(file, workspace = this.createAgent.cwd) {
     if (!this.storagePath) throw new Error("当前实例未启用会话存储，无法导入会话");
     const source = resolve(String(file || "").trim());
     let text;
@@ -372,9 +372,8 @@ export class Sessions {
     } catch {}
     if (header?.type !== "session" || typeof header.cwd !== "string" || !header.cwd.trim())
       throw new Error("不是有效的 pi 会话文件：缺少 session 头或 cwd 字段");
-    // 会话来自其它机器或目录已删除时，退回到本实例的工作空间，会话内容与历史不受影响。
-    const workspace = await stat(header.cwd).then((info) => (info.isDirectory() ? header.cwd : null)).catch(() => null);
-    return this.create(workspace || this.createAgent.cwd, {}, {
+    // 只导入历史，目标目录由调用方指定，不沿用源会话的工作空间。
+    return this.create(workspace, {}, {
       id: randomUUID(),
       title: importedTitle(lines, source),
       imported: true,
@@ -524,7 +523,12 @@ export class Sessions {
         resultId: task.resultId || randomUUID(), notified: task.notified ?? false });
     }
     try {
-      if (importedFile) await writeFile(importedFile, saved.importText, { mode: 0o600 });
+      if (importedFile) {
+        // 副本拥有自己的身份和工作空间；历史条目及其分支 ID 保持不变。
+        const lines = saved.importText.trimStart().split("\n");
+        lines[0] = JSON.stringify({ ...JSON.parse(lines[0]), id, cwd });
+        await writeFile(importedFile, lines.join("\n"), { mode: 0o600 });
+      }
       item.agent = await this.createAgent(delegationTools(item.tasks), {
         ...this.recentConfig,
         ...(selection.model ? { model: selection.model } : {}),

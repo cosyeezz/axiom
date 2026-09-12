@@ -2805,7 +2805,7 @@ $("import-session").onclick = async () => {
   const original = sessionId;
   const entry = await filePicker.open({ title: "导入 pi 会话（.jsonl）", mode: "file", path: importDir });
   if (!entry || original !== sessionId || !connected || changing) return;
-  await switchSession(() => request("session.import", { path: entry.path }));
+  await switchSession(() => request("session.import", { path: entry.path, cwd: currentCwd || undefined }));
 };
 
 let creationLoad = 0;
