@@ -5,6 +5,7 @@ import "./tooltip.js";
 import { initTextContrast } from "./text-contrast.js";
 import { createModelPicker } from "./model-picker.js";
 import { initModelManager } from "./model-manager.js";
+import { initServiceSettings } from "./service-settings.js";
 
 initTextContrast();
 const filePicker = createFilePicker(request);
@@ -18,8 +19,6 @@ let ws,
   busy = false,
   changing = false,
   connected = false,
-  serviceManaged = false,
-  restarting = false,
   creation;
 let sessionMissing = false;
 let onboarding = false;
@@ -43,6 +42,7 @@ for (const id of ["provider", "model", "thinking", "subagent-provider", "subagen
   modelPicker.enhance($(id), kind);
 }
 const modelManager = initModelManager({ root: $("models-panel"), request, onSaved: refreshModelCatalog });
+const serviceUi = initServiceSettings({ request, isReady: () => connected });
 let compactions = [], mainItems = [];
 const compactionNodes = new Map(), taskEntries = new Map();
 let images = [], imageLoading = false;
@@ -208,9 +208,8 @@ function controls() {
   for (const id of ["new", "custom-new"]) $(id).disabled = unavailable || !models.length;
   for (const button of document.querySelectorAll(".session-actions button")) button.disabled = !button.closest(".session-copy-menu") && !button.matches(".session-copy, .session-hide") && unavailable;
   $("status").dataset.connected = String(connected);
-  $("status").textContent = restarting ? "正在重启…" : connected ? "已连接" : "连接断开";
-  for (const id of ["restart-quick", "restart-rebuild", "restart-update"])
-    $(id).disabled = !connected || !serviceManaged || restarting;
+  $("status").textContent = serviceUi.restarting ? "正在重启…" : connected ? "已连接" : "连接断开";
+  serviceUi.sync();
   modelPicker.syncAll();
 }
 function options(select, entries, selected) {
@@ -355,7 +354,7 @@ async function configure(thinking) {
   }
 }
 function showSettingsPanel(panel) {
-  for (const name of ["defaults", "remote", "models"]) {
+  for (const name of ["defaults", "remote", "models", "service"]) {
     $(`${name}-panel`).hidden = name !== panel;
     const button = $(`settings-${name}-tab`);
     if (name === panel) button.setAttribute("aria-current", "page");
@@ -367,6 +366,12 @@ function showSettingsPanel(panel) {
 $("settings-defaults-tab").onclick = () => showSettingsPanel("defaults");
 $("settings-remote-tab").onclick = () => showSettingsPanel("remote");
 $("settings-models-tab").onclick = () => showSettingsPanel("models");
+$("settings-service-tab").onclick = () => showSettingsPanel("service");
+// 顶部状态可点击直达「服务与更新」；顶部只保留状态/DEV/版本，不暴露源码路径。
+$("status").onclick = () => {
+  showSettingsPanel("service");
+  if (!$("settings").open) $("settings").showModal();
+};
 $("open-settings").onclick = () => {
   showSettingsPanel(models.length ? "defaults" : "models");
   controls();
@@ -1792,6 +1797,8 @@ $("login").onsubmit = async (e) => {
         for (const id of new Set(["main", ...tasks.keys(), ...waitingItems.keys()])) stopActivity(id, "连接断开，等待恢复");
         if (!$("workspace").hidden) saveView();
         reject(new Error("连接断开"));
+        serviceUi.cancelRestart();
+        serviceUi.watch();
         for (const p of pending.values()) p.reject(new Error("连接断开"));
         pending.clear();
         if (!connecting) scheduleReconnect();
@@ -1801,17 +1808,8 @@ $("login").onsubmit = async (e) => {
       };
     });
     const service = await request("service.status");
-    $("service-dev").hidden = service.dev !== true;
-    $("service-dev").title = service.dev ? `开发环境 · ${location.host}\n代码目录：${service.sourceDir || "未知"}` : "";
-    serviceManaged = service.managed;
-    serviceVersion = service.version || "";
     importDir = service.importDir || "";
-    $("service-version").hidden = !serviceVersion;
-    $("service-version").textContent = serviceVersion ? `v${serviceVersion}` : "";
-    restarting = false;
-    $("service-feedback").textContent = service.error || (serviceManaged
-      ? "重启前请停止所有会话任务；页面会自动重连。"
-      : "当前为直接启动，请改用 npm start 以启用重启。");
+    serviceUi.apply(service);
     models = await request("models.list");
     try { modelFavorites = await request("models.favorites.get"); }
     catch (e) { error(`收藏读取失败：${e.message}`); }
@@ -1882,42 +1880,7 @@ function scheduleReconnect() {
   reconnectTimer = setTimeout(() => $("login").requestSubmit(), reconnectDelay);
   reconnectDelay = Math.min(reconnectDelay * 2, 15000);
 }
-let serviceVersion = "";
 let importDir = "";
-const restartNames = { quick: "快速重启", rebuild: "重建重启", update: "检查更新" };
-const restartDescriptions = {
-  quick: "仅重新启动服务，不安装依赖。所有页面会暂时断开连接，随后自动重连。",
-  rebuild: "重新安装依赖、执行构建后启动，可能需要数分钟。所有页面会暂时断开连接，随后自动重连。",
-  update: "联网比对 GitHub 公开仓库最新版本，有更新则重装并自动重启；已是最新则仅提示，不重启。",
-};
-for (const mode of Object.keys(restartNames)) $(`restart-${mode}`).onclick = () => {
-  $("restart-dialog").dataset.mode = mode;
-  $("restart-title").textContent = restartNames[mode];
-  $("restart-description").textContent = mode === "update" && serviceVersion
-    ? `${restartDescriptions[mode]}当前版本 v${serviceVersion}。`
-    : restartDescriptions[mode];
-  $("restart-submit").textContent = `确认${restartNames[mode]}`;
-  $("restart-dialog").showModal();
-  $("restart-cancel").focus();
-};
-$("restart-cancel").onclick = () => $("restart-dialog").close();
-$("restart-form").onsubmit = async (e) => {
-  e.preventDefault();
-  if (!$("restart-dialog").open) return;
-  const mode = $("restart-dialog").dataset.mode;
-  const name = restartNames[mode];
-  $("restart-dialog").close();
-  if (!connected || !serviceManaged || restarting) return;
-  restarting = true;
-  controls();
-  $("service-feedback").textContent = `${name}中，请等待自动重连…`;
-  try { await request("service.restart", { mode }); }
-  catch (e) {
-    restarting = false;
-    $("service-feedback").textContent = e.message;
-    controls();
-  }
-};
 controls();
 $("login").requestSubmit();
 $("provider").onchange = () => {

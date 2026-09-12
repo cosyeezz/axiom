@@ -159,7 +159,8 @@ export const modelConfigIn = z
 const fingerprintIn = z.string().min(1).max(128);
 export const command = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("service.status") }).strict(),
-  z.object({ id, type: z.literal("service.restart"), mode: z.enum(["quick", "rebuild", "update"]) }).strict(),
+  z.object({ id, type: z.literal("service.update.check") }).strict(),
+  z.object({ id, type: z.literal("service.restart"), mode: z.enum(["quick", "rebuild", "update"]), sha: z.string().regex(/^[0-9a-f]{40}$/i).optional() }).strict(),
   // 远程访问（Tailscale）：get 本地/远程均可读；configure/login 仅限本地连接（server.js 内拦截远程）。
   z.object({ id, type: z.literal("remote.get") }).strict(),
   z.object({ id, type: z.literal("remote.login") }).strict(),

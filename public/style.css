@@ -254,22 +254,20 @@ h1 {
   white-space: nowrap;
 }
 .service-controls { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-#service-menu-button { min-height: 28px; padding: 4px 8px; font-size: 12px; }
-#service-menu {
-  position: fixed; inset: 60px 12px auto auto; margin: 0;
-  width: min(270px, calc(100vw - 24px)); padding: 12px;
-  background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
-}
-#service-menu button { display: block; width: 100%; margin-top: 8px; }
-#service-menu small, #service-feedback { display: block; font-size: 12px; color: var(--muted); margin: 6px 0; }
 #status {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-height: 28px;
+  padding: 4px 8px;
   font-size: 12px;
+  font-weight: 400;
   color: var(--muted);
+  background: none;
+  border: 0;
   white-space: nowrap;
 }
+#status:hover:not(:disabled) { background: var(--surface); }
 #service-dev {
   color: var(--accent-ink);
   background: var(--surface);
@@ -284,6 +282,16 @@ h1 {
   color: var(--muted);
   white-space: nowrap;
 }
+.service-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.service-action p { margin: 6px 0 0; }
+#update-install { margin-top: 8px; }
+#service-history { font-family: var(--mono); font-size: 12px; color: var(--body-ink); }
+#service-history p { margin: 4px 0; overflow-wrap: anywhere; }
+#maintenance-state { flex-basis: 100%; margin: 0; }
 #status::before {
   content: "";
   width: 6px;

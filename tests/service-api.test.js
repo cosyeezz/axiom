@@ -43,20 +43,33 @@ test("service restart validates mode, rejects active work and duplicate requests
     return JSON.parse((await response)[0]);
   };
   try {
-    assert.deepEqual((await request("service.status")).data, { managed: true, error: "previous build failed", version: "", importDir: "C:\\pi\\sessions" });
+    assert.deepEqual((await request("service.status")).data, { managed: true, error: "previous build failed", version: "", importDir: "C:\\pi\\sessions", dev: false });
     service.dev = true;
     service.sourceDir = "/development/axiom";
     const devStatus = (await request("service.status")).data;
     assert.equal(devStatus.dev, true);
-    assert.equal(devStatus.sourceDir, service.sourceDir);
+    assert.equal(devStatus.sourceDir, undefined);
+    assert.equal((await request("service.update.check")).ok, false);
+    assert.equal((await request("service.restart", { mode: "update", sha: "a".repeat(40) })).ok, false);
     assert.equal((await request("service.restart", { mode: "shell" })).ok, false);
     assert.match((await request("service.restart", { mode: "quick" })).error, /正在运行/);
     assert.equal(modes.length, 0);
     status = "idle";
     assert.equal((await request("service.restart", { mode: "rebuild" })).ok, true);
     assert.deepEqual(modes, ["rebuild"]);
-    assert.equal((await request("service.restart", { mode: "quick" })).ok, false);
+    const duplicate = await request("service.restart", { mode: "quick" });
+    assert.equal(duplicate.ok, false);
+    assert.equal(duplicate.id, "test", "维护中拒绝必须带回请求 ID，不能让前端一直等待");
     assert.equal(modes.length, 1);
+    app.resume();
+    service.dev = false;
+    service.checkUpdate = async () => ({ available: true, sha: "a".repeat(40), local: "old", remote: "new" });
+    assert.equal((await request("service.update.check")).data.sha, "a".repeat(40));
+    assert.equal((await request("service.restart", { mode: "update" })).ok, false);
+    assert.equal((await request("service.restart", { mode: "update", sha: "bad" })).ok, false);
+    service.restart = async () => { throw new Error("supervisor unavailable"); };
+    assert.equal((await request("service.restart", { mode: "quick" })).ok, false);
+    assert.equal((await request("service.status")).ok, true);
   } finally { ws.terminate(); await app.close(); }
 });
 

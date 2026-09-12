@@ -13,7 +13,7 @@ const modelSources = await Promise.all(["model-picker", "model-manager"].map(asy
 })).then((parts) => parts.join("\n"));
 const contrastSource = stripImports(await readFile(new URL("../public/text-contrast.js", import.meta.url), "utf8"));
 const pickerSource = stripImports(await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8"));
-const appSource = stripImports(await readFile(new URL("../public/app.js", import.meta.url), "utf8"));
+const appSource = stripImports(await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")) + "\n" + stripImports(await readFile(new URL("../public/app.js", import.meta.url), "utf8"));
 
 const config = { model: null, thinking: "off", levels: ["off"], skills: [] };
 const harness = async () => {

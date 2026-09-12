@@ -10,6 +10,7 @@ const assets = new Map(
     ["/favicon.svg", "public/favicon.svg", "image/svg+xml"],
     ["/style.css", "public/style.css", "text/css"],
     ["/app.js", "public/app.js"],
+    ["/service-settings.js", "public/service-settings.js"],
     ["/file-picker.js", "public/file-picker.js"],
     ["/tooltip.js", "public/tooltip.js"],
     ["/tooltip.css", "public/tooltip.css", "text/css"],
@@ -41,12 +42,15 @@ for (const [route, file, type = "text/javascript"] of [
 }
 
 export function createServerApp(sessions, service = {}) {
-  let stopping = false;
+  let stopping = false, closing = false;
   let remoteServer = null;
   let remoteAuthorize = null;
   let generation = 0; // 每次停用/变更递增，作废在途的异步鉴权
   const pending = new Set();
   const remoteClients = new Set();
+  const hasActiveWork = () => sessions.list().some((item) => item.status !== "idle") ||
+    [...(sessions.items?.values() || [])].some((item) => item.configuring ||
+      [...item.tasks.jobs.values()].some((task) => ["starting", "running"].includes(task.status)));
   const handleRequest = (req, res, isLocal) => {
     if (req.url === "/service/stop") {
       if (!isLocal) {
@@ -63,9 +67,7 @@ export function createServerApp(sessions, service = {}) {
       if (!service.stop || stopping) {
         res.writeHead(409); res.end("服务不受守护进程管理或正在停止"); return;
       }
-      if (sessions.list().some((item) => item.status !== "idle") ||
-          [...(sessions.items?.values() || [])].some((item) => item.configuring ||
-            [...item.tasks.jobs.values()].some((task) => ["starting", "running"].includes(task.status)))) {
+      if (hasActiveWork()) {
         res.writeHead(409); res.end("还有任务正在运行，请先停止任务再执行 axiom stop"); return;
       }
       stopping = true;
@@ -84,7 +86,7 @@ export function createServerApp(sessions, service = {}) {
         "X-Content-Type-Options": "nosniff",
         "Content-Security-Policy":
           // img-src 加 data: 仅为显示消息内嵌的 base64 图片预览，其余策略不放宽。
-          "default-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'",
+          `default-src 'self'; connect-src 'self'${isLocal && /^http:\/\/127\.0\.0\.1:\d+$/.test(service.maintenance?.url || "") ? ` ${service.maintenance.url}` : ""}; img-src 'self' data:; frame-ancestors 'none'`,
       });
       res.end(unchanged ? undefined : asset.body);
       return;
@@ -96,6 +98,7 @@ export function createServerApp(sessions, service = {}) {
       JSON.stringify({
         service: "axiom",
         status: req.url === "/health" ? "ok" : "not_found",
+        ...(req.url === "/health" && service.instanceId ? { instanceId: service.instanceId, version: service.version } : {}),
       }),
     );
   };
@@ -108,7 +111,7 @@ export function createServerApp(sessions, service = {}) {
     handleProtocols: () => "axiom",
   });
   const acceptUpgrade = (req, socket, head, isRemote) => {
-    if (stopping || req.url !== "/ws") {
+    if (closing || req.url !== "/ws") {
       socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
       return;
     }
@@ -242,28 +245,35 @@ export function createServerApp(sessions, service = {}) {
       const work = (async () => {
         let request;
         try {
-          if (stopping) throw new Error("Service is stopping");
+          request = command.parse(JSON.parse(raw.toString()));
+          if (stopping && request.type !== "service.status") throw new Error("服务正在维护，请在设置中查看进度");
           if (!(await reauth())) {
             ws.terminate(); // 撤权/变更后旧远程连接立即失效
             return;
           }
-          request = command.parse(JSON.parse(raw.toString()));
+          // reauth 是异步边界：同一轮多个请求可能都通过最前面的检查。
+          if (stopping && request.type !== "service.status") throw new Error("服务正在维护，请在设置中查看进度");
           let data;
           switch (request.type) {
             case "service.status":
-              data = { managed: Boolean(service.restart), error: service.error || "", version: service.version || "", importDir: service.importDir || "", ...(service.dev ? { dev: true, sourceDir: service.sourceDir } : {}) };
+              data = { managed: Boolean(service.restart) && !ws.isRemote, error: service.error || "", version: service.version || "", importDir: service.importDir || "", dev: Boolean(service.dev), ...(!ws.isRemote && service.maintenance ? { maintenance: service.maintenance } : {}) };
+              break;
+            case "service.update.check":
+              if (ws.isRemote) throw new Error("请在本机检查服务更新");
+              if (service.dev) throw new Error("开发环境通过 Git 更新，不执行安装版更新");
+              if (!service.checkUpdate) throw new Error("更新检查不可用");
+              data = await service.checkUpdate();
               break;
             case "service.restart":
               if (ws.isRemote) throw new Error("远程连接不允许重启服务");
               if (!service.restart) throw new Error("请通过 npm start 启动服务后再使用重启功能");
-              if (sessions.list().some((item) => item.status !== "idle") ||
-                  [...(sessions.items?.values() || [])].some((item) => item.configuring ||
-                    [...item.tasks.jobs.values()].some((task) => ["starting", "running"].includes(task.status))))
+              if (request.mode === "update" && service.dev) throw new Error("开发环境不执行安装版更新");
+              if (request.mode === "update" && !request.sha) throw new Error("请先检查更新并确认目标版本");
+              if (hasActiveWork())
                 throw new Error("还有会话正在运行，请先停止所有任务再重启");
               stopping = true;
-              try { await service.restart(request.mode); }
+              try { data = { restarting: true, ...await service.restart(request.mode, request.sha) }; }
               catch (error) { stopping = false; throw error; }
-              data = { restarting: true };
               break;
             case "capabilities.list":
               data = await sessions.createAgent.capabilities(request.cwd, request.trustProject);
@@ -415,7 +425,9 @@ export function createServerApp(sessions, service = {}) {
     server,
     createRemoteServer,
     dropRemote,
+    resume() { stopping = false; },
     async close() {
+      closing = true;
       stopping = true;
       service.remoteShutdown?.(); // 清理登录子进程
       dropRemote();
