@@ -81,6 +81,20 @@ test("shared Markdown renderer formats blocks and removes unsafe content", async
     }
     render(node, fenced(ascii));
     assert(node.querySelector("table"), "completed streaming table is converted");
+    const diagram = '侧栏（改动前）       （改动后）\n┌──────────┐        ┌──────────┐\n│ ✓ 完成   │        │ ✎ 重命名 │\n│ 中文 😀  │        │ é <img> │\n└──────────┘        └──────────┘';
+    render(node, fenced(diagram));
+    assert.equal(node.querySelector('.code-toolbar > span').textContent, '字符示意图');
+    assert.equal(node.querySelector('code').textContent, diagram + '\n');
+    const cells = [...node.querySelectorAll('.diagram-cell')];
+    for (const char of ['中', '😀', '（']) assert(cells.find((cell) => cell.textContent === char).classList.contains('diagram-wide'));
+    assert(cells.some((cell) => cell.textContent === 'é'), 'combining marks remain one grapheme');
+    assert.equal(node.querySelector('img'), null);
+    await node.querySelector('button').onclick();
+    assert.equal(copied, diagram + '\n');
+    render(node, fenced(diagram, 'js'));
+    assert.equal(node.querySelector('.text-diagram'), null);
+    render(node, fenced(diagram + 'x'.repeat(20000)));
+    assert.equal(node.querySelector('.text-diagram'), null, 'large diagrams avoid per-character DOM growth');
     const jsonText = '{"名称":"中文","html":"<img src=x onerror=alert(1)>","items":[1,2]}';
     for (const input of [fenced(jsonText, "json"), fenced(jsonText, ""), jsonText]) {
       render(node, input);

@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-12 字符示意图网格排版
+- 原因：并排菜单框不是表格，上一轮转换不覆盖；中文、图标的字体回退字宽不符合字符图的网格。
+- 修改：public/markdown.js 识别纯文本 Unicode 制表线图，Intl.Segmenter 保留字素，CSS 单/双格固定宽度；保留原文和复制，不猜测语义或修复源空格。20K 字符上限避免逐字 DOM 放大。public/style.css 复用现有 --mono 和颜色，正常字重、零字距。
+- 文件：上述两文件、tests/markdown.test.js、tests/text-diagram-ui.py、README.md、devlog.md 与 codebase-map 索引/脚本/坑库。
+- 验证：Playwright Chromium 实测 1440/320px 单双宽网格、页面无横向溢出与键盘滚动入口；单测覆盖组合字符、emoji、注入、原文复制与大内容回退。
+
 ## 2026-09-12 00:52 ASCII 表格与 JSON 展示
 - 原因：中英文混排的字符表格边框错位；用户需要会话 JSON 的格式化、压缩、去转义、转义和复制当前结果。
 - 内容：共享 Markdown 渲染器识别完整 ASCII 表格并复用原生表格滚动样式、复制仍保留原文；JSON 使用原生 JSON.parse/stringify、本地操作与错误状态，不增加依赖。单元格和转换结果只用 textContent；未知/残缺 ASCII 保持代码，超安全整数拒绝重写。
