@@ -249,7 +249,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
             break;
           case "session.import":
             lastImport = req;
-            data = { sessionId: "imported", title: "imported", cwd: "C:\\pi", status: "idle", config, messages: [], tasks: [], live: {} };
+            data = { sessionId: "imported", title: "imported", cwd: req.cwd, status: "idle", config, messages: [], tasks: [], live: {} };
             break;
           case "session.rename":
             states.find((s) => s.sessionId === req.sessionId).title = req.title;
@@ -1219,7 +1219,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("search").value = "missing";
     $("search").dispatchEvent(new window.Event("input"));
     assert.match($("sessions").textContent, /没有匹配/);
-    // 跨目录导入在新页签打开，不覆盖当前工作空间与草稿。
+    // 导入副本绑定当前工作空间，不跳回源目录。
     $("search").value = "";
     $("search").dispatchEvent(new window.Event("input"));
     $("import-session").click(); await settle();
@@ -1230,8 +1230,10 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("file-picker-confirm").click(); await settle();
     assert.equal(lastImport.type, "session.import");
     assert.equal(lastImport.path, "C:\\pi\\sessions\\pi.jsonl");
-    assert.deepEqual(opened, ["/#session=imported", "_blank", "noopener"]);
-    assert.equal($("workspace-label").textContent, "C:\\work", "跨目录导入保留当前工作空间");
+    assert.equal(lastImport.cwd, "C:\\work");
+    assert.notEqual(opened?.[0], "/#session=imported", "导入不另开原工作空间");
+    assert.match(window.location.hash, /session=imported/);
+    assert.equal($("workspace-label").textContent, "C:\\work", "导入副本留在当前工作空间");
   } finally {
     dom.window.close();
   }

@@ -261,7 +261,9 @@ test("session.import copies a pi jsonl session, rebuilds history and protects th
   const root = await mkdtemp(join(tmpdir(), "axiom-import-"));
   const storage = join(root, "storage");
   const workspace = join(root, "workspace");
+  const target = join(root, "target");
   await mkdir(workspace, { recursive: true });
+  await mkdir(target, { recursive: true });
   const source = join(root, "pi-2026.jsonl");
   await writeFile(source, [
     { type: "session", version: 3, id: "pi-1", timestamp: "2026-01-01T00:00:00.000Z", cwd: workspace },
@@ -286,19 +288,36 @@ test("session.import copies a pi jsonl session, rebuilds history and protects th
     };
   };
   factory.catalog = () => [{ key: "test/one" }];
+  factory.cwd = target;
   try {
     const sessions = new Sessions(factory, undefined, storage);
-    const id = await sessions.importSession(source);
+    const original = await readFile(source, "utf8");
+    const id = await sessions.importSession(source, target);
     const state = sessions.snapshot(id);
-    assert.equal(state.cwd, workspace, "工作空间取会话头 cwd");
+    assert.equal(state.cwd, target, "会话归属导入目标，而非源工作空间");
     assert.equal(state.title, "帮我检查导入", "标题取首条用户正文，不含 Skill 注入内容");
     assert.deepEqual(state.messages.map((record) => record.entryId), ["u1", "a1"]);
     const copied = sessions.get(id).agent.sessionFile();
     assert.notEqual(copied, source);
-    assert.equal(await readFile(copied, "utf8"), await readFile(source, "utf8"));
-    await sessions.remove(id);
+    const [header, ...history] = (await readFile(copied, "utf8")).split("\n");
+    assert.equal(JSON.parse(header).cwd, target);
+    assert.equal(JSON.parse(header).id, id);
+    assert.deepEqual(history, original.split("\n").slice(1), "历史条目原样保留");
+    await sessions.rename(id, "独立副本");
+    await sessions.close();
+    const restored = new Sessions(factory, undefined, storage);
+    await restored.load();
+    assert.equal(restored.snapshot(id).cwd, target);
+    assert.equal(restored.snapshot(id).title, "独立副本");
+    assert.deepEqual(restored.snapshot(id).messages, state.messages);
+    await restored.remove(id);
+    assert.equal(await readFile(source, "utf8"), original, "导入、重命名、恢复、删除均不改源会话");
     assert.equal(existsSync(source), true, "删除 Axiom 会话不删原始 pi 文件");
     assert.equal(existsSync(copied), false);
+    const fallback = await sessions.importSession(source);
+    assert.equal(sessions.snapshot(fallback).cwd, target, "旧调用省略 cwd 时使用实例默认目录");
+    await sessions.remove(fallback);
+    await assert.rejects(sessions.importSession(source, join(root, "missing-workspace")), /目录|不存在|ENOENT/);
     await assert.rejects(sessions.importSession(join(root, "missing.jsonl")), /会话文件不存在/);
     const bogus = join(root, "bogus.jsonl");
     await writeFile(bogus, '{"type":"message","id":"x"}\n');

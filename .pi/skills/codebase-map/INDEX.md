@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 04:14:01）
+# Axiom 多级代码索引（生成于 2026/9/12 05:26:40）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -35,12 +35,12 @@
 | src/remote.js | 501 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
 | src/retry.js | 161 | 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_DELAY_MS, MAX_RETRIES, delayFor |
 | src/server.js | 438 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | assets, createServerApp |
-| src/sessions.js | 938 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | BROWSE_PAGE, resolveDir, parentOf, absoluteCrumbs |
+| src/sessions.js | 942 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | BROWSE_PAGE, resolveDir, parentOf, absoluteCrumbs |
 | src/tasks.js | 107 | Tasks：子任务（委托）生命周期 | Tasks |
 | src/tools.js | 97 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
 | tests/activity-groups-ui.py | 201 | node --test 测试（npm test） | activityHistory, sessions |
-| tests/app.test.js | 1597 | node --test 测试（npm test） | pickerSource, contrastSource, modelSources |
+| tests/app.test.js | 1599 | node --test 测试（npm test） | pickerSource, contrastSource, modelSources |
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
 | tests/capabilities.test.js | 207 | node --test 测试（npm test） | - |
@@ -79,7 +79,7 @@
 | tests/service-api.test.js | 63 | node --test 测试（npm test） | - |
 | tests/service.test.js | 236 | node --test 测试（npm test） | - |
 | tests/session-created-at.test.js | 44 | node --test 测试（npm test） | factory |
-| tests/session-flow.test.js | 308 | node --test 测试（npm test） | flowFactory, jsonlFactory |
+| tests/session-flow.test.js | 327 | node --test 测试（npm test） | flowFactory, jsonlFactory |
 | tests/session-sidebar-ui.py | 104 | node --test 测试（npm test） | - |
 | tests/smoke.js | 67 | node --test 测试（npm test） | TIMEOUT, sessions |
 | tests/stream-renderer.test.js | 99 | node --test 测试（npm test） | - |
@@ -683,7 +683,7 @@
 | assets | const | 7 |
 | createServerApp | function | 43 |
 
-### src/sessions.js（938 行） — Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化
+### src/sessions.js（942 行） — Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -711,22 +711,22 @@
 | list | method | 333 |
 | rename | method | 349 |
 | importSession | method | 358 |
-| create | method | 386 |
-| scheduleTaskNotifications | method | 617 |
-| deliverTaskNotifications | method | 629 |
-| get | method | 651 |
-| revealWorkspace | method | 656 |
-| browse | method | 670 |
-| listFiles | method | 676 |
-| refreshSkills | method | 735 |
-| snapshot | method | 741 |
-| subscribe | method | 769 |
-| configure | method | 775 |
-| prompt | method | 809 |
-| withdraw | method | 859 |
-| cancel | method | 901 |
-| remove | method | 919 |
-| close | method | 934 |
+| create | method | 385 |
+| scheduleTaskNotifications | method | 621 |
+| deliverTaskNotifications | method | 633 |
+| get | method | 655 |
+| revealWorkspace | method | 660 |
+| browse | method | 674 |
+| listFiles | method | 680 |
+| refreshSkills | method | 739 |
+| snapshot | method | 745 |
+| subscribe | method | 773 |
+| configure | method | 779 |
+| prompt | method | 813 |
+| withdraw | method | 863 |
+| cancel | method | 905 |
+| remove | method | 923 |
+| close | method | 938 |
 
 ### src/tasks.js（107 行） — Tasks：子任务（委托）生命周期
 
@@ -770,7 +770,7 @@
 | activityHistory | const | 16 |
 | sessions | const | 27 |
 
-### tests/app.test.js（1597 行） — node --test 测试（npm test）
+### tests/app.test.js（1599 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1009,7 +1009,7 @@
 |---|---|---|
 | factory | const | 8 |
 
-### tests/session-flow.test.js（308 行） — node --test 测试（npm test）
+### tests/session-flow.test.js（327 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
