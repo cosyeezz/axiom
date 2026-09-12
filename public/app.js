@@ -2638,9 +2638,17 @@ function renderContextChips() {
     return chip;
   }));
 }
+// 名称模糊匹配：忽略大小写，needle 字符按顺序出现即命中（"apjs" 命中 "app.js"）；空 needle 全部命中。
+function fuzzyHit(text, needle) {
+  const lower = text.toLocaleLowerCase();
+  if (lower.includes(needle)) return true;
+  let i = 0;
+  for (const char of lower) if (char === needle[i] && ++i === needle.length) return true;
+  return false;
+}
 function renderContextResults() {
   const query = $("context-search").value.toLocaleLowerCase();
-  const shown = (config?.skills || []).filter((entry) => `${entry.name} ${entry.description || ""}`.toLocaleLowerCase().includes(query));
+  const shown = (config?.skills || []).filter((entry) => fuzzyHit(entry.name, query) || (entry.description || "").toLocaleLowerCase().includes(query));
   $("context-results").replaceChildren(...shown.map((entry) => {
     const button = document.createElement("button"); button.type = "button";
     const text = document.createElement("span");
@@ -2788,10 +2796,13 @@ async function updateCompletion() {
   input.setAttribute("aria-expanded", "true");
   try {
     const slash = query.lastIndexOf("/");
-    const entries = skill ? (config?.skills || []) : (await request("workspace.browse", { sessionId: target, path: slash < 0 ? "" : query.slice(0, slash) })).entries;
-    if (version !== completionVersion || target !== sessionId) return;
     const filter = (skill ? query : query.slice(slash + 1)).toLocaleLowerCase();
-    completionEntries = entries.filter((entry) => `${entry.name} ${skill ? entry.description || "" : ""}`.toLocaleLowerCase().includes(filter));
+    const entries = skill
+      ? (config?.skills || [])
+      : (await request("workspace.browse", { sessionId: target, path: slash < 0 ? "" : query.slice(0, slash), query: filter })).entries;
+    if (version !== completionVersion || target !== sessionId) return;
+    // 服务端已按名称模糊递归搜索；这里再兜一次，旧服务端（只按子串过滤）也能用。
+    completionEntries = entries.filter((entry) => fuzzyHit(`${entry.name} ${skill ? entry.description || "" : ""}`, filter));
     completionIndex = 0;
     $("prompt-completion").replaceChildren(...completionEntries.map((entry, index) => {
       const option = document.createElement("div");

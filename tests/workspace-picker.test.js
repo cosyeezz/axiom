@@ -5,7 +5,7 @@ import { tmpdir, homedir } from "node:os";
 import { basename, join, sep } from "node:path";
 import { Sessions } from "../src/sessions.js";
 
-// 全局模式（无 sessionId）files.browse：主机目录浏览、过滤、分页、面包屑与快速位置。
+// 全局模式（无 sessionId）files.browse：主机目录浏览、递归模糊搜索、分页、面包屑与快速位置。
 test("files.browse global mode lists host directories with filter, pagination and locations", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-picker-"));
   const factory = () => ({});
@@ -57,10 +57,13 @@ test("files.browse global mode lists host directories with filter, pagination an
     const page2 = await sessions.listFiles({ path: join(root, "alpha"), offset: page1.nextOffset });
     assert.equal(page2.entries.length, 5);
     assert.equal(page2.nextOffset, null);
-    // 过滤在分页之前生效。
-    const filtered = await sessions.listFiles({ path: join(root, "alpha"), query: "FILE-01", offset: 5 });
-    assert.equal(filtered.entries.length, 5);
+    // 搜索：递归子目录、名称模糊匹配、大小写不敏感，一次返回全部命中（不分页）。
+    await mkdir(join(root, "alpha", "deep"));
+    await writeFile(join(root, "alpha", "deep", "nested-app.js"), "x");
+    const filtered = await sessions.listFiles({ path: join(root, "alpha"), query: "file-200" });
+    assert.deepEqual(filtered.entries.map((entry) => entry.name), ["file-200.txt"]);
     assert.equal(filtered.nextOffset, null);
+    assert.deepEqual((await sessions.listFiles({ query: "appjs" })).entries.map((entry) => entry.name), ["nested-app.js"]);
 
     // 符号链接被跳过。
     assert.equal(page1.entries.some((entry) => entry.name === "link.txt"), false);

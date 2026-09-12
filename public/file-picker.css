@@ -188,6 +188,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+#file-picker .fp-dir {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
 #file-picker .fp-more {
   align-self: center;
   margin: 0 12px 4px;

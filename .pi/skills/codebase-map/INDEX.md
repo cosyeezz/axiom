@@ -1,13 +1,13 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 12:09:28）
+# Axiom 多级代码索引（生成于 2026/9/12 12:37:54）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| public/app.js | 3188 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, sessionMissing |
-| public/file-picker.css | 269 | 文件选择弹窗主题与响应式布局 | - |
-| public/file-picker.js | 351 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
+| public/app.js | 3199 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, sessionMissing |
+| public/file-picker.css | 274 | 文件选择弹窗主题与响应式布局 | - |
+| public/file-picker.js | 355 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/index.html | 316 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown.js | 247 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, textLanguages, isText |
 | public/memory-tags.js | 87 | 主子代理共享简单标签提取与流式显示过滤 | TAGS, NAMES, TAG, OPEN |
@@ -36,17 +36,17 @@
 | src/memory-policy.js | 29 | 主子代理摘要规则与环境配置校验 | SUMMARY_SYSTEM_PROMPT, SUMMARY_REMINDER, SUMMARY_DELEGATE, intEnv |
 | src/model-config.js | 369 | Pi models.json 无损配置读写与共享收藏持久化 | sdkModelConfig, EMPTY_FINGERPRINT, digest, LEVELS |
 | src/pi.js | 357 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, queueStateOf, hasModelOutput, withdrawQueue |
-| src/protocol.js | 313 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
+| src/protocol.js | 314 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/remote.js | 501 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
 | src/retry.js | 161 | 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_DELAY_MS, MAX_RETRIES, delayFor |
 | src/server.js | 451 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | assets, createServerApp |
 | src/session-memory.js | 91 | 标题与增量摘要登记、触发复盘、委派背景与被动进度 | textOf, escape, memoryHooks, parentSummaryContext |
-| src/sessions.js | 1002 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | BROWSE_PAGE, pointStatus, trackElapsed, resolveDir |
+| src/sessions.js | 1058 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | BROWSE_PAGE, SEARCH_LIMIT, SEARCH_DIR_LIMIT, IGNORED_ENTRIES |
 | src/tasks.js | 112 | Tasks：子任务（委托）生命周期 | Tasks |
 | src/tools.js | 97 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
 | tests/activity-groups-ui.py | 201 | node --test 测试（npm test） | activityHistory, sessions |
-| tests/app.test.js | 1629 | node --test 测试（npm test） | pickerSource, contrastSource, modelSources, serviceSource |
+| tests/app.test.js | 1636 | node --test 测试（npm test） | pickerSource, contrastSource, modelSources, serviceSource |
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
 | tests/capabilities.test.js | 207 | node --test 测试（npm test） | - |
@@ -94,7 +94,7 @@
 | tests/service-settings.test.js | 314 | node --test 测试（npm test） | source, html, setup |
 | tests/service.test.js | 478 | node --test 测试（npm test） | until, readMaybe, killTree, buildWorkspace |
 | tests/session-created-at.test.js | 44 | node --test 测试（npm test） | factory |
-| tests/session-flow.test.js | 327 | node --test 测试（npm test） | flowFactory, jsonlFactory |
+| tests/session-flow.test.js | 333 | node --test 测试（npm test） | flowFactory, jsonlFactory |
 | tests/session-memory.test.js | 170 | node --test 测试（npm test） | reply |
 | tests/session-sidebar-ui.py | 104 | node --test 测试（npm test） | - |
 | tests/smoke.js | 67 | node --test 测试（npm test） | TIMEOUT, sessions |
@@ -110,12 +110,12 @@
 | tests/uninstall.test.js | 45 | node --test 测试（npm test） | - |
 | tests/update.test.js | 38 | node --test 测试（npm test） | old |
 | tests/workspace-isolation.test.js | 80 | node --test 测试（npm test） | - |
-| tests/workspace-picker.test.js | 96 | node --test 测试（npm test） | - |
+| tests/workspace-picker.test.js | 99 | node --test 测试（npm test） | - |
 | tests/workspace-tabs.test.js | 235 | node --test 测试（npm test） | appSource, pickerSource, contrastSource, modelSources |
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
-### public/app.js（3188 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
+### public/app.js（3199 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -315,39 +315,40 @@
 | openSessionAction | function | 2579 |
 | contextIcon | function | 2620 |
 | renderContextChips | function | 2623 |
-| renderContextResults | function | 2641 |
-| showContextSkills | function | 2661 |
-| positionContextSkills | function | 2666 |
-| showContextSkills | method | 2678 |
-| controls | method | 2713 |
-| skillTrigger | const | 2715 |
-| showContextSkills | method | 2731 |
-| resizePrompt | method | 2740 |
-| controls | method | 2741 |
-| closeCompletion | function | 2744 |
-| highlightCompletion | function | 2752 |
-| chooseCompletion | function | 2761 |
-| closeCompletion | method | 2771 |
-| updateCompletion | function | 2774 |
-| closeCompletion | method | 2775 |
-| resizePrompt | method | 2828 |
-| controls | method | 2829 |
-| switchSession | method | 2869 |
-| creationLoad | const | 2880 |
-| refreshPresets | function | 2881 |
-| createAgentPicker | function | 2916 |
-| options | method | 2942 |
-| fill | method | 2950 |
-| fillThinking | method | 2958 |
-| options | method | 2960 |
-| loadCreation | function | 3007 |
-| openCreation | function | 3043 |
-| rememberCreation | const | 3064 |
-| updateDefaultsPreview | function | 3096 |
-| updateDefaultsPreview | method | 3120 |
-| controls | method | 3175 |
+| fuzzyHit | function | 2642 |
+| renderContextResults | function | 2649 |
+| showContextSkills | function | 2669 |
+| positionContextSkills | function | 2674 |
+| showContextSkills | method | 2686 |
+| controls | method | 2721 |
+| skillTrigger | const | 2723 |
+| showContextSkills | method | 2739 |
+| resizePrompt | method | 2748 |
+| controls | method | 2749 |
+| closeCompletion | function | 2752 |
+| highlightCompletion | function | 2760 |
+| chooseCompletion | function | 2769 |
+| closeCompletion | method | 2779 |
+| updateCompletion | function | 2782 |
+| closeCompletion | method | 2783 |
+| resizePrompt | method | 2839 |
+| controls | method | 2840 |
+| switchSession | method | 2880 |
+| creationLoad | const | 2891 |
+| refreshPresets | function | 2892 |
+| createAgentPicker | function | 2927 |
+| options | method | 2953 |
+| fill | method | 2961 |
+| fillThinking | method | 2969 |
+| options | method | 2971 |
+| loadCreation | function | 3018 |
+| openCreation | function | 3054 |
+| rememberCreation | const | 3075 |
+| updateDefaultsPreview | function | 3107 |
+| updateDefaultsPreview | method | 3131 |
+| controls | method | 3186 |
 
-### public/file-picker.js（351 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
+### public/file-picker.js（355 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -368,7 +369,7 @@
 | kindOf | function | 82 |
 | fileIcon | function | 94 |
 | createFilePicker | function | 115 |
-| baseName | function | 348 |
+| baseName | function | 352 |
 
 ### public/markdown.js（247 行） — marked + DOMPurify 渲染（XSS 边界）
 
@@ -701,7 +702,7 @@
 | memoryExtension | function | 102 |
 | createPiFactory | function | 130 |
 
-### src/protocol.js（313 行） — zod 协议：selection / command 判别联合（消息类型见 L3）
+### src/protocol.js（314 行） — zod 协议：selection / command 判别联合（消息类型见 L3）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -783,52 +784,58 @@
 | memoryHooks | function | 9 |
 | parentSummaryContext | function | 87 |
 
-### src/sessions.js（1002 行） — Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化
+### src/sessions.js（1058 行） — Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | BROWSE_PAGE | const | 14 |
-| pointStatus | function | 17 |
-| trackElapsed | function | 24 |
-| resolveDir | function | 34 |
-| parentOf | function | 45 |
-| absoluteCrumbs | function | 54 |
-| importedTitle | function | 76 |
-| hostLocations | function | 98 |
-| Sessions | class | 113 |
-| constructor | method | 114 |
-| loadDefaults | method | 126 |
-| getDefaults | method | 145 |
-| workspaceDefaults | method | 148 |
-| configureDefaults | method | 166 |
-| saveDefaults | method | 171 |
-| validateSelection | method | 219 |
-| validateCompaction | method | 240 |
-| listPresets | method | 258 |
-| mutatePresets | method | 269 |
-| savePreset | method | 290 |
-| deletePreset | method | 305 |
-| load | method | 314 |
-| persist | method | 333 |
-| list | method | 355 |
-| rename | method | 372 |
-| importSession | method | 383 |
-| create | method | 410 |
-| scheduleTaskNotifications | method | 674 |
-| deliverTaskNotifications | method | 686 |
-| get | method | 708 |
-| revealWorkspace | method | 713 |
-| browse | method | 727 |
-| listFiles | method | 733 |
-| refreshSkills | method | 792 |
-| snapshot | method | 798 |
-| subscribe | method | 827 |
-| configure | method | 833 |
-| prompt | method | 867 |
-| withdraw | method | 921 |
-| cancel | method | 965 |
-| remove | method | 983 |
-| close | method | 998 |
+| SEARCH_LIMIT | const | 16 |
+| SEARCH_DIR_LIMIT | const | 17 |
+| IGNORED_ENTRIES | const | 19 |
+| fuzzyHit | function | 22 |
+| matchRank | function | 33 |
+| searchEntries | function | 42 |
+| pointStatus | function | 70 |
+| trackElapsed | function | 77 |
+| resolveDir | function | 87 |
+| parentOf | function | 98 |
+| absoluteCrumbs | function | 107 |
+| importedTitle | function | 129 |
+| hostLocations | function | 151 |
+| Sessions | class | 166 |
+| constructor | method | 167 |
+| loadDefaults | method | 179 |
+| getDefaults | method | 198 |
+| workspaceDefaults | method | 201 |
+| configureDefaults | method | 219 |
+| saveDefaults | method | 224 |
+| validateSelection | method | 272 |
+| validateCompaction | method | 293 |
+| listPresets | method | 311 |
+| mutatePresets | method | 322 |
+| savePreset | method | 343 |
+| deletePreset | method | 358 |
+| load | method | 367 |
+| persist | method | 386 |
+| list | method | 408 |
+| rename | method | 425 |
+| importSession | method | 436 |
+| create | method | 463 |
+| scheduleTaskNotifications | method | 727 |
+| deliverTaskNotifications | method | 739 |
+| get | method | 761 |
+| revealWorkspace | method | 766 |
+| browse | method | 780 |
+| listFiles | method | 786 |
+| refreshSkills | method | 848 |
+| snapshot | method | 854 |
+| subscribe | method | 883 |
+| configure | method | 889 |
+| prompt | method | 923 |
+| withdraw | method | 977 |
+| cancel | method | 1021 |
+| remove | method | 1039 |
+| close | method | 1054 |
 
 ### src/tasks.js（112 行） — Tasks：子任务（委托）生命周期
 
@@ -872,7 +879,7 @@
 | activityHistory | const | 16 |
 | sessions | const | 27 |
 
-### tests/app.test.js（1629 行） — node --test 测试（npm test）
+### tests/app.test.js（1636 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1199,7 +1206,7 @@
 |---|---|---|
 | factory | const | 8 |
 
-### tests/session-flow.test.js（327 行） — node --test 测试（npm test）
+### tests/session-flow.test.js（333 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|

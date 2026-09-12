@@ -407,3 +407,9 @@
 - 根因：主会话全局 sticky 规则进入 task-dialog 的有界滚动区，Working 使用 canvas 黑底、thinking 再次吸顶，叠层覆盖正文。
 - 修复：public/style.css 在 task-dialog 内取消详情标题吸顶并使 Working 背景透明，主会话不变。
 - 防再犯：tests/ui-sticky-check.mjs 真实 Chromium 验证背景、主/子样式隔离、滚动坐标；最小 DOM 不等于完整 app 会话端到端验收。
+
+### 2026-09-12 @ 补全和工作空间搜索匹配不到嵌套文件
+- 症状：在输入框输入 `@app` / `@apjs` 无匹配，工作空间根目录只列出 `public/` 这类目录名。
+- 根因：`workspace.browse` 与 `files.browse` 的 `query` 只在当前层用 `entry.name.includes()` 子串过滤，既不递归也不模糊；`app.js` 在 `public/` 里，根层永远匹配不到。
+- 修复：src/sessions.js 抽出 `fuzzyHit()`/`matchRank()` 与 BFS `searchEntries()`，`query` 非空时递归搜索当前 `path` 子树（跳过 `.git`/`node_modules`/符号链接）、只匹配名称、按匹配质量排序后一次返回（不分页，上限 60 条、目录上限 400）；`workspace.browse` 增加 `query`，前端把 `@` 后最后一段当 `query` 发出。
+- 防再犯：tests/session-flow.test.js、tests/workspace-picker.test.js 断言递归与模糊（`appjs` → `src/deep/nested-app.js`）；tests/app.test.js 的 workspace.browse 桩件按 `req.query` 返回根目录没有的 `src/app.js`，保证「根层没有也能命中」这条回归；改搜索前先直连 `Sessions.browse()` 在真实工作空间量耗时，别凭感觉加索引/防抖。
