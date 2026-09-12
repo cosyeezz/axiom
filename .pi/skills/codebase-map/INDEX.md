@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 01:54:13）
+# Axiom 多级代码索引（生成于 2026/9/12 02:01:14）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -9,13 +9,13 @@
 | public/file-picker.css | 269 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 351 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/index.html | 285 | 页面骨架与元素 id（见 L3） | - |
-| public/markdown.js | 161 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, asciiTable, isJson |
+| public/markdown.js | 181 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, asciiTable, layoutDiagram |
 | public/model-manager.css | 279 | 模型配置页：供应商列表、编辑表单与响应式布局 | - |
 | public/model-manager.js | 628 | Pi 模型管理：供应商模板、模型编辑与安全保存反馈 | API_TYPES, PROVIDER_TEMPLATES, PROVIDER_ID, MASK_KINDS |
 | public/model-picker.css | 88 | 共享收藏下拉：暗色浮层、星标、触屏与焦点样式 | - |
 | public/model-picker.js | 283 | 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互 | GAP, EDGE, TYPEAHEAD_MS, el |
 | public/stream-renderer.js | 46 | 流式增量渲染状态机 | createStreamRenderer |
-| public/style.css | 1220 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1223 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | public/text-contrast.css | 46 | 文字专用对比度档位与调节面板 | - |
 | public/text-contrast.js | 113 | 文字对比度按钮、实时调节与本地偏好 | KEY, MIN, MAX, STEP |
 | public/tooltip.css | 50 | 共享暗色悬停说明样式 | - |
@@ -58,7 +58,7 @@
 | tests/image-input.test.js | 167 | node --test 测试（npm test） | pngBase64, jpegBase64, image, parsePrompt |
 | tests/inline-images.test.js | 42 | node --test 测试（npm test） | text, a, b, user |
 | tests/install.test.js | 52 | node --test 测试（npm test） | - |
-| tests/markdown.test.js | 123 | node --test 测试（npm test） | - |
+| tests/markdown.test.js | 137 | node --test 测试（npm test） | - |
 | tests/message-activity.test.js | 229 | node --test 测试（npm test） | page, assistant, thought, call |
 | tests/model-config.test.js | 463 | node --test 测试（npm test） | sha, EMPTY, tempDir, makeService |
 | tests/model-manager.test.js | 430 | node --test 测试（npm test） | source, tick, j, masked |
@@ -85,6 +85,7 @@
 | tests/task-notifications.test.js | 129 | node --test 测试（npm test） | factoryFixture, tick, until |
 | tests/tasks.test.js | 76 | node --test 测试（npm test） | fixture |
 | tests/text-contrast.test.js | 162 | node --test 测试（npm test） | source, css, fakeStorage, throwingStorage |
+| tests/text-diagram-ui.py | 28 | node --test 测试（npm test） | - |
 | tests/tooltip.test.js | 282 | node --test 测试（npm test） | source, boot, fire, tip |
 | tests/uninstall.test.js | 31 | node --test 测试（npm test） | - |
 | tests/update.test.js | 38 | node --test 测试（npm test） | old |
@@ -336,16 +337,17 @@
 | createFilePicker | function | 115 |
 | baseName | function | 348 |
 
-### public/markdown.js（161 行） — marked + DOMPurify 渲染（XSS 边界）
+### public/markdown.js（181 行） — marked + DOMPurify 渲染（XSS 边界）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | cache | const | 4 |
 | policy | const | 5 |
 | asciiTable | function | 12 |
-| isJson | function | 43 |
-| jsonControls | function | 47 |
-| renderMarkdown | function | 86 |
+| layoutDiagram | function | 43 |
+| isJson | function | 62 |
+| jsonControls | function | 66 |
+| renderMarkdown | function | 105 |
 
 ### public/model-manager.js（628 行） — Pi 模型管理：供应商模板、模型编辑与安全保存反馈
 

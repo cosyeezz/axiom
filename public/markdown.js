@@ -40,6 +40,25 @@ function asciiTable(code, language) {
   return table;
 }
 
+function layoutDiagram(code, language) {
+  if (code.textContent.length > 20000 || !["纯文本", "text", "txt", "plaintext", "ascii"].includes(language) ||
+      code.textContent.split("\n").filter((line) => /[─━│┃┌┐└┘├┤┬┴┼╭╮╰╯]/u.test(line)).length < 2) return false;
+  // ponytail: 1/2-cell widths, max 20K chars to bound DOM size; incorrect source padding stays unchanged.
+  const segments = new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(code.textContent);
+  const fragment = code.ownerDocument.createDocumentFragment();
+  for (const { segment } of segments) {
+    if (/^[\r\n\t]+$/.test(segment)) { fragment.append(segment); continue; }
+    const cell = code.ownerDocument.createElement("span");
+    const wide = /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff01-\uff60\uffe0-\uffe6\u{20000}-\u{3fffd}]|\p{Emoji_Presentation}|\uFE0F/u.test(segment);
+    cell.className = wide ? "diagram-cell diagram-wide" : "diagram-cell";
+    cell.textContent = segment;
+    fragment.append(cell);
+  }
+  code.replaceChildren(fragment);
+  code.classList.add("text-diagram");
+  return true;
+}
+
 function isJson(text) {
   try { JSON.parse(text); return true; } catch { return false; }
 }
@@ -117,7 +136,8 @@ export function renderMarkdown(element, text = "") {
       const json = language.toLowerCase() === "json" ||
         (["纯文本", "text", "txt", "plaintext"].includes(language) &&
           /^[\s]*[\[{]/.test(code.textContent) && isJson(code.textContent));
-      label.textContent = table ? "表格" : json ? "JSON" : language;
+      const diagram = !table && !json && layoutDiagram(code, language);
+      label.textContent = table ? "表格" : json ? "JSON" : diagram ? "字符示意图" : language;
       const copy = element.ownerDocument.createElement("button");
       copy.type = "button";
       copy.textContent = "复制";

@@ -64,6 +64,7 @@ const MODULE_INFO = {
   "tests/tooltip.test.js": "共享提示事件、动态文本与键盘回归",
   "tests/text-contrast.test.js": "文字对比度持久化、非法输入与重置回归",
   "tests/conversation-preview.mjs": "无模型本地 UI 验收：思考、工具状态、Markdown、子任务与窄屏样例",
+  "tests/text-diagram-ui.py": "可选 Playwright 回归：字符示意图单双宽网格与窄屏滚动",
   "tests/conversation-ui.py": "可选 Playwright 浏览器回归：配色、字重、吸顶收起、无内滚动、子代理定位与动态状态",
   "tests/message-activity.test.js": "消息活动状态、连续思考合并、工具历史与终态回归",
   "tests/file-picker.test.js": "共享选择器懒加载、分页、竞态和键盘交互回归",
