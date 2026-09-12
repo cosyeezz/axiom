@@ -120,16 +120,25 @@ summary {
   color: #d0d6e0;
 }
 #sessions {
-  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
   min-height: 60px;
-  overflow: auto;
+  overflow: hidden;
 }
+.session-section { min-height: 0; overflow: auto; }
+.session-section:first-child { flex: 1; }
+.session-completed { flex: 0 0 auto; max-height: 45%; }
+.session-completed > summary { padding: 8px 0; }
+.session-completed[open] { display: flex; flex-direction: column; }
+.session-completed::details-content { min-height: 0; overflow: auto; }
 .session-group {
   font-size: 12px;
   color: var(--muted);
   margin: 16px 8px 8px;
 }
 .session-section + .session-section { border-top: 1px solid var(--line); margin-top: 16px; }
+.session-completed > .session-group { margin: 0 8px; }
 .session-section > .session-group { color: var(--ink); font-weight: 600; }
 .session-day { display: flex; align-items: center; gap: 8px; margin: 12px 8px 4px; font-size: 12px; color: var(--muted); }
 .session-day::after { content: ""; height: 1px; flex: 1; background: var(--line); }
@@ -148,7 +157,9 @@ summary {
 .session-options[open] > .session-more { background: var(--raised); color: var(--ink); }
 .session-options:not([open]) > .session-actions { display: none; }
 .session-actions button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 8px; background: transparent; border-color: transparent; color: var(--ink); text-align: left; font-weight: 400; }
-.session-actions button:hover:not(:disabled) { background: var(--raised); }
+.session-actions button:hover:not(:disabled) { background: var(--surface); }
+.session-copy-arrow { margin-left: auto; font-size: 20px; line-height: 1; }
+.session-copy-menu[hidden] { display: none; }
 @media (pointer: coarse) { .session-more, .session-actions button { min-height: 44px; } .session-more { width: 44px; } }
 .session-actions svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .session-item {
@@ -198,7 +209,7 @@ summary {
 #preset-fields[hidden] { display: none; }
 #preset-fixed-cwd { width: auto; }
 .sidebar-footer {
-  margin-top: auto;
+  flex-shrink: 0;
   color: var(--muted);
   text-align: left;
   padding: 10px 12px;
