@@ -303,3 +303,9 @@
 - 根因：空格对齐依赖字体字宽，模型生成的列宽也未必一致。
 - 修复：markdown.js 仅转换完整、列数一致的纯文本 ASCII 表格为原生 table，单元格走 textContent，复制保留原文。JSON 工具同样用 textContent 更新，复制读取当前 code 内容。
 - 防再犯：不要全局替换空格或修改普通代码；覆盖残缺流式块、HTML 文本、失败不丢原文与当前结果复制。
+
+### 2026-09-12 重试卡吸收工具消息、刷新移到末尾
+- 症状：重试卡混入思考/正文/工具，成功折叠后隐藏正常内容；刷新前后位置和内容不一致。
+- 根因：renderRetry 搬入整条失败消息，失败缓存只按 agentId；snapshot 在全部消息后追加重试记录，没有消息边界。
+- 修复：public/app.js 删除失败缓存和节点搬运，src/sessions.js 首次记录 messageCount；快照按消息边界插入。终态清除当前等待字段及成功旧错误，history 不变。
+- 防再犯：tests/message-activity.test.js 对比实时/快照顺序和无嵌套消息/工具，tests/session-flow.test.js 验证位置落盘及字段清理；旧记录无位置不得猜测重排。

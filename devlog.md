@@ -533,6 +533,12 @@
 - 验证：创建时间与页签回归通过，Chromium 1440px/320px 验证分组、日期、绿点、操作展开/收起与边界；全量测试的思考展开和 collapsed-thinking 两处失败在干净基线 159d62a 同样复现，未冒充全绿。预览使用 PREVIEW_PORT=4397，未重启正式服务。
 - 文件：public/{app.js,index.html,style.css}、src/sessions.js、tests/{app.test.js,workspace-tabs.test.js,session-created-at.test.js,session-sidebar-ui.py,conversation-preview.mjs}、README.md、devlog.md、codebase-map 索引/生成脚本/knowledge.md。
 
+## 2026-09-12 重试卡内容边界与历史顺序修复
+- 内容/原因：删除整条失败助手消息搬入重试卡的逻辑，正文、思考和工具留在消息流，消除旧失败消息跨轮误收。重试首次记录 messageCount，快照按相同边界恢复；旧记录没有位置保留末尾回退，不伪造顺序。
+- 终态移除当前等待字段，成功清除当前错误；加载旧记录也规范化，history 保留每次失败原因。
+- 验证：npm test 184 通过、1 跳过；新增实时/快照顺序、内容隔离、旧记录回退、位置持久化及终态字段断言。未重启正式服务。
+- 文件：public/app.js、src/sessions.js、tests/message-activity.test.js、tests/session-flow.test.js、README.md、devlog.md、codebase-map INDEX.md/knowledge.md。
+
 ## 2026-09-12 会话菜单支持复制 JSONL 源文件路径
 - 内容：会话操作菜单在「新页签打开」与「重命名」之间新增「复制 JSONL 路径」，把会话 `.jsonl` 源文件的绝对路径写入剪贴板，便于在其他位置（如另一实例的「导入 pi 会话」）直接粘贴导入。
 - 实现：服务端 `Sessions.list()` 返回 `sessionFile`（取 `agent.sessionFile()`，未落盘为 null）；前端 `copySessionFile()` 走 `navigator.clipboard`，按钮悬停反馈「已复制」，无文件或复制失败走错误条。复制是纯前端操作，断连时保持可用。导入的会话返回的是存储目录里的副本路径（导入即复制，原文件不动）。

@@ -45,6 +45,36 @@ const thought = (text) => ({ type: "thinking", thinking: text });
 const call = (id, name = "read", args = { path: "src/main.js" }) => ({ type: "toolCall", id, name, arguments: args });
 const entry = (message, entryId, agentId = "main") => ({ message, entryId, agentId });
 
+test("retry cards preserve timeline positions and never absorb message content", async () => {
+  const { dom, emit, restore, paint, output } = await page();
+  try {
+    const failed = assistant([thought("思考内容"), call("retry-tool")], { stopReason: "error", errorMessage: "network error" });
+    const answer = assistant([{ type: "text", text: "恢复后的回答" }]);
+    const retry = { id: "r1", agentId: "main", status: "waiting", attempt: 1, maxRetries: 45, delayMs: 2000, nextRetryAt: Date.now() + 2000, error: "network error" };
+    emit("agent.message.start", { message: failed });
+    emit("agent.message.end", { message: failed, entryId: "failure" });
+    emit("agent.retry", retry);
+    paint();
+    assert.equal(output.querySelector(".retry-card .message"), null);
+    assert.equal(output.querySelector(".retry-card .tool-record"), null);
+    assert(output.querySelector(".tool-record"));
+    emit("agent.message.start", { message: answer });
+    emit("agent.message.end", { message: answer, entryId: "answer" });
+    emit("agent.retry", { ...retry, status: "succeeded" });
+    paint();
+    const order = () => [...output.children].filter(n => !n.hidden).map(n => n.className);
+    const liveOrder = order();
+    restore({ messages: [entry(failed, "failure"), entry(answer, "answer")], retries: [{ ...retry, status: "succeeded", messageCount: 1, history: [retry] }] });
+    paint();
+    assert.deepEqual(order(), liveOrder, "refresh preserves the retry boundary between messages");
+    assert.equal(output.querySelector(".retry-card .message"), null);
+    assert.equal(output.querySelector(".retry-card").open, false);
+    restore({ messages: [entry(answer, "answer")], retries: [{ ...retry, status: "succeeded" }] });
+    paint();
+    assert.equal(output.lastElementChild.className, "retry-card", "legacy records keep their fallback position");
+  } finally { dom.window.close(); }
+});
+
 test("activity history hides empty shells and retains tool summaries without raw payloads", async () => {
   const { dom, restore, output, paint } = await page();
   try {

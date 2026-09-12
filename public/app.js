@@ -1273,7 +1273,6 @@ function renderQueue(queue = {}) {
   $("message-queue").hidden = !$("message-queue").children.length;
 }
 const retryCards = new Map();
-const retryFailures = new Map();
 function renderRetry(agentId, data) {
   const key = `${agentId}:${data.id}`;
   let record = retryCards.get(key);
@@ -1299,10 +1298,6 @@ function renderRetry(agentId, data) {
     const row = document.createElement("li");
     row.textContent = `第 ${attempt.attempt} 次 · 等待 ${attempt.delayMs / 1000} 秒 · ${attempt.error || "异常中断"}`;
     record.history.append(row);
-  }
-  if (data.status === "waiting" && retryFailures.has(agentId)) {
-    record.node.append(retryFailures.get(agentId).node);
-    retryFailures.delete(agentId);
   }
   const labels = { waiting: "等待重试", running: "正在重试", succeeded: "重试成功", failed: "重试失败", cancelled: "重试已停止" };
   record.summary.textContent = `${labels[data.status] || data.status} · ${data.attempt}/${data.maxRetries || 30}`;
@@ -1399,7 +1394,6 @@ function event(message) {
       if (call.type === "toolCall") toolState(agentId, { phase: "start", toolCallId: call.id, toolName: call.name, args: call.arguments });
     renderMessage(item, data.message);
     mergeThoughts(item.node.parentElement);
-    if (["error", "aborted", "length"].includes(data.message.stopReason)) retryFailures.set(agentId, item);
     live.delete(agentId);
     if (agentId === "main") mainItems.push({ item, entryId: data.entryId });
   }
@@ -1501,7 +1495,6 @@ function snapshot(state) {
   tasks.clear();
   renderTaskRuns();
   retryCards.clear();
-  retryFailures.clear();
   compactions = state.compactions || [];
   compactionNodes.clear();
   taskEntries.clear();
@@ -1518,7 +1511,19 @@ function snapshot(state) {
     for (const entryId of record.compactedMessageIds || [])
       if (!folded.has(entryId)) folded.set(entryId, record);
   const placed = new Set(), foldedTools = new Set();
-  for (const { agentId, message, entryId } of state.messages) {
+  const retriesAt = new Map();
+  for (const record of state.retries || []) {
+    // 旧记录没有时间线位置：保留末尾展示，不猜测消息归属。
+    const index = Number.isInteger(record.messageCount) && record.messageCount >= 0
+      ? Math.min(record.messageCount, state.messages.length) : state.messages.length;
+    if (!retriesAt.has(index)) retriesAt.set(index, []);
+    retriesAt.get(index).push(record);
+  }
+  const restoreRetries = (index) => {
+    for (const record of retriesAt.get(index) || []) renderRetry(record.agentId, record);
+  };
+  for (const [index, { agentId, message, entryId }] of state.messages.entries()) {
+    restoreRetries(index);
     if (message.role === "toolResult") {
       if (toolItems.has(`${agentId}:${message.toolCallId}`)) toolState(agentId, { ...message, phase: "end" });
     }
@@ -1550,6 +1555,7 @@ function snapshot(state) {
       if (agentId === "main") mainItems.push({ item, entryId });
     }
   }
+  restoreRetries(state.messages.length);
   for (const [agentId, message] of Object.entries(state.live))
     if (message.role === "assistant") {
       const item = card(
@@ -1578,7 +1584,6 @@ function snapshot(state) {
   // 摘要按记录顺序集中在历史顶部；原任务入口移动而非复制，弹窗与状态保持不变。
   $("output").prepend(...compactions.map((record) => compactionNodes.get(record.id)));
   placeCompactedTasks();
-  for (const record of state.retries || []) renderRetry(record.agentId, record);
   if (!$("output").children.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
