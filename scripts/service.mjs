@@ -2,7 +2,9 @@
 import { fork, spawn } from "node:child_process";
 import { mkdirSync, openSync, existsSync, realpathSync } from "node:fs";
 import { rename, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
+import { createServer as createControlServer, createConnection } from "node:net";
+import { createHash } from "node:crypto";
 import { dirname, delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { npmSpec, commitFile, validateCommit } from "../src/update.js";
@@ -22,7 +24,7 @@ export function run(command, args, cwd = root, capture = false) {
   });
 }
 // Windows 的 npm 是 .cmd 垫片，必须经 cmd 包装；参数仅用固定字面量和经过白名单校验的 SHA。AXIOM_NPM 可指定 npm 可执行文件（测试注入假 npm）
-const npmRun = (execute, args, cwd = root, capture = false) => {
+export const npmRun = (execute, args, cwd = root, capture = false) => {
   const npm = process.env.AXIOM_NPM || "npm";
   return process.platform === "win32"
     ? execute(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `${npm} ${args.join(" ")}`], cwd, capture)
@@ -61,6 +63,11 @@ export async function rebuild(cwd = root, execute = run) {
   if (saved) await rm(backup, { recursive: true, force: true });
 }
 
+export function controlPath(address, cwd = root) {
+  const id = createHash("sha256").update(`${realpathSync(cwd)}:${new URL(address).port}`).digest("hex").slice(0, 24);
+  return process.platform === "win32" ? `\\\\.\\pipe\\axiom-${id}` : join(tmpdir(), `axiom-${id}.sock`);
+}
+
 export async function supervise() {
   if (existsSync(join(root, ".env.local"))) process.loadEnvFile(join(root, ".env.local"));
   process.env.PATH = `${dirname(process.execPath)}${delimiter}${process.env.PATH || ""}`;
@@ -72,7 +79,38 @@ export async function supervise() {
   mkdirSync(logDir, { recursive: true });
   const log = openSync(join(logDir, "service.log"), "a");
   output = ["ignore", log, log];
-  let child, restarting = false, stopping = false, failures = 0, startedAt = 0;
+  let child, restartTimer, restarting = false, stopping = false, failures = 0, startedAt = 0;
+  // 只在 worker 已退出时提供兜底停止；健康 worker 仍走 HTTP 的任务/保存检查。
+  const socketPath = controlPath(address);
+  const control = createControlServer((socket) => {
+    socket.on("error", () => {});
+    socket.setTimeout(5000, () => socket.destroy());
+    socket.once("data", (data) => {
+      if (data.toString() !== "stop\n") { socket.destroy(); return; }
+      if (restarting || (child && child.exitCode === null && child.signalCode === null)) {
+        socket.end(JSON.stringify({ error: "服务进程仍在运行或重启，请等待就绪后重试；未强制终止任务。" }));
+        return;
+      }
+      stopping = true;
+      clearTimeout(restartTimer);
+      socket.end(JSON.stringify({ service: "axiom", pid: process.pid }), () => {
+        control.close(() => process.exit(0));
+      });
+    });
+  });
+  if (process.platform !== "win32" && existsSync(socketPath)) {
+    const active = await new Promise((resolve, reject) => {
+      const probe = createConnection(socketPath);
+      probe.on("connect", () => { probe.destroy(); resolve(true); });
+      probe.on("error", (error) => error.code === "ECONNREFUSED" ? resolve(false) : reject(error));
+    });
+    if (active) throw new Error("当前安装已有守护进程运行");
+    await rm(socketPath, { force: true });
+  }
+  await new Promise((resolve, reject) => {
+    control.once("error", reject);
+    control.listen(socketPath, resolve);
+  });
   const start = (error = "") => {
     if (stopping) return;
     startedAt = Date.now();
@@ -83,11 +121,11 @@ export async function supervise() {
     child.on("error", (error) => { console.error(error); process.exitCode = 1; });
     child.on("exit", (code) => {
       if (restarting) return;
-      if (stopping) process.exit(code || 0);
+      if (stopping) { control.close(() => process.exit(code || 0)); return; }
       if (Date.now() - startedAt > 30000) failures = 0;
       const delay = Math.min(1000 * 2 ** failures++, 10000);
       console.error(`服务进程意外退出（code ${code ?? "signal"}），${delay}ms 后自动重启`);
-      setTimeout(() => start(), delay);
+      restartTimer = setTimeout(() => start(), delay);
     });
     child.on("message", (message) => {
       if (message?.type === "service.shutdown" && !stopping && !restarting) {
@@ -137,7 +175,8 @@ export async function supervise() {
   }
   for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => {
     stopping = true;
-    void stopChild().catch((error) => { console.error(error); process.exitCode = 1; });
+    clearTimeout(restartTimer);
+    void stopChild().then(() => control.close(() => process.exit(0))).catch((error) => { console.error(error); process.exitCode = 1; });
   });
   start();
   console.log(`服务运行中：${address}（日志 ${join(logDir, "service.log")}，Ctrl+C 停止）`);
@@ -145,10 +184,31 @@ export async function supervise() {
 // npm 全局 bin 在类 Unix 系统是符号链接，argv[1] 需取 realpath 再比对
 const invoked = (() => { try { return realpathSync(process.argv[1] ?? ""); } catch { return ""; } })();
 export async function stopService(address = `http://127.0.0.1:${Number(process.env.AXIOM_PORT ?? 4319)}`) {
-  const response = await fetch(`${address}/service/stop`, { method: "POST", signal: AbortSignal.timeout(5000) });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`停止失败：${text || response.status}（旧版本需先升级并完整重启一次）`);
-  const status = JSON.parse(text);
+  let response;
+  let status;
+  try {
+    response = await fetch(`${address}/service/stop`, { method: "POST", signal: AbortSignal.timeout(5000) });
+  } catch {
+    status = await new Promise((resolve, reject) => {
+      const socket = createConnection(controlPath(address));
+      socket.on("connect", () => socket.write("stop\n"));
+      let text = "";
+      socket.setTimeout(5000, () => socket.destroy(new Error("守护进程响应超时")));
+      socket.on("data", (data) => { text += data; });
+      socket.on("error", (error) => {
+        if (["ENOENT", "ECONNREFUSED"].includes(error.code)) resolve(null);
+        else reject(error);
+      });
+      socket.on("end", () => { try { resolve(JSON.parse(text)); } catch { reject(new Error("守护进程响应无效")); } });
+    });
+    if (!status) { console.log("服务未运行（未发现当前安装版的守护进程）。"); return; }
+    if (status.error) throw new Error(status.error);
+  }
+  if (response) {
+    const text = await response.text();
+    if (!response.ok) throw new Error(`停止失败：${text || response.status}（旧版本需先升级并完整重启一次）`);
+    status = JSON.parse(text);
+  }
   if (status.service !== "axiom" || !Number.isInteger(status.pid) || status.pid <= 0)
     throw new Error("停止响应无效，无法确认守护进程状态");
   const deadline = Date.now() + 65000;
@@ -163,10 +223,10 @@ export async function stopService(address = `http://127.0.0.1:${Number(process.e
 if (invoked && invoked === realpathSync(fileURLToPath(import.meta.url))) {
   const [command, ...extra] = process.argv.slice(2);
   if (existsSync(join(root, ".env.local"))) process.loadEnvFile(join(root, ".env.local"));
-  if (extra.length || (command && command !== "stop")) {
-    console.error("用法：axiom [stop]"); process.exitCode = 1;
+  if (extra.length || (command && !["stop", "uninstall"].includes(command))) {
+    console.error("用法：axiom [stop|uninstall]"); process.exitCode = 1;
   } else {
-    await (command === "stop" ? stopService() : supervise()).catch((error) => {
+    await (command === "uninstall" ? import("./uninstall.mjs").then((m) => m.uninstall()) : command === "stop" ? stopService() : supervise()).catch((error) => {
       console.error(error.message); process.exitCode = 1;
     });
   }

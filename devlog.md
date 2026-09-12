@@ -6,6 +6,12 @@
 - 文件：上述两文件、tests/markdown.test.js、tests/text-diagram-ui.py、README.md、devlog.md 与 codebase-map 索引/脚本/坑库。
 - 验证：Playwright Chromium 实测 1440/320px 单双宽网格、页面无横向溢出与键盘滚动入口；单测覆盖组合字符、emoji、注入、原文复制与大内容回退。
 
+## 2026-09-12 首次安装允许后配模型，并自动补装 Pi
+- 原因：新电脑尚无模型凭据时 createPiFactory 直接退出，用户无法进入网页配置；安装脚本也未补装 Pi CLI。
+- 决策：服务启动与模型可用性分离，建会话时才校验，每次从最新模型目录选择；显式无效模型仍拒绝，不悄悄替换。网页无模型时保持连接并复用现有「模型与供应商」设置，配置后可新建会话，不新增向导或样式。
+- 安装检查 Pi CLI，缺失则 npm 全局安装最新版，已有不强制升级，安装失败中止。卸载沿用停止/取消自启/npm uninstall 三步，README 说明实际包名与保留数据，不额外删除共用 Pi。
+- 涉及：src/pi.js、public/app.js、scripts/install.mjs、tests/model-onboarding.test.js、tests/install.test.js、前端回归测试、README.md、codebase-map 索引与坑库。复用既有 Linear 暗色面板和焦点样式，无新增依赖。
+- 验证：真实 Pi SDK 在独立临时目录、空凭据环境启动，写入测试模型后刷新目录并创建会话；不调用真实模型、不修改用户凭据。最终全量结果见交付说明。
 ## 2026-09-12 00:52 ASCII 表格与 JSON 展示
 - 原因：中英文混排的字符表格边框错位；用户需要会话 JSON 的格式化、压缩、去转义、转义和复制当前结果。
 - 内容：共享 Markdown 渲染器识别完整 ASCII 表格并复用原生表格滚动样式、复制仍保留原文；JSON 使用原生 JSON.parse/stringify、本地操作与错误状态，不增加依赖。单元格和转换结果只用 textContent；未知/残缺 ASCII 保持代码，超安全整数拒绝重写。
@@ -539,6 +545,12 @@
 - 验证：创建时间与页签回归通过，Chromium 1440px/320px 验证分组、日期、绿点、操作展开/收起与边界；全量测试的思考展开和 collapsed-thinking 两处失败在干净基线 159d62a 同样复现，未冒充全绿。预览使用 PREVIEW_PORT=4397，未重启正式服务。
 - 文件：public/{app.js,index.html,style.css}、src/sessions.js、tests/{app.test.js,workspace-tabs.test.js,session-created-at.test.js,session-sidebar-ui.py,conversation-preview.mjs}、README.md、devlog.md、codebase-map 索引/生成脚本/knowledge.md。
 
+### 2026-09-12 首装网页引导与统一卸载
+
+- 内容：空模型保持连接并复用模型设置；保留历史引用/草稿，配置后手动新建。新增 axiom uninstall 核对全局目录、安全停止、取消自启后仅卸载 Axiom。
+- 原因：避免首装会话失败重连；HTTP 未启动时通过本地守护通道停止崩溃重试，不强杀活跃 worker。
+- 涉及：public/app.js、scripts/service.mjs、scripts/uninstall.mjs、tests/model-onboarding-ui.test.js、tests/service.test.js、tests/uninstall.test.js、README.md、代码索引及坑库。
+- 决策：保留 ~/.axiom 与 ~/.pi；旧守护进程须完整重启后才有兜底通道。
 ## 2026-09-12 会话菜单支持复制 JSONL 源文件路径
 - 内容：会话操作菜单在「新页签打开」与「重命名」之间新增「复制 JSONL 路径」，把会话 `.jsonl` 源文件的绝对路径写入剪贴板，便于在其他位置（如另一实例的「导入 pi 会话」）直接粘贴导入。
 - 实现：服务端 `Sessions.list()` 返回 `sessionFile`（取 `agent.sessionFile()`，未落盘为 null）；前端 `copySessionFile()` 走 `navigator.clipboard`，按钮悬停反馈「已复制」，无文件或复制失败走错误条。复制是纯前端操作，断连时保持可用。导入的会话返回的是存储目录里的副本路径（导入即复制，原文件不动）。
