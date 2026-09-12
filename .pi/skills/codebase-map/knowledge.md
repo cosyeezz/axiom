@@ -299,7 +299,19 @@
 - 修复：public/app.js 固定当前工作空间和三组顺序；运行优先于完成标记；src/sessions.js 独立持久化 createdAt；操作通过原生 details 展开。跨 cwd 在 switchSession 统一新开页签，不替换当前草稿。
 - 防再犯：tests/session-sidebar-ui.py 实测桌面/手机、日期与排序、绿点及键盘；tests/workspace-tabs.test.js 检查跨目录保留草稿。resize 后等待媒体查询事件再操作侧栏，预览端口冲突用 PREVIEW_PORT，不能误测旧服务。基线原有两项思考渲染失败已单独复现，不应归因侧栏。
 
+### 2026-09-12 新电脑无模型凭据阻止网页首次配置
+- 症状：安装后 No authenticated model 退出，无法进入网页添加供应商。
+- 根因：createPiFactory 在启动阶段强制选择模型，浏览器连接后无条件创建会话并在失败时断线重连。
+- 修复：src/pi.js 将校验延后到创建会话，每次使用刷新后的目录；public/app.js 空目录保持连接并打开既有模型配置页；scripts/install.mjs 缺少 Pi CLI 时补装最新版。
+- 防再犯：隔离真实 SDK 的凭据与配置目录验证空启动、配置后创建，不只测 fake factory；前端验证无模型不发 session.create、不循环重连，安装 mock 覆盖已有/缺失/安装失败。
 ### 2026-09-12 ASCII 中英文表格边框错位
 - 根因：空格对齐依赖字体字宽，模型生成的列宽也未必一致。
 - 修复：markdown.js 仅转换完整、列数一致的纯文本 ASCII 表格为原生 table，单元格走 textContent，复制保留原文。JSON 工具同样用 textContent 更新，复制读取当前 code 内容。
 - 防再犯：不要全局替换空格或修改普通代码；覆盖残缺流式块、HTML 文本、失败不丢原文与当前结果复制。
+
+### 2026-09-12 空模型网页与崩溃守护停止
+
+- 症状：空模型导致网页建会话失败、重复恢复；worker 启动失败后 HTTP 无法停止重试。
+- 根因：页面把连接等同于已建会话；停止命令只依赖 worker HTTP。
+- 修复：app.js 空目录只引导设置、保留引用与草稿；service.mjs 本地管道仅允许停止已退出 worker 的守护进程；uninstall.mjs 安全卸载。
+- 防再犯：jsdom 空目录/保存模型回归；独立子进程崩溃退避停止及重复 stop；卸载 busy/目标不匹配/取消自启失败阻断测试。

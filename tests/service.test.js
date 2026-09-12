@@ -95,6 +95,30 @@ test("supervisor respawns crashed workers with backoff until stopped", async () 
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
+test("stop CLI stops crash-backoff supervisor without HTTP and tolerates repeat", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "axiom-crash-stop-"));
+  let child;
+  try {
+    await mkdir(join(cwd, "scripts")); await mkdir(join(cwd, "src"));
+    await writeFile(join(cwd, "scripts/service.mjs"), await readFile(new URL("../scripts/service.mjs", import.meta.url)));
+    await writeFile(join(cwd, "src/update.js"), await readFile(new URL("../src/update.js", import.meta.url)));
+    await writeFile(join(cwd, "src/main.js"), "process.exit(1)");
+    const env = { ...process.env, AXIOM_PORT: "0", AXIOM_HOME: cwd };
+    child = spawn(process.execPath, [join(cwd, "scripts/service.mjs")], { env, stdio: ["ignore", "ignore", "pipe"] });
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("no crash report")), 5000);
+      child.stderr.on("data", (data) => { if (data.toString().includes("自动重启")) { clearTimeout(timer); resolve(); } });
+    });
+    const exited = once(child, "exit");
+    for (let i = 0; i < 2; i++) {
+      const cli = spawn(process.execPath, [join(cwd, "scripts/service.mjs"), "stop"], { env, stdio: "inherit" });
+      assert.equal((await once(cli, "exit"))[0], 0);
+    }
+    await exited;
+    assert.throws(() => process.kill(child.pid, 0), { code: "ESRCH" });
+  } finally { child?.kill(); await rm(cwd, { recursive: true, force: true }); }
+});
+
 for (const failInstall of [false, true]) test(`supervisor update ${failInstall ? "failure restores requests via restart" : "installs the exact commit before restart"}`, async () => {
   const cwd = await mkdtemp(join(tmpdir(), "axiom-update-sup-"));
   try {

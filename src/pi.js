@@ -93,17 +93,15 @@ export async function createPiFactory({ cwd, model: requested }) {
   let available = await modelRuntime.getAvailable();
   const startup = await discoverCapabilities(cwd, { loadAdapter: false });
   const defaultKey = requested || `${startup.settingsManager.getDefaultProvider()}/${startup.settingsManager.getDefaultModel()}`;
-  const model = available.find((m) => `${m.provider}/${m.id}` === defaultKey) || (!requested && available[0]);
-  if (!model)
-    throw new Error(
-      "No authenticated model. Configure Pi credentials and AXIOM_MODEL=provider/model.",
-    );
   const factory = async (customTools = [], selection = {}) => {
     const workspace = selection.cwd || cwd;
-    const selected = selection.model
-      ? available.find((m) => `${m.provider}/${m.id}` === selection.model)
-      : available.find((m) => `${m.provider}/${m.id}` === `${model.provider}/${model.id}`);
-    if (!selected) throw new Error("Unknown model");
+    // 启动不依赖模型；每次建会话从最新目录选择，网页首次配置后无需重启。
+    const key = selection.model || defaultKey;
+    const selected = available.find((m) => `${m.provider}/${m.id}` === key)
+      || (!selection.model && !requested && available[0]);
+    if (!selected) throw new Error(available.length
+      ? `模型不可用：${key}。请在设置中选择可用模型，或检查 AXIOM_MODEL。`
+      : "尚未配置可用模型，请先在「设置 → 模型与供应商」添加供应商、模型和凭据。");
     const validateCompaction = (value, mainModel) => {
       const config = normalizeCompaction(value);
       const target = config.model ? available.find((m) => `${m.provider}/${m.id}` === config.model) : mainModel;

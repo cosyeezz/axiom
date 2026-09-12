@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 一键安装：装依赖（复用 service.mjs rebuild 的备份/回滚）→ 可选注册登录自启 → 启动守护服务 → 等健康检查 → 可选打开浏览器。
+// 一键安装：检查/补装 Pi CLI → 装依赖（复用 service.mjs rebuild 的备份/回滚）→ 可选注册登录自启 → 启动守护服务 → 等健康检查 → 可选打开浏览器。
 // 选项：--no-autostart 跳过注册自启；--no-browser 跳过打开浏览器；交互终端且未给参数时逐项询问，默认是。
 // 自定义端口写项目根 .env.local（AXIOM_PORT=…），本脚本与 service.mjs、自启注册读取同一来源。
 import { fork, spawn } from "node:child_process";
@@ -8,7 +8,7 @@ import { createInterface } from "node:readline/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { rebuild } from "./service.mjs";
+import { rebuild, run } from "./service.mjs";
 import { main as autostart } from "./autostart.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -33,6 +33,19 @@ export const openCommand = (platform = process.platform) =>
     ? { command: process.env.ComSpec || "cmd.exe", lead: ["/d", "/s", "/c", "start", ""] }
     : { command: platform === "darwin" ? "open" : "xdg-open", lead: [] };
 
+// Pi CLI 缺失才全局装最新版，已有不强制升级。安装失败错误原样抛出。
+export const ensurePi = async (execute = viaShell) => {
+  if (await execute("pi", ["--version"], true).then(() => true, () => false)) return "已有 Pi CLI";
+  await execute("npm", ["install", "-g", "--ignore-scripts", "@earendil-works/pi-coding-agent@latest"]);
+  return "已全局安装 @earendil-works/pi-coding-agent@latest";
+};
+
+// Windows 的 npm/pi 全局 bin 是 .cmd 垫片；命令和参数仅来自上面的固定字面量。
+const viaShell = (command, args, capture = false) =>
+  process.platform === "win32"
+    ? run(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `${command} ${args.join(" ")}`], root, capture)
+    : run(command, args, root, capture);
+
 // ok=服务就绪；busy=端口有响应但不是 axiom（被其他程序占用）；down=无响应
 const probe = async (target) => {
   try {
@@ -55,6 +68,8 @@ export async function install(argv = process.argv.slice(2), io = console, isTTY 
       if (opts.browser) opts.browser = await ask(rl, "完成后打开浏览器？");
     } finally { rl.close(); }
   }
+  io.log("检查 Pi CLI（未安装时将通过 npm 安装最新版）…");
+  io.log(`Pi CLI：${await ensurePi()}`);
   if (root.includes("node_modules")) io.log("npm 安装：依赖已就绪，跳过重装。");
   else { io.log("安装依赖（npm ci；已装依赖先备份，失败自动回滚）…"); await rebuild(); }
   if (opts.autostart) await autostart(["enable"]);
