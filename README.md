@@ -405,6 +405,7 @@ pi 会话 .jsonl（~/.pi/agent/sessions/...）
 - 双按 Esc（300ms 内）或「停止」取消执行。右上角已连接时显示 `Idle` / `Running`，断线为灰色。
 - 300ms 内三按 Esc：把这一轮已发出的输入收回输入框（含图片，编号重新对齐草稿附件）。只在模型还没产出内容时成立（被中断或失败的半截回答会一并丢弃）；一旦出现过回答、工具调用或工具结果，只停止并保留原消息；队列里的消息仍按单按 Esc 撤回，被拒绝的撤回不会吞掉队列。撤回按分支回退实现，之后的历史前缀逐字节不变，供应商前缀缓存继续命中。
 - `prompt` 可带 `queueType: "steer" | "followUp"`；`session.configure` 可保存默认 `queueType`；`queue.withdraw` 可带 `recall: true` 并返回 `{steering,followUp,recalled}`（`recalled` 为 `{entryId,text,images}` 或 `null`）；`session.queue` 同步队列，attach 快照包含 `queue`。
+- 输入框上方「+」行最右端显示任务计时器，口径就是侧栏绿点：绿点亮起开始计时，熄灭后定格，重新执行继续累加而不清零。不足 1 分钟显示 `45s`，之后 `3m 05s`、`1h 02m 03s`；运行中绿点脉动、文字提亮，停止后变为静态灰点，数字用等宽数字位（`tabular-nums`）避免每秒跳动，减少动态效果只停动画、不停计时。计时按会话落盘：`sessions.list` 与 `session.state`/`task.state` 事件附带 `elapsedMs`（已结算累计毫秒）与 `runningSince`（本段起点，空闲为 `null`），服务重启保留已结算累计值，未结算的运行段不补算。
 
 ## 协议
 

@@ -1512,6 +1512,7 @@ function event(message) {
     } else updateTaskRuntime(tasks.get(agentId), data);
   }
   if (type === "session.state") {
+    applyElapsed(data);
     void refreshSessions().catch(error);
     busy = data.status !== "idle";
     if (data.status === "running") waiting("main");
@@ -1565,6 +1566,7 @@ function event(message) {
     foldCompaction(data);
   }
   if (type === "task.state") {
+    applyElapsed(data);
     if (!tasks.has(message.taskId)) {
       const fragment = $("task-template").content.cloneNode(true);
       const trigger = fragment.querySelector(".task-card");
@@ -2249,13 +2251,47 @@ function refreshSessions() {
 setInterval(() => {
   if (connected && !sessionMissing && !changing && !document.querySelector(".session-options[open]") && !document.hidden) void refreshSessions().catch(error);
 }, 5000);
+// 运行中每秒重算显示；停止后不再重绘。减少动态效果只停动画，不停计时。
+setInterval(() => {
+  if (allSessions.find((s) => s.id === sessionId)?.runningSince) renderTaskTimer();
+}, 1000);
+// 任务计时：绿点（会话执行中）累计时长，运行中每秒增长，停止后定格为累计值。
+function timerText(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const pad = (value) => String(value).padStart(2, "0");
+  if (total < 60) return `${total}s`;
+  if (total < 3600) return `${Math.floor(total / 60)}m ${pad(total % 60)}s`;
+  return `${Math.floor(total / 3600)}h ${pad(Math.floor((total % 3600) / 60))}m ${pad(total % 60)}s`;
+}
+function renderTaskTimer(sessions = allSessions) {
+  const node = $("task-timer");
+  const session = sessions.find((s) => s.id === sessionId);
+  const running = Boolean(session?.runningSince);
+  const elapsed = (session?.elapsedMs || 0) + (running ? Date.now() - session.runningSince : 0);
+  node.hidden = !running && !elapsed;
+  node.dataset.running = String(running);
+  const text = timerText(elapsed);
+  const label = `${running ? "任务进行中" : "任务已停止"}，累计运行 ${text}`;
+  $("task-timer-value").textContent = text;
+  node.title = label;
+  node.setAttribute("aria-label", label);
+}
+function applyElapsed(data) {
+  if (data?.elapsedMs == null) return;
+  const current = allSessions.find((s) => s.id === sessionId);
+  if (!current) return;
+  current.elapsedMs = data.elapsedMs;
+  current.runningSince = data.runningSince ?? null;
+  renderTaskTimer();
+}
 function updatePageTitle() {
   const workspace = currentCwd.replaceAll("\\", "/").replace(/\/$/, "").split("/").pop() || currentCwd;
   document.title = `${$("session-title").textContent} · ${workspace} — Axiom`;
 }
 async function updateSessions() {
   const sessions = await request("sessions.list");
-  const listState = (items) => JSON.stringify(items.map(({ id, title, cwd, status, sessionFile, createdAt, updatedAt }) => ({ id, title, cwd, status, sessionFile, createdAt: createdAt ?? updatedAt })));
+  renderTaskTimer(sessions);
+  const listState = (items) => JSON.stringify(items.map(({ id, title, cwd, status, sessionFile, createdAt, updatedAt, elapsedMs, runningSince }) => ({ id, title, cwd, status, sessionFile, createdAt: createdAt ?? updatedAt, elapsedMs, runningSince })));
   const active = sessions.find((s) => s.id === sessionId);
   if (!active && sessionId && connected && !changing) {
     allSessions = sessions;

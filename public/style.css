@@ -657,6 +657,13 @@ button.danger:hover:not(:disabled) { background: #c13e50; }
 #add-context:hover svg, body:has(#context-menu:popover-open) #add-context svg { color: var(--ink); }
 body:has(#context-menu:popover-open) #add-context { background: var(--raised); }
 #context-chips { display: flex; gap: 6px; overflow-x: auto; min-width: 0; }
+/* 任务计时：与「+」同行最右端，运行中绿点脉动、停止后定格累计值。 */
+#task-timer { display: flex; align-items: center; gap: 6px; margin-left: auto; padding-left: 8px; flex-shrink: 0; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+#task-timer[hidden] { display: none; }
+#task-timer .task-timer-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+#task-timer[data-running="true"] { color: var(--body-ink); }
+#task-timer[data-running="true"] .task-timer-dot { background: var(--success); animation: task-timer-pulse 1.6s ease-in-out infinite; }
+@keyframes task-timer-pulse { 50% { opacity: .3; transform: scale(.75); } }
 .context-chip { display: flex; align-items: center; gap: 6px; padding: 5px 9px; max-width: 240px; flex-shrink: 0; border: 1px solid #5e6ad233; background: #5e6ad210; color: var(--ink); border-radius: 8px; font-size: 12px; }
 .context-chip span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .context-chip span:last-child { color: var(--muted); }
@@ -1275,5 +1282,5 @@ summary:hover > .disclosure-action { color: var(--ink); }
 @keyframes activity-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
   .activity-icon, .activity-icon svg, .activity-icon::after, .tool-status::before,
-  .task-status::before, .task-top h2::before, .task-run-spin, .thinking-dots { animation: none !important; }
+  .task-status::before, .task-top h2::before, .task-run-spin, .thinking-dots, .task-timer-dot { animation: none !important; }
 }
