@@ -82,6 +82,39 @@ const flowFactory = async () => ({
 });
 flowFactory.catalog = () => [{ key: "test/one" }];
 
+test("legacy retry boundaries migrate once and survive repeated service restarts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-retry-order-"));
+  const storage = join(root, "sessions");
+  const retry = (id, extra = {}) => ({ id, agentId: "main", status: "succeeded", attempt: 1,
+    history: [{ attempt: 1, nextRetryAt: 2200, delayMs: 2000 }], ...extra });
+  let sessions = new Sessions(flowFactory, undefined, storage);
+  try {
+    const id = await sessions.create(root, {}, { id: "legacy", messages: [
+      { agentId: "main", message: { role: "user", content: "hello", timestamp: 100 } },
+      { agentId: "main", message: { role: "assistant", content: [], stopReason: "error", timestamp: 150 } },
+      { agentId: "child", message: { role: "assistant", content: [], timestamp: 180 } },
+      { agentId: "main", message: { role: "assistant", content: "done", timestamp: 300 } },
+    ], retries: [retry("old"), retry("fixed", { messageCount: 1 }),
+      retry("child", { agentId: "child" }), retry("missing", { history: [] }),
+      retry("ambiguous", { history: [{ nextRetryAt: 2150, delayMs: 2000 }] })] });
+    assert.deepEqual(sessions.snapshot(id).retries.map(r => r.messageCount), [3, 1, 3, undefined, undefined]);
+    for (let restart = 0; restart < 2; restart++) {
+      await sessions.close();
+      sessions = new Sessions(flowFactory, undefined, storage);
+      await sessions.load();
+      assert.deepEqual(sessions.snapshot(id).retries.map(r => r.messageCount), [3, 1, 3, undefined, undefined]);
+      assert.equal(sessions.snapshot(id).retries[0].history[0].nextRetryAt, 2200);
+    }
+    // 缺失时间或时钟倒退不能用于迁移。
+    for (const timestamps of [[100, undefined], [300, 100]]) {
+      const other = await sessions.create(root, {}, { messages: timestamps.map(timestamp => ({
+        agentId: "main", message: { role: "assistant", content: [], timestamp },
+      })), retries: [retry("uncertain")] });
+      assert.equal(sessions.snapshot(other).retries[0].messageCount, undefined);
+    }
+  } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 // 会话模式 files.browse：相对路径、工作空间边界、保留原有过滤、分页与导航字段。
 test("files.browse session mode stays inside the workspace and pages filtered entries", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-files-"));
