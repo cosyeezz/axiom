@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 01:06:03）
+# Axiom 多级代码索引（生成于 2026/9/12 01:13:15）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -32,7 +32,7 @@
 | src/pi.js | 309 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, queueStateOf, hasModelOutput, withdrawQueue |
 | src/protocol.js | 304 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/remote.js | 501 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
-| src/retry.js | 149 | 模型失败重试：可取消退避、最多30次、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_RETRIES, delayFor, MAX_TIMEOUT_MS |
+| src/retry.js | 150 | 模型失败重试：可取消退避、最多45次、16分钟封顶、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_DELAY_MS, MAX_RETRIES, delayFor |
 | src/server.js | 438 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | assets, createServerApp |
 | src/sessions.js | 848 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | BROWSE_PAGE, resolveDir, parentOf, absoluteCrumbs |
 | src/tasks.js | 107 | Tasks：子任务（委托）生命周期 | Tasks |
@@ -635,17 +635,18 @@
 | LOGIN_OUTPUT_CAP | const | 135 |
 | createRemoteAccess | function | 137 |
 
-### src/retry.js（149 行） — 模型失败重试：可取消退避、最多30次、保留已有工具结果继续
+### src/retry.js（150 行） — 模型失败重试：可取消退避、最多45次、16分钟封顶、保留已有工具结果继续
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | RETRY_DELAYS_MS | const | 5 |
-| MAX_RETRIES | const | 6 |
-| delayFor | const | 7 |
-| MAX_TIMEOUT_MS | const | 13 |
-| abortableSleep | const | 14 |
-| classify | class | 48 |
-| createAutoRetry | function | 77 |
+| MAX_DELAY_MS | const | 6 |
+| MAX_RETRIES | const | 7 |
+| delayFor | const | 8 |
+| MAX_TIMEOUT_MS | const | 14 |
+| abortableSleep | const | 15 |
+| classify | class | 49 |
+| createAutoRetry | function | 78 |
 
 ### src/server.js（438 行） — createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发
 
