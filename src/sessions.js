@@ -551,6 +551,20 @@ export class Sessions {
         historyIndex = index + 1;
       }
     }
+    // 旧版重试没有消息边界；仅用完整、单调的同代理时间线迁移一次并随快照落盘。
+    for (const retry of item.retries) {
+      if (Number.isInteger(retry.messageCount) && retry.messageCount >= 0) continue;
+      const first = retry.history?.[0];
+      if (!Number.isFinite(first?.nextRetryAt) || !Number.isFinite(first?.delayMs) || first.delayMs < 0) continue;
+      const startedAt = first.nextRetryAt - first.delayMs;
+      const messages = item.messages.map((entry, index) => ({ ...entry, index }))
+        .filter((entry) => entry.agentId === (retry.agentId || "main"));
+      if (!messages.length || messages.some((entry, index) => !Number.isFinite(entry.message.timestamp)
+        || entry.message.timestamp === startedAt
+        || (index > 0 && entry.message.timestamp < messages[index - 1].message.timestamp))) continue;
+      const next = messages.find((entry) => entry.message.timestamp > startedAt);
+      retry.messageCount = next?.index ?? messages.at(-1).index + 1;
+    }
     for (const record of item.agent.compactions?.() || []) {
       const saved = item.compactions.find((entry) => entry.id === record.id);
       if (saved) Object.assign(saved, record);
