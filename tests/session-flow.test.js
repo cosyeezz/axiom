@@ -45,6 +45,14 @@ test("sessions persist across shutdown, queue by type, switch models while runni
     first.get(id).emit({ type: "agent.retry", agentId: "main", data: { id: "retry-1", status: "waiting", attempt: 1, delayMs: 96000, error: "429" } });
     first.get(id).emit({ type: "agent.retry", agentId: "child", data: { id: "retry-1", status: "succeeded", attempt: 2 } });
     assert.equal(first.snapshot(id).retries.length, 2, "main and child retries are isolated");
+    const position = first.get(id).messages.length;
+    first.get(id).emit({ type: "agent.retry", data: { id: "finished", status: "waiting", attempt: 1, delayMs: 2000, nextRetryAt: 12345, error: "network" } });
+    first.get(id).emit({ type: "agent.message.end", data: { message: { role: "assistant", content: "done" } } });
+    first.get(id).emit({ type: "agent.retry", data: { id: "finished", status: "succeeded", attempt: 1 } });
+    const finished = first.snapshot(id).retries[2];
+    assert.equal(finished.messageCount, position);
+    for (const field of ["error", "delayMs", "nextRetryAt"]) assert.equal(field in finished, false);
+    assert.equal(finished.history[0].error, "network");
     await first.rename(id, "saved name");
     await first.close();
     const restored = new Sessions(factory, undefined, storage);
@@ -58,6 +66,8 @@ test("sessions persist across shutdown, queue by type, switch models while runni
     assert.equal(state.retries[0].status, "cancelled");
     assert.equal(state.retries[0].history[0].delayMs, 96000);
     assert.equal(state.retries[1].status, "succeeded");
+    assert.equal(state.retries[2].messageCount, position);
+    assert.equal(state.retries[2].error, undefined);
     await restored.remove(id);
     const [workspace] = await readdir(storage);
     assert.deepEqual(await readdir(join(storage, workspace)), []);

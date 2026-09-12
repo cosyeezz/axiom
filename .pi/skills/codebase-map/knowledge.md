@@ -315,3 +315,9 @@
 - 根因：页面把连接等同于已建会话；停止命令只依赖 worker HTTP。
 - 修复：app.js 空目录只引导设置、保留引用与草稿；service.mjs 本地管道仅允许停止已退出 worker 的守护进程；uninstall.mjs 安全卸载。
 - 防再犯：jsdom 空目录/保存模型回归；独立子进程崩溃退避停止及重复 stop；卸载 busy/目标不匹配/取消自启失败阻断测试。
+
+### 2026-09-12 重试卡吸收工具消息、刷新移到末尾
+- 症状：重试卡混入思考/正文/工具，成功折叠后隐藏正常内容；刷新前后位置和内容不一致。
+- 根因：renderRetry 搬入整条失败消息，失败缓存只按 agentId；snapshot 在全部消息后追加重试记录，没有消息边界。
+- 修复：public/app.js 删除失败缓存和节点搬运，src/sessions.js 首次记录 messageCount；快照按消息边界插入。终态清除当前等待字段及成功旧错误，history 不变。
+- 防再犯：tests/message-activity.test.js 对比实时/快照顺序和无嵌套消息/工具，tests/session-flow.test.js 验证位置落盘及字段清理；旧记录无位置不得猜测重排。
