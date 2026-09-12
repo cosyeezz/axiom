@@ -110,8 +110,10 @@ function saveView() {
     });
 }
 function resizePrompt() {
+  const phone = matchMedia("(max-width: 700px)").matches;
+  $("prompt").rows = phone ? 1 : 3;
   $("prompt").style.height = "auto";
-  $("prompt").style.height = Math.min($("prompt").scrollHeight, 240) + "px";
+  $("prompt").style.height = (phone && !$("prompt").value ? 44 : Math.min($("prompt").scrollHeight, 240)) + "px";
 }
 let scrollFrame, locatedScroll;
 function scrollLatest() {
@@ -162,8 +164,16 @@ function sidebar(open) {
 $("toggle-sidebar").onclick = () =>
   sidebar($("toggle-sidebar").getAttribute("aria-expanded") !== "true");
 $("sidebar-backdrop").onclick = () => sidebar(false);
-mobile.onchange = () => sidebar(!mobile.matches);
+mobile.onchange = () => {
+  sidebar(!mobile.matches);
+  resizePrompt();
+};
 sidebar(!mobile.matches);
+$("mobile-expand").onclick = () => {
+  const expanded = document.querySelector(".shell").classList.toggle("mobile-expanded");
+  $("mobile-expand").setAttribute("aria-expanded", String(expanded));
+  $("mobile-expand").textContent = expanded ? "收起" : "展开";
+};
 const pending = new Map(),
   live = new Map(),
   tasks = new Map();
@@ -302,6 +312,14 @@ function runtimeSummary(value = {}) {
   return [`缓存命中 ${cache}`, `上下文 ${contextText}`, `${identity} · ${thinking || "未知"}`];
 }
 function renderRuntime(node, value) {
+  if (node.id === "session-runtime") {
+    const { usage, context } = value || {};
+    const input = (usage?.input ?? 0) + (usage?.cacheRead ?? 0) + (usage?.cacheWrite ?? 0);
+    const cache = input > 0 && Number.isFinite(usage?.cacheRead) ? `${(usage.cacheRead / input * 100).toFixed(1)}%` : "—";
+    const percent = Number.isFinite(context?.percent) ? `${context.percent.toFixed(1)}%` : "—";
+    $("mobile-runtime").textContent = `${cache} / ${percent}`;
+    $("mobile-runtime").setAttribute("aria-label", `缓存命中率 ${cache}，上下文占比 ${percent}`);
+  }
   node.replaceChildren(...runtimeSummary(value).map((text) => {
     const span = document.createElement("span");
     span.textContent = text;
