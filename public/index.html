@@ -52,22 +52,14 @@
             <div class="workspace-location"><span id="workspace-label"></span><button id="copy-workspace" class="icon-button" title="复制工作空间路径" aria-label="复制工作空间路径"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h11v12H9ZM15 9V3H4v12h5"/></svg></button><button id="reveal-workspace" class="icon-button" title="在资源管理器中打开" aria-label="在资源管理器中打开工作空间"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l3 3h9v4M3 7v13h16l3-9H7l-4 9"/></svg></button><span id="workspace-feedback" class="sr-only" role="status"></span></div>
           </div>
           <div class="service-controls">
-            <span id="status" role="status" title="WebSocket 连接状态">连接中</span>
-            <span id="service-dev" hidden tabindex="0" aria-label="开发环境">DEV</span>
+            <button type="button" id="status" aria-live="polite" aria-haspopup="dialog" aria-controls="settings" title="查看服务与更新设置">连接中</button>
+            <span id="service-dev" hidden title="开发环境">DEV</span>
             <span id="service-version" hidden title="当前安装版本"></span>
-            <button type="button" id="service-menu-button" class="secondary" popovertarget="service-menu">服务 ▾</button>
-            <div id="service-menu" popover>
-              <button type="button" id="restart-quick" aria-haspopup="dialog" aria-controls="restart-dialog" disabled>快速重启</button>
-              <small>仅重新启动服务</small>
-              <button type="button" id="restart-rebuild" aria-haspopup="dialog" aria-controls="restart-dialog" disabled>重建重启</button>
-              <button type="button" id="restart-update" aria-haspopup="dialog" aria-controls="restart-dialog" disabled>检查更新</button>
-              <small>重新安装依赖、执行构建后启动</small>
-              <p id="service-feedback" role="status">正在检查服务…</p>
-            </div>
           </div>
         </header>
         <form id="login" hidden>
           <span>连接已断开，正在自动重连；消息和草稿仍保留在此页面。</span>
+          <p id="maintenance-state" role="status" hidden></p>
           <button id="connect" class="secondary">重新连接</button>
         </form>
         <section id="workspace" hidden>
@@ -197,6 +189,7 @@
         <button id="settings-defaults-tab" type="button" class="secondary" aria-current="page" aria-controls="defaults-panel">默认新会话设置</button>
         <button id="settings-remote-tab" type="button" class="secondary" aria-controls="remote-panel">远程控制</button>
         <button id="settings-models-tab" type="button" class="secondary" aria-controls="models-panel">模型与供应商</button>
+        <button id="settings-service-tab" type="button" class="secondary" aria-controls="service-panel">服务与更新</button>
       </nav>
       <div class="settings-body" id="defaults-panel">
         <section aria-labelledby="selection-copy-title">
@@ -255,6 +248,30 @@
         </form>
       </div>
       <div class="settings-body" id="models-panel" hidden></div>
+      <div class="settings-body" id="service-panel" hidden>
+        <section aria-labelledby="service-state-title">
+          <h3 id="service-state-title">状态</h3>
+          <p id="service-feedback" role="status" aria-live="polite">正在检查服务…</p>
+        </section>
+        <section aria-labelledby="service-restart-title">
+          <h3 id="service-restart-title">重启</h3>
+          <div class="service-actions">
+            <div class="service-action"><button type="button" id="restart-quick" class="secondary" aria-haspopup="dialog" aria-controls="restart-dialog" disabled>重启服务</button><p>仅重启服务，不修复依赖。</p></div>
+            <div class="service-action"><button type="button" id="restart-rebuild" class="secondary" aria-haspopup="dialog" aria-controls="restart-dialog" disabled>修复依赖并重启</button><p>重新安装依赖、执行构建后启动，可能需要数分钟。</p></div>
+            <div class="service-action"><button type="button" id="service-recover" class="secondary" hidden>尝试恢复服务</button><p>页面与服务断开且业务进程未运行时，请求守护进程重新拉起。</p></div>
+          </div>
+        </section>
+        <section id="service-update-section" aria-labelledby="service-update-title" hidden>
+          <h3 id="service-update-title">更新</h3>
+          <div class="service-action"><button type="button" id="update-check" class="secondary" disabled>检查更新</button><p>联网比对 GitHub 公开仓库最新版本，不会改动本机安装。</p></div>
+          <p id="update-result" role="status" aria-live="polite"></p>
+          <button type="button" id="update-install" class="secondary" aria-haspopup="dialog" aria-controls="restart-dialog" hidden>安装更新</button>
+        </section>
+        <section aria-labelledby="service-history-title">
+          <h3 id="service-history-title">最近操作</h3>
+          <div id="service-history"></div>
+        </section>
+      </div>
       </div>
     </dialog>
     <dialog id="create-session" aria-labelledby="create-title">

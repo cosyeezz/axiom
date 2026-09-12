@@ -17,6 +17,12 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  * 未登记的文件会在 INDEX.md 里标 ⚠ 提醒补充。
  */
 const MODULE_INFO = {
+  "scripts/maint-server.mjs": "loopback维护HTTP：来源校验、随机凭证、状态与离线恢复",
+  "scripts/maint-state.mjs": "守护维护状态：持久化阶段、最近结果与有界脱敏证据",
+  "tests/service-settings.test.js": "服务设置操作、确认更新、进度与离线恢复回归",
+  "public/service-settings.js": "设置页服务维护：真实进度、结果、更新确认与独立维护通道",
+  "tests/service-settings-api.test.js": "维护接口本机凭证隔离、CSP、只读更新检查与实例健康回归",
+  "tests/service-settings-ui.py": "服务设置真实浏览器桌面/手机布局与键盘关闭验收",
   "src/remote.js": "Tailscale 登录身份、远程监听、同账号授权与本机配置持久化",
   "tests/model-onboarding.test.js": "空凭据启动、配置后热选模型与显式无效模型回归（真实 Pi SDK）",
   "tests/remote.test.js": "Tailscale 远程访问身份、撤权、持久化与来源校验回归",

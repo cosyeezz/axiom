@@ -13,6 +13,7 @@ const modelSources = await Promise.all(["model-picker", "model-manager"].map(asy
   const exports = [...source.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
   return `Object.assign(window, (() => { ${source.replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`;
 })).then((parts) => parts.join("\n"));
+const serviceSource = (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^export /gm, "");
 
 test("header path icons do not inherit the global button minimum height", async () => {
   const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
@@ -205,7 +206,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
             data = { ...states[0], config: { ...config, model: selected.model || config.model, subagentModel: selected.subagentModel ?? null, capabilitySelection: selected.capabilities ?? null, subagentCapabilities: selected.subagentCapabilities ?? null } };
             break;
           case "service.status":
-            data = { managed: true, error: "", version: "9.9.9", importDir: "C:\\pi\\sessions", dev: true, sourceDir: "F:/Axiom" };
+            data = { managed: true, error: "", version: "9.9.9", importDir: "C:\\pi\\sessions", dev: true, maintenance: { url: "http://127.0.0.1:4567", token: "secret" } };
             break;
           case "service.restart":
             this.receive({ type: "response", id: req.id, ok: false, error: "请先停止正在运行的会话" });
@@ -278,7 +279,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("prompt").dispatchEvent(new window.Event("input"));
   };
   try {
-    window.eval(`${modelSources}\n${contrastSource}\n${pickerSource}\n${source}`);
+    window.eval(`${modelSources}\n${contrastSource}\n${pickerSource}\n${serviceSource}\n${source}`);
     const copySelection = window.eval("copySelection");
     $("prompt").value = "copy selected text";
     $("prompt").setSelectionRange(5, 13);
@@ -313,7 +314,14 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     await settle();
     paint();
     assert.equal($("service-dev").hidden, false);
-    assert.match($("service-dev").title, /F:\/Axiom/);
+    assert.doesNotMatch($("service-dev").outerHTML, /[DF]:[\\/]/, "dev badge must not expose the source path");
+    assert.equal($("service-update-section").hidden, true, "dev hides the update group");
+    assert.equal(window.sessionStorage.getItem("axiom.maintenance"), JSON.stringify({ url: "http://127.0.0.1:4567", token: "secret" }));
+    $("status").click();
+    assert.equal($("settings").open, true, "header status opens settings");
+    assert.equal($("service-panel").hidden, false);
+    assert.equal($("defaults-panel").hidden, true);
+    $("settings").close();
     assert.equal($("workspace").hidden, false);
     assert.equal(requests.filter((req) => req.type === "session.presets.list").length, 1, "connect fetches the preset list");
     assert.equal($("send").disabled, true);
@@ -588,7 +596,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("create-submit").textContent, "保存默认配置");
     assert.equal($("create-main-provider").value, "", "defaults do not take the current model implicitly");
     assert.equal($("create-trust-row").hidden, true);
-    assert.equal(window.document.querySelectorAll('.settings-nav button').length, 3, "默认新会话设置 + 远程控制 + 模型与供应商");
+    assert.equal(window.document.querySelectorAll('.settings-nav button').length, 4, "默认新会话设置 + 远程控制 + 模型与供应商 + 服务与更新");
     assert.equal($("create-subagent-mode").querySelector('option[value="inherit"]').textContent, "跟随主代理能力");
     assert.equal($("create-subagent-thinking").querySelector('option[value="max"]').textContent, "max");
     $("create-main-thinking").value = "high";
@@ -857,16 +865,16 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("status").textContent, "已连接");
     assert.equal($("restart-quick").disabled, false);
     assert.equal($("restart-rebuild").disabled, false);
-    assert.equal($("restart-update").disabled, false);
+    assert.equal($("service-update-section").hidden, true, "dev hides the update group");
     const restartRequests = () => requests.filter((r) => r.type === "service.restart");
     window.confirm = () => { throw new Error("must use styled dialog"); };
-    for (const mode of ["quick", "rebuild", "update"]) {
+    for (const mode of ["quick", "rebuild"]) {
       const before = restartRequests().length;
       $(`restart-${mode}`).click();
       assert.equal($("restart-dialog").open, true);
       assert.equal(window.document.activeElement, $("restart-cancel"));
       assert.match($("restart-description").textContent,
-        mode === "quick" ? /不安装依赖/ : mode === "update" ? /已是最新/ : /数分钟/);
+        mode === "quick" ? /不修复依赖/ : /数分钟/);
       assert.equal(restartRequests().length, before);
       $("restart-cancel").click();
       assert.equal($("restart-dialog").open, false);
@@ -1354,7 +1362,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
   };
   const emit = (type, data) => sockets.at(-1).receive({ type, sessionId: state.sessionId, data });
   try {
-    window.eval(`${modelSources}\n${contrastSource}\n${pickerSource}\n${source}`);
+    window.eval(`${modelSources}\n${contrastSource}\n${pickerSource}\n${serviceSource}\n${source}`);
     sockets[0].open();
     await settle();
     paint();

@@ -1,235 +1,477 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, readFile, rm, chmod, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, chmod } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { rebuild, update, stopService } from "../scripts/service.mjs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { createServer } from "node:http";
+import { request } from "node:http";
+import { createMaintState, sanitize } from "../scripts/maint-state.mjs";
+import { startMaintServer } from "../scripts/maint-server.mjs";
 
-test("axiom stop waits for supervisor exit after graceful worker save", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), 'axiom-stop-'));
-  let child;
-  const server = createServer((req, res) => {
-    assert.equal(req.method, 'POST');
-    assert.equal(req.url, '/service/stop');
-    res.writeHead(202, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ service: 'axiom', pid: child.pid }));
-    void writeFile(join(cwd, 'shutdown'), '1');
+const until = async (check, timeout = 12000, step = 80) => {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    const result = await check();
+    if (result) return result;
+    if (Date.now() > deadline) throw new Error("until 超时");
+    await new Promise((done) => setTimeout(done, step));
+  }
+};
+const readMaybe = async (path) => { try { return await readFile(path, "utf8"); } catch { return null; } };
+const killTree = (pid) => pid && new Promise((done) => {
+  if (process.platform === "win32") {
+    const p = spawn("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
+    p.once("close", done); p.once("error", done);
+  } else { try { process.kill(pid, "SIGKILL"); } catch {} done(); }
+});
+// 更新测试要求 daemon root === npm 全局包目录，因此 npm 布局把工作区建为 base/@cosyeezz/axiom。
+const buildWorkspace = async (npm = false) => {
+  const base = await mkdtemp(join(tmpdir(), "axiom-svc-"));
+  const root = npm ? join(base, "@cosyeezz", "axiom") : base;
+  await mkdir(join(root, "scripts"), { recursive: true });
+  await mkdir(join(root, "src"), { recursive: true });
+  await writeFile(join(root, "package.json"), JSON.stringify({ name: "axiom", version: "0.0.0", private: true }));
+  await writeFile(join(root, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: {} }));
+  for (const name of ["service.mjs", "maint-state.mjs", "maint-server.mjs"])
+    await writeFile(join(root, "scripts", name), await readFile(new URL(`../scripts/${name}`, import.meta.url)));
+  await writeFile(join(root, "src", "update.js"), await readFile(new URL("../src/update.js", import.meta.url)));
+  return { base, root, home: npm ? join(base, "home") : join(root, "home") };
+};
+// 通用假 worker：写 workers/maint-env/workerPid，ready（instanceId 匹配 env），消费 requests 文件里的 restart 请求，
+// service.stop 按 stop-exit 退出码退出；crash/recover-flag 文件驱动崩溃终态与恢复分支。
+const WORKER = `
+const fs = require('node:fs');
+fs.writeFileSync('workers', String((parseInt(fs.existsSync('workers') ? fs.readFileSync('workers', 'utf8') : '0', 10) || 0) + 1));
+fs.writeFileSync('maint-env', JSON.stringify({ url: process.env.AXIOM_MAINTENANCE_URL || '', token: process.env.AXIOM_MAINTENANCE_TOKEN || '', instanceId: process.env.AXIOM_INSTANCE_ID || '' }));
+fs.writeFileSync('workerPid', String(process.pid));
+process.on('uncaughtException', (e) => { fs.writeFileSync('worker-error', String((e && e.stack) || e)); process.exit(1); });
+process.on('message', (m) => {
+  if (m.type === 'service.stop') { const code = fs.existsSync('stop-exit') ? fs.readFileSync('stop-exit', 'utf8').trim() : '0'; fs.writeFileSync('stopped', code); process.exit(parseInt(code, 10)); }
+  if (m.type === 'service.resume') fs.writeFileSync('resumed', 'yes');
+  if (m.type === 'service.accepted') fs.writeFileSync('accepted-' + m.requestId, String(m.operationId));
+  if (m.type === 'service.rejected') fs.writeFileSync('rejected-' + m.requestId, String(m.error || ''));
+});
+if (Number(process.env.AXIOM_PORT)) require('node:http').createServer((req, res) => {
+  if (req.url !== '/service/stop') { res.writeHead(404); return res.end(); }
+  if (fs.existsSync('busy')) { res.writeHead(409); return res.end('活动任务'); }
+  res.writeHead(202); res.end(JSON.stringify({ service: 'axiom', pid: process.ppid }));
+  process.send({ type: 'service.shutdown' });
+}).listen(Number(process.env.AXIOM_PORT), '127.0.0.1');
+const ready = () => {
+  if (fs.existsSync('node_modules/staged') && process.env.FAKE_START_RESULT === 'timeout') return;
+  process.send({ type: 'service.ready', instanceId: process.env.AXIOM_INSTANCE_ID, version: 'test' });
+};
+if (fs.existsSync('crash')) process.exit(1);
+if (!fs.existsSync('sent')) {
+  fs.writeFileSync('sent', 'yes');
+  const lines = fs.existsSync('requests') ? fs.readFileSync('requests', 'utf8').split('\\n').filter(Boolean) : [];
+  ready();
+  for (const line of lines) process.send(JSON.parse(line));
+} else {
+  ready();
+}
+setInterval(() => {}, 1000);
+`;
+const startDaemon = (root, extra = {}) =>
+  spawn(process.execPath, [join(root, "scripts", "service.mjs")], {
+    // cwd 放包目录之外：Windows 下进程 cwd 会锁住目录，update 的原子 rename 要求包目录可换名。
+    cwd: join(root, ".."), stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, AXIOM_PORT: "0", AXIOM_HOME: join(root, "home"), ...extra },
+  });
+const startTest = async (root, { requests, touch = [], env = {} } = {}) => {
+  await writeFile(join(root, "src", "main.js"), WORKER);
+  if (requests) await writeFile(join(root, "requests"), requests.map((r) => JSON.stringify(r)).join("\n") + "\n");
+  for (const [name, body] of touch) await writeFile(join(root, name), body);
+  const child = startDaemon(root, env);
+  child.stderr.on("data", (d) => console.error("[daemon]", String(d).trim()));
+  await until(async () => (await readMaybe(join(root, "maint-env"))) !== null);
+  return child;
+};
+const maintEnv = async (root) => JSON.parse(await readFile(join(root, "maint-env"), "utf8"));
+const getStatus = async (root) => {
+  const env = await maintEnv(root);
+  const res = await fetch(`${env.url}/status`, { headers: { Authorization: `Bearer ${env.token}` } });
+  return res.json();
+};
+const stateFileOf = async (home) => {
+  const name = (await readdir(home)).find((f) => /^service-state-.+\.json$/.test(f));
+  assert.ok(name, "状态文件存在且命名合法");
+  return join(home, name);
+};
+const teardown = async (base, child) => {
+  const workerPid = parseInt(await readMaybe(join(base, "workerPid")) ?? "0", 10);
+  await killTree(workerPid || child?.pid);
+  await killTree(child?.pid);
+  await rm(base, { recursive: true, force: true });
+};
+// 假 npm：install → 在 stage 组装带 _resolved/package-lock/SDK 桩的完整包；ci → stage 依赖+SDK 桩；run build → 标记。
+const NPM_FAKE = `
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+const [cmd, ...rest] = process.argv.slice(2);
+const say = (t) => process.stdout.write(t + "\\n");
+const sdkStub = (dir) => {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "@earendil-works/pi-coding-agent", type: "module", main: "index.mjs" }));
+  writeFileSync(join(dir, "index.mjs"), "export const sdk = true;\\n");
+};
+if (cmd === "root" && rest.includes("-g")) { say(process.env.FAKE_GLOBAL_ROOT || ""); process.exit(0); }
+if (cmd === "install") {
+  if (process.env.FAKE_INSTALL_RESULT === "fail") process.exit(1);
+  const sha = ((rest.find((a) => a.startsWith("github:")) ?? "").match(/#([0-9a-f]{40})$/i) ?? [])[1] ?? "";
+  if (!sha) process.exit(2);
+  const stage = process.cwd();
+  rmSync(join(stage, "node_modules"), { recursive: true, force: true });
+  const pkg = join(stage, "node_modules", "@cosyeezz", "axiom");
+  sdkStub(join(pkg, "node_modules", "@earendil-works", "pi-coding-agent"));
+  writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: "@cosyeezz/axiom", version: "9.0.0", _resolved: "github:cosyeezz/axiom#" + sha }));
+  writeFileSync(join(stage, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: { "node_modules/@cosyeezz/axiom": { resolved: "github:cosyeezz/axiom#" + sha } } }));
+  writeFileSync(join(stage, "node_modules", "dep-new"), "dep\\n");
+  // npm -g 装的是完整包：把现包 scripts/src 复制进 staged，换名后新 worker 才有入口。
+  for (const part of ["scripts", "src"]) cpSync(join(process.env.FAKE_GLOBAL_ROOT, "@cosyeezz", "axiom", part), join(pkg, part), { recursive: true });
+  if (process.env.FAKE_SERVED && !existsSync("stopped")) writeFileSync(process.env.FAKE_SERVED, "yes");
+  process.exit(0);
+}
+if (cmd === "ci") {
+  const stage = process.cwd();
+  rmSync(join(stage, "node_modules"), { recursive: true, force: true });
+  sdkStub(join(stage, "node_modules", "@earendil-works", "pi-coding-agent"));
+  writeFileSync(join(stage, "node_modules", "staged"), "yes\\n");
+  process.exit(0);
+}
+if (cmd === "run") { writeFileSync(join(process.cwd(), "build-called"), "yes\\n"); process.exit(process.env.FAKE_BUILD_RESULT === "fail" ? 1 : 0); }
+process.exit(3);
+`;
+const installNpmShim = async (base) => {
+  const dir = join(base, "scripts");
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "npm-fake.mjs"), NPM_FAKE);
+  if (process.platform === "win32") {
+    await writeFile(join(dir, "npm.cmd"), "@echo off\r\nnode \"%~dp0npm-fake.mjs\" %*\r\n");
+    return join(dir, "npm.cmd");
+  }
+  const sh = join(dir, "npm");
+  await writeFile(sh, "#!/bin/sh\nexec node \"$(dirname \"$0\")/npm-fake.mjs\" \"$@\"\n");
+  await chmod(sh, 0o755);
+  return sh;
+};
+const A40 = "a".repeat(40), B40 = "b".repeat(40);
+
+test("stop CLI waits for graceful worker exit then confirms daemon is gone", async () => {
+  const { base, root } = await buildWorkspace();
+  const port = String(30000 + Math.floor(Math.random() * 20000));
+  const child = await startTest(root, { env: { AXIOM_PORT: port } });
+  try {
+    await writeFile(join(root, 'busy'), '1');
+    const rejected = spawn(process.execPath, [join(root, 'scripts', 'service.mjs'), 'stop'], {
+      cwd: root, stdio: 'ignore', env: { ...process.env, AXIOM_PORT: port },
+    });
+    assert.equal((await once(rejected, 'exit'))[0], 1, 'HTTP 409 不能绕过任务检查');
+    assert.equal(await readMaybe(join(root, 'stopped')), null);
+    await rm(join(root, 'busy'));
+    const cli = spawn(process.execPath, [join(root, "scripts", "service.mjs"), "stop"], {
+      cwd: root, stdio: "ignore", env: { ...process.env, AXIOM_PORT: port, AXIOM_HOME: join(root, "home") },
+    });
+    const [code] = await once(cli, "exit");
+    assert.equal(code, 0);
+    assert.equal(await readMaybe(join(root, "stopped")), "0");
+    await until(async () => { try { process.kill(child.pid, 0); return false; } catch (e) { return e.code === "ESRCH"; } });
+  } finally { await teardown(base, child); }
+});
+
+test("quick restart stops worker gracefully and starts a ready replacement", async () => {
+  const { base, root, home } = await buildWorkspace();
+  const child = await startTest(root, { requests: [{ type: "service.restart", mode: "quick", requestId: "q1" }] });
+  try {
+    await until(async () => (await readMaybe(join(root, "accepted-q1"))) !== null);
+    await until(async () => (await getStatus(root)).status === "succeeded");
+    assert.ok(parseInt(await readFile(join(root, "workers"), "utf8"), 10) >= 2);
+    assert.equal(await readMaybe(join(root, "stopped")), "0");
+    const state = JSON.parse(await readFile(await stateFileOf(home), "utf8"));
+    assert.deepEqual(state.phases.map((p) => p.phase), ["stopping", "starting", "ready"]);
+  } finally { await teardown(base, child); }
+});
+
+test("busy restart is rejected without resume and never unlocks the running op", async () => {
+  const { base, root } = await buildWorkspace();
+  const child = await startTest(root, {
+    requests: [
+      { type: "service.restart", mode: "quick", requestId: "r1" },
+      { type: "service.restart", mode: "quick", requestId: "r2" },
+    ],
   });
   try {
-    await mkdir(join(cwd, 'scripts')); await mkdir(join(cwd, 'src'));
-    await writeFile(join(cwd, 'scripts/service.mjs'), await readFile(new URL('../scripts/service.mjs', import.meta.url)));
-    await writeFile(join(cwd, 'src/update.js'), await readFile(new URL('../src/update.js', import.meta.url)));
-    await writeFile(join(cwd, 'src/main.js'), `
-      const fs = require('node:fs');
-      process.on('message', m => {
-        if (m.type === 'service.stop') setTimeout(() => { fs.writeFileSync('saved', 'yes'); process.exit(0); }, 200);
-      });
-      const timer = setInterval(() => {
-        if (fs.existsSync('shutdown')) { clearInterval(timer); process.send({ type: 'service.shutdown' }); }
-      }, 20);
-    `);
-    child = spawn(process.execPath, [join(cwd, 'scripts/service.mjs')], { stdio: 'ignore', env: { ...process.env, AXIOM_PORT: '0' } });
-    server.listen(0, '127.0.0.1'); await once(server, 'listening');
-    await stopService(`http://127.0.0.1:${server.address().port}`);
-    assert.equal(await readFile(join(cwd, 'saved'), 'utf8'), 'yes');
-    assert.throws(() => process.kill(child.pid, 0), { code: 'ESRCH' });
-  } finally {
-    child?.kill();
-    await new Promise(done => server.close(done));
-    await rm(cwd, { recursive: true, force: true });
-  }
+    await until(async () => (await readMaybe(join(root, "accepted-r1"))) !== null);
+    const rejected = await until(async () => await readMaybe(join(root, "rejected-r2")));
+    assert.ok(rejected.includes("维护操作已在进行"));
+    await until(async () => (await getStatus(root)).status === "succeeded");
+    assert.equal(await readMaybe(join(root, "resumed")), null, "busy 拒绝不补 resume");
+  } finally { await teardown(base, child); }
 });
 
-test("supervisor quick restart waits for graceful stop then starts a new worker", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "axiom-supervisor-"));
+test("invalid restart params are rejected and always paired with resume", async () => {
+  const { base, root, home } = await buildWorkspace();
+  const child = await startTest(root, { requests: [{ type: "service.restart", mode: "update", requestId: "s1", sha: "zz" }] });
   try {
-    await mkdir(join(cwd, "scripts")); await mkdir(join(cwd, "src"));
-    await writeFile(join(cwd, "scripts/service.mjs"), await readFile(new URL("../scripts/service.mjs", import.meta.url)));
-    await writeFile(join(cwd, "src/update.js"), await readFile(new URL("../src/update.js", import.meta.url)));
-    await writeFile(join(cwd, "src/main.js"), `
-      const fs = require('node:fs');
-      const count = () => (parseInt(fs.existsSync('workers') ? fs.readFileSync('workers', 'utf8') : '0', 10) || 0) + 1;
-      fs.writeFileSync('workers', String(count()));
-      if (fs.existsSync('stopped')) process.exit(0);
-      process.on('message', message => {
-        if (message.type === 'service.stop') { fs.writeFileSync('stopped', 'saved'); process.exit(0); }
-      });
-      process.send({ type: 'service.restart', mode: 'quick' });
-    `);
-    const child = spawn(process.execPath, [join(cwd, "scripts/service.mjs")], { stdio: "ignore", env: { ...process.env, AXIOM_PORT: "0" } });
-    try {
-      const deadline = Date.now() + 8000;
-      while (Date.now() < deadline) {
-        try { if (parseInt(await readFile(join(cwd, "workers"), "utf8"), 10) >= 2) break; } catch {}
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-      child.kill();
-      await once(child, "exit");
-      assert.equal(await readFile(join(cwd, "stopped"), "utf8"), "saved");
-      assert.ok(parseInt(await readFile(join(cwd, "workers"), "utf8"), 10) >= 2, "a new worker started after quick restart");
-    } finally { await rm(cwd, { recursive: true, force: true }); }
-  } finally { await rm(cwd, { recursive: true, force: true }); }
+    const rejected = await until(async () => await readMaybe(join(root, "rejected-s1")));
+    await until(async () => (await readMaybe(join(root, "resumed"))) !== null);
+    assert.ok(rejected.includes("无效"));
+    assert.equal(parseInt(await readFile(join(root, "workers"), "utf8"), 10), 1);
+    assert.equal((await getStatus(root)).status, "idle");
+    assert.equal((await readdir(root)).some((f) => f.startsWith(".axiom-update-")), false);
+  } finally { await teardown(base, child); }
 });
 
-test("supervisor respawns crashed workers with backoff until stopped", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "axiom-respawn-"));
+test("crash retries reach terminal state then POST /recover brings service back", async () => {
+  const { base, root, home } = await buildWorkspace();
+  const child = await startTest(root, { touch: [["crash", "1"]], env: { AXIOM_CRASH_BACKOFF_MS: "30", AXIOM_MAX_CRASH_RETRIES: "2" } });
   try {
-    await mkdir(join(cwd, "scripts")); await mkdir(join(cwd, "src"));
-    await writeFile(join(cwd, "scripts/service.mjs"), await readFile(new URL("../scripts/service.mjs", import.meta.url)));
-    await writeFile(join(cwd, "src/update.js"), await readFile(new URL("../src/update.js", import.meta.url)));
-    await writeFile(join(cwd, "src/main.js"), `
-      const fs = require('node:fs');
-      const n = String((parseInt(fs.existsSync('respawns') ? fs.readFileSync('respawns', 'utf8') : '0', 10) || 0) + 1);
-      fs.writeFileSync('respawns', n);
-      process.exit(1);
-    `);
-    const child = spawn(process.execPath, [join(cwd, "scripts/service.mjs")], { stdio: "ignore", env: { ...process.env, AXIOM_PORT: "0" } });
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 3500));
-      assert.ok(parseInt(await readFile(join(cwd, "respawns"), "utf8"), 10) >= 3, "crashed workers are respawned");
-    } finally { child.kill(); await once(child, "exit"); }
-    await rm(join(cwd, "respawns"), { force: true });
-  } finally { await rm(cwd, { recursive: true, force: true }); }
+    await until(async () => (await getStatus(root)).status === "failed");
+    assert.equal(parseInt(await readFile(join(root, "workers"), "utf8"), 10), 3);
+    const failed = JSON.parse(await readFile(await stateFileOf(home), "utf8"));
+    assert.ok(/\/recover/.test(failed.error));
+    await new Promise((r) => setTimeout(r, 600));
+    assert.equal(parseInt(await readFile(join(root, "workers"), "utf8"), 10), 3, "终态后不再自动重启");
+    await rm(join(root, "crash"));
+    await writeFile(join(root, "recover-flag"), "1");
+    const env = await maintEnv(root);
+    const res = await fetch(`${env.url}/recover`, {
+      method: "POST", headers: { Authorization: `Bearer ${env.token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "quick" }),
+    });
+    assert.equal(res.status, 202);
+    const body = await res.json();
+    assert.equal(body.accepted, true);
+    await until(async () => (await getStatus(root)).status === "succeeded");
+    assert.equal(parseInt(await readFile(join(root, "workers"), "utf8"), 10), 4);
+  } finally { await teardown(base, child); }
 });
 
-test("stop CLI stops crash-backoff supervisor without HTTP and tolerates repeat", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "axiom-crash-stop-"));
+test("staged update: verify-commit, swap after clean stop, commit only after ready", async () => {
+  const { base, root, home } = await buildWorkspace(true);
+  const npm = await installNpmShim(base);
+  // 预置：目标目录即 daemon root（realpath 校验通过），旧版本 A40。
+  await mkdir(join(base, "node_modules"), { recursive: true });
+  await writeFile(join(root, "package.json"), JSON.stringify({ name: "@cosyeezz/axiom", version: "8.0.0", _resolved: `github:cosyeezz/axiom#${A40}` }));
+  const child = await startTest(root, {
+    requests: [{ type: "service.restart", mode: "update", requestId: "u1", sha: B40 }],
+    env: { AXIOM_NPM: npm, AXIOM_HOME: join(base, "home"), FAKE_GLOBAL_ROOT: base, FAKE_SERVED: join(base, "served-during-install") },
+  });
+  try {
+    await until(async () => (await readMaybe(join(root, "accepted-u1"))) !== null);
+    await until(async () => (await readMaybe(join(base, "served-during-install"))) !== null, 8000);
+    await until(async () => (await readMaybe(join(root, ".axiom-commit")))?.trim() === B40);
+    await until(async () => (await getStatus(root)).status === "succeeded");
+    assert.equal(JSON.parse(await readFile(join(root, "package.json"), "utf8"))._resolved, `github:cosyeezz/axiom#${B40}`);
+    assert.equal(existsSync(join(base, "@cosyeezz", ".axiom-package-backup")), false, "ready 后备份清理");
+    assert.equal((await readdir(join(base, "@cosyeezz"))).some((f) => f.startsWith(".axiom-update-")), false, "暂存目录清理");
+    assert.equal(await readMaybe(join(root, "node_modules", "dep-new")), "dep\n", "新依赖位于包私有目录");
+    assert.equal(await readMaybe(join(base, "node_modules", "dep-new")), null, "不改共享全局依赖");
+    // 换代证明由 _resolved==B40 + .axiom-commit + status succeeded 承担；swap 后新包根全新，workers 计数不跨包累计。
+    const state = JSON.parse(await readFile(await stateFileOf(home), "utf8"));
+    assert.deepEqual(state.phases.map((p) => p.phase), ["preparing", "stopping", "swapping", "starting", "ready"]);
+  } finally { await teardown(base, child); }
+});
+
+test("update install failure leaves running install untouched and resumes worker", async () => {
+  const { base, root, home } = await buildWorkspace(true);
+  const npm = await installNpmShim(base);
+  const child = await startTest(root, {
+    requests: [{ type: "service.restart", mode: "update", requestId: "u2", sha: B40 }],
+    env: { AXIOM_NPM: npm, AXIOM_HOME: join(base, "home"), FAKE_GLOBAL_ROOT: base, FAKE_INSTALL_RESULT: "fail" },
+  });
+  try {
+    await writeFile(join(root, "package.json"), JSON.stringify({ name: "@cosyeezz/axiom", version: "8.0.0", _resolved: `github:cosyeezz/axiom#${A40}` }));
+    await until(async () => (await readMaybe(join(root, "accepted-u2"))) !== null);
+    await until(async () => (await getStatus(root)).status === "failed");
+    const state = JSON.parse(await readFile(await stateFileOf(home), "utf8"));
+    assert.equal(state.phase, "preparing");
+    assert.ok(/exited 1/.test(state.error));
+    assert.equal(await readMaybe(join(root, "resumed")), "yes", "worker 存活 → resume");
+    assert.equal(parseInt(await readFile(join(root, "workers"), "utf8"), 10), 1);
+    assert.equal(JSON.parse(await readFile(join(root, "package.json"), "utf8"))._resolved, `github:cosyeezz/axiom#${A40}`, "在用安装未被触碰");
+    assert.equal(existsSync(join(root, ".axiom-package-backup")), false);
+    assert.equal(existsSync(join(root, ".axiom-commit")), false);
+  } finally { await teardown(base, child); }
+});
+
+test("rebuild cancels swap when worker stop exits non-zero", async () => {
+  const { base, root, home } = await buildWorkspace();
+  const npm = await installNpmShim(base);
+  const child = await startTest(root, {
+    requests: [{ type: "service.restart", mode: "rebuild", requestId: "rb1" }],
+    touch: [["stop-exit", "3"]],
+    env: { AXIOM_NPM: npm, AXIOM_HOME: join(base, "home") },
+  });
+  try {
+    await mkdir(join(root, "node_modules"), { recursive: true });
+    await writeFile(join(root, "node_modules", "old-marker"), "1");
+    await until(async () => (await getStatus(root)).status === "failed");
+    const state = JSON.parse(await readFile(await stateFileOf(home), "utf8"));
+    assert.ok(/退出码/.test(state.error));
+    assert.equal(existsSync(join(root, ".node_modules-backup")), false);
+    assert.equal(existsSync(join(root, "build-called")), false);
+    assert.equal(await readMaybe(join(root, "node_modules", "old-marker")), "1", "依赖原样保留");
+    assert.equal(parseInt(await readFile(join(root, "workers"), "utf8"), 10), 2, "旧代码拉起恢复服务");
+  } finally { await teardown(base, child); }
+});
+
+test("rebuild happy path: stage, swap after stop, build once, commit after ready", async () => {
+  const { base, root, home } = await buildWorkspace();
+  const npm = await installNpmShim(base);
+  const child = await startTest(root, {
+    requests: [{ type: "service.restart", mode: "rebuild", requestId: "rb2" }],
+    env: { AXIOM_NPM: npm, AXIOM_HOME: join(base, "home") },
+  });
+  try {
+    await until(async () => (await readMaybe(join(root, "accepted-rb2"))) !== null);
+    await until(async () => (await getStatus(root)).status === "succeeded");
+    assert.equal(await readMaybe(join(root, "node_modules", "staged")), "yes\n");
+    assert.equal(existsSync(join(root, "build-called")), true);
+    assert.equal(existsSync(join(root, ".node_modules-backup")), false, "ready 后备份清理");
+    assert.equal((await readdir(root)).some((f) => f.startsWith(".axiom-stage-")), false);
+    const state = JSON.parse(await readFile(await stateFileOf(home), "utf8"));
+    assert.deepEqual(state.phases.map((p) => p.phase), ["preparing", "stopping", "swapping", "building", "starting", "ready"]);
+  } finally { await teardown(base, child); }
+});
+
+for (const failure of ['build', 'timeout']) test(`rebuild ${failure} failure restores old dependencies before recovery`, { timeout: 15000 }, async () => {
+  const { base, root } = await buildWorkspace();
+  const npm = await installNpmShim(base);
+  await mkdir(join(root, 'node_modules'));
+  await writeFile(join(root, 'node_modules', 'old-marker'), 'preserved');
   let child;
   try {
-    await mkdir(join(cwd, "scripts")); await mkdir(join(cwd, "src"));
-    await writeFile(join(cwd, "scripts/service.mjs"), await readFile(new URL("../scripts/service.mjs", import.meta.url)));
-    await writeFile(join(cwd, "src/update.js"), await readFile(new URL("../src/update.js", import.meta.url)));
-    await writeFile(join(cwd, "src/main.js"), "process.exit(1)");
-    const env = { ...process.env, AXIOM_PORT: "0", AXIOM_HOME: cwd };
-    child = spawn(process.execPath, [join(cwd, "scripts/service.mjs")], { env, stdio: ["ignore", "ignore", "pipe"] });
-    await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("no crash report")), 5000);
-      child.stderr.on("data", (data) => { if (data.toString().includes("自动重启")) { clearTimeout(timer); resolve(); } });
+    child = await startTest(root, {
+      requests: [{ type: 'service.restart', mode: 'rebuild', requestId: 'rollback' }],
+      env: { AXIOM_NPM: npm, AXIOM_READY_TIMEOUT_MS: '400',
+        FAKE_BUILD_RESULT: failure === 'build' ? 'fail' : '',
+        FAKE_START_RESULT: failure === 'timeout' ? 'timeout' : '' },
     });
-    const exited = once(child, "exit");
-    for (let i = 0; i < 2; i++) {
-      const cli = spawn(process.execPath, [join(cwd, "scripts/service.mjs"), "stop"], { env, stdio: "inherit" });
-      assert.equal((await once(cli, "exit"))[0], 0);
-    }
-    await exited;
-    assert.throws(() => process.kill(child.pid, 0), { code: "ESRCH" });
-  } finally { child?.kill(); await rm(cwd, { recursive: true, force: true }); }
+    await until(async () => { const s = await getStatus(root); return s.status === 'failed' && s.ready; });
+    assert.equal(await readMaybe(join(root, 'node_modules', 'old-marker')), 'preserved');
+    assert.equal(existsSync(join(root, 'node_modules', 'staged')), false);
+    assert.equal(existsSync(join(root, '.node_modules-backup')), false);
+    assert.equal(Number(await readMaybe(join(root, 'workers'))), failure === 'build' ? 2 : 3);
+  } finally { await teardown(base, child); }
 });
 
-for (const failInstall of [false, true]) test(`supervisor update ${failInstall ? "failure restores requests via restart" : "installs the exact commit before restart"}`, async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "axiom-update-sup-"));
+test("maintenance HTTP: auth trio, preflight, strict body, recover guard", async () => {
+  const { base, root, home } = await buildWorkspace();
+  const child = await startTest(root);
   try {
-    await mkdir(join(cwd, "scripts")); await mkdir(join(cwd, "src"));
-    const globalRoot = join(cwd, "global");
-    await mkdir(join(globalRoot, "@cosyeezz"), { recursive: true });
-    await symlink(cwd, join(globalRoot, "@cosyeezz", "axiom"), "junction");
-    const shim = join(cwd, "shim"); await mkdir(shim);
-    if (process.platform === "win32") {
-      await writeFile(join(shim, "npm.cmd"), `@if "%1"=="root" (echo ${globalRoot}& exit /b 0)\r\n@echo %* > "%CD%\\npm-called"\r\nif not exist stopped echo served > "%CD%\\served-during-install"\r\nexit /b ${failInstall ? 1 : 0}\r\n`);
-    } else {
-      await writeFile(join(shim, "npm"), `#!/bin/sh\nif [ "$1" = root ]; then printf '%s\\n' '${globalRoot}'; exit 0; fi\necho "$@" > npm-called\n[ ! -f stopped ] && echo served > served-during-install\nexit ${failInstall ? 1 : 0}\n`);
-      await chmod(join(shim, "npm"), 0o755);
-    }
-    await writeFile(join(cwd, "scripts/service.mjs"), await readFile(new URL("../scripts/service.mjs", import.meta.url)));
-    await writeFile(join(cwd, "src/update.js"), await readFile(new URL("../src/update.js", import.meta.url)));
-    await writeFile(join(cwd, "src/main.js"), `
-      const fs = require('node:fs');
-      const count = () => (parseInt(fs.existsSync('workers') ? fs.readFileSync('workers', 'utf8') : '0', 10) || 0) + 1;
-      fs.writeFileSync('workers', String(count()));
-      process.on('message', message => {
-        if (message.type === 'service.stop') { fs.writeFileSync('stopped', 'saved'); process.exit(0); }
-      });
-      fs.writeFileSync('service-error', process.env.AXIOM_SERVICE_ERROR || '');
-      if (!fs.existsSync('stopped')) process.send({ type: 'service.restart', mode: 'update', sha: '${"b".repeat(40)}' });
-      setInterval(() => {}, 1000);
-    `);
-    const child = spawn(process.execPath, [join(cwd, "scripts/service.mjs")], {
-      stdio: "ignore",
-      env: { ...process.env, AXIOM_PORT: "0", AXIOM_NPM: join(shim, process.platform === "win32" ? "npm.cmd" : "npm") },
+    const { url, token } = await maintEnv(root);
+    const get = (o = {}) => fetch(`${url}/status`, { headers: { ...(o.token ? { Authorization: `Bearer ${o.token}` } : {}), ...(o.origin ? { Origin: o.origin } : {}) } });
+    assert.equal((await get({ token: "x".repeat(64) })).status, 404);
+    assert.equal((await get({})).status, 404);
+    assert.equal((await get({ token, origin: "http://evil.example" })).status, 404);
+    const hostile = await new Promise((done) => {
+      const req = request(url, { headers: { Host: "evil:9", Authorization: `Bearer ${token}` }, timeout: 3000 }, (res) => { res.resume(); res.on("end", () => done(res.statusCode)); });
+      req.on("error", () => done(0)); req.end();
     });
-    const killTree = () => process.platform === "win32"
-      ? spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"])
-      : child.kill("SIGTERM");
-    try {
-      const deadline = Date.now() + 8000;
-      while (Date.now() < deadline) {
-        try { if (parseInt(await readFile(join(cwd, "workers"), "utf8"), 10) >= 2) break; } catch {}
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-      killTree();
-      await once(child, "exit");
-      assert.ok((await readFile(join(cwd, "npm-called"), "utf8")).includes('install -g github:cosyeezz/axiom#' + 'b'.repeat(40)));
-      const error = await readFile(join(cwd, "service-error"), "utf8");
-      if (failInstall) {
-        assert.match(error, /更新失败/);
-        await assert.rejects(readFile(join(cwd, ".axiom-commit")), { code: "ENOENT" });
-      } else {
-        assert.equal(error, "");
-        assert.equal((await readFile(join(cwd, ".axiom-commit"), "utf8")).trim(), 'b'.repeat(40));
-      }
-      // shim 只在 stopped 尚不存在（旧 worker 仍在服务）时写入此标记 → 证明先装后停
-      assert.equal((await readFile(join(cwd, "served-during-install"), "utf8")).trim(), "served");
-      assert.equal(await readFile(join(cwd, "stopped"), "utf8"), "saved");
-      assert.ok(parseInt(await readFile(join(cwd, "workers"), "utf8"), 10) >= 2, "a new worker started after update");
-    } finally { await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }).catch(() => {}); }
-  } finally { await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }).catch(() => {}); }
+    assert.equal(hostile, 404, "Host 不精确 → 404");
+    const pre = await fetch(`${url}/status`, { method: "OPTIONS", headers: { Origin: url } });
+    assert.equal(pre.status, 204);
+    assert.equal(pre.headers.get("access-control-allow-origin"), url);
+    assert.equal((await fetch(`${url}/nope`, { headers: { Authorization: `Bearer ${token}` } })).status, 404);
+    assert.equal((await getStatus(root)).ready, true);
+    assert.match(await stateFileOf(home), /service-state-.+\.json$/);
+    const recover = (body, type = "application/json") => fetch(`${url}/recover`, {
+      method: "POST", headers: { Authorization: `Bearer ${token}`, ...(type ? { "Content-Type": type } : {}) }, body,
+    });
+    assert.equal((await recover(JSON.stringify({ mode: "quick" }))).status, 409, "worker 存活 → 409");
+    assert.equal((await recover(JSON.stringify(["quick"]))).status, 400, "数组 body 拒绝");
+    assert.equal((await recover(JSON.stringify({ mode: "quick", extra: 1 }))).status, 400, "多余键拒绝");
+    assert.equal((await recover(JSON.stringify({ mode: "nope" }))).status, 400);
+    assert.equal((await recover(JSON.stringify({ mode: "quick" }), "text/plain")).status, 404, "content-type 必须 JSON");
+  } finally { await teardown(base, child); }
 });
 
-test("update pins the full commit and records it only after successful installation", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "axiom-pinned-"));
-  const sha = "b".repeat(40), calls = [];
+test("maint-state: interrupted keeps last result, begin isolates, sanitize covers paths, persist errors surface", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "axiom-state-"));
+  const file = join(dir, "state.json");
+  const redactions = [["tokensecret", "***"], [dir, "<install>"]];
   try {
-    const globalRoot = join(cwd, "global");
-    await mkdir(join(globalRoot, "@cosyeezz"), { recursive: true });
-    await symlink(cwd, join(globalRoot, "@cosyeezz", "axiom"), "junction");
-    const execute = async (command, args, dir, capture) => {
-      calls.push([command, ...args].join(" "));
-      return capture ? globalRoot + '\n' : '';
-    };
-    await update(sha, execute, cwd);
-    assert.equal(calls.length, 3);
-    assert.ok(calls[1].includes(`npm install -g github:cosyeezz/axiom#${sha}`));
-    assert.equal((await readFile(join(cwd, ".axiom-commit"), "utf8")).trim(), sha);
-    await assert.rejects(update("c".repeat(40), async (cmd, args, dir, capture) => {
-      if (capture) return globalRoot;
-      throw new Error("offline");
-    }, cwd), /offline/);
-    let installs = 0;
-    await assert.rejects(update(sha, async (cmd, args, dir, capture) => {
-      if (capture) return join(cwd, 'other-prefix');
-      installs++;
-    }, cwd), /目录与当前服务不一致/);
-    assert.equal(installs, 0, 'wrong prefix must be rejected before npm install');
-    let probes = 0;
-    await assert.rejects(update('c'.repeat(40), async (cmd, args, dir, capture) => {
-      if (capture) return ++probes === 1 ? globalRoot : join(cwd, 'changed-prefix');
-    }, cwd), /目录与当前服务不一致/);
-    assert.equal((await readFile(join(cwd, ".axiom-commit"), "utf8")).trim(), sha);
-    await assert.rejects(update("bad & command", async () => assert.fail("must not run npm"), cwd), /无效/);
-  } finally { await rm(cwd, { recursive: true, force: true }); }
+    await writeFile(file, JSON.stringify({
+      pid: 1, instanceId: "old", version: "0.1.0", ready: true,
+      operation: "update", operationId: "m-1", status: "running", phase: "swapping",
+      phases: [{ phase: "stopping", at: 1 }, { phase: "swapping", at: 2 }],
+      startedAt: 5, updatedAt: 6, error: null, log: `tokensecret crash at ${dir}\\src\\x.js\n`,
+    }));
+    const s = await createMaintState({ file, redactions });
+    assert.equal(s.data.status, "interrupted");
+    assert.equal(s.data.operation, "update", "最近操作保留");
+    assert.equal(s.data.startedAt, 5, "startedAt 保留");
+    assert.ok(s.data.error.includes("中断"));
+    assert.deepEqual(s.data.phases.map((p) => p.phase), ["stopping", "swapping", "boot"]);
+    assert.ok(s.data.log.includes("crash"), "上次现场保留");
+    assert.ok(!s.data.log.includes("tokensecret") && !s.data.log.includes(dir), "读取即脱敏");
+    assert.equal(s.data.instanceId, null);
+    await s.begin("m-2", "quick");
+    assert.equal(s.data.status, "running");
+    assert.deepEqual(s.data.phases, [], "begin 清空阶段时间线");
+    assert.equal(s.data.log, "", "begin 清空证据窗口");
+    s.appendLog(`Authorization: Bearer tokensecret at ${dir}\\src\\y.js`);
+    s.appendLog("authorization=abcdefghijklmnopqrstuvwxyz0123456789");
+    assert.ok(!s.data.log.includes("tokensecret") && !s.data.log.includes(`${dir}\\src`));
+    assert.ok(!s.data.log.includes("abcdefghijklmnopqrstuvwxyz"), "长鉴权值被正则打码");
+    await s.fail(new Error(`boom at ${dir}\\src\\z.js`));
+    assert.equal(s.data.status, "failed");
+    assert.ok(s.data.error.includes("<install>") && !s.data.error.includes(`${dir}\\src`));
+    const persisted = JSON.parse(await readFile(file, "utf8"));
+    assert.equal(persisted.status, "failed");
+    // 落盘失败必须显式报错而非静默：把状态文件换成目录，rename 必然失败。
+    const broken = join(dir, "broken.json");
+    await mkdir(broken);
+    const errorSpy = t.mock.method(console, "error", () => {});
+    const s2 = await createMaintState({ file: broken, redactions });
+    assert.ok(errorSpy.mock.calls.some((c) => /落盘失败/.test(String(c.arguments[0]))), "持久化错误可见");
+    assert.match(s2.data.persistenceError, /未能保存/);
+    // 有界：超长输入截到 ≤16KB 尾部。
+    s2.appendLog("x".repeat(20 * 1024));
+    assert.ok(s2.data.log.length <= 16 * 1024);
+    await s.flush();
+    await s2.flush();
+    errorSpy.mock.restore();
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test("rebuild installs then builds; failed install restores old dependencies", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "axiom-rebuild-"));
-  const modules = join(cwd, "node_modules");
+test("sanitize handles auth headers with any separator", () => {
+  const out = sanitize('authorization="SuperSecretValue1" bearer=SuperSecretValue2', [["SuperSecretValue1", "***"], ["SuperSecretValue2", "***"]]);
+  assert.ok(!out.includes("SuperSecretValue"));
+  assert.ok(out.includes("***"));
+});
+
+test("maint-server: strict object body and recover failures map to 400/409/500", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "axiom-msrv-"));
+  const server = await startMaintServer({
+    state: { data: { hello: 1 } }, token: "t".repeat(64), redactions: [["C:\\secret", "<x>"]],
+    // mode 只接受 quick/rebuild；用调用序号驱动 409 → 500 → 202 三种结果。
+    recover: (mode) => {
+      n += 1;
+      if (n === 1) return { error: "busy" };
+      if (n === 2) throw new Error("kaboom C:\\secret");
+      return { operationId: "m-1" };
+    },
+  });
+  let n = 0;
   try {
-    await mkdir(modules);
-    await writeFile(join(modules, "old"), "working");
-    await assert.rejects(rebuild(cwd, async () => {
-      await mkdir(modules); await writeFile(join(modules, "partial"), "bad");
-      throw new Error("offline");
-    }), /offline/);
-    assert.equal(await readFile(join(modules, "old"), "utf8"), "working");
-    const calls = [];
-    await rebuild(cwd, async (cmd, args) => {
-      calls.push([cmd, ...args].join(" "));
-      if (calls.length === 1) await mkdir(modules);
+    const call = (path, body, extra = {}) => fetch(`${server.url}${path}`, {
+      headers: { Authorization: `Bearer ${"t".repeat(64)}`, "Content-Type": "application/json", ...extra },
+      ...(body === undefined ? {} : { method: "POST", body }),
     });
-    assert.match(calls[0], /npm ci/);
-    assert.match(calls[1], /npm run build --if-present/);
-    await assert.rejects(readFile(join(cwd, ".node_modules-backup", "old")), { code: "ENOENT" });
-  } finally { await rm(cwd, { recursive: true, force: true }); }
+    assert.equal((await call("/status")).status, 200);
+    assert.equal((await call("/recover", JSON.stringify({ mode: "quick" }))).status, 409, "recover 返回 error → 409");
+    const boom = await call("/recover", JSON.stringify({ mode: "quick" }));
+    assert.equal(boom.status, 500);
+    const text = await boom.text();
+    assert.ok(text.includes("<x>") && !text.includes("C:\\secret"), "500 报文脱敏");
+    const ok = await call("/recover", JSON.stringify({ mode: "quick" }));
+    assert.deepEqual(await ok.json(), { accepted: true, mode: "quick", operationId: "m-1" });
+  } finally {
+    await server.close();
+    await rm(dir, { recursive: true, force: true });
+  }
 });

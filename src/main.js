@@ -9,7 +9,8 @@ import { Sessions } from "./sessions.js";
 import { createModelsService } from "./model-config.js";
 import { createServerApp } from "./server.js";
 import { createRemoteAccess, createTailscale } from "./remote.js";
-import { checkUpdate } from "./update.js";
+import { checkUpdate, validateCommit } from "./update.js";
+import { randomUUID } from "node:crypto";
 
 const port = Number(process.env.AXIOM_PORT || 4319);
 if (!Number.isInteger(port) || port < 1 || port > 65535)
@@ -32,32 +33,41 @@ await sessions.loadDefaults();
 await sessions.load();
 const service = {
   supervisorPid: process.ppid,
+  instanceId: process.env.AXIOM_INSTANCE_ID,
   stop: process.send ? () => process.send({ type: "service.shutdown" }) : undefined,
   error: process.env.AXIOM_SERVICE_ERROR,
   dev: process.env.AXIOM_DEV === "1",
-  sourceDir: fileURLToPath(new URL("..", import.meta.url)),
+  maintenance: process.env.AXIOM_MAINTENANCE_URL && process.env.AXIOM_MAINTENANCE_TOKEN
+    ? { url: process.env.AXIOM_MAINTENANCE_URL, token: process.env.AXIOM_MAINTENANCE_TOKEN } : undefined,
+  checkUpdate,
   // pi 的会话目录：网页「导入 pi 会话」的默认浏览位置。
   importDir: join(getAgentDir(), "sessions"),
   models,
   version: JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8")).version,
-  restart: process.send ? (mode) => new Promise((resolve, reject) => {
-    (async () => {
-      let sha;
-      if (mode === "update") {
-        const status = await checkUpdate();
-        if (!status.available) throw new Error("已是最新版本，无需更新");
-        sha = status.sha;
-        // ponytail: 开发目录（非 npm 全局安装）不自动覆盖工作区代码，由 git 工作流负责更新
-        if (!fileURLToPath(new URL("..", import.meta.url)).includes("node_modules"))
-          throw new Error(`发现新版本 ${status.remote}（本地 ${status.local}）：开发目录请 git 拉取更新后重建重启`);
-      }
-      process.send({ type: "service.restart", mode, sha }, (error) => error ? reject(error) : resolve());
-    })().catch(reject);
+  restart: process.send ? (mode, sha) => new Promise((resolve, reject) => {
+    if (mode === "update") {
+      if (process.env.AXIOM_DEV === "1") return reject(new Error("开发环境不执行安装版更新"));
+      try { sha = validateCommit(sha); } catch (error) { reject(error); return; }
+    }
+    const requestId = randomUUID();
+    const finish = () => { clearTimeout(timer); process.off("message", onMessage); };
+    const onMessage = (message) => {
+      if (message?.requestId !== requestId) return;
+      if (message.type === "service.accepted") { finish(); resolve({ operationId: message.operationId }); }
+      if (message.type === "service.rejected") { finish(); reject(new Error(message.error)); }
+    };
+    // 回执超时不等于拒绝：保留维护锁，由守护进程状态给出最终结论。
+    const timer = setTimeout(() => { finish(); resolve({ unconfirmed: true }); }, 5000);
+    process.on("message", onMessage);
+    process.send({ type: "service.restart", mode, sha, requestId }, (error) => {
+      if (error) { finish(); reject(error); }
+    });
   }) : undefined,
 };
 const app = createServerApp(sessions, service);
 app.server.listen(port, "127.0.0.1", () => {
   console.log(`Axiom listening on http://127.0.0.1:${port}; workspace: ${cwd}`);
+  process.send?.({ type: "service.ready", instanceId: process.env.AXIOM_INSTANCE_ID, version: service.version });
   // 本地端口确定后再初始化远程访问：远程 server 与本地共用端口号（绑定 IP 不同不冲突）。
   initRemote().catch((error) => console.error("远程访问初始化失败：", error));
 });
@@ -81,5 +91,6 @@ function stop() {
 for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, stop);
 process.on("message", (message) => {
   if (message?.type === "service.stop") stop();
+  if (message?.type === "service.resume" && !closing) app.resume();
 });
 if (process.send) process.once("disconnect", stop);

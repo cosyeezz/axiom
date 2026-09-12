@@ -1,5 +1,20 @@
 # 开发记录
 
+## 2026-09-12 主代理接管服务维护收敛
+- 原因：子代理测试覆盖了理想流程，却把控制管道绕过任务检查及共享依赖覆盖当作预期；暂停子代理编辑，由主代理统一修复。
+- 修改：HTTP 停止拒绝不再回落管道，管道仅停止无 worker 的守护；更新依赖随新包私有部署，备份含完整旧依赖；构建失败恢复依赖；未就绪实例必须确认退出后才能回滚/拉起，增加重复 worker 防线；健康探测同步更新 ready，退出清除 ready。
+- 涉及：scripts/service.mjs、tests/{service,service-settings}.test.js、README.md、本日志与代码索引。守护测试增至 15 项，补构建失败回退与启动超时回退；前端 HTTP 测试清理前 flush，删除重复且过时的 scripts/maintenance-contract.md，统一维护 docs/service-maintenance.md。
+- 验证：复制源码到独立临时目录 npm ci，SDK 导入成功；全量 224 项，223 通过、1 原有跳过、0 失败。真实服务使用随机端口 52226 与临时数据目录：WS 回执 operationId → 独立维护状态 succeeded → 新实例健康身份一致 → CLI 优雅退出，全部通过；1440/390/320px 浏览器检查通过。4319/4320 的运行实例未改动。
+- 最终复核：维护状态按调用时快照串行落盘，持久化失败通过状态接口和面板明确告警；补齐真实阶段中文名称、无维护操作时的崩溃终态展示。再次全量 223 通过、1 跳过，三种屏幕尺寸通过，git diff --check 无错误。沿用 Linear surface-1/hairline 与现有按钮，没有新样式依赖。
+- 环境：在用 worktree 的 Pi SDK dist 缺失已独立确认，但缺失原因未查明；没有原地修依赖或重启，避免中断已有会话。隔离安装正常，不能将当前进程仍健康视为下次可启动。部署需先确认任务空闲。
+
+## 2026-09-12 10:50 UTC 服务设置与可观测维护（实施中）
+- 原因：4320 开发 worker 因 Pi SDK 的 dist 缺失反复崩溃；旧服务菜单把接收请求、启动进程与真正就绪混为一谈，刷新后无维护证据。
+- 决策：在独立 worktree 恢复开发依赖；复用守护进程提供本机鉴权维护接口、持久化真实阶段与最近结果；入口迁入「设置 → 服务与更新」，不公开源码路径，远程连接不授予维护权限。更新先检查固定提交再确认，失败不能冒充成功。
+- 涉及：scripts/service.mjs、scripts/maint-*.mjs、src/{main,server,protocol}.js、public/{app,service-settings}.js、public/{index.html,style.css}、相关 API/UI/守护测试、README.md、docs/service-maintenance.md 和 codebase-map。
+- 复核：维护准备期允许新 WebSocket 读取 service.status，实际 close 才拒绝新连接，避免刷新丢失维护入口；鉴权与维护写锁保持不变。
+- 进度：本机权限/CSP/活动任务保护及远程隔离 12 项通过；1440/390/320px 服务设置浏览器检查通过。守护流程与故障恢复仍在集成验证，未宣称全量通过。当前轮不重启有活动会话的 4320，不触碰 4319 正式服务。
+
 ## 2026-09-12 重试时间线完整边界修复
 - 原因：上一轮未覆盖排队消息时间与消费时间区别、撤回后的计数失效、压缩与主/子代理归属；无法定位的历史仍追加末尾。
 - 修改：后端统一恢复/维护首次重试边界及关联消息 ID，撤回同步维护重试记录；前端按关联 ID 将已压缩重试归档到摘要，未知位置使用顶部独立折叠区，迟到子代理元信息不污染主时间线。
@@ -607,3 +622,8 @@
 - 内容/原因：提供命令行用法、停止及卸载的数据保留说明，支持 help/--help/-h；帮助不加载本地环境或启动服务，无效参数非零退出。
 - 涉及：scripts/service.mjs、tests/cli-help.test.js、README.md、代码索引。
 - 验证：真实 CLI 子进程检查三个帮助入口及错误参数。
+
+### 2026-09-12 服务维护层按最终 HTTP 契约重写（服务设置重构）
+- 内容/原因：维护通道对齐 scripts/maint-server.mjs 实际实现——GET /status 扁平记录（operation/status 枚举/phase/phases/startedAt/error/log），POST /recover 严格 body（仅 {"mode":"quick"|"rebuild"}，要求 application/json，多余键 400）；凭证仅缓存 loopback http（^http://127.0.0.1:\d+$）+ 非空 token 于 sessionStorage；fetch 5s 超时即 abort（AbortController + finally clearTimeout），轮询防重叠（在飞跳过）；在线与断线都轮询（重启准备阶段可观测），每次以权威 state 更新重启锁（准备阶段失败 worker 在线时靠轮询解锁，提交后守护记账前 5s 宽限防提前解锁）；service.status 暂不带 operation：apply 无字段时保留 lastState 不抹历史；阶段名本地化（未知原样）；恢复改为面板「尝试恢复服务」按钮手动触发（#service-recover，index.html 新增），前端不自动再起，自动重试/限流归守护；真实 HTTP 集成测试（真实 maint-state + maint-server + 真实 fetch）验证 404/400/409/202、扁平字段、日志脱敏、前端端到端渲染。
+- 涉及：public/service-settings.js（重写）、public/index.html（+恢复按钮）、README.md、devlog.md、tests/service-settings.test.js（重写：8 项含真实 HTTP 契约实测）。
+- 验证：node --test tests/service-settings.test.js tests/app.test.js 11/11 通过、自然退出；全量除后端进行中的 service.test.js 外 207 passed 1 skipped；索引失败仅后端 3 个未登记文件（maintenance-contract.md、service-settings-api.test.js、service-settings-ui.py），待统一重建。

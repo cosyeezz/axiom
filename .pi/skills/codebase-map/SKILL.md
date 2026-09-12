@@ -35,6 +35,7 @@ desktop/pake.json ── Pake 独立桌面壳（macOS Universal / Windows x64）
      .github/workflows/desktop.yml 分平台打包
 浏览器 public/
   index.html ── app.js（唯一入口：视图栈/WS客户端/会话设置UI）
+                 ├─ service-settings.js  服务设置：更新确认、维护阶段与断线诊断
                  ├─ model-picker.js      共享供应商/模型/思考下拉，星标收藏与键盘操作
                  ├─ model-manager.js     设置页 Pi 供应商/模型管理，模板与安全编辑
                  ├─ file-picker.js       共享文件/目录选择、分类图标、按目录分页加载
@@ -47,7 +48,9 @@ desktop/pake.json ── Pake 独立桌面壳（macOS Universal / Windows x64）
 scripts/install.mjs    一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器
 scripts/uninstall.mjs  核对安装目录 → 安全停止 → 取消自启 → 卸载（保留用户数据）
 scripts/autostart.mjs  Windows/macOS/Linux 用户登录自动启动注册
-  └─ scripts/service.mjs  守护进程：快速重启 / 安装构建后重启
+  └─ scripts/service.mjs  守护进程：维护执行、新实例验证与故障恢复
+       ├─ maint-state.mjs  最近操作持久化、阶段与脱敏证据
+       ├─ maint-server.mjs 独立 loopback 状态/恢复入口
        └─ src/main.js  入口：端口/cwd 校验，组装并 listen(127.0.0.1)
   ├─ server.js       HTTP 静态路由 + /health + WS 升级分发
   │    └─ remote.js  可选 Tailscale 独立监听、同账号 whois 验证、本机远程配置
