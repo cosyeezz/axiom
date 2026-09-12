@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 02:33:16）
+# Axiom 多级代码索引（生成于 2026/9/12 02:44:52）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -35,7 +35,7 @@
 | src/remote.js | 501 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
 | src/retry.js | 161 | 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_DELAY_MS, MAX_RETRIES, delayFor |
 | src/server.js | 438 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | assets, createServerApp |
-| src/sessions.js | 862 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | BROWSE_PAGE, resolveDir, parentOf, absoluteCrumbs |
+| src/sessions.js | 876 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | BROWSE_PAGE, resolveDir, parentOf, absoluteCrumbs |
 | src/tasks.js | 107 | Tasks：子任务（委托）生命周期 | Tasks |
 | src/tools.js | 97 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
@@ -59,7 +59,7 @@
 | tests/inline-images.test.js | 42 | node --test 测试（npm test） | text, a, b, user |
 | tests/install.test.js | 52 | node --test 测试（npm test） | - |
 | tests/markdown.test.js | 159 | node --test 测试（npm test） | - |
-| tests/message-activity.test.js | 259 | node --test 测试（npm test） | page, assistant, thought, call |
+| tests/message-activity.test.js | 263 | node --test 测试（npm test） | page, assistant, thought, call |
 | tests/model-config.test.js | 463 | node --test 测试（npm test） | sha, EMPTY, tempDir, makeService |
 | tests/model-manager.test.js | 430 | node --test 测试（npm test） | source, tick, j, masked |
 | tests/model-onboarding-ui.test.js | 153 | node --test 测试（npm test） | stripImports, modelSources, contrastSource, pickerSource |
@@ -78,7 +78,7 @@
 | tests/service-api.test.js | 63 | node --test 测试（npm test） | - |
 | tests/service.test.js | 236 | node --test 测试（npm test） | - |
 | tests/session-created-at.test.js | 44 | node --test 测试（npm test） | factory |
-| tests/session-flow.test.js | 189 | node --test 测试（npm test） | flowFactory |
+| tests/session-flow.test.js | 222 | node --test 测试（npm test） | flowFactory |
 | tests/session-sidebar-ui.py | 61 | node --test 测试（npm test） | - |
 | tests/smoke.js | 67 | node --test 测试（npm test） | TIMEOUT, sessions |
 | tests/stream-renderer.test.js | 99 | node --test 测试（npm test） | - |
@@ -677,7 +677,7 @@
 | assets | const | 7 |
 | createServerApp | function | 43 |
 
-### src/sessions.js（862 行） — Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化
+### src/sessions.js（876 行） — Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -706,21 +706,21 @@
 | rename | method | 347 |
 | importSession | method | 356 |
 | create | method | 384 |
-| scheduleTaskNotifications | method | 568 |
-| deliverTaskNotifications | method | 580 |
-| get | method | 602 |
-| revealWorkspace | method | 607 |
-| browse | method | 621 |
-| listFiles | method | 627 |
-| refreshSkills | method | 686 |
-| snapshot | method | 692 |
-| subscribe | method | 720 |
-| configure | method | 726 |
-| prompt | method | 760 |
-| withdraw | method | 810 |
-| cancel | method | 825 |
-| remove | method | 843 |
-| close | method | 858 |
+| scheduleTaskNotifications | method | 582 |
+| deliverTaskNotifications | method | 594 |
+| get | method | 616 |
+| revealWorkspace | method | 621 |
+| browse | method | 635 |
+| listFiles | method | 641 |
+| refreshSkills | method | 700 |
+| snapshot | method | 706 |
+| subscribe | method | 734 |
+| configure | method | 740 |
+| prompt | method | 774 |
+| withdraw | method | 824 |
+| cancel | method | 839 |
+| remove | method | 857 |
+| close | method | 872 |
 
 ### src/tasks.js（107 行） — Tasks：子任务（委托）生命周期
 
@@ -874,7 +874,7 @@
 | user | const | 8 |
 | inlineImagesExtension | method | 32 |
 
-### tests/message-activity.test.js（259 行） — node --test 测试（npm test）
+### tests/message-activity.test.js（263 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1003,7 +1003,7 @@
 |---|---|---|
 | factory | const | 8 |
 
-### tests/session-flow.test.js（189 行） — node --test 测试（npm test）
+### tests/session-flow.test.js（222 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|

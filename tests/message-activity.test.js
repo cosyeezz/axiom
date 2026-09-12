@@ -64,9 +64,13 @@ test("retry cards preserve timeline positions and never absorb message content",
     paint();
     const order = () => [...output.children].filter(n => !n.hidden).map(n => n.className);
     const liveOrder = order();
-    restore({ messages: [entry(failed, "failure"), entry(answer, "answer")], retries: [{ ...retry, status: "succeeded", messageCount: 1, history: [retry] }] });
-    paint();
-    assert.deepEqual(order(), liveOrder, "refresh preserves the retry boundary between messages");
+    assert.equal(output.lastElementChild.querySelector(":scope > .markdown").textContent.trim(), "恢复后的回答");
+    for (let reload = 0; reload < 3; reload++) {
+      restore({ messages: [entry(failed, "failure"), entry(answer, "answer")], retries: [{ ...retry, status: "succeeded", messageCount: 1, history: [retry] }] });
+      paint();
+      paint();
+      assert.deepEqual(order(), liveOrder, "repeated refresh and grouping preserve the retry boundary");
+    }
     assert.equal(output.querySelector(".retry-card .message"), null);
     assert.equal(output.querySelector(".retry-card").open, false);
     restore({ messages: [entry(answer, "answer")], retries: [{ ...retry, status: "succeeded" }] });

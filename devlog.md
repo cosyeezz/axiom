@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-12 09:42 UTC 旧重试卡时间线迁移
+- 原因：新记录已有 messageCount，但旧记录恢复仍固定追加末尾，成功状态更新不会纠正旧位置。
+- 决策：src/sessions.js 在恢复时用首次 nextRetryAt-delayMs 和同代理消息 timestamp 找边界，仅接受完整、单调且边界不重时的时间线；补齐 messageCount 后随现有 persist 落盘，已有位置不覆盖，缺证据继续回退。不改重试策略、消息正文或 Linear 卡片样式，无新增依赖。
+- 涉及：src/sessions.js、tests/session-flow.test.js、tests/message-activity.test.js、README.md、本日志及 codebase-map 坑库/生成索引。
+- 验证：合入最新 origin/master 后 npm test 198 项，197 通过、0 失败、1 既有跳过。新增旧记录迁移与连续两次服务关闭/恢复检查；前端多次快照与分组绘制验证卡片始终在恢复回答之前；另覆盖主/子隔离、已存边界优先、时间缺失/倒退/同毫秒不猜位置。
+
 ## 2026-09-12 02:15 执行过程合组收尾与上下跳转
 - 原因：回答前 thinking 独立建组，与紧邻工具组形成连续 Completed；旧测试把思考位置锁在消息内部，且遗漏历史恢复。
 - 修改：public/app.js 复用前段工具组并保留 thinking 在正文之前，识别移出的 thinking 记录；public/index.html、public/style.css 增加顶部最早/底部最新按钮，沿用现有 secondary 样式与 8px 间距。
