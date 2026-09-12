@@ -468,14 +468,19 @@ export class Sessions {
         if (!item.compactions.some((entry) => entry.id === event.data.id)) item.compactions.push(event.data);
         void this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `会话保存失败：${error.message}` } }));
       }
+      const envelope = { ...event, sessionId: id, seq: ++item.seq };
       if (event.type === "agent.retry") {
         let record = item.retries.find((entry) => entry.agentId === agentId && entry.id === event.data.id);
         if (!record) {
-          record = { agentId, messageCount: item.messages.length, history: [] };
+          const anchor = item.messages.findLast((entry) => entry.agentId === agentId && entry.entryId);
+          record = { agentId, messageCount: item.messages.length, ...(anchor ? { anchorEntryId: anchor.entryId } : {}), history: [] };
           item.retries.push(record);
         }
         if (event.data.status === "waiting") record.history.push({ ...event.data });
         Object.assign(record, event.data);
+        // 位置随事件广播：前端无需等快照即可归位；缺失字段表示未知。
+        envelope.data = { ...event.data, messageCount: record.messageCount,
+          ...(record.anchorEntryId ? { anchorEntryId: record.anchorEntryId } : {}) };
         if (!["waiting", "running"].includes(record.status)) {
           delete record.delayMs;
           delete record.nextRetryAt;
@@ -490,7 +495,6 @@ export class Sessions {
         };
       if (event.type === "task.state")
         void this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `会话保存失败：${error.message}` } }));
-      const envelope = { ...event, sessionId: id, seq: ++item.seq };
       for (const listener of item.listeners) listener(envelope);
     };
     item.tasks = new Tasks(
@@ -551,19 +555,48 @@ export class Sessions {
         historyIndex = index + 1;
       }
     }
-    // 旧版重试没有消息边界；仅用完整、单调的同代理时间线迁移一次并随快照落盘。
+    // 旧版重试位置迁移（一次性，随本次 persist 固化）：
+    // - 界内已有 count 的记录不重算，只补最近同代理 entryId 锚点供前端压缩归属。
+    // - 无 count 或越界旧值（早期撤回未清理）：从首个等待起点在「消费时间线」上重定——
+    //   主代理优先 SDK 落盘 entry.timestamp（ISO，消费时写入；排队 user 的 message.timestamp
+    //   是入队时间，早于真实消费，不可用），无落盘历史可查时退回 message.timestamp；
+    //   无消费时间时，助手之后出现的 user 可能来自队列，不能用编写时间推断位置。
+    //   仍无可靠位置则保持未知，绝不保留越界数值。
+    const consumedAt = new Map((item.agent.historyEntries?.() || [])
+      .filter((entry) => Number.isFinite(Date.parse(entry.timestamp)))
+      .map((entry) => [entry.id, Date.parse(entry.timestamp)]));
+    const anchorFor = (agent, count) => item.messages.slice(0, count)
+      .findLast((entry) => entry.agentId === agent && entry.entryId);
     for (const retry of item.retries) {
-      if (Number.isInteger(retry.messageCount) && retry.messageCount >= 0) continue;
-      const first = retry.history?.[0];
-      if (!Number.isFinite(first?.nextRetryAt) || !Number.isFinite(first?.delayMs) || first.delayMs < 0) continue;
-      const startedAt = first.nextRetryAt - first.delayMs;
-      const messages = item.messages.map((entry, index) => ({ ...entry, index }))
-        .filter((entry) => entry.agentId === (retry.agentId || "main"));
-      if (!messages.length || messages.some((entry, index) => !Number.isFinite(entry.message.timestamp)
-        || entry.message.timestamp === startedAt
-        || (index > 0 && entry.message.timestamp < messages[index - 1].message.timestamp))) continue;
-      const next = messages.find((entry) => entry.message.timestamp > startedAt);
-      retry.messageCount = next?.index ?? messages.at(-1).index + 1;
+      const agent = retry.agentId || "main";
+      if (!(Number.isInteger(retry.messageCount) && retry.messageCount >= 0 && retry.messageCount <= item.messages.length)) {
+        delete retry.messageCount;
+        const first = retry.history?.[0];
+        const sameAgent = item.messages.map((entry, index) => ({ index, entry }))
+          .filter(({ entry }) => entry.agentId === agent);
+        let boundary = null;
+        const hasQueuedInput = sameAgent.some(({ entry }, index) => entry.message?.role === "user"
+          && sameAgent.slice(0, index).some(({ entry: previous }) => previous.message?.role === "assistant"));
+        if ((agent === "main" && consumedAt.size || !hasQueuedInput) && sameAgent.length && Number.isFinite(first?.nextRetryAt) && Number.isFinite(first?.delayMs) && first.delayMs >= 0) {
+          const startedAt = first.nextRetryAt - first.delayMs;
+          const timeline = sameAgent.map(({ entry, index }) => ({ index,
+            ts: agent === "main" && consumedAt.size ? consumedAt.get(entry.entryId) : entry.message?.timestamp }));
+          if (timeline.every(({ ts }, i) => Number.isFinite(ts) && ts !== startedAt
+            && (i === 0 || ts >= timeline[i - 1].ts))) {
+            const next = timeline.find(({ ts }) => ts > startedAt);
+            boundary = next ? next.index : timeline.at(-1).index + 1;
+          }
+        }
+        if (boundary !== null) retry.messageCount = boundary;
+      }
+      if (Number.isInteger(retry.messageCount) && retry.messageCount >= 0 && retry.messageCount <= item.messages.length) {
+        const anchor = anchorFor(agent, retry.messageCount);
+        if (anchor) retry.anchorEntryId = anchor.entryId;
+        else delete retry.anchorEntryId;
+      } else {
+        delete retry.messageCount;
+        delete retry.anchorEntryId;
+      }
     }
     for (const record of item.agent.compactions?.() || []) {
       const saved = item.compactions.find((entry) => entry.id === record.id);
@@ -829,7 +862,34 @@ export class Sessions {
     if (recalled) {
       // 网页历史跟着回退：否则重新 attach 仍会画出被撤回的输入和被打断的半截回答。
       const cut = item.messages.findIndex((record) => record.agentId === "main" && record.entryId === recalled.entryId);
-      if (cut >= 0) item.messages.length = cut;
+      if (cut >= 0) {
+        const previousMessages = item.messages;
+        // 撤回只回退主代理，独立子任务已经发生的输出必须保留。
+        const keptBefore = [0];
+        item.messages = previousMessages.filter((record, index) => {
+          const keep = index < cut || record.agentId !== "main";
+          keptBefore.push(keptBefore.at(-1) + Number(keep));
+          return keep;
+        });
+        // 撤回区间内的主代理重试一并移除（子代理重试保留）；保留记录不得残留越界 count
+        // 或失效锚点，否则后续新消息会让旧卡在错位处漂移。无可靠位置 → 前端未知区归档。
+        const surviving = new Map();
+        for (const record of item.messages)
+          if (record.entryId) surviving.set(record.agentId, (surviving.get(record.agentId) ?? new Set()).add(record.entryId));
+        item.retries = item.retries.filter((retry) => {
+          const agent = retry.agentId || "main";
+          if (agent !== "main") return true;
+          if (Number.isInteger(retry.messageCount)) return retry.messageCount <= cut;
+          return retry.anchorEntryId == null || surviving.get("main")?.has(retry.anchorEntryId);
+        });
+        for (const retry of item.retries) {
+          if (Number.isInteger(retry.messageCount) && retry.messageCount >= 0 && retry.messageCount <= previousMessages.length)
+            retry.messageCount = keptBefore[retry.messageCount];
+          else delete retry.messageCount;
+          const anchors = surviving.get(retry.agentId || "main");
+          if (retry.anchorEntryId && !anchors?.has(retry.anchorEntryId)) delete retry.anchorEntryId;
+        }
+      }
       delete item.live.main;
       await this.persist(item);
     }

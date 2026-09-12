@@ -1122,6 +1122,7 @@ function trackTaskEntries(message, entryId) {
   }
 }
 function placeCompactedTasks() {
+  placeCompactedRetries();
   for (const [id, task] of tasks) {
     const entryId = taskEntries.get(id);
     if (!entryId) continue;
@@ -1368,7 +1369,37 @@ function renderQueue(queue = {}) {
   $("message-queue").hidden = !$("message-queue").children.length;
 }
 const retryCards = new Map();
-function renderRetry(agentId, data) {
+function placeCompactedRetries() {
+  for (const record of retryCards.values()) {
+    if (record.agentId !== "main") {
+      const output = tasks.get(record.agentId)?.output;
+      if (output && !output.contains(record.node)) {
+        const oldArchive = record.node.closest(".retry-archive");
+        (oldArchive ? retryArchive(output) : output).append(record.node);
+        if (oldArchive && !oldArchive.querySelector(".retry-card")) oldArchive.remove();
+      }
+      continue;
+    }
+    if (!record.anchorEntryId) continue;
+    const compacted = compactions.find(c => c.compactedMessageIds?.includes(record.anchorEntryId));
+    const parent = compactionNodes.get(compacted?.id)?.querySelector(".compaction-tasks");
+    if (parent && record.node.parentElement !== parent) parent.append(record.node);
+  }
+}
+function retryArchive(output) {
+  let archive = output.querySelector(":scope > .retry-archive");
+  if (!archive) {
+    archive = document.createElement("details");
+    archive.className = "compaction-card retry-archive";
+    const summary = document.createElement("summary");
+    summary.textContent = "历史重试记录（原位置无法确认）";
+    summary.append(disclosureHint());
+    archive.append(summary);
+    output.prepend(archive);
+  }
+  return archive;
+}
+function renderRetry(agentId = "main", data, historical = false) {
   const key = `${agentId}:${data.id}`;
   let record = retryCards.get(key);
   if (!record) {
@@ -1381,10 +1412,12 @@ function renderRetry(agentId, data) {
     node.append(summary, status, history);
     const output = tasks.get(agentId)?.output || $("output");
     output.querySelector(".empty")?.remove();
-    output.append(node);
+    const unknown = historical && (!Number.isInteger(data.messageCount) || data.messageCount < 0);
+    (unknown || (agentId !== "main" && !tasks.has(agentId)) ? retryArchive(output) : output).append(node);
     const label = document.createElement("span");
     summary.append(label, disclosureHint());
-    record = { node, summary: label, history, status, attempts: new Set() };
+    record = { node, summary: label, history, status, attempts: new Set(), agentId,
+      anchorEntryId: data.anchorEntryId || (!historical && agentId === "main" ? mainItems.at(-1)?.entryId : undefined) };
     retryCards.set(key, record);
   }
   for (const attempt of data.history || (data.status === "waiting" ? [data] : [])) {
@@ -1395,12 +1428,14 @@ function renderRetry(agentId, data) {
     record.history.append(row);
   }
   const labels = { waiting: "等待重试", running: "正在重试", succeeded: "重试成功", failed: "重试失败", cancelled: "重试已停止" };
-  record.summary.textContent = `${labels[data.status] || data.status} · ${data.attempt}/${data.maxRetries || 30}`;
+  record.summary.textContent = `${labels[data.status] || data.status} · ${data.attempt}/${data.maxRetries || 45}`;
   record.status.textContent = data.status === "waiting"
     ? `预计 ${new Date(data.nextRetryAt).toLocaleString()} 继续，可点击 Stop 停止。`
     : data.status === "succeeded" ? "任务已恢复，展开可查看重试过程。" : data.error || "继续执行任务…";
   if (record.lastStatus !== data.status) record.node.open = data.status !== "succeeded";
   record.lastStatus = data.status;
+  record.anchorEntryId ||= data.anchorEntryId;
+  placeCompactedRetries();
   scrollLatest();
 }
 function event(message) {
@@ -1608,14 +1643,18 @@ function snapshot(state) {
   const placed = new Set(), foldedTools = new Set();
   const retriesAt = new Map();
   for (const record of state.retries || []) {
-    // 旧记录没有时间线位置：保留末尾展示，不猜测消息归属。
-    const index = Number.isInteger(record.messageCount) && record.messageCount >= 0
-      ? Math.min(record.messageCount, state.messages.length) : state.messages.length;
+    // 无可靠边界的旧记录单独归档，不伪装成任务结束后的事件。
+    const valid = Number.isInteger(record.messageCount) && record.messageCount >= 0 && record.messageCount <= state.messages.length;
+    const index = valid ? record.messageCount : state.messages.length;
     if (!retriesAt.has(index)) retriesAt.set(index, []);
-    retriesAt.get(index).push(record);
+    retriesAt.get(index).push(valid ? record : { ...record, messageCount: undefined });
   }
   const restoreRetries = (index) => {
-    for (const record of retriesAt.get(index) || []) renderRetry(record.agentId, record);
+    for (const record of retriesAt.get(index) || []) {
+      const anchor = Number.isInteger(record.messageCount) ? state.messages.slice(0, index)
+        .findLast(entry => entry.agentId === (record.agentId || "main"))?.entryId : undefined;
+      renderRetry(record.agentId, { ...record, anchorEntryId: record.anchorEntryId || anchor }, true);
+    }
   };
   for (const [index, { agentId, message, entryId }] of state.messages.entries()) {
     restoreRetries(index);
@@ -1679,6 +1718,8 @@ function snapshot(state) {
   // 摘要按记录顺序集中在历史顶部；原任务入口移动而非复制，弹窗与状态保持不变。
   $("output").prepend(...compactions.map((record) => compactionNodes.get(record.id)));
   placeCompactedTasks();
+  const retryHistory = $("output").querySelector(":scope > .retry-archive");
+  if (retryHistory) $("output").prepend(retryHistory);
   if (!$("output").children.length) {
     const empty = document.createElement("div");
     empty.className = "empty";

@@ -82,6 +82,84 @@ const flowFactory = async () => ({
 });
 flowFactory.catalog = () => [{ key: "test/one" }];
 
+// 带 JSONL 落盘历史的工厂：entry.timestamp（ISO，消费时写入）与 message.timestamp（入队毫秒）刻意背离。
+const jsonlFactory = () => {
+  const factory = async () => ({
+    config: () => ({ model: "test/one", thinking: "off" }),
+    subscribe: () => () => {}, prompt: async () => {}, enqueue: async () => {},
+    queue: () => ({ steering: [], followUp: [] }), withdraw: () => ({}),
+    abort: async () => {}, result: () => "ok", dispose: async () => {},
+    historyEntries: () => [
+      { id: "a1", timestamp: "2026-01-01T00:00:00.100Z" },
+      { id: "u1", timestamp: "2026-01-01T00:00:00.900Z" },
+    ],
+  });
+  factory.catalog = () => [{ key: "test/one" }];
+  return factory;
+};
+
+test("new retries carry the nearest same-agent entryId and broadcast position in event.data", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-retry-anchor-"));
+  const sessions = new Sessions(flowFactory, undefined, join(root, "sessions"));
+  try {
+    const id = await sessions.create(root);
+    const seen = [];
+    sessions.subscribe(id, (event) => seen.push(event));
+    const item = sessions.get(id);
+    item.emit({ type: "agent.message.end", data: { message: { role: "user", content: "hi" }, entryId: "u1" } });
+    item.emit({ type: "agent.message.end", agentId: "child", data: { message: { role: "assistant", content: [] }, entryId: "c1" } });
+    item.emit({ type: "agent.retry", data: { id: "r1", status: "waiting", attempt: 1, delayMs: 2000, nextRetryAt: 3000, error: "429" } });
+    item.emit({ type: "agent.retry", agentId: "child", data: { id: "r2", status: "waiting", attempt: 1, delayMs: 2000, nextRetryAt: 3000, error: "429" } });
+    const broadcast = seen.filter((event) => event.type === "agent.retry").map((event) => event.data);
+    assert.deepEqual(broadcast, [
+      { id: "r1", status: "waiting", attempt: 1, delayMs: 2000, nextRetryAt: 3000, error: "429", messageCount: 2, anchorEntryId: "u1" },
+      { id: "r2", status: "waiting", attempt: 1, delayMs: 2000, nextRetryAt: 3000, error: "429", messageCount: 2, anchorEntryId: "c1" },
+    ]);
+    assert.deepEqual(sessions.snapshot(id).retries.map((r) => [r.messageCount, r.anchorEntryId]), [[2, "u1"], [2, "c1"]]);
+  } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("legacy retries migrate from persisted entry timestamps, never from queue-time message timestamps", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-retry-jsonl-"));
+  const sessions = new Sessions(jsonlFactory(), undefined, join(root, "storage"));
+  try {
+    // 排队 user 的 message.timestamp(150) 早于重试起点(500)，但落盘时间(900)晚于起点：
+    // 边界必须按消费时间落在它之前，重试卡不得被排队消息推到末尾。
+    const id = await sessions.create(root, {}, { id: "queued", messages: [
+      { agentId: "main", entryId: "a1", message: { role: "assistant", content: [], stopReason: "error", timestamp: 100 } },
+      { agentId: "main", entryId: "u1", message: { role: "user", content: "排队插话", timestamp: 150 } },
+    ], retries: [{ id: "r", agentId: "main", status: "succeeded", attempt: 1,
+      history: [{ attempt: 1, nextRetryAt: Date.parse("2026-01-01T00:00:02.500Z"), delayMs: 2000 }] }] });
+    const [record] = sessions.snapshot(id).retries;
+    assert.equal(record.messageCount, 1);
+    assert.equal(record.anchorEntryId, "a1", "锚点补最近同代理带 entryId 的消息");
+    // 落盘历史里查不到的 entryId 不能猜；有 JSONL 但时间线不自洽时也不用助手边界。
+    const other = await sessions.create(root, {}, { id: "strict", messages: [
+      { agentId: "main", message: { role: "assistant", content: [], stopReason: "error", timestamp: 100 } },
+    ], retries: [{ id: "r", agentId: "main", status: "failed", attempt: 1, error: "x",
+      history: [{ attempt: 1, nextRetryAt: 2500, delayMs: 2000 }] }] });
+    assert.equal(sessions.snapshot(other).retries[0].messageCount, undefined);
+  } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("out-of-range legacy counts are re-derived from known boundaries or dropped, never kept", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-retry-oob-"));
+  const sessions = new Sessions(flowFactory, undefined, join(root, "sessions"));
+  try {
+    const id = await sessions.create(root, {}, { id: "oob", messages: [
+      { agentId: "main", message: { role: "user", content: "hi", timestamp: 100 } },
+      { agentId: "main", message: { role: "assistant", content: [], stopReason: "aborted", timestamp: 200 } },
+    ], retries: [
+      { id: "oob", agentId: "main", status: "cancelled", attempt: 3, messageCount: 99 },
+      { id: "stable", agentId: "main", status: "succeeded", attempt: 1, messageCount: 1 },
+      { id: "lost", agentId: "main", status: "failed", attempt: 2, error: "x", messageCount: -4 },
+    ] });
+    // 越界旧值不留存：不凭最后失败消息猜位置；界内稳定 count 不被覆盖；
+    // 无任何可靠依据时归未知（见上一用例末尾的缺失时间/时钟倒退场景）。
+    assert.deepEqual(sessions.snapshot(id).retries.map((r) => r.messageCount), [undefined, 1, undefined]);
+  } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test("legacy retry boundaries migrate once and survive repeated service restarts", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-retry-order-"));
   const storage = join(root, "sessions");
@@ -97,6 +175,8 @@ test("legacy retry boundaries migrate once and survive repeated service restarts
     ], retries: [retry("old"), retry("fixed", { messageCount: 1 }),
       retry("child", { agentId: "child" }), retry("missing", { history: [] }),
       retry("ambiguous", { history: [{ nextRetryAt: 2150, delayMs: 2000 }] })] });
+    // 旧记录时间线不可用时明确归档，不猜位置。
+    // ambiguous/missing 均保持未知。
     assert.deepEqual(sessions.snapshot(id).retries.map(r => r.messageCount), [3, 1, 3, undefined, undefined]);
     for (let restart = 0; restart < 2; restart++) {
       await sessions.close();
@@ -105,6 +185,12 @@ test("legacy retry boundaries migrate once and survive repeated service restarts
       assert.deepEqual(sessions.snapshot(id).retries.map(r => r.messageCount), [3, 1, 3, undefined, undefined]);
       assert.equal(sessions.snapshot(id).retries[0].history[0].nextRetryAt, 2200);
     }
+    const queued = await sessions.create(root, {}, { messages: [
+      { agentId: "main", message: { role: "assistant", stopReason: "error", timestamp: 100, content: [] } },
+      { agentId: "main", message: { role: "user", timestamp: 150, content: "排队输入" } },
+      { agentId: "main", message: { role: "assistant", timestamp: 300, content: [] } },
+    ], retries: [retry("queued")] });
+    assert.equal(sessions.snapshot(queued).retries[0].messageCount, undefined, "无消费记录时不能用排队输入的编写时间猜位置");
     // 缺失时间或时钟倒退不能用于迁移。
     for (const timestamps of [[100, undefined], [300, 100]]) {
       const other = await sessions.create(root, {}, { messages: timestamps.map(timestamp => ({

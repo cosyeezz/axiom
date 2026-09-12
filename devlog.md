@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-12 重试时间线完整边界修复
+- 原因：上一轮未覆盖排队消息时间与消费时间区别、撤回后的计数失效、压缩与主/子代理归属；无法定位的历史仍追加末尾。
+- 修改：后端统一恢复/维护首次重试边界及关联消息 ID，撤回同步维护重试记录；前端按关联 ID 将已压缩重试归档到摘要，未知位置使用顶部独立折叠区，迟到子代理元信息不污染主时间线。
+- 设计：复用 Linear 既有 compaction-card/retry-card、surface-1 与 hairline、原生 details 键盘操作，无新增样式或依赖。不凭编写时间猜队列消费顺序，不删除无法确认位置的旧记录。
+- 涉及：src/sessions.js、public/app.js、tests/session-flow.test.js、tests/recall.test.js、tests/message-activity.test.js、README.md、本日志和 codebase-map 坑库/索引；验证：npm test 共 208 项，207 通过、0 失败、1 项原有跳过；Chromium 实测 46 项通过（定位、恢复折叠、未知归档、压缩及连续刷新），无控制台错误。最终复核移除“最后失败助手”猜测，无消费时间的排队输入保持未知；撤回保留独立子任务输出，并重映射混合消息边界。
+
 ## 2026-09-12 项目独立：包名 @cosyeezz/axiom，弃用旧发布方式
 - 决策：按用户要求 Axiom 独立，去除与主工作区的现行从属关系；旧的子目录镜像发布方式不再使用，master 直接推送公开仓库。npm 包名定为 `@cosyeezz/axiom`，macOS 登录自启 Label 改为 `com.cosyeezz.axiom`。不改写 Git 历史，不删除另一仓库及其未提交改动；历史条目仅以中性表述（主工作区、旧发布方式）去除旧名称与具体路径，事件事实不变。
 - 文档：README 发布流程改为独立功能 worktree 验证 → 提交 push → 合并 master 推送发布；卸载说明按本机实际安装 package.json 的 name 确定包名，不保留旧名称字面量；新增「从旧包名迁移」一节：更名不支持原地自动迁移，旧版本先安全停止、取消自启、卸载旧包，再安装 github:cosyeezz/axiom 并 axiom-setup，~/.axiom 与 ~/.pi 保留，新旧服务不可同时运行。AGENTS 示例改用 Axiom。版本升至 0.1.5，更新与卸载核对新包目录，预览使用当前工作空间。
