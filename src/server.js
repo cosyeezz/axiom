@@ -340,7 +340,7 @@ export function createServerApp(sessions, service = {}) {
               break;
             }
             case "session.import": {
-              const id = await sessions.importSession(request.path);
+              const id = await sessions.importSession(request.path, request.cwd);
               if (ws.readyState !== WebSocket.OPEN) {
                 await sessions.remove(id);
                 return;

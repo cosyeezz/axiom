@@ -250,7 +250,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
             break;
           case "session.import":
             lastImport = req;
-            data = { sessionId: "imported", title: "imported", cwd: "C:\\pi", status: "idle", config, messages: [], tasks: [], live: {} };
+            data = { sessionId: "imported", title: "imported", cwd: req.cwd, status: "idle", config, messages: [], tasks: [], live: {} };
             break;
           case "session.rename":
             states.find((s) => s.sessionId === req.sessionId).title = req.title;
@@ -279,7 +279,12 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("prompt").dispatchEvent(new window.Event("input"));
   };
   try {
-    window.eval(`${modelSources}\n${contrastSource}\n${pickerSource}\n${serviceSource}\n${source}`);
+    window.eval(`${modelSources}\n${contrastSource}\n${pickerSource}\n${serviceSource}\n${source}\nwindow.sidebarCheck = async () => {
+      allSessions = allSessions.map((s) => ({...s, sessionFile: null}));
+      await updateSessions();
+      return allSessions.find((s) => s.id === 'b').sessionFile;
+    };
+    window.sidebarConnected = (value) => { connected = value; controls(); };`);
     const copySelection = window.eval("copySelection");
     $("prompt").value = "copy selected text";
     $("prompt").setSelectionRange(5, 13);
@@ -328,11 +333,12 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("send").textContent, "Send");
     assert.equal(window.document.querySelector("header .menu"), null);
     const firstActions = $("sessions").querySelector(".session-actions");
-    assert.deepEqual([...$("sessions").querySelectorAll(".session-group")].map((n) => n.textContent), ["执行中", "待继续", "已完成"]);
+    assert.deepEqual([...$("sessions").querySelectorAll(".session-group")].map((n) => n.textContent), ["进行中", "已完成"]);
     assert.equal(firstActions.children[0].title, "标记已完成");
     assert.equal(firstActions.children[1].className, "session-open");
     assert.equal(firstActions.children[2].className, "session-copy");
-    assert.equal(firstActions.children[3].className, "session-rename");
+    assert.equal(firstActions.querySelector(".session-rename").title, "重命名");
+    assert.equal($("sessions").querySelector(".session-completed").open, false);
     assert.equal(firstActions.children[0].querySelector("path").getAttribute("d"), "M5 12l4 4L19 6");
     const beforeHide = requests.length;
     const row = (id) => $("sessions").querySelector(`[data-session-id="${id}"]`);
@@ -341,7 +347,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("sessions").querySelector('[aria-label="已完成"] .session-item span').textContent, "a");
     assert.deepEqual(JSON.parse(window.localStorage.getItem("axiom.hiddenSessions")), ["a"]);
     assert.equal($("session-title").textContent, "a");
+    $("sessions").querySelector(".session-completed").open = true;
     window.eval("renderSessions()");
+    assert.equal($("sessions").querySelector(".session-completed").open, true, "refresh preserves manual disclosure");
     assert.equal($("sessions").querySelector('[aria-label="已完成"] .session-item span').textContent, "a");
     $("search").value = "b";
     $("search").oninput();
@@ -353,11 +361,11 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.deepEqual(JSON.parse(window.localStorage.getItem("axiom.hiddenSessions")), []);
     assert.equal(requests.length, beforeHide, "completion markers never delete or cancel sessions");
     const rowTitles = () => [...$("sessions").querySelectorAll(".session-row .session-item span")].map((n) => n.textContent);
-    assert.deepEqual(rowTitles(), ["c", "a", "b"], "running first, pending by creation time");
+    assert.deepEqual(rowTitles(), ["a", "b", "c"], "in-progress sessions share creation-time order");
     assert.equal(row("a").draggable, false);
     window.localStorage.setItem("axiom.sessionOrder", '["b","a","c"]');
     window.eval("renderSessions()");
-    assert.deepEqual(rowTitles(), ["c", "a", "b"], "legacy custom order is ignored");
+    assert.deepEqual(rowTitles(), ["a", "b", "c"], "legacy custom order is ignored");
     row("b").querySelector(".session-rename").click();
     assert.equal($("session-name").value, "b");
     $("session-name").value = "Renamed other session";
@@ -375,8 +383,35 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("composer-skill").options[1].title, "代码导航");
     assert.equal($("composer-skill").hidden, true);
     assert.equal($("stop").textContent.trim(), "Stop ■");
-    row("b").querySelector(".session-copy").click(); await settle();
-    assert.equal(copiedPath, "C:\\axiom\\b.jsonl", "session menu copies the JSONL source path");
+    assert.equal(await window.sidebarCheck(), "C:\\axiom\\b.jsonl", "file-only changes refresh cached copy targets");
+    window.sidebarConnected(false);
+    assert.equal(row("b").querySelector(".session-copy").disabled, false);
+    assert.equal(row("b").querySelector('[data-copy="path"]').disabled, false);
+    assert.equal(row("b").querySelector(".session-hide").disabled, false);
+    assert.equal(row("b").querySelector(".session-delete").disabled, true);
+    window.sidebarConnected(true);
+    for (const [part, expected] of [["directory", "C:\\axiom\\"], ["name", "b.jsonl"], ["path", "C:\\axiom\\b.jsonl"]]) {
+      const menu = row("b").querySelector(".session-options");
+      menu.open = true;
+      row("b").querySelector(".session-copy").click();
+      assert.equal(menu.open, true, "opening copy options keeps parent menu open");
+      assert.equal(row("b").querySelector(".session-copy-menu").hidden, false);
+      row("b").querySelector(`[data-copy="${part}"]`).click(); await settle();
+      assert.equal(copiedPath, expected);
+      assert.equal(menu.open, false);
+    }
+    for (const [file, directory, name] of [["/a/b.jsonl", "/a/", "b.jsonl"], ["/b.jsonl", "/", "b.jsonl"], ["C:\\b.jsonl", "C:\\", "b.jsonl"], ["\\\\host\\share\\b.jsonl", "\\\\host\\share\\", "b.jsonl"]]) {
+      for (const [kind, expected] of [["directory", directory], ["name", name], ["path", file]]) {
+        await window.eval(`copySessionFile({sessionFile:${JSON.stringify(file)}}, document.createElement('button'), ${JSON.stringify(kind)})`);
+        assert.equal(copiedPath, expected);
+      }
+    }
+    await window.eval("copySessionFile({}, document.createElement('button'))");
+    assert.match($("error").textContent, /还没有 JSONL/);
+    window.navigator.clipboard.writeText = async () => { throw new Error("denied"); };
+    await window.eval("copySessionFile({sessionFile:'/a.jsonl'}, document.createElement('button'))");
+    assert.match($("error").textContent, /复制失败/);
+    window.navigator.clipboard.writeText = originalWriteText;
     $("copy-workspace").click(); await settle();
     assert.equal(copiedPath, "C:\\work");
     $("reveal-workspace").click(); await settle();
@@ -1192,7 +1227,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("search").value = "missing";
     $("search").dispatchEvent(new window.Event("input"));
     assert.match($("sessions").textContent, /没有匹配/);
-    // 跨目录导入在新页签打开，不覆盖当前工作空间与草稿。
+    // 导入副本绑定当前工作空间，不跳回源目录。
     $("search").value = "";
     $("search").dispatchEvent(new window.Event("input"));
     $("import-session").click(); await settle();
@@ -1203,8 +1238,10 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("file-picker-confirm").click(); await settle();
     assert.equal(lastImport.type, "session.import");
     assert.equal(lastImport.path, "C:\\pi\\sessions\\pi.jsonl");
-    assert.deepEqual(opened, ["/#session=imported", "_blank", "noopener"]);
-    assert.equal($("workspace-label").textContent, "C:\\work", "跨目录导入保留当前工作空间");
+    assert.equal(lastImport.cwd, "C:\\work");
+    assert.notEqual(opened?.[0], "/#session=imported", "导入不另开原工作空间");
+    assert.match(window.location.hash, /session=imported/);
+    assert.equal($("workspace-label").textContent, "C:\\work", "导入副本留在当前工作空间");
   } finally {
     dom.window.close();
   }

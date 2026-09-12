@@ -14,6 +14,22 @@
 - 涉及：scripts/service.mjs、scripts/maint-*.mjs、src/{main,server,protocol}.js、public/{app,service-settings}.js、public/{index.html,style.css}、相关 API/UI/守护测试、README.md、docs/service-maintenance.md 和 codebase-map。
 - 复核：维护准备期允许新 WebSocket 读取 service.status，实际 close 才拒绝新连接，避免刷新丢失维护入口；鉴权与维护写锁保持不变。
 - 进度：本机权限/CSP/活动任务保护及远程隔离 12 项通过；1440/390/320px 服务设置浏览器检查通过。守护流程与故障恢复仍在集成验证，未宣称全量通过。当前轮不重启有活动会话的 4320，不触碰 4319 正式服务。
+## 2026-09-12 会话导入修复发布 0.1.6
+- 按用户要求合并 master 并发布；package.json/package-lock.json 同步升至 0.1.6，README 发布说明沿用 master SHA 更新流程。
+- 发布前全量测试；保留主仓库已有未提交索引，不混入本次提交。不强制重启其他 worktree 的开发预览服务。
+
+## 2026-09-12 05:25 导入会话归属当前工作空间
+- 原因：导入虽然复制 JSONL，却使用源头 cwd，导致跳回原目录，未满足独立副本在目标空间正常续聊的预期。
+- 修改：前端传当前 cwd；协议与服务转发目标目录，省略时使用实例默认值并复用目录校验；副本头部更新 ID/cwd，历史条目保持不变，源文件只读。沿用普通会话保存、恢复、重命名和删除，不复制项目文件，不改历史绝对路径。
+- 验证：npm test 209 项，208 通过、1 跳过；新增目标归属、头部身份、历史不变、重命名/重启恢复/删除不改源文件、默认目标与无效目标检查，前端验证不另开源目录。
+- 涉及：src/sessions.js、src/protocol.js、src/server.js、public/app.js、tests/session-flow.test.js、tests/app.test.js、README.md、本日志及 codebase-map 索引/知识库。
+
+## 2026-09-12 03:45 左侧会话列表与复制菜单重构
+- 需求：执行中/待继续合并为「进行中」；已完成默认折叠并固定在设置上方；复制目录、文件名、完整路径收进右侧二级菜单。
+- 决策：复用原生 details / Popover 与既有 Linear surface、raised、line、accent token，沿用创建时间倒序及日期分隔，不新增依赖。完成标记不影响运行，展开状态仅在当前页面保留；复制对象是 JSONL 源文件，目录保留末尾分隔符以兼容盘符根目录、POSIX 根目录与 UNC。
+- 修复：controls 不再禁用断线时可本地执行的复制/完成标记；列表比较纳入 sessionFile，避免文件刚落盘后复制菜单仍使用旧空路径。
+- 验证：npm test 208 项，207 通过、0 失败、1 原有跳过；Chromium 1440/320 宽度验证底部折叠、右侧菜单/窄屏避让、Esc 逐级关闭与焦点、外部点击、长列表滚动及设置不被挤出。新增 Windows/UNC/POSIX 复制、未落盘、剪贴板失败、断线、路径更新回归检查。
+- 涉及：public/app.js、public/style.css、tests/app.test.js、tests/session-sidebar-ui.py、README.md、本日志与 codebase-map 知识/生成索引。
 
 ## 2026-09-12 重试时间线完整边界修复
 - 原因：上一轮未覆盖排队消息时间与消费时间区别、撤回后的计数失效、压缩与主/子代理归属；无法定位的历史仍追加末尾。
@@ -631,3 +647,8 @@
 ### 2026-09-12 — 4320 原地依赖修复与独立重载
 - npm ci 遇到运行中原生模块的 Windows 文件锁（EPERM），改用 npm install 补齐依赖；SDK 导入和 service-settings-api 测试通过。还原 npm 自动补写的锁文件元数据，不变更依赖版本。
 - 不再等待当前代理自身空闲：临时独立进程限时重试 4320 安全停止入口，当前回复结束后接手启动 scripts/dev.mjs 并记录健康检查；不强杀、不操作 4319。重载结果写入系统临时目录 axiom-reload-4320.log。
+### 2026-09-12 会话运行绿点包含子代理
+- 原因：主代理空闲后，列表仅返回主代理状态，仍执行中的子代理被漏算，绿点提前熄灭。
+- 修改：src/sessions.js 在列表聚合 starting/running 子任务；不改变主代理输入、排队与通知状态机，不改现有绿色样式。README.md 同步语义。
+- 验证：tests/task-notifications.test.js 覆盖子代理启动、主轮提前结束、部分完成、主代理处理通知、全部完成及取消。同步代码索引与坑库。
+- 验证结果：npm test 209 项，208 通过、1 跳过、0 失败；git diff --check 通过。复用可见页面每 5 秒的后台列表刷新，不增加订阅或改变视觉 token。

@@ -206,7 +206,7 @@ function controls() {
   $("stop").hidden = !busy;
   $("send").hidden = busy;
   for (const id of ["new", "custom-new"]) $(id).disabled = unavailable || !models.length;
-  for (const button of document.querySelectorAll(".session-actions button")) button.disabled = unavailable;
+  for (const button of document.querySelectorAll(".session-actions button")) button.disabled = !button.closest(".session-copy-menu") && !button.matches(".session-copy, .session-hide") && unavailable;
   $("status").dataset.connected = String(connected);
   $("status").textContent = serviceUi.restarting ? "正在重启…" : connected ? "已连接" : "连接断开";
   serviceUi.sync();
@@ -2171,6 +2171,8 @@ document.addEventListener("keydown", (e) => {
   const menu = document.querySelector(".session-options[open]");
   if (menu) {
     e.preventDefault();
+    const copy = menu.querySelector('.session-copy[aria-expanded="true"]');
+    if (copy) { copy.click(); copy.focus(); return; }
     menu.open = false;
     menu.querySelector("summary").focus();
     return;
@@ -2223,7 +2225,7 @@ function updatePageTitle() {
 }
 async function updateSessions() {
   const sessions = await request("sessions.list");
-  const listState = (items) => JSON.stringify(items.map(({ id, title, cwd, status, createdAt, updatedAt }) => ({ id, title, cwd, status, createdAt: createdAt ?? updatedAt })));
+  const listState = (items) => JSON.stringify(items.map(({ id, title, cwd, status, sessionFile, createdAt, updatedAt }) => ({ id, title, cwd, status, sessionFile, createdAt: createdAt ?? updatedAt })));
   const active = sessions.find((s) => s.id === sessionId);
   if (!active && sessionId && connected && !changing) {
     allSessions = sessions;
@@ -2295,16 +2297,28 @@ async function switchSession(action) {
     controls();
   }
 }
-// 复制会话的 .jsonl 源文件路径到剪贴板，便于在其他位置（如另一实例的导入框）粘贴导入。
-async function copySessionFile(s, action) {
+// 保留源路径的分隔符，兼容 Windows、UNC 和 POSIX 文件路径。
+async function copySessionFile(s, action, kind = "path") {
   if (!s.sessionFile) return error(new Error("该会话还没有 JSONL 文件（发送首条消息后生成）"));
   try {
-    await navigator.clipboard.writeText(s.sessionFile);
+    const file = s.sessionFile;
+    const separator = Math.max(file.lastIndexOf("/"), file.lastIndexOf("\\"));
+    const directory = file.slice(0, separator + 1);
+    const value = kind === "name" ? file.slice(separator + 1) : kind === "directory" ? directory : file;
+    await navigator.clipboard.writeText(value);
+    const label = action.title;
     action.title = "已复制";
-    setTimeout(() => { action.title = "复制 JSONL 路径"; }, 1600);
+    setTimeout(() => { action.title = label; }, 1600);
   } catch (e) { error(new Error(`复制失败：${e.message}`)); }
 }
+function positionSessionMenu(trigger, panel) {
+  const anchor = trigger.getBoundingClientRect(), box = panel.getBoundingClientRect();
+  const left = anchor.right + 8 + box.width <= innerWidth - 8 ? anchor.right + 8 : Math.max(8, anchor.left - box.width - 8);
+  panel.style.left = `${left}px`;
+  panel.style.top = `${Math.max(8, Math.min(anchor.top, innerHeight - box.height - 8))}px`;
+}
 function renderSessions() {
+  const completedOpen = $("sessions").querySelector(".session-completed")?.open ?? false;
   const fragment = document.createDocumentFragment();
   const query = $("search").value.trim().toLowerCase();
   const createdAt = (s) => s.createdAt ?? s.updatedAt;
@@ -2312,8 +2326,7 @@ function renderSessions() {
     .sort((a, b) => createdAt(b) - createdAt(a) || a.id.localeCompare(b.id));
   const running = (s) => s.status !== "idle";
   const groups = [
-    ["执行中", matched.filter(running)],
-    ["待继续", matched.filter((s) => !running(s) && !hiddenSessions.has(s.id))],
+    ["进行中", matched.filter((s) => running(s) || !hiddenSessions.has(s.id))],
     ["已完成", matched.filter((s) => !running(s) && hiddenSessions.has(s.id))],
   ];
   const addRow = (s) => {
@@ -2344,22 +2357,23 @@ function renderSessions() {
     menu.append(more);
     menu.addEventListener("toggle", () => {
       if (!menu.isConnected) return;
-      if (!menu.open) { actions.hidePopover?.(); return; }
+      if (!menu.open) {
+        actions.querySelector('.session-copy[aria-expanded="true"]')?.click();
+        actions.hidePopover?.();
+        return;
+      }
       document.querySelectorAll(".session-options[open]").forEach((other) => { if (other !== menu) other.open = false; });
       actions.showPopover?.();
-      const trigger = more.getBoundingClientRect(), box = actions.getBoundingClientRect();
-      const left = trigger.right + 8 + box.width <= innerWidth - 8 ? trigger.right + 8 : Math.max(8, trigger.left - box.width - 8);
-      actions.style.left = `${left}px`;
-      actions.style.top = `${Math.max(8, Math.min(trigger.top, innerHeight - box.height - 8))}px`;
+      positionSessionMenu(more, actions);
     });
     const actions = document.createElement("div");
     actions.className = "session-actions";
     actions.setAttribute("popover", "manual");
     actions.setAttribute("aria-label", `会话操作：${s.title}`);
     for (const [kind, label, path] of [
-      ["hide", hidden ? "移回待继续" : "标记已完成", hidden ? 'M12 20V4M5 11l7-7 7 7' : 'M5 12l4 4L19 6'],
+      ["hide", hidden ? "移回进行中" : "标记已完成", hidden ? 'M12 20V4M5 11l7-7 7 7' : 'M5 12l4 4L19 6'],
       ["open", "在新标签页打开", 'M14 3h7v7M21 3l-10 10M10 3H3v18h18v-7'],
-      ["copy", "复制 JSONL 路径", 'M9 9h11v12H9ZM15 9V3H4v12h5'],
+      ["copy", "复制", 'M9 9h11v12H9ZM15 9V3H4v12h5'],
       ["rename", "重命名", 'M16 3l5 5L8 21H3v-5L16 3zM13 6l5 5M3 16l5 5'],
       ["delete", "删除会话", 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7'],
     ]) {
@@ -2373,13 +2387,44 @@ function renderSessions() {
       action.disabled = !["hide", "copy"].includes(kind) && (!connected || changing);
       action.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
       action.append(document.createTextNode(label));
+      if (kind === "copy") {
+        const submenu = document.createElement("div");
+        submenu.className = "session-actions session-copy-menu";
+        submenu.setAttribute("popover", "manual");
+        submenu.setAttribute("aria-label", "复制会话文件信息");
+        submenu.hidden = true;
+        action.setAttribute("aria-expanded", "false");
+        action.innerHTML += '<span class="session-copy-arrow" aria-hidden="true">›</span>';
+        for (const [part, text] of [["directory", "复制所在目录"], ["name", "复制文件名"], ["path", "复制完整路径"]]) {
+          const item = document.createElement("button");
+          item.type = "button";
+          item.dataset.copy = part;
+          item.textContent = item.title = text;
+          item.onclick = () => {
+            void copySessionFile(s, item, part);
+            action.click();
+            menu.open = false;
+            actions.hidePopover?.();
+            more.focus();
+          };
+          submenu.append(item);
+        }
+        action.onclick = () => {
+          const open = action.getAttribute("aria-expanded") !== "true";
+          action.setAttribute("aria-expanded", String(open));
+          submenu.hidden = !open;
+          if (open) { submenu.showPopover?.(); positionSessionMenu(action, submenu); }
+          else submenu.hidePopover?.();
+        };
+        actions.append(action, submenu);
+        continue;
+      }
       action.onclick = () => {
         menu.open = false;
         actions.hidePopover?.();
         more.focus();
         if (kind === "open") window.open(`/#${new URLSearchParams({ session: s.id })}`, "_blank", "noopener");
         else if (kind === "hide") void setSessionHidden(s.id, !hidden);
-        else if (kind === "copy") void copySessionFile(s, action);
         else openSessionAction(kind, s);
       };
       actions.append(action);
@@ -2389,13 +2434,17 @@ function renderSessions() {
     return row;
   };
   for (const [name, sessions] of groups) {
-    const section = document.createElement("section");
-    section.className = "session-section";
+    const completed = name === "已完成";
+    const section = document.createElement(completed ? "details" : "section");
+    section.className = `session-section${completed ? " session-completed" : ""}`;
+    if (completed) section.open = completedOpen;
     section.setAttribute("aria-label", name);
-    const heading = document.createElement("h2");
+    const heading = document.createElement(completed ? "summary" : "h2");
     heading.className = "session-group";
     heading.textContent = name;
-    section.append(heading);
+    const content = document.createElement("div");
+    content.className = "session-section-content";
+    section.append(heading, content);
     let day;
     for (const s of sessions) {
       const date = new Date(createdAt(s));
@@ -2405,15 +2454,15 @@ function renderSessions() {
         const divider = document.createElement("p");
         divider.className = "session-day";
         divider.textContent = label;
-        section.append(divider);
+        content.append(divider);
       }
-      section.append(addRow(s));
+      content.append(addRow(s));
     }
     if (!sessions.length) {
       const empty = document.createElement("p");
       empty.className = "session-empty";
       empty.textContent = query ? "没有匹配的会话" : "暂无会话";
-      section.append(empty);
+      content.append(empty);
     }
     fragment.append(section);
   }
@@ -2719,7 +2768,7 @@ $("import-session").onclick = async () => {
   const original = sessionId;
   const entry = await filePicker.open({ title: "导入 pi 会话（.jsonl）", mode: "file", path: importDir });
   if (!entry || original !== sessionId || !connected || changing) return;
-  await switchSession(() => request("session.import", { path: entry.path }));
+  await switchSession(() => request("session.import", { path: entry.path, cwd: currentCwd || undefined }));
 };
 
 let creationLoad = 0;
