@@ -27,6 +27,7 @@ function boot(bodyHtml, favs = {}, hooks = {}) {
     w.favData[kind] = favorite ? [...list, key] : list.filter((v) => v !== key); // 先同步更 store 再异步持久化
   });
   w.onError = hooks.onError ?? ((err) => w.errors.push(err));
+  w.favKey = hooks.favKey;
   w.eval(`${source}\nwindow.picker = createModelPicker(window);`);
   return { dom, w };
 }
@@ -130,6 +131,86 @@ test("onToggle 抛错进 onError", async () => {
     assert.equal(w.errors.length, 1);
     assert.match(w.errors[0].message, /persist down/);
     assert.ok(menu(w), "保存失败不影响菜单");
+  } finally { dom.window.close(); }
+});
+
+test("favKey 映射：星标按持久化键匹配、onToggle 上报映射键、无键项无星", async () => {
+  const { dom, w } = boot(SELECT, { model: ["prov/c"] }, {
+    favKey: (kind, value) => (kind === "model" ? `prov/${value}` : value),
+  });
+  try {
+    const select = $(w, "model");
+    w.picker.enhance(select, "model");
+    click(w, select);
+    assert.deepEqual(opts(w).map((o) => o.dataset.value), ["c", "a", "b", ""], "映射键命中置顶");
+    assert.equal(stars(w)[0].textContent, "★", "存储键 prov/c 经映射回亮星");
+    stars(w)[1].focus(); // a 行
+    click(w, stars(w)[1]);
+    await tick();
+    assert.deepEqual(w.toggled.map((t) => [...t]), [["model", "prov/a", true]], "上报持久化键而非展示值");
+    assert.deepEqual(w.favData.model, ["prov/c", "prov/a"]);
+
+    const bare = boot(SELECT, {}, { favKey: () => "" }); // favKey 返回空串：全部无星不可收藏
+    try {
+      bare.w.picker.enhance(bare.w.document.getElementById("model"), "model");
+      click(bare.w, bare.w.document.getElementById("model"));
+      assert.equal(stars(bare.w).length, 0, "无收藏键的选项不提供星标");
+    } finally { bare.dom.window.close(); }
+  } finally { dom.window.close(); }
+});
+
+test("快速连点：乐观集交替上报，请求按序落地后与最后一次一致", async () => {
+  const gates = [];
+  const { dom, w } = boot(SELECT, {}, {
+    onToggle: (kind, key, favorite) => new Promise((res) => {
+      w.toggled.push([kind, key, favorite]);
+      const list = w.favData[kind] ?? [];
+      w.favData[kind] = favorite ? [...list, key] : list.filter((v) => v !== key); // 模拟主入口同步更 store
+      gates.push(res);
+    }),
+  });
+  try {
+    const select = $(w, "model");
+    w.picker.enhance(select, "model");
+    click(w, select);
+    const starOf = (v) => stars(w).find((s) => s.dataset.value === v);
+    click(w, starOf("c")); // 收藏 c
+    click(w, starOf("c")); // 第一个请求未落地时连点：基于乐观集而非陈旧 store
+    await tick(); // 串行链：只有第一个请求已上报
+    assert.deepEqual(w.toggled.map((t) => [...t]), [["model", "c", true]], "收藏先上报；陈旧 store 会误报两次 true");
+    gates[0](); // 第一个请求落地后才发第二个，且 favorite 基于点击时的乐观集
+    await tick();
+    assert.deepEqual(w.toggled.map((t) => [...t]), [["model", "c", true], ["model", "c", false]], "按序上报交替状态");
+    gates[1]();
+    await tick();
+    assert.equal(starOf("c").textContent, "☆", "落地后与最后一次请求一致");
+    assert.deepEqual(w.favData.model, []);
+  } finally { dom.window.close(); }
+});
+
+test("持久化失败：onError 一次、星标回落真实状态、可重试", async () => {
+  let calls = 0;
+  const { dom, w } = boot(SELECT, {}, {
+    onToggle: async (kind, key, favorite) => {
+      calls++;
+      if (calls === 1) throw new Error("persist down");
+      const list = w.favData[kind] ?? [];
+      w.favData[kind] = favorite ? [...list, key] : list.filter((v) => v !== key);
+    },
+  });
+  try {
+    const select = $(w, "model");
+    w.picker.enhance(select, "model");
+    click(w, select);
+    click(w, stars(w)[0]); // a：失败
+    await tick();
+    assert.equal(w.errors.length, 1);
+    assert.match(w.errors[0].message, /persist down/);
+    assert.equal(stars(w)[0].textContent, "☆", "失败后星标回落 store 真实状态");
+    click(w, stars(w)[0]); // 重试：成功
+    await tick();
+    assert.equal(w.errors.length, 1, "失败只报一次");
+    assert.equal(stars(w)[0].textContent, "★");
   } finally { dom.window.close(); }
 });
 
