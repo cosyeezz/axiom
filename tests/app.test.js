@@ -240,6 +240,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
             data = states.map((s) => ({
               id: s.sessionId,
               ...s,
+              sessionFile: `C:\\axiom\\${s.sessionId}.jsonl`,
               updatedAt: Date.now(),
             }));
             break;
@@ -322,7 +323,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.deepEqual([...$("sessions").querySelectorAll(".session-group")].map((n) => n.textContent), ["执行中", "待继续", "已完成"]);
     assert.equal(firstActions.children[0].title, "标记已完成");
     assert.equal(firstActions.children[1].className, "session-open");
-    assert.equal(firstActions.children[2].className, "session-rename");
+    assert.equal(firstActions.children[2].className, "session-copy");
+    assert.equal(firstActions.children[3].className, "session-rename");
     assert.equal(firstActions.children[0].querySelector("path").getAttribute("d"), "M5 12l4 4L19 6");
     const beforeHide = requests.length;
     const row = (id) => $("sessions").querySelector(`[data-session-id="${id}"]`);
@@ -365,6 +367,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("composer-skill").options[1].title, "代码导航");
     assert.equal($("composer-skill").hidden, true);
     assert.equal($("stop").textContent.trim(), "Stop ■");
+    row("b").querySelector(".session-copy").click(); await settle();
+    assert.equal(copiedPath, "C:\\axiom\\b.jsonl", "session menu copies the JSONL source path");
     $("copy-workspace").click(); await settle();
     assert.equal(copiedPath, "C:\\work");
     $("reveal-workspace").click(); await settle();
