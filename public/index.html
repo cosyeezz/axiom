@@ -123,6 +123,10 @@
                 ><button type="submit" class="secondary" id="send-steer" data-queue="steer" title="在下一个可介入节点补充指令，不中断正在运行的工具" hidden>Steer</button><button type="submit" class="secondary" id="send-followup" data-queue="followUp" title="等待当前这一轮结束后发送，不影响当前执行" hidden>Follow-up</button><button id="send">Send</button>
               </div>
               <div id="session-runtime" class="runtime-summary" role="status" aria-live="polite"></div>
+              <div class="mobile-controls">
+                <span id="mobile-runtime" aria-live="polite"></span>
+                <button type="button" id="mobile-expand" class="secondary" aria-expanded="false" aria-controls="session-runtime">展开</button>
+              </div>
             </form>
             <div class="composer-footer" id="composer-help">
               <span>/ Skill · @ 文件/文件夹 · Enter 发送 · Shift / Ctrl / ⌘ + Enter 换行 · Ctrl+Z 撤销 · Ctrl+C 清空文字</span
