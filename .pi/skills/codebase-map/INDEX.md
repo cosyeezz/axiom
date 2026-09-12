@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 10:58:52）
+# Axiom 多级代码索引（生成于 2026/9/12 10:59:53）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -17,7 +17,7 @@
 | public/model-picker.js | 283 | 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互 | GAP, EDGE, TYPEAHEAD_MS, el |
 | public/service-settings.js | 278 | 设置页服务维护：真实进度、结果、更新确认与独立维护通道 | MAINT_URL_RE, POLL_MS, initServiceSettings |
 | public/stream-renderer.js | 46 | 流式增量渲染状态机 | createStreamRenderer |
-| public/style.css | 1277 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1278 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | public/text-contrast.css | 46 | 文字专用对比度档位与调节面板 | - |
 | public/text-contrast.js | 113 | 文字对比度按钮、实时调节与本地偏好 | KEY, MIN, MAX, STEP |
 | public/tooltip.css | 50 | 共享暗色悬停说明样式 | - |
@@ -30,7 +30,7 @@
 | scripts/service.mjs | 497 | 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道 | root, output, run, npmRun |
 | scripts/uninstall.mjs | 18 | 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据 | uninstall |
 | src/capabilities.js | 139 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
-| src/compaction.js | 392 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
+| src/compaction.js | 390 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
 | src/main.js | 97 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, factory, home |
 | src/memory-policy.js | 29 | 主子代理摘要规则与环境配置校验 | SUMMARY_SYSTEM_PROMPT, SUMMARY_REMINDER, SUMMARY_DELEGATE, intEnv |
@@ -46,7 +46,7 @@
 | src/tools.js | 97 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
 | tests/activity-groups-ui.py | 201 | node --test 测试（npm test） | activityHistory, sessions |
-| tests/app.test.js | 1607 | node --test 测试（npm test） | pickerSource, contrastSource, modelSources, serviceSource |
+| tests/app.test.js | 1608 | node --test 测试（npm test） | pickerSource, contrastSource, modelSources, serviceSource |
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
 | tests/capabilities.test.js | 207 | node --test 测试（npm test） | - |
@@ -55,7 +55,7 @@
 | tests/compaction-config.test.js | 107 | node --test 测试（npm test） | - |
 | tests/compaction-ui.py | 57 | node --test 测试（npm test） | - |
 | tests/compaction-ui.test.js | 126 | node --test 测试（npm test） | page |
-| tests/compaction.test.js | 797 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
+| tests/compaction.test.js | 802 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
 | tests/config.test.js | 225 | node --test 测试（npm test） | - |
 | tests/context-menu-ui.py | 66 | node --test 测试（npm test） | - |
 | tests/conversation-preview.mjs | 123 | node --test 测试（npm test） | markdown, message, thinking, state |
@@ -600,7 +600,7 @@
 | refreshProjectSkills | function | 94 |
 | capabilityLoader | function | 104 |
 
-### src/compaction.js（392 行） — 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交
+### src/compaction.js（390 行） — 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -614,10 +614,10 @@
 | SUMMARY_SYSTEM_PROMPT | const | 95 |
 | summaryRequest | function | 98 |
 | parseSummaryOutput | function | 113 |
-| throwIfAborted | function | 128 |
-| summarizeWithPiSession | function | 132 |
-| throwIfAborted | method | 133 |
-| createBackgroundCompaction | function | 206 |
+| throwIfAborted | function | 126 |
+| summarizeWithPiSession | function | 130 |
+| throwIfAborted | method | 131 |
+| createBackgroundCompaction | function | 204 |
 
 ### src/inline-images.js（32 行） — 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列
 
@@ -860,7 +860,7 @@
 | activityHistory | const | 16 |
 | sessions | const | 27 |
 
-### tests/app.test.js（1607 行） — node --test 测试（npm test）
+### tests/app.test.js（1608 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -898,32 +898,32 @@
 | page | function | 10 |
 | restore | method | 40 |
 
-### tests/compaction.test.js（797 行） — node --test 测试（npm test）
+### tests/compaction.test.js（802 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| fakeModel | const | 78 |
-| createTestSession | function | 91 |
-| seq | const | 108 |
-| userMsg | const | 109 |
-| assistantMsg | const | 110 |
-| big | const | 116 |
-| seed | function | 118 |
-| settle | const | 123 |
-| waitFor | function | 125 |
-| enabledConfig | const | 133 |
-| fakeSummarize | function | 142 |
-| startHangingLlmServer | function | 150 |
-| startFakeLlmServer | function | 173 |
-| zodError | method | 230 |
-| zodError | method | 231 |
-| zodError | method | 232 |
-| zodError | method | 233 |
-| zodError | method | 234 |
+| fakeModel | const | 83 |
+| createTestSession | function | 96 |
+| seq | const | 113 |
+| userMsg | const | 114 |
+| assistantMsg | const | 115 |
+| big | const | 121 |
+| seed | function | 123 |
+| settle | const | 128 |
+| waitFor | function | 130 |
+| enabledConfig | const | 138 |
+| fakeSummarize | function | 147 |
+| startHangingLlmServer | function | 155 |
+| startFakeLlmServer | function | 178 |
 | zodError | method | 235 |
-| hangingSummarize | function | 560 |
-| createLoopSession | function | 657 |
-| writeFileSync | method | 658 |
+| zodError | method | 236 |
+| zodError | method | 237 |
+| zodError | method | 238 |
+| zodError | method | 239 |
+| zodError | method | 240 |
+| hangingSummarize | function | 565 |
+| createLoopSession | function | 662 |
+| writeFileSync | method | 663 |
 
 ### tests/conversation-preview.mjs（123 行） — node --test 测试（npm test）
 
