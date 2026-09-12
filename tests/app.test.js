@@ -166,7 +166,10 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
             break;
           case "workspace.reveal": data = { opened: true }; break;
           case "workspace.browse":
-            data = { path: req.path, entries: req.path ? [{ name: "app.js", path: "src/app.js", directory: false }] : [{ name: "src", path: "src", directory: true }] };
+            // query 非空时模拟服务端：在整个工作空间内模糊搜索名称（app.js 不在根列表里）。
+            data = { path: req.path, entries: req.query
+              ? [{ name: "app.js", path: "src/app.js", directory: false }, { name: "src", path: "src", directory: true }].filter((entry) => entry.name.includes(req.query))
+              : req.path ? [{ name: "app.js", path: "src/app.js", directory: false }] : [{ name: "src", path: "src", directory: true }] };
             break;
           case "capabilities.list":
             data = { needsTrust: req.trustProject ? false : needsTrust || req.cwd === "C:\\untrusted", warnings: [], skills: [{ id: "skill-a", name: "Skill A", scope: "global" }, { id: "skill-b", name: "Skill B", scope: "project" }], mcp: [{ id: "browser", name: "Browser" }], plugins: [{ id: "search", name: "Search" }] };
@@ -527,6 +530,10 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     input("@src/app"); await settle(); completionKey("Enter");
     assert.equal($("context-chips").children.length, 1, "references deduplicate");
     $("context-chips").firstChild.click();
+    // 回归：根目录没有 app.js，@ 输入必须靠服务端在工作空间内递归模糊搜索才能命中。
+    input("@app"); await settle();
+    assert.match($("prompt-completion").textContent, /文件：src\/app\.js/);
+    completionKey("Escape"); input("");
     input("@src/app"); input("普通正文"); await settle();
     assert.equal($("prompt-completion").hidden, true, "late browse replies cannot reopen completion");
     input("/"); completionKey("Escape");

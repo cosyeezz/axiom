@@ -1,5 +1,10 @@
 # 开发记录
 
+## 2026-09-12 19:37 UTC 文件/文件夹搜索与 @ 补全：名称模糊匹配 + 工作空间递归
+- 原因：输入框上沿「＋」与 `@` 补全都只能在当前目录里按子串过滤名称，工作空间根目录只有 `public/` 这类目录名，输入 `@app` 或 `@apjs` 根本匹配不到 `public/app.js`，用户反馈「艾特的时候输入无法匹配」。
+- 实现：`src/sessions.js` 新增 `fuzzyHit()`（忽略大小写、字符按顺序出现即命中）与 `matchRank()`（完全相等 → 前缀 → 子串越靠前越好 → 子序列），`listFiles()` 在 `query` 非空时改走 BFS 递归搜索 `searchEntries()`：只匹配名称、不回读文件、跳过 `.git`/`node_modules`/符号链接，按匹配质量排序后一次返回（`nextOffset: null`），递归目录数封顶 400、单目录不可读只跳过；无搜索词时保持原目录优先排序 + 分页（每页 200）。`browse()`/`workspace.browse` 增加 `query` 参数（`protocol.js` 同步为 `query: z.string().max(200).default("")`），`app.js` 的 `@` 补全把最后一段作为 `query` 发给服务端，技能搜索（＋ 菜单与 `/` 补全）同样改为名称模糊、说明仍按子串。`file-picker.js` 搜索命中行右侧显示所在相对目录，避免深浅目录同名文件无法区分。
+- 涉及：src/{sessions,server,protocol}.js、public/{app,file-picker}.js、public/file-picker.css、tests/{session-flow,workspace-picker,app}.test.js、README.md、本日志与 codebase-map 索引。
+- 验证：session-flow / workspace-picker 改为断言递归 + 模糊 + 不分页（`query: "appjs"` 命中 `src/deep/nested-app.js`），app.test.js 新增 `@app` 命中根目录没有的 `src/app.js` 的回归用例；worktree 全量 `npm test` 258 项：257 通过、1 跳过、0 失败。直连 `Sessions.browse()` 在真实 Axiom 工作空间实测：`@app` 38ms 4 命中、`@apjs` 7ms、`@sessionMjs` 6ms，均按匹配质量把 `public/app.js`、`src/session-memory.js` 排在前。
 ## 2026-09-12 手机阅读优先（桌面布局不变）
 - 原因：手机输入区和多层吸顶遮挡正文；用户要求信息最大化、单行输入、双数值状态及统一展开入口，不能影响桌面。
 - 修改：≤700px 默认折叠顶栏/模型/上下文工具/任务快捷列表；保留发送与安全操作、附件和错误。输入一行起步，限制自动增高与底栏最大占比；状态仅两个百分比，去操作指引与详情吸顶，跳转不浮遮。沿用 Linear token，不加依赖。
