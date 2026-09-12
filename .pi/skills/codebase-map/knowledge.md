@@ -298,3 +298,8 @@
 - 根因：renderSessions 未限定当前 cwd，把完成标记当隐藏优先级，updatedAt 并非创建时间，操作按钮直接常驻。
 - 修复：public/app.js 固定当前工作空间和三组顺序；运行优先于完成标记；src/sessions.js 独立持久化 createdAt；操作通过原生 details 展开。跨 cwd 在 switchSession 统一新开页签，不替换当前草稿。
 - 防再犯：tests/session-sidebar-ui.py 实测桌面/手机、日期与排序、绿点及键盘；tests/workspace-tabs.test.js 检查跨目录保留草稿。resize 后等待媒体查询事件再操作侧栏，预览端口冲突用 PREVIEW_PORT，不能误测旧服务。基线原有两项思考渲染失败已单独复现，不应归因侧栏。
+
+### 2026-09-12 ASCII 中英文表格边框错位
+- 根因：空格对齐依赖字体字宽，模型生成的列宽也未必一致。
+- 修复：markdown.js 仅转换完整、列数一致的纯文本 ASCII 表格为原生 table，单元格走 textContent，复制保留原文。JSON 工具同样用 textContent 更新，复制读取当前 code 内容。
+- 防再犯：不要全局替换空格或修改普通代码；覆盖残缺流式块、HTML 文本、失败不丢原文与当前结果复制。

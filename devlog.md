@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-12 00:52 ASCII 表格与 JSON 展示
+- 原因：中英文混排的字符表格边框错位；用户需要会话 JSON 的格式化、压缩、去转义、转义和复制当前结果。
+- 内容：共享 Markdown 渲染器识别完整 ASCII 表格并复用原生表格滚动样式、复制仍保留原文；JSON 使用原生 JSON.parse/stringify、本地操作与错误状态，不增加依赖。单元格和转换结果只用 textContent；未知/残缺 ASCII 保持代码，超安全整数拒绝重写。
+- 样式：复用既有 --line/--surface/--muted token、8px 圆角与 4px 操作间距，窄屏工具栏换行。
+- 涉及：public/markdown.js、public/style.css、tests/markdown.test.js、README.md、本日志与 .pi/skills/codebase-map/{INDEX,knowledge}.md。
+- 验证：共享 Markdown 回归覆盖转换、原文复制、当前 JSON 复制、失败保留和 HTML 注入防护；npm test 184 项：183 通过、1 原有跳过，git diff --check 通过；未做真实浏览器视觉验收。
+
 ## 2026-09-11 修复 Tailscale 普通设备被拒绝
 - 实机只读检查 status/whois：个人设备正常省略 Tags，旧 whoisUser 却要求数组，误将同账号设备当作 tag 设备拒绝。
 - src/remote.js 允许省略 Tags，仍拒绝真实标签、非法类型、缺失 Node/用户和不同登录名；tests/remote.test.js 的所有普通设备 mock 改为真实省略形态，覆盖 HTTP/WS 全链路。README 与坑库、索引同步。
