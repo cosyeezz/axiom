@@ -2,10 +2,10 @@
 
 ## 2026-09-12 任务计时器（输入框「+」行最右端）
 - 原因：需要直观看到当前任务进行了多久；口径必须与侧栏绿点一致，停止后重新输入要继续累计而不是清零。
-- 实现：后端在 `session.state` / `task.state` 事件里按「会话执行中」累计 `elapsedMs`（进入 running 开表、离开结算），随会话 JSON 落盘，事件回执与 `sessions.list` 带 `elapsedMs` / `runningSince`；前端每秒重算并渲染，停止后定格。取消/关闭空闲会话也会发 cancelling，因此以 running 而非「非 idle」开表。
+- 实现：后端在 `session.state` / `task.state` 事件里按「会话执行中」累计 `elapsedMs`（进入 running 开表、离开结算），随会话 JSON 落盘，事件回执与 `sessions.list` 带 `elapsedMs` / `runningSince`；前端每秒重算并渲染，停止后定格。取消/关闭空闲会话也会发 cancelling，因此以 running 而非「非 idle」开表。绿点口径抽成 `pointStatus()`，`sessions.list` 与事件回执共用，计时与侧栏绿点永远同源。
 - 参考成熟实现：[OpenAI Codex 状态行](https://github.com/openai/codex) 的 pause/resume 计时与 `59s` / `1m 00s` / `1h 02m 03s` 紧凑格式；Claude Code 的「减少动态效果不应冻结计时」教训；`font-variant-numeric: tabular-nums` 防每秒跳动。不引入前端框架或额外依赖。
 - 涉及：src/sessions.js、public/{index.html,app.js,style.css}、tests/{task-timer,app}.test.js、README.md、本日志与 codebase-map 索引。
-- 验证：`npm test` 252 项全通过；隔离 Playwright 预览中运行中显示绿点脉动 + `24s`，停止后定格为静态累计值，窄屏不挤出「+」行。
+- 验证：tests/task-timer.test.js 覆盖开表、结算、续跑累计、落盘恢复；tests/app.test.js 页面用例覆盖「无记录不占位、运行中累计、停止后定格、再次执行继续累加」。worktree 全量 `npm test` 256 项：255 通过、1 跳过、0 失败。Chromium 静态预览核对运行/停止两态配色、脉冲动画、`tabular-nums`、与「+」同排且右对齐、390px 无溢出（非真实会话端到端验收）。
 
 ## 2026-09-12 18:10 UTC 设置页签切换高度稳定
 - 原因：设置弹窗随内容长度改变高度，居中布局导致切换分类上下跳动。

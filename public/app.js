@@ -593,7 +593,9 @@ function paintCallGroup(group) {
   if (!rows.length) return;
   // Message boundaries fold segments; agent state ends activity even without a final answer.
   const output = group.closest('#output') || [...tasks.values()].find(task => task.output.contains(group))?.output;
-  const running = group.dataset.messageFolded !== 'true' && output?.dataset.activityState === 'running';
+  const pending = rows.some(row => ['running', 'waiting', 'thinking'].includes(row.dataset.state));
+  const running = group.dataset.messageFolded !== 'true' && output?.dataset.activityState === 'running'
+    && (pending || group.dataset.hasFollowingActivity !== 'true');
   const stopped = rows.some(row => ['stopped', 'failed'].includes(row.dataset.state));
   const label = running ? 'Working' : stopped ? 'Stopped' : 'Completed';
   const icon = running ? 'waiting' : label === 'Stopped' ? 'circle-stopped' : 'circle-done';
@@ -689,6 +691,13 @@ function refreshCallGroups(output) {
   for (const node of [...output.children]) if (node.classList.contains('call-group')) {
     if (!node.lastElementChild.childElementCount) node.remove();
     else paintCallGroup(node);
+  }
+  // Only the latest segment owns the between-tools wait; older segments need actual pending work.
+  let hasFollowingActivity = false;
+  for (const segment of [...output.querySelectorAll('.call-group')].reverse()) {
+    segment.dataset.hasFollowingActivity = String(hasFollowingActivity);
+    paintCallGroup(segment);
+    if (!segment.hidden) hasFollowingActivity = true;
   }
   let hasFollowingMessage = false;
   for (const node of [...output.children].reverse()) {
