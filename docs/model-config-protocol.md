@@ -98,6 +98,30 @@
 
 按 id 删除；provider 或模型不存在 → 报错。
 
+### models.provider.discover `{ providerId }` → `{ models, truncated }`（只读）
+
+从供应商在线拉取模型列表，供 UI 勾选后逐条调用 `models.model.save` 加入配置。**本命令不写盘、不启用模型、不触发 `refreshModels` / `models.config.changed`**，也无 baseFingerprint（不修改文件）。
+
+- 读取已保存供应商的 `baseUrl` / `api` / `apiKey` / `headers`；**任何响应都不回传密钥明文**
+- 凭据解析：`!command` 命令型值**直接拒绝**（不执行）；`$VAR`/`${VAR}`/`$$`/`$!` 沿用 SDK 真实插值语义；解析不出（如环境变量缺失）→ 安全报错
+- 按 `api` 类型请求（官方接口已核实）：
+
+| api | 请求 |
+|---|---|
+| `openai-completions` / `openai-responses` | `GET {baseUrl}/models`，`Authorization: Bearer`（无 apiKey 时省略，兼容本地服务器） |
+| `anthropic-messages` | `GET {baseUrl\|https://api.anthropic.com}/v1/models?limit=1000`，`x-api-key` + `anthropic-version: 2023-06-01`（无 apiKey 报错） |
+| `google-generative-ai` | `GET {baseUrl\|…/v1beta}/models?pageSize=1000`，`x-goog-api-key`（无 apiKey 报错） |
+
+- `authHeader: true` 时额外附 `Authorization: Bearer`（无法解析 apiKey 时报错）；`oauth` 供应商不支持
+- 超时 15 秒；响应体上限 5 MiB；`redirect: "error"`（重定向可能带走凭据，直接拒绝）；允许用户显式配置的本地 http 地址（如 Ollama）
+- 返回：`models` 为 `{ id, name?, contextWindow?, maxTokens? }` 数组（最多 500 条，超出 slice 后 `truncated: true`）；
+  `truncated` 另在 Anthropic `has_more` / Google `nextPageToken` 时为 true。
+  **只透传接口确实给出的字段**：OpenAI 兼容接口仅 id（及服务器自带的 name）；Anthropic `display_name`→`name`；
+  Google 去掉 `models/` 前缀为 id、`displayName`→`name`、`inputTokenLimit`→`contextWindow`、`outputTokenLimit`→`maxTokens`，
+  并按 `supportedGenerationMethods` 含 `generateContent` 过滤（embedding/TTS 等非对话模型）；
+  **未知 reasoning/上下文一律省略，不从名称猜测**
+- 错误脱敏：固定中文文案 + HTTP 状态码；**绝不包含请求头、密钥、上游响应体**（网络错误/超时/重定向/非 JSON/结构无法识别/响应体过大各有独立文案）
+
 ### 写命令副作用（成功后依次）
 
 1. 备份：原 `models.json` → `models.json.bak`（覆盖旧备份）
@@ -114,7 +138,7 @@
 三组扁平有序 key 列表（组内唯一、按收藏先后排序，每组上限 200）：
 
 - `provider`：供应商 id，如 `"anthropic"`
-- `model`：模型完整 key，如 `"anthropic/claude-…"`（不含 `:`）
+- `model`：模型完整 key，如 `"anthropic/claude-…"`；允许模型 ID 中的冒号，如 `"ollama/llama3.1:8b"`
 - `thinking`：模型+思考等级，key 形如 `"anthropic/claude-…:high"`
   （最后一个 `:` 后为等级：`off|minimal|low|medium|high|xhigh|max`）
 

@@ -231,6 +231,8 @@ export const command = z.discriminatedUnion("type", [
       baseFingerprint: fingerprintIn,
     })
     .strict(),
+  // 只读：从供应商在线拉取模型列表（models.provider.discover）；不写盘、不自动启用。
+  z.object({ id, type: z.literal("models.provider.discover"), providerId: providerKey }).strict(),
   z.object({ id, type: z.literal("models.favorites.get") }).strict(),
   z
     .object({

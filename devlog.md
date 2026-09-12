@@ -700,3 +700,15 @@
 - 原因：CommonMark 侧翼规则在 `**` 紧贴中文标点+紧邻文字时拒绝开/闭，正文星号原样显示（用户截图场景）；思考区不加粗为既定设计，不改。
 - 修改：public/markdown.js 增加 fixCjkBold 预处理（仅围栏外，成对 `**` 首尾标点移出，渲染文本不变）；tests/markdown.test.js 补 4 条断言。README 无需改（318 行描述的「强调」行为本就应含中文）。
 - 验证：npm test 三轮 225 项（224 通过、1 跳过、0 失败）；真实渲染探针覆盖截图原文/冒号/引号/正常加粗。有一轮曾出现 expected 2 的抖动断言，随后同代码连续三轮全绿，按既有基线抖动记录，不归因本次改动。
+
+### 2026-09-12 — 恢复后端工作：models.provider.discover 只读拉取 + Ollama 冒号收藏修复（Axiom-model-settings-recovery）
+- 背景：旧 worktree F:/worktrees/Axiom-model-settings 被清空，未提交工作不可恢复；本条记录在 F:/worktrees/Axiom-model-settings-recovery（分支 feat/model-settings-recovery，基线 cb7686f）重建全部改动，未 git 提交（交主代理验收合并）。
+- 冒号修复恢复：src/model-config.js validFavoriteKey 删除 model key 禁冒号行，model 组整体作 modelKey（colon=-1），thinking 组仍按最后冒号切分等级；docs 收藏章节改为「允许模型 ID 中的冒号，如 ollama/llama3.1:8b」；tests/model-config.test.js 冒号拒绝断言改为正向回归（收藏/持久化/无 thinking 误匹配）。
+- discover 新增（只读）：protocol.js 加 z.literal("models.provider.discover")+providerId strict schema；model-config.js 深加载 SDK resolve-config-value.js（$VAR/$ {VAR}/$$/$! 真实插值，!command 拒不执行），DISCOVER_APIS 四 api 类型（openai-completions/responses、anthropic-messages、google-generative-ai，官方接口已核实），redirect:"error" 防 Key 外泄、15s 超时、响应体 5MiB 上限、>500 条截断，错误全部固定中文文案+HTTP 状态码不含请求头/密钥/上游响应体；不写盘、不触发 refreshModels、不广播、无 baseFingerprint。
+- 限制内未改 src/server.js，主代理需补：case 组（src/server.js ~295 行）加 case "models.provider.discover" 走 service.models.handle；广播分支（~305 行）排除 discover（只读不得触发 models.config.changed）。
+- 验证：worktree 本地 npm ci（旧 node_modules 是指向主仓库残缺 SDK 的 junction，pi-coding-agent dist 整体缺失，共享路径全部 ERR_MODULE_NOT_FOUND）；tests/model-config.test.js 18/18（含 7 个 discover 套件）、tests/model-thinking-favorites.test.js 1/1（Ollama 冒号键回归）、全量 tests/*.test.js 270 项 0 失败（model-manager XSS 断言曾单次抖动，复跑稳定全绿）。mock 保真度修正：redirect 拒绝场景改为 mock 抛 TypeError 模拟 undici 真实行为（原 mock 返 302 响应对象绕过了 redirect:"error" 逻辑）。
+
+## 2026-09-12 12:20 — 模型管理验收收尾
+- README 同步分栏设计来源、只读拉取并勾选添加、思考收藏键与浏览器回归命令；reindex 登记新增测试。
+- tests/model-selection-preview.mjs 使用隔离供应商与 mock discoverFetch，并去除配置中的运行时回调，修复 structuredClone 导致预览无法连接。
+- 新增 tests/model-settings-ui.py：思考收藏刷新持久且不切换、拉取后仅保存勾选项、1440/390/320 布局；两份浏览器回归通过。全量 npm test：274 通过、1 跳过、0 失败。

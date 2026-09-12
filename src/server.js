@@ -292,6 +292,7 @@ export function createServerApp(sessions, service = {}) {
               data = sessions.createAgent.catalog();
               break;
             case "models.config.get":
+            case "models.provider.discover":
             case "models.provider.save":
             case "models.provider.delete":
             case "models.model.save":
@@ -300,7 +301,7 @@ export function createServerApp(sessions, service = {}) {
             case "models.favorites.set": {
               if (!service.models) throw new Error("模型配置服务未启用");
               data = await service.models.handle(request);
-              if (request.type !== "models.config.get" && request.type !== "models.favorites.get") {
+              if (!["models.config.get", "models.favorites.get", "models.provider.discover"].includes(request.type)) {
                 if (request.type === "models.favorites.set")
                   broadcast({ type: "models.favorites.changed", data });
                 else broadcast({ type: "models.config.changed" });
