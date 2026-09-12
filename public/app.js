@@ -1,4 +1,5 @@
 import { renderMarkdown } from "./markdown.js";
+import { stripMemoryTags } from "./memory-tags.js";
 import { createStreamRenderer } from "./stream-renderer.js";
 import { createFilePicker, fileIcon } from "./file-picker.js";
 import "./tooltip.js";
@@ -43,7 +44,7 @@ for (const id of ["provider", "model", "thinking", "subagent-provider", "subagen
 }
 const modelManager = initModelManager({ root: $("models-panel"), request, onSaved: refreshModelCatalog });
 const serviceUi = initServiceSettings({ request, isReady: () => connected });
-let compactions = [], mainItems = [];
+let compactions = [], mainItems = [], summaries = [];
 const compactionNodes = new Map(), taskEntries = new Map();
 let images = [], imageLoading = false;
 let completionVersion = 0, completionToken, completionEntries = [], completionIndex = 0;
@@ -1042,10 +1043,12 @@ function renderMessage(item, message) {
     typeof message.content === "string"
       ? [{ type: "text", text: message.content }]
       : message.content || [];
-  item.buffer = content
+  const raw = content
     .filter((c) => c?.type === "text")
     .map((c) => c.text)
     .join("\n");
+  // 记忆标签只属于助手自报内容；用户手写同名标签原样保留。
+  item.buffer = message.role === "assistant" ? stripMemoryTags(raw) : raw;
   item.reasoning = content
     .filter((c) => c?.type === "thinking")
     .map((c) => c.thinking)
@@ -1474,6 +1477,17 @@ function event(message) {
     toolState(agentId, { ...data.message, phase: "end" });
   }
   if (type === "session.queue" && agentId === "main") renderQueue(data);
+  if (type === "session.title") {
+    $("session-title").textContent = data.title || "新会话";
+    updatePageTitle();
+  }
+  if (type === "session.summary") {
+    // 同一记录可能随 turn_end 补充 entryId/toolResults 重发，按 id 覆盖。
+    const at = summaries.findIndex((record) => record.id === data.id);
+    if (at >= 0) summaries[at] = data;
+    else summaries.push(data);
+    if ($("summaries").open) renderSummaries();
+  }
   if (type === "agent.message.end" && data.message.role === "user") {
     clearWaiting(agentId);
     const item = card("你", tasks.get(agentId));
@@ -1509,7 +1523,11 @@ function event(message) {
   if (type === "agent.delta") {
     const item = live.get(agentId);
     if (!item) return;
-    if (data.type === "text_delta") item.buffer += data.delta;
+    if (data.type === "text_delta") {
+      item.raw = (item.raw || "") + data.delta;
+      // 流式剥离从未完成的原始累计文本重算，避免残缺标签闪现。
+      item.buffer = stripMemoryTags(item.raw, { streaming: true });
+    }
     else if (data.type === "thinking_delta") item.reasoning += data.delta;
     else if (data.type === "thinking_start") { setActivity(item.activity, "thinking...", "thinking"); return; }
     else if (data.type === "toolcall_start" || data.type === "toolcall_delta") { setActivity(item.activity, "calling...", "running"); return; }
@@ -1631,6 +1649,8 @@ function snapshot(state) {
   renderTaskRuns();
   retryCards.clear();
   compactions = state.compactions || [];
+  summaries = state.summaries || [];
+  if ($("summaries").open) renderSummaries();
   compactionNodes.clear();
   taskEntries.clear();
   renderCompactionStatus(state.compactionStatus);
@@ -2470,6 +2490,37 @@ function renderSessions() {
 }
 $("search").oninput = renderSessions;
 let sessionAction;
+// 主会话摘要记录：时间、轮次、纯文本；只展示 agentId 为 main 的记录。
+function renderSummaries() {
+  const records = summaries.filter((record) => record.agentId === "main").reverse();
+  $("summaries-empty").hidden = records.length > 0;
+  $("summaries-list").replaceChildren(...records.map((record) => {
+    const row = document.createElement("article");
+    row.className = "summary-record";
+    const meta = document.createElement("header");
+    meta.className = "summary-meta";
+    const time = document.createElement("time");
+    const at = record.timestamp || record.messageTimestamp;
+    if (at) {
+      time.textContent = new Date(at).toLocaleString();
+      meta.append(time);
+    }
+    const turn = document.createElement("span");
+    turn.className = "summary-turn";
+    turn.textContent = `第 ${record.turn || 1} 轮`;
+    const text = document.createElement("p");
+    text.className = "summary-text";
+    text.textContent = record.text || "";
+    meta.append(turn);
+    row.append(meta, text);
+    return row;
+  }));
+}
+$("open-summaries").onclick = () => {
+  renderSummaries();
+  $("summaries").showModal();
+};
+
 function openSessionAction(kind, session) {
   if (!connected || changing) return;
   sessionAction = { kind, id: session.id, cwd: session.cwd };

@@ -17,6 +17,12 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  * 未登记的文件会在 INDEX.md 里标 ⚠ 提醒补充。
  */
 const MODULE_INFO = {
+  "src/session-memory.js": "标题与逐回复摘要登记、委派背景快照、子任务进度被动送达",
+  "public/memory-tags.js": "主子代理共享简单标签提取与流式显示过滤",
+  "tests/session-memory.test.js": "摘要时序、被动进度、标题保护与JSON恢复回归",
+  "tests/memory-tags.test.js": "标签边界、代码块、流式前缀与合法性回归",
+  "tests/pi-memory.test.js": "Pi事件接入、turn计数与请求前提示注入回归",
+  "tests/memory-ui.test.js": "摘要记录入口与助手标签隐藏回归",
   "scripts/maint-server.mjs": "loopback维护HTTP：来源校验、随机凭证、状态与离线恢复",
   "scripts/maint-state.mjs": "守护维护状态：持久化阶段、最近结果与有界脱敏证据",
   "tests/service-settings.test.js": "服务设置操作、确认更新、进度与离线恢复回归",

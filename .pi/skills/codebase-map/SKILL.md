@@ -56,6 +56,8 @@ scripts/autostart.mjs  Windows/macOS/Linux 用户登录自动启动注册
   │    └─ remote.js  可选 Tailscale 独立监听、同账号 whois 验证、本机远程配置
   ├─ model-config.js Pi models.json 无损读写、版本冲突保护与全局收藏持久化
   ├─ Sessions        会话生命周期/队列 + ~/.axiom 工作空间历史、默认配置与具名预设
+  │    ├─ session-memory.js  标题/逐回复摘要登记、最近32条背景与被动进度
+  │    │    └─ public/memory-tags.js  标签提取与前端显示过滤（保留Pi原始消息）
   │    └─ Tasks ── delegationTools（tools.js，注册给 pi 的委托工具）
   └─ pi.js createPiFactory → pi-coding-agent SDK（原生队列 + SessionManager JSONL）
        ├─ capabilities.js  模型/子代理/技能发现与解析

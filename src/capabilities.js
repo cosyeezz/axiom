@@ -101,10 +101,10 @@ export function refreshProjectSkills(loader, selected, catalog, all = false) {
   return loader.getSkills().skills.map(({ name, description }) => ({ name, description }));
 }
 
-export function capabilityLoader(resources, selection, customTools) {
+export function capabilityLoader(resources, selection, customTools, extraFactories = [], memoryRole = null) {
   const { catalog, settingsManager, paths, adapter, mcpConfig, createMcpAdapter, cwd, agentDir } = resources;
   const selected = resolveCapabilities(selection, catalog);
-  const factories = [{ name: "axiom-inline-images", factory: inlineImagesExtension }];
+  const factories = [...extraFactories, { name: "axiom-inline-images", factory: inlineImagesExtension }];
   if (adapter && (selection == null || selected.mcp.length)) {
     factories.push({ name: "axiom-mcp", factory: createMcpAdapter({ config: {
       ...mcpConfig,
@@ -126,9 +126,13 @@ export function capabilityLoader(resources, selection, customTools) {
       extensionFactories: factories,
       // Preserve the custom allowlist even when an extension contributes more skills on startup.
       skillsOverride: (current) => ({ ...current, skills: current.skills.filter((s) => selection == null || selected.skills.includes(s.filePath)) }),
-      appendSystemPromptOverride: (current) => [...current, customTools.length
-        ? "Delegate independent work with delegate. Wait for the proactive completion notification that reports each finished task's taskId and resultId, then read that result once with read_result; do not poll. Use append to add instructions to a running subtask. Avoid concurrent edits to the same files. Report task failures honestly."
-        : "Complete the delegated task. Return concise findings and changes with evidence."],
+      appendSystemPromptOverride: (current) => [...current,
+        // 会话记忆：主代理逐轮自报 summary；子代理不逐轮 summary，每满5轮自报 progress。
+        ...(memoryRole === "main" ? ["每轮回复末尾单独一行输出<summary>上一步已知要点+本次意图</summary>。"] : []),
+        ...(memoryRole === "subagent" ? ["无需逐轮summary；每满5轮在回复末尾单独一行输出<progress>阶段进展</progress>。"] : []),
+        customTools.length
+          ? "Delegate independent work with delegate. Wait for the proactive completion notification that reports each finished task's taskId and resultId, then read that result once with read_result; do not poll. Use append to add instructions to a running subtask. Avoid concurrent edits to the same files. Report task failures honestly."
+          : "Complete the delegated task. Return concise findings and changes with evidence."],
     }),
   };
 }

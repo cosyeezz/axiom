@@ -23,6 +23,7 @@ test("compaction settings, message IDs and successful records survive restart; f
   const factory = async (_tools, selection) => {
     selections.push(selection);
     let config = { model: "p/main", thinking: "off", compaction: { ...compactionDefaults }, ...selection };
+    delete config.memory;
     return {
       config: () => config, configure: async (value) => (config = { ...config, ...value }),
       historyEntries: () => [{ id: "m1", type: "message", message: { role: "user", content: "old" } }],
@@ -69,6 +70,7 @@ test("restored sessions pick up the latest default compaction; other selection s
   const factory = async (_tools, selection) => {
     selections.push(selection);
     let config = { model: "p/main", thinking: "off", compaction: { ...compactionDefaults }, ...selection };
+    delete config.memory;
     return {
       config: () => config, configure: async (value) => (config = { ...config, ...value }),
       historyEntries: () => [], compactions: () => [],

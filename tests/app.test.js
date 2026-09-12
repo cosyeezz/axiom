@@ -46,7 +46,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     new URL("../public/index.html", import.meta.url),
     "utf8",
   );
-  const source = (
+  const source = (await readFile(new URL("../public/memory-tags.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (
     await readFile(new URL("../public/app.js", import.meta.url), "utf8")
   ).replace(/^import .*;\r?\n/gm, "");
   const dom = new JSDOM(html, {
@@ -1253,7 +1253,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     new URL("../public/index.html", import.meta.url),
     "utf8",
   );
-  const source = (
+  const source = (await readFile(new URL("../public/memory-tags.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (
     await readFile(new URL("../public/app.js", import.meta.url), "utf8")
   ).replace(/^import .*;\r?\n/gm, "");
   const dom = new JSDOM(html, {
