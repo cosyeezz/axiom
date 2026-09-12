@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 09:16:13）
+# Axiom 多级代码索引（生成于 2026/9/12 10:44:58）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -29,7 +29,7 @@
 | scripts/service.mjs | 497 | 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道 | root, output, run, npmRun |
 | scripts/uninstall.mjs | 18 | 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据 | uninstall |
 | src/capabilities.js | 135 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
-| src/compaction.js | 392 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
+| src/compaction.js | 390 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
 | src/main.js | 97 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, factory, home |
 | src/model-config.js | 369 | Pi models.json 无损配置读写与共享收藏持久化 | sdkModelConfig, EMPTY_FINGERPRINT, digest, LEVELS |
@@ -52,7 +52,7 @@
 | tests/compaction-config.test.js | 105 | node --test 测试（npm test） | - |
 | tests/compaction-ui.py | 57 | node --test 测试（npm test） | - |
 | tests/compaction-ui.test.js | 125 | node --test 测试（npm test） | page |
-| tests/compaction.test.js | 797 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
+| tests/compaction.test.js | 802 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
 | tests/config.test.js | 224 | node --test 测试（npm test） | - |
 | tests/context-menu-ui.py | 66 | node --test 测试（npm test） | - |
 | tests/conversation-preview.mjs | 123 | node --test 测试（npm test） | markdown, message, thinking, state |
@@ -575,7 +575,7 @@
 | refreshProjectSkills | function | 94 |
 | capabilityLoader | function | 104 |
 
-### src/compaction.js（392 行） — 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交
+### src/compaction.js（390 行） — 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -589,10 +589,10 @@
 | SUMMARY_SYSTEM_PROMPT | const | 95 |
 | summaryRequest | function | 98 |
 | parseSummaryOutput | function | 113 |
-| throwIfAborted | function | 128 |
-| summarizeWithPiSession | function | 132 |
-| throwIfAborted | method | 133 |
-| createBackgroundCompaction | function | 206 |
+| throwIfAborted | function | 126 |
+| summarizeWithPiSession | function | 130 |
+| throwIfAborted | method | 131 |
+| createBackgroundCompaction | function | 204 |
 
 ### src/inline-images.js（32 行） — 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列
 
@@ -852,32 +852,32 @@
 | page | function | 10 |
 | restore | method | 39 |
 
-### tests/compaction.test.js（797 行） — node --test 测试（npm test）
+### tests/compaction.test.js（802 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| fakeModel | const | 78 |
-| createTestSession | function | 91 |
-| seq | const | 108 |
-| userMsg | const | 109 |
-| assistantMsg | const | 110 |
-| big | const | 116 |
-| seed | function | 118 |
-| settle | const | 123 |
-| waitFor | function | 125 |
-| enabledConfig | const | 133 |
-| fakeSummarize | function | 142 |
-| startHangingLlmServer | function | 150 |
-| startFakeLlmServer | function | 173 |
-| zodError | method | 230 |
-| zodError | method | 231 |
-| zodError | method | 232 |
-| zodError | method | 233 |
-| zodError | method | 234 |
+| fakeModel | const | 83 |
+| createTestSession | function | 96 |
+| seq | const | 113 |
+| userMsg | const | 114 |
+| assistantMsg | const | 115 |
+| big | const | 121 |
+| seed | function | 123 |
+| settle | const | 128 |
+| waitFor | function | 130 |
+| enabledConfig | const | 138 |
+| fakeSummarize | function | 147 |
+| startHangingLlmServer | function | 155 |
+| startFakeLlmServer | function | 178 |
 | zodError | method | 235 |
-| hangingSummarize | function | 560 |
-| createLoopSession | function | 657 |
-| writeFileSync | method | 658 |
+| zodError | method | 236 |
+| zodError | method | 237 |
+| zodError | method | 238 |
+| zodError | method | 239 |
+| zodError | method | 240 |
+| hangingSummarize | function | 565 |
+| createLoopSession | function | 662 |
+| writeFileSync | method | 663 |
 
 ### tests/conversation-preview.mjs（123 行） — node --test 测试（npm test）
 
