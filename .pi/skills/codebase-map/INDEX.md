@@ -1,11 +1,11 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 00:55:04）
+# Axiom 多级代码索引（生成于 2026/9/12 01:06:03）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| public/app.js | 2885 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, sessionMissing |
+| public/app.js | 2897 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, sessionMissing |
 | public/file-picker.css | 269 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 351 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/index.html | 285 | 页面骨架与元素 id（见 L3） | - |
@@ -34,12 +34,12 @@
 | src/remote.js | 501 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
 | src/retry.js | 149 | 模型失败重试：可取消退避、最多30次、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_RETRIES, delayFor, MAX_TIMEOUT_MS |
 | src/server.js | 438 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | assets, createServerApp |
-| src/sessions.js | 846 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | BROWSE_PAGE, resolveDir, parentOf, absoluteCrumbs |
+| src/sessions.js | 848 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | BROWSE_PAGE, resolveDir, parentOf, absoluteCrumbs |
 | src/tasks.js | 107 | Tasks：子任务（委托）生命周期 | Tasks |
 | src/tools.js | 97 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
 | tests/activity-groups-ui.py | 129 | node --test 测试（npm test） | - |
-| tests/app.test.js | 1558 | node --test 测试（npm test） | pickerSource, contrastSource, modelSources |
+| tests/app.test.js | 1562 | node --test 测试（npm test） | pickerSource, contrastSource, modelSources |
 | tests/autostart.test.js | 60 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
 | tests/capabilities.test.js | 207 | node --test 测试（npm test） | - |
@@ -90,7 +90,7 @@
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
-### public/app.js（2885 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
+### public/app.js（2897 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -270,42 +270,43 @@
 | switchSession | function | 2142 |
 | saveView | method | 2144 |
 | controls | method | 2147 |
-| renderSessions | function | 2169 |
-| sessionAction | const | 2282 |
-| openSessionAction | function | 2283 |
-| contextIcon | function | 2324 |
-| renderContextChips | function | 2327 |
-| renderContextResults | function | 2345 |
-| showContextSkills | function | 2365 |
-| positionContextSkills | function | 2370 |
-| showContextSkills | method | 2382 |
-| controls | method | 2417 |
-| skillTrigger | const | 2419 |
-| showContextSkills | method | 2435 |
-| resizePrompt | method | 2444 |
-| controls | method | 2445 |
-| closeCompletion | function | 2448 |
-| highlightCompletion | function | 2456 |
-| chooseCompletion | function | 2465 |
-| closeCompletion | method | 2475 |
-| updateCompletion | function | 2478 |
-| closeCompletion | method | 2479 |
-| resizePrompt | method | 2532 |
-| controls | method | 2533 |
-| switchSession | method | 2573 |
-| creationLoad | const | 2584 |
-| refreshPresets | function | 2585 |
-| createAgentPicker | function | 2620 |
-| options | method | 2646 |
-| fill | method | 2654 |
-| fillThinking | method | 2662 |
-| options | method | 2664 |
-| loadCreation | function | 2711 |
-| openCreation | function | 2745 |
-| rememberCreation | const | 2766 |
-| updateDefaultsPreview | function | 2798 |
-| updateDefaultsPreview | method | 2818 |
-| controls | method | 2872 |
+| copySessionFile | function | 2170 |
+| renderSessions | function | 2178 |
+| sessionAction | const | 2294 |
+| openSessionAction | function | 2295 |
+| contextIcon | function | 2336 |
+| renderContextChips | function | 2339 |
+| renderContextResults | function | 2357 |
+| showContextSkills | function | 2377 |
+| positionContextSkills | function | 2382 |
+| showContextSkills | method | 2394 |
+| controls | method | 2429 |
+| skillTrigger | const | 2431 |
+| showContextSkills | method | 2447 |
+| resizePrompt | method | 2456 |
+| controls | method | 2457 |
+| closeCompletion | function | 2460 |
+| highlightCompletion | function | 2468 |
+| chooseCompletion | function | 2477 |
+| closeCompletion | method | 2487 |
+| updateCompletion | function | 2490 |
+| closeCompletion | method | 2491 |
+| resizePrompt | method | 2544 |
+| controls | method | 2545 |
+| switchSession | method | 2585 |
+| creationLoad | const | 2596 |
+| refreshPresets | function | 2597 |
+| createAgentPicker | function | 2632 |
+| options | method | 2658 |
+| fill | method | 2666 |
+| fillThinking | method | 2674 |
+| options | method | 2676 |
+| loadCreation | function | 2723 |
+| openCreation | function | 2757 |
+| rememberCreation | const | 2778 |
+| updateDefaultsPreview | function | 2810 |
+| updateDefaultsPreview | method | 2830 |
+| controls | method | 2884 |
 
 ### public/file-picker.js（351 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 
@@ -653,7 +654,7 @@
 | assets | const | 7 |
 | createServerApp | function | 43 |
 
-### src/sessions.js（846 行） — Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化
+### src/sessions.js（848 行） — Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -679,24 +680,24 @@
 | load | method | 295 |
 | persist | method | 314 |
 | list | method | 333 |
-| rename | method | 345 |
-| importSession | method | 354 |
-| create | method | 382 |
-| scheduleTaskNotifications | method | 552 |
-| deliverTaskNotifications | method | 564 |
-| get | method | 586 |
-| revealWorkspace | method | 591 |
-| browse | method | 605 |
-| listFiles | method | 611 |
-| refreshSkills | method | 670 |
-| snapshot | method | 676 |
-| subscribe | method | 704 |
-| configure | method | 710 |
-| prompt | method | 744 |
-| withdraw | method | 794 |
-| cancel | method | 809 |
-| remove | method | 827 |
-| close | method | 842 |
+| rename | method | 347 |
+| importSession | method | 356 |
+| create | method | 384 |
+| scheduleTaskNotifications | method | 554 |
+| deliverTaskNotifications | method | 566 |
+| get | method | 588 |
+| revealWorkspace | method | 593 |
+| browse | method | 607 |
+| listFiles | method | 613 |
+| refreshSkills | method | 672 |
+| snapshot | method | 678 |
+| subscribe | method | 706 |
+| configure | method | 712 |
+| prompt | method | 746 |
+| withdraw | method | 796 |
+| cancel | method | 811 |
+| remove | method | 829 |
+| close | method | 844 |
 
 ### src/tasks.js（107 行） — Tasks：子任务（委托）生命周期
 
@@ -733,7 +734,7 @@
 | validateCommit | function | 10 |
 | checkUpdate | function | 15 |
 
-### tests/app.test.js（1558 行） — node --test 测试（npm test）
+### tests/app.test.js（1562 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|

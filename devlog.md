@@ -532,3 +532,9 @@
 - 决策：复用原完成标记 localStorage 与跨页锁，不新增依赖；会话操作收进原生 details，支持键盘、Esc、外部点击和手机触控。创建时间独立持久化，旧历史以 updatedAt 兼容，不能还原过去未保存的创建时间。
 - 验证：创建时间与页签回归通过，Chromium 1440px/320px 验证分组、日期、绿点、操作展开/收起与边界；全量测试的思考展开和 collapsed-thinking 两处失败在干净基线 159d62a 同样复现，未冒充全绿。预览使用 PREVIEW_PORT=4397，未重启正式服务。
 - 文件：public/{app.js,index.html,style.css}、src/sessions.js、tests/{app.test.js,workspace-tabs.test.js,session-created-at.test.js,session-sidebar-ui.py,conversation-preview.mjs}、README.md、devlog.md、codebase-map 索引/生成脚本/knowledge.md。
+
+## 2026-09-12 会话菜单支持复制 JSONL 源文件路径
+- 内容：会话操作菜单在「新页签打开」与「重命名」之间新增「复制 JSONL 路径」，把会话 `.jsonl` 源文件的绝对路径写入剪贴板，便于在其他位置（如另一实例的「导入 pi 会话」）直接粘贴导入。
+- 实现：服务端 `Sessions.list()` 返回 `sessionFile`（取 `agent.sessionFile()`，未落盘为 null）；前端 `copySessionFile()` 走 `navigator.clipboard`，按钮悬停反馈「已复制」，无文件或复制失败走错误条。复制是纯前端操作，断连时保持可用。导入的会话返回的是存储目录里的副本路径（导入即复制，原文件不动）。
+- 验证：npm test 183 通过、1 跳过；tests/app.test.js 更新菜单子项断言并新增复制路径断言（`C:\axiom\b.jsonl`）。
+- 文件：src/sessions.js、public/app.js、tests/app.test.js、README.md、devlog.md。

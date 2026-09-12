@@ -332,13 +332,15 @@ export class Sessions {
 
   list() {
     return [...this.items.values()]
-      .map(({ id, title, cwd, status, updatedAt, createdAt }) => ({
-        id,
-        title,
-        cwd,
-        status,
-        createdAt,
-        updatedAt,
+      .map((item) => ({
+        id: item.id,
+        title: item.title,
+        cwd: item.cwd,
+        status: item.status,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+        // 会话的 .jsonl 源文件路径，供侧栏菜单「复制 JSONL 路径」用；尚未落盘时为 null。
+        sessionFile: item.agent?.sessionFile?.() ?? null,
       }))
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }

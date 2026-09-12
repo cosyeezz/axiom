@@ -2166,6 +2166,15 @@ async function switchSession(action) {
     controls();
   }
 }
+// 复制会话的 .jsonl 源文件路径到剪贴板，便于在其他位置（如另一实例的导入框）粘贴导入。
+async function copySessionFile(s, action) {
+  if (!s.sessionFile) return error(new Error("该会话还没有 JSONL 文件（发送首条消息后生成）"));
+  try {
+    await navigator.clipboard.writeText(s.sessionFile);
+    action.title = "已复制";
+    setTimeout(() => { action.title = "复制 JSONL 路径"; }, 1600);
+  } catch (e) { error(new Error(`复制失败：${e.message}`)); }
+}
 function renderSessions() {
   const fragment = document.createDocumentFragment();
   const query = $("search").value.trim().toLowerCase();
@@ -2221,6 +2230,7 @@ function renderSessions() {
     for (const [kind, label, path] of [
       ["hide", hidden ? "移回待继续" : "标记已完成", hidden ? 'M12 20V4M5 11l7-7 7 7' : 'M5 12l4 4L19 6'],
       ["open", "在新标签页打开", 'M14 3h7v7M21 3l-10 10M10 3H3v18h18v-7'],
+      ["copy", "复制 JSONL 路径", 'M9 9h11v12H9ZM15 9V3H4v12h5'],
       ["rename", "重命名", 'M16 3l5 5L8 21H3v-5L16 3zM13 6l5 5M3 16l5 5'],
       ["delete", "删除会话", 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7'],
     ]) {
@@ -2230,7 +2240,8 @@ function renderSessions() {
       action.title = label;
       action.setAttribute("aria-label", `${label}：${s.title}`);
       if (["rename", "delete"].includes(kind)) action.setAttribute("aria-haspopup", "dialog");
-      action.disabled = kind !== "hide" && (!connected || changing);
+      // 复制路径纯前端操作，不依赖连接，断连时也保持可用。
+      action.disabled = !["hide", "copy"].includes(kind) && (!connected || changing);
       action.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
       action.append(document.createTextNode(label));
       action.onclick = () => {
@@ -2239,6 +2250,7 @@ function renderSessions() {
         more.focus();
         if (kind === "open") window.open(`/#${new URLSearchParams({ session: s.id })}`, "_blank", "noopener");
         else if (kind === "hide") void setSessionHidden(s.id, !hidden);
+        else if (kind === "copy") void copySessionFile(s, action);
         else openSessionAction(kind, s);
       };
       actions.append(action);
