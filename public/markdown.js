@@ -8,9 +8,12 @@ const policy = {
   FORBID_ATTR: ["style"],
 };
 
+const textLanguages = new Set(["纯文本", "text", "txt", "plaintext", "ascii", "diagram", "tree"]);
+const isText = (language) => textLanguages.has(language.toLowerCase());
+
 // ponytail: only complete, single-line-cell ASCII tables; other diagrams stay verbatim.
 function asciiTable(code, language) {
-  if (!["纯文本", "text", "txt", "plaintext", "ascii"].includes(language)) return null;
+  if (!isText(language)) return null;
   const lines = code.textContent.trim().split(/\r?\n/).map((line) => line.trim());
   const border = lines[0];
   if (!/^\+(?:-+\+){2,}$/.test(border) || lines.length < 5 ||
@@ -40,19 +43,36 @@ function asciiTable(code, language) {
   return table;
 }
 
+function looksLikeDiagram(text) {
+  const lines = text.split(/\r?\n/);
+  // Structural signals, not semantic guesses: code languages never reach this detector.
+  return lines.some((line) => /(?:[-=]{2,}>|<[-=]{2,}|[←→↔⇒⇐⇔])/.test(line)) ||
+    lines.filter((line) => /[\u2500-\u257f]|\+(?:[-=]{2,}\+)+|^\s*(?:[|+] |[|+`\\]--|\|.*\|\s*$)/u.test(line)).length >= 2;
+}
+
 function layoutDiagram(code, language) {
-  if (code.textContent.length > 20000 || !["纯文本", "text", "txt", "plaintext", "ascii"].includes(language) ||
-      code.textContent.split("\n").filter((line) => /[─━│┃┌┐└┘├┤┬┴┼╭╮╰╯]/u.test(line)).length < 2) return false;
+  if (code.textContent.length > 20000 || !isText(language)) return false;
   // ponytail: 1/2-cell widths, max 20K chars to bound DOM size; incorrect source padding stays unchanged.
   const segments = new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(code.textContent);
   const fragment = code.ownerDocument.createDocumentFragment();
+  let column = 0;
   for (const { segment } of segments) {
-    if (/^[\r\n\t]+$/.test(segment)) { fragment.append(segment); continue; }
+    if (/^[\r\n]+$/.test(segment)) { fragment.append(segment); column = 0; continue; }
+    if (segment === "\t") {
+      const tab = code.ownerDocument.createElement("span");
+      const width = 8 - column % 8;
+      tab.className = `diagram-tab diagram-tab-${width}`;
+      tab.textContent = segment;
+      fragment.append(tab);
+      column += width;
+      continue;
+    }
     const cell = code.ownerDocument.createElement("span");
     const wide = /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff01-\uff60\uffe0-\uffe6\u{20000}-\u{3fffd}]|\p{Emoji_Presentation}|\uFE0F/u.test(segment);
     cell.className = wide ? "diagram-cell diagram-wide" : "diagram-cell";
     cell.textContent = segment;
     fragment.append(cell);
+    column += wide ? 2 : 1;
   }
   code.replaceChildren(fragment);
   code.classList.add("text-diagram");
@@ -136,7 +156,8 @@ export function renderMarkdown(element, text = "") {
       const json = language.toLowerCase() === "json" ||
         (["纯文本", "text", "txt", "plaintext"].includes(language) &&
           /^[\s]*[\[{]/.test(code.textContent) && isJson(code.textContent));
-      const diagram = !table && !json && layoutDiagram(code, language);
+      const source = code.textContent;
+      const diagram = !table && !json && looksLikeDiagram(source) && layoutDiagram(code, language);
       label.textContent = table ? "表格" : json ? "JSON" : diagram ? "字符示意图" : language;
       const copy = element.ownerDocument.createElement("button");
       copy.type = "button";
@@ -157,7 +178,35 @@ export function renderMarkdown(element, text = "") {
       pre.before(block);
       block.append(bar, table || pre);
       if (status) block.append(status);
-      if (table) pre.remove();
+      if (!json && isText(language)) {
+        const toggle = element.ownerDocument.createElement("button");
+        toggle.type = "button";
+        let optimized = Boolean(table || diagram);
+        const updateToggle = () => {
+          toggle.textContent = optimized ? "原文" : "优化";
+          toggle.setAttribute("aria-label", optimized ? "切换到原文展示" : "切换到优化展示");
+        };
+        updateToggle();
+        toggle.onclick = () => {
+          if (optimized) {
+            if (table) block.querySelector(".table-scroll").hidden = true;
+            code.textContent = source;
+            code.classList.remove("text-diagram");
+            pre.hidden = false;
+          } else if (table) {
+            block.querySelector(".table-scroll").hidden = false;
+            pre.hidden = true;
+          } else if (!layoutDiagram(code, language)) return;
+          optimized = !optimized;
+          updateToggle();
+        };
+        if (source.length > 20000 && !table) {
+          toggle.disabled = true;
+          toggle.title = "超过 20,000 字符，保留原文以避免页面卡顿";
+        }
+        bar.insertBefore(toggle, copy);
+      }
+      if (table) { pre.hidden = true; block.append(pre); }
     }
     for (const table of node.querySelectorAll("table")) {
       const wrapper = element.ownerDocument.createElement("div");

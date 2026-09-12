@@ -23,5 +23,13 @@ with sync_playwright() as p:
         assert all(abs(c['width'] - unit * (2 if c['wide'] else 1)) < .1 for c in sizes)
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
         assert page.locator('pre').get_attribute('tabindex') == '0'
+        page.get_by_role('button', name='切换到原文展示', exact=True).click()
+        assert page.locator('.text-diagram').count() == 0
+        page.get_by_role('button', name='切换到优化展示', exact=True).click()
+        assert page.locator('.text-diagram').count() == 1
+    page.evaluate('(text) => renderMarkdown(document.querySelector("main"), text)', '```text\n中文\tX\né\tY\n```')
+    page.get_by_role('button', name='切换到优化展示', exact=True).click()
+    positions = page.locator('.diagram-cell').evaluate_all('(cells) => cells.filter(c => ["X","Y"].includes(c.textContent)).map(c => c.getBoundingClientRect().x)')
+    assert abs(positions[0] - positions[1]) < .1, 'tabs align to the same eight-cell stop'
     browser.close()
 print('text diagram grid: desktop/mobile passed')
