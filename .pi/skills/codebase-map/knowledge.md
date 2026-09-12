@@ -358,3 +358,9 @@
 - 根因：updateSessions 的列表比较遗漏 sessionFile；controls 统一禁用所有会话操作，覆盖建行时的本地操作豁免。
 - 修复：public/app.js 比较 sessionFile，controls 对复制入口/子项与完成标记保留可用；复制目录保留末尾分隔符，避免把 C:\ 变成盘符相对路径。
 - 防再犯：tests/app.test.js 验证文件字段单独变化、断线后本地按钮可用及 Windows/UNC/POSIX 根目录复制。
+
+### 2026-09-12 主代理空闲导致子任务未完成时侧栏绿点熄灭
+- 症状：subagent 仍运行，会话侧栏却不再显示进行中绿点。
+- 根因：Sessions.list 只返回 item.status，未合并 Tasks.jobs 的 starting/running 状态。
+- 修复：列表聚合主/子运行状态，保留主代理内部状态用于输入、排队与完成通知；复用列表刷新与既有绿点。
+- 防再犯：tests/task-notifications.test.js 覆盖真实主轮结束后多子任务陆续完成、通知轮与取消，不能把主轮结束当整场结束。
