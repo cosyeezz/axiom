@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { recallLastMessage } from "../src/pi.js";
@@ -90,4 +90,52 @@ test("withdraw with recall trims the web history and leaves the queue alone when
   queued.steering = ["再来一条"];
   await assert.rejects(sessions.withdraw(id, true), /已经产生了模型输出/);
   assert.deepEqual(sessions.get(id).agent.queue(), { steering: ["再来一条"], followUp: [] }, "a refused recall must not eat the queue");
+});
+
+test("withdraw drops retracted main retries, keeps earlier and subagent ones without stale positions", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-recall-retries-"));
+  let recalled = { entryId: "u1", text: "撤回的输入", images: [] };
+  const factory = async () => ({
+    config: () => ({ model: "test/one", thinking: "off", levels: ["off"] }),
+    configure: async () => ({}),
+    subscribe: () => () => {}, prompt: async () => {}, enqueue: async () => {},
+    queue: () => ({ steering: [], followUp: [] }),
+    withdraw: () => ({ steering: [], followUp: [] }),
+    recall: async () => recalled,
+    abort: async () => {}, result: () => "ok", dispose: async () => {},
+  });
+  factory.catalog = () => [{ key: "test/one" }];
+  const sessions = new Sessions(factory, undefined, join(root, "sessions"));
+  try {
+    const id = await sessions.create(root);
+    sessions.get(id).messages = [
+      { agentId: "main", entryId: "u0", message: { role: "user", content: "保留的输入" } },
+      { agentId: "main", entryId: "u1", message: { role: "user", content: "撤回的输入" } },
+      { agentId: "child", entryId: "c9", message: { role: "assistant", content: "保留子任务" } },
+    ];
+    sessions.get(id).retries = [
+      { id: "kept", agentId: "main", status: "succeeded", attempt: 1, messageCount: 1, anchorEntryId: "u0" },
+      { id: "count-cut", agentId: "main", status: "succeeded", attempt: 1, messageCount: 2 },
+      { id: "anchor-cut", agentId: "main", status: "succeeded", attempt: 1, anchorEntryId: "u1" },
+      { id: "unknown", agentId: "main", status: "failed", attempt: 2, error: "x" },
+      { id: "child", agentId: "child", status: "succeeded", attempt: 1, messageCount: 3, anchorEntryId: "c9" },
+    ];
+    await sessions.withdraw(id, true);
+    const item = sessions.get(id);
+    assert.deepEqual(item.retries.map((r) => r.id), ["kept", "unknown", "child"],
+      "撤回区间内的主代理重试移除，区间前与未知位置及子代理保留");
+    assert.deepEqual(item.retries.map((r) => [r.messageCount, r.anchorEntryId]),
+      [[1, "u0"], [undefined, undefined], [2, "c9"]],
+      "保留记录不得残留越界 count 或失效锚点，新消息不会让旧卡漂移");
+    // 持久化后重开：清理结果稳定，不回弹。
+    await sessions.close();
+    const reopened = new Sessions(factory, undefined, join(root, "sessions"));
+    await reopened.load();
+    assert.deepEqual(reopened.snapshot(id).retries.map((r) => [r.id, r.messageCount]),
+      [["kept", 1], ["unknown", undefined], ["child", 2]]);
+    assert.deepEqual(reopened.snapshot(id).messages.map(r => r.entryId), ["u0", "c9"]);
+    reopened.get(id).emit({ type: "agent.message.end", data: { message: { role: "user", content: "后续输入" }, entryId: "u2" } });
+    assert.equal(reopened.snapshot(id).retries.find(r => r.id === "child").messageCount, 2);
+    await reopened.close();
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

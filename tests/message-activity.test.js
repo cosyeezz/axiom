@@ -75,7 +75,113 @@ test("retry cards preserve timeline positions and never absorb message content",
     assert.equal(output.querySelector(".retry-card").open, false);
     restore({ messages: [entry(answer, "answer")], retries: [{ ...retry, status: "succeeded" }] });
     paint();
-    assert.equal(output.lastElementChild.className, "retry-card", "legacy records keep their fallback position");
+    assert(output.firstElementChild.classList.contains("retry-archive"), "unknown history is explicitly archived, not appended after the answer");
+    assert(output.firstElementChild.querySelector(".retry-card"));
+    assert.equal(output.lastElementChild.querySelector(":scope > .markdown").textContent.trim(), "恢复后的回答");
+  } finally { dom.window.close(); }
+});
+
+test("retry cards follow their compacted boundary across live updates and repeated snapshots", async () => {
+  const { dom, emit, restore, paint, output } = await page();
+  try {
+    const failed = assistant([{ type: "text", text: "失败之前" }], { stopReason: "error" });
+    const answer = assistant([{ type: "text", text: "最终回答" }]);
+    const retry = { id: "compact-retry", status: "waiting", attempt: 1, messageCount: 1,
+      anchorEntryId: "failure", delayMs: 2000, nextRetryAt: 3000 };
+    const compaction = { id: "compact", summary: "历史摘要", compactedMessageIds: ["failure"] };
+    emit("agent.message.end", { message: failed, entryId: "failure" });
+    emit("agent.retry", retry);
+    emit("agent.message.end", { message: answer, entryId: "answer" });
+    emit("agent.compaction", compaction);
+    emit("agent.retry", { ...retry, status: "succeeded" });
+    const check = () => {
+      paint(); paint();
+      assert.equal(output.querySelectorAll(":scope > .retry-card").length, 0);
+      assert.equal(output.querySelectorAll(".compaction-card .retry-card").length, 1);
+      assert.match(output.querySelector(".compaction-card .retry-card").textContent, /重试成功/);
+      assert.equal(output.lastElementChild.querySelector(":scope > .markdown").textContent.trim(), "最终回答");
+    };
+    check();
+    for (let i = 0; i < 3; i++) {
+      restore({ messages: [entry(failed, "failure"), entry(answer, "answer")], compactions: [compaction],
+        retries: [{ ...retry, status: "succeeded" }] });
+      check();
+    }
+  } finally { dom.window.close(); }
+});
+
+test("attaching during retry keeps the same card through running and success", async () => {
+  const { dom, emit, restore, paint, output } = await page();
+  try {
+    const retry = { id: "waiting", agentId: "main", status: "waiting", attempt: 1,
+      messageCount: 0, delayMs: 2000, nextRetryAt: 3000 };
+    restore({ status: "running", retries: [{ ...retry, history: [retry] }] });
+    const card = output.querySelector(".retry-card");
+    assert.equal(card.open, true);
+    assert.match(card.textContent, /预计/);
+    assert.match(card.textContent, /1\/45/);
+    emit("agent.retry", { ...retry, status: "running" });
+    const message = assistant([{ type: "text", text: "恢复回答" }]);
+    emit("agent.message.end", { message, entryId: "answer" });
+    emit("agent.retry", { ...retry, status: "succeeded" });
+    paint(); paint();
+    assert.equal(output.querySelector(".retry-card"), card);
+    assert.equal(output.querySelectorAll(".retry-card").length, 1);
+    assert.equal(card.open, false);
+    assert.equal(card.querySelectorAll("li").length, 1);
+    assert.equal(output.lastElementChild.querySelector(":scope > .markdown").textContent.trim(), "恢复回答");
+  } finally { dom.window.close(); }
+});
+
+test("multiple retry episodes retain their first boundary through status updates and replay", async () => {
+  const { dom, emit, restore, paint, output } = await page();
+  try {
+    const messages = [], retries = [];
+    for (let i = 0; i < 2; i++) {
+      const message = assistant([{ type: "text", text: `阶段${i}` }]);
+      messages.push(entry(message, `m${i}`));
+      emit("agent.message.end", { message, entryId: `m${i}` });
+      const retry = { id: `retry${i}`, agentId: "main", status: "waiting", attempt: 1,
+        messageCount: messages.length, delayMs: 2000, nextRetryAt: 3000 };
+      emit("agent.retry", retry);
+      retries.push({ ...retry, status: "succeeded", history: [retry] });
+    }
+    const message = assistant([{ type: "text", text: "结束" }]);
+    messages.push(entry(message, "end"));
+    emit("agent.message.end", { message, entryId: "end" });
+    for (const retry of [...retries].reverse()) emit("agent.retry", retry);
+    paint(); paint();
+    const order = () => [...output.children].filter(n => !n.hidden).map(n => n.classList.contains("retry-card")
+      ? n.querySelector("summary").textContent : n.querySelector(":scope > .markdown")?.textContent);
+    const live = order();
+    restore({ messages, retries }); paint(); paint();
+    assert.deepEqual(order(), live);
+    assert.equal(output.querySelectorAll(".retry-card").length, 2);
+  } finally { dom.window.close(); }
+});
+
+test("main and child retries stay isolated, including missing task metadata", async () => {
+  const { dom, w, emit, restore, paint, output } = await page();
+  try {
+    const retry = { id: "same", status: "succeeded", attempt: 1, messageCount: 1 };
+    const child = { id: "child", task: "子任务", status: "completed" };
+    const messages = [entry(assistant([{ type: "text", text: "主回答" }]), "main"),
+      entry(assistant([{ type: "text", text: "子回答" }]), "child-answer", "child")];
+    const retries = [{ ...retry, agentId: "main" }, { ...retry, agentId: "child" }];
+    for (let i = 0; i < 2; i++) {
+      restore({ messages, retries, tasks: [child] }); paint(); paint();
+      assert.equal(output.querySelectorAll(".retry-card").length, 1);
+      const body = w.document.querySelector("#task-child .task-body");
+      assert.equal(body.querySelector(".retry-card").nextElementSibling.classList.contains("message"), true);
+      emit("agent.retry", { ...retry, status: "cancelled" }, "child");
+      assert.match(body.textContent, /重试已停止/);
+      assert.match(output.querySelector(".retry-card").textContent, /重试成功/);
+    }
+    restore({ messages: [messages[0]], retries: [retries[1]] });
+    assert(output.querySelector(".retry-archive .retry-card"));
+    w.event({ sessionId: "activity", type: "task.state", taskId: "child", data: child });
+    assert.equal(output.querySelector(".retry-card"), null);
+    assert(w.document.querySelector("#task-child .retry-archive .retry-card"));
   } finally { dom.window.close(); }
 });
 
