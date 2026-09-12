@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { extractMemoryTags } from "../public/memory-tags.js";
+import { memoryPolicy } from "./memory-policy.js";
 
 const textOf = (message) => (message.content || []).filter((block) => block.type === "text").map((block) => block.text).join("\n");
 const escape = (text) => text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
@@ -7,20 +8,41 @@ const escape = (text) => text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").r
 // Only model self-reports belong here; tool outcomes remain separate evidence.
 export function memoryHooks(item, save, job) {
   const agentId = job?.id || "main";
+  const policy = memoryPolicy(job ? "subagent" : "main");
+  item.summaryTriggers ||= [];
   return {
     role: job ? "subagent" : "main",
     turn: item.memoryTurns[agentId] || 0,
+    onTrigger(data) {
+      item.summaryTriggers.push({ id: randomUUID(), agentId, timestamp: Date.now(), reason: "interval", status: "pending", ...data });
+      save();
+    },
     onReply({ message, turn }) {
-      if (message.role !== "assistant" || ["error", "aborted", "length"].includes(message.stopReason)) return;
+      if (message.role !== "assistant") return;
+      let trigger = item.summaryTriggers.findLast((entry) => entry.agentId === agentId && entry.turn === turn && entry.status === "pending");
+      const delegates = !job && message.content?.some((block) => block.type === "toolCall" && block.name === "delegate");
+      if (delegates && !trigger) {
+        trigger = { id: randomUUID(), agentId, turn, timestamp: Date.now(), reason: "delegate", ...policy };
+        item.summaryTriggers.push(trigger);
+      } else if (delegates) trigger.reason = "interval+delegate";
+      if (trigger) trigger.messageTimestamp = message.timestamp;
+      if (["error", "aborted", "length"].includes(message.stopReason)) {
+        if (trigger) trigger.status = message.stopReason;
+        save();
+        return;
+      }
       const tags = extractMemoryTags(textOf(message));
       if (!job && item.titlePending && !item.titleManual && tags.title && [...tags.title].length <= 10) {
         item.title = tags.title;
         item.titlePending = false;
         item.emit({ type: "session.title", data: { title: item.title } });
       }
-      const text = job ? tags.progress : tags.summary;
-      if (text) {
+      const text = tags.axiom_summary || (job ? tags.progress : tags.summary);
+      const valid = text && [...text].length < policy.maxChars;
+      if (trigger) trigger.status = !text ? "missing" : valid ? "recorded" : "oversize";
+      if (valid) {
         const record = { id: randomUUID(), agentId, turn, text, timestamp: Date.now(), messageTimestamp: message.timestamp, source: "model" };
+        if (trigger) { trigger.summaryId = record.id; record.triggerId = trigger.id; }
         item.summaries.push(record);
         if (job) job.progress = record;
         item.emit({ type: "session.summary", agentId, data: record });

@@ -89,6 +89,25 @@ test("recall removes only summaries attached to retracted main messages", async 
   } finally { await sessions.close(); }
 });
 
+test("summary audit retains missing, oversized, failed and delegate reports", () => {
+  const item = { summaries: [], memoryTurns: {}, emit: () => {} };
+  const hooks = memoryHooks(item, () => {});
+  for (const [turn, text, status] of [[1, "无标签", "missing"], [2, `<axiom_summary>${"字".repeat(30)}</axiom_summary>`, "oversize"], [3, "<axiom_summary>验证通过</axiom_summary>", "recorded"]]) {
+    hooks.onTrigger({ turn, interval: 3, maxChars: 30, prompt: "提醒" });
+    hooks.onReply({ turn, message: reply(text) });
+    assert.equal(item.summaryTriggers.at(-1).status, status);
+  }
+  hooks.onTrigger({ turn: 4 });
+  hooks.onReply({ turn: 4, message: { ...reply(""), stopReason: "aborted" } });
+  assert.equal(item.summaryTriggers.at(-1).status, "aborted");
+  const message = reply("<axiom_summary>已定位缺失校验</axiom_summary>");
+  message.content.push({ type: "toolCall", name: "delegate" });
+  hooks.onReply({ turn: 5, message });
+  assert.equal(item.summaryTriggers.at(-1).reason, "delegate");
+  assert.equal(item.summaryTriggers.at(-1).summaryId, item.summaries.at(-1).id);
+  assert.equal(item.summaries.length, 2);
+});
+
 test("invalid, missing and failed model reports do not change the title", () => {
   const item = { summaries: [], memoryTurns: {}, title: "临时标题", titlePending: true, emit: () => {} };
   const hooks = memoryHooks(item, () => {});

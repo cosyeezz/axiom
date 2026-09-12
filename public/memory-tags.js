@@ -2,7 +2,8 @@
 // extractMemoryTags 供后端落库（src/session-memory.js），stripMemoryTags 供展示过滤（前端流式与 result() 去标签）。
 // 只解析简单单行有界标签；代码围栏（``` 行，允许缩进，未闭合视为代码到结尾）内一律不处理。
 
-const TAGS = ["summary", "title", "progress"];
+// 保留旧标签读取兼容，新的模型输出统一使用 axiom_summary。
+const TAGS = ["axiom_summary", "summary", "title", "progress"];
 const NAMES = TAGS.join("|");
 // 单行有界标签；内容排除其他标签起点，杜绝贪婪吞并同类标签与嵌套。
 const TAG = new RegExp(`<(${NAMES})>((?:(?!<(?:/?(?:${NAMES})))[^\\n])*?)</\\1>`, "gi");

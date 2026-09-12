@@ -316,7 +316,7 @@ export class Sessions {
     if (!item.storageDir) return Promise.resolve();
     const data = JSON.stringify({ id: item.id, cwd: item.cwd, title: item.title,
       titleManual: item.titleManual, titleRequested: item.titleRequested,
-      summaries: item.summaries, memoryTurns: item.memoryTurns, progressDeliveries: item.progressDeliveries,
+      summaries: item.summaries, memoryTurns: item.memoryTurns, progressDeliveries: item.progressDeliveries, summaryTriggers: item.summaryTriggers,
       createdAt: item.createdAt, updatedAt: item.updatedAt, messages: item.messages, compactions: item.compactions, retries: item.retries, tasks: item.tasks.snapshot(),
       sessionFile: item.agent.sessionFile?.(),
       selection: { ...item.agent.config?.(), capabilities: item.capabilities,
@@ -409,6 +409,7 @@ export class Sessions {
       summaries: saved?.summaries || [],
       memoryTurns: saved?.memoryTurns || {},
       progressDeliveries: saved?.progressDeliveries || [],
+      summaryTriggers: (saved?.summaryTriggers || []).map((entry) => entry.status === "pending" ? { ...entry, status: "interrupted" } : entry),
       // 老记录无 createdAt，回退 updatedAt 兜底（历史文件未存创建时间，无法还原真实值）。
       createdAt: saved?.createdAt || saved?.updatedAt || Date.now(),
       updatedAt: saved?.updatedAt || Date.now(),
@@ -475,6 +476,8 @@ export class Sessions {
         if (event.data.message.role === "assistant" && event.data.entryId) {
           const record = item.summaries.findLast((entry) => entry.agentId === agentId && !entry.entryId && entry.messageTimestamp != null && entry.messageTimestamp === event.data.message.timestamp);
           if (record) record.entryId = event.data.entryId;
+          const trigger = item.summaryTriggers.findLast((entry) => entry.agentId === agentId && entry.messageTimestamp != null && entry.messageTimestamp === event.data.message.timestamp);
+          if (trigger) trigger.entryId = event.data.entryId;
         }
         item.messages.push({ agentId, message: event.data.message, ...(event.data.entryId ? { entryId: event.data.entryId } : {}) });
         delete item.live[agentId];

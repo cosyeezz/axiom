@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { extractMemoryTags, stripMemoryTags } from "../public/memory-tags.js";
 
 test("extract 只认单行有界标签，行中/行尾/同行多个均可", () => {
+  assert.deepEqual(extractMemoryTags("<axiom_summary>完成验证</axiom_summary>"), { axiom_summary: "完成验证" });
+  assert.equal(stripMemoryTags("正文<axiom_summary>完成验证</axiom_summary>"), "正文");
+  assert.equal(stripMemoryTags("正文<axiom_sum", { streaming: true }), "正文");
   assert.deepEqual(extractMemoryTags("前言\n<summary>已知X；意图Y</summary>\n正文"), { summary: "已知X；意图Y" });
   assert.deepEqual(extractMemoryTags("<title>摘要机制</title><summary>明确需求</summary>"), { title: "摘要机制", summary: "明确需求" });
   assert.deepEqual(extractMemoryTags("正文 <summary>末尾</summary>"), { summary: "末尾" });

@@ -61,6 +61,13 @@ test("shared Markdown renderer formats blocks and removes unsafe content", async
     render(node, "**partial");
     render(node, "**complete**");
     assert.equal(node.querySelector("strong").textContent, "complete");
+    render(node, "**加粗。**中文内容");
+    assert(node.querySelector("strong"), "CJK punctuation before closing ** still closes");
+    assert.equal(node.querySelector("strong").textContent, "加粗");
+    render(node, "他说**“重点”**内容");
+    assert.equal(node.querySelector("strong").textContent, "重点");
+    render(node, "```text\n**x。**y\n```");
+    assert.equal(node.querySelector("code").textContent, "**x。**y\n", "fenced code keeps ** verbatim");
     const ascii = "+----------+----------+\n| 命令 | 作用 |\n+----------+----------+\n| axiom | 启动服务（已运行则提示） |\n| <img src=x onerror=alert(1)> | **原文** |\n+----------+----------+";
     const fenced = (text, lang = "text") => `\`\`\`${lang}\n${text}\n\`\`\``;
     render(node, fenced(ascii));

@@ -6,6 +6,7 @@ import {
 import { capabilityLoader, discoverCapabilities, refreshProjectSkills } from "./capabilities.js";
 import { stripMemoryTags } from "../public/memory-tags.js";
 import { createBackgroundCompaction, entryIdFor, normalizeCompaction, summarizedEntryIds } from "./compaction.js";
+import { SUMMARY_DELEGATE, SUMMARY_REMINDER, memoryPolicy } from "./memory-policy.js";
 import { createAutoRetry } from "./retry.js";
 import { createJiti } from "jiti";
 const { getSupportedThinkingLevels } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai/compat");
@@ -92,22 +93,26 @@ const TITLE_INSTRUCTION = "另在本次回复开头单独一行输出<title>不�
 
 // 会话记忆接入：context 钩子在每次 LLM 请求（含同一次 prompt 的工具后续轮）实时取背景，
 // 工具后新产生的子代理进度因此能进入下一次请求；titleRequest 的标题指令只随当次首个请求注入一次；
-// 子代理每满 5 个累计 turn 在下一次请求前附加一次 <progress> 提醒（不额外发请求，
-// lastProgressTurn 记录已提醒的 turn，重试同一请求不会重发）。
+// 每满 N 个累计 turn（主 3/子 6，建会话时由 memory-policy 定死，逐请求不重读）在下一次请求前附加一次
+// [摘要提醒]（不额外发请求，lastReminderTurn 记录已提醒的 turn，重试同一请求不会重发），
+// 真正注入时回调 onTrigger 供复盘；委派触发不在此层：模型按系统提示词随 delegate 回复自带正文标签，
+// 由 onReply 在 message_end（先于 delegate 执行）登记。
 // transformContext 仅改请求副本、不落盘，不动原始消息历史；
 // 助手 message_end（工具执行前）同步调 onReply，turn_end 调 onTurn，turn 首轮为 memory.turn+1。
-function memoryExtension(state, memory) {
+function memoryExtension(state, memory, policy) {
   return (pi) => {
     pi.on("context", ({ messages }) => {
-      const parts = [memory.context(), state.pending].filter(Boolean);
-      state.pending = null;
-      if (memory.role === "subagent" && state.turn > 0 && state.turn % 5 === 0 && state.lastProgressTurn !== state.turn) {
-        parts.push(`已满${state.turn}轮，请在本次回复末尾单独一行输出<progress>阶段进展</progress>。`);
-        state.lastProgressTurn = state.turn;
+      const parts = [memory.context()];
+      if (state.turn > 0 && state.turn % policy.interval === 0 && state.lastReminderTurn !== state.turn) {
+        parts.push(SUMMARY_REMINDER);
+        state.lastReminderTurn = state.turn;
+        memory.onTrigger?.({ turn: state.turn + 1, interval: policy.interval, maxChars: policy.maxChars, prompt: SUMMARY_REMINDER, systemPrompt: policy.systemPrompt });
       }
-      if (!parts.length) return undefined;
+      if (state.pending) parts.push(state.pending);
+      state.pending = null;
+      if (!parts.some(Boolean)) return undefined;
       return { messages: [...messages, {
-        role: "custom", customType: "axiom-memory", content: parts.join("\n\n"), display: false, timestamp: Date.now(),
+        role: "custom", customType: "axiom-memory", content: parts.filter(Boolean).join("\n\n"), display: false, timestamp: Date.now(),
       }] };
     });
     pi.on("message_end", ({ message }) => {
@@ -132,7 +137,9 @@ export async function createPiFactory({ cwd, model: requested }) {
   const factory = async (customTools = [], selection = {}) => {
     const workspace = selection.cwd || cwd;
     const memory = selection.memory || null;
-    const memoryState = memory ? { turn: memory.turn || 0, pending: null, lastProgressTurn: 0 } : null;
+    // 策略在建会话时捕获一次并校验环境变量（非法直接失败），逐请求不重读，避免中途漂移。
+    const policy = memory ? memoryPolicy(memory.role) : null;
+    const memoryState = memory ? { turn: memory.turn || 0, pending: null, lastReminderTurn: 0 } : null;
     // 启动不依赖模型；每次建会话从最新目录选择，网页首次配置后无需重启。
     const key = selection.model || defaultKey;
     const selected = available.find((m) => `${m.provider}/${m.id}` === key)
@@ -156,7 +163,8 @@ export async function createPiFactory({ cwd, model: requested }) {
     settingsManager.setRetryEnabled(false);
     settingsManager.applyOverrides({ retry: { provider: { maxRetries: 0 } } });
     const { loader, selected: capabilities } = capabilityLoader(resources, selection.capabilities, customTools,
-      memoryState ? [memoryExtension(memoryState, memory)] : [], memory?.role ?? null);
+      memoryState ? [memoryExtension(memoryState, memory, policy)] : [],
+      policy ? policy.systemPrompt + (memory.role === "main" ? SUMMARY_DELEGATE : "") : null);
     await loader.reload();
     const diagnostics = loader.getExtensions().errors;
     if (diagnostics.length) {
@@ -193,7 +201,7 @@ export async function createPiFactory({ cwd, model: requested }) {
     const messageEntries = () => session.sessionManager.getBranch().filter((entry) => entry.type === "message");
     const compactionRecords = () => session.sessionManager.getBranch().filter((entry) => entry.type === "compaction").map((entry) => {
       const branch = session.sessionManager.getBranch(entry.id);
-      return { id: entry.id, summary: entry.summary, firstKeptEntryId: entry.firstKeptEntryId,
+      return { id: entry.id, summary: entry.summary, ...(entry.details?.progress ? { progress: entry.details.progress } : {}), firstKeptEntryId: entry.firstKeptEntryId,
         compactedMessageIds: summarizedEntryIds(branch.filter((item) => item.id !== entry.id), entry.firstKeptEntryId),
         tokensBefore: entry.tokensBefore };
     });

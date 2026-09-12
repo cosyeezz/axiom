@@ -1145,10 +1145,12 @@ function compactionCard(data) {
   node.className = "compaction-card";
   const label = document.createElement("summary");
   const badge = document.createElement("span");
-  badge.textContent = "上下文已压缩";
+  const number = String(compactions.findIndex((record) => record.id === data.id) + 1).padStart(2, "0");
+  badge.textContent = `${number} · ${data.progress?.title || "上下文已压缩"}`;
   const meta = document.createElement("small");
   const tokens = (value) => (Number.isFinite(value) ? value.toLocaleString("en-US") : "—");
-  meta.textContent = `压缩前 ${tokens(data.tokensBefore)} tokens${Number.isFinite(data.estimatedTokensAfter) ? ` · 压缩后约 ${tokens(data.estimatedTokensAfter)} tokens` : ""}`;
+  meta.textContent = data.progress?.description
+    || `压缩前 ${tokens(data.tokensBefore)} tokens${Number.isFinite(data.estimatedTokensAfter) ? ` · 压缩后约 ${tokens(data.estimatedTokensAfter)} tokens` : ""}`;
   const body = document.createElement("div");
   body.className = "markdown compaction-summary";
   label.append(badge, meta, disclosureHint("查看摘要"));
