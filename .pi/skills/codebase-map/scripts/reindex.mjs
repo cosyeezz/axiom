@@ -18,6 +18,7 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  */
 const MODULE_INFO = {
   "src/remote.js": "Tailscale 登录身份、远程监听、同账号授权与本机配置持久化",
+  "tests/model-onboarding.test.js": "空凭据启动、配置后热选模型与显式无效模型回归（真实 Pi SDK）",
   "tests/remote.test.js": "Tailscale 远程访问身份、撤权、持久化与来源校验回归",
   "tests/remote-ui.test.js": "远程设置导航、状态、保存、登录与断线回归",
   "tests/remote-ui.py": "远程设置真实浏览器布局、分类切换与键盘关闭回归",

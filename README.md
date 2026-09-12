@@ -19,7 +19,7 @@
 
 ## 启动
 
-需要 Node.js >=22.5，以及已配置好凭据和所需扩展包的 Pi。未修改默认新会话配置时，主 Agent 和子 Agent 加载本机 Pi 已启用的 Skills、插件、MCP、提示词模板及目录上下文；基础编码工具为 read/bash/edit/write，主 Agent 额外获得 delegate/read_result/append 三个协作工具。默认能力与终端持久配置对齐，不继承另一终端进程的临时参数、会话状态或已执行的模式命令。纯 TUI 组件和终端快捷键不适用于网页；当前无插件交互 UI 桥，需要审批的 MCP 调用按适配器规则拒绝，不自动批准。
+需要 Node.js >=22.5。安装程序检查 Pi CLI，未安装时自动全局安装最新版 `@earendil-works/pi-coding-agent@latest`，已有 Pi 不强制升级。无需预先配置模型或凭据：没有可用模型时仍启动网页，并引导进入「设置 → 模型与供应商」；添加供应商、模型及 API Key 后即可新建对话，无需重启。订阅登录仍通过 Pi 的 `/login` 完成。未修改默认新会话配置时，主 Agent 和子 Agent 加载本机 Pi 已启用的 Skills、插件、MCP、提示词模板及目录上下文；基础编码工具为 read/bash/edit/write，主 Agent 额外获得 delegate/read_result/append 三个协作工具。默认能力与终端持久配置对齐，不继承另一终端进程的临时参数、会话状态或已执行的模式命令。纯 TUI 组件和终端快捷键不适用于网页；当前无插件交互 UI 桥，需要审批的 MCP 调用按适配器规则拒绝，不自动批准。
 
 ### 一键安装（macOS / Windows）
 
@@ -49,6 +49,29 @@ Windows 也可直接双击 `install.cmd`。更新版本：网页「服务 → �
 停止后台服务：终端运行 `axiom stop`（默认 4319；`AXIOM_PORT` 可指定其他端口）。有运行任务时拒绝停止；空闲时保存会话，退出服务及守护进程，命令等待退出确认，超时不强杀。只停止当前运行实例，不取消登录自启。旧版本没有停止接口，需要首次完整重启升级后才可使用。
 
 服务停止后重新拉起（守护进程 + 服务进程）：终端运行 `axiom`。已在运行时不重复启动；运行中打印访问地址与日志路径，`Ctrl+C` 停止。
+
+### 卸载 npm 安装版
+
+卸载使用实际包名 `@myworkbench/axiom`，不是安装来源 `github:cosyeezz/axiom`。当前没有统一卸载命令，先取消自启、停止服务，再卸载包。
+
+Windows PowerShell：
+
+```powershell
+$npmRoot = npm root -g
+node "$npmRoot/@myworkbench/axiom/scripts/autostart.mjs" disable
+axiom stop
+npm uninstall -g @myworkbench/axiom
+```
+
+macOS / Linux：
+
+```sh
+node "$(npm root -g)/@myworkbench/axiom/scripts/autostart.mjs" disable
+axiom stop
+npm uninstall -g @myworkbench/axiom
+```
+
+若提示任务运行中，先停止任务再重试；服务本来就未运行时可跳过停止。取消自启须在卸载包之前执行。卸载保留 `~/.axiom` 会话数据及 `~/.pi` 配置，不卸载共用的 Pi；不需要的数据请确认备份后自行删除。
 
 ### 独立桌面壳（Pake / macOS + Windows）
 

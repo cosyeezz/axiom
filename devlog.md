@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-12 首次安装允许后配模型，并自动补装 Pi
+- 原因：新电脑尚无模型凭据时 createPiFactory 直接退出，用户无法进入网页配置；安装脚本也未补装 Pi CLI。
+- 决策：服务启动与模型可用性分离，建会话时才校验，每次从最新模型目录选择；显式无效模型仍拒绝，不悄悄替换。网页无模型时保持连接并复用现有「模型与供应商」设置，配置后可新建会话，不新增向导或样式。
+- 安装检查 Pi CLI，缺失则 npm 全局安装最新版，已有不强制升级，安装失败中止。卸载沿用停止/取消自启/npm uninstall 三步，README 说明实际包名与保留数据，不额外删除共用 Pi。
+- 涉及：src/pi.js、public/app.js、scripts/install.mjs、tests/model-onboarding.test.js、tests/install.test.js、前端回归测试、README.md、codebase-map 索引与坑库。复用既有 Linear 暗色面板和焦点样式，无新增依赖。
+- 验证：真实 Pi SDK 在独立临时目录、空凭据环境启动，写入测试模型后刷新目录并创建会话；不调用真实模型、不修改用户凭据。最终全量结果见交付说明。
+
 ## 2026-09-11 修复 Tailscale 普通设备被拒绝
 - 实机只读检查 status/whois：个人设备正常省略 Tags，旧 whoisUser 却要求数组，误将同账号设备当作 tag 设备拒绝。
 - src/remote.js 允许省略 Tags，仍拒绝真实标签、非法类型、缺失 Node/用户和不同登录名；tests/remote.test.js 的所有普通设备 mock 改为真实省略形态，覆盖 HTTP/WS 全链路。README 与坑库、索引同步。

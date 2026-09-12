@@ -298,3 +298,9 @@
 - 根因：renderSessions 未限定当前 cwd，把完成标记当隐藏优先级，updatedAt 并非创建时间，操作按钮直接常驻。
 - 修复：public/app.js 固定当前工作空间和三组顺序；运行优先于完成标记；src/sessions.js 独立持久化 createdAt；操作通过原生 details 展开。跨 cwd 在 switchSession 统一新开页签，不替换当前草稿。
 - 防再犯：tests/session-sidebar-ui.py 实测桌面/手机、日期与排序、绿点及键盘；tests/workspace-tabs.test.js 检查跨目录保留草稿。resize 后等待媒体查询事件再操作侧栏，预览端口冲突用 PREVIEW_PORT，不能误测旧服务。基线原有两项思考渲染失败已单独复现，不应归因侧栏。
+
+### 2026-09-12 新电脑无模型凭据阻止网页首次配置
+- 症状：安装后 No authenticated model 退出，无法进入网页添加供应商。
+- 根因：createPiFactory 在启动阶段强制选择模型，浏览器连接后无条件创建会话并在失败时断线重连。
+- 修复：src/pi.js 将校验延后到创建会话，每次使用刷新后的目录；public/app.js 空目录保持连接并打开既有模型配置页；scripts/install.mjs 缺少 Pi CLI 时补装最新版。
+- 防再犯：隔离真实 SDK 的凭据与配置目录验证空启动、配置后创建，不只测 fake factory；前端验证无模型不发 session.create、不循环重连，安装 mock 覆盖已有/缺失/安装失败。
