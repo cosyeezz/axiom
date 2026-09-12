@@ -3,9 +3,11 @@
 //   import { createModelPicker } from "./model-picker.js";
 //   const picker = createModelPicker({
 //     getFavorites: () => ({ provider: [], model: [], thinking: [] }), // 同步返回各 kind 收藏 value 数组，每次渲染读取
+//     favKey: (kind, value, select) => key,                            // 可选：option value → 持久化收藏键（返回空串=该项不可收藏）；
+//                                                                      //   缺省恒等。存储键与展示值不同时必传（如 thinking 需 provider/model:level）
 //     onToggle: async (kind, key, favorite) => { ... },                // 星标切换后回调（favorite 为新状态），保存由这里负责；
 //                                                                      //   建议先同步更新自家 store 再异步持久化，
-//                                                                      //   同步抛错/异步 reject 都进 onError
+//                                                                      //   同步抛错/异步 reject 都进 onError；快速连点串行按序落地，
 //     onError: (err) => showFeedback(err),                             // 缺省 console.error
 //   });
 //   picker.enhance($("provider"), "provider");  // kind: provider | model | thinking，同 kind 共享收藏
@@ -36,7 +38,7 @@ function el(tag, attrs = {}, ...kids) {
   return n;
 }
 
-export function createModelPicker({ getFavorites, onToggle, onError } = {}) {
+export function createModelPicker({ getFavorites, onToggle, onError, favKey } = {}) {
   const meta = new WeakMap(); // select -> 状态
   const all = new Set(); // 已增强的 select，syncAll 用
   let opened = null; // 当前打开的菜单状态
@@ -44,6 +46,7 @@ export function createModelPicker({ getFavorites, onToggle, onError } = {}) {
 
   const fail = (err) => (onError ? onError(err) : console.error(err));
   const favSet = (kind) => new Set(getFavorites?.()?.[kind] ?? []); // 每次渲染现读：后端数据到达即生效
+  const keyOf = (state, value) => (favKey ? favKey(state.kind, value, state.select) : value); // 展示值 → 收藏键（空串=不可收藏）
 
   function labelOf(select) {
     return select.getAttribute("aria-label") || select.getAttribute("title") || "选项";
@@ -57,7 +60,7 @@ export function createModelPicker({ getFavorites, onToggle, onError } = {}) {
       id: `ax-mp-${++counter}`, class: "ax-mp-menu", role: "menu", "aria-label": labelOf(select),
     });
     if (typeof menu.showPopover === "function") menu.setAttribute("popover", "manual");
-    const state = { select, kind, menu, open: false, popped: false, pos: null, typeahead: "", timer: 0, seen: select.isConnected };
+    const state = { select, kind, menu, open: false, popped: false, pos: null, typeahead: "", timer: 0, seen: select.isConnected, pending: null, flight: null };
     meta.set(select, state);
     all.add(select);
 
@@ -136,11 +139,11 @@ export function createModelPicker({ getFavorites, onToggle, onError } = {}) {
 
   function render(state, favOverride) {
     const { select, menu } = state;
-    const fav = favOverride ?? favSet(state.kind); // toggle 传入乐观集，避免 onToggle 微任务未落地时被旧数据盖掉
+    const fav = favOverride ?? state.pending ?? favSet(state.kind); // toggle 传入乐观集 / 保存飞行中沿用乐观集，避免被陈旧 store 盖掉
     const opts = [...select.options]
       .filter((o) => !o.disabled)
-      .sort((a, b) => Number(fav.has(b.value)) - Number(fav.has(a.value))); // 稳定排序：收藏置顶，组内保持原序
-    menu.replaceChildren(...opts.map((o) => entry(state, o, fav.has(o.value))));
+      .sort((a, b) => Number(fav.has(keyOf(state, b.value))) - Number(fav.has(keyOf(state, a.value)))); // 稳定排序：收藏置顶，组内保持原序
+    menu.replaceChildren(...opts.map((o) => entry(state, o, fav.has(keyOf(state, o.value)))));
   }
 
   function entry(state, opt, faved) {
@@ -149,13 +152,12 @@ export function createModelPicker({ getFavorites, onToggle, onError } = {}) {
       "aria-checked": String(state.select.value === opt.value), "data-value": opt.value,
     }, opt.text);
     pick.addEventListener("click", () => choose(state, opt.value));
-    if (!opt.value) return el("div", { role: "none", class: "ax-mp-entry" }, pick); // 空 value 占位（如“默认主代理模型”）不提供收藏
+    if (!opt.value || !keyOf(state, opt.value)) return el("div", { role: "none", class: "ax-mp-entry" }, pick); // 空 value（如“默认主代理模型”）或无收藏键：不提供收藏
     const star = el("button", {
       type: "button", class: "ax-mp-star", role: "menuitemcheckbox", tabindex: "-1",
       "aria-checked": String(faved), "aria-label": `${faved ? "取消收藏" : "收藏"}：${opt.text}`,
       "data-value": opt.value,
     }, faved ? "★" : "☆");
-    pick.addEventListener("click", () => choose(state, opt.value));
     star.addEventListener("click", () => toggle(state, opt.value));
     return el("div", { role: "none", class: "ax-mp-entry" }, pick, star); // role=none 包装：menu 合法子结构，星与选项平级不嵌套
   }
@@ -179,13 +181,28 @@ export function createModelPicker({ getFavorites, onToggle, onError } = {}) {
   }
 
   function toggle(state, value) {
-    const fav = favSet(state.kind);
-    const favorite = !fav.has(value);
-    favorite ? fav.add(value) : fav.delete(value); // 乐观更新仅为本菜单重排；持久状态以主入口 store 为准
+    const key = keyOf(state, value);
+    if (!key) return;
+    const fav = state.pending ?? favSet(state.kind); // 连点基于上次点击的乐观集，而非陈旧 store
+    const favorite = !fav.has(key);
+    favorite ? fav.add(key) : fav.delete(key);
+    state.pending = fav;
     const starWas = document.activeElement?.classList?.contains("ax-mp-star"); // render 会移除焦点元素，先取后用
-    Promise.resolve().then(() => onToggle?.(state.kind, value, favorite)).catch(fail);
+    const run = Promise.resolve(state.flight).then(() => onToggle?.(state.kind, key, favorite)); // 串行链：请求按点击顺序落地
+    const tail = run.then(
+      () => settle(state, tail),
+      (err) => { fail(err); settle(state, tail); }, // 保存失败：进 onError 并回落真实状态
+    );
+    state.flight = tail;
     render(state, fav); // 置顶重排只发生在菜单里，select 顺序与选中值不动
     focusValue(state, value, starWas);
+  }
+
+  function settle(state, tail) {
+    if (state.flight !== tail) return; // 已有更晚点击在飞行：由链尾统一回落
+    state.pending = null;
+    state.flight = null;
+    if (state.open) rerender(state); // 菜单开着才对齐 store；已关则下次打开现读
   }
 
   function focusValue(state, value, star) {
