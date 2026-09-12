@@ -796,9 +796,11 @@ textarea {
 .summary-turn { padding: 1px 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--raised); font: 500 11px/1.5 var(--mono); letter-spacing: 0.04em; }
 .summary-text { margin: 0; color: var(--body-ink); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
 #restart-title { margin: 0; font-size: 18px; }
-#settings { width: min(1000px, calc(100% - 32px)); }
+#settings { width: min(1000px, calc(100% - 32px)); height: 80dvh; overflow: hidden; }
+#settings[open] { display: flex; flex-direction: column; }
+#settings > header { flex-shrink: 0; }
 .task-dialog { width: min(880px, calc(100% - var(--sidebar-width) - 32px)); border-color: #42455f; }
-.settings-layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); }
+.settings-layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); flex: 1; min-height: 0; overflow: auto; scrollbar-gutter: stable; }
 .settings-nav { padding: 20px 12px; border-right: 1px solid var(--line); }
 .settings-nav button { width: 100%; white-space: normal; margin-bottom: 8px; text-align: left; }
 .settings-nav button[aria-current="page"] { background: var(--raised); color: var(--ink); border-color: var(--accent); }

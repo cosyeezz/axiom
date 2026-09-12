@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 10:59:53）
+# Axiom 多级代码索引（生成于 2026/9/12 11:08:46）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -17,7 +17,7 @@
 | public/model-picker.js | 283 | 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互 | GAP, EDGE, TYPEAHEAD_MS, el |
 | public/service-settings.js | 278 | 设置页服务维护：真实进度、结果、更新确认与独立维护通道 | MAINT_URL_RE, POLL_MS, initServiceSettings |
 | public/stream-renderer.js | 46 | 流式增量渲染状态机 | createStreamRenderer |
-| public/style.css | 1278 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1280 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | public/text-contrast.css | 46 | 文字专用对比度档位与调节面板 | - |
 | public/text-contrast.js | 113 | 文字对比度按钮、实时调节与本地偏好 | KEY, MIN, MAX, STEP |
 | public/tooltip.css | 50 | 共享暗色悬停说明样式 | - |
@@ -89,7 +89,7 @@
 | tests/server.test.js | 125 | node --test 测试（npm test） | - |
 | tests/service-api.test.js | 76 | node --test 测试（npm test） | - |
 | tests/service-settings-api.test.js | 71 | node --test 测试（npm test） | - |
-| tests/service-settings-ui.py | 46 | node --test 测试（npm test） | - |
+| tests/service-settings-ui.py | 60 | node --test 测试（npm test） | - |
 | tests/service-settings.test.js | 314 | node --test 测试（npm test） | source, html, setup |
 | tests/service.test.js | 478 | node --test 测试（npm test） | until, readMaybe, killTree, buildWorkspace |
 | tests/session-created-at.test.js | 44 | node --test 测试（npm test） | factory |
