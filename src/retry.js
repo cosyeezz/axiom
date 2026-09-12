@@ -1,15 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { createJiti } from "jiti";
 
-// 退避节奏：第 1..8 次失败后分别等待 3,3,3,6,6,12,24,48 秒，第 9 次起 96、192、… 一直翻倍不封顶；最多重试 30 次。
-export const RETRY_DELAYS_MS = [3000, 3000, 3000, 6000, 6000, 12000, 24000, 48000];
-export const MAX_RETRIES = 30;
+// 退避节奏：第 1..11 次失败后分别等待 2,2,5,5,10,10,30,60,120,240,480 秒，第 12 次起翻倍但封顶 16 分钟；最多重试 45 次。
+export const RETRY_DELAYS_MS = [2000, 2000, 5000, 5000, 10000, 10000, 30000, 60000, 120000, 240000, 480000];
+export const MAX_DELAY_MS = 960_000; // 16 分钟
+export const MAX_RETRIES = 45;
 const delayFor = (attempt) =>
   attempt <= RETRY_DELAYS_MS.length
     ? RETRY_DELAYS_MS[attempt - 1]
-    : RETRY_DELAYS_MS.at(-1) * 2 ** (attempt - RETRY_DELAYS_MS.length);
+    : Math.min(RETRY_DELAYS_MS.at(-1) * 2 ** (attempt - RETRY_DELAYS_MS.length), MAX_DELAY_MS);
 
-// setTimeout 上限 2^31-1 ms（约 24.8 天），第 24 次起等待即超限：分段等待。
+// setTimeout 上限 2^31-1 ms：等待超过上限时分段；当前封顶 16 分钟不会触发，防御性保留。
 export const MAX_TIMEOUT_MS = 2 ** 31 - 1;
 export const abortableSleep = (ms, signal) =>
   signal.aborted
