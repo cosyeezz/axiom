@@ -19,8 +19,21 @@ import {
   summarizeWithPiSession,
   summarizedEntryIds,
   summaryRequest,
+  parseSummaryOutput,
   DEFAULT_COMPACTION_CONFIG,
 } from "../src/compaction.js";
+
+test("增量展示与完整交接分离，格式异常保留原文", () => {
+  const progress = { title: "确认通知缺口", description: "发现已通知不等于已读，尚未修复。" };
+  const text = `AXIOM_PROGRESS ${JSON.stringify(progress)}\nGoal: 保留之前的约束\nProgress: 新发现`;
+  assert.deepEqual(parseSummaryOutput(text), { progress, summary: "Goal: 保留之前的约束\nProgress: 新发现" });
+  for (const value of ["旧摘要", "AXIOM_PROGRESS nope\n完整摘要", 'AXIOM_PROGRESS {"title":3}\n完整摘要', `AXIOM_PROGRESS ${JSON.stringify(progress)}`])
+    assert.deepEqual(parseSummaryOutput(value), { summary: value });
+  const request = summaryRequest("本次新增发现", "历史约束");
+  assert.match(request, /ONLY progress/);
+  assert.match(request, /NOT incremental/);
+  assert.match(request, /Do not include numbering/);
+});
 
 test("连续摘要请求完整传入旧约束并要求保留，而非仅输出增量", () => {
   for (const previous of ["约束A：禁止新增依赖", "约束A：禁止新增依赖；已完成B"]) {
@@ -129,7 +142,7 @@ const enabledConfig = {
 function fakeSummarize(log) {
   return async ({ messages, previousSummary }) => {
     log?.push({ count: messages.length, previousSummary });
-    return { summary: `S:${messages.length}`, usage: { input: 10, output: 5 } };
+    return { summary: `S:${messages.length}`, progress: { title: "本次进展", description: "本次新增发现。" }, usage: { input: 10, output: 5 } };
   };
 }
 
@@ -291,6 +304,9 @@ test("turn_end 快照后摘要，安全点应用：保留 recent 与快照后新
     assert.equal(leaf.type, "compaction");
     assert.equal(leaf.id, data.id);
     assert.equal(leaf.firstKeptEntryId, data.firstKeptEntryId);
+    assert.deepEqual(leaf.details.progress, { title: "本次进展", description: "本次新增发现。" });
+    assert.deepEqual(data.progress, leaf.details.progress);
+    assert.ok(!state[0].summary.includes("AXIOM_PROGRESS"));
 
     // 事件：agent.compaction 与落盘一致
     assert.deepEqual(events.filter((e) => e.type === "agent.compaction.status").map((e) => e.data.status), ["summarizing", "ready", "applied"]);

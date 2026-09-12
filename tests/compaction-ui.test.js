@@ -95,3 +95,30 @@ test("压缩状态隔离、两层子代理归档、快照与迟到任务更新",
   } finally { dom.window.close(); }
 });
 
+test("压缩卡片序号与 progress 标题描述，旧数据回退现文案", async () => {
+  const { dom, restore, output } = await page();
+  try {
+    const records = [
+      { id: "c1", summary: "摘要一", tokensBefore: 120000, estimatedTokensAfter: 30000, compactedMessageIds: [] },
+      { id: "c2", summary: "摘要二", progress: { title: "阶段压缩<img src=x>", description: "保留检查点后的消息<script>alert(1)</script>" }, compactedMessageIds: [] },
+    ];
+    restore({ compactions: records });
+    const cards = output.querySelectorAll(":scope > .compaction-card");
+    assert.equal(cards.length, 2);
+    // 旧数据：现文案 + 序号 01
+    assert.equal(cards[0].querySelector("summary span").textContent, "01 · 上下文已压缩");
+    assert.match(cards[0].querySelector("summary small").textContent, /压缩前 120,000 tokens · 压缩后约 30,000 tokens/);
+    // 新数据：progress 标题/描述只走 textContent，不产生任何元素
+    const badge = cards[1].querySelector("summary span");
+    const meta = cards[1].querySelector("summary small");
+    assert.equal(badge.textContent, "02 · 阶段压缩<img src=x>");
+    assert.equal(meta.textContent, "保留检查点后的消息<script>alert(1)</script>");
+    assert.equal(badge.querySelector("*"), null);
+    assert.equal(meta.querySelector("*"), null);
+    // 摘要展开结构不变
+    cards[1].open = true;
+    assert.match(cards[1].querySelector(".compaction-summary").textContent, /摘要二/);
+    assert.equal(cards[1].querySelector(".compaction-tasks").childElementCount, 0);
+  } finally { dom.window.close(); }
+});
+
