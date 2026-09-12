@@ -33,7 +33,7 @@ const MODULE_INFO = {
   "scripts/install.mjs": "一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器",
   "src/main.js": "入口：端口/工作区校验，组装 factory+Sessions+server，信号处理",
   "src/pi.js": "createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）",
-  "src/retry.js": "模型失败重试：可取消退避、最多45次、16分钟封顶、保留已有工具结果继续",
+  "src/retry.js": "模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续",
   "src/compaction.js": "后台独立摘要、token/占比阈值、快照校验与 turn 安全提交",
   "src/sessions.js": "Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化",
   "src/server.js": "createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发",

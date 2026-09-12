@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>鹈鹕的夜间骑行 · SVG 动画</title>
+  <style>
+    :root { color-scheme: dark; --canvas:#010102; --surface:#0f1011; --ink:#f7f8f8; --muted:#8a8f98; --line:#23252a; --accent:#5e6ad2; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--canvas); color:var(--ink); font-family:"SF Pro Display",-apple-system,system-ui,"Segoe UI",sans-serif; }
+    main { max-width:1280px; margin:auto; padding:48px 32px 24px; }
+    header { display:flex; align-items:flex-end; justify-content:space-between; gap:24px; margin-bottom:32px; }
+    .eyebrow { margin:0 0 16px; color:var(--muted); font-size:13px; letter-spacing:.4px; }
+    h1 { margin:0; font-size:clamp(28px,5vw,56px); font-weight:600; letter-spacing:-1.8px; line-height:1.1; }
+    .intro { color:#d0d6e0; font-size:14px; line-height:1.8; margin:0; }
+    .scene { position:relative; overflow:hidden; border:1px solid var(--line); border-radius:16px; background:var(--surface); }
+    .scene > svg { display:block; width:100%; height:auto; }
+    .caption { position:absolute; top:24px; left:24px; color:var(--muted); font-size:12px; letter-spacing:.4px; }
+    .controls { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px 24px; border-top:1px solid var(--line); }
+    button { min-height:44px; padding:8px 16px; border:0; border-radius:8px; background:var(--accent); color:#fff; font-family:inherit; font-size:14px; font-weight:500; line-height:1.2; cursor:pointer; }
+    button:hover { background:#828fff; }
+    button:focus-visible { outline:2px solid #5e69d1; outline-offset:4px; }
+    .note { color:var(--muted); font-size:12px; line-height:1.5; }
+    footer { display:flex; justify-content:space-between; gap:16px; margin-top:16px; color:var(--muted); font-size:12px; }
+    @media(max-width:600px) { main { padding:32px 16px 16px; } header { display:block; } .intro { margin-top:16px; } .caption { top:16px; left:16px; } .controls { padding:16px; } footer { flex-wrap:wrap; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div><p class="eyebrow">PELICAN / AFTER HOURS</p><h1>今晚，沿着海岸骑。</h1></div>
+    <p class="intro">一只鹈鹕，一辆自行车。<br>海风刚好，慢慢向前。</p>
+  </header>
+  <section class="scene" aria-label="鹈鹕骑自行车动画">
+    <span class="caption">海岸夜骑 · 循环动画</span>
+    <svg id="scene" viewBox="0 0 1100 650" role="img" aria-labelledby="title description" xmlns="http://www.w3.org/2000/svg">
+      <title id="title">一只鹈鹕在月光下骑自行车</title>
+      <desc id="description">白色鹈鹕伸着长嘴，翅膀搭在车把上，双脚交替蹬踏。车轮持续旋转，围巾随风摆动，海岸道路向后移动。</desc>
+      <defs>
+        <pattern id="sea" width="180" height="28" patternUnits="userSpaceOnUse"><path d="M8 16h42m48 0h16m31 0h21" fill="none" stroke="#34343a" stroke-width="1.5" stroke-linecap="round"/></pattern>
+        <pattern id="road" width="160" height="50" patternUnits="userSpaceOnUse"><path d="M20 24h60" stroke="#62666d" stroke-width="2" stroke-linecap="round"/></pattern>
+        <g id="spokes" fill="none" stroke="#8a8f98" stroke-width="1.5">
+          <path d="M-85 0H85M0-85V85M-60-60L60 60M-60 60L60-60M-79-33L79 33M-33-79L33 79M-79 33L79-33M-33 79L33-79"/>
+        </g>
+        <g id="wheel">
+          <circle r="94" fill="#0f1011" stroke="#010102" stroke-width="11"/>
+          <circle r="86" fill="none" stroke="#d0d6e0" stroke-width="3"/>
+          <circle r="96" fill="none" stroke="#34343a" stroke-width="1"/>
+        </g>
+      </defs>
+      <!-- 海面与月亮：低对比背景，把注意力留给骑行者。 -->
+      <circle cx="850" cy="142" r="49" fill="#d0d6e0"/>
+      <circle cx="866" cy="129" r="7" fill="#8a8f98" opacity=".25"/>
+      <circle cx="832" cy="155" r="12" fill="#8a8f98" opacity=".2"/>
+      <g fill="#62666d"><circle cx="194" cy="146" r="2"/><circle cx="321" cy="93" r="1.5"/><circle cx="661" cy="102" r="2"/><circle cx="948" cy="245" r="1.5"/><circle cx="102" cy="266" r="1.5"/><circle cx="722" cy="195" r="1.5"/></g>
+      <path d="M0 358Q133 318 260 356T514 350T794 345T1100 340V500H0Z" fill="#18191a"/>
+      <path d="M0 393Q258 374 550 395T1100 380V505H0Z" fill="#191a1b"/>
+      <rect x="0" y="395" width="1100" height="95" fill="url(#sea)"/>
+      <path d="M0 495Q260 472 532 493T1100 479V650H0Z" fill="#141516"/>
+      <path d="M0 541H1100" stroke="#34343a" fill="none"/>
+      <rect x="0" y="565" width="1100" height="50" fill="url(#road)"/>
+      <ellipse cx="537" cy="548" rx="255" ry="13" fill="#010102" opacity=".65"/>
+      <g id="rider">
+        <!-- 远侧的腿在车架后，近侧的腿在车架前。 -->
+        <path id="far-leg" d="M500 367L535 411L513 463" fill="none" stroke="#62666d" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+        <path id="far-foot" d="M504 463h27" fill="none" stroke="#8a8f98" stroke-width="10" stroke-linecap="round"/>
+        <g transform="translate(360 445)"><use href="#wheel"/><g id="rear-spokes"><use href="#spokes"/></g><circle r="8" fill="#d0d6e0"/></g>
+        <g transform="translate(723 445)"><use href="#wheel"/><g id="front-spokes"><use href="#spokes"/></g><circle r="8" fill="#d0d6e0"/></g>
+        <!-- 双三角车架、链条、前叉及弯把。 -->
+        <g stroke-linecap="round" stroke-linejoin="round" fill="none">
+          <path d="M360 445L532 470Q552 456 534 443L360 435Z" stroke="#62666d" stroke-width="3"/>
+          <path d="M360 445L460 330L527 450L360 445M460 330L673 330L527 450M673 330L723 445" stroke="#d0d6e0" stroke-width="10"/>
+          <path d="M460 330L446 302M673 330L662 294L691 277Q724 271 721 292Q719 305 704 303" stroke="#d0d6e0" stroke-width="8"/>
+          <path d="M700 277Q726 275 721 292" stroke="#62666d" stroke-width="10"/>
+          <path d="M687 295Q651 342 708 415" stroke="#62666d" stroke-width="2"/>
+          <path d="M425 300H467" stroke="#010102" stroke-width="14"/>
+          <path d="M426 296H466" stroke="#8a8f98" stroke-width="4"/>
+        </g>
+        <circle cx="527" cy="450" r="24" fill="#18191a" stroke="#8a8f98" stroke-width="3"/>
+        <g id="crank" stroke="#d0d6e0" stroke-width="6" stroke-linecap="round"><path d="M499 450H555"/></g>
+        <!-- 鹈鹕的长颈、宽大的喉囊和背部羽毛。 -->
+        <g id="bird" stroke="#23252a" stroke-width="3" stroke-linejoin="round">
+          <path d="M432 320L359 290L381 325L354 317Q379 351 431 357" fill="#d0d6e0"/>
+          <path d="M422 280Q455 255 510 275Q548 286 554 250L548 207Q539 169 565 150Q594 130 614 153Q630 171 614 194Q596 216 611 254Q638 319 570 356Q524 386 460 358Q414 343 413 312Q411 293 422 280Z" fill="#f7f8f8"/>
+          <path d="M604 195Q591 231 611 266Q624 296 597 324" fill="none" stroke="#d0d6e0" stroke-width="12"/>
+          <path d="M609 180L774 199Q771 213 748 229Q683 278 620 211Z" fill="#8a8f98"/>
+          <path d="M609 177Q682 179 780 198Q786 201 777 207L612 198Z" fill="#d0d6e0"/>
+          <path d="M626 206Q680 240 752 213" fill="none" stroke="#62666d" stroke-width="2"/>
+          <path d="M553 151L547 139L563 145L569 132L578 144" fill="#f7f8f8"/>
+          <circle cx="598" cy="172" r="6" fill="#010102" stroke="none"/>
+          <circle cx="600" cy="170" r="1.7" fill="#ffffff" stroke="none"/>
+          <path d="M588 158Q596 154 604 159" fill="none" stroke-width="2"/>
+          <path id="scarf" d="M552 228Q511 236 479 217L444 227L476 241Q518 251 559 238" fill="#62666d" stroke="none"/>
+          <path d="M550 221Q572 234 601 225L606 241Q574 252 554 237Z" fill="#34343a" stroke="none"/>
+          <path d="M456 285Q494 270 529 300Q575 325 655 286Q668 280 675 291Q651 311 615 324Q525 365 471 324Q453 310 456 285Z" fill="#d0d6e0"/>
+          <path d="M475 298Q494 324 538 328M477 310Q500 333 531 337" stroke="#8a8f98" stroke-width="2" fill="none"/>
+        </g>
+        <path id="near-leg" d="M506 354L562 392L555 450" fill="none" stroke="#d0d6e0" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+        <path id="near-foot" d="M546 450h28" fill="none" stroke="#f7f8f8" stroke-width="11" stroke-linecap="round"/>
+        <circle cx="527" cy="450" r="6" fill="#f7f8f8"/>
+      </g>
+      <g fill="none" stroke="#62666d" stroke-width="2" stroke-linecap="round" opacity=".65"><path d="M263 266h58M280 278h25M796 334h42M807 348h18"/></g>
+    </svg>
+    <div class="controls">
+      <button id="toggle" type="button" aria-controls="scene">暂停动画</button>
+      <span class="note">车轮转动 / 双脚蹬踏 / 海风轻拂</span>
+    </div>
+  </section>
+  <footer><span>不赶时间，只管向前。</span><span>纯 SVG 绘制 · 无外部依赖</span></footer>
+</main>
+<script>
+  const get = id => document.getElementById(id);
+  const motion = matchMedia('(prefers-reduced-motion: reduce)');
+  const button = get('toggle');
+  const parts = Object.fromEntries(['rear-spokes','front-spokes','crank','near-leg','far-leg','near-foot','far-foot','bird','scarf','sea','road'].map(id => [id, get(id)]));
+  let playing = !motion.matches, elapsed = 0, previous = null, frame = null;
+
+  function draw(time) {
+    const angle = time * Math.PI * 2 / 1600;
+    const degrees = angle * 180 / Math.PI;
+    const bob = Math.sin(angle * 2) * 2;
+    parts['rear-spokes'].setAttribute('transform', `rotate(${degrees})`);
+    parts['front-spokes'].setAttribute('transform', `rotate(${degrees})`);
+    parts.crank.setAttribute('transform', `rotate(${degrees} 527 450)`);
+    parts.bird.setAttribute('transform', `translate(0 ${bob})`);
+    parts.scarf.setAttribute('transform', `rotate(${Math.sin(angle * 2) * 4} 556 232)`);
+    for (const [side, phase, hipX] of [['near', 0, 506], ['far', Math.PI, 492]]) {
+      const x = 527 + Math.cos(angle + phase) * 28;
+      const y = 450 + Math.sin(angle + phase) * 28;
+      // 两段等长的腿：由固定髋关节和踏板位置计算膝盖，脚始终贴着踏板。
+      const hipY = 352 + bob, dx = x - hipX, dy = y - hipY;
+      const distance = Math.hypot(dx, dy);
+      const bend = Math.sqrt(Math.max(0, 76 ** 2 - distance ** 2 / 4));
+      const kneeX = (hipX + x) / 2 + dy / distance * bend;
+      const kneeY = (hipY + y) / 2 - dx / distance * bend;
+      parts[`${side}-leg`].setAttribute('d', `M${hipX} ${hipY}L${kneeX} ${kneeY}L${x} ${y}`);
+      parts[`${side}-foot`].setAttribute('d', `M${x - 10} ${y}h28`);
+    }
+    parts.road.setAttribute('patternTransform', `translate(${-time * (2 * Math.PI * 94 / 1600) % 160} 0)`);
+    parts.sea.setAttribute('patternTransform', `translate(${-time * .025 % 180} 0)`);
+  }
+  function tick(now) {
+    if (previous !== null) elapsed += Math.min(now - previous, 64);
+    previous = now;
+    draw(elapsed);
+    frame = requestAnimationFrame(tick);
+  }
+  function sync() {
+    cancelAnimationFrame(frame);
+    previous = null;
+    button.textContent = playing ? '暂停动画' : '播放动画';
+    if (playing && !document.hidden) frame = requestAnimationFrame(tick);
+  }
+  button.addEventListener('click', () => { playing = !playing; sync(); });
+  motion.addEventListener('change', event => { playing = !event.matches; sync(); });
+  document.addEventListener('visibilitychange', sync);
+  draw(0);
+  sync();
+</script>
+</body>
+</html>

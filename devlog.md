@@ -570,3 +570,4 @@
 - 验证：npm test 183 通过、1 跳过；tests/app.test.js 更新菜单子项断言并新增复制路径断言（`C:\axiom\b.jsonl`）。
 - 文件：src/sessions.js、public/app.js、tests/app.test.js、README.md、devlog.md。
 - 内容/原因：自动重试节奏改为 2、2、5、5、10、10、30、60、120、240、480 秒，之后翻倍、16 分钟封顶，最多 45 次（全部耗尽纯等待约 9.3 小时）；原为翻倍不封顶、最多 30 次。涉及 src/retry.js（新增 MAX_DELAY_MS 上限）、tests/retry.test.js、README.md。时间：2025-06。文件：src/retry.js、tests/retry.test.js、README.md、devlog.md。
+- 内容/原因：重试支持自定义错误词表（会话配置 selection.retry）：白名单命中强制重试、黑名单命中不重试（黑名单>白名单>内建判定），字符串子串匹配、大小写不敏感；设置页新增芯片式编辑器（回车添加/× 删除/去重），子代理经会话配置继承；仅新建会话生效。涉及 src/protocol.js（retryPatterns schema）、src/retry.js（classify 词表）、src/pi.js、src/sessions.js（defaultSelection/item/子代理透传）、public/app.js、public/index.html、public/style.css。时间：2025-06。文件：上述 + tests/retry.test.js、tests/config.test.js、README.md、devlog.md。

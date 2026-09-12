@@ -173,7 +173,7 @@ export async function createPiFactory({ cwd, model: requested }) {
       config: initialCompaction,
       onEvent: emitAxiom,
     });
-    const retry = createAutoRetry({ session, emit: emitAxiom });
+    const retry = createAutoRetry({ session, emit: emitAxiom, patterns: selection.retry });
     session.subscribe((event) => {
       if (event.type === "turn_end") void compactionCtrl.onTurnEnd();
       if (event.type === "compaction_end" && event.result && !event.aborted) {

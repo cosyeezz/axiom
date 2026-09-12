@@ -101,7 +101,7 @@ export class Sessions {
     this.createAgent = createAgent;
     this.items = new Map();
     this.recentConfig = {};
-    this.defaultSelection = { compaction: { ...compactionDefaults }, queueType: "steer", model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
+    this.defaultSelection = { compaction: { ...compactionDefaults }, retry: null, queueType: "steer", model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
   }
 
   async loadDefaults() {
@@ -418,6 +418,7 @@ export class Sessions {
       tools: {},
       subagentModel: selection.subagentModel ?? null,
       subagentThinking: selection.subagentThinking ?? null,
+      retry: selection.retry ?? null,
       subagentResolvedCapabilities: catalog ? resolveCapabilities(selection.subagentCapabilities === "inherit" ? selection.capabilities : selection.subagentCapabilities, catalog) : null,
       capabilities: selection.capabilities ?? null,
       subagentCapabilities: selection.subagentCapabilities ?? null,
@@ -496,6 +497,7 @@ export class Sessions {
       () =>
         this.createAgent([], {
           ...item.agent.config?.(),
+          ...(item.retry ? { retry: item.retry } : {}),
           ...(item.subagentModel ? { model: item.subagentModel } : {}),
           cwd,
           ...(item.subagentThinking ? { thinking: item.subagentThinking } : {}),

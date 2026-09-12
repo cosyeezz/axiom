@@ -53,8 +53,16 @@ export const compaction = z.object({
   keepRecentTokens: z.number().int().positive().max(100000000),
 }).strict().refine((value) => !value.enabled || value.tokenThreshold !== null || value.percentThreshold !== null,
   "启用自动压缩时至少设置一个触发阈值");
+// 重试错误词表：字符串子串匹配（大小写不敏感）。nonRetryable 优先于 retryable，二者都优先于内建判定。
+export const retryPatterns = z
+  .object({
+    retryable: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
+    nonRetryable: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
+  })
+  .strict();
 export const selection = z.object({
   compaction: compaction.optional(),
+  retry: retryPatterns.nullable().optional(),
   queueType: queueType.optional(),
   model: id.nullable().optional(),
   subagentModel: id.nullable().optional(),
