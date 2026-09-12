@@ -1,14 +1,14 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 11:08:46）
+# Axiom 多级代码索引（生成于 2026/9/12 12:04:20）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| public/app.js | 3135 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, sessionMissing |
+| public/app.js | 3171 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, sessionMissing |
 | public/file-picker.css | 269 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 351 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
-| public/index.html | 315 | 页面骨架与元素 id（见 L3） | - |
+| public/index.html | 316 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown.js | 247 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, textLanguages, isText |
 | public/memory-tags.js | 87 | 主子代理共享简单标签提取与流式显示过滤 | TAGS, NAMES, TAG, OPEN |
 | public/model-manager.css | 279 | 模型配置页：供应商列表、编辑表单与响应式布局 | - |
@@ -17,7 +17,7 @@
 | public/model-picker.js | 283 | 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互 | GAP, EDGE, TYPEAHEAD_MS, el |
 | public/service-settings.js | 278 | 设置页服务维护：真实进度、结果、更新确认与独立维护通道 | MAINT_URL_RE, POLL_MS, initServiceSettings |
 | public/stream-renderer.js | 46 | 流式增量渲染状态机 | createStreamRenderer |
-| public/style.css | 1280 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1287 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | public/text-contrast.css | 46 | 文字专用对比度档位与调节面板 | - |
 | public/text-contrast.js | 113 | 文字对比度按钮、实时调节与本地偏好 | KEY, MIN, MAX, STEP |
 | public/tooltip.css | 50 | 共享暗色悬停说明样式 | - |
@@ -41,12 +41,12 @@
 | src/retry.js | 161 | 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_DELAY_MS, MAX_RETRIES, delayFor |
 | src/server.js | 451 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | assets, createServerApp |
 | src/session-memory.js | 91 | 标题与增量摘要登记、触发复盘、委派背景与被动进度 | textOf, escape, memoryHooks, parentSummaryContext |
-| src/sessions.js | 971 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | BROWSE_PAGE, resolveDir, parentOf, absoluteCrumbs |
+| src/sessions.js | 1002 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | BROWSE_PAGE, pointStatus, trackElapsed, resolveDir |
 | src/tasks.js | 112 | Tasks：子任务（委托）生命周期 | Tasks |
 | src/tools.js | 97 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
 | tests/activity-groups-ui.py | 201 | node --test 测试（npm test） | activityHistory, sessions |
-| tests/app.test.js | 1608 | node --test 测试（npm test） | pickerSource, contrastSource, modelSources, serviceSource |
+| tests/app.test.js | 1629 | node --test 测试（npm test） | pickerSource, contrastSource, modelSources, serviceSource |
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
 | tests/capabilities.test.js | 207 | node --test 测试（npm test） | - |
@@ -99,6 +99,7 @@
 | tests/smoke.js | 67 | node --test 测试（npm test） | TIMEOUT, sessions |
 | tests/stream-renderer.test.js | 99 | node --test 测试（npm test） | - |
 | tests/task-notifications.test.js | 161 | node --test 测试（npm test） | factoryFixture, tick, until |
+| tests/task-timer.test.js | 55 | node --test 测试（npm test） | factory, state, settle |
 | tests/tasks.test.js | 96 | node --test 测试（npm test） | fixture |
 | tests/text-contrast.test.js | 162 | node --test 测试（npm test） | source, css, fakeStorage, throwingStorage |
 | tests/text-diagram-ui.py | 36 | node --test 测试（npm test） | - |
@@ -111,7 +112,7 @@
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
-### public/app.js（3135 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
+### public/app.js（3171 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -250,92 +251,97 @@
 | placeCompactedRetries | method | 1448 |
 | scrollLatest | method | 1449 |
 | event | function | 1451 |
-| snapshot | function | 1624 |
-| clearTimeout | method | 1626 |
-| updatePageTitle | method | 1644 |
-| renderTaskRuns | method | 1651 |
-| renderCompactionStatus | method | 1658 |
-| restoreRetries | method | 1719 |
-| mergeThoughts | method | 1733 |
-| placeCompactedTasks | method | 1747 |
-| renderImages | method | 1761 |
-| closeCompletion | method | 1764 |
-| renderQueue | method | 1775 |
-| applyConfig | method | 1777 |
-| controls | method | 1779 |
-| reconnectTimer | const | 1781 |
-| clearTimeout | method | 1785 |
-| controls | method | 1788 |
-| scheduleReconnect | function | 1900 |
-| clearTimeout | method | 1901 |
-| importDir | const | 1905 |
-| fillModels | method | 1909 |
-| fillSubagentModels | method | 1916 |
-| closeCompletion | method | 1933 |
-| controls | method | 1938 |
-| scrollLatest | method | 1943 |
-| enableImagePreview | function | 1975 |
-| renderImages | function | 1996 |
-| addImages | function | 2021 |
-| loadImages | function | 2042 |
-| renderImages | method | 2051 |
-| selectionCopy | const | 2074 |
-| copySelection | function | 2086 |
-| escapeTimer | const | 2149 |
-| withdrawQueue | function | 2150 |
-| refreshing | const | 2232 |
-| refreshSessions | function | 2233 |
-| updatePageTitle | function | 2244 |
-| updateSessions | function | 2248 |
-| updatePageTitle | method | 2260 |
-| renderSessions | method | 2261 |
-| recoverMissingSession | function | 2263 |
-| controls | method | 2265 |
-| saveView | method | 2272 |
-| controls | method | 2276 |
-| switchSession | function | 2292 |
-| saveView | method | 2294 |
-| controls | method | 2297 |
-| copySessionFile | function | 2323 |
-| positionSessionMenu | function | 2336 |
-| renderSessions | function | 2342 |
-| sessionAction | const | 2494 |
-| renderSummaries | function | 2496 |
-| renderSummaries | method | 2522 |
-| openSessionAction | function | 2526 |
-| contextIcon | function | 2567 |
-| renderContextChips | function | 2570 |
-| renderContextResults | function | 2588 |
-| showContextSkills | function | 2608 |
-| positionContextSkills | function | 2613 |
-| showContextSkills | method | 2625 |
-| controls | method | 2660 |
-| skillTrigger | const | 2662 |
-| showContextSkills | method | 2678 |
-| resizePrompt | method | 2687 |
-| controls | method | 2688 |
-| closeCompletion | function | 2691 |
-| highlightCompletion | function | 2699 |
-| chooseCompletion | function | 2708 |
-| closeCompletion | method | 2718 |
-| updateCompletion | function | 2721 |
-| closeCompletion | method | 2722 |
-| resizePrompt | method | 2775 |
-| controls | method | 2776 |
-| switchSession | method | 2816 |
-| creationLoad | const | 2827 |
-| refreshPresets | function | 2828 |
-| createAgentPicker | function | 2863 |
-| options | method | 2889 |
-| fill | method | 2897 |
-| fillThinking | method | 2905 |
-| options | method | 2907 |
-| loadCreation | function | 2954 |
-| openCreation | function | 2990 |
-| rememberCreation | const | 3011 |
-| updateDefaultsPreview | function | 3043 |
-| updateDefaultsPreview | method | 3067 |
-| controls | method | 3122 |
+| snapshot | function | 1626 |
+| clearTimeout | method | 1628 |
+| updatePageTitle | method | 1646 |
+| renderTaskRuns | method | 1653 |
+| renderCompactionStatus | method | 1660 |
+| restoreRetries | method | 1721 |
+| mergeThoughts | method | 1735 |
+| placeCompactedTasks | method | 1749 |
+| renderImages | method | 1763 |
+| closeCompletion | method | 1766 |
+| renderQueue | method | 1777 |
+| applyConfig | method | 1779 |
+| controls | method | 1781 |
+| reconnectTimer | const | 1783 |
+| clearTimeout | method | 1787 |
+| controls | method | 1790 |
+| scheduleReconnect | function | 1902 |
+| clearTimeout | method | 1903 |
+| importDir | const | 1907 |
+| fillModels | method | 1911 |
+| fillSubagentModels | method | 1918 |
+| closeCompletion | method | 1935 |
+| controls | method | 1940 |
+| scrollLatest | method | 1945 |
+| enableImagePreview | function | 1977 |
+| renderImages | function | 1998 |
+| addImages | function | 2023 |
+| loadImages | function | 2044 |
+| renderImages | method | 2053 |
+| selectionCopy | const | 2076 |
+| copySelection | function | 2088 |
+| escapeTimer | const | 2151 |
+| withdrawQueue | function | 2152 |
+| refreshing | const | 2234 |
+| refreshSessions | function | 2235 |
+| timerText | function | 2251 |
+| renderTaskTimer | function | 2258 |
+| applyElapsed | function | 2271 |
+| renderTaskTimer | method | 2277 |
+| updatePageTitle | function | 2279 |
+| updateSessions | function | 2283 |
+| renderTaskTimer | method | 2285 |
+| updatePageTitle | method | 2296 |
+| renderSessions | method | 2297 |
+| recoverMissingSession | function | 2299 |
+| controls | method | 2301 |
+| saveView | method | 2308 |
+| controls | method | 2312 |
+| switchSession | function | 2328 |
+| saveView | method | 2330 |
+| controls | method | 2333 |
+| copySessionFile | function | 2359 |
+| positionSessionMenu | function | 2372 |
+| renderSessions | function | 2378 |
+| sessionAction | const | 2530 |
+| renderSummaries | function | 2532 |
+| renderSummaries | method | 2558 |
+| openSessionAction | function | 2562 |
+| contextIcon | function | 2603 |
+| renderContextChips | function | 2606 |
+| renderContextResults | function | 2624 |
+| showContextSkills | function | 2644 |
+| positionContextSkills | function | 2649 |
+| showContextSkills | method | 2661 |
+| controls | method | 2696 |
+| skillTrigger | const | 2698 |
+| showContextSkills | method | 2714 |
+| resizePrompt | method | 2723 |
+| controls | method | 2724 |
+| closeCompletion | function | 2727 |
+| highlightCompletion | function | 2735 |
+| chooseCompletion | function | 2744 |
+| closeCompletion | method | 2754 |
+| updateCompletion | function | 2757 |
+| closeCompletion | method | 2758 |
+| resizePrompt | method | 2811 |
+| controls | method | 2812 |
+| switchSession | method | 2852 |
+| creationLoad | const | 2863 |
+| refreshPresets | function | 2864 |
+| createAgentPicker | function | 2899 |
+| options | method | 2925 |
+| fill | method | 2933 |
+| fillThinking | method | 2941 |
+| options | method | 2943 |
+| loadCreation | function | 2990 |
+| openCreation | function | 3026 |
+| rememberCreation | const | 3047 |
+| updateDefaultsPreview | function | 3079 |
+| updateDefaultsPreview | method | 3103 |
+| controls | method | 3158 |
 
 ### public/file-picker.js（351 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 
@@ -773,50 +779,52 @@
 | memoryHooks | function | 9 |
 | parentSummaryContext | function | 87 |
 
-### src/sessions.js（971 行） — Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化
+### src/sessions.js（1002 行） — Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | BROWSE_PAGE | const | 14 |
-| resolveDir | function | 16 |
-| parentOf | function | 27 |
-| absoluteCrumbs | function | 36 |
-| importedTitle | function | 58 |
-| hostLocations | function | 80 |
-| Sessions | class | 95 |
-| constructor | method | 96 |
-| loadDefaults | method | 108 |
-| getDefaults | method | 127 |
-| workspaceDefaults | method | 130 |
-| configureDefaults | method | 148 |
-| saveDefaults | method | 153 |
-| validateSelection | method | 201 |
-| validateCompaction | method | 222 |
-| listPresets | method | 240 |
-| mutatePresets | method | 251 |
-| savePreset | method | 272 |
-| deletePreset | method | 287 |
-| load | method | 296 |
-| persist | method | 315 |
-| list | method | 336 |
-| rename | method | 352 |
-| importSession | method | 363 |
-| create | method | 390 |
-| scheduleTaskNotifications | method | 643 |
-| deliverTaskNotifications | method | 655 |
-| get | method | 677 |
-| revealWorkspace | method | 682 |
-| browse | method | 696 |
-| listFiles | method | 702 |
-| refreshSkills | method | 761 |
-| snapshot | method | 767 |
-| subscribe | method | 796 |
-| configure | method | 802 |
-| prompt | method | 836 |
-| withdraw | method | 890 |
-| cancel | method | 934 |
-| remove | method | 952 |
-| close | method | 967 |
+| pointStatus | function | 17 |
+| trackElapsed | function | 24 |
+| resolveDir | function | 34 |
+| parentOf | function | 45 |
+| absoluteCrumbs | function | 54 |
+| importedTitle | function | 76 |
+| hostLocations | function | 98 |
+| Sessions | class | 113 |
+| constructor | method | 114 |
+| loadDefaults | method | 126 |
+| getDefaults | method | 145 |
+| workspaceDefaults | method | 148 |
+| configureDefaults | method | 166 |
+| saveDefaults | method | 171 |
+| validateSelection | method | 219 |
+| validateCompaction | method | 240 |
+| listPresets | method | 258 |
+| mutatePresets | method | 269 |
+| savePreset | method | 290 |
+| deletePreset | method | 305 |
+| load | method | 314 |
+| persist | method | 333 |
+| list | method | 355 |
+| rename | method | 372 |
+| importSession | method | 383 |
+| create | method | 410 |
+| scheduleTaskNotifications | method | 674 |
+| deliverTaskNotifications | method | 686 |
+| get | method | 708 |
+| revealWorkspace | method | 713 |
+| browse | method | 727 |
+| listFiles | method | 733 |
+| refreshSkills | method | 792 |
+| snapshot | method | 798 |
+| subscribe | method | 827 |
+| configure | method | 833 |
+| prompt | method | 867 |
+| withdraw | method | 921 |
+| cancel | method | 965 |
+| remove | method | 983 |
+| close | method | 998 |
 
 ### src/tasks.js（112 行） — Tasks：子任务（委托）生命周期
 
@@ -860,7 +868,7 @@
 | activityHistory | const | 16 |
 | sessions | const | 27 |
 
-### tests/app.test.js（1608 行） — node --test 测试（npm test）
+### tests/app.test.js（1629 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1204,6 +1212,14 @@
 | tick | const | 26 |
 | until | function | 27 |
 
+### tests/task-timer.test.js（55 行） — node --test 测试（npm test）
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| factory | const | 9 |
+| state | const | 19 |
+| settle | const | 20 |
+
 ### tests/tasks.test.js（96 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
@@ -1286,7 +1302,7 @@
 ## L3 横切常量（跨模块定位入口）
 
 - 协议 command.type：image、inherit、radius、service.status、service.update.check、service.restart、remote.get、remote.login、remote.configure、session.rename、workspace.reveal、workspace.browse、files.browse、models.list、models.config.get、models.provider.save、models.provider.delete、models.model.save、models.model.delete、models.favorites.get、models.favorites.set、capabilities.list、session.defaults.get、session.defaults.configure、session.presets.list、session.presets.save、session.presets.delete、session.configure、sessions.list、session.create、session.import、session.attach、session.skills.refresh、session.close、prompt、cancel、queue.withdraw、tasks.read（src/protocol.js）
-- HTML id：sidebar、open-workspace、new、custom-new、preset-list、import-session、search、sessions、open-settings、sidebar-backdrop、toggle-sidebar、session-title、workspace-label、copy-workspace、reveal-workspace、workspace-feedback、open-summaries、status、service-dev、service-version、login、maintenance-state、connect、workspace、earliest、transcript、output、latest、message-queue、task-runs、compaction-progress、add-context、add-image、image-files、context-chips、context-menu、context-picker、context-back、context-title、context-close、context-search、context-results、context-error、image-attachments、composer、prompt、prompt-completion、composer-skill、provider、model、thinking、stop、send-steer、send-followup、send、session-runtime、composer-help、error、session-action、session-action-form、session-action-title、session-action-description、session-name-label、session-name、session-action-error、session-action-cancel、session-action-submit、image-preview、image-preview-close、image-preview-image、restart-dialog、restart-form、restart-title、restart-description、restart-warning、restart-cancel、restart-submit、summaries、summaries-title、summaries-body、summaries-empty、summaries-list、task-overlays、task-template、settings、settings-title、settings-defaults-tab、settings-remote-tab、settings-models-tab、settings-service-tab、defaults-panel、selection-copy-title、selection-copy、selection-copy-help、selection-copy-feedback、queue-type、steer-help、followup-help、defaults-preview、subagent-title、subagent-help、subagent-provider、subagent-model、settings-feedback、defaults-title、defaults-editor、remote-panel、remote-status-title、remote-status、remote-login、remote-auth、remote-url、remote-form、remote-note、remote-enabled、remote-email、remote-email-help、remote-feedback、remote-refresh、remote-save、models-panel、service-panel、service-state-title、service-feedback、service-restart-title、restart-quick、restart-rebuild、service-recover、service-update-section、service-update-title、update-check、update-result、update-install、service-history-title、service-history、create-session、create-title、create-form、preset-fields、preset-name、preset-fixed-cwd、preset-directory、preset-delete、create-workspace、create-defaults-help、create-agents、create-compaction、create-retry、create-trust-row、create-trust、create-feedback、create-submit（public/index.html）
+- HTML id：sidebar、open-workspace、new、custom-new、preset-list、import-session、search、sessions、open-settings、sidebar-backdrop、toggle-sidebar、session-title、workspace-label、copy-workspace、reveal-workspace、workspace-feedback、open-summaries、status、service-dev、service-version、login、maintenance-state、connect、workspace、earliest、transcript、output、latest、message-queue、task-runs、compaction-progress、add-context、add-image、image-files、context-chips、task-timer、task-timer-value、context-menu、context-picker、context-back、context-title、context-close、context-search、context-results、context-error、image-attachments、composer、prompt、prompt-completion、composer-skill、provider、model、thinking、stop、send-steer、send-followup、send、session-runtime、composer-help、error、session-action、session-action-form、session-action-title、session-action-description、session-name-label、session-name、session-action-error、session-action-cancel、session-action-submit、image-preview、image-preview-close、image-preview-image、restart-dialog、restart-form、restart-title、restart-description、restart-warning、restart-cancel、restart-submit、summaries、summaries-title、summaries-body、summaries-empty、summaries-list、task-overlays、task-template、settings、settings-title、settings-defaults-tab、settings-remote-tab、settings-models-tab、settings-service-tab、defaults-panel、selection-copy-title、selection-copy、selection-copy-help、selection-copy-feedback、queue-type、steer-help、followup-help、defaults-preview、subagent-title、subagent-help、subagent-provider、subagent-model、settings-feedback、defaults-title、defaults-editor、remote-panel、remote-status-title、remote-status、remote-login、remote-auth、remote-url、remote-form、remote-note、remote-enabled、remote-email、remote-email-help、remote-feedback、remote-refresh、remote-save、models-panel、service-panel、service-state-title、service-feedback、service-restart-title、restart-quick、restart-rebuild、service-recover、service-update-section、service-update-title、update-check、update-result、update-install、service-history-title、service-history、create-session、create-title、create-form、preset-fields、preset-name、preset-fixed-cwd、preset-directory、preset-delete、create-workspace、create-defaults-help、create-agents、create-compaction、create-retry、create-trust-row、create-trust、create-feedback、create-submit（public/index.html）
 - HTTP 静态路由：/、/favicon.svg、/style.css、/app.js、/service-settings.js、/file-picker.js、/tooltip.js、/tooltip.css、/text-contrast.js、/text-contrast.css、/file-picker.css、/markdown.js、/stream-renderer.js、/memory-tags.js、/vendor/marked.js、/vendor/purify.js、/model-manager.js、/model-manager.css、/model-picker.js、/model-picker.css、/health（src/server.js）
 
 ## ⚠ 未登记文件（0）

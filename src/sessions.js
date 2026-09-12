@@ -13,6 +13,24 @@ import { memoryHooks, parentSummaryContext } from "./session-memory.js";
 // 统一目录浏览：目录优先排序后按服务端过滤结果分页；不递归、不逐项 stat、跳过符号链接。
 const BROWSE_PAGE = 200;
 
+// 侧栏绿点口径：主运行中，或主代理空闲但仍有子任务在跑。
+function pointStatus(item) {
+  if (item.status !== "idle") return item.status;
+  return [...item.tasks.jobs.values()].some((job) => ["starting", "running"].includes(job.status)) ? "running" : "idle";
+}
+
+// 任务用时即会话执行中的累计时长：进入 running 开始计，离开 running 结算，再次 running 继续累加。
+// 用 running 而不是「非 idle」：取消/关闭空闲会话也会发 cancelling，那不应开一段计时。
+function trackElapsed(item, status) {
+  if (status === "running") {
+    item.runningSince ??= Date.now();
+    return;
+  }
+  if (!item.runningSince) return;
+  item.elapsedMs += Date.now() - item.runningSince;
+  item.runningSince = null;
+}
+
 async function resolveDir(target) {
   try {
     return await realpath(target);
@@ -318,6 +336,7 @@ export class Sessions {
       titleManual: item.titleManual, titleRequested: item.titleRequested,
       summaries: item.summaries, memoryTurns: item.memoryTurns, progressDeliveries: item.progressDeliveries, summaryTriggers: item.summaryTriggers,
       createdAt: item.createdAt, updatedAt: item.updatedAt, messages: item.messages, compactions: item.compactions, retries: item.retries, tasks: item.tasks.snapshot(),
+      elapsedMs: item.elapsedMs, runningSince: item.runningSince,
       sessionFile: item.agent.sessionFile?.(),
       selection: { ...item.agent.config?.(), capabilities: item.capabilities,
         subagentCapabilities: item.subagentCapabilities, subagentModel: item.subagentModel,
@@ -340,10 +359,11 @@ export class Sessions {
         title: item.title,
         cwd: item.cwd,
         // 列表展示整场执行状态；主代理的输入/队列状态仍由 item.status 控制。
-        status: item.status === "idle" && [...item.tasks.jobs.values()].some((job) =>
-          ["starting", "running"].includes(job.status)) ? "running" : item.status,
+        status: pointStatus(item),
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
+        elapsedMs: item.elapsedMs,
+        runningSince: item.runningSince,
         // 会话的 .jsonl 源文件路径，供侧栏菜单「复制 JSONL 路径」用；尚未落盘时为 null。
         sessionFile: item.agent?.sessionFile?.() ?? null,
       }))
@@ -413,6 +433,9 @@ export class Sessions {
       // 老记录无 createdAt，回退 updatedAt 兜底（历史文件未存创建时间，无法还原真实值）。
       createdAt: saved?.createdAt || saved?.updatedAt || Date.now(),
       updatedAt: saved?.updatedAt || Date.now(),
+      // 重启即中断：上次未结算的运行段不补算，只保留已结算的累计用时。
+      elapsedMs: saved?.elapsedMs || 0,
+      runningSince: null,
       seq: 0,
       status: "idle",
       listeners: new Set(),
@@ -488,6 +511,14 @@ export class Sessions {
         void this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `会话保存失败：${error.message}` } }));
       }
       const envelope = { ...event, sessionId: id, seq: ++item.seq };
+      if (event.type === "session.state" || event.type === "task.state") {
+        // 绿点开始/结束才需要落盘：累计值变了，重启恢复才算得准。
+        const wasRunning = item.runningSince;
+        trackElapsed(item, pointStatus(item));
+        envelope.data = { ...event.data, elapsedMs: item.elapsedMs, runningSince: item.runningSince };
+        if (wasRunning !== item.runningSince)
+          void this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `会话保存失败：${error.message}` } }));
+      }
       if (event.type === "agent.retry") {
         let record = item.retries.find((entry) => entry.agentId === agentId && entry.id === event.data.id);
         if (!record) {
