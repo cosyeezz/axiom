@@ -62,28 +62,39 @@ Windows 也可直接双击 `install.cmd`。更新版本：网页「服务 → �
 axiom uninstall
 ```
 
-命令核对当前 npm 全局安装位置，安全停止服务、取消自启，再移除 `@myworkbench/axiom`。忙碌、停止超时或取消自启失败均中止卸载；服务未运行可直接继续。保留 `~/.axiom` 和 `~/.pi`，不卸载共享 Pi。
+命令核对当前 npm 全局安装位置，安全停止服务、取消自启，再移除当前包 `@cosyeezz/axiom`。忙碌、停止超时或取消自启失败均中止卸载；服务未运行可直接继续。保留 `~/.axiom` 和 `~/.pi`，不卸载共享 Pi。
 
-旧版不支持该命令时，使用以下手动步骤（任一步失败应停止，不要继续删除包）。卸载使用实际包名 `@myworkbench/axiom`，不是安装来源 `github:cosyeezz/axiom`。
+旧版不支持该命令时，使用以下手动步骤（任一步失败应停止，不要继续删除包）。包名以本机实际安装为准：打开 `npm root -g` 下的包目录，读取其 `package.json` 的 `name` 作为下文 `<包名>`；它不是安装来源 `github:cosyeezz/axiom`。
 
 Windows PowerShell：
 
 ```powershell
 $npmRoot = npm root -g
-node "$npmRoot/@myworkbench/axiom/scripts/autostart.mjs" disable
+node "$npmRoot/<包名>/scripts/autostart.mjs" disable
 axiom stop
-npm uninstall -g @myworkbench/axiom
+npm uninstall -g <包名>
 ```
 
 macOS / Linux：
 
 ```sh
-node "$(npm root -g)/@myworkbench/axiom/scripts/autostart.mjs" disable
+node "$(npm root -g)/<包名>/scripts/autostart.mjs" disable
 axiom stop
-npm uninstall -g @myworkbench/axiom
+npm uninstall -g <包名>
 ```
 
 若提示任务运行中，先停止任务再重试；服务本来就未运行时可跳过停止。取消自启须在卸载包之前执行。卸载保留 `~/.axiom` 会话数据及 `~/.pi` 配置，不卸载共用的 Pi；不需要的数据请确认备份后自行删除。
+
+### 从旧包名迁移（一次性）
+
+本项目独立发布，npm 包更名为 `@cosyeezz/axiom`，macOS 登录自启 Label 同步改为 `com.cosyeezz.axiom`。更名不支持原地自动迁移：旧版本不要用「检查更新」过渡，它会按新包名另装一份，旧包与旧自启仍在，容易同时运行两个服务。手动迁移一次：
+
+1. 结束运行任务后安全停止旧服务：`axiom stop`（更早版本无停止接口时，退出旧守护进程并确认 4319 端口空闲）。
+2. 取消旧自启：`node "$(npm root -g)/<旧包名>/scripts/autostart.mjs" disable`（PowerShell 用 `$npmRoot` 写法同上节）。`<旧包名>` 从旧安装目录 `package.json` 的 `name` 读取，不要凭记忆输入；macOS 上该步骤同时移除旧 Label 的 LaunchAgent。
+3. 卸载旧包：`npm uninstall -g <旧包名>`。
+4. 安装新包并初始化：`npm install -g github:cosyeezz/axiom`，再运行 `axiom-setup`（可重新注册登录自启，macOS Label 为 `com.cosyeezz.axiom`）。
+
+`~/.axiom` 会话数据与 `~/.pi` 配置跨更名保留，无需搬移。迁移期间及之后都不要同时运行新旧两个服务：两者默认占用同一端口并读写同一数据目录，同时启动会端口冲突或互相干扰；先确认旧服务已完全停止，再启动新服务。
 
 ### 独立桌面壳（Pake / macOS + Windows）
 
@@ -117,10 +128,10 @@ macOS 同时支持两种芯片时，先执行 `rustup target add aarch64-apple-d
 
 ### 维护：发布更新
 
-公开仓库是 MyWorkbench 内 `axiom/` 的镜像（git subtree）。改动合并到 MyWorkbench master 后需手动同步镜像，同步后各安装实例的「检查更新」即可发现并自动升级（按提交比对，内容变更即发现）。发布时顺手把 `axiom/package.json` 的 `version` 升一档——页面服务菜单会显示当前版本，便于确认更新生效（检测本身不依赖它）：
+本仓库独立发布，公开仓库就是 `cosyeezz/axiom`，没有上游镜像或同步步骤。发布流程：所有改动（含文档）在独立功能 worktree 验证（构建、测试、复核）→ 提交并 push 功能分支 → 合并回 `master` 并推送。推送后各安装实例的「检查更新」即可发现并自动升级（按提交比对，内容变更即发现）。发布时顺手把 `package.json` 的 `version` 升一档——页面服务菜单会显示当前版本，便于确认更新生效（检测本身不依赖它）：
 
 ```sh
-git subtree push --prefix=axiom git@github.com:cosyeezz/axiom.git master
+git push origin master
 ```
 
 ### 手动启动
