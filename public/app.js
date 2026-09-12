@@ -29,8 +29,16 @@ const views = new Map();
 const compactionDefaults = { enabled: false, tokenThreshold: 100000, percentThreshold: 70, model: null, thinking: "off", keepRecentTokens: 20000 };
 const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 let modelFavorites = { provider: [], model: [], thinking: [] };
+// 思考收藏键带模型上下文，符合后端 provider/model:level 契约（model id 含冒号时后端按最后一个冒号切分）；
+// 无模型上下文（“默认主代理模型”“跟随主代理”等空值）返回空串，菜单不提供星标。
+function favoriteKey(kind, value, select) {
+  if (kind !== "thinking") return value;
+  const model = select.closest(".selectors")?.querySelector('select[data-model-kind="model"]')?.value;
+  return model ? `${model}:${value}` : "";
+}
 const modelPicker = createModelPicker({
   getFavorites: () => modelFavorites,
+  favKey: favoriteKey,
   onToggle: async (kind, key, favorite) => {
     modelFavorites = await request("models.favorites.set", { kind, key, favorite });
     modelPicker.syncAll();
