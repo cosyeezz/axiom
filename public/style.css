@@ -90,6 +90,7 @@ button {
 button:hover:not(:disabled) {
   background: #828fff;
 }
+#stop > span { color: var(--danger); }
 button.secondary {
   background: var(--surface);
 }

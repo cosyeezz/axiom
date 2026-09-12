@@ -1,11 +1,11 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 08:57:46）
+# Axiom 多级代码索引（生成于 2026/9/12 10:46:56）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| public/app.js | 3082 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, sessionMissing |
+| public/app.js | 3084 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, sessionMissing |
 | public/file-picker.css | 269 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 351 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/index.html | 304 | 页面骨架与元素 id（见 L3） | - |
@@ -16,7 +16,7 @@
 | public/model-picker.js | 283 | 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互 | GAP, EDGE, TYPEAHEAD_MS, el |
 | public/service-settings.js | 278 | 设置页服务维护：真实进度、结果、更新确认与独立维护通道 | MAINT_URL_RE, POLL_MS, initServiceSettings |
 | public/stream-renderer.js | 46 | 流式增量渲染状态机 | createStreamRenderer |
-| public/style.css | 1258 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1259 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | public/text-contrast.css | 46 | 文字专用对比度档位与调节面板 | - |
 | public/text-contrast.js | 113 | 文字对比度按钮、实时调节与本地偏好 | KEY, MIN, MAX, STEP |
 | public/tooltip.css | 50 | 共享暗色悬停说明样式 | - |
@@ -29,7 +29,7 @@
 | scripts/service.mjs | 497 | 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道 | root, output, run, npmRun |
 | scripts/uninstall.mjs | 18 | 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据 | uninstall |
 | src/capabilities.js | 135 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
-| src/compaction.js | 374 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
+| src/compaction.js | 390 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
 | src/main.js | 97 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, factory, home |
 | src/model-config.js | 369 | Pi models.json 无损配置读写与共享收藏持久化 | sdkModelConfig, EMPTY_FINGERPRINT, digest, LEVELS |
@@ -43,7 +43,7 @@
 | src/tools.js | 97 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
 | tests/activity-groups-ui.py | 201 | node --test 测试（npm test） | activityHistory, sessions |
-| tests/app.test.js | 1607 | node --test 测试（npm test） | pickerSource, contrastSource, modelSources, serviceSource |
+| tests/app.test.js | 1608 | node --test 测试（npm test） | pickerSource, contrastSource, modelSources, serviceSource |
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
 | tests/capabilities.test.js | 207 | node --test 测试（npm test） | - |
@@ -51,8 +51,8 @@
 | tests/codebase-index.test.js | 20 | node --test 测试（npm test） | ROOT, SKILL |
 | tests/compaction-config.test.js | 105 | node --test 测试（npm test） | - |
 | tests/compaction-ui.py | 57 | node --test 测试（npm test） | - |
-| tests/compaction-ui.test.js | 98 | node --test 测试（npm test） | page |
-| tests/compaction.test.js | 781 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
+| tests/compaction-ui.test.js | 125 | node --test 测试（npm test） | page |
+| tests/compaction.test.js | 802 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
 | tests/config.test.js | 224 | node --test 测试（npm test） | - |
 | tests/context-menu-ui.py | 66 | node --test 测试（npm test） | - |
 | tests/conversation-preview.mjs | 123 | node --test 测试（npm test） | markdown, message, thinking, state |
@@ -102,7 +102,7 @@
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
-### public/app.js（3082 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
+### public/app.js（3084 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -223,108 +223,108 @@
 | placeCompactedTasks | function | 1129 |
 | placeCompactedRetries | method | 1130 |
 | compactionCard | function | 1139 |
-| renderMarkdown | method | 1157 |
-| foldCompaction | function | 1160 |
-| placeCompactedTasks | method | 1180 |
-| mergeThoughts | method | 1181 |
-| compactionEditor | function | 1185 |
-| options | method | 1223 |
-| fillThinking | method | 1253 |
-| retryChipList | function | 1262 |
-| retryEditor | function | 1311 |
-| renderTaskRuns | function | 1331 |
-| renderQueue | function | 1359 |
-| retryCards | const | 1376 |
-| placeCompactedRetries | function | 1377 |
-| retryArchive | function | 1394 |
-| renderRetry | function | 1407 |
-| placeCompactedRetries | method | 1443 |
-| scrollLatest | method | 1444 |
-| event | function | 1446 |
-| snapshot | function | 1604 |
-| clearTimeout | method | 1606 |
-| updatePageTitle | method | 1624 |
-| renderTaskRuns | method | 1631 |
-| renderCompactionStatus | method | 1636 |
-| restoreRetries | method | 1697 |
-| mergeThoughts | method | 1711 |
-| placeCompactedTasks | method | 1725 |
-| renderImages | method | 1739 |
-| closeCompletion | method | 1742 |
-| renderQueue | method | 1753 |
-| applyConfig | method | 1755 |
-| controls | method | 1757 |
-| reconnectTimer | const | 1759 |
-| clearTimeout | method | 1763 |
-| controls | method | 1766 |
-| scheduleReconnect | function | 1878 |
-| clearTimeout | method | 1879 |
-| importDir | const | 1883 |
-| fillModels | method | 1887 |
-| fillSubagentModels | method | 1894 |
-| closeCompletion | method | 1911 |
-| controls | method | 1916 |
-| scrollLatest | method | 1921 |
-| enableImagePreview | function | 1953 |
-| renderImages | function | 1974 |
-| addImages | function | 1999 |
-| loadImages | function | 2020 |
-| renderImages | method | 2029 |
-| selectionCopy | const | 2052 |
-| copySelection | function | 2064 |
-| escapeTimer | const | 2127 |
-| withdrawQueue | function | 2128 |
-| refreshing | const | 2210 |
-| refreshSessions | function | 2211 |
-| updatePageTitle | function | 2222 |
-| updateSessions | function | 2226 |
-| updatePageTitle | method | 2238 |
-| renderSessions | method | 2239 |
-| recoverMissingSession | function | 2241 |
-| controls | method | 2243 |
-| saveView | method | 2250 |
-| controls | method | 2254 |
-| switchSession | function | 2270 |
-| saveView | method | 2272 |
-| controls | method | 2275 |
-| copySessionFile | function | 2301 |
-| positionSessionMenu | function | 2314 |
-| renderSessions | function | 2320 |
-| sessionAction | const | 2472 |
-| openSessionAction | function | 2473 |
-| contextIcon | function | 2514 |
-| renderContextChips | function | 2517 |
-| renderContextResults | function | 2535 |
-| showContextSkills | function | 2555 |
-| positionContextSkills | function | 2560 |
-| showContextSkills | method | 2572 |
-| controls | method | 2607 |
-| skillTrigger | const | 2609 |
-| showContextSkills | method | 2625 |
-| resizePrompt | method | 2634 |
-| controls | method | 2635 |
-| closeCompletion | function | 2638 |
-| highlightCompletion | function | 2646 |
-| chooseCompletion | function | 2655 |
-| closeCompletion | method | 2665 |
-| updateCompletion | function | 2668 |
-| closeCompletion | method | 2669 |
-| resizePrompt | method | 2722 |
-| controls | method | 2723 |
-| switchSession | method | 2763 |
-| creationLoad | const | 2774 |
-| refreshPresets | function | 2775 |
-| createAgentPicker | function | 2810 |
-| options | method | 2836 |
-| fill | method | 2844 |
-| fillThinking | method | 2852 |
-| options | method | 2854 |
-| loadCreation | function | 2901 |
-| openCreation | function | 2937 |
-| rememberCreation | const | 2958 |
-| updateDefaultsPreview | function | 2990 |
-| updateDefaultsPreview | method | 3014 |
-| controls | method | 3069 |
+| renderMarkdown | method | 1159 |
+| foldCompaction | function | 1162 |
+| placeCompactedTasks | method | 1182 |
+| mergeThoughts | method | 1183 |
+| compactionEditor | function | 1187 |
+| options | method | 1225 |
+| fillThinking | method | 1255 |
+| retryChipList | function | 1264 |
+| retryEditor | function | 1313 |
+| renderTaskRuns | function | 1333 |
+| renderQueue | function | 1361 |
+| retryCards | const | 1378 |
+| placeCompactedRetries | function | 1379 |
+| retryArchive | function | 1396 |
+| renderRetry | function | 1409 |
+| placeCompactedRetries | method | 1445 |
+| scrollLatest | method | 1446 |
+| event | function | 1448 |
+| snapshot | function | 1606 |
+| clearTimeout | method | 1608 |
+| updatePageTitle | method | 1626 |
+| renderTaskRuns | method | 1633 |
+| renderCompactionStatus | method | 1638 |
+| restoreRetries | method | 1699 |
+| mergeThoughts | method | 1713 |
+| placeCompactedTasks | method | 1727 |
+| renderImages | method | 1741 |
+| closeCompletion | method | 1744 |
+| renderQueue | method | 1755 |
+| applyConfig | method | 1757 |
+| controls | method | 1759 |
+| reconnectTimer | const | 1761 |
+| clearTimeout | method | 1765 |
+| controls | method | 1768 |
+| scheduleReconnect | function | 1880 |
+| clearTimeout | method | 1881 |
+| importDir | const | 1885 |
+| fillModels | method | 1889 |
+| fillSubagentModels | method | 1896 |
+| closeCompletion | method | 1913 |
+| controls | method | 1918 |
+| scrollLatest | method | 1923 |
+| enableImagePreview | function | 1955 |
+| renderImages | function | 1976 |
+| addImages | function | 2001 |
+| loadImages | function | 2022 |
+| renderImages | method | 2031 |
+| selectionCopy | const | 2054 |
+| copySelection | function | 2066 |
+| escapeTimer | const | 2129 |
+| withdrawQueue | function | 2130 |
+| refreshing | const | 2212 |
+| refreshSessions | function | 2213 |
+| updatePageTitle | function | 2224 |
+| updateSessions | function | 2228 |
+| updatePageTitle | method | 2240 |
+| renderSessions | method | 2241 |
+| recoverMissingSession | function | 2243 |
+| controls | method | 2245 |
+| saveView | method | 2252 |
+| controls | method | 2256 |
+| switchSession | function | 2272 |
+| saveView | method | 2274 |
+| controls | method | 2277 |
+| copySessionFile | function | 2303 |
+| positionSessionMenu | function | 2316 |
+| renderSessions | function | 2322 |
+| sessionAction | const | 2474 |
+| openSessionAction | function | 2475 |
+| contextIcon | function | 2516 |
+| renderContextChips | function | 2519 |
+| renderContextResults | function | 2537 |
+| showContextSkills | function | 2557 |
+| positionContextSkills | function | 2562 |
+| showContextSkills | method | 2574 |
+| controls | method | 2609 |
+| skillTrigger | const | 2611 |
+| showContextSkills | method | 2627 |
+| resizePrompt | method | 2636 |
+| controls | method | 2637 |
+| closeCompletion | function | 2640 |
+| highlightCompletion | function | 2648 |
+| chooseCompletion | function | 2657 |
+| closeCompletion | method | 2667 |
+| updateCompletion | function | 2670 |
+| closeCompletion | method | 2671 |
+| resizePrompt | method | 2724 |
+| controls | method | 2725 |
+| switchSession | method | 2765 |
+| creationLoad | const | 2776 |
+| refreshPresets | function | 2777 |
+| createAgentPicker | function | 2812 |
+| options | method | 2838 |
+| fill | method | 2846 |
+| fillThinking | method | 2854 |
+| options | method | 2856 |
+| loadCreation | function | 2903 |
+| openCreation | function | 2939 |
+| rememberCreation | const | 2960 |
+| updateDefaultsPreview | function | 2992 |
+| updateDefaultsPreview | method | 3016 |
+| controls | method | 3071 |
 
 ### public/file-picker.js（351 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 
@@ -575,7 +575,7 @@
 | refreshProjectSkills | function | 94 |
 | capabilityLoader | function | 104 |
 
-### src/compaction.js（374 行） — 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交
+### src/compaction.js（390 行） — 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -588,10 +588,11 @@
 | summarizedEntryIds | function | 78 |
 | SUMMARY_SYSTEM_PROMPT | const | 95 |
 | summaryRequest | function | 98 |
-| throwIfAborted | function | 111 |
-| summarizeWithPiSession | function | 115 |
-| throwIfAborted | method | 116 |
-| createBackgroundCompaction | function | 189 |
+| parseSummaryOutput | function | 113 |
+| throwIfAborted | function | 126 |
+| summarizeWithPiSession | function | 130 |
+| throwIfAborted | method | 131 |
+| createBackgroundCompaction | function | 204 |
 
 ### src/inline-images.js（32 行） — 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列
 
@@ -813,7 +814,7 @@
 | activityHistory | const | 16 |
 | sessions | const | 27 |
 
-### tests/app.test.js（1607 行） — node --test 测试（npm test）
+### tests/app.test.js（1608 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -844,39 +845,39 @@
 | SKILL | const | 8 |
 | execFileSync | method | 11 |
 
-### tests/compaction-ui.test.js（98 行） — node --test 测试（npm test）
+### tests/compaction-ui.test.js（125 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | page | function | 10 |
 | restore | method | 39 |
 
-### tests/compaction.test.js（781 行） — node --test 测试（npm test）
+### tests/compaction.test.js（802 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| fakeModel | const | 65 |
-| createTestSession | function | 78 |
-| seq | const | 95 |
-| userMsg | const | 96 |
-| assistantMsg | const | 97 |
-| big | const | 103 |
-| seed | function | 105 |
-| settle | const | 110 |
-| waitFor | function | 112 |
-| enabledConfig | const | 120 |
-| fakeSummarize | function | 129 |
-| startHangingLlmServer | function | 137 |
-| startFakeLlmServer | function | 160 |
-| zodError | method | 217 |
-| zodError | method | 218 |
-| zodError | method | 219 |
-| zodError | method | 220 |
-| zodError | method | 221 |
-| zodError | method | 222 |
-| hangingSummarize | function | 544 |
-| createLoopSession | function | 641 |
-| writeFileSync | method | 642 |
+| fakeModel | const | 83 |
+| createTestSession | function | 96 |
+| seq | const | 113 |
+| userMsg | const | 114 |
+| assistantMsg | const | 115 |
+| big | const | 121 |
+| seed | function | 123 |
+| settle | const | 128 |
+| waitFor | function | 130 |
+| enabledConfig | const | 138 |
+| fakeSummarize | function | 147 |
+| startHangingLlmServer | function | 155 |
+| startFakeLlmServer | function | 178 |
+| zodError | method | 235 |
+| zodError | method | 236 |
+| zodError | method | 237 |
+| zodError | method | 238 |
+| zodError | method | 239 |
+| zodError | method | 240 |
+| hangingSummarize | function | 565 |
+| createLoopSession | function | 662 |
+| writeFileSync | method | 663 |
 
 ### tests/conversation-preview.mjs（123 行） — node --test 测试（npm test）
 
