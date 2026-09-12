@@ -65,7 +65,8 @@ test("configuration applies to the main agent and is inherited by delegated chil
   const selections = [];
   const sessions = new Sessions(async (_tools, selected) => {
     selections.push(selected);
-    let config = { model: "a/b", thinking: "off", ...selected, levels: ["off", "high"] };
+    const { memory, ...configuration } = selected;
+    let config = { model: "a/b", thinking: "off", ...configuration, levels: ["off", "high"] };
     return {
       config: () => config,
       configure: async (value) => {

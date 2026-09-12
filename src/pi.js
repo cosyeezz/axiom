@@ -4,7 +4,9 @@ import {
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { capabilityLoader, discoverCapabilities, refreshProjectSkills } from "./capabilities.js";
+import { stripMemoryTags } from "../public/memory-tags.js";
 import { createBackgroundCompaction, entryIdFor, normalizeCompaction, summarizedEntryIds } from "./compaction.js";
+import { SUMMARY_DELEGATE, SUMMARY_REMINDER, memoryPolicy } from "./memory-policy.js";
 import { createAutoRetry } from "./retry.js";
 import { createJiti } from "jiti";
 const { getSupportedThinkingLevels } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai/compat");
@@ -86,6 +88,45 @@ export async function recallLastMessage(session) {
   };
 }
 
+// 标题指令只在 titleRequest 的当次首个请求随背景注入，不进系统提示词、不改用户原文。
+const TITLE_INSTRUCTION = "另在本次回复开头单独一行输出<title>不超过10字的会话标题</title>。";
+
+// 会话记忆接入：context 钩子在每次 LLM 请求（含同一次 prompt 的工具后续轮）实时取背景，
+// 工具后新产生的子代理进度因此能进入下一次请求；titleRequest 的标题指令只随当次首个请求注入一次；
+// 每满 N 个累计 turn（主 3/子 6，建会话时由 memory-policy 定死，逐请求不重读）在下一次请求前附加一次
+// [摘要提醒]（不额外发请求，lastReminderTurn 记录已提醒的 turn，重试同一请求不会重发），
+// 真正注入时回调 onTrigger 供复盘；委派触发不在此层：模型按系统提示词随 delegate 回复自带正文标签，
+// 由 onReply 在 message_end（先于 delegate 执行）登记。
+// transformContext 仅改请求副本、不落盘，不动原始消息历史；
+// 助手 message_end（工具执行前）同步调 onReply，turn_end 调 onTurn，turn 首轮为 memory.turn+1。
+function memoryExtension(state, memory, policy) {
+  return (pi) => {
+    pi.on("context", ({ messages }) => {
+      const parts = [memory.context()];
+      if (state.turn > 0 && state.turn % policy.interval === 0 && state.lastReminderTurn !== state.turn) {
+        parts.push(SUMMARY_REMINDER);
+        state.lastReminderTurn = state.turn;
+        memory.onTrigger?.({ turn: state.turn + 1, interval: policy.interval, maxChars: policy.maxChars, prompt: SUMMARY_REMINDER, systemPrompt: policy.systemPrompt });
+      }
+      if (state.pending) parts.push(state.pending);
+      state.pending = null;
+      if (!parts.some(Boolean)) return undefined;
+      return { messages: [...messages, {
+        role: "custom", customType: "axiom-memory", content: parts.filter(Boolean).join("\n\n"), display: false, timestamp: Date.now(),
+      }] };
+    });
+    pi.on("message_end", ({ message }) => {
+      if (message.role === "assistant") memory.onReply({ message, turn: state.turn + 1 });
+      return undefined;
+    });
+    pi.on("turn_end", (event) => {
+      memory.onTurn({ message: event.message, toolResults: event.toolResults ?? [], turn: state.turn + 1 });
+      state.turn += 1;
+      return undefined;
+    });
+  };
+}
+
 export async function createPiFactory({ cwd, model: requested }) {
   // 模型目录可被模型配置页刷新（models.json 写入后）：available 用可变绑定，
   // 旧会话的 configure/压缩模型校验才能看到新目录；已绑定的模型对象本身不热更新（SDK 行为）。
@@ -95,6 +136,10 @@ export async function createPiFactory({ cwd, model: requested }) {
   const defaultKey = requested || `${startup.settingsManager.getDefaultProvider()}/${startup.settingsManager.getDefaultModel()}`;
   const factory = async (customTools = [], selection = {}) => {
     const workspace = selection.cwd || cwd;
+    const memory = selection.memory || null;
+    // 策略在建会话时捕获一次并校验环境变量（非法直接失败），逐请求不重读，避免中途漂移。
+    const policy = memory ? memoryPolicy(memory.role) : null;
+    const memoryState = memory ? { turn: memory.turn || 0, pending: null, lastReminderTurn: 0 } : null;
     // 启动不依赖模型；每次建会话从最新目录选择，网页首次配置后无需重启。
     const key = selection.model || defaultKey;
     const selected = available.find((m) => `${m.provider}/${m.id}` === key)
@@ -117,7 +162,9 @@ export async function createPiFactory({ cwd, model: requested }) {
     // 可能来自用户配置并叠加，这里一并清零（仅本会话内存态，不写盘）。
     settingsManager.setRetryEnabled(false);
     settingsManager.applyOverrides({ retry: { provider: { maxRetries: 0 } } });
-    const { loader, selected: capabilities } = capabilityLoader(resources, selection.capabilities, customTools);
+    const { loader, selected: capabilities } = capabilityLoader(resources, selection.capabilities, customTools,
+      memoryState ? [memoryExtension(memoryState, memory, policy)] : [],
+      policy ? policy.systemPrompt + (memory.role === "main" ? SUMMARY_DELEGATE : "") : null);
     await loader.reload();
     const diagnostics = loader.getExtensions().errors;
     if (diagnostics.length) {
@@ -252,6 +299,8 @@ export async function createPiFactory({ cwd, model: requested }) {
       prompt: async (text, options) => {
         if (await compactionCtrl.maybeApply()) emitAxiom({ type: "agent.runtime", data: agentRuntime(session) });
         lastResult = undefined;
+        // 背景由 context 钩子按请求实时取；这里只挂 titleRequest 的标题指令，消费一次即失效。
+        if (memoryState) memoryState.pending = options?.titleRequest ? TITLE_INSTRUCTION : null;
         await retry.run(() => session.prompt(text, options?.images ? { images: options.images } : undefined));
       },
       async abort() {
@@ -274,10 +323,11 @@ export async function createPiFactory({ cwd, model: requested }) {
           throw new Error(
             last?.errorMessage || last?.stopReason || "No assistant result",
           );
-        return last.content
+        const text = last.content
           .filter((block) => block.type === "text")
           .map((block) => block.text)
           .join("\n");
+        return memoryState ? stripMemoryTags(text) : text;
       },
       subscribe(listener) {
         listeners.add(listener);

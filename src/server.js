@@ -19,6 +19,7 @@ const assets = new Map(
     ["/file-picker.css", "public/file-picker.css", "text/css"],
     ["/markdown.js", "public/markdown.js"],
     ["/stream-renderer.js", "public/stream-renderer.js"],
+    ["/memory-tags.js", "public/memory-tags.js"],
     ["/vendor/marked.js", "node_modules/marked/lib/marked.esm.js"],
     ["/vendor/purify.js", "node_modules/dompurify/dist/purify.es.mjs"],
   ].map(([route, file, type = "text/javascript"]) => {

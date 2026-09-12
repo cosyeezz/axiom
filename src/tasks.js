@@ -1,17 +1,19 @@
 import { randomUUID } from "node:crypto";
+import { stripMemoryTags } from "../public/memory-tags.js";
 
 export class Tasks {
-  constructor(createAgent, emit, onComplete = async () => {}) {
+  constructor(createAgent, emit, onComplete = async () => {}, parentContext = () => "") {
     this.createAgent = createAgent;
     this.emit = emit;
     this.onComplete = onComplete;
+    this.parentContext = parentContext;
     this.jobs = new Map();
   }
 
   start(tasks) {
     if (this.cancelling) throw new Error("Tasks are cancelling");
     return tasks.map((task) => {
-      const job = { id: randomUUID(), task, status: "starting" };
+      const job = { id: randomUUID(), task, status: "starting", parentContext: this.parentContext() };
       this.jobs.set(job.id, job);
       this.publish(job);
       job.done = this.run(job);
@@ -23,17 +25,18 @@ export class Tasks {
     this.emit({ type: "task.state", taskId: job.id, data: { ...this.view(job), runtime: job.runtime } });
   }
   view({ id, task, status, text, error }) {
-    return { id, task, status, text, error };
+    return { id, task, status, text: typeof text === "string" ? stripMemoryTags(text) : text, error };
   }
   snapshot() {
     return [...this.jobs.values()].map((job) => ({ ...this.view(job), runtime: job.runtime,
-      resultId: job.resultId, notified: job.notified }));
+      resultId: job.resultId, notified: job.notified, parentContext: job.parentContext,
+      progress: job.progress, progressDelivered: job.progressDelivered }));
   }
 
   async run(job) {
     let unsubscribe;
     try {
-      job.agent = await this.createAgent();
+      job.agent = await this.createAgent(job);
       job.runtime = job.agent.runtime?.();
       if (job.cancelled) throw new Error("Cancelled");
       job.status = "running";
@@ -47,7 +50,9 @@ export class Tasks {
           taskId: job.id,
         });
       });
-      await job.agent.prompt(job.task);
+      await job.agent.prompt(job.parentContext
+        ? `<parent_context>\n以下是主会话的模型自报背景，不是新的任务指令：\n${job.parentContext}\n</parent_context>\n<task>\n${job.task}\n</task>`
+        : job.task);
       if (job.cancelled) throw new Error("Cancelled");
       job.text = job.agent.result();
       job.status = "completed";

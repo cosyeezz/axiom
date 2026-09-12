@@ -1,5 +1,24 @@
 # 开发记录
 
+## 2026-09-12 统一摘要规则与复盘基础
+- 按用户原文固定共同系统提示词，主代理额外要求delegate时摘要；不添加首次范围或行动意图。每3/6累计turn动态提醒，摘要正文严格小于30字，环境变量可调间隔和长度，默认不加配置UI。
+- 新增summaryTriggers保存触发规则、实际提示词、轮次、回复关联与缺失/超长/失败状态；代理重启后未完成触发标记interrupted，供未来复盘，不额外模型调用。
+- 涉及 src/{memory-policy,capabilities,pi,session-memory,sessions}.js、tests/{memory-policy,pi-memory,session-memory}.test.js、README.md与索引。合并最新master时保留双方知识/开发记录，索引重建；主代理接管修正字数配置（可显式设30/40，提示词上限同步），委派附加句严格采用用户原文，补“此内容进入工作记忆。”。最终隔离全量252项：251通过、0失败、1跳过。
+
+## 2026-09-12 摘要标签统一
+- 按用户确认改为 `<axiom_summary>`，主代理摘要与子代理进度按身份登记；兼容旧标签读取。删除子代理系统提示词中的轮次要求，仅代码计数后在请求末尾提醒，要求闭合标签后无正文。
+- 涉及 src/{capabilities,pi,session-memory}.js、public/memory-tags.js、tests/{memory-tags,pi-memory}.test.js、README.md；合并master及最终验证仍进行中。
+
+## 2026-09-12 15:22 UTC 会话标题与轻量工作记忆
+- 原因：委派缺少主会话背景，主代理无法被动了解子任务方向；采用随回复输出标签，避免新增标题/总结模型调用。
+- 决策：助手 message_end 先登记摘要，delegate 再冻结最近32条；turn_end 关联工具状态；子代理每5轮在下次 context 提醒汇报，主代理仅在正常 context 附带最新进度。标题只请求一次，手动改名优先。
+- 存储：沿用 JSON 异步持久化；保存模型自报摘要、累计轮次、时间、消息关联和进度送达记录，不替代 Pi JSONL，不引入 SQLite 调度或轮询工具。
+- 涉及：src/{pi,capabilities,sessions,tasks,session-memory}.js、public/{memory-tags,app,stream-renderer}.js、public/{index.html,style.css}、相关 memory 测试、README、codebase-map。
+- 复核修正：撤回主代理消息时清理关联摘要，避免继续委派旧背景；消息时间戳缺失时不关联 entryId；进度送达诊断仅保留最近50次且8000字符预算包含包装；更新旧测试 mock，配置不再混入 memory 回调。涉及 src/{sessions,session-memory}.js、tests/{session-memory,config,compaction-config}.test.js；增加隔离浏览器预览 tests/memory-preview.mjs。
+- UI复核：轮次改为后端一致的1起算；标签提取跳过空/超长标题后取首个合法值。1440/390/320px隔离预览的摘要列表、无横向溢出、Esc关闭通过。
+- 最终修正：memory.context() 移至每次 SDK context 事件，工具连续轮可收到新进度；子代理累计满5轮后下一次请求提醒一次，标题独立消费一次。真实SDK+本地fake SSE覆盖工具前登记、连续轮进度、一次性标题、子代理第6轮提醒，未增加请求。
+- 最终验证：隔离副本 F:/worktrees/verify-session-memory-final 执行 npm ci（0漏洞）及 npm test：245项，244通过、0失败、1跳过。共享node_modules随后出现缺包（@asamuzakjp/css-color等），原因未查明，未修补或重启运行实例；三种屏宽浏览器检查已通过。
+
 ## 2026-09-12 17:45 UTC Stop 方块改为红色
 - 原因：按用户截图要求，仅将 Stop 右侧白色方块改为红色。
 - 修改：方块单独包裹 span，复用现有 --danger（#f2a6a6），保留文字、边框及停止行为；装饰图标对读屏隐藏。

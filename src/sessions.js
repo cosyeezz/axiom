@@ -8,6 +8,7 @@ import { selection as selectionSchema, presetStore, compaction as compactionSche
 import { Tasks } from "./tasks.js";
 import { delegationTools } from "./tools.js";
 import { resolveCapabilities } from "./capabilities.js";
+import { memoryHooks, parentSummaryContext } from "./session-memory.js";
 
 // 统一目录浏览：目录优先排序后按服务端过滤结果分页；不递归、不逐项 stat、跳过符号链接。
 const BROWSE_PAGE = 200;
@@ -314,6 +315,8 @@ export class Sessions {
   persist(item) {
     if (!item.storageDir) return Promise.resolve();
     const data = JSON.stringify({ id: item.id, cwd: item.cwd, title: item.title,
+      titleManual: item.titleManual, titleRequested: item.titleRequested,
+      summaries: item.summaries, memoryTurns: item.memoryTurns, progressDeliveries: item.progressDeliveries, summaryTriggers: item.summaryTriggers,
       createdAt: item.createdAt, updatedAt: item.updatedAt, messages: item.messages, compactions: item.compactions, retries: item.retries, tasks: item.tasks.snapshot(),
       sessionFile: item.agent.sessionFile?.(),
       selection: { ...item.agent.config?.(), capabilities: item.capabilities,
@@ -349,6 +352,8 @@ export class Sessions {
   async rename(id, title) {
     const item = this.get(id);
     item.title = title;
+    item.titleManual = true;
+    item.titlePending = false;
     item.updatedAt = Date.now();
     await this.persist(item);
     return { sessionId: id, title };
@@ -398,6 +403,13 @@ export class Sessions {
       storageDir,
       queueType: selection.queueType || "steer",
       title: saved?.title || "新会话",
+      titleManual: saved?.titleManual ?? !!saved,
+      titleRequested: saved?.titleRequested ?? !!saved,
+      titlePending: false,
+      summaries: saved?.summaries || [],
+      memoryTurns: saved?.memoryTurns || {},
+      progressDeliveries: saved?.progressDeliveries || [],
+      summaryTriggers: (saved?.summaryTriggers || []).map((entry) => entry.status === "pending" ? { ...entry, status: "interrupted" } : entry),
       // 老记录无 createdAt，回退 updatedAt 兜底（历史文件未存创建时间，无法还原真实值）。
       createdAt: saved?.createdAt || saved?.updatedAt || Date.now(),
       updatedAt: saved?.updatedAt || Date.now(),
@@ -461,6 +473,12 @@ export class Sessions {
         }
       }
       if (event.type === "agent.message.end") {
+        if (event.data.message.role === "assistant" && event.data.entryId) {
+          const record = item.summaries.findLast((entry) => entry.agentId === agentId && !entry.entryId && entry.messageTimestamp != null && entry.messageTimestamp === event.data.message.timestamp);
+          if (record) record.entryId = event.data.entryId;
+          const trigger = item.summaryTriggers.findLast((entry) => entry.agentId === agentId && entry.messageTimestamp != null && entry.messageTimestamp === event.data.message.timestamp);
+          if (trigger) trigger.entryId = event.data.entryId;
+        }
         item.messages.push({ agentId, message: event.data.message, ...(event.data.entryId ? { entryId: event.data.entryId } : {}) });
         delete item.live[agentId];
         void this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `会话保存失败：${error.message}` } }));
@@ -498,8 +516,9 @@ export class Sessions {
         void this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `会话保存失败：${error.message}` } }));
       for (const listener of item.listeners) listener(envelope);
     };
+    const saveMemory = () => void this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `摘要保存失败：${error.message}` } }));
     item.tasks = new Tasks(
-      () =>
+      (job) =>
         this.createAgent([], {
           ...item.agent.config?.(),
           ...(item.retry ? { retry: item.retry } : {}),
@@ -508,12 +527,14 @@ export class Sessions {
           ...(item.subagentThinking ? { thinking: item.subagentThinking } : {}),
           capabilities: item.subagentCapabilities === "inherit" ? item.agent.config?.().capabilities ?? item.capabilities : item.subagentCapabilities,
           trustProject: item.trustProject,
+          memory: memoryHooks(item, saveMemory, job),
         }),
       item.emit,
       async () => {
         await this.persist(item);
         this.scheduleTaskNotifications(item);
       },
+      () => parentSummaryContext(item),
     );
     for (const task of saved?.tasks || []) {
       const interrupted = ["starting", "running"].includes(task.status);
@@ -539,6 +560,7 @@ export class Sessions {
         cwd,
         sessionDir: storageDir,
         sessionFile: saved?.sessionFile ?? importedFile,
+        memory: memoryHooks(item, saveMemory),
       });
     } catch (error) {
       if (importedFile) await rm(importedFile, { force: true });
@@ -762,6 +784,7 @@ export class Sessions {
       },
       runId: item.runId,
       messages: item.messages,
+      summaries: item.summaries,
       compactions: item.compactions,
       compactionStatus: item.agent.compactionStatus?.() ?? null,
       retries: item.retries,
@@ -826,7 +849,10 @@ export class Sessions {
     }
     if (item.status !== "idle" || item.configuring || item.closing) throw new Error("Session is busy");
     item.notificationsPaused = false;
-    if (item.title === "新会话") item.title = (text.trim() || "[图片]").slice(0, 60);
+    if (item.title === "新会话" && !item.titleManual) item.title = (text.trim() || "[图片]").slice(0, 60);
+    const titleRequest = !item.titleRequested && !item.titleManual;
+    item.titleRequested = true;
+    item.titlePending = titleRequest;
     item.updatedAt = Date.now();
     item.runId = randomUUID();
     item.status = "running";
@@ -836,7 +862,7 @@ export class Sessions {
     });
     item.work = (async () => {
       try {
-        await item.agent.prompt(text, images?.length ? { images } : undefined);
+        await item.agent.prompt(text, titleRequest || images?.length ? { ...(images?.length ? { images } : {}), ...(titleRequest ? { titleRequest } : {}) } : undefined);
         item.agent.result();
       } catch (error) {
         item.emit({
@@ -844,6 +870,7 @@ export class Sessions {
           data: { message: String(error.message ?? error) },
         });
       } finally {
+        item.titlePending = false;
         await this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `会话保存失败：${error.message}` } }));
         if (item.status !== "cancelling") {
           item.status = "idle";
@@ -870,6 +897,8 @@ export class Sessions {
       const cut = item.messages.findIndex((record) => record.agentId === "main" && record.entryId === recalled.entryId);
       if (cut >= 0) {
         const previousMessages = item.messages;
+        const removedIds = new Set(previousMessages.slice(cut).filter((entry) => entry.agentId === "main").map((entry) => entry.entryId).filter(Boolean));
+        item.summaries = item.summaries.filter((entry) => entry.agentId !== "main" || !removedIds.has(entry.entryId));
         // 撤回只回退主代理，独立子任务已经发生的输出必须保留。
         const keptBefore = [0];
         item.messages = previousMessages.filter((record, index) => {

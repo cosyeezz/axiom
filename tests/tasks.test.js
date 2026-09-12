@@ -55,6 +55,26 @@ test("results require completion notification IDs, never wait or poll", async ()
   assert.equal(command.safeParse({ id: "r", type: "tasks.read", sessionId: "s", ...first, wait: false }).success, false);
 });
 
+test("delegate freezes background at start and results hide metadata", async () => {
+  let context = "本轮已登记摘要";
+  let received;
+  let release;
+  const tasks = new Tasks(async () => {
+    await new Promise((resolve) => { release = resolve; });
+    return { subscribe: () => () => {}, prompt: async (text) => { received = text; },
+      result: () => "完成<progress>已完成检查</progress>", dispose: async () => {} };
+  }, () => {}, async () => {}, () => context);
+  const [id] = tasks.start(["检查接口"]);
+  context = "后续摘要";
+  release();
+  const job = tasks.jobs.get(id);
+  await job.done;
+  assert.match(received, /本轮已登记摘要/);
+  assert.doesNotMatch(received, /后续摘要/);
+  assert.match(received, /<task>\n检查接口\n<\/task>/);
+  assert.equal(tasks.read(id, job.resultId).text, "完成");
+});
+
 test("append defaults to steer, validates input and rejects ended/cancelling tasks", async () => {
   const { tasks, agents, notifications } = fixture();
   const append = delegationTools(tasks).find((tool) => tool.name === "append");

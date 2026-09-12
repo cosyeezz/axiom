@@ -101,10 +101,10 @@ export function refreshProjectSkills(loader, selected, catalog, all = false) {
   return loader.getSkills().skills.map(({ name, description }) => ({ name, description }));
 }
 
-export function capabilityLoader(resources, selection, customTools) {
+export function capabilityLoader(resources, selection, customTools, extraFactories = [], summaryPrompt = null) {
   const { catalog, settingsManager, paths, adapter, mcpConfig, createMcpAdapter, cwd, agentDir } = resources;
   const selected = resolveCapabilities(selection, catalog);
-  const factories = [{ name: "axiom-inline-images", factory: inlineImagesExtension }];
+  const factories = [...extraFactories, { name: "axiom-inline-images", factory: inlineImagesExtension }];
   if (adapter && (selection == null || selected.mcp.length)) {
     factories.push({ name: "axiom-mcp", factory: createMcpAdapter({ config: {
       ...mcpConfig,
@@ -126,9 +126,13 @@ export function capabilityLoader(resources, selection, customTools) {
       extensionFactories: factories,
       // Preserve the custom allowlist even when an extension contributes more skills on startup.
       skillsOverride: (current) => ({ ...current, skills: current.skills.filter((s) => selection == null || selected.skills.includes(s.filePath)) }),
-      appendSystemPromptOverride: (current) => [...current, customTools.length
-        ? "Delegate independent work with delegate. Wait for the proactive completion notification that reports each finished task's taskId and resultId, then read that result once with read_result; do not poll. Use append to add instructions to a running subtask. Avoid concurrent edits to the same files. Report task failures honestly."
-        : "Complete the delegated task. Return concise findings and changes with evidence."],
+      appendSystemPromptOverride: (current) => [...current,
+        // 摘要系统提示词（主代理含委派附加句）原文固定，来自 memory-policy；
+        // 动态 [摘要提醒] 由代码按累计 turn 注入，不让模型计数。
+        ...(summaryPrompt ? [summaryPrompt] : []),
+        customTools.length
+          ? "Delegate independent work with delegate. Wait for the proactive completion notification that reports each finished task's taskId and resultId, then read that result once with read_result; do not poll. Use append to add instructions to a running subtask. Avoid concurrent edits to the same files. Report task failures honestly."
+          : "Complete the delegated task. Return concise findings and changes with evidence."],
     }),
   };
 }
