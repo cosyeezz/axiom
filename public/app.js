@@ -1233,6 +1233,76 @@ function compactionEditor(initial, mainModel) {
   node.append(legend, toggle, selectors, hint);
   return { node, read, valid, error, fillThinking };
 }
+// 重试错误词编辑器：两组 chip 列表（白名单/黑名单），字符串子串匹配、大小写不敏感。
+// 回车提交、重复（不区分大小写）拒收、Backspace 空输入时删除末尾、每条 chip × 可删。
+function retryChipList(labelText, initial) {
+  const state = [...initial];
+  const wrap = document.createElement("div");
+  wrap.className = "retry-patterns";
+  const label = document.createElement("span");
+  label.className = "retry-patterns-label";
+  label.textContent = labelText;
+  const chips = document.createElement("div");
+  chips.className = "retry-chips";
+  const input = Object.assign(document.createElement("input"), { type: "text", maxLength: 200, placeholder: "输入关键词后回车添加，如：429、overloaded" });
+  input.setAttribute("aria-label", `${labelText}关键词`);
+  const render = () => {
+    chips.replaceChildren(...state.map((value, index) => {
+      const chip = document.createElement("span");
+      chip.className = "retry-chip";
+      const text = document.createElement("span");
+      text.textContent = value;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "×";
+      remove.setAttribute("aria-label", `删除 ${value}`);
+      remove.onclick = () => { state.splice(index, 1); render(); input.focus(); };
+      chip.append(text, remove);
+      return chip;
+    }));
+  };
+  const add = () => {
+    const value = input.value.trim();
+    if (!value) return;
+    if (state.some((existing) => existing.toLowerCase() === value.toLowerCase())) {
+      input.value = "";
+      return;
+    }
+    state.push(value);
+    input.value = "";
+    render();
+  };
+  input.onkeydown = (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      add();
+    } else if (event.key === "Backspace" && !input.value && state.length) {
+      state.pop();
+      render();
+    }
+  };
+  wrap.append(label, chips, input);
+  return { node: wrap, values: () => [...state] };
+}
+function retryEditor(initial) {
+  initial = initial || {};
+  const node = document.createElement("fieldset");
+  node.className = "capability-agent retry-settings";
+  const legend = document.createElement("legend");
+  legend.textContent = "自动重试";
+  const white = retryChipList("强制重试（错误消息含关键词即重试）", initial.retryable || []);
+  const black = retryChipList("强制不重试（命中关键词立即停止）", initial.nonRetryable || []);
+  const hint = document.createElement("p");
+  hint.className = "compaction-hint";
+  hint.textContent = "按错误消息里的子串匹配（不区分大小写）；黑名单优先于白名单，二者都优先于内建判定（内建默认重试 429、5xx、网络与流中断等）。仅对新建会话生效。";
+  node.append(legend, white.node, black.node, hint);
+  return {
+    node,
+    read: () => ({ retryable: white.values(), nonRetryable: black.values() }),
+    valid: () => true,
+    error: () => "",
+  };
+}
 // 运行摘要复用 tasks map，点击定位原卡片，不复制详情渲染。
 function renderTaskRuns() {
   const active = [...tasks.values()].filter((task) => ["starting", "running"].includes(task.trigger.dataset.status));
@@ -2780,6 +2850,8 @@ async function loadCreation() {
     );
     $("create-compaction").replaceChildren(current.compaction.node);
     $("create-main-model").addEventListener("change", current.compaction.fillThinking);
+    current.retry = retryEditor(selected.retry);
+    $("create-retry").replaceChildren(current.retry.node);
     current.catalog = catalog;
     updateDefaultsPreview();
     $("create-trust-row").hidden = current.defaults || (!catalog.needsTrust && !$("create-trust").checked);
@@ -2817,7 +2889,7 @@ const rememberCreation = () => {
   const main = creation.main(), child = creation.subagent();
   creation.selection = { ...creation.selection, model: main.model, thinking: main.thinking, capabilities: main.capabilities,
     subagentModel: child.model, subagentThinking: child.thinking, subagentCapabilities: child.capabilities,
-    compaction: creation.compaction.read() };
+    compaction: creation.compaction.read(), retry: creation.retry?.read() };
 };
 $("create-trust").onchange = () => { rememberCreation(); void loadCreation(); };
 $("preset-directory").onclick = async () => {
@@ -2848,6 +2920,10 @@ function updateDefaultsPreview() {
   if (!creation?.defaults || !creation.main) return;
   const main = creation.main(), child = creation.subagent();
   const compaction = creation.compaction?.read();
+  const retry = creation.retry?.read();
+  const retryLine = retry && (retry.retryable.length || retry.nonRetryable.length)
+    ? `\n\n自动重试 · 强制重试 ${retry.retryable.length} 条 · 强制不重试 ${retry.nonRetryable.length} 条`
+    : "";
   const compactionLine = compaction
     ? `\n\n自动压缩 · ${compaction.enabled ? ([
         compaction.tokenThreshold ? `${compaction.tokenThreshold.toLocaleString("en-US")} tokens` : null,
@@ -2860,7 +2936,7 @@ function updateDefaultsPreview() {
     const capabilities = agent.capabilities === "inherit" ? main.capabilities : agent.capabilities;
     return `${title} · ${model?.provider || "默认供应商"} · ${model?.name || key || "默认模型"} · ${agent.thinking || (agent === child ? main.thinking : null) || "默认"}\n` +
       [["skills", "Skills"], ["mcp", "MCP"], ["plugins", "Extensions"]].map(([kind, label]) => `${label}：${(capabilities?.[kind] || creation.catalog[kind].map((entry) => entry.id)).map(capabilityName).join("、") || "无"}`).join("\n");
-  }).join("\n\n") + compactionLine;
+  }).join("\n\n") + compactionLine + retryLine;
 }
 $("create-form").onchange = () => {
   if (!creation?.defaults) return;
@@ -2886,6 +2962,7 @@ $("create-form").onsubmit = async (e) => {
     capabilities: main.capabilities,
     subagentCapabilities: child.capabilities,
     compaction: creation.compaction.read(),
+    retry: creation.retry.read(),
   };
   $("create-submit").disabled = true;
   if (creation.defaults) {

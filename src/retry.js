@@ -46,7 +46,9 @@ const { isRetryableAssistantError, isRecoverableLength } = await createJiti(
 ).import("@earendil-works/pi-ai/compat");
 
 // 返回 null = 正常结束；{ retry, error } = 应重试；{ terminal, error } / { cancelled, error } = 终止。
-function classify(message, later, maxTokens) {
+// custom：会话配置的错误词表（子串匹配，小写预归一）；命中黑名单 → 不重试，命中白名单 → 重试，
+// 二者优先于内建判定（如某供应商把可瞬时故障报成 quota 文案时，可白名单强制重试）。
+function classify(message, later, maxTokens, custom = { retryable: [], nonRetryable: [] }) {
   if (!message || message.stopReason === "stop") return null;
   // 工具调用已全部拿到结果的 toolUse 收尾是正常轮次结束，不是错误。
   if (message.stopReason === "toolUse") {
@@ -60,6 +62,10 @@ function classify(message, later, maxTokens) {
       : { terminal: true, error: message.errorMessage || "输出超出模型上限（length）" };
   // aborted：signal 已 abort（用户主动取消）→ cancelled；否则属意外中断，由调用方按可重试继续。
   if (message.stopReason === "aborted") return { cancelled: true, error: message.errorMessage || "已中止" };
+  const text = (message.errorMessage || "").toLowerCase();
+  if (custom.nonRetryable.some((pattern) => text.includes(pattern)))
+    return { terminal: true, error: message.errorMessage || "error" };
+  if (custom.retryable.some((pattern) => text.includes(pattern))) return { retry: true, error: message.errorMessage || "error" };
   if (isRetryableAssistantError(message)) return { retry: true, error: message.errorMessage || "error" };
   return { terminal: true, error: message.errorMessage || "error" };
 }
@@ -75,7 +81,12 @@ function classify(message, later, maxTokens) {
  * - 等待期可经 cancel() 取消（会话 abort/dispose 时调用）；此期间会话 status 保持 running，
  *   新消息只会入队（steer/followUp），不会启动另一次运行，由重试成功后的续跑消化。
  */
-export function createAutoRetry({ session, emit, sleep = abortableSleep, maxRetries = MAX_RETRIES, now = Date.now }) {
+export function createAutoRetry({ session, emit, patterns, sleep = abortableSleep, maxRetries = MAX_RETRIES, now = Date.now }) {
+  // 词表小写归一一次，classify 内子串比对错误消息的小写副本。
+  const custom = {
+    retryable: (patterns?.retryable ?? []).map((pattern) => pattern.toLowerCase()),
+    nonRetryable: (patterns?.nonRetryable ?? []).map((pattern) => pattern.toLowerCase()),
+  };
   let controller;
   // 与 SDK _prepareRetry 相同的准备：仅移除末尾失败/截断的助手消息（原始消息仍留在会话历史）。
   const dropFailedAssistant = () => {
@@ -116,7 +127,7 @@ export function createAutoRetry({ session, emit, sleep = abortableSleep, maxRetr
           }
           if (!verdict) {
             fresh = freshAssistant();
-            verdict = classify(fresh?.message, fresh?.later ?? [], session.model?.maxTokens ?? 0);
+            verdict = classify(fresh?.message, fresh?.later ?? [], session.model?.maxTokens ?? 0, custom);
           }
           if (!verdict) {
             if (attempt > 0) announce("succeeded");

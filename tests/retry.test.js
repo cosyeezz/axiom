@@ -263,6 +263,35 @@ test("永久错误不重试：配额/计费首败即止无事件；重试途中�
   assert.equal(data().at(-1).error, QUOTA.errorMessage);
 });
 
+test("自定义词表：白名单强制重试内建不重试的错误", async () => {
+  const location = { stopReason: "error", errorMessage: "UserLocationError: region not supported" };
+  const session = fakeSession([location, { stopReason: "stop", text: "ok" }]);
+  const { emit, data } = recorder();
+  const retry = createAutoRetry({ session, emit, sleep: recordedSleep(), patterns: { retryable: ["region not supported"] } });
+  await retry.run((text) => session.prompt(text || "hi"));
+  assert.deepEqual(session.log, ["prompt", "continue"]);
+  assert.equal(data().at(-1).status, "succeeded");
+});
+
+test("自定义词表：白名单可越过内建黑名单（quota 文案强制重试）", async () => {
+  const session = fakeSession([QUOTA, { stopReason: "stop", text: "ok" }]);
+  const { emit, data } = recorder();
+  const retry = createAutoRetry({ session, emit, sleep: recordedSleep(), patterns: { retryable: ["insufficient_quota"] } });
+  await retry.run((text) => session.prompt(text || "hi"));
+  assert.deepEqual(session.log, ["prompt", "continue"]);
+  assert.equal(data().at(-1).status, "succeeded");
+});
+
+test("自定义词表：黑名单优先，命中内建可重试错误也立即终止；大小写不敏感", async () => {
+  const session = fakeSession([RATE_LIMIT]);
+  const { emit, data } = recorder();
+  const retry = createAutoRetry({ session, emit, sleep: recordedSleep(), patterns: { nonRetryable: ["429 Rate Limit"] } });
+  await retry.run((text) => session.prompt(text || "hi"));
+  assert.deepEqual(session.log, ["prompt"], "黑名单首败即止");
+  assert.deepEqual(data(), [], "未进入重试序列则无事件");
+  assert.equal(lastAssistant(session).stopReason, "error");
+});
+
 test("length 未完成：可恢复（产出低于上限）重试，满额不重试", async () => {
   const truncated = fakeSession([{ stopReason: "length", usage: { output: 50 } }, { stopReason: "stop", text: "done" }]);
   const { emit, data } = recorder();

@@ -119,10 +119,11 @@ test("configuration applies to the main agent and is inherited by delegated chil
     assert.equal(sessions.snapshot(newest).config.thinking, "off");
     assert.equal(sessions.snapshot(newest).config.subagentModel, null);
 
-    const all = { compaction: { ...compactionDefaults }, queueType: "steer", model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
+    const all = { compaction: { ...compactionDefaults }, retry: null, queueType: "steer", model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
     assert.deepEqual(sessions.getDefaults(), all);
     const defaults = {
       compaction: { ...compactionDefaults },
+      retry: { retryable: ["429"], nonRetryable: ["billing"] },
       queueType: "steer", model: "c/d", subagentModel: "a/b", thinking: null, subagentThinking: null,
       capabilities: { skills: ["s"], mcp: [], plugins: ["p"] },
       subagentCapabilities: { skills: [], mcp: ["m"], plugins: [] },
