@@ -304,3 +304,7 @@
 - 根因：createPiFactory 在启动阶段强制选择模型，浏览器连接后无条件创建会话并在失败时断线重连。
 - 修复：src/pi.js 将校验延后到创建会话，每次使用刷新后的目录；public/app.js 空目录保持连接并打开既有模型配置页；scripts/install.mjs 缺少 Pi CLI 时补装最新版。
 - 防再犯：隔离真实 SDK 的凭据与配置目录验证空启动、配置后创建，不只测 fake factory；前端验证无模型不发 session.create、不循环重连，安装 mock 覆盖已有/缺失/安装失败。
+### 2026-09-12 ASCII 中英文表格边框错位
+- 根因：空格对齐依赖字体字宽，模型生成的列宽也未必一致。
+- 修复：markdown.js 仅转换完整、列数一致的纯文本 ASCII 表格为原生 table，单元格走 textContent，复制保留原文。JSON 工具同样用 textContent 更新，复制读取当前 code 内容。
+- 防再犯：不要全局替换空格或修改普通代码；覆盖残缺流式块、HTML 文本、失败不丢原文与当前结果复制。

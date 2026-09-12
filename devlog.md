@@ -6,6 +6,12 @@
 - 安装检查 Pi CLI，缺失则 npm 全局安装最新版，已有不强制升级，安装失败中止。卸载沿用停止/取消自启/npm uninstall 三步，README 说明实际包名与保留数据，不额外删除共用 Pi。
 - 涉及：src/pi.js、public/app.js、scripts/install.mjs、tests/model-onboarding.test.js、tests/install.test.js、前端回归测试、README.md、codebase-map 索引与坑库。复用既有 Linear 暗色面板和焦点样式，无新增依赖。
 - 验证：真实 Pi SDK 在独立临时目录、空凭据环境启动，写入测试模型后刷新目录并创建会话；不调用真实模型、不修改用户凭据。最终全量结果见交付说明。
+## 2026-09-12 00:52 ASCII 表格与 JSON 展示
+- 原因：中英文混排的字符表格边框错位；用户需要会话 JSON 的格式化、压缩、去转义、转义和复制当前结果。
+- 内容：共享 Markdown 渲染器识别完整 ASCII 表格并复用原生表格滚动样式、复制仍保留原文；JSON 使用原生 JSON.parse/stringify、本地操作与错误状态，不增加依赖。单元格和转换结果只用 textContent；未知/残缺 ASCII 保持代码，超安全整数拒绝重写。
+- 样式：复用既有 --line/--surface/--muted token、8px 圆角与 4px 操作间距，窄屏工具栏换行。
+- 涉及：public/markdown.js、public/style.css、tests/markdown.test.js、README.md、本日志与 .pi/skills/codebase-map/{INDEX,knowledge}.md。
+- 验证：共享 Markdown 回归覆盖转换、原文复制、当前 JSON 复制、失败保留和 HTML 注入防护；npm test 184 项：183 通过、1 原有跳过，git diff --check 通过；未做真实浏览器视觉验收。
 
 ## 2026-09-11 修复 Tailscale 普通设备被拒绝
 - 实机只读检查 status/whois：个人设备正常省略 Tags，旧 whoisUser 却要求数组，误将同账号设备当作 tag 设备拒绝。
