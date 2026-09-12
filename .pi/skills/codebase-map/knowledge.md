@@ -392,3 +392,8 @@
 - 根因：CommonMark 侧翼规则：闭合 ** 前为标点且后紧跟文字、或开 ** 后为标点且前为文字时，判定为不可开/闭；中文不加空格故高发。marked 遵循规范，升级无效。
 - 修复：public/markdown.js 新增 fixCjkBold，词法分析前把成对 ** 的首尾标点移出（`**x。**y` → `**x**。y`），渲染文本不变，围栏代码块跳过；tests/markdown.test.js 覆盖句号/冒号/引号三型与代码块原文。
 - 防再犯：行内反引号与缩进代码内的成对 ** 不处理（注释已标 ceiling）；改解析前先用真实 marked 复现最小用例，勿做全文字符串替换。
+
+### 2026-09-12 设置切页因内容高度变化跳动
+- 根因：原生居中 dialog 仅限最大高度，实际高度随页签内容变化。
+- 修复：public/style.css 为 #settings 固定 80dvh，打开时采用纵向 flex，头部固定、settings-layout 内部滚动并预留滚动条位置。
+- 防再犯：tests/service-settings-ui.py 在桌面与窄屏比较四页签真实坐标，长内容验证内部滚动和固定关闭栏；display:flex 仅用于 [open]，避免已关闭弹窗仍显示。
