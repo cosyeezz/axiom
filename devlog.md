@@ -596,3 +596,8 @@
 - 根因：service 顶层等待动态导入 uninstall，uninstall 又静态导入尚未完成求值的 service。
 - 修复：显式传入 run/stop/npm，删除反向导入；涉及 scripts/service.mjs、scripts/uninstall.mjs、tests/uninstall.test.js、README.md 及索引。
 - 验证：新增真实 CLI 子进程测试，以不存在的 npm 隔离实际安装和用户数据。
+
+### 2026-09-12 增加 axiom help
+- 内容/原因：提供命令行用法、停止及卸载的数据保留说明，支持 help/--help/-h；帮助不加载本地环境或启动服务，无效参数非零退出。
+- 涉及：scripts/service.mjs、tests/cli-help.test.js、README.md、代码索引。
+- 验证：真实 CLI 子进程检查三个帮助入口及错误参数。

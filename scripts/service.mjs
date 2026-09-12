@@ -222,10 +222,21 @@ export async function stopService(address = `http://127.0.0.1:${Number(process.e
 }
 if (invoked && invoked === realpathSync(fileURLToPath(import.meta.url))) {
   const [command, ...extra] = process.argv.slice(2);
-  if (existsSync(join(root, ".env.local"))) process.loadEnvFile(join(root, ".env.local"));
-  if (extra.length || (command && !["stop", "uninstall"].includes(command))) {
-    console.error("用法：axiom [stop|uninstall]"); process.exitCode = 1;
+  if (!extra.length && ["help", "--help", "-h"].includes(command)) {
+    console.log(`用法：axiom [help|stop|uninstall]
+
+  axiom            启动后台服务（默认 http://127.0.0.1:4319）
+  axiom help       显示帮助（也支持 --help、-h）
+  axiom stop       安全停止服务及守护进程，不取消登录自启
+  axiom uninstall  停止服务、取消自启并卸载 Axiom
+
+停止时有运行任务会拒绝操作，超时不会强杀。
+卸载保留 Pi、~/.pi 配置和 ~/.axiom 会话数据。
+可通过 AXIOM_PORT 指定端口。`);
+  } else if (extra.length || (command && !["stop", "uninstall"].includes(command))) {
+    console.error("用法：axiom [help|stop|uninstall]（运行 axiom help 查看说明）"); process.exitCode = 1;
   } else {
+    if (existsSync(join(root, ".env.local"))) process.loadEnvFile(join(root, ".env.local"));
     await (command === "uninstall" ? import("./uninstall.mjs").then((m) => m.uninstall({ execute: run, stop: stopService, npm: npmRun })) : command === "stop" ? stopService() : supervise()).catch((error) => {
       console.error(error.message); process.exitCode = 1;
     });

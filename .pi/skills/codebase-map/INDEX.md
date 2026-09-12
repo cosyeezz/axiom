@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 02:46:45）
+# Axiom 多级代码索引（生成于 2026/9/12 02:49:03）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -23,7 +23,7 @@
 | scripts/autostart.mjs | 133 | Windows/macOS/Linux 当前用户登录自动启动安装/卸载 | run, projectDir, serviceEntry, label |
 | scripts/dev.mjs | 12 | 开发入口：DEV 标识、4320 端口与独立数据目录 | - |
 | scripts/install.mjs | 101 | 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器 | root, parseArgs, nodeOk, openCommand |
-| scripts/service.mjs | 234 | 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道 | root, output, run, npmRun |
+| scripts/service.mjs | 245 | 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道 | root, output, run, npmRun |
 | scripts/uninstall.mjs | 18 | 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据 | uninstall |
 | src/capabilities.js | 135 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/compaction.js | 374 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
@@ -44,6 +44,7 @@
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
 | tests/capabilities.test.js | 207 | node --test 测试（npm test） | - |
+| tests/cli-help.test.js | 23 | node --test 测试（npm test） | - |
 | tests/codebase-index.test.js | 20 | node --test 测试（npm test） | ROOT, SKILL |
 | tests/compaction-config.test.js | 105 | node --test 测试（npm test） | - |
 | tests/compaction-ui.py | 57 | node --test 测试（npm test） | - |
@@ -489,7 +490,7 @@
 | install | function | 60 |
 | invoked | const | 98 |
 
-### scripts/service.mjs（234 行） — 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道
+### scripts/service.mjs（245 行） — 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道
 
 | 符号 | 类型 | 行 |
 |---|---|---|
