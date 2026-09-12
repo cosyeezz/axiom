@@ -154,7 +154,7 @@ export async function createPiFactory({ cwd, model: requested }) {
     const messageEntries = () => session.sessionManager.getBranch().filter((entry) => entry.type === "message");
     const compactionRecords = () => session.sessionManager.getBranch().filter((entry) => entry.type === "compaction").map((entry) => {
       const branch = session.sessionManager.getBranch(entry.id);
-      return { id: entry.id, summary: entry.summary, firstKeptEntryId: entry.firstKeptEntryId,
+      return { id: entry.id, summary: entry.summary, ...(entry.details?.progress ? { progress: entry.details.progress } : {}), firstKeptEntryId: entry.firstKeptEntryId,
         compactedMessageIds: summarizedEntryIds(branch.filter((item) => item.id !== entry.id), entry.firstKeptEntryId),
         tokensBefore: entry.tokensBefore };
     });

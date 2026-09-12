@@ -19,8 +19,26 @@ import {
   summarizeWithPiSession,
   summarizedEntryIds,
   summaryRequest,
+  parseSummaryOutput,
   DEFAULT_COMPACTION_CONFIG,
 } from "../src/compaction.js";
+
+test("增量展示与完整交接分离，格式异常保留原文", () => {
+  const progress = { title: "确认通知缺口", description: "发现已通知不等于已读，尚未修复。" };
+  const tags = `<axiom_compact_title>\n${progress.title}\n</axiom_compact_title>\n<axiom_compact_desc>${progress.description}</axiom_compact_desc>`;
+  const text = `Goal: 保留之前的约束\nProgress: 新发现\n${tags}`;
+  assert.deepEqual(parseSummaryOutput(text), { progress, summary: "Goal: 保留之前的约束\nProgress: 新发现" });
+  assert.deepEqual(parseSummaryOutput(text.replaceAll("\n", "\r\n") + "\n"), { progress, summary: "Goal: 保留之前的约束\r\nProgress: 新发现" });
+  for (const value of ["旧摘要", tags, `${text}\n后续正文`, text.replace("</axiom_compact_desc>", ""), text.replace(progress.title, ""), text.replace(progress.title, "长".repeat(31)), text.replace(progress.description, "长".repeat(201)), text.replace(progress.title, "<nested>标题</nested>"), `AXIOM_PROGRESS ${JSON.stringify(progress)}\n旧格式摘要`])
+    assert.deepEqual(parseSummaryOutput(value), { summary: value });
+  const request = summaryRequest("本次新增发现", "历史约束");
+  assert.match(request, /ONLY progress/);
+  assert.match(request, /NOT incremental/);
+  assert.match(request, /Do not include numbering/);
+  assert.match(request, /<axiom_compact_title>/);
+  assert.match(request, /<axiom_compact_desc>/);
+  assert.ok(!request.includes("AXIOM_PROGRESS"));
+});
 
 test("连续摘要请求完整传入旧约束并要求保留，而非仅输出增量", () => {
   for (const previous of ["约束A：禁止新增依赖", "约束A：禁止新增依赖；已完成B"]) {
@@ -129,7 +147,7 @@ const enabledConfig = {
 function fakeSummarize(log) {
   return async ({ messages, previousSummary }) => {
     log?.push({ count: messages.length, previousSummary });
-    return { summary: `S:${messages.length}`, usage: { input: 10, output: 5 } };
+    return { summary: `S:${messages.length}`, progress: { title: "本次进展", description: "本次新增发现。" }, usage: { input: 10, output: 5 } };
   };
 }
 
@@ -291,6 +309,9 @@ test("turn_end 快照后摘要，安全点应用：保留 recent 与快照后新
     assert.equal(leaf.type, "compaction");
     assert.equal(leaf.id, data.id);
     assert.equal(leaf.firstKeptEntryId, data.firstKeptEntryId);
+    assert.deepEqual(leaf.details.progress, { title: "本次进展", description: "本次新增发现。" });
+    assert.deepEqual(data.progress, leaf.details.progress);
+    assert.ok(!state[0].summary.includes("<axiom_compact_title>"));
 
     // 事件：agent.compaction 与落盘一致
     assert.deepEqual(events.filter((e) => e.type === "agent.compaction.status").map((e) => e.data.status), ["summarizing", "ready", "applied"]);

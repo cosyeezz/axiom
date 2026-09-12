@@ -4,7 +4,19 @@
 - 原因：按用户截图要求，仅将 Stop 右侧白色方块改为红色。
 - 修改：方块单独包裹 span，复用现有 --danger（#f2a6a6），保留文字、边框及停止行为；装饰图标对读屏隐藏。
 - 涉及：public/index.html、public/style.css、tests/app.test.js、README.md、本日志及自动生成的代码索引。
-- 验证：npm test 共 225 项，224 通过、1 原有跳过、0 失败。
+- 验证：同步远端 master 后 npm test 共 227 项，226 通过、1 原有跳过、0 失败；git diff --check 通过。
+
+## 2026-09-12 10:45 -07:00 摘要展示元数据改用末尾标签
+- 原因：用户指定 axiom_compact_title、axiom_compact_desc，避免自然语言输出使用 JSON 转义。
+- 修改：摘要提示词要求完整交接正文后追加两个标签；只提取末尾完整有效的标签，校验非空和长度，异常保留全文。内部 progress 存储和前端 01/02 编号不变，不新增模型调用。
+- 文件：src/compaction.js、tests/compaction.test.js、README.md、devlog.md、.pi/skills/codebase-map/INDEX.md。
+- 验证：npm test 共 227 项，226 通过、1 跳过、0 失败；覆盖多行/CRLF、标签缺失、空内容、超长、嵌套、非末尾及旧 JSON 原文回退。git diff --check 通过；未调用真实模型，未重启服务。
+
+## 2026-09-12 09:15 -07:00 摘要增量进度展示
+- 原因：用户希望连续摘要按 01、02 展示为可读进度，而不是反复展示累计历史。
+- 决策：同次摘要请求额外输出中文增量标题与描述，程序按记录顺序编号；完整交接摘要仍累计，展示数据存入压缩 details，重启恢复。格式异常保留完整原文并回退默认展示，不新增依赖或模型请求。
+- 文件：src/compaction.js、src/pi.js、public/app.js、tests/compaction.test.js、tests/compaction-config.test.js、tests/compaction-ui.test.js、README.md 及代码索引。复用现有 Linear 摘要卡片样式，无新增视觉 token。
+- 验证：后台相关 22 项通过；全量 227 项中 226 通过、1 跳过、0 失败，git diff --check 通过。覆盖增量格式解析/回退、元数据落盘恢复、序号实时/快照一致与展示文本安全；未调用真实模型或运行真实浏览器验收。
 
 ## 2026-09-12 主代理接管服务维护收敛
 - 原因：子代理测试覆盖了理想流程，却把控制管道绕过任务检查及共享依赖覆盖当作预期；暂停子代理编辑，由主代理统一修复。

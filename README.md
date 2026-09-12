@@ -290,6 +290,8 @@ pi 会话 .jsonl（~/.pi/agent/sessions/...）
 
 每会话最多一个后台摘要任务；任务完成不立即修改运行中的上下文。应用时使用 Pi `prepareNextTurnWithContext` 安全入口，并保留其原生轮次刷新；用户排队输入仍由原队列投递。摘要过期、失败或取消时不删除原历史。接近模型窗口硬上限仍以 Pi 原生压缩兜底，必要时会等待，并非任何情况下都零延迟。摘要是有损的，也可能影响模型缓存命中率。
 
+每次后台摘要在同一次模型请求中生成增量进展标题和描述，主会话按 `01 · 标题`、`02 · 标题` 排列，描述只讲本次新增发现、进展或阻塞；历史摘要只作为背景，不重复累计描述。展开后的完整交接摘要仍累计保留有效约束和未完成工作。序号由当前会话压缩记录顺序生成，刷新后保持一致；旧记录、原生兜底或模型格式异常时使用默认标题，不额外请求模型。模型在完整摘要末尾依次追加 `<axiom_compact_title>标题</axiom_compact_title>` 和 `<axiom_compact_desc>描述</axiom_compact_desc>`，不再输出 JSON；程序仅拆出末尾完整有效的标签，缺失、超长或格式错误时保留原文并回退默认展示。正常提取的展示元数据以 `progress: {title, description}` 随事件、会话快照和 Pi JSONL 压缩条目 details 保存，不进入主代理交接摘要。
+
 每次成功压缩保存独立记录，前端只隐藏本次覆盖的历史，保留近期和后台期间新增消息，不重建整个会话或清空输入。被压缩的委托记录所对应的子代理入口收进该次摘要，展开摘要后仍能打开原有子代理详情；多次压缩在历史顶部逐层排列，关联不明的旧任务保守保留。归属依据真实委托工具结果的任务 ID，而非时间猜测。重连/重启恢复相同归属，未完成的后台摘要不会恢复；Pi JSONL 仍保留原文。
 
 协议：`session.create`、`session.configure`、`session.defaults.configure` 支持 `compaction: {enabled,tokenThreshold,percentThreshold,model,thinking,keepRecentTokens}`，两个阈值和 model 可为 `null`。配置返回实际 compaction；快照包含 `compactions`，消息记录包含 `entryId`。成功事件 `agent.compaction` 包含摘要 ID、正文、保留边界和 `compactedMessageIds`，客户端按消息 ID 折叠而非按时间猜测。进度事件 `agent.compaction.status` 与快照 `compactionStatus` 使用相同阶段数据。未启用此功能时仍保留 Pi 原生窗口保护。
