@@ -999,7 +999,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     const text = task.querySelector(".message > .markdown");
     for (const selector of ["h1", "strong", "li", "pre code", "table"]) assert(text.querySelector(selector), selector);
     assert.equal(text.querySelector("img,[onerror]"), null);
-    const thought = task.querySelector(".message details.thinking-record");
+    const thought = task.querySelector("details.thinking-record");
     assert.equal(thought.hidden, false);
     assert.equal(thought.querySelector(".thinking-content").textContent, "");
     thought.open = true;

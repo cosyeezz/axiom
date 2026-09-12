@@ -119,11 +119,20 @@ function scrollLatest() {
 const renderer = createStreamRenderer(renderMarkdown, scrollLatest);
 $("transcript").onscroll = () => {
   const el = $("transcript");
+  $("earliest").hidden = el.scrollTop < 80;
   // A programmatic jump near the bottom must not re-enable follow.
   if (el.scrollTop === locatedScroll) return;
   locatedScroll = undefined;
   follow = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   $("latest").hidden = follow;
+};
+$("earliest").onclick = () => {
+  follow = false;
+  $("transcript").scrollTop = 0;
+  locatedScroll = $("transcript").scrollTop;
+  $("earliest").hidden = true;
+  $("latest").hidden = false;
+  $("transcript").focus({ preventScroll: true });
 };
 $("latest").onclick = () => {
   locatedScroll = undefined;
@@ -593,8 +602,9 @@ function refreshCallGroups(output) {
   let group;
   for (const node of nodes) {
     const item = messageItems.get(node);
+    const precedingGroup = group || (node.previousElementSibling?.classList.contains('call-group') ? node.previousElementSibling : null);
     const isCall = item ? item.heading.textContent !== '你' && !item.buffer.trim()
-      : node.matches('.tool-record, .activity-line, .message-tools');
+      : node.matches('.tool-record, .thinking-record, .activity-line, .message-tools');
     // Consecutive tool-only messages belong to one group, not one group per message.
     if (isCall && item?.callGroup) {
       item.text.before(item.thinking);
@@ -626,13 +636,21 @@ function refreshCallGroups(output) {
     if (item) {
       // Thinking precedes the answer; tool calls emitted after prose stay after it.
       if (!isCall && item.reasoning && item.heading.textContent !== '你') {
-        if (!item.thoughtGroup) {
-          item.thoughtGroup = createCallGroup();
-          item.text.before(item.thoughtGroup);
-          item.thoughtGroup.lastElementChild.append(item.thinking);
+        if (precedingGroup) {
+          precedingGroup.lastElementChild.append(item.thinking);
+          item.thoughtGroup?.remove();
+          item.thoughtGroup = undefined;
+          paintCallGroup(precedingGroup);
+          foldCallsBeforeMessage(precedingGroup);
+        } else {
+          if (!item.thoughtGroup) {
+            item.thoughtGroup = createCallGroup();
+            item.text.before(item.thoughtGroup);
+            item.thoughtGroup.lastElementChild.append(item.thinking);
+          }
+          paintCallGroup(item.thoughtGroup);
+          foldCallsBeforeMessage(item.thoughtGroup);
         }
-        paintCallGroup(item.thoughtGroup);
-        foldCallsBeforeMessage(item.thoughtGroup);
       } else if (item.thoughtGroup) {
         item.text.before(item.thinking);
         item.thoughtGroup.remove();

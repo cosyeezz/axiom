@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-12 02:15 执行过程合组收尾与上下跳转
+- 原因：回答前 thinking 独立建组，与紧邻工具组形成连续 Completed；旧测试把思考位置锁在消息内部，且遗漏历史恢复。
+- 修改：public/app.js 复用前段工具组并保留 thinking 在正文之前，识别移出的 thinking 记录；public/index.html、public/style.css 增加顶部最早/底部最新按钮，沿用现有 secondary 样式与 8px 间距。
+- 验证：tests/activity-groups-ui.py 用 Chromium 覆盖连续三次调用、用量不拆组、手动展开、失败行、手机元信息、上下跳转、真实 attach 与 reload；tests/app.test.js 更新思考查询以允许跨消息合组。README.md 同步说明，坑库追加根因；索引重建但不纳入本次提交。
+- 集成：先合并最新 origin/master，保留其 Agent 结束/停止状态修复，不恢复旧版无限 Working；功能分支验证后合并 master 并普通推送。
+
 ## 2026-09-12 通用字符图入口与原文回退
 - 决策：字符图无统一语法，不强行推断语义；复用 ASCII 表格与字符网格，以结构信号识别 ASCII 框、树、箭头和完整 Unicode 制表线范围，未知保持原文并支持手动优化。
 - 内容：纯文本语言统一大小写归一、增加 diagram/tree；表格和字符网格共用优化/原文切换，复制保持源内容；Tab 按字素列宽推进至 8 格位置，超长网格禁用并说明原因。JSON 控件不变。

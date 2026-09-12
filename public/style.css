@@ -974,14 +974,15 @@ textarea {
   color: var(--muted);
   font-size: 11px;
 }
-#latest {
+#earliest, #latest {
   position: absolute;
-  bottom: calc(100% + 8px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 2;
   box-shadow: 0 4px 20px #0005;
 }
+#earliest { top: 8px; }
+#latest { bottom: calc(100% + 8px); }
 #error {
   margin: 0;
   padding: 0 24px;

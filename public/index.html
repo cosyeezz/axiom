@@ -71,11 +71,12 @@
           <button id="connect" class="secondary">重新连接</button>
         </form>
         <section id="workspace" hidden>
+          <button id="earliest" class="secondary" type="button" aria-controls="transcript" hidden>回到最早消息 ↑</button>
           <div id="transcript" role="region" aria-label="对话记录" tabindex="0">
             <div id="output"></div>
           </div>
           <div class="composer-wrap">
-            <button id="latest" class="secondary" hidden>回到最新消息 ↓</button>
+            <button id="latest" class="secondary" type="button" aria-controls="transcript" hidden>回到最新消息 ↓</button>
             <div id="message-queue" aria-label="待发送队列" aria-live="polite" hidden></div>
             <div id="task-runs" role="status" aria-label="运行中的子代理任务" hidden></div>
             <div id="compaction-progress" role="status" aria-live="polite" aria-atomic="true" aria-label="后台上下文压缩进度" hidden></div>
