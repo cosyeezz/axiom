@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-12 通用字符图入口与原文回退
+- 决策：字符图无统一语法，不强行推断语义；复用 ASCII 表格与字符网格，以结构信号识别 ASCII 框、树、箭头和完整 Unicode 制表线范围，未知保持原文并支持手动优化。
+- 内容：纯文本语言统一大小写归一、增加 diagram/tree；表格和字符网格共用优化/原文切换，复制保持源内容；Tab 按字素列宽推进至 8 格位置，超长网格禁用并说明原因。JSON 控件不变。
+- 文件：public/markdown.js、public/style.css、tests/markdown.test.js、tests/text-diagram-ui.py、README.md、本日志和代码索引/坑库。复用现有 --mono、颜色及工具栏按钮，不新增依赖。
+- 验证：单测覆盖框/树/箭头/混合文本、手动回退、表格双向切换与 Tab 保真；Playwright 验证桌面/手机切换与 Tab 实际坐标。
+
 ## 2026-09-12 字符示意图网格排版
 - 原因：并排菜单框不是表格，上一轮转换不覆盖；中文、图标的字体回退字宽不符合字符图的网格。
 - 修改：public/markdown.js 识别纯文本 Unicode 制表线图，Intl.Segmenter 保留字素，CSS 单/双格固定宽度；保留原文和复制，不猜测语义或修复源空格。20K 字符上限避免逐字 DOM 放大。public/style.css 复用现有 --mono 和颜色，正常字重、零字距。

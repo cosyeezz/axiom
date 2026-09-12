@@ -64,7 +64,7 @@ test("shared Markdown renderer formats blocks and removes unsafe content", async
     const ascii = "+----------+----------+\n| 命令 | 作用 |\n+----------+----------+\n| axiom | 启动服务（已运行则提示） |\n| <img src=x onerror=alert(1)> | **原文** |\n+----------+----------+";
     const fenced = (text, lang = "text") => `\`\`\`${lang}\n${text}\n\`\`\``;
     render(node, fenced(ascii));
-    assert.equal(node.querySelector("pre"), null);
+    assert.equal(node.querySelector("pre").hidden, true);
     assert.equal(node.querySelector("th").scope, "col");
     assert.equal(node.querySelectorAll("tbody tr").length, 2);
     assert.equal(node.querySelector("td").textContent, "axiom");
@@ -72,7 +72,7 @@ test("shared Markdown renderer formats blocks and removes unsafe content", async
     assert.equal(node.querySelector("img, strong"), null, "cells remain literal text");
     assert.equal(node.querySelector(".table-scroll").tabIndex, 0);
     window.navigator.clipboard.writeText = async (text) => { copied = text; };
-    await node.querySelector("button").onclick();
+    await node.querySelector('button[aria-label="复制表格原文"]').onclick();
     assert.equal(copied, ascii + "\n", "copy retains the original ASCII including whitespace");
     for (const [text, lang] of [[ascii, "js"], [ascii.split("\n").slice(0, -1).join("\n"), "text"], [ascii.replace("| axiom |", "| a | b |"), ""], ["a --> b\n     |\n     c", "ascii"]]) {
       render(node, fenced(text, lang));
@@ -89,12 +89,34 @@ test("shared Markdown renderer formats blocks and removes unsafe content", async
     for (const char of ['中', '😀', '（']) assert(cells.find((cell) => cell.textContent === char).classList.contains('diagram-wide'));
     assert(cells.some((cell) => cell.textContent === 'é'), 'combining marks remain one grapheme');
     assert.equal(node.querySelector('img'), null);
-    await node.querySelector('button').onclick();
+    await node.querySelector('button[aria-label="复制代码"]').onclick();
     assert.equal(copied, diagram + '\n');
     render(node, fenced(diagram, 'js'));
     assert.equal(node.querySelector('.text-diagram'), null);
     render(node, fenced(diagram + 'x'.repeat(20000)));
     assert.equal(node.querySelector('.text-diagram'), null, 'large diagrams avoid per-character DOM growth');
+    for (const sample of ['+----+\n| hi |\n+----+', 'root\n|-- 中文\n`-- leaf', 'A --> B', '╔══╗\n║中║\n╚══╝', '说明\n╭──╮\n│中│\n╰──╯\n尾注']) {
+      render(node, fenced(sample));
+      assert(node.querySelector('.text-diagram'), sample);
+      node.querySelector('button[aria-label="切换到原文展示"]').click();
+      assert.equal(node.querySelector('.text-diagram'), null);
+      assert.equal(node.querySelector('code').textContent, sample + '\n');
+      node.querySelector('button[aria-label="切换到优化展示"]').click();
+      assert(node.querySelector('.text-diagram'));
+    }
+    render(node, fenced('中文\tX\né\tY'));
+    assert.equal(node.querySelector('.text-diagram'), null, 'unknown text stays original');
+    node.querySelector('button[aria-label="切换到优化展示"]').click();
+    assert(node.querySelector('.diagram-tab-4'));
+    assert(node.querySelector('.diagram-tab-7'));
+    assert.equal(node.querySelector('code').textContent, '中文\tX\né\tY\n');
+    render(node, fenced(ascii));
+    node.querySelector('button[aria-label="切换到原文展示"]').click();
+    assert.equal(node.querySelector('.table-scroll').hidden, true);
+    assert.equal(node.querySelector('pre').hidden, false);
+    node.querySelector('button[aria-label="切换到优化展示"]').click();
+    assert.equal(node.querySelector('.table-scroll').hidden, false);
+    assert.equal(node.querySelector('pre').hidden, true);
     const jsonText = '{"名称":"中文","html":"<img src=x onerror=alert(1)>","items":[1,2]}';
     for (const input of [fenced(jsonText, "json"), fenced(jsonText, ""), jsonText]) {
       render(node, input);
