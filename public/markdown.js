@@ -83,6 +83,23 @@ function isJson(text) {
   try { JSON.parse(text); return true; } catch { return false; }
 }
 
+// CommonMark 在“** 紧贴标点+紧邻文字”时拒绝开/闭（中文 `**加粗。**下文`、`**“重点”**下文` 高发）。
+// 仅在围栏代码块外把加粗首尾标点移出：`**x。**y` → `**x**。y`，渲染文本不变。
+// ponytail: 行内反引号与缩进代码内的 ** 不处理，误配仅影响样式边界。
+function fixCjkBold(text) {
+  let fenced = false;
+  return text.split("\n").map((line) => {
+    if (/^\s{0,3}(?:```|~~~)/.test(line)) fenced = !fenced;
+    if (fenced) return line;
+    return line.replace(/\*\*([^*\n]+?)\*\*(?=\p{L})/gu, (raw, body) => {
+      const core = body.replace(/^[^\p{L}\p{N}]+/u, "").replace(/[^\p{L}\p{N}]+$/u, "");
+      if (!core || core === body) return raw;
+      const lead = body.slice(0, body.indexOf(core));
+      return `${lead}**${core}**${body.slice(body.indexOf(core) + core.length)}`;
+    });
+  }).join("\n");
+}
+
 function jsonControls(code, bar) {
   const doc = code.ownerDocument;
   const actions = doc.createElement("div");
@@ -130,7 +147,7 @@ export function renderMarkdown(element, text = "") {
   // Bare JSON objects/arrays are data, not Markdown; never interpret their contents as HTML.
   const bareJson = /^[\s]*[\[{]/.test(text) && isJson(text);
   const tokens = (bareJson ? [{ type: "code", lang: "json", text }] : marked
-    .lexer(text, { gfm: true }))
+    .lexer(fixCjkBold(text), { gfm: true }))
     .filter((token) => token.type !== "space");
   const blocks = tokens.map((token, index) => {
     const key = JSON.stringify(token);
