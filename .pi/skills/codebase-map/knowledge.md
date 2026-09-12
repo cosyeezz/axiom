@@ -341,3 +341,9 @@
 - 根因：messageCount 仅为新事件赋值，旧记录无迁移，snapshot 按设计追加末尾。
 - 修复：src/sessions.js 恢复时由首次等待时间与完整单调的同代理消息时间恢复边界，并通过既有 persist 固定；已有边界不重算，缺时间/时钟倒退/边界同毫秒不猜。
 - 防再犯：tests/session-flow.test.js 连续两次真实保存/恢复，tests/message-activity.test.js 连续快照及分组绘制比较位置；修历史兼容不能只测新事件。
+
+### 2026-09-12 卸载入口 top-level await 死锁
+- 症状：卸载 CLI 以 unsettled top-level await 退出。
+- 根因：入口动态导入的模块反向静态导入入口，函数导入测试未覆盖真实 CLI。
+- 修复：uninstall 不再导入 service，由入口传入服务操作。
+- 防再犯：保留真实 CLI 子进程回归，使用无效 npm 防止实际卸载。

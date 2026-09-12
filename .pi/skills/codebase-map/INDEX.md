@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 02:43:40）
+# Axiom 多级代码索引（生成于 2026/9/12 02:44:51）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -24,7 +24,7 @@
 | scripts/dev.mjs | 12 | 开发入口：DEV 标识、4320 端口与独立数据目录 | - |
 | scripts/install.mjs | 101 | 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器 | root, parseArgs, nodeOk, openCommand |
 | scripts/service.mjs | 234 | 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道 | root, output, run, npmRun |
-| scripts/uninstall.mjs | 19 | 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据 | uninstall |
+| scripts/uninstall.mjs | 18 | 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据 | uninstall |
 | src/capabilities.js | 135 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/compaction.js | 374 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
@@ -87,7 +87,7 @@
 | tests/text-contrast.test.js | 162 | node --test 测试（npm test） | source, css, fakeStorage, throwingStorage |
 | tests/text-diagram-ui.py | 36 | node --test 测试（npm test） | - |
 | tests/tooltip.test.js | 282 | node --test 测试（npm test） | source, boot, fire, tip |
-| tests/uninstall.test.js | 31 | node --test 测试（npm test） | - |
+| tests/uninstall.test.js | 45 | node --test 测试（npm test） | - |
 | tests/update.test.js | 38 | node --test 测试（npm test） | old |
 | tests/workspace-isolation.test.js | 80 | node --test 测试（npm test） | - |
 | tests/workspace-picker.test.js | 96 | node --test 测试（npm test） | - |
@@ -506,11 +506,11 @@
 | invoked | const | 185 |
 | stopService | function | 186 |
 
-### scripts/uninstall.mjs（19 行） — 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据
+### scripts/uninstall.mjs（18 行） — 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| uninstall | function | 9 |
+| uninstall | function | 8 |
 
 ### src/capabilities.js（135 行） — 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities）
 
