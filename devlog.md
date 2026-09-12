@@ -627,3 +627,7 @@
 - 内容/原因：维护通道对齐 scripts/maint-server.mjs 实际实现——GET /status 扁平记录（operation/status 枚举/phase/phases/startedAt/error/log），POST /recover 严格 body（仅 {"mode":"quick"|"rebuild"}，要求 application/json，多余键 400）；凭证仅缓存 loopback http（^http://127.0.0.1:\d+$）+ 非空 token 于 sessionStorage；fetch 5s 超时即 abort（AbortController + finally clearTimeout），轮询防重叠（在飞跳过）；在线与断线都轮询（重启准备阶段可观测），每次以权威 state 更新重启锁（准备阶段失败 worker 在线时靠轮询解锁，提交后守护记账前 5s 宽限防提前解锁）；service.status 暂不带 operation：apply 无字段时保留 lastState 不抹历史；阶段名本地化（未知原样）；恢复改为面板「尝试恢复服务」按钮手动触发（#service-recover，index.html 新增），前端不自动再起，自动重试/限流归守护；真实 HTTP 集成测试（真实 maint-state + maint-server + 真实 fetch）验证 404/400/409/202、扁平字段、日志脱敏、前端端到端渲染。
 - 涉及：public/service-settings.js（重写）、public/index.html（+恢复按钮）、README.md、devlog.md、tests/service-settings.test.js（重写：8 项含真实 HTTP 契约实测）。
 - 验证：node --test tests/service-settings.test.js tests/app.test.js 11/11 通过、自然退出；全量除后端进行中的 service.test.js 外 207 passed 1 skipped；索引失败仅后端 3 个未登记文件（maintenance-contract.md、service-settings-api.test.js、service-settings-ui.py），待统一重建。
+
+### 2026-09-12 — 4320 原地依赖修复与独立重载
+- npm ci 遇到运行中原生模块的 Windows 文件锁（EPERM），改用 npm install 补齐依赖；SDK 导入和 service-settings-api 测试通过。还原 npm 自动补写的锁文件元数据，不变更依赖版本。
+- 不再等待当前代理自身空闲：临时独立进程限时重试 4320 安全停止入口，当前回复结束后接手启动 scripts/dev.mjs 并记录健康检查；不强杀、不操作 4319。重载结果写入系统临时目录 axiom-reload-4320.log。
