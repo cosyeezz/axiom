@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 02:44:52）
+# Axiom 多级代码索引（生成于 2026/9/12 02:46:45）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -41,7 +41,7 @@
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
 | tests/activity-groups-ui.py | 201 | node --test 测试（npm test） | activityHistory, sessions |
 | tests/app.test.js | 1562 | node --test 测试（npm test） | pickerSource, contrastSource, modelSources |
-| tests/autostart.test.js | 60 | node --test 测试（npm test） | node, cwd, service |
+| tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
 | tests/capabilities.test.js | 207 | node --test 测试（npm test） | - |
 | tests/codebase-index.test.js | 20 | node --test 测试（npm test） | ROOT, SKILL |
@@ -772,13 +772,13 @@
 | contrastSource | const | 10 |
 | modelSources | const | 11 |
 
-### tests/autostart.test.js（60 行） — node --test 测试（npm test）
+### tests/autostart.test.js（71 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| node | const | 14 |
-| cwd | const | 15 |
-| service | const | 16 |
+| node | const | 16 |
+| cwd | const | 17 |
+| service | const | 18 |
 
 ### tests/benchmark.js（92 行） — node --test 测试（npm test）
 

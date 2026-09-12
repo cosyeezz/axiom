@@ -124,8 +124,8 @@ for (const failInstall of [false, true]) test(`supervisor update ${failInstall ?
   try {
     await mkdir(join(cwd, "scripts")); await mkdir(join(cwd, "src"));
     const globalRoot = join(cwd, "global");
-    await mkdir(join(globalRoot, "@myworkbench"), { recursive: true });
-    await symlink(cwd, join(globalRoot, "@myworkbench", "axiom"), "junction");
+    await mkdir(join(globalRoot, "@cosyeezz"), { recursive: true });
+    await symlink(cwd, join(globalRoot, "@cosyeezz", "axiom"), "junction");
     const shim = join(cwd, "shim"); await mkdir(shim);
     if (process.platform === "win32") {
       await writeFile(join(shim, "npm.cmd"), `@if "%1"=="root" (echo ${globalRoot}& exit /b 0)\r\n@echo %* > "%CD%\\npm-called"\r\nif not exist stopped echo served > "%CD%\\served-during-install"\r\nexit /b ${failInstall ? 1 : 0}\r\n`);
@@ -183,8 +183,8 @@ test("update pins the full commit and records it only after successful installat
   const sha = "b".repeat(40), calls = [];
   try {
     const globalRoot = join(cwd, "global");
-    await mkdir(join(globalRoot, "@myworkbench"), { recursive: true });
-    await symlink(cwd, join(globalRoot, "@myworkbench", "axiom"), "junction");
+    await mkdir(join(globalRoot, "@cosyeezz"), { recursive: true });
+    await symlink(cwd, join(globalRoot, "@cosyeezz", "axiom"), "junction");
     const execute = async (command, args, dir, capture) => {
       calls.push([command, ...args].join(" "));
       return capture ? globalRoot + '\n' : '';

@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-12 项目独立：包名 @cosyeezz/axiom，弃用旧发布方式
+- 决策：按用户要求 Axiom 独立，去除与主工作区的现行从属关系；旧的子目录镜像发布方式不再使用，master 直接推送公开仓库。npm 包名定为 `@cosyeezz/axiom`，macOS 登录自启 Label 改为 `com.cosyeezz.axiom`。不改写 Git 历史，不删除另一仓库及其未提交改动；历史条目仅以中性表述（主工作区、旧发布方式）去除旧名称与具体路径，事件事实不变。
+- 文档：README 发布流程改为独立功能 worktree 验证 → 提交 push → 合并 master 推送发布；卸载说明按本机实际安装 package.json 的 name 确定包名，不保留旧名称字面量；新增「从旧包名迁移」一节：更名不支持原地自动迁移，旧版本先安全停止、取消自启、卸载旧包，再安装 github:cosyeezz/axiom 并 axiom-setup，~/.axiom 与 ~/.pi 保留，新旧服务不可同时运行。AGENTS 示例改用 Axiom。版本升至 0.1.5，更新与卸载核对新包目录，预览使用当前工作空间。
+- 本机配置：worktree `.env.local`（gitignore，不入库）已复制原配置并移除旧 AXIOM_CWD（改为注释），合并后部署回主源码目录并保留其他设置；在此记录该被忽略的本机配置修正，便于追溯。
+- 验证：合入最新 master 的卸载 CLI 循环等待及重试时间线修复后，npm test 199 项，198 通过、1 原有跳过、0 失败；npm pack --dry-run 核对独立包名且不含本机 .env.local；当前源码与文档的旧项目名称引用清零。
+- 涉及：README.md、devlog.md、AGENTS.md、package.json、package-lock.json、scripts/{service,uninstall,autostart}.mjs、tests/{service,uninstall,autostart}.test.js、tests/conversation-preview.mjs、代码索引及本机 .env.local。
+
 ## 2026-09-12 09:42 UTC 旧重试卡时间线迁移
 - 原因：新记录已有 messageCount，但旧记录恢复仍固定追加末尾，成功状态更新不会纠正旧位置。
 - 决策：src/sessions.js 在恢复时用首次 nextRetryAt-delayMs 和同代理消息 timestamp 找边界，仅接受完整、单调且边界不重时的时间线；补齐 messageCount 后随现有 persist 落盘，已有位置不覆盖，缺证据继续回退。不改重试策略、消息正文或 Linear 卡片样式，无新增依赖。
@@ -104,7 +111,7 @@
 - 发布工作区 npm test：130 通过、0 失败、1 原有跳过；未全局安装或重启正式/开发服务。首次部署后需完整重启守护进程加载新更新逻辑。
 
 ## 2026-09-11 — 更新目录错位保护
-- scripts/service.mjs 安装前后执行同一 npm 的 root -g，以 realpath 比对目标 @myworkbench/axiom 与运行根目录；不一致拒绝，防止多 Node/npm 环境中更新别处却把旧目录标记为最新。
+- scripts/service.mjs 安装前后执行同一 npm 的 root -g，以 realpath 比对目标包与运行根目录；不一致拒绝，防止多 Node/npm 环境中更新别处却把旧目录标记为最新。
 - tests/service.test.js 覆盖不同 prefix 安装前拦截、安装后 prefix 变化不写新 SHA，以及目录别名的真实路径核对；相关 9 项通过。未全局安装或重启服务。
 
 ## 2026-09-11 — 更新按 master 完整提交，不再依赖版本号
@@ -114,7 +121,7 @@
 
 ## 2026-09-11 — 预设会话合并发布 0.1.4
 - 用户确认合并；功能分支先同步最新 master，保留导入 pi 会话入口、压缩与输入快捷键，文档两侧记录保留，代码索引重建。package.json patch 升至 0.1.4，以便独立仓库更新识别。
-- 合并后 npm test：130 项，129 通过、1 原有跳过、0 失败。推送功能分支并合并 master，再 subtree 同步 cosyeezz/axiom；主工作区未提交改动保留，不重启服务。全局/项目配置分层和工具进度条不在此次预设分支内。
+- 合并后 npm test：130 项，129 通过、1 原有跳过、0 失败。推送功能分支并合并 master，再按当时的子目录镜像方式同步 cosyeezz/axiom；主工作区未提交改动保留，不重启服务。全局/项目配置分层和工具进度条不在此次预设分支内。
 
 ## 2026-09-11 — 侧栏具名预设会话
 - 按用户要求将自定义新会话入口改为「预设会话配置」，保存的预设按钮显示在其下方，共享背景框；复用现有主/子模型、能力与压缩表单，支持名称、可选固定目录、编辑、删除、点击启动。
@@ -148,7 +155,7 @@
 
 ## 2026-09-11 — 技能恢复修复发布 0.1.3
 - 用户确认合并与同步独立仓库。package.json 升至 0.1.3，发布跨目录默认能力收窄与逐会话恢复隔离修复；README 已同步恢复规则。
-- 在功能 worktree 复验后合并 MyWorkbench/master，并以 subtree 推送 axiom/ 至 cosyeezz/axiom master。保留主工作区未提交改动，不重启本机服务，不执行 npm ci。
+- 在功能 worktree 复验后合并原主仓库 master，并以旧发布方式推送至公开仓库 cosyeezz/axiom master。保留主工作区未提交改动，不重启本机服务，不执行 npm ci。
 
 ## 2026-09-11 01:30 — 跨目录能力继承与启动恢复隔离
 - 原因：默认/历史能力以绝对路径持久化，跨目录或卸载后与新清单不符；Sessions.load 将单会话失败传播至 main，导致服务退出，macOS/Windows 共用此缺陷。
@@ -157,7 +164,7 @@
 - 验证：Windows 本机 npm test 114 通过、1 原有跳过、0 失败；git diff --check 通过。macOS 未实机运行，测试同时覆盖 Windows/POSIX 旧路径。
 
 ## 2026-09-10 21:52 — 紧凑原名工具行与模块强调
-- worktree MyWorkbench-conversation-labels / feat/conversation-labels。按用户六项反馈将工具/思考行缩至 12px/400、SVG 16px/底座 24px；工具显示原名（仅省略 functions. 前缀，完整名保留 title），powershell/pwsh 复用命令图标。思考/连接/准备调用使用 thinking / thinking... / connecting... / calling...，中文结果状态保留。
+- 功能 worktree feat/conversation-labels。按用户六项反馈将工具/思考行缩至 12px/400、SVG 16px/底座 24px；工具显示原名（仅省略 functions. 前缀，完整名保留 title），powershell/pwsh 复用命令图标。思考/连接/准备调用使用 thinking / thinking... / connecting... / calling...，中文结果状态保留。
 - waiting/running 的等待图标隐藏 SVG，使用高低亮度分段 CSS 旋转环；不增加定时器，尊重 reduced-motion。SKILL 与 SUBAGENT 使用描边标识、语义底色和左侧色条，任务状态行允许换行；桌面工具行最小 36px，手机 44px 点击区域不变。缩短消息/角色标题/用量间距，正文 14px、1.8 行高不动，不改安全 Markdown、流式脏块或折叠惰性渲染。
 - 涉及 public/{app.js,style.css}、tests/{app.test.js,message-activity.test.js,conversation-preview.mjs,conversation-ui.py}、两级 README.md / devlog.md、codebase-map 索引及 knowledge.md。测试补原始工具名/完整 title/图标映射、Skill badge 和真实浏览器尺寸、键盘与伪元素旋转。
 - 验证：npm test 86 通过、1 原有跳过、0 失败；Chromium 1440/390/320px 全部通过，无页面/CSP 错误。相同内容对比桌面工具行从 44px 降至 36px（18.2%），录制实际浏览器 12 帧动画，未伪造动效。样例不调用模型/读取用户数据。只读比对确认正式 4319 CSS 仍为 8b186c6：src/server.js 启动时缓存静态资源，需合并后快速重启才载入新版；本轮不重启正式服务，保留分支和截图供验收。
@@ -167,7 +174,7 @@
 - 合并后验证：npm test 86 通过、1 原有跳过、0 失败；重启静态预览后，Chromium 1440/390/320px 配色、吸顶、定位、转圈及减少动态效果检查通过，无浏览器错误。按流程推送功能分支、合并 master 并推送，再将截图/日志移出并清理 worktree；正式服务不在本次合并中重启。
 
 ## 2026-09-10 21:12 — 会话语义配色、动态状态与阅读体验
-- worktree MyWorkbench-conversation-colors / feat/conversation-colors。按用户三轮反馈保留 Linear 深色底，新增雾蓝读取/搜索、青绿命令/代码、暖金编辑/重点、柔紫思考/子代理；正文缩至 14px，思考 Markdown 斜体正常字重（代码保持正体）。状态改清晰旋转环，覆盖思考、连接、工具与子代理卡片/浮层/摘要，结束停止并尊重减少动态效果。
+- 功能 worktree feat/conversation-colors。按用户三轮反馈保留 Linear 深色底，新增雾蓝读取/搜索、青绿命令/代码、暖金编辑/重点、柔紫思考/子代理；正文缩至 14px，思考 Markdown 斜体正常字重（代码保持正体）。状态改清晰旋转环，覆盖思考、连接、工具与子代理卡片/浮层/摘要，结束停止并尊重减少动态效果。
 - 去除工具输出、diff、系统提示词内部纵向限高，使用共享 sticky summary 和收起 SVG；原生键盘折叠、宽代码/表格横向滚动保留。子代理摘要改原生按钮，定位并聚焦会话内原卡片，不直接打开浮层；浏览器复现近底部跳转触发 onscroll 后重新跟随的问题，记录程序跳转位置并忽略同位置事件，实际滚动或回到最新可恢复，快照重置。
 - 涉及 public/{app.js,style.css}、tests/{app.test.js,conversation-preview.mjs,conversation-ui.py}、README.md、本日志、仓库 devlog.md、codebase-map 的索引/职责表与 knowledge.md。不加运行依赖，不改 SDK、消息协议、安全 Markdown 或折叠渲染策略。
 - 验证：npm test 83 通过、1 原有跳过、0 失败；已有 Python Playwright + Chromium 实测 1440/390/320px 配色、字号/字重、主/子长内容吸顶收起、无内部纵向滚动、键盘定位及回到最新；检查旋转实际运动、结束停止及 reduced-motion，无页面/CSP 错误。新增脚本可重复验收并输出截图，静态样例不调用模型、不读取用户数据；截图前等待滚动合成稳定，避免拍到短暂空白标题。正式服务未重启，先保留功能分支供用户看预览。
@@ -178,50 +185,50 @@
 - 验证：npm test 83 通过、1 原有跳过、0 失败；Chromium 桌面/390px/320px 全套 UI 检查通过，额外验证 1440px/320px 双 diff 视图截断提示及输入菜单颜色，无浏览器/CSP 错误。预览仍为静态样例，正式服务未重启。最终只读复核已回收：主体改动未发现功能/性能/安全回归；后续补修由主代理以上述 83 项测试与浏览器检查验证。复制反馈的失焦边界、纯 pre 的标签措辞和无害死选择器三项非阻塞建议暂留，避免扩大本轮范围；按仓库流程合并，验收截图移出工作树保留。
 
 ## 2026-09-11 — 会话信息层级与 Linear 视觉重设计
-- worktree MyWorkbench-conversation-ui / feat/conversation-ui。按用户反馈去掉执行记录默认三角、字符图标和重复思考状态：统一 20px SVG + 32px 底座，工具动作/对象/状态分列，完成保持工具身份；工作空间内路径缩短，手机对象换行，未知工具原名省略显示。
+- 功能 worktree feat/conversation-ui。按用户反馈去掉执行记录默认三角、字符图标和重复思考状态：统一 20px SVG + 32px 底座，工具动作/对象/状态分列，完成保持工具身份；工作空间内路径缩短，手机对象换行，未知工具原名省略显示。
 - 思考入口合并为一行，展开复用安全 Markdown 与脏块渲染；正文/思考/重点/斜体分层。代码块新增语言/复制反馈，表格改原生布局加可聚焦滚动容器，修正右侧空框及窄屏单字换行；工具详情、Skill、重试与压缩统一文字展开提示。采用项目 design 的 Linear tokens 与系统字体回退，无新增依赖，不改 pending、回执、SDK 或模型上下文。
 - 涉及 public/{app.js,style.css,markdown.js,stream-renderer.js}、tests/{app,markdown,message-activity,stream-renderer}.test.js、tests/conversation-preview.mjs、README.md、devlog.md、codebase-map 索引/职责表与知识库。新增无模型/用户数据的本地预览入口，主代理完成 UI，子代理只读复核。
 - 验证：npm test 82 通过、1 原有跳过、0 失败；Chromium 148 实测桌面/390px/320px 无会话或浮层横向溢出，Enter/空格展开、思考 Markdown、代码真实剪贴板、diff 响应式、子任务与减少动态效果通过，页面/CSP 控制台无错误。JSDOM 微基准中位数 baseline 2457ms / optimized 340ms；折叠任务 0 帧/0 解析（仅本机微基准，非模型速度）。未调用付费模型；静态资源需服务重启后生效。
 
 ## 2026-09-11 — 子任务主动通知、凭证读取与输入区运行摘要
-- worktree MyWorkbench-task-notifications / feat/task-notifications。完成任务随机生成 resultId，结果与待通知状态先落盘，再等主运行结束合并唤醒；通知不进入可撤回队列，取消暂停，重启补发（不保证 exactly-once、不重跑任务）。旧任务加载补齐凭证；取消通知轮不标记送达。
+- 功能 worktree feat/task-notifications。完成任务随机生成 resultId，结果与待通知状态先落盘，再等主运行结束合并唤醒；通知不进入可撤回队列，取消暂停，重启补发（不保证 exactly-once、不重跑任务）。旧任务加载补齐凭证；取消通知轮不标记送达。
 - read_result / WS tasks.read 改单任务 taskId+resultId，删除 wait 和批量/轮询用法；新增 append，默认 steer、可选 followUp，仅允许运行中子任务追加。模型提示与 smoke 同步迁移。
 - 输入框＋上方添加当前会话启动中/运行中子代理的单行摘要，转圈图标、省略溢出，完成移除、切会话重置，复用现有任务状态；不增加依赖或后端接口。
 - 涉及 src/{tasks,sessions,tools,protocol,server,capabilities}.js、public/{app.js,index.html,style.css}、tests/{tasks,task-notifications,config,capabilities,app}.test.js、tests/smoke.js、README.md、索引及 knowledge.md。使用假代理与 DOM 回归验证；未调用付费模型运行 smoke、未做真实浏览器视觉验收。
 
 ## 2026-09-10 — 主/子代理自动避让重试
-- worktree MyWorkbench-auto-retry / feat/auto-retry。调研 OpenAI/Anthropic SDK 与 Pi SDK 后，在共享 factory 层统一重试，禁用底层重复计数；保留工具结果后继续，不重发用户任务。
+- 功能 worktree feat/auto-retry。调研 OpenAI/Anthropic SDK 与 Pi SDK 后，在共享 factory 层统一重试，禁用底层重复计数；保留工具结果后继续，不重发用户任务。
 - 用户确认间隔 3、3、3、6、6、12、24、48、96、192…秒，持续翻倍、最多30次。长等待分段定时防32位溢出；主动停止立即取消；永久错误不重试。
 - UI 原生 details 聚合错误与等待时间，成功自动折叠，可手动展开；主/子代理隔离，记录保存、重启标记停止。前端委托两次遇到429失败，改由主代理实现。
 - 涉及 src/{pi,retry,sessions}.js、public/{app.js,style.css}、tests/{retry,app,session-flow}.test.js、README.md、索引与知识库。测试使用假模型/假等待，不调用付费模型；未做真实浏览器视觉验收。
 ## 2026-09-10 — 图片粘贴位置占位
-- worktree MyWorkbench-image-placeholders / feat/image-placeholders。上传/粘贴立即在光标或选区插入 `[imageN]`，缩略图显示同编号，删除附件同步删标记并重排；发送保留正文位置并附编号与附件顺序说明，复用原协议，不改 SDK。
+- 功能 worktree feat/image-placeholders。上传/粘贴立即在光标或选区插入 `[imageN]`，缩略图显示同编号，删除附件同步删标记并重排；发送保留正文位置并附编号与附件顺序说明，复用原协议，不改 SDK。
 - 队列撤回按已有草稿与各条附件数累加调整编号；读图与撤回互斥，避免异步编号冲突；读图失败只回滚原位置尚未编辑的占位，不覆盖用户新输入。手改标记按普通文字处理，删除标记不自动丢弃图片。
 - 涉及 public/app.js、tests/app.test.js、README.md、devlog.md、codebase-map 的 INDEX.md 与 knowledge.md。测试覆盖中间粘贴、继续输入、删除重排、失败恢复、异步切会话、多条撤回编号、发送说明；独立复查补充了读图/撤回竞态防护。
 - 验证：npm test 全量 52 项通过；未做真实浏览器手动验收。
 
 ## 2026-09-10 — 三类分组与拖动排序
-- worktree MyWorkbench-session-groups / feat/session-groups。按用户要求列表分三类：按时间分组、待处理（运行中会话，紧挨已完成上方）、已完成；另支持同类内拖动会话到另一行手动排序。
+- 功能 worktree feat/session-groups。按用户要求列表分三类：按时间分组、待处理（运行中会话，紧挨已完成上方）、已完成；另支持同类内拖动会话到另一行手动排序。
 - 排序以全局会话 id 顺序物化存入 localStorage（axiom.sessionOrder），搜索中拖动也不破坏其他会话顺序；未排序会话按原服务端顺序稳定跟随。
 - 涉及 public/{app.js,style.css}、tests/app.test.js、README.md、devlog.md 与 codebase-map 索引。
 - 验证：npm test 全量 52 项通过，新增断言三类分组顺序、拖动排序落点、localStorage 持久化与重渲染稳定；未做真实浏览器拖拽验收。
 
 ## 2026-09-10 — 已完成区上移与待处理分组
-- worktree MyWorkbench-done-placement / feat/done-placement。按用户要求，「已完成」区域从侧栏底部固定改为紧贴会话列表下方（列表空间不足时自动压缩滚动，「设置」仍钉在底部），并在列表顶部增加「待处理」分组标题。
+- 功能 worktree feat/done-placement。按用户要求，「已完成」区域从侧栏底部固定改为紧贴会话列表下方（列表空间不足时自动压缩滚动，「设置」仍钉在底部），并在列表顶部增加「待处理」分组标题。
 - 涉及 public/{app.js,style.css}、tests/app.test.js、README.md、devlog.md 与 codebase-map 索引。
 
 ## 2026-09-10 — 已完成区去掉拖放提示文案
-- worktree MyWorkbench-done-label / feat/done-label。按用户要求，折叠区标题精简为「已完成」，去掉「· 拖到这里」提示；拖放行为不变。涉及 public/{app.js,index.html}、devlog.md。
+- 功能 worktree feat/done-label。按用户要求，折叠区标题精简为「已完成」，去掉「· 拖到这里」提示；拖放行为不变。涉及 public/{app.js,index.html}、devlog.md。
 - 验证：npm test 全量 51 项通过（测试未断言该文案）。
 
 ## 2026-09-10 — 输入框 Skill 与工作空间补全
-- worktree MyWorkbench-composer-completion / feat/composer-completion。输入开头 `/` 补全当前会话 Skill，`@` 补全文件及文件夹，支持名称过滤、路径分层、带空格路径、点击与上下/Enter/Tab/Esc 键；文件夹可直接引用或右箭头进入。
+- 功能 worktree feat/composer-completion。输入开头 `/` 补全当前会话 Skill，`@` 补全文件及文件夹，支持名称过滤、路径分层、带空格路径、点击与上下/Enter/Tab/Esc 键；文件夹可直接引用或右箭头进入。
 - 复用 workspace.browse 的工作空间边界检查、已有标签及发送链路，不引入依赖或新协议；序号与会话检查丢弃过期结果，切换/断线/失焦关闭候选。修正仅文件/文件夹标签无法发送的已有条件遗漏。
 - 涉及 public/{app.js,index.html,style.css}、tests/app.test.js、README.md、devlog.md、codebase-map 索引与知识库。测试覆盖技能/文件/文件夹、去重、键盘、邮件/URL 不误触发、过期回包与引用单独发送。
 - 验证时发现 controls 首次执行早于补全状态初始化，将状态声明移到文件顶部后页面测试通过；`npm test` 全量 51 项通过。未执行真实浏览器手动验收。
 
 ## 2026-09-10 — 已完成区改名与去掉计数
-- worktree MyWorkbench-session-done / feat/session-done-label。按用户要求，隐藏区标题由「已隐藏 (N) · 拖到这里」改为「已完成 · 拖到这里」，不再显示会话个数；README 同步。涉及 public/{app.js,index.html}、README.md、devlog.md。
+- 功能 worktree feat/session-done-label。按用户要求，隐藏区标题由「已隐藏 (N) · 拖到这里」改为「已完成 · 拖到这里」，不再显示会话个数；README 同步。涉及 public/{app.js,index.html}、README.md、devlog.md。
 - 验证：npm test 全量 51 项通过（测试未断言计数文案，无需改动）。
 
 ## 2026-09-10 — 顶栏标题与路径间距
@@ -231,7 +238,7 @@
 - 同时排查 Steer / Follow-up：空输入时禁用符合现有逻辑，输入后启用及双类型发送已有测试覆盖，无需修改队列。
 
 ## 2026-09-10 — 会话隐藏与拖放恢复
-- worktree MyWorkbench-session-hide / feat/session-hide。在会话列表下方添加默认收起的原生 details 隐藏区，支持拖入隐藏、拖回恢复及键盘/触屏按钮；限制展开高度，避免影响正常列表阅读。
+- 功能 worktree feat/session-hide。在会话列表下方添加默认收起的原生 details 隐藏区，支持拖入隐藏、拖回恢复及键盘/触屏按钮；限制展开高度，避免影响正常列表阅读。
 - 按后续反馈，将重命名图标改为直线铅笔轮廓，去掉原有类似取色器的圆头。
 - 按后续要求，将隐藏入口放在编辑前，使用对钩图标与「完成并隐藏」提示，点击后移动到下方隐藏区；隐藏区仍提供向上箭头恢复。
 - 仅作为当前浏览器列表偏好保存到 localStorage，不增加服务端协议、不删除或停止会话、不切换当前对话；搜索和工作空间筛选继续生效。
@@ -240,75 +247,75 @@
 
 ## 2026-09-10 — Skill 与用户消息分离
 - 按用户要求，public/app.js 将 skill 折叠块放到对应用户气泡前面、同级显示，保留安全 Markdown 与按需展开；纯 skill 不留空气泡，压缩时一起隐藏。
-- 涉及 public/app.js、tests/app.test.js、README.md、devlog.md 与 codebase-map 索引。worktree MyWorkbench-skill-flat / feat/skill-flat；不增加依赖。
+- 涉及 public/app.js、tests/app.test.js、README.md、devlog.md 与 codebase-map 索引。功能 worktree feat/skill-flat；不增加依赖。
 - 验证：`npm test` 51 项通过；覆盖同级顺序、展开、重复渲染清理、纯 skill 和压缩隐藏。首次缺少依赖，建立共享 node_modules junction 后重跑。
 
 ## 2026-09-10 — 移除浏览器截图，增加图片放大预览
-- worktree MyWorkbench-image-preview / feat/image-preview。按用户要求删除截图按钮与 getDisplayMedia 抓帧逻辑，保留上传和粘贴；附件及消息/历史图片共用原生 dialog 放大预览，支持点击、Enter/空格打开，关闭按钮、遮罩或原生 Esc 关闭，不新增依赖。
+- 功能 worktree feat/image-preview。按用户要求删除截图按钮与 getDisplayMedia 抓帧逻辑，保留上传和粘贴；附件及消息/历史图片共用原生 dialog 放大预览，支持点击、Enter/空格打开，关闭按钮、遮罩或原生 Esc 关闭，不新增依赖。
 - 涉及 public/{app.js,index.html,style.css}、tests/app.test.js、README.md、devlog.md 与 codebase-map 索引。
 - 验证：全量 `npm test` 50 项通过，覆盖截图入口移除、附件/消息预览、键盘开启、关闭与图片源清理。首次测试因 worktree 缺少依赖失败，修正依赖 junction 后通过；JSDOM 不实现原生 Esc，关闭事件用 close() 验证。
 
 ## 2026-09-10 — 现代原生工作空间选择框
-- worktree MyWorkbench-modern-workspace-picker / feat/modern-workspace-picker。按用户反馈替换老式树状 UI：优先调用本机 PowerShell 7，启用 VisualStyles、AutoUpgradeEnabled 和标题；仅未安装（ENOENT）时回退 Windows PowerShell，其他错误不重复弹窗。不新增依赖，保留置顶 owner、取消和超时语义。
+- 功能 worktree feat/modern-workspace-picker。按用户反馈替换老式树状 UI：优先调用本机 PowerShell 7，启用 VisualStyles、AutoUpgradeEnabled 和标题；仅未安装（ENOENT）时回退 Windows PowerShell，其他错误不重复弹窗。不新增依赖，保留置顶 owner、取消和超时语义。
 - 涉及 src/sessions.js、tests/workspace-picker.test.js、README.md、devlog.md、codebase-map 坑库与索引。
 - 验证：全量 `npm test` 50 项通过；本机 PowerShell 7.6.6；Windows UI Automation 实测现代选择框、地址栏、搜索框和选择文件夹按钮可见，测试窗口已关闭；测试覆盖新版优先、缺失回退以及非 ENOENT 错误不回退。
 
 ## 2026-09-10 — 修复工作空间选择窗口不可见
-- worktree MyWorkbench-workspace-picker / feat/workspace-picker。后台 PowerShell 的无 owner 文件夹选择框可能隐藏或落在浏览器后面，未完成的请求随后被误导性提示「窗口已打开」。为原生选择框创建并激活置顶 owner，完成后释放；保留互斥与 5 分钟超时，补充明确占用/超时错误，移除不再存在的手输路径建议。
+- 功能 worktree feat/workspace-picker。后台 PowerShell 的无 owner 文件夹选择框可能隐藏或落在浏览器后面，未完成的请求随后被误导性提示「窗口已打开」。为原生选择框创建并激活置顶 owner，完成后释放；保留互斥与 5 分钟超时，补充明确占用/超时错误，移除不再存在的手输路径建议。
 - 涉及 src/sessions.js、tests/workspace-picker.test.js、README.md、devlog.md、codebase-map 索引与坑库。无新增依赖，不改会话切换流程。
 - 验证：全量 `npm test` 50 项通过；Windows UI Automation 确认真实选择框和取消/确定按钮 IsOffscreen=false（测试窗口已关闭）；回归覆盖中文路径、取消、并发拒绝、超时及失败释放锁。首次原生探测命令误匹配自身并终止，已修正排除自身后重新验证。
 
 ## 2026-09-10 — 守护进程自动重生
-- worktree MyWorkbench-supervisor-respawn / feat/supervisor-respawn。worker 意外退出后 supervisor 自动重启（指数退避 1s→10s，稳定运行 30s 重置计数），端口被占时后台重试、释放后接管；优雅停止/快速重建路径不受影响，终端 Ctrl+C 仍整体退出。
+- 功能 worktree feat/supervisor-respawn。worker 意外退出后 supervisor 自动重启（指数退避 1s→10s，稳定运行 30s 重置计数），端口被占时后台重试、释放后接管；优雅停止/快速重建路径不受影响，终端 Ctrl+C 仍整体退出。
 - 涉及 scripts/service.mjs、tests/service.test.js。验证：真实子进程测试 49 项全部通过。
 
 ## 2026-09-10 — 工作空间打开改原生选择
-- worktree MyWorkbench-workspace-picker / feat/workspace-picker。按用户要求移除侧栏手输目录路径表单（▶ 工作空间），「打开工作空间」直接拉起原生文件夹选择，选后切已有同目录会话或新建；当前工作空间改存 JS 变量，不再借隐藏 DOM 输入框当状态。非 Windows 暂无打开其他工作空间入口（pick 本就仅 Windows），README 同步。
+- 功能 worktree feat/workspace-picker。按用户要求移除侧栏手输目录路径表单（▶ 工作空间），「打开工作空间」直接拉起原生文件夹选择，选后切已有同目录会话或新建；当前工作空间改存 JS 变量，不再借隐藏 DOM 输入框当状态。非 Windows 暂无打开其他工作空间入口（pick 本就仅 Windows），README 同步。
 - 涉及 public/{index.html,app.js,style.css}、tests/app.test.js、README 与代码索引。验证：全量 npm test 48 项通过。
 
 ## 2026-09-10 — 截图与图片输入
-- 独立 worktree MyWorkbench-image-input / feat/image-input。输入区增加图片上传、粘贴系统截图、浏览器授权截取屏幕/窗口/标签页；截图只抓一帧，成功或失败都停止共享。复用 FileReader、canvas、getDisplayMedia 与 Pi 原生图片输入，无新增依赖。
+- 独立 功能 worktree feat/image-input。输入区增加图片上传、粘贴系统截图、浏览器授权截取屏幕/窗口/标签页；截图只抓一帧，成功或失败都停止共享。复用 FileReader、canvas、getDisplayMedia 与 Pi 原生图片输入，无新增依赖。
 - 支持纯图片/图文发送、附件预览与移除、按会话保留草稿、消息历史图片；限制 PNG/JPEG/GIF/WebP、4 张/消息、5 MiB/张，后端校验 base64、签名与大小，视觉模型能力提前校验。排队与撤回保留附件，避免 SDK 文本队列回执丢图。
 - 涉及 public/{app.js,index.html,style.css}、src/{protocol,server,sessions,pi}.js、tests/{app,image-input}.test.js、README/devlog、codebase-map。刻意不增加裁剪/压缩库或独立上传存储；截图超限可先使用系统区域截图。未发送草稿仅存页面内存。
 - 验证：`npm test` 初始 41 项、同步最新 master（服务控制功能）后全部 48 项通过；前端 JSDOM 检查上传、粘贴、纯图发送、会话隔离、移除、格式/数量限制和截图清理；后端检查协议、模型限制、图片队列与 WebSocket 大图传输。未调用付费视觉模型、未进行真实浏览器授权弹窗人工验收，未重启现有服务。
 
 ## 2026-09-10 — 跨平台自动启动与服务重启
-- 独立 worktree MyWorkbench-service-controls / feat/service-controls。右上角独立连接状态与服务菜单，命名「快速重启」「重建重启」；复用 WebSocket Origin/Host 校验，严格校验模式，忙碌会话/子任务禁止重启。
+- 独立 功能 worktree feat/service-controls。右上角独立连接状态与服务菜单，命名「快速重启」「重建重启」；复用 WebSocket Origin/Host 校验，严格校验模式，忙碌会话/子任务禁止重启。
 - npm start 使用 Node 守护进程与 IPC 优雅停止。重建执行 npm ci + 可选 build，暂存原依赖以便安装失败恢复；原生 JS 不增加虚假编译步骤。当前用户登录自动启动分别使用 Windows Startup、macOS LaunchAgent、Linux systemd --user，不立即启停现有进程。
 - 涉及 scripts/{service,autostart}.mjs、package.json、src/{main,server,protocol}.js、public/{app.js,index.html,style.css}、tests/{service,service-api,autostart,app}.test.js、README 和代码索引。
 - 验证：自动启动三平台配置生成/转义、真实子进程快速重启、重建失败恢复与 API 校验测试；全量 npm test。macOS/Linux 尚无真实系统登录验收，不宣称已验证开机；不强杀运行中的现有服务。
 
 ## 2026-09-10 — 可配置后台摘要与 turn 安全压缩
-- 独立 worktree MyWorkbench-background-compaction / feat/background-compaction。按照用户确定方案，后台独立内存 Pi 会话生成摘要，主会话继续运行；token/窗口占比阈值任一先达到触发，支持专用模型、思考等级和近期保留量，摘要会话固定无工具及无关资源。
+- 独立 功能 worktree feat/background-compaction。按照用户确定方案，后台独立内存 Pi 会话生成摘要，主会话继续运行；token/窗口占比阈值任一先达到触发，支持专用模型、思考等级和近期保留量，摘要会话固定无工具及无关资源。
 - 复用 Pi 原生轮次刷新钩子，摘要完成后仅在下一请求前校验并提交；保留固定边界之后的近期消息与全部新增输入/输出/工具结果，原生压缩作为窗口保护。每会话单任务，失败/失效不折叠、不删除原文。
 - 配置接入默认设置、自定义新会话和当前会话；成功压缩事件/历史消息 ID 落盘，前端按覆盖范围局部隐藏旧消息并新增可展开摘要，不重建流式消息。无新增依赖，不修改 node_modules。
 - 涉及 src/{pi,compaction,protocol,sessions}.js、public/{app.js,index.html,style.css}、tests/{compaction,compaction-config,config,app}.test.js、README/devlog 与 codebase-map。验证：npm test 34 项通过，含真实 SDK + 本地 SSE 伪模型端到端、真实 HTTP 取消、split-turn、失效检查、阈值校验、配置/消息 ID/摘要重启恢复、前端折叠与输入滚动保留。实际本机已认证 Pi factory 创建/配置/释放检查通过；未调用付费模型、未重启现有服务，未进行真实浏览器视觉验收。
 
 ## 2026-09-10 — 紧凑添加菜单、Skill 标签与布局纠正
-- 在独立 worktree MyWorkbench-compact-context-menu 实施：菜单改为 176px 三行单行布局，移除标题/副文案，说明移入 title；加号换细线 SVG、桌面 28px 无边框按钮，触屏保留 40px 点击区域。
+- 在独立 独立功能 worktree 实施：菜单改为 176px 三行单行布局，移除标题/副文案，说明移入 title；加号换细线 SVG、桌面 28px 无边框按钮，触屏保留 40px 点击区域。
 - Skill 单独保存为页面草稿状态，上方标签显示，正文不再重复命令，发送时复用 Pi /skill 命令；取消不改正文、失败保留、切换按会话恢复，支持仅发送 Skill。删除旧 CSS order，恢复正文→模型按钮→会话信息。
 - 涉及 public/{app.js,index.html,style.css}、tests/app.test.js、README.md、devlog.md 和 codebase-map；npm test 13 项通过。独立 Chromium 检查 1440/390px 菜单 176×106、加号 28×28、无横向溢出，模型操作行实际位于信息栏上方。未重启现有服务。
 
 ## 2026-09-10 — 上下文添加菜单与工作空间本地操作
-- 独立 worktree MyWorkbench-composer-add-menu / feat/composer-add-menu。参考 Claude Code 桌面「＋」与 Cursor 上下文引用官方文档，移除可见的 Skill 表单行，输入框上沿增加图标菜单、搜索选择器、可移除标签；不调整模型栏/运行摘要位置。Skill 正文以 Pi 终端同款 `[skill] 名称` 默认折叠、点击展开并安全渲染，保留任务正文。
+- 独立 功能 worktree feat/composer-add-menu。参考 Claude Code 桌面「＋」与 Cursor 上下文引用官方文档，移除可见的 Skill 表单行，输入框上沿增加图标菜单、搜索选择器、可移除标签；不调整模型栏/运行摘要位置。Skill 正文以 Pi 终端同款 `[skill] 名称` 默认折叠、点击展开并安全渲染，保留任务正文。
 - 文件/目录只添加工作空间路径引用，按需读取；浏览接口校验真实路径边界，排除符号链接及 .git/node_modules。新会话上方提供 Windows 原生选目录，路径后增加复制/Explorer 图标；取消选择不切换，沿用原会话/信任流程。顶栏仅 WS 状态、停止按钮改 Stop。
 - 涉及 public/{app.js,index.html,style.css}、src/{sessions,server,protocol}.js、tests/{app,session-flow,codebase-index}.test.js、README/devlog 与索引/坑库。无新增依赖；native picker 限 Windows，目录引用不冒充完整附件加载。
 - 验证：13 项自动测试通过，覆盖菜单搜索/选择/移除/发送、Skill 折叠与正文、复制/打开请求、目录越界/缺失、索引行号；独立 4348 模拟服务浏览器验证 1440/390/320px 无横向溢出、菜单与标签可操作、无页面异常。未调用付费模型，未重启现有服务；Windows 原生弹窗与 Explorer 尚未人工点击验收。
 
 ## 2026-09-10 — 输入框显式加载 Skill
-- 独立 worktree MyWorkbench-composer-skills / feat/composer-skills。输入框增加原生 Skill 下拉框，显示主代理实际可用技能及说明；选择、替换、取消直接编辑草稿中的 `/skill:名称 `，发送前即可看到要加载的技能。
+- 独立 功能 worktree feat/composer-skills。输入框增加原生 Skill 下拉框，显示主代理实际可用技能及说明；选择、替换、取消直接编辑草稿中的 `/skill:名称 `，发送前即可看到要加载的技能。
 - 复用 Pi 原生命令展开，普通发送/插话/追加共用，不添加加载接口、依赖或独立选择状态；草稿原有切换保留与失败保留机制不变。只提供单技能显式加载，不把默认能力预览当作当前加载状态。
 - 涉及 src/pi.js、public/{app.js,index.html,style.css}、tests/app.test.js、README.md、devlog.md 和 codebase-map/INDEX.md。npm test 13 项通过，覆盖选择/替换/取消、手动命令同步、发送请求及发送后清空；未调用真实模型，未重启现有服务。
 
 ## 2026-09-10 — 队列、运行中模型切换与工作空间会话落盘
-- 独立 worktree MyWorkbench-session-flow / feat/session-flow。发送操作移到输入区底部；执行中提供 Steering 插话与 Follow-up 追加，设置保存当前会话 Enter 默认类型。复用 Pi 原生队列事件/查询/clearQueue，点击或单按 Esc 撤回全部队列并保留已有草稿，300ms 内双按 Esc 停止；弹窗及手机侧栏优先处理 Esc。
+- 独立 功能 worktree feat/session-flow。发送操作移到输入区底部；执行中提供 Steering 插话与 Follow-up 追加，设置保存当前会话 Enter 默认类型。复用 Pi 原生队列事件/查询/clearQueue，点击或单按 Esc 撤回全部队列并保留已有草稿，300ms 内双按 Esc 停止；弹窗及手机侧栏优先处理 Esc。
 - 运行中允许切换模型，不误将运行状态改为 idle；回答下方使用消息本身的 provider/model/usage，不套用当前选择。右上角仅显示已连接（绿）/连接断开（灰）。重命名、删除使用统一暗色原生 dialog，异步操作绑定原会话 ID，错误留在弹窗。
 - 选择 ~/.axiom/workspaces/<目录 SHA-256>/ 下 Pi 原生 JSONL + 网页元数据 JSON，而非 SQLite：无需新依赖和上下文格式转换，保留 Pi 压缩/模型记录；元数据串行原子替换，保存标题、配置、网页消息和子任务结果。正常退出保留历史，显式删除移除磁盘记录；重启不自动续跑。默认配置移到 ~/.axiom/defaults.json，首次从旧位置复制且不覆盖已有文件。
 - 验证：npm test 13 项通过，新增持久化/关闭恢复/删除/队列类型/运行中配置状态检查；页面测试覆盖撤回保留草稿、单 Esc 不取消、双 Esc 取消与连接状态。真实 SDK 无付费调用验证创建/保存/关闭/重新加载/删除通过。Playwright 独立 4337 模拟服务检查 1440/390/320px 均无横向溢出，发送按钮贴近输入区底部，重命名弹窗打开并聚焦名称输入。未重启既有 4319 服务，旧版纯内存会话无法由此次文件存储自动迁移。
 - 涉及 src/{main,pi,protocol,server,sessions}.js、public/{app.js,index.html,style.css}、tests/{app,config,session-flow}.test.js、README.md 与 codebase-map。队列目前按 Pi 原生一次撤回全部，不实现自造逐条队列；运行队列/未完成片段不跨重启恢复。
 
 ## 2026-09-10 — 子代理会话内浮层、统一渲染与上下跳转
-- 在独立 worktree MyWorkbench-subagent-overlay（feat/subagent-overlay）实施。模型摘要及等级选项去掉「思考」前缀，直接显示供应商 · 模型 · max 等实际等级；不改变运行配置或思考输出能力。
+- 在独立 worktree（feat/subagent-overlay）实施。模型摘要及等级选项去掉「思考」前缀，直接显示供应商 · 模型 · max 等实际等级；不改变运行配置或思考输出能力。
 - 主会话保留 SUBAGENT 状态/任务卡片，点击打开原生 dialog。按用户反馈将初版青绿色改为与现有主题协调的低饱和蓝紫色；浮层和遮罩限定在右侧会话区，以其中心定位，宽度沿用 880px 上限，避开侧栏和顶部会话栏，随侧栏收起及移动端布局变化。
 - 复用主会话 card/renderMessage、stream-renderer、Markdown/DOMPurify 和消息样式，只替换容器；没有第二套子代理渲染或新依赖。缓存、上下文、实际模型/等级固定在顶部，下方独立滚动；「回到最上」暂停跟随，「回到最下」恢复跟随。关闭/未打开时不解析正文，重开补绘完整结果；不自动弹窗抢焦点。
 - 保留原生关闭/遮罩/Esc/焦点返回，Esc 不取消代理；切换/重连释放旧浮层，按快照恢复；延迟 close 回调不清空已重新打开的 activeTask。将浮层 h2 样式限定到顶部，避免污染复用的 Markdown 正文。
@@ -316,7 +323,7 @@
 - 涉及 public/{app.js,index.html,style.css}、tests/app.test.js、README.md、devlog.md 与 codebase-map 索引/坑库；截图仅放独立 artifacts 目录，不提交。
 
 ## 2026-09-10 — 会话运行摘要与子代理详情
-- 在独立 worktree MyWorkbench-session-runtime（feat/session-runtime）实施。发送按钮去掉 ↑；模型选择下显示最近请求缓存命中、Pi 当前上下文估算和实际供应商/模型/思考程度，窄屏换行。
+- 在独立 worktree（feat/session-runtime）实施。发送按钮去掉 ↑；模型选择下显示最近请求缓存命中、Pi 当前上下文估算和实际供应商/模型/思考程度，窄屏换行。
 - 复用 SDK systemPrompt、messages.usage 和 getContextUsage，增加 agent.runtime 边界事件与主/子快照；子任务销毁前保留最终信息。折叠摘要显示状态与运行信息，展开查看完整任务、实际系统提示词、错误和输出，提示词只按纯文本展示。
 - 展示元数据不进入 read_result/tasks.read，避免额外占用主代理上下文；未知用量不伪装成 0%，压缩后的未知上下文显示待更新。无新依赖，不在 token 增量上扫描历史或传输提示词。
 - 验证：npm test 12 项通过，覆盖运行数据、模型变更、主子/跨会话隔离、历史恢复、终态保留、XSS 文本边界与折叠按需绘制；真实 SDK 创建/读取/释放验证通过，未发起付费模型请求。Playwright 使用独立 4327 模拟服务验证 1440/390/320px 无横向溢出、提示词纯文本及摘要展示；git diff --check 通过。
@@ -347,7 +354,7 @@
 - 涉及 public/{app.js,index.html,style.css}、src/{pi,protocol,sessions}.js、tests/{app,config}.test.js、README.md、devlog.md。
 
 ## 2026-09-10 — 可配置默认新会话，复用自定义会话组件
-- 在独立 worktree F:/worktrees/MyWorkbench-default-new-session（feat/default-new-session）实施。「新会话 · 全部能力」更名为「新会话」，设置中增加默认新会话入口，可独立配置主/子模型与 Skills、MCP、插件的全部或自定义能力（含空选择）。
+- 在独立 worktree（feat/default-new-session）实施。「新会话 · 全部能力」更名为「新会话」，设置中增加默认新会话入口，可独立配置主/子模型与 Skills、MCP、插件的全部或自定义能力（含空选择）。
 - 两种配置直接复用原有弹窗、createAgentPicker 和加载/提交数据组装；协议共享选择字段，保存与创建共用 validateSelection，不新增依赖、组件副本或配置服务。默认配置和最近主模型/思考回退值分开，防止调整当前会话覆盖显式默认配置。
 - Sessions.create 统一合入默认值，覆盖所有普通创建入口；自定义入口明确 useDefaults:false，保留当前模型和初始全部能力的原行为。保存默认不创建代理、不改已有会话；省略字段保留，null 恢复默认/全部，失败保留旧值。沿用服务内存生命周期，刷新/重连保留，重启重置，不写 Pi 设置。
 - 默认配置不保存目录信任；保存和实际创建均校验目录/模型/两组能力，所选能力在其他目录不可用时拒绝创建，编辑保留并标记缺失项，不静默扩大或清空选择。原有自定义会话级信任流程保持不变。
@@ -355,7 +362,7 @@
 - 涉及文件：public/{app.js,index.html,style.css}、src/{sessions,protocol,server}.js、tests/{app,config,server}.test.js、README.md、devlog.md。
 
 ## 2026-09-10 — 默认完整能力与自定义主/子代理新会话
-- 在独立 worktree F:/worktrees/MyWorkbench-agent-capabilities（feat/agent-capabilities）实施。新增默认全部能力、自定义新会话两个入口；弹窗复用模型选择样式，主/子代理分别选择供应商/模型和 Skills、MCP、插件多选清单。
+- 在独立 worktree（feat/agent-capabilities）实施。新增默认全部能力、自定义新会话两个入口；弹窗复用模型选择样式，主/子代理分别选择供应商/模型和 Skills、MCP、插件多选清单。
 - 复用 DefaultPackageManager/loadSkills/DefaultResourceLoader，不重写插件扫描或 MCP 协议；MCP 通过已安装适配器独立 config 快照过滤。增加直接依赖 jiti 2.7.0（与 SDK 已使用版本一致），用于导入 Pi 全局 npm 目录中的 TypeScript MCP 适配器及其配置解析器，并映射到当前宿主 SDK。
 - 默认遵守 Pi 已启用配置和目录信任；未信任项目仅全局加载，自定义可明确授予会话级信任。配置快照不写回用户设置。插件按选择加载而非加载后隐藏；主/子模型运行时独立，接通 session_start/session_shutdown，避免 MCP 连接泄漏。无 TUI 组件桥，需审批的操作不自动放行。
 - 新增 capabilities.list 与 session.create 能力字段，创建前校验两类代理选择；快照保留模式/选项、实际工具名和加载提示。能力创建时固定，模型继续使用现有设置机制。修复插件指令无模型回答被误报失败，以及子任务清理异常导致状态不发布。
@@ -363,21 +370,21 @@
 - 涉及文件：src/{capabilities,pi,sessions,tasks,protocol,server}.js、public/{index.html,app.js,style.css}、tests/{capabilities,app}.test.js、package{,-lock}.json、README.md、devlog.md。
 
 ## 2026-09-09 — 新建会话继承最近主代理配置
-- 在独立 worktree MyWorkbench-session-defaults（feat/session-defaults）实现，解决新建会话总是恢复启动模型、需要重复选择的问题。
+- 在独立 worktree（feat/session-defaults）实现，解决新建会话总是恢复启动模型、需要重复选择的问题。
 - Sessions 统一记忆最近成功变更的主模型与实际思考等级，所有新建入口（含切换工作空间时创建）沿用；已有会话不变，子代理覆盖仍按会话独立。
 - 仅子代理变更、读取旧会话或配置失败不覆盖默认值；采用服务内存保存，不新增持久化文件，服务重启后恢复启动配置。
 - 验证：npm test 7 项全部通过；补充新会话继承、已有会话隔离、失败和子代理变更不污染默认值的检查，git diff --check 通过。
 - 涉及文件：src/sessions.js、tests/config.test.js、README.md、devlog.md。
 
 ## 2026-09-09 21:00 — 统一设置入口与子代理配置迁移
-- 在独立 worktree MyWorkbench-agent-settings（feat/agent-settings）实施；删除侧栏底部运行时标语，改为「设置」入口，采用常见的设置弹窗与分区布局，后续设置继续加入此处，不创建空白分类或插件框架。
+- 在独立 worktree（feat/agent-settings）实施；删除侧栏底部运行时标语，改为「设置」入口，采用常见的设置弹窗与分区布局，后续设置继续加入此处，不创建空白分类或插件框架。
 - 将子代理配置从输入区迁入设置，复用主代理的供应商 → 模型下拉样式，保留默认跟随主代理、当前会话作用范围和自动保存；未增加独立思考配置，继续沿用既有继承规则。
 - 使用原生 dialog 处理焦点与 Escape，避免关闭设置时误停任务；支持关闭按钮、遮罩关闭、失败反馈及回滚、忙碌/离线禁用。
 - 验证：npm test 全部 7 项通过，补充供应商筛选、跟随恢复、失败回滚和入口迁移检查；真实浏览器验证桌面打开、关闭焦点与 Escape、390px 手机宽度无横向溢出，未调用付费模型。
 - 涉及文件：public/{index.html,app.js,style.css}、tests/app.test.js、README.md、devlog.md。
 
 ## 2026-09-09 — 页面子 Agent 模型配置
-- 在独立 worktree F:/worktrees/MyWorkbench-subagent-model（feat/subagent-model）实现，复用模型目录与 session.configure，不新增依赖或配置服务。
+- 在独立 worktree（feat/subagent-model）实现，复用模型目录与 session.configure，不新增依赖或配置服务。
 - 输入框下新增原生折叠配置区：子 Agent 可选择独立模型或默认跟随主 Agent；按会话内存保存，快照恢复，忙碌/断线时禁用选择。
 - 委派创建统一应用模型覆盖，保留工作目录和思考继承；配置只影响新子任务，未知模型在主 Agent 配置变更前拒绝。省略覆盖保留旧值，null 恢复继承。
 - 验证：npm test 7 项通过，覆盖独立模型、恢复继承、未知模型拒绝、会话隔离、协议校验、页面选择提交及切换/重连恢复；未进行付费模型调用。依赖通过临时 node_modules junction 复用本机安装。
@@ -385,7 +392,7 @@
 
 ## 2026-09-09 — Axiom 独立服务
 
-- 按用户要求在当前空间新建独立项目，不接入 MyWorkbench，不改其依赖、代码和文档。
+- 按用户要求在当前空间新建独立项目，不接入原主项目，不改其依赖、代码和文档。
 - 实现 Node HTTP/WebSocket 服务、Pi SDK 适配、主会话、并行任务、delegate/read_result 两个工具。
 - 使用原生 JS 模块与 Node 测试，省去构建环节；模块按传输、会话、任务、工具、Pi 适配分开。
 - 无任务并发上限、超时、只读或结果截断；保留鉴权、输入校验、取消传播和慢连接保护。
@@ -447,7 +454,7 @@
 - 仍保留内存会话；持久化、超长单块增量解析不在本次实现。
 
 ## 2026-09-09 — 质量、性能与页面体验优化
-- 原 axiom/ 全部未跟踪：在 F:/worktrees/MyWorkbench-axiom-quality（feat/axiom-quality）复制源码并提交现状基线，未复制凭据、node_modules、PID 或运行日志；保留原工作区及 4319 服务。
+- 原 axiom/ 全部未跟踪：在功能 worktree（feat/axiom-quality）复制源码并提交现状基线，未复制凭据、node_modules、PID 或运行日志；保留原工作区及 4319 服务。
 - 渲染：折叠子任务仅更新文本缓存，跳过帧调度和 Markdown 解析，展开补绘；覆盖流式、最终结果与快照。历史任务按首条消息放置，避免任务详情全部跑到用户请求之前。
 - 传输：合并重复静态资源注册，启动时生成 ETag，no-cache 强制校验、命中返回 304；保持 CSP、DOMPurify、输入校验与本机连接限制。
 - 交互：断线不隐藏消息，允许继续写草稿，重连前保存最新输入；注册握手失败关闭处理，避免无法重试。保留草稿高度和滚动、修复带空白的发送回执、避免列表刷新失败误删已发送消息，修复跨会话重命名回执，删除会话释放草稿。
@@ -456,14 +463,14 @@
 - 可复现性能：node tests/benchmark.js，3 个任务 × 60 更新，展开 60 帧 / 180 次解析（本机一次 562ms），折叠 0 帧 / 0 次解析（四舍五入 0ms）。原有块渲染微基准 4964ms -> 551ms 是既有优化对全量重绘的对比，不归因于本次改动、不代表端到端加速。
 - 涉及文件：public/{app.js,index.html,style.css,stream-renderer.js,favicon.svg}、src/server.js、tests/{app.test.js,stream-renderer.test.js,server.test.js,benchmark.js}、README.md、devlog.md。仍不做磁盘持久化、自动重连或额外前端框架。
 - 交付：基线 87d2816、优化 65916cb 已推送 origin/feat/axiom-quality。尝试按规范合并 master，被主工作区未跟踪的 axiom/ 同名文件阻止，Git 安全中止；不强制覆盖或自动移动原代码。等待用户确认备份策略后再合并、推送 master 和清理 worktree。
-- 保留独立预览 http://127.0.0.1:4320/（该 worktree 内运行，PID 记录在被忽略的 .axiom.pid），未重启原 4319 服务。浏览器截图留在 F:/worktrees/MyWorkbench-axiom-quality-artifacts/，不提交生成图片。
+- 保留独立预览 http://127.0.0.1:4320/（该 worktree 内运行，PID 记录在被忽略的 .axiom.pid），未重启原 4319 服务。浏览器截图留在当时 worktree 旁的 artifacts 目录，不提交生成图片。
 
 ## 2026-09-10 项目 skill：codebase-map 多级索引与排障
 
 - 内容：新增项目级 skill `.pi/skills/codebase-map/`（SKILL.md / INDEX.md / knowledge.md / scripts/reindex.mjs）。多级索引：L0 架构图与模块职责（SKILL.md）→ L1 文件总览 → L2 符号→行号跳转表 → L3 横切常量（协议 command.type、HTML id、HTTP 路由），INDEX.md 由脚本毫秒级重建，用前/改后各跑一次保证实时。bug 知识库 knowledge.md 从 devlog 历史提炼 5 条，修复后追加实现自成长。新增 tests/codebase-index.test.js 守住生成逻辑。
 - 原因：需要快速定位项目结构与按层排障，且索引和知识随代码改动同步成长，不腐烂。
 - 涉及文件：axiom/.pi/skills/codebase-map/{SKILL.md,INDEX.md,knowledge.md,scripts/reindex.mjs}、axiom/tests/codebase-index.test.js、axiom/README.md、axiom/devlog.md。
-- 分支：feat/axiom-project-skill（worktree F:/worktrees/MyWorkbench-axiom-project-skill）。
+- 分支：feat/axiom-project-skill（独立功能 worktree）。
 
 ## 2026-09-10 会话左右留白调整
 
@@ -475,7 +482,7 @@
 - 内容：核查 skill 与近期 4 个功能合并（持久化会话/消息队列/子代理浮层/运行详情）的同步情况——MODULE_INFO、架构图、knowledge.md（+3 条）均已被功能分支按规则维护，索引零漂移（仅时间戳差异）。唯一缺口：SKILL.md 查 bug 怀疑点清单缺新区域，补 3 条（队列回执≠执行状态、子代理浮层定位约束、~/.axiom 持久化排查入口）。
 - 原因：新功能落地后 skill 的排障指引未覆盖新增故障面。
 - 涉及文件：axiom/.pi/skills/codebase-map/SKILL.md、axiom/devlog.md。
-- 分支：feat/axiom-skill-refresh（worktree F:/worktrees/MyWorkbench-axiom-skill-refresh）。
+- 分支：feat/axiom-skill-refresh（独立功能 worktree）。
 
 ### 2026-09-10 会话操作、队列命名与连接恢复
 - 内容/原因：操作入口移到左侧每条会话，固定图标空间并截断长标题；补齐 session-action 暗色样式和危险按钮悬停；修正设置选择器宽度、箭头与复用样式；统一 Send/Steer/Follow-up、Idle/Running 并直接说明效果；WS 退避重连避免后台启动后必须刷新。

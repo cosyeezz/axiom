@@ -13,7 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const run = promisify(execFile);
 export const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const serviceEntry = join(projectDir, "scripts", "service.mjs");
-export const label = "com.myworkbench.axiom";
+export const label = "com.cosyeezz.axiom";
 export const unitName = "axiom.service";
 
 // —— 转义与生成函数（纯函数，供测试）——

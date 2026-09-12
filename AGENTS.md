@@ -6,7 +6,7 @@
 
 - 所有修改（含文档）一律在独立 worktree 中进行，不在主仓库直接改。
 - 位置：项目目录上一级的 `worktrees/` 目录（从主仓库根目录看为 `../worktrees/`，不放项目目录内部）。
-- 命名：目录 `项目名称-功能摘要`（如 `../worktrees/MyWorkbench-agents-update`），分支 `feat/<功能摘要>`。
+- 命名：目录 `项目名称-功能摘要`（如 `../worktrees/Axiom-agents-update`），分支 `feat/<功能摘要>`。
 - 流程：worktree 内验证（构建、测试、复核）→ 提交并 push → 合并回 `master` 并推送 → 清理 worktree。
 
 ## 跨平台
