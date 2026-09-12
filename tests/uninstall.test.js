@@ -7,7 +7,7 @@ import { uninstall } from "../scripts/uninstall.mjs";
 
 test("uninstall verifies target, stops, disables autostart, then removes only Axiom", async () => {
   const dir = await mkdtemp(join(tmpdir(), "axiom-uninstall-"));
-  const root = join(dir, "@myworkbench", "axiom");
+  const root = join(dir, "@cosyeezz", "axiom");
   await mkdir(root, { recursive: true });
   try {
     const calls = [];
@@ -16,7 +16,7 @@ test("uninstall verifies target, stops, disables autostart, then removes only Ax
     assert.match(JSON.stringify(calls[0]), /root/);
     assert.equal(calls[1], "stop");
     assert.equal(calls[2], "disable");
-    assert.match(JSON.stringify(calls[3]), /uninstall.*-g.*@myworkbench\/axiom/);
+    assert.match(JSON.stringify(calls[3]), /uninstall.*-g.*@cosyeezz\/axiom/);
     assert.equal(calls.length, 4);
     const busy = [];
     await assert.rejects(uninstall({ root, cwd: dir, execute: async () => dir,

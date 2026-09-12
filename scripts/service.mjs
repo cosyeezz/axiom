@@ -36,7 +36,7 @@ export async function update(sha, execute = run, cwd = root) {
   const runningRoot = realpathSync(cwd);
   const verifyTarget = async () => {
     const globalRoot = (await npmRun(execute, ["root", "-g"], cwd, true)).trim();
-    const target = join(globalRoot, "@myworkbench", "axiom");
+    const target = join(globalRoot, "@cosyeezz", "axiom");
     if (!globalRoot || !existsSync(target) || realpathSync(target) !== runningRoot)
       throw new Error(`npm 全局安装目录与当前服务不一致：目标 ${target}；当前 ${runningRoot}。请使用启动本服务的 Node/npm 环境更新。`);
   };

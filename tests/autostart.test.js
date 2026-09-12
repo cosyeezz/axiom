@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   vbsScript,
   launchdPlist,
@@ -8,12 +9,22 @@ import {
   xmlText,
   systemdArg,
   main,
+  label,
 } from "../scripts/autostart.mjs";
 
 // 含空格的合成路径，验证三平台转义；纯函数测试，不触碰真实注册位置。
 const node = "/dir with space/node";
 const cwd = "/my projects/axiom";
 const service = "/my projects/axiom/scripts/service.mjs";
+
+test("standalone package and service identity stay consistent", () => {
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url)));
+  const lock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url)));
+  assert.equal(pkg.name, "@cosyeezz/axiom");
+  assert.equal(lock.name, pkg.name);
+  assert.equal(lock.packages[""].name, pkg.name);
+  assert.equal(label, "com.cosyeezz.axiom");
+});
 
 test("windows vbs：隐藏启动、设置工作目录、引号翻倍", () => {
   const s = vbsScript(node, service, cwd);

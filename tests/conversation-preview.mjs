@@ -36,7 +36,7 @@ const thinking = `### 先看信息层级
 内容 → 层级 → 留白 → 状态
 \`\`\``;
 const state = {
-  sessionId: "ui-review", title: "会话阅读体验 · UI 验收", cwd: "F:/worktrees/MyWorkbench-conversation-ui/axiom", status: "idle",
+  sessionId: "ui-review", title: "会话阅读体验 · UI 验收", cwd: process.cwd(), status: "idle",
   config: { model: "preview/axiom", thinking: "high", levels: ["off", "high"], skills: [] },
   runtime: { model: "preview/axiom", thinking: "high" },
   messages: [], live: {}, tools: {},
