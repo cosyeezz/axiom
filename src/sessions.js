@@ -405,8 +405,15 @@ export class Sessions {
       listeners: new Set(),
       messages: saved?.messages || [],
       compactions: saved?.compactions || [],
-      retries: (saved?.retries || []).map((record) => ["waiting", "running"].includes(record.status)
-        ? { ...record, status: "cancelled", error: "服务已重启，自动重试已停止" } : record),
+      retries: (saved?.retries || []).map((savedRecord) => {
+        const record = { ...savedRecord };
+        if (["waiting", "running"].includes(record.status))
+          Object.assign(record, { status: "cancelled", error: "服务已重启，自动重试已停止" });
+        delete record.delayMs;
+        delete record.nextRetryAt;
+        if (record.status === "succeeded") delete record.error;
+        return record;
+      }),
       live: {},
       tools: {},
       subagentModel: selection.subagentModel ?? null,
@@ -463,11 +470,16 @@ export class Sessions {
       if (event.type === "agent.retry") {
         let record = item.retries.find((entry) => entry.agentId === agentId && entry.id === event.data.id);
         if (!record) {
-          record = { agentId, history: [] };
+          record = { agentId, messageCount: item.messages.length, history: [] };
           item.retries.push(record);
         }
         if (event.data.status === "waiting") record.history.push({ ...event.data });
         Object.assign(record, event.data);
+        if (!["waiting", "running"].includes(record.status)) {
+          delete record.delayMs;
+          delete record.nextRetryAt;
+          if (record.status === "succeeded") delete record.error;
+        }
         void this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `重试记录保存失败：${error.message}` } }));
       }
       if (event.type === "tool.state")
