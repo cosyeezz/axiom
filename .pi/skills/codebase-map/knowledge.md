@@ -1,5 +1,11 @@
 # 坑与 bug 知识库（自成长：只追加，不删改历史）
 
+### 2026-09-12 回答前思考与前段工具形成相邻 Completed
+- 症状：连续工具后开始正文，正文自身 thinking 又建一个折叠条，视觉上两个 Completed 紧邻。
+- 根因：只合并工具消息，没有把下一条回答正文之前的 thinking 归入同一无正文区间。
+- 修复：public/app.js refreshCallGroups 复用紧邻前组，独立 thinking-record 同样作为活动处理；正文之后的工具仍留在正文之后。
+- 防再犯：tests/activity-groups-ui.py 覆盖三次实时调用、用量、正文前思考与真实 attach/reload；相邻断言忽略组内 Markdown 和空正文，不能让隐藏思考伪装成正文边界。tests/app.test.js 不再假定 thinking 必须位于原消息节点。
+
 ### 2026-09-11 Tailscale omitempty 字段不能当必填身份
 - 症状：同账号个人设备打开远程地址也返回 403。
 - 根因：真实 whois Node.Tags 使用 omitempty，无标签时省略；测试全手写 Tags:[]，未覆盖实际输出。

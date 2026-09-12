@@ -12,7 +12,19 @@ from playwright.sync_api import sync_playwright
 root = Path(__file__).resolve().parents[1]
 preview = (root / 'tests/conversation-preview.mjs').read_text(encoding='utf-8')
 preview = preview.replace('../src/server.js', (root / 'src/server.js').as_uri()).replace('4321', '4328')
-preview = preview.replace('const sessions = {', 'const sessions = { listPresets: () => [],')
+preview = preview.replace('const sessions = {', '''
+const activityHistory = { ...state, sessionId: 'ui-activity-history', tasks: [], messages: [
+  { agentId: 'main', message: { role: 'user', content: '开始检查。' } },
+  ...['one', 'two', 'three'].flatMap(id => [
+    { agentId: 'main', message: assistant([{ type: 'thinking', thinking: `检查 ${id}` },
+      { type: 'toolCall', id, name: 'read', arguments: { path: `${id}.txt` } }]) },
+    { agentId: 'main', message: { role: 'toolResult', toolCallId: id, toolName: 'read', content: [] } },
+  ]),
+  { agentId: 'main', message: assistant([{ type: 'thinking', thinking: '汇总检查结果。' },
+    { type: 'text', text: '检查已完成。' }]) },
+] };
+states.push(activityHistory);
+const sessions = { listPresets: () => [],''')
 server = subprocess.Popen(['node', '--input-type=module', '-e', preview], cwd=root,
                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 artifacts = Path(tempfile.mkdtemp(prefix='axiom-activity-ui-'))
@@ -82,12 +94,19 @@ try:
             'usage': {'input': 100, 'output': 20}, 'content': [
                 {'type': 'toolCall', 'id': 'c', 'name': 'read', 'arguments': {'path': 'second.txt'}}]}})
         send('tool.state', {'phase': 'end', 'toolCallId': 'c', 'toolName': 'read', 'result': {'content': []}})
-        assert len(groups()) == before, 'usage and consecutive tool messages must not split the group'
+        send('agent.message.start', {'message': {'role': 'assistant'}})
+        send('agent.message.end', {'message': {'role': 'assistant', 'provider': 'preview', 'model': 'axiom',
+            'usage': {'input': 200, 'output': 30}, 'content': [
+                {'type': 'toolCall', 'id': 'd', 'name': 'read', 'arguments': {'path': 'third.txt'}}]}})
+        send('tool.state', {'phase': 'end', 'toolCallId': 'd', 'toolName': 'read', 'result': {'content': []}})
+        assert len(groups()) == before and groups()[-1]['tools'] == 3, 'three consecutive calls must share one group'
         assert groups()[-1]['label'] == 'Working' and groups()[-1]['open'], groups()
         assert 'FAILED' not in groups()[-1]['label'], groups()
         assert page.locator('.tool-activity[data-state="failed"] .tool-status').inner_text() == 'FAILED'
         send('agent.message.start', {'message': {'role': 'assistant'}})
+        send('agent.delta', {'type': 'thinking_delta', 'delta': '整理刚才的工具结果。'})
         send('agent.delta', {'type': 'text_delta', 'delta': '已经完成。'})
+        assert len(groups()) == before, 'answer thinking must merge with preceding tools, not create another Completed'
         shot('04-final-prose')
         assert all(not g['open'] and g['active'] == 'false' for g in groups()), groups()
         page.locator('#output .call-group > summary').first.click()
@@ -119,8 +138,61 @@ try:
         page.set_viewport_size({'width': 390, 'height': 844})
         assert meta.evaluate('(el) => el.scrollWidth <= el.clientWidth'), 'metadata must fit mobile width'
         shot('06-message-metadata-mobile')
+        page.locator('#output').evaluate("el => { const p = document.createElement('p'); p.textContent = '滚动验证。'.repeat(2000); el.append(p); }")
+        page.locator('#transcript').evaluate('el => el.scrollTop = el.scrollHeight')
+        page.wait_for_timeout(150)
+        page.locator('#earliest').click()
+        assert page.locator('#transcript').evaluate('el => el.scrollTop') == 0
+        assert page.locator('#latest').is_visible()
+        page.locator('#latest').click()
+        page.wait_for_timeout(150)
+        assert page.locator('#transcript').evaluate('el => el.scrollHeight - el.clientHeight - el.scrollTop < 2')
+        send('agent.message.start', {'message': {'role': 'assistant'}})
+        send('agent.delta', {'type': 'thinking_delta', 'delta': '第一段思考。'})
+        send('agent.delta', {'type': 'text_delta', 'delta': '第一段正文。'})
+        send('agent.delta', {'type': 'text_delta', 'delta': '继续第二段。'})
+        send('agent.delta', {'type': 'text_delta', 'delta': '继续第三段。'})
+        send('agent.message.end', {'message': {'role': 'assistant', 'content': [
+            {'type': 'thinking', 'thinking': '第一段思考。'}, {'type': 'text', 'text': '第一段正文。'}]}})
+        send('agent.message.start', {'message': {'role': 'assistant'}})
+        send('agent.delta', {'type': 'thinking_delta', 'delta': '第二段思考。'})
+        send('agent.delta', {'type': 'text_delta', 'delta': '第二段正文。'})
+        send('agent.message.end', {'message': {'role': 'assistant', 'content': [
+            {'type': 'thinking', 'thinking': '第二段思考。'}, {'type': 'text', 'text': '第二段正文。'}]}})
+        send('agent.message.start', {'message': {'role': 'assistant'}})
+        send('agent.delta', {'type': 'text_delta', 'delta': '第三段正文。'})
+        send('agent.message.end', {'message': {'role': 'assistant', 'content': [{'type': 'text', 'text': '第三段正文。'}]}})
+        completed = [g for g in groups() if g['label'] == 'Completed'][1:]
+        assert len(completed) >= 2 and all(not g['open'] for g in completed), groups()
+        adjacent = page.locator('#output').evaluate('''() => {
+            const rows = [...document.querySelectorAll('#output .call-group, #output .message > .markdown')]
+                .filter(n => !n.closest('[hidden], .call-list') &&
+                    (n.classList.contains('call-group') || n.textContent.trim()));
+            for (let i = 1; i < rows.length; i++)
+                if (rows[i].classList.contains('call-group') && rows[i - 1].classList.contains('call-group')) return true;
+            return false;
+        }''')
+        assert not adjacent, 'folded rows must be separated by prose'
+        assert not any(g['active'] == 'true' for g in groups()), groups()
+        shot('07-three-prose-segments')
+        # Real attach + reload: three tool/usage/thinking messages form one segment.
+        page.goto('http://127.0.0.1:4328/#session=ui-activity-history')
+        page.reload()
+        page.wait_for_function("document.querySelector('#output').textContent.includes('检查已完成。')")
+        page.wait_for_timeout(250)
+        for attempt in range(2):
+            assert len(groups()) == 1 and groups()[0]['tools'] == 3, groups()
+            assert groups()[0]['label'] == 'Completed' and not groups()[0]['open'], groups()
+            assert page.locator('#output .thinking-record').last.evaluate('''el =>
+                !!(el.compareDocumentPosition(document.querySelector('#output > .message:last-child')) &
+                   Node.DOCUMENT_POSITION_FOLLOWING)'''), 'restored thinking must precede answer'
+            if attempt == 0:
+                page.reload()
+                page.wait_for_function("document.querySelector('#output').textContent.includes('检查已完成。')")
+                page.wait_for_timeout(250)
+        shot('08-history-reload')
         assert not errors, errors
-        print('PASS: tool gap, thinking expansion, prose boundaries, nested groups, failure row, manual reopen')
+        print('PASS: tool gap, thinking order, prose boundaries, failure row, manual reopen, mobile metadata, scroll jumps, three-call history and reload')
         print('Screenshots:', artifacts)
         browser.close()
 finally:
