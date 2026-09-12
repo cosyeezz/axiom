@@ -29,6 +29,38 @@ async function until(check) {
   assert.fail("notification deadline exceeded");
 }
 
+test("session list stays running until parent and all children finish", async () => {
+  const { factory, mains, children } = factoryFixture();
+  const sessions = new Sessions(factory);
+  try {
+    const id = await sessions.create();
+    const item = sessions.get(id);
+    const status = () => sessions.list().find((session) => session.id === id).status;
+    await sessions.prompt(id, "parent work");
+    item.tasks.start(["a", "b"]);
+    assert.equal(status(), "running", "starting children count as active");
+    await tick();
+    mains[0].finish();
+    await until(() => item.status === "idle");
+    assert.equal(status(), "running", "idle parent must not hide running children");
+    children[0].finish();
+    await until(() => mains[0].calls.length === 2);
+    mains[0].finish();
+    await until(() => !item.notifying && item.status === "idle");
+    assert.equal(status(), "running", "one remaining child keeps the session active");
+    children[1].finish();
+    await until(() => mains[0].calls.length === 3);
+    assert.equal(status(), "running", "parent processing results is still active");
+    mains[0].finish();
+    await until(() => !item.notifying && item.status === "idle");
+    assert.equal(status(), "idle");
+    item.tasks.start(["cancelled child"]);
+    assert.equal(status(), "running", "idle parent with starting child is active");
+    await sessions.cancel(id);
+    assert.equal(status(), "idle", "cancelled children do not keep the session active");
+  } finally { await sessions.close(); }
+});
+
 test("completion is persisted, batched after parent settles, and credentials survive reload", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-notify-"));
   const { factory, mains, children } = factoryFixture();

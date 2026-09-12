@@ -336,7 +336,9 @@ export class Sessions {
         id: item.id,
         title: item.title,
         cwd: item.cwd,
-        status: item.status,
+        // 列表展示整场执行状态；主代理的输入/队列状态仍由 item.status 控制。
+        status: item.status === "idle" && [...item.tasks.jobs.values()].some((job) =>
+          ["starting", "running"].includes(job.status)) ? "running" : item.status,
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
         // 会话的 .jsonl 源文件路径，供侧栏菜单「复制 JSONL 路径」用；尚未落盘时为 null。
