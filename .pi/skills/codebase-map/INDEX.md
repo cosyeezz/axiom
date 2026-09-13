@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 22:48:06）
+# Axiom 多级代码索引（生成于 2026/9/12 22:56:09）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -107,7 +107,7 @@
 | tests/session-sidebar-ui.py | 104 | node --test 测试（npm test） | - |
 | tests/session-store.test.js | 500 | node --test 测试（npm test） | withStore, fullSaved |
 | tests/smoke.js | 67 | node --test 测试（npm test） | TIMEOUT, sessions |
-| tests/sqlite-benchmark.mjs | 742 | node --test 测试（npm test） | parseArgs, args, scriptPath, repoDir |
+| tests/sqlite-benchmark.mjs | 971 | node --test 测试（npm test） | parseArgs, args, scriptPath, repoDir |
 | tests/stream-renderer.test.js | 99 | node --test 测试（npm test） | - |
 | tests/task-notifications.test.js | 197 | node --test 测试（npm test） | factoryFixture, tick, until |
 | tests/task-timer.test.js | 55 | node --test 测试（npm test） | factory, state, settle |
@@ -1366,59 +1366,61 @@
 | assert | method | 56 |
 | assert | method | 57 |
 
-### tests/sqlite-benchmark.mjs（742 行） — node --test 测试（npm test）
+### tests/sqlite-benchmark.mjs（971 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| parseArgs | function | 29 |
-| args | const | 39 |
-| scriptPath | const | 40 |
-| repoDir | const | 41 |
-| mode | const | 42 |
-| bytesOf | const | 46 |
-| since | const | 47 |
-| kb | const | 48 |
-| pct | const | 49 |
-| rss | const | 50 |
-| fileStat | const | 51 |
-| loopMonitor | function | 54 |
-| instrument | function | 70 |
-| countingStore | function | 104 |
-| SIZES | const | 119 |
-| REPS | const | 125 |
-| filler | const | 127 |
-| makeSession | function | 130 |
-| writeFileSync | method | 133 |
-| makeDataset | function | 175 |
-| oldPersist | function | 183 |
-| runStorage | function | 201 |
-| runPhase | method | 246 |
-| runPhase | method | 254 |
-| rmSync | method | 317 |
-| fakeAgentFactory | function | 323 |
-| runE2E | function | 343 |
-| else | method | 354 |
-| rmSync | method | 403 |
-| runGates | function | 409 |
-| lockHolder | function | 534 |
-| lockVictim | function | 545 |
-| runLock | function | 574 |
-| rmSync | method | 596 |
-| main | function | 602 |
-| writeFileSync | method | 624 |
-| spawnSync | method | 625 |
-| cpSync | method | 632 |
-| rmSync | method | 695 |
-| line | method | 699 |
-| line | method | 700 |
-| line | method | 701 |
-| line | method | 702 |
-| line | method | 722 |
-| line | method | 723 |
-| line | method | 728 |
-| line | method | 730 |
-| line | method | 735 |
-| emit | method | 737 |
+| parseArgs | function | 32 |
+| args | const | 42 |
+| scriptPath | const | 43 |
+| repoDir | const | 44 |
+| mode | const | 45 |
+| bytesOf | const | 49 |
+| since | const | 50 |
+| kb | const | 51 |
+| pct | const | 53 |
+| rss | const | 57 |
+| fileStat | const | 58 |
+| tick | const | 60 |
+| loopMonitor | function | 65 |
+| WRITE_SQL | const | 85 |
+| instrument | function | 86 |
+| countingStore | function | 127 |
+| SIZES | const | 143 |
+| REPS | const | 149 |
+| filler | const | 151 |
+| makeSession | function | 154 |
+| writeFileSync | method | 157 |
+| makeDataset | function | 199 |
+| oldPersist | function | 209 |
+| runStorage | function | 227 |
+| fakeAgentFactory | function | 360 |
+| runE2E | function | 380 |
+| runGates | function | 452 |
+| lockHolder | function | 616 |
+| lockVictim | function | 635 |
+| runLock | function | 660 |
+| rmSync | method | 712 |
+| childResult | function | 717 |
+| judge | function | 727 |
+| selfCheck | function | 739 |
+| main | function | 828 |
+| writeFileSync | method | 851 |
+| spawnSync | method | 852 |
+| writeFileSync | method | 858 |
+| cpSync | method | 860 |
+| rmSync | method | 922 |
+| line | method | 926 |
+| line | method | 927 |
+| line | method | 928 |
+| line | method | 929 |
+| line | method | 930 |
+| line | method | 950 |
+| line | method | 951 |
+| line | method | 956 |
+| line | method | 958 |
+| line | method | 964 |
+| emit | method | 966 |
 
 ### tests/task-notifications.test.js（197 行） — node --test 测试（npm test）
 

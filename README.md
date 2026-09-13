@@ -471,7 +471,9 @@ capabilities.js 原生能力发现、内存配置、MCP 快照与选择加载
 ```sh
 npm test           # 含默认配置、浮层隔离/跳转、主子共享渲染、断线恢复、悬停提示/对比度与活动动画回归
 node tests/benchmark.js # CPU/DOM 微基准，不代表模型生成速度
+node tests/sqlite-benchmark.mjs self-check # 百分位、SQL字节计量与失败判定自检
 node tests/sqlite-benchmark.mjs # SQLite 合成数据验收（详见 docs/sqlite-performance.md）
+node --test --test-name-pattern="history IDs" tests/session-flow.test.js # 历史恢复扫描次数独立回归
 node tests/conversation-preview.mjs # 127.0.0.1:4321，无模型/用户数据的会话 UI 样例
 node tests/smoke.js  # 真实模型验证，会产生模型调用费用
 ```

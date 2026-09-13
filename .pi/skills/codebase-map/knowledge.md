@@ -473,3 +473,8 @@
 - 已复现：retry自定义词表仅在item和子代理装配处，首次主代理漏传，sessionData.selection也漏存，重启丢失。
 - 修复：主代理createAgent传retry、sessionData显式保存；不让默认配置追溯覆盖旧会话。
 - 防再犯：session-persistence.test.js串联首次主代理→库selection→重启主代理→子代理，不能仅断言item字段。
+
+### 2026-09-13 基准必须测真实变化并等待子进程完整退出
+- 根因：合法JSON可掩盖后续非零退出，exit时stdout未必排空；同值通知写入及错误的进度数组让新旧工作量不一致，旧字节计量漏绑定键；锁实验把进程启动算入持锁等待。
+- 修复：sqlite-benchmark.mjs在close后同时要求退出码0与合法JSON，计量单点化含绑定键；使用真实快照及每次变化的通知/计时字段，victim连接就绪后经IPC才开始测锁。
+- 防再犯：self-check验证失败判定，保留原硬门槛；绑定字节不是磁盘写入量，空历史fake SDK不能证明历史扫描复杂度，另用session-flow getter计数回归。

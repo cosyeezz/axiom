@@ -9,7 +9,7 @@
 //     storage --side old|new --size small|large --baseline-dir <dir> --new-dir <dir>
 //     e2e     --side old|new --size small|large --scenario no-pending|pending --baseline-dir <dir> --new-dir <dir>
 //     lock-holder <db> <holdMs> --new-dir <dir>   拿到写锁后先输出 "READY" 再自旋持锁
-//     lock-victim <db> --new-dir <dir>
+//     lock-victim <db> --new-dir <dir>          连接就绪后等待 IPC，再开始测写锁
 //     self-check                                  百分位/计量/失败判定的最小自校验
 //
 // 诚实声明：
@@ -78,9 +78,9 @@ function loopMonitor() {
 // SQL 计量（全脚本唯一计量点，杜绝多层重复计数）：
 //   stats.sql        语句执行总次数（读+写；报告口径注明）
 //   stats.writeSql   写语句次数（INSERT/UPDATE/DELETE/REPLACE 开头；DDL/事务控制不计）
-//   stats.writeBytes 写语句 SQL 绑定字符串参数的 UTF-8 字节数 = 真实落库的 SQL 写负载
+//   stats.writeBytes 写语句绑定字符串的 UTF-8 字节数（含WHERE键，不等于文件增量）
 //   读语句（get/all/iterate）只计次数，绝不计入写字节；store 层调用只计次数（见 countingStore）。
-//   旧 KV db.set(ns,key,value) 的绑定字节 = JSON.stringify(value)（旧实现内部 stringify 后绑定）。
+//   旧 KV db.set(ns,key,value) 绑定 ns/key/JSON.stringify(value)，与新 SQL 层同口径。
 //   必须先 instrument、再 new SessionStore / 任何 prepare：store 按语句文本缓存 prepared 对象，后装会漏计。
 const WRITE_SQL = /^\s*(insert|update|delete|replace)/i;
 function instrument(db, stats) {
@@ -88,7 +88,12 @@ function instrument(db, stats) {
   for (const m of ["get", "set", "delete", "list"]) {
     if (typeof db[m] !== "function") continue;
     const orig = db[m].bind(db);
-    db[m] = (...a) => { bump(m !== "get" && m !== "list", m === "set" ? bytesOf(a[2]) : 0); return orig(...a); };
+    db[m] = (...a) => {
+      const write = m === "set" || m === "delete";
+      const bound = write ? [a[0], a[1], ...(m === "set" ? [JSON.stringify(a[2])] : [])] : [];
+      bump(write, bound.reduce((n, v) => n + Buffer.byteLength(v), 0));
+      return orig(...a);
+    };
   }
   if (typeof db.prepare === "function") {
     const origPrepare = db.prepare.bind(db);
@@ -165,7 +170,7 @@ function makeSession(index, size, workspaceDir, notified = true) {
       context: Array.from({ length: 20 }, (_, k) => ({ role: k % 2 ? "assistant" : "user", text: filler(100, `c${k}`) })),
       usage: { input_tokens: 1234, output_tokens: 567, cache_read_tokens: 89 }, // 任务运行详情快照允许保留 usage
     },
-    progress: [{ at: Date.now(), text: filler(120, "进度：") }],
+    progress: { id: "progress-0", at: Date.now(), text: filler(120, "进度：") },
     progressDelivered: "progress-0",
   }));
   return {
@@ -241,12 +246,13 @@ async function runStorage({ side, size, baselineDir, newDir }) {
         getSession: (...a) => rawStore.getSession(...a),
       });
     }
-    const dataset = makeDataset(size, workspaceDir);
+    const dataset = makeDataset(size, workspaceDir, false);
     const items = dataset.map((saved) => ({ ...saved })); // 内存态，模拟旧进程内 item
 
     const phases = [];
     const runPhase = async (op, reps, fn) => {
       const loop = loopMonitor();
+      try {
       await tick(); // 相位前让 1ms 采样定时器真实 tick，last 落在相位紧前
       const lat = [];
       const sql0 = stats.sql, wsql0 = stats.writeSql, bytes0 = stats.writeBytes;
@@ -268,6 +274,7 @@ async function runStorage({ side, size, baselineDir, newDir }) {
         rssKB: Math.round((rss() - rss0) / 1024),
         ...loopStats,
       });
+      } finally { loop.stop(); }
     };
 
     // 数据导入（一次性，不进热路径指标，但单独报告）
@@ -302,8 +309,8 @@ async function runStorage({ side, size, baselineDir, newDir }) {
     if (side === "old") {
       await runPhase("改标题", R, (r) => { const it = items[r % items.length]; it.title = `改名${r}`; it.updatedAt = Date.now(); return oldPersist(it, db); });
       await runPhase("追加摘要", R, (r) => { const it = items[r % items.length]; it.summaries.push({ id: `new-${r}`, agentId: "main", text: filler(200, "新摘要："), turn: 999 }); return oldPersist(it, db); });
-      await runPhase("任务进度", R, (r) => { const it = items[r % items.length]; const t = it.tasks[0]; t.progress = [...t.progress, { at: Date.now(), text: filler(120, "进度：") }]; return oldPersist(it, db); });
-      await runPhase("任务通知(notified)", R, (r) => { const it = items[r % items.length]; it.tasks[r % it.tasks.length].notified = true; return oldPersist(it, db); });
+      await runPhase("任务进度", R, (r) => { const it = items[r % items.length]; const t = it.tasks[0]; t.progress = { id: `progress-${r + 1}`, at: Date.now(), text: filler(120, "进度：") }; return oldPersist(it, db); });
+      await runPhase("任务通知(notified)", R, (r) => { const it = items[r % items.length]; it.tasks[0].notified = !it.tasks[0].notified; return oldPersist(it, db); });
       await runPhase("进度送达+修剪", R, (r) => {
         const it = items[r % items.length];
         it.progressDeliveries.push({ id: `pd-${r}`, taskId: it.tasks[0].id, at: Date.now(), text: filler(120, "送达：") });
@@ -316,12 +323,12 @@ async function runStorage({ side, size, baselineDir, newDir }) {
       await runPhase("追加摘要", R, (r) => { const t0 = process.hrtime.bigint(); store.saveSummary(dataset[r % dataset.length].id, { id: `new-${r}`, agentId: "main", text: filler(200, "新摘要："), turn: 999 }); return since(t0); });
       await runPhase("任务进度", R, (r) => { // E 真实热路径形态：persist(item,{progress}) → saveTask 单任务
         const t0 = process.hrtime.bigint();
-        store.saveTask(dataset[r % dataset.length].id, { id: `task-${r % dataset.length}-0`, progress: { at: Date.now(), text: filler(120, "进度：") } });
+        store.saveTask(dataset[r % dataset.length].id, { id: `task-${r % dataset.length}-0`, progress: { id: `progress-${r + 1}`, at: Date.now(), text: filler(120, "进度：") } });
         return since(t0);
       });
       await runPhase("任务通知(notified)", R, (r) => { // E 真实热路径：deliver → persist(item,{task:{id,notified:true}})
         const t0 = process.hrtime.bigint();
-        store.saveTask(dataset[r % dataset.length].id, { id: `task-${r % dataset.length}-0`, notified: true });
+        store.saveTask(dataset[r % dataset.length].id, { id: `task-${r % dataset.length}-0`, notified: Math.floor(r / dataset.length) % 2 === 0 });
         return since(t0);
       });
       await runPhase("进度送达+修剪", R, (r) => {
@@ -330,7 +337,7 @@ async function runStorage({ side, size, baselineDir, newDir }) {
         store.pruneEvents(dataset[r % dataset.length].id, "progress_delivery", 50);
         return since(t0);
       });
-      await runPhase("计时更新(elapsedMs)", R, (r) => { const t0 = process.hrtime.bigint(); store.updateSession(dataset[r % dataset.length].id, { elapsedMs: 1000 }); return since(t0); });
+      await runPhase("计时更新(elapsedMs)", R, (r) => { const t0 = process.hrtime.bigint(); store.updateSession(dataset[r % dataset.length].id, { elapsedMs: dataset[r % dataset.length].elapsedMs + 100 * (Math.floor(r / dataset.length) + 1) }); return since(t0); });
     }
 
     return {
@@ -493,8 +500,8 @@ async function runGates(baselineDir, newDir) {
   {
     const g = fresh();
     try {
-      const small = makeSession(0, { ...SIZES.small, resultText: 300, systemPrompt: 500 }, g.workspaceDir);
-      const big = makeSession(1, { ...SIZES.large, resultText: 48 * 1024, systemPrompt: 16 * 1024 }, g.workspaceDir);
+      const small = makeSession(0, { ...SIZES.small, resultText: 300, systemPrompt: 500 }, g.workspaceDir, false);
+      const big = makeSession(1, { ...SIZES.large, resultText: 48 * 1024, systemPrompt: 16 * 1024 }, g.workspaceDir, false);
       g.store.insertSession(small);
       g.store.insertSession(big);
       const m1 = mark(g);
@@ -507,7 +514,7 @@ async function runGates(baselineDir, newDir) {
       const pass = bigBytes <= smallBytes + 512 && stillNotified && smallSql >= 1 && bigSql >= 1;
       check("门2 notified 不携带 runtime/result",
         pass,
-        `notified 更新 SQL 绑定写字节：小任务 ${smallBytes}B vs 大任务(64K字 result+16K字 runtime) ${bigBytes}B（写语句各 ${smallSql}/${bigSql} 条），语义保留=${stillNotified}` +
+        `notified 更新 SQL 绑定写字节：小任务 ${smallBytes}B vs 大任务(48K字 result+16K字 runtime) ${bigBytes}B（写语句各 ${smallSql}/${bigSql} 条），语义保留=${stillNotified}` +
         (pass ? "" : smallSql < 1 || bigSql < 1 ? "；SQL 计量未观测到写入，门槛失效" : "；notified 更新写负载随 runtime/result 体积放大，须独立列修复"));
     } catch (e) { check("门2 notified 不携带 runtime/result", false, `异常：${e.message}`); }
     finally { g.db.close(); rmSync(g.tmp, { recursive: true, force: true }); }
@@ -556,8 +563,8 @@ async function runGates(baselineDir, newDir) {
       sessions.get(s.id).notificationsPaused = true; // 通知投递不得进入观测窗口
       const emitEvent = subs[0];
       if (!emitEvent) throw new Error("fake agent 未注册 subscribe 回调，注入通道缺失");
-      emitEvent({ type: "agent.message.start", data: { message: { role: "assistant", content: [{ type: "text", text: "" }] } } });
       const m = mark(g);
+      emitEvent({ type: "agent.message.start", data: { message: { role: "assistant", content: [{ type: "text", text: "" }] } } });
       for (let i = 1; i < 100; i++) {
         if (i % 3 === 1) emitEvent({ type: "agent.delta", data: { type: "text_delta", contentIndex: 0, delta: `token块${i} ` } });
         else if (i % 3 === 2) emitEvent({ type: "agent.delta", data: { type: "thinking_delta", contentIndex: 0, delta: `tok${i}` } });
@@ -628,6 +635,13 @@ async function lockHolder(dbPath, holdMs, newDir) {
 async function lockVictim(dbPath, newDir) {
   const { Database } = await import(pathToFileURL(join(newDir, "src/database.js")));
   const db = new Database(dbPath); // 生产构造器：busy_timeout=5000，不调参
+  // 先连好库，再等holder拿锁：进程启动/模块导入不占测量窗口。
+  if (process.send) {
+    const start = new Promise((resolve) => process.once("message", resolve));
+    writeSync(1, "READY\n");
+    await start;
+    process.disconnect();
+  }
   const t0 = process.hrtime.bigint();
   try {
     db.set("lock", "victim", Date.now());
@@ -647,39 +661,48 @@ async function runLock(newDir) {
   const tmp = mkdtempSync(join(tmpdir(), "axiom-bench-lock-"));
   const dbPath = join(tmp, "lock.db");
   { const { Database } = await import(pathToFileURL(join(newDir, "src/database.js"))); new Database(dbPath).close(); } // 预建 schema
-  const child = (a) => spawn(process.execPath, [scriptPath, ...a], { cwd: repoDir });
+  const child = (a) => spawn(process.execPath, [scriptPath, ...a], {
+    cwd: repoDir, stdio: ["ignore", "pipe", "pipe", "ipc"],
+  });
   // 收集子进程 stdout 到退出，末行解析为 JSON；ready 回调在 READY 行出现时立即触发（不等退出）。
   const collect = (p, onReady) => new Promise((res) => {
-    let buf = "", fired = false;
+    let buf = "", err = "", fired = false;
+    p.stderr.on("data", d => { err += d; });
+    p.once("error", error => res({ code: null, ok: false, error: error.message }));
     p.stdout.on("data", (d) => {
       buf += d;
       if (onReady && !fired && /^READY\b/m.test(buf)) { fired = true; onReady(); }
     });
-    p.on("exit", (code) => {
+    p.on("close", (code) => {
       const line = buf.trim().split("\n").filter(Boolean).pop() ?? "";
-      try { res({ code, ...JSON.parse(line) }); }
-      catch { res({ code, ok: false, error: `子进程输出不可解析：${buf.slice(0, 200)}` }); }
+      try { res({ ...JSON.parse(line), code }); }
+      catch { res({ code, ok: false, error: `子进程输出不可解析：${(err || buf).slice(0, 200)}` }); }
     });
   });
 
   const results = {};
   let ok = true;
   for (const [name, holdMs] of [["hold300ms", 300], ["hold6000ms_超过busy_timeout", 6000]]) {
-    const holder = child(["lock-holder", dbPath, String(holdMs), "--new-dir", newDir]);
-    const readySignal = new Promise((r) => { holder._ready = r; });
-    const hp = collect(holder, () => holder._ready());
-    const outcome = await Promise.race([readySignal.then(() => "ready"), hp.then(() => "exited")]);
-    let v = null;
-    if (outcome === "ready") {
-      const victim = child(["lock-victim", dbPath, "--new-dir", newDir]);
-      v = await collect(victim);
+    const victim = child(["lock-victim", dbPath, "--new-dir", newDir]);
+    const victimReady = Promise.withResolvers();
+    const vp = collect(victim, victimReady.resolve);
+    const connected = await Promise.race([victimReady.promise.then(() => true), vp.then(() => false)]);
+    let h = { ok: false }, outcome = "exited";
+    if (connected) {
+      const holder = child(["lock-holder", dbPath, String(holdMs), "--new-dir", newDir]);
+      const holderReady = Promise.withResolvers();
+      const hp = collect(holder, holderReady.resolve);
+      outcome = await Promise.race([holderReady.promise.then(() => "ready"), hp.then(() => "exited")]);
+      if (outcome === "ready") victim.send("write");
+      else victim.kill();
+      h = await hp;
     }
-    const h = await hp;
+    const v = await vp;
     const pass =
-      outcome === "ready" && h.ok === true && v != null &&
+      outcome === "ready" && h.code === 0 && h.ok === true && v != null &&
       (holdMs <= 4000
-        ? v.ok === true && h.heldMs > 0 && v.waitMs >= h.heldMs * 0.8 // 短持锁：victim 应阻塞近整个窗口后成功
-        : v.ok === false && v.timedOut === true && v.waitMs >= 4000); // 长持锁：等近 busy_timeout 后超时可见
+        ? v.code === 0 && v.ok === true && h.heldMs > 0 && v.waitMs >= h.heldMs * 0.8 // 原门槛不放宽
+        : v.code === 2 && v.ok === false && v.timedOut === true && v.waitMs >= 4000);
     if (!pass) ok = false;
     results[name] = {
       holdMs, pass, holder: h,
@@ -688,6 +711,15 @@ async function runLock(newDir) {
   }
   rmSync(tmp, { recursive: true, force: true });
   return { results, ok };
+}
+
+// 子进程close后再解析，非零退出即失败，不能被提前输出的合法JSON掩盖。
+function childResult(code, out, err = "") {
+  const marker = out.indexOf("===BENCH_JSON===\n");
+  if (code !== 0 || marker < 0)
+    return { error: `子进程失败(exit ${code})：${(err || out).slice(-2000)}` };
+  try { return JSON.parse(out.slice(marker + "===BENCH_JSON===\n".length).trim()); }
+  catch { return { error: "子进程结果不是合法JSON" }; }
 }
 
 // ---------- 失败判定（纯函数；self-check 验证其失败路径） ----------
@@ -724,6 +756,7 @@ async function selfCheck() {
   await test("instrument：读不计写；写字节=绑定字符串 UTF-8；DDL/事务不算写语句", () => {
     const stats = { sql: 0, writeSql: 0, writeBytes: 0, calls: 0 };
     const db = instrument(new DatabaseSync(":memory:"), stats);
+    try {
     db.exec("CREATE TABLE t (a TEXT)");
     eq(stats.sql, 1, "CREATE 计语句次数");
     eq(stats.writeSql, 0, "DDL 不计写语句");
@@ -738,6 +771,10 @@ async function selfCheck() {
     eq(stats.writeBytes, 8, "写字节累计=3(INSERT)+5(UPDATE)，读参数不计");
     db.prepare("BEGIN").run();
     eq(stats.writeSql, 2, "事务控制不计写语句");
+    } finally { db.close(); }
+    const kvStats = { sql: 0, writeSql: 0, writeBytes: 0 };
+    instrument({ set() {}, delete() {} }, kvStats).set("ns", "k", "abc");
+    eq(kvStats.writeBytes, 8, "旧侧包含namespace/key及JSON引号，与SQL绑定同口径");
   });
 
   await test("countingStore 只计调用数，无字节字段（杜绝与 SQL 层双计）", () => {
@@ -760,6 +797,14 @@ async function selfCheck() {
       lock: { ok: false, results: {} },
     });
     eq(bad.length, 4, "1 门槛 + 1 存储 + 1 e2e + 1 锁");
+  });
+
+  await test("子进程结果必须同时满足退出码0和有效JSON", () => {
+    const out = '===BENCH_JSON===\n{"mode":"storage"}';
+    eq(childResult(0, out).mode, "storage", "成功输出");
+    eq(Boolean(childResult(2, out).error), true, "合法JSON不能掩盖非零退出");
+    eq(Boolean(childResult(null, out).error), true, "被信号杀死不能成功");
+    eq(Boolean(childResult(0, "===BENCH_JSON===\n{").error), true, "坏JSON也失败");
   });
 
   await test("loopMonitor：phase 前后真实 tick，同步阻塞被采样（非恒 0）", async () => {
@@ -810,6 +855,7 @@ async function main() {
     console.error("baseline 物化失败：git archive/tar 提取后无 src/sessions.js");
     process.exit(1);
   }
+  writeFileSync(join(root, "package.json"), '{"type":"module"}\n'); // 保留原仓库ESM解释，不额外测语法探测成本
   const newSnap = join(root, "new");
   cpSync(join(newDir, "src"), join(newSnap, "src"), { recursive: true });
   if (existsSync(join(newDir, "public"))) cpSync(join(newDir, "public"), join(newSnap, "public"), { recursive: true });
@@ -829,11 +875,10 @@ async function main() {
       let o = "", e = "";
       p.stdout.on("data", (d) => (o += d));
       p.stderr.on("data", (d) => (e += d));
-      p.on("exit", (code) => res([code, o, e]));
+      p.once("error", error => res([null, o, error.message]));
+      p.on("close", (code) => res([code, o, e]));
     });
-    const marker = out.indexOf("===BENCH_JSON===\n");
-    if (marker < 0) return { error: `子进程失败(exit ${code})：${(err || out).slice(-2000)}` };
-    return JSON.parse(out.slice(marker + "===BENCH_JSON===\n".length).trim().split("\n").pop());
+    return childResult(code, out, err);
   };
 
   const report = {
