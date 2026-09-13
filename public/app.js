@@ -55,6 +55,8 @@ for (const id of ["provider", "model", "thinking", "subagent-provider", "subagen
 const modelManager = initModelManager({ root: $("models-panel"), request, onSaved: refreshModelCatalog });
 const serviceUi = initServiceSettings({ request, isReady: () => connected });
 let compactions = [], mainItems = [], summaries = [];
+// 手动重试靠主代理末尾消息判定：与服务端 canResume 同一条规则，避免两边判断不一致。
+let lastMainMessage = null, interrupted = false;
 const compactionNodes = new Map(), taskEntries = new Map();
 let images = [], imageLoading = false;
 let completionVersion = 0, completionToken, completionEntries = [], completionIndex = 0;
@@ -256,6 +258,7 @@ function controls() {
   $("stop").disabled = !busy || unavailable || sessionMissing;
   $("stop").hidden = !busy;
   $("send").hidden = busy;
+  syncRetryPrompt();
   for (const id of ["new", "custom-new"]) $(id).disabled = unavailable || !models.length;
   for (const button of document.querySelectorAll(".session-actions button")) button.disabled = !button.closest(".session-copy-menu") && !button.matches(".session-copy, .session-hide") && unavailable;
   $("status").dataset.connected = String(connected);
@@ -1476,6 +1479,38 @@ function renderQueue(queue = {}) {
   })));
   $("message-queue").hidden = !$("message-queue").children.length;
 }
+// 异常停止（Esc 停止、终态错误、重试用尽）后在会话流末尾给一个手动重试入口。
+// 只对主代理，子代理由主代理续跑带动；判定与 src/retry.js canResume 同步（只认异常的正面证据）。
+const canResumeMessage = (message) =>
+  !!message && (message.role !== "assistant" || ["error", "aborted", "length", "toolUse"].includes(message.stopReason));
+let retryPrompt;
+function syncRetryPrompt() {
+  if (!(interrupted && !busy && connected && !changing && sessionId && !sessionMissing)) return void retryPrompt?.remove();
+  if (!retryPrompt) {
+    retryPrompt = document.createElement("div");
+    retryPrompt.className = "retry-prompt";
+    const hint = document.createElement("span");
+    hint.textContent = "上一次请求未正常结束。";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "secondary";
+    button.textContent = "↻ 重试";
+    button.title = "接着上次中断的地方继续，不重发你的输入";
+    button.onclick = async () => {
+      button.disabled = true;
+      // 成功后服务端转 running，session.state 会把本卡片收走；失败则原地重新可点。
+      try { await request("session.retry", { sessionId }); }
+      catch (e) { error(e); button.disabled = false; }
+    };
+    retryPrompt.append(hint, button);
+    retryPrompt.button = button;
+  }
+  retryPrompt.button.disabled = false;
+  if ($("output").lastElementChild === retryPrompt) return;
+  $("output").querySelector(".empty")?.remove();
+  $("output").append(retryPrompt);
+  scrollLatest();
+}
 const retryCards = new Map();
 function placeCompactedRetries() {
   for (const record of retryCards.values()) {
@@ -1561,6 +1596,7 @@ function event(message) {
   const { type, agentId = "main", data } = message;
   if (type === "agent.compaction.status" && agentId === "main") renderCompactionStatus(data);
   if (type === "agent.message.end" && agentId === "main") {
+    lastMainMessage = data.message;
     trackTaskEntries(data.message, data.entryId);
     placeCompactedTasks();
   }
@@ -1607,6 +1643,9 @@ function event(message) {
     busy = data.status !== "idle";
     if (data.status === "running") waiting("main");
     else stopActivity("main", data.status === "cancelling" ? "正在停止…" : "已结束");
+    // 停稳了才判断能不能续：message.end 总先于 idle 到达，此时 lastMainMessage 已是本轮结果。
+    if (data.status === "running") interrupted = false;
+    else if (data.status === "idle") interrupted = canResumeMessage(lastMainMessage);
     controls();
   }
   if (type === "agent.message.start" && data.message.role === "assistant") {
@@ -1745,6 +1784,8 @@ function snapshot(state) {
   $("workspace-label").textContent = state.cwd;
   updatePageTitle();
   busy = state.status !== "idle";
+  lastMainMessage = state.messages.findLast((entry) => entry.agentId === "main")?.message || null;
+  interrupted = !busy && canResumeMessage(lastMainMessage);
   $("output").replaceChildren();
   live.clear();
   toolItems.clear();

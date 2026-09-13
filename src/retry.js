@@ -70,6 +70,23 @@ function classify(message, later, maxTokens, custom = { retryable: [], nonRetrya
   return { terminal: true, error: message.errorMessage || "error" };
 }
 
+// 与 SDK _prepareRetry 相同的准备：仅移除末尾失败/截断的助手消息（原始消息仍留在会话历史）。
+// 末尾不是 assistant（半截轮次停在 user/toolResult）时是空操作，continue() 直接接着跑。
+export function dropFailedAssistant(session) {
+  const messages = session.agent.state.messages;
+  if (messages.at(-1)?.role === "assistant") session.agent.state.messages = messages.slice(0, -1);
+}
+
+// 手动重试的可续判定（public/app.js canResumeMessage 是同一条规则的前端副本，改一处记得同步）：
+// 只认“确有异常”的正面证据 —— 失败/被中止/截断的 assistant（Esc 停止 → aborted、终态错误 → error）、
+// 停在 toolUse 的未收尾轮次，或末尾还是 user/toolResult 的半截轮次。
+// stopReason=stop 的正常收尾与没有 stopReason 的消息都不给重试，宁可漏不可误。
+export const RESUMABLE_STOP_REASONS = ["error", "aborted", "length", "toolUse"];
+export function canResume(session) {
+  const last = session.agent.state.messages.at(-1);
+  return !!last && (last.role !== "assistant" || RESUMABLE_STOP_REASONS.includes(last.stopReason));
+}
+
 /**
  * pi factory 层自动重试（主/子代理共享）：
  * - 限流/网络中断（含 start() 抛出的异常）/意外 aborted/可恢复 length 未完成 → 按 delayFor 退避后
@@ -88,11 +105,6 @@ export function createAutoRetry({ session, emit, patterns, sleep = abortableSlee
     nonRetryable: (patterns?.nonRetryable ?? []).map((pattern) => pattern.toLowerCase()),
   };
   let controller;
-  // 与 SDK _prepareRetry 相同的准备：仅移除末尾失败/截断的助手消息（原始消息仍留在会话历史）。
-  const dropFailedAssistant = () => {
-    const messages = session.agent.state.messages;
-    if (messages.at(-1)?.role === "assistant") session.agent.state.messages = messages.slice(0, -1);
-  };
   return {
     cancel() {
       controller?.abort(new Error("已取消自动重试"));
@@ -145,7 +157,7 @@ export function createAutoRetry({ session, emit, patterns, sleep = abortableSlee
           announce("waiting", { delayMs, nextRetryAt: now() + delayMs, error: verdict.error });
           await sleep(delayMs, signal);
           announce("running", { error: verdict.error });
-          dropFailedAssistant();
+          dropFailedAssistant(session);
           start = () => session.agent.continue();
         }
       } catch (error) {

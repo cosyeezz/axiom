@@ -801,3 +801,14 @@
 - 内容：`public/style.css` 把 `.settings-layout` 由整块滚动改为 `overflow: hidden`，分类列与右侧面板各自成为滚动容器（`#settings .settings-nav, #settings .settings-body { min-width: 0; min-height: 0; overflow: auto; scrollbar-gutter: stable }`）；≤700px 单列布局回到整块滚动，但分类列改 `position: sticky; top: 0; max-height: 45dvh`（配 `background: var(--surface)`、`z-index: 2`），窄屏滚下去同样能看到分类。
 - 验证：Playwright 用真实 dialog 片段（index.html 的 `#settings` 块 + 造 60 段占位内容）实测 1200/700/420px：滚到底后分类列 `navTop` 完全不变（145/145/141），右侧内容分别在自身容器内滚动；全量 `npm test` 305 项 304 过 1 跳过 0 失败。
 - 涉及：public/style.css、devlog.md、.pi/skills/codebase-map/index。
+
+## 2026-09-13 10:20 — 异常停止后在会话流末尾增加手动重试（续跑）入口
+- 原因：自动重试只覆盖「可恢复失败」，手动 Esc 停止（归为 cancelled）与终态错误停下来后没有任何再来一次的入口，只能重打一遍输入；用户明确要求按钮贴在被打断的位置，不放发送区。
+- 内容：
+  - `src/retry.js`：抽出并导出 `dropFailedAssistant(session)`（仅移除末尾失败/截断的助手消息，末尾是 user/toolResult 时空操作）与 `canResume(session)` + `RESUMABLE_STOP_REASONS`（`error/aborted/length/toolUse`）；只认异常的正面证据，`stopReason=stop` 与缺失 `stopReason` 都不给重试（宁可漏不可误，避免测试/历史里无 stopReason 的消息误挂按钮）。createAutoRetry 内部改用导出版本，行为不变。
+  - `src/pi.js`：agent 返回对象新增 `resumable()` / `resume()`。resume 清 `lastResult` 后 `retry.run(() => { dropFailedAssistant(session); return session.agent.continue(); })`——不重发用户输入，续跑再失败仍吃自动退避；故意不跑 compaction（maybeApply 会重写消息数组，与 continue 靠末尾接续的前提冲突）。
+  - `src/protocol.js` / `src/server.js`：新增 `session.retry` 命令（`{ id, type, sessionId }.strict()`）与分发 `data = { runId: await sessions.retry(request.sessionId) }`。
+  - `src/sessions.js`：从 `prompt()` 抽出 `startRun(item, run)` 运行骨架（runId/status 广播 → run() → result() 取错 → 收尾持久化 + idle 复位 + scheduleTaskNotifications），`prompt()` 与新增的 `retry(id)` 共用；retry 在启动前同步校验 `status==="idle" && !configuring && !closing && agent.resumable()`，不可续直接抛错给回执，不留 running→idle 空转。
+  - `public/app.js` / `public/style.css`：新增 `lastMainMessage`/`interrupted` 状态与 `canResumeMessage`（服务端规则的前端副本）；`syncRetryPrompt()` 维护单例 `.retry-prompt` 节点（提示 + 「↻ 重试」按钮 → `request("session.retry", { sessionId })`），按 interrupted && 空闲 && 已连接 && 有会话 append/remove 到 `#output` 末尾；`agent.message.end`(main) 更新 lastMainMessage，`session.state` running 清标记、idle 重判，刷新恢复时从 `messages.findLast(agentId==="main")` 初始化。样式复用 retry-card 同款 `--line/--surface/--muted` token。
+- 验证：新增 `tests/manual-retry.test.js` 5 项（canResume 正负样本、dropFailedAssistant 三种末尾、sessions.retry 续跑/回执 runId/忙碌与不可续守卫不广播状态/续跑再失败仍回 idle、protocol strict + server 分发、前端入口显隐与点击载荷）；全量 `npm test` 311 项 310 过 1 跳过 0 失败。
+- 涉及：src/retry.js、src/pi.js、src/protocol.js、src/server.js、src/sessions.js、public/app.js、public/style.css、tests/manual-retry.test.js、README.md、devlog.md、.pi/skills/codebase-map/index。
