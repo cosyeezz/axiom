@@ -207,6 +207,7 @@ $("mobile-expand").onclick = () => {
   const expanded = document.querySelector(".shell").classList.toggle("mobile-expanded");
   $("mobile-expand").setAttribute("aria-expanded", String(expanded));
   $("mobile-expand").textContent = expanded ? "收起" : "展开";
+  if (expanded) resizePrompt();
 };
 const pending = new Map(),
   live = new Map(),
@@ -352,8 +353,9 @@ function renderRuntime(node, value) {
     const input = (usage?.input ?? 0) + (usage?.cacheRead ?? 0) + (usage?.cacheWrite ?? 0);
     const cache = input > 0 && Number.isFinite(usage?.cacheRead) ? `${(usage.cacheRead / input * 100).toFixed(1)}%` : "—";
     const percent = Number.isFinite(context?.percent) ? `${context.percent.toFixed(1)}%` : "—";
-    $("mobile-runtime").textContent = `${cache} / ${percent}`;
-    $("mobile-runtime").setAttribute("aria-label", `缓存命中率 ${cache}，上下文占比 ${percent}`);
+    const identity = runtimeSummary(value)[2];
+    $("mobile-runtime").textContent = `${cache} · ${percent} · ${identity}`;
+    $("mobile-runtime").setAttribute("aria-label", `缓存命中率 ${cache}，上下文占比 ${percent}，${identity}`);
   }
   node.replaceChildren(...runtimeSummary(value).map((text) => {
     const span = document.createElement("span");

@@ -1091,19 +1091,14 @@ textarea {
 @media (max-width: 700px) {
   body { --sidebar-width: 0px; }
   .shell:not(.mobile-expanded) main > header,
-  .shell:not(.mobile-expanded) #composer .selectors,
-  .shell:not(.mobile-expanded) #session-runtime,
-  .shell:not(.mobile-expanded) .context-bar,
-  .shell:not(.mobile-expanded) #task-runs { display: none; }
-  .shell:not(.mobile-expanded) .context-bar:has(.context-chip) { display: flex; }
+  .shell:not(.mobile-expanded) #earliest,
+  .shell:not(.mobile-expanded) .composer-wrap > :not(#composer),
+  .shell:not(.mobile-expanded) #composer > :not(.mobile-controls) { display: none; }
+  .shell:not(.mobile-expanded) #composer { border: 0; background: transparent; box-shadow: none; }
+  #session-runtime { display: none; }
   .mobile-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px; }
-  #mobile-runtime { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-  #mobile-expand { min-height: 40px; padding: 4px 8px; border: 0; background: transparent; color: var(--muted); font-size: 12px; }
-  .shell:not(.mobile-expanded) #composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
-  .shell:not(.mobile-expanded) #composer .actions { align-self: end; }
-  .shell:not(.mobile-expanded) #composer :is(.mobile-controls, #prompt-completion) { grid-column: 1 / -1; }
-  .shell:not(.mobile-expanded) #composer:has(#stop:not([hidden])) #prompt { grid-column: 1 / -1; }
-  .shell:not(.mobile-expanded) #composer:has(#stop:not([hidden])) .actions { grid-column: 1 / -1; }
+  #mobile-runtime { min-width: 0; flex: 1; overflow-x: auto; white-space: nowrap; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; scrollbar-width: none; }
+  #mobile-expand { flex-shrink: 0; min-height: 40px; padding: 4px 8px; border: 0; background: transparent; color: var(--muted); font-size: 12px; }
   .shell,
   .shell.collapsed {
     grid-template-columns: minmax(0, 1fr);
@@ -1145,8 +1140,8 @@ textarea {
   }
   #composer { border-radius: 12px; }
   #prompt {
-    font-size: 16px;
-    line-height: 24px;
+    font-size: 14px;
+    line-height: 20px;
     padding: 8px 12px;
     min-height: 44px;
     max-height: min(120px, 20dvh);
