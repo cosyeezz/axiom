@@ -5,6 +5,9 @@
 - 保留：主仓库 AGENTS.md 的本地规则整理转入功能分支提交；临时安装目录和 NUL 不纳入源码。
 - 复核：detached 工作区未跟踪 workspace-isolation.test.js 是旧版草稿（仍使用已废弃 files.browse）；master 已有更新后的 workspace.browse 测试，旧稿备份但不覆盖新版。
 - 涉及：AGENTS.md、devlog.md，以及各 SQLite 分支的原有变更。
+- 最终融合：保留隐藏/恢复模型新增功能、SQLite 拆表与懒恢复、跨进程 CAS；原始 storage/model-fixes/benchmark 文件逐字对照已吸收提交，确认重复后保留后续安全增强，五个原始分支历史合并前后源码差异为零。日志冲突保留双方条目，索引统一重建。
+- 验证：所有原 worktree HEAD 均为集成分支祖先；全量 npm test 365 项，363 通过、2 平台跳过、0 失败。基线页面时序失败单跑 3/3 通过。未启动或重启正式服务。
+- 清理保护：未提交改动、旧 detached 测试、截图及 19 个忽略日志备份至 ../worktrees/Axiom-merge-backup-20260913；保留主仓库未跟踪安装暂存目录、NUL、.env.local 与旧 stash，不删除其他仓库或非注册备份目录。
 
 ## 2026-09-13 05:40+ UTC 合并模型设置重设计与最新 master（冲突融合）
 - 合并 8995365（模型设置重设计+选择性导入）到 SQLite 重构分支：5 个 UU 逐一人工融合，不选边。数字验证为严格并集：model-manager.js 461/118 = ours(10/3)+theirs(451/115)；tests/model-manager 584/70、tests/model-config 380/8 同理；devlog 为双方条目拼接。INDEX.md 由 reindex 重建。提交 69023fc。
