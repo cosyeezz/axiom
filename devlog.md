@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-13 全部 worktree 集成与清理
+- 决策：按用户要求集成所有附加工作区；先备份未提交内容，处理已有合并冲突，验证后推送 master 并清理附加 worktree。
+- 保留：主仓库 AGENTS.md 的本地规则整理转入功能分支提交；临时安装目录和 NUL 不纳入源码。
+- 复核：detached 工作区未跟踪 workspace-isolation.test.js 是旧版草稿（仍使用已废弃 files.browse）；master 已有更新后的 workspace.browse 测试，旧稿备份但不覆盖新版。
+- 涉及：AGENTS.md、devlog.md，以及各 SQLite 分支的原有变更。
+
 ## 2026-09-13 供应商协议「不设置」保存回显修复
 - 原因：providerForm 把已有供应商缺失的 api 当作新建模板，回读时补成 openai-completions，再次保存还可能写回该默认值。
 - 修改：仅新建表单采用模板默认协议；已有配置缺失 api 保持空值，不改后端协议校验、模型继承或界面样式。
