@@ -471,6 +471,8 @@ capabilities.js 原生能力发现、内存配置、MCP 快照与选择加载
 
 任务状态只归 tasks 管理，工具不保存另一份状态；传输层不直接调用 Pi SDK。采用原生 JavaScript ES modules 和 Node 测试工具，不增加编译步骤或工作流框架。
 
+模型配置、收藏与凭据的读改写使用同一权威数据库连接进行原文比较后原子写入（CAS）；其他进程已修改时明确拒绝，不覆盖、不自动重放凭据回调。派生模型文件仍有跨进程陈旧窗口，不能把权威库防丢更新等同于各进程 SDK 实时同步。
+
 ## 验证和运行边界
 
 项目级 skill `codebase-map`（.pi/skills/codebase-map/）：多级索引快速定位代码与排障。`node .pi/skills/codebase-map/scripts/reindex.mjs` 重建 INDEX.md（模块总览→符号行号→协议/路由/元素常量）；knowledge.md 沉淀历史 bug，改代码后重建索引并追加记录。

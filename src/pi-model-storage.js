@@ -92,9 +92,41 @@ export function createPiModelStorage({ database, home, piDir = getAgentDir() }) 
     database.set(NAMESPACE, CONFIG_KEY, config);
   };
 
+  // ---- 跨进程 CAS：修同 HOME 多进程读-改-写丢更新 --------------------------------
+  // 复用传入的权威连接，比较与写入在单条同步 SQL 内完成，不持锁跨异步操作。
+  const readRaw = (db, namespace, key) =>
+    db.prepare("SELECT value FROM store WHERE namespace = ? AND key = ?").get(namespace, key)?.value;
+  // expectedRaw 为 undefined（行尚不存在）→ 仅当行仍不存在时插入；否则原文全等才覆盖。
+  // 返回 false = 他人已抢先写入：调用方转为固定脱敏冲突错误，绝不自动重放（fn 可能有副作用）。
+  const compareAndSet = (db, namespace, key, expectedRaw, next) =>
+    expectedRaw === undefined
+      ? db
+          .prepare("INSERT INTO store (namespace, key, value) VALUES (?, ?, ?) ON CONFLICT(namespace, key) DO NOTHING")
+          .run(namespace, key, next).changes === 1
+      : db.prepare("UPDATE store SET value = ? WHERE namespace = ? AND key = ? AND value = ?").run(next, namespace, key, expectedRaw).changes === 1;
+
+  // 写路径起点捕获：raw 为库内原文（CAS 期望值）；config 解析兜底与 readConfig 同语义。
+  const readState = (namespace, key) => {
+    const raw = readRaw(database, namespace, key);
+    try { return { raw, value: raw === undefined ? undefined : JSON.parse(raw) }; }
+    catch { throw new Error(`数据库记录无效：${namespace}/${key}（不是有效 JSON）`); }
+  };
+  const configState = () => {
+    const { raw, value } = readState(NAMESPACE, CONFIG_KEY);
+    return { raw, config: isPlainObject(value) ? value : { providers: {} } };
+  };
+  const casConfig = (raw, config) => compareAndSet(database, NAMESPACE, CONFIG_KEY, raw, JSON.stringify(config));
+  const favoritesState = () => readState(NAMESPACE, FAVORITES_KEY);
+  const casFavorites = (raw, store) =>
+    compareAndSet(database, NAMESPACE, FAVORITES_KEY, raw, JSON.stringify({ version: 1, ...store }));
+  const credentialState = (providerId) => {
+    const { raw, value } = readState(AUTH_NAMESPACE, providerId);
+    return { raw, current: isCredential(value) ? value : undefined };
+  };
+
   // ---- 凭据（auth/<providerId>）：pi-ai CredentialStore 实现 ---------------------
-  // 单进程单写者：modify/delete 走同一条 promise 链串行化（CredentialStore 契约的进程内部分；
-  // 跨进程互斥由 SQLite 语句级原子性兜底）。OAuth 刷新等运行时写入全部落库。
+  // 单进程单写者：modify/delete 走同一条 promise 链串行化；跨进程见下方 CAS。
+  // 跨进程由落库时的 CAS（比较 fn 调用前的权威原文）防丢更新。OAuth 刷新等运行时写入全部落库。
   let chain = Promise.resolve();
   const enqueue = (run) => {
     const task = chain.then(run);
@@ -134,11 +166,13 @@ export function createPiModelStorage({ database, home, piDir = getAgentDir() }) 
     modify(providerId, fn, options) {
       return enqueue(async () => {
         options?.signal?.throwIfAborted();
-        const current = rawCredential(providerId);
+        const { raw: expectedRaw, current } = credentialState(providerId);
         const next = await fn(current ? structuredClone(current) : undefined);
         // 与 SDK AuthStorage.modify 一致：fn 返回 undefined 表示放弃变更，保留现值。
         if (next === undefined) return current;
-        database.set(AUTH_NAMESPACE, providerId, next);
+        // 异步 fn 期间他人可能已写：CAS 原文比较失败即冲突——固定脱敏错误，不自动重放。
+        if (!compareAndSet(database, AUTH_NAMESPACE, providerId, expectedRaw, JSON.stringify(next)))
+          throw new Error("凭据已被其他进程修改，本次写入已取消，请重试");
         return structuredClone(next);
       });
     },
@@ -253,6 +287,10 @@ export function createPiModelStorage({ database, home, piDir = getAgentDir() }) 
     importErrors,
     readConfig,
     writeConfig,
+    configState,
+    casConfig,
+    favoritesState,
+    casFavorites,
     syncCompatFile,
     canonicalModelsJson,
     getFavorites: readFavoritesRaw,

@@ -13,6 +13,7 @@ import { Database } from "../src/database.js";
 import { createPiModelStorage, canonicalModelsJson } from "../src/pi-model-storage.js";
 import { Sessions } from "../src/sessions.js";
 import { createServerApp } from "../src/server.js";
+import { runOpponent } from "./helpers/model-concurrency-child.mjs";
 
 // 独立后端测试：临时目录 + fake factory + 独立 SQLite，不触碰真实 ~/.pi 与任何真实密钥。
 const sha = (raw) => createHash("sha256").update(raw).digest("hex");
@@ -944,3 +945,35 @@ test("models.hidden.set：隐藏只影响可选入口（listCatalog），运行�
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// 子进程已读旧权威、停在CAS前；父进程先写成功再放行，确定性检查过期写拒绝。
+for (const op of ["config", "favorites"]) {
+  test(`两进程 ${op}：旧权威捕获后被他人更新，过期CAS必须拒绝`, { timeout: 30000 }, async () => {
+    const dir = await tempDir();
+    let opponent;
+    try {
+      const { models, storage } = makeService(dir);
+      opponent = runOpponent({ dir, op });
+      await opponent.ready();
+      if (op === "config") {
+        await models.saveProvider({ providerId: "p", provider: { name: "from-parent" }, baseFingerprint: (await models.get()).fingerprint });
+      } else {
+        await models.setFavorite({ kind: "model", key: "parent/model", favorite: true });
+      }
+      opponent.release();
+      const outcome = await opponent.result();
+      assert.equal(outcome.ok, false);
+      assert.match(outcome.message, /已被/);
+      if (op === "config") {
+        assert.equal(storage.readConfig().providers.p.name, "from-parent");
+        assert.deepEqual(JSON.parse(await compat(dir)), storage.readConfig());
+      } else {
+        assert.deepEqual((await models.favorites()).model, ["parent/model"]);
+      }
+    } finally {
+      await opponent?.close();
+      closeOpenDatabases();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+}
