@@ -724,3 +724,12 @@
 - 原因：摘要 JSON 替换在 Windows 报 EPERM；用户要求跨平台配置页与 SQLite 权威存储，API Key 明文保存。
 - 内容：新增 database/pi-model-storage，迁移 sessions/model-config/remote/maint-state 的管理数据；main/pi/server 接线，摘要设置页、模型页文案与协议同步。保留 Pi JSONL，迁移按文件幂等、缺失历史不覆盖；Node 支持范围升为22.13+（22.x）或24+。
 - 验证：数据库、迁移、凭据真实 SDK、配置 UI、守护测试均有回归；全量最后一项守护时序测试首次失败、单独重跑15/15通过，最终全量复跑275项：274通过、0失败、1跳过。
+
+## 2026-09-12 模型存储修复：部分成功回执、导入自愈、临时文件加固
+- 原因：审查确认三处缺陷——writeConfig 先库后派生后刷新产生部分成功但向上抛错（UI 误判保存失败而权威已变）；旧配置导入坏文件即打迁移标记，用户修复原文件后永远无法重导；compat 原子写临时文件名可碰撞且 writeFile 失败路径泄漏临时文件、rename 无瞬时占用重试。
+- 内容（src/pi-model-storage.js + src/model-config.js + 两个对应测试）：
+  - writeConfig 拆为两阶段：仅权威落库；派生兼容文件由调用方经 syncCompatFile 显式重建。saveProvider/saveModel/deleteProvider/deleteModel 落库成功后派生/刷新失败时不再抛错，返回 `{fingerprint, applied:false, applyError(脱敏截断)}` 并记挂起状态；库写入失败照常抛。models.config.get 读取路径顺带重试挂起应用（GET 幂等、不重放 mutation），响应新增可选 `applyError`（有 = 已保存未应用，无 = 已应用），重试成功即清除；无挂起时 GET 不额外刷新。同一 fingerprint 重试保存仍可重新派生应用（乐观锁照常通过，apply 幂等）。不新增协议类型，server/ui 由主审接线。
+  - 导入门闩改为仅成功后打标记：读失败/坏 JSON/结构拒绝只记去重告警（同源同消息只记一条）且不打标记，修复原文件后下次 init 自动重导；导入干净时清除该来源陈旧告警。混合坏 auth：好条目入库、坏条目告警、权威已有 providerId 一律不覆盖（UI 新值优先），修复后补导入。凭据 modify 本进程串行语义保持，不加跨 await SQL 事务、不做多 worker。
+  - compat 临时文件改 randomUUID 唯一名，write/rename 任一步失败完整清理；rename 瞬时占用（EPERM/EBUSY）有限退避重试 2 次，绝不先删目标；校验临时文件同样 randomUUID 并把 writeFile 移入 try/finally。
+- 验证：npm test 全量 288 项 287 通过 0 失败 1 跳过（此前 service.test.js 偶发失败为基线时序抖动，stash 对比确认与本分支无关）；新增 7 条故障注入测试（compat 失败回执+同指纹重派生、refresh 失败回执、GET 自愈、修复坏源再 init、混合 auth 不覆盖新值、告警去重、rename 失败清理临时文件）。测试全部使用独立临时目录，未触碰真实配置。
+- 涉及文件：src/model-config.js、src/pi-model-storage.js、tests/model-config.test.js、tests/pi-model-storage.test.js、README.md。

@@ -31,9 +31,12 @@ const closeOpenDatabases = () => {
 
 function makeService(dir, catalog = []) {
   let refreshes = 0;
+  // 故障注入点：failRefresh 置 true 时 refreshModels 抛错，模拟 SDK 目录刷新失败。
+  const state = { failRefresh: false };
   const factory = {
     catalog: () => catalog,
     refreshModels: async () => {
+      if (state.failRefresh) throw new Error("refresh exploded");
       refreshes += 1;
       return catalog;
     },
@@ -43,12 +46,15 @@ function makeService(dir, catalog = []) {
   // piDir 指向临时空目录：导入逻辑不触碰真实 ~/.pi。
   const storage = createPiModelStorage({ database, home: dir, piDir: join(dir, "pi") });
   const models = createModelsService({ factory, storage });
-  return { models, storage, database, refreshes: () => refreshes };
+  return { models, storage, database, refreshes: () => refreshes, state };
 }
 
-// 种子：直接写权威库（绕过服务层校验，模拟任意既有状态），同步派生文件保持一致。
-const seed = (svc, content) =>
-  svc.storage.writeConfig(typeof content === "string" ? JSON.parse(content) : content);
+// 种子：直接写权威库（绕过服务层校验，模拟任意既有状态），并同步派生文件保持一致。
+const seed = async (svc, content) => {
+  const config = typeof content === "string" ? JSON.parse(content) : content;
+  svc.storage.writeConfig(config);
+  await svc.storage.syncCompatFile(config);
+};
 
 // 派生兼容文件读取：SDK 实际读的镜像，内容应始终等于权威配置。
 const compat = (dir) => readFile(join(dir, "models.compat.json"), "utf8");
@@ -86,6 +92,7 @@ test("models.config.get：权威为空时空指纹与空列表", async () => {
     assert.deepEqual(data.providers, []);
     assert.deepEqual(data.catalog, [{ key: "a/b" }]);
     assert.equal(data.parseError, undefined);
+    assert.equal(data.applyError, undefined, "无挂起时 GET 不返回 applyError");
   } finally {
     closeOpenDatabases();
     await rm(dir, { recursive: true, force: true });
@@ -102,6 +109,7 @@ test("provider.save：权威落库、派生文件同步、目录刷新", async (
       baseFingerprint: EMPTY,
     });
     assert.notEqual(created.fingerprint, EMPTY);
+    assert.equal(created.applied, true, "成功回执 applied:true");
     assert.equal(refreshes(), 1);
     // 权威：SQLite 中的值含真实密钥（用户明确同意的明文存储）。
     const raw = database.get("models", "config");
@@ -334,6 +342,115 @@ test("SDK 校验闸门：轻校验放过的垃圾在落库前被拒，无临时�
     assert.equal(await compat(dir), before);
     const leftover = (await readdir(dir)).filter((name) => name.includes(".tmp-"));
     assert.deepEqual(leftover, []);
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("部分成功回执：compat 重建失败 → applied:false + applyError，权威已落库，同指纹重试重新派生", async () => {
+  const dir = await tempDir();
+  try {
+    const svc = makeService(dir);
+    const { models, storage, database } = svc;
+    const realSync = storage.syncCompatFile;
+    // 故障注入：库写入后的派生文件重建失败（磁盘/权限类 IO 错误）
+    storage.syncCompatFile = async () => {
+      throw new Error("EACCES: permission denied, unlink 'C:\\data\\models.compat.json'");
+    };
+    let receipt;
+    try {
+      receipt = await models.saveProvider({
+        providerId: "p",
+        provider: { name: "P", baseUrl: "https://p.example.com/v1", api: "openai-completions" },
+        baseFingerprint: EMPTY,
+      });
+    } finally {
+      storage.syncCompatFile = realSync;
+    }
+    assert.equal(receipt.applied, false);
+    assert.match(receipt.applyError, /EACCES/);
+    assert.notEqual(receipt.fingerprint, EMPTY);
+    // 库已是新配置（部分成功的事实），派生文件未生成
+    assert.equal(database.get("models", "config").providers.p.name, "P");
+    await assert.rejects(() => compat(dir), /ENOENT/);
+    // 同一 fingerprint 重试：乐观锁通过、apply 幂等重算同一配置、重新派生应用成功
+    const retried = await models.saveProvider({
+      providerId: "p",
+      provider: { name: "P", baseUrl: "https://p.example.com/v1", api: "openai-completions" },
+      baseFingerprint: receipt.fingerprint,
+    });
+    assert.equal(retried.applied, true);
+    assert.equal(retried.applyError, undefined);
+    assert.deepEqual(JSON.parse(await compat(dir)), database.get("models", "config"));
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("部分成功回执：目录刷新失败 → applied:false，库与派生已一致，修复后重试仅重刷目录", async () => {
+  const dir = await tempDir();
+  try {
+    const svc = makeService(dir);
+    const { models, database, state, refreshes } = svc;
+    state.failRefresh = true;
+    const receipt = await models.saveProvider({
+      providerId: "p",
+      provider: { name: "P", baseUrl: "https://p.example.com/v1", api: "openai-completions" },
+      baseFingerprint: EMPTY,
+    });
+    assert.equal(receipt.applied, false);
+    assert.match(receipt.applyError, /refresh exploded/);
+    assert.equal(refreshes(), 0);
+    // 库与派生文件已一致，仅 SDK 目录未刷新；同指纹重试修复后只补目录刷新
+    assert.deepEqual(JSON.parse(await compat(dir)), database.get("models", "config"));
+    state.failRefresh = false;
+    const retried = await models.saveProvider({
+      providerId: "p",
+      provider: { name: "P", baseUrl: "https://p.example.com/v1", api: "openai-completions" },
+      baseFingerprint: receipt.fingerprint,
+    });
+    assert.equal(retried.applied, true);
+    assert.equal(refreshes(), 1);
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("GET 自愈：读取路径顺带重试挂起应用，成功后 applyError 消失，无挂起不额外刷新", async () => {
+  const dir = await tempDir();
+  try {
+    const svc = makeService(dir);
+    const { models, storage, database, refreshes } = svc;
+    const realSync = storage.syncCompatFile;
+    storage.syncCompatFile = async () => {
+      throw new Error("EBUSY: resource busy");
+    };
+    let receipt;
+    storage.syncCompatFile = async () => {
+      throw new Error("EBUSY: resource busy");
+    };
+    receipt = await models.saveProvider({
+      providerId: "p",
+      provider: { name: "P", baseUrl: "https://p.example.com/v1", api: "openai-completions" },
+      baseFingerprint: EMPTY,
+    });
+    assert.equal(receipt.applied, false);
+    // 挂起未修复：GET 返回 applyError（已保存未应用），UI 可展示并引导刷新重试
+    let view = await models.handle({ type: "models.config.get" });
+    assert.match(view.applyError, /EBUSY/);
+    // 修复后：任意 GET 顺带重试成功，applyError 消失，派生文件与库一致
+    storage.syncCompatFile = realSync;
+    view = await models.handle({ type: "models.config.get" });
+    assert.equal(view.applyError, undefined);
+    assert.equal(refreshes(), 1, "GET 自愈重刷目录一次");
+    assert.deepEqual(JSON.parse(await compat(dir)), database.get("models", "config"));
+    // 挂起已清除：再次 GET 不额外刷新
+    const before = refreshes();
+    await models.handle({ type: "models.config.get" });
+    assert.equal(refreshes(), before);
   } finally {
     closeOpenDatabases();
     await rm(dir, { recursive: true, force: true });

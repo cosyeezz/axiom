@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { rm, writeFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
@@ -175,8 +175,24 @@ export function createModelsService({ factory, storage }) {
   };
   // 权威配置的指纹：对规范序列化做摘要；权威为空与旧「文件缺失」同语义（空配置）。
   const fingerprintOf = (config) => digest(canonicalModelsJson(config));
+  // 错误消息只含路径/系统调用信息，不含文件内容（密钥不外泄）；截断防刷屏。
+  const sanitizeApplyError = (error) => String(error?.message ?? error).slice(0, 300);
+  // 挂起应用状态：库已落库但派生/刷新未完成。GET 读取路径顺带重试（GET 幂等、不重放任何
+  // mutation，是比客户端重发写命令更安全的自愈入口）；重试成功即清除，无挂起时 GET 不额外刷新。
+  let pendingApply = null;
 
   async function get() {
+    if (pendingApply)
+      await enqueue(async () => {
+        if (!pendingApply) return;
+        try {
+          await storage.syncCompatFile(storage.readConfig());
+          if (factory.refreshModels) await factory.refreshModels();
+          pendingApply = null;
+        } catch (error) {
+          pendingApply.applyError = sanitizeApplyError(error);
+        }
+      });
     const config = storage.readConfig();
     const result = {
       fingerprint: fingerprintOf(config),
@@ -184,6 +200,7 @@ export function createModelsService({ factory, storage }) {
       providers: [],
       catalog: factory.catalog(),
     };
+    if (pendingApply) result.applyError = pendingApply.applyError;
     // 导入期告警只在权威配置为空时展示：一旦用户开始配置，旧文件的问题不再 relevant。
     const imported = storage.importErrors();
     if (!Object.keys(config.providers ?? {}).length && imported.length)
@@ -198,9 +215,14 @@ export function createModelsService({ factory, storage }) {
     return result;
   }
 
-  // 所有写命令：指纹乐观锁 → 权威读取 → 变更 → SDK 真实 schema 校验 → 权威落库（含派生
-  // 兼容文件重建）→ 刷新 SDK 模型目录。全部写命令经 enqueue 串行，读-改-写不会交错；
-  // SQLite 单文件无「外部编辑」入口，旧双指纹复查窗口随文件写入一并消失。
+  // 所有写命令：指纹乐观锁 → 权威读取 → 变更 → SDK 真实 schema 校验 → 权威落库 →
+  // 派生兼容文件重建 + SDK 模型目录刷新（应用阶段）。全部写命令经 enqueue 串行，读-改-写不会交错。
+  // 回执协议：库写入失败（指纹冲突/校验拒绝/SQLite 异常）照常抛错，权威未变；
+  // 库已落库但派生/刷新失败时不抛——权威已变，抛错会让 UI 误以为保存失败而丢弃编辑。
+  // 此时返回 { fingerprint, applied: false, applyError }，同时记为挂起状态：后续任意
+  // models.config.get 读取路径顺带重试派生+刷新并在响应返回 applyError（有 = 已保存未应用，
+  // 无 = 已应用）。GET 幂等且不重放 mutation，是最安全的自愈入口；也可拿同一 fingerprint
+  // 重试保存，乐观锁照常通过，apply 幂等重算同一配置。
   async function mutate(baseFingerprint, apply) {
     const config = storage.readConfig();
     if (fingerprintOf(config) !== baseFingerprint) throw new Error("模型配置已被外部修改，请刷新配置页后重试");
@@ -211,17 +233,25 @@ export function createModelsService({ factory, storage }) {
     apply(config.providers);
     if (!sdkModelConfig) throw new Error("无法加载 Pi 配置校验器，已拒绝保存；请检查 SDK 版本");
     // SDK 校验器只接受文件路径：规范序列化写入临时文件校验后即删（临时文件永不落密钥副本留盘）。
-    const tmp = `${storage.compatPath}.tmp-validate-${process.pid}-${Date.now()}`;
-    await writeFile(tmp, canonicalModelsJson(config), { mode: 0o600 });
+    const tmp = `${storage.compatPath}.tmp-validate-${randomUUID()}`;
     try {
+      await writeFile(tmp, canonicalModelsJson(config), { mode: 0o600 });
       const check = await sdkModelConfig.load(tmp);
       if (check.getError()) throw new Error("模型配置未通过校验，已放弃保存；请检查 Pi 模型参数与供应商配置");
     } finally {
       await rm(tmp, { force: true }).catch(() => {});
     }
     await storage.writeConfig(config);
-    if (factory.refreshModels) await factory.refreshModels();
-    return { fingerprint: fingerprintOf(config) };
+    const fingerprint = fingerprintOf(config);
+    try {
+      await storage.syncCompatFile(config);
+      if (factory.refreshModels) await factory.refreshModels();
+      pendingApply = null;
+    } catch (error) {
+      pendingApply = { fingerprint, applyError: sanitizeApplyError(error) };
+      return { fingerprint, applied: false, applyError: pendingApply.applyError };
+    }
+    return { fingerprint, applied: true };
   }
 
   const sameId = (id) => (entry) => entry && typeof entry === "object" && entry.id === id;
