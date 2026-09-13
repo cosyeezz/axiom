@@ -437,3 +437,9 @@
 - 根因：`workspace.browse` 与 `files.browse` 的 `query` 只在当前层用 `entry.name.includes()` 子串过滤，既不递归也不模糊；`app.js` 在 `public/` 里，根层永远匹配不到。
 - 修复：src/sessions.js 抽出 `fuzzyHit()`/`matchRank()` 与 BFS `searchEntries()`，`query` 非空时递归搜索当前 `path` 子树（跳过 `.git`/`node_modules`/符号链接）、只匹配名称、按匹配质量排序后一次返回（不分页，上限 60 条、目录上限 400）；`workspace.browse` 增加 `query`，前端把 `@` 后最后一段当 `query` 发出。
 - 防再犯：tests/session-flow.test.js、tests/workspace-picker.test.js 断言递归与模糊（`appjs` → `src/deep/nested-app.js`）；tests/app.test.js 的 workspace.browse 桩件按 `req.query` 返回根目录没有的 `src/app.js`，保证「根层没有也能命中」这条回归；改搜索前先直连 `Sessions.browse()` 在真实工作空间量耗时，别凭感觉加索引/防抖。
+
+### 2026-09-14 运行中吸底滚动被自己补发的 scroll 事件停掉
+- 症状：会话运行中自动吸底会突然停下，之后只能手动滚到最底部才短暂恢复；子代理面板同样如此。
+- 根因：onscroll 用 `scrollHeight - scrollTop - clientHeight < 80` 无条件重算跟随。程序补底写入的 scrollTop 要等下一帧的 scroll steps 才派发 scroll 事件，而同步追加的工具记录/流式正文已经把内容撑高超过 80px，事件里的距离是「旧 scrollTop + 新 scrollHeight」，于是被判成用户离开底部；暂停后内容继续增高，用户永远追不上 80px 阈值。
+- 修复：public/app.js 的 `readFollow()` 只承认用户意图（wheel/touch/keydown/pointerdown 的 200ms 窗口）与无意图向上位移可以暂停，贴底一律恢复；滚动事件不再参与计算布局。内容增高改由内容观察器（`watchGrowth`/ResizeObserver）兜底补底，覆盖图片解码、折叠展开等不经过 scrollLatest 的路径。
+- 防再犯：tests/app.test.js 用带限位的 scrollTop getter 模拟真实浏览器贴底，断言“内容增高后补发的 scroll 事件不暂停吸底”（把 readFollow 改回 `atLatest` 单条件即失败）；tests/autoscroll-ui.py 在真实 Chromium + conversation-preview 里重复同样场景。JSDOM 不限位 scrollTop，写这类测试必须自己限位，否则距离算负、假通过。

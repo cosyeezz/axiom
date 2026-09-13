@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-14 运行中吸底滚动只在用户滚动时暂停
+- 原因：用户反馈运行中自动吸底会莫名停下。根因是 `#transcript`/子代理面板的 onscroll 按“距底部 <80px”无条件重算跟随状态：贴底时 `scrollTop = scrollHeight` 产生的滚动事件要等下一帧才派发，而同步追加的工具记录/流式正文已把内容撑高超过 80px，于是被误判成“用户离开了底部”；一旦暂停，用户很难再靠滚到底部追上持续增高的内容。
+- 实现：public/app.js 抽出 `atLatest()`/`readFollow()`，跟随状态只由贴底和用户意图决定（滚轮、触摸、键盘、按下滚动条标记 200ms 意图窗口；无意图的向上位移仍视为拖动滚动条），程序跳转、折叠补偿、布局重排引发的滚动事件不再改变状态。新增内容观察器：`#output` 与子代理输出增高就补一次贴底，覆盖图片解码、折叠展开等不经过 `scrollLatest` 的路径；切换会话与重建弹窗时解除观察。
+- 涉及文件：public/app.js、tests/app.test.js、tests/autoscroll-ui.py（新增）、README.md、devlog.md、knowledge.md 与 codebase-map 索引。
+- 验证：tests/app.test.js 用限位 scrollTop 复现“补发滚动事件 + 内容增高”场景（改回旧规则时该断言必失败）；真实 Chromium（`node tests/conversation-preview.mjs` + `python tests/autoscroll-ui.py`）13 项通过：初始贴底、增高跟随、上滚暂停与不抢位、滚回底部恢复、补发事件不暂停、无脚本错误。全量 `npm test` 301 项：300 通过、1 跳过、0 失败。未调用模型、未重启正式服务。
+
 ## 2026-09-13 06:55 UTC SQLite 安装入口的 Node 版本前置检查
 - 原因：静态导入 node:sqlite 早于安装脚本的版本检查，旧 Node 先报未知内置模块；安装脚本及 README 存在过时版本/JSON 存储描述。
 - 实现：src/database.js 复用原 nodeOk 规则，在同步加载 SQLite 前统一拒绝不支持的 Node；scripts/install.mjs 重导出规则供现有测试使用，移除不可达的重复检查。无需新依赖、启动标志或修改 npm 全局安装命令。install.sh、install.ps1 与 README.md 同步版本及 SQLite 说明。
