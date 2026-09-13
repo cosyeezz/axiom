@@ -94,6 +94,62 @@ test("withdraw with recall trims the web history and leaves the queue alone when
   } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+test("recall keeps web history in sync when SQLite rejects writes, returns input and retries the whole cleanup", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-recall-readonly-"));
+  let branch = [
+    { ...user("保留"), id: "u0" }, { ...assistant("stop"), id: "a0" },
+    user("撤回的输入"), assistant("aborted", thinking),
+  ];
+  const sdk = {
+    isStreaming: false,
+    navigateTree: async id => { branch = branch.slice(0, branch.findIndex(e => e.id === id)); return {}; },
+    sessionManager: { getBranch: () => branch, appendCustomEntry: () => {} },
+  };
+  const factory = Object.assign(async () => ({
+    config: () => ({ model: "test/one" }), subscribe: () => () => {},
+    recall: () => recallLastMessage(sdk), withdraw: () => ({ steering: ["排队输入"], followUp: [] }),
+    historyEntries: () => branch, dispose: async () => {}, abort: async () => {},
+  }), { catalog: () => [{ key: "test/one" }] });
+  const sessions = new Sessions(factory, undefined, join(root, "storage"));
+  try {
+    const id = await sessions.create(root);
+    const item = sessions.get(id), errors = [];
+    item.messages = branch.map(entry => ({ agentId: "main", entryId: entry.id, message: entry.message }));
+    item.live.main = assistant("aborted", thinking).message;
+    item.summaryTriggers = [{ id: "trigger", agentId: "main", entryId: "a1", status: "aborted" }];
+    item.retries = [{ id: "retry", agentId: "main", anchorEntryId: "a1", messageCount: 4, status: "cancelled" }];
+    await sessions.persist(item, { event: { type: "summary_trigger", record: item.summaryTriggers[0] } });
+    await sessions.persist(item, { event: { type: "retry", record: item.retries[0] } });
+    sessions.subscribe(id, event => { if (event.type === "error") errors.push(event); });
+    sessions.database.exec("PRAGMA query_only = ON");
+    const result = await sessions.withdraw(id, true);
+    assert.equal(result.recalled.text, "撤回的输入", "SDK已经回退，必须把输入交还用户");
+    assert.deepEqual(result.steering, ["排队输入"]);
+    assert.deepEqual(item.messages.map(e => e.entryId), branch.map(e => e.id));
+    assert.equal(item.live.main, undefined);
+    assert.deepEqual(item.retries, []);
+    assert.deepEqual(item.summaryTriggers, []);
+    assert.ok(errors.length, "数据库错误仍可见，不冒充已落盘");
+    assert.equal(sessions.store.getSession(id).summaryTriggers.length, 1);
+    sessions.database.exec("PRAGMA query_only = OFF");
+    // 整组清理后半段失败时不能只删除一半；重试仍复用原有pendingWrites。
+    const original = sessions.store.deleteEvents.bind(sessions.store);
+    sessions.store.deleteEvents = (sid, type, records) => {
+      if (type === "retry") throw new Error("injected cleanup failure");
+      return original(sid, type, records);
+    };
+    await assert.rejects(sessions.persist(item, {}), /injected cleanup failure/);
+    assert.equal(sessions.store.getSession(id).summaryTriggers.length, 1, "同一次撤回清理须为短事务");
+    sessions.store.deleteEvents = original;
+    await sessions.persist(item, {});
+    assert.equal(sessions.store.getSession(id).summaryTriggers.length, 0);
+    assert.equal(sessions.store.getSession(id).retries.length, 0);
+  } finally {
+    sessions.database.exec("PRAGMA query_only = OFF");
+    await sessions.close(); await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("withdraw drops retracted main retries, keeps earlier and subagent ones without stale positions", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-recall-retries-"));
   let recalled = { entryId: "u1", text: "撤回的输入", images: [] };

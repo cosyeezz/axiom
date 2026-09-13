@@ -90,6 +90,38 @@ test("recall removes only summaries attached to retracted main messages", async 
   } finally { await sessions.close(); }
 });
 
+test("恢复补齐唯一匹配的摘要与触发关联，不猜同毫秒或缺失时间的旧记录", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-memory-link-"));
+  const history = [
+    { id: "a1", message: { ...reply("<axiom_summary>已确认</axiom_summary>"), timestamp: 100 } },
+    { id: "a2", message: { ...reply("重复"), timestamp: 200 } },
+    { id: "a3", message: { ...reply("重复"), timestamp: 200 } },
+  ];
+  const factory = Object.assign(async () => ({ config: () => ({ model: "test/one" }),
+    subscribe: () => () => {}, historyEntries: () => history, abort: async () => {}, dispose: async () => {},
+  }), { catalog: () => [{ key: "test/one" }] });
+  let sessions = new Sessions(factory, undefined, join(root, "storage"));
+  try {
+    const id = await sessions.create(root);
+    for (const record of [
+      { id: "unique", agentId: "main", messageTimestamp: 100, text: "已确认" },
+      { id: "ambiguous", agentId: "main", messageTimestamp: 200, text: "不可猜" },
+      { id: "unknown", agentId: "main", text: "保留旧记录" },
+      { id: "child", agentId: "child", messageTimestamp: 100, text: "子任务不误关联" },
+    ]) await sessions.persist(sessions.get(id), { summary: record });
+    await sessions.persist(sessions.get(id), { event: { type: "summary_trigger", record:
+      { id: "trigger", agentId: "main", status: "recorded", messageTimestamp: 100 } } });
+    await sessions.close();
+    sessions = new Sessions(factory, undefined, join(root, "storage"));
+    await sessions.load();
+    const item = await sessions.ensureLoaded(id);
+    assert.deepEqual(item.summaries.map(e => e.entryId), ["a1", undefined, undefined, undefined]);
+    assert.equal(item.summaryTriggers[0].entryId, "a1");
+    assert.equal(sessions.store.getSession(id).summaries[0].entryId, "a1", "补齐关联要落盘");
+    assert.equal(parentSummaryContext(item), "已确认\n不可猜\n保留旧记录", "不凭不完整证据删除旧事实");
+  } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test("summary audit retains missing, oversized, failed and delegate reports", () => {
   const item = { summaries: [], memoryTurns: {}, emit: () => {} };
   const hooks = memoryHooks(item, () => {});

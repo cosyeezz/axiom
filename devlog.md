@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-13 05:45 UTC 撤回失败一致性、摘要恢复关联与重试词表
+- 已复现：PRAGMA query_only使撤回中的事件删除抛错，SDK已回退但网页历史未裁切，或网页已裁切却丢失撤回回执。修复先同步内存，再经saveChange提交整组短SAVEPOINT；失败通过既有error事件报告、pendingWrites保留整组清理，下次保存/关闭重试，仍把输入交还用户，不跨SDK持SQL事务。
+- 复核纠正：此前V01探针强行允许撤回已有完整回答的轮次，绕过真实recallLastMessage限制，不能据此确认“撤回后污染委派”。真正已确认的是崩溃窗口后摘要/触发记录缺entryId；恢复按唯一助手messageTimestamp回填并落库，同毫秒歧义/缺时间保留旧记录，不猜测删除。
+- 额外已复现：retry错误词表未传首次主代理、sessionData.selection未保存；补两处传递，重启主代理与子代理保持原词表。跨进程配置丢更新修复另由独立worktree处理，不持事务跨await。
+- 验证：tests/recall.test.js、session-memory.test.js、session-persistence.test.js三个新增用例先红后绿；38项定向全过，全量327项：325通过、0失败、2平台跳过。撤回用真实recallLastMessage+SDK树桩，另注入清理后半段失败证明整组回退后可重试，未降低断言。
+- 涉及：src/sessions.js、上述测试、README.md、devlog.md、docs/sqlite-refactor-plan.md、codebase-map知识与索引。正式服务、正式库仍未触碰；性能基准修正待最终复跑，不引用旧精确数字。
+
 ## 2026-09-13 05:32 UTC 历史恢复索引与取消失败边界
 - 已复现：256条消息、256条重试使旧恢复逻辑读取消息65,664次；ID匹配已线性但后续retry逐条map/filter/slice，compaction逐条find仍为平方扫描。取消恰好正在恢复且SDK失败的会话会连带抛加载错误，虽无运行任务可取消。
 - 修复：src/sessions.js 按代理一次构建单调时间线与锚点，重试二分查询；同毫秒歧义、时间倒退、缺失时间、排队输入规则保持，压缩按ID对账。cancel等待失败加载后继续原有未加载直接返回语义，不重建SDK、不删记录。

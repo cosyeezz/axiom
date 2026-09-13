@@ -458,3 +458,18 @@
 - 根因：cancel直接await item.loading，加载失败传染取消；remove同场景已忽略加载失败后清理。
 - 修复：cancel等待加载settle后继续原有未加载返回分支，无SDK时无需再取消，不删除原记录。
 - 防再犯：session-persistence.test.js 可控SDK拒绝，验证打开报错、取消完成且库记录仍在。
+
+### 2026-09-13 SDK已撤回后保存失败不能截断网页同步和回执
+- 已复现：query_only使事件删除失败，旧代码在裁切messages之前await抛错；无事件时最后persist失败则已撤回但不给用户输入回执。
+- 修复：sessions.withdraw先完成内存裁切，再经saveChange提交数组变更，复用单个SAVEPOINT与pendingWrites；失败可见但仍交还输入，后半段失败不允许前半段独立落盘。
+- 防再犯：recall.test.js用真实recallLastMessage判定与SDK树桩、真实SQLite只读故障和后半段注入验证回执/网页/重试，不用强制成功的recall桩声称复现真实撤回边界。
+
+### 2026-09-13 摘要缺ID与撤回污染不能混为同一复现
+- 根因：memory.onReply先落摘要，Pi message.end回调微任务后才补entryId，崩溃恢复只补了messages；旧探针却绕过真实已回答不可撤回的限制，过度推断污染。
+- 修复：恢复构建唯一助手时间戳索引补摘要/触发关联并落盘；同毫秒多条、缺时间、子代理记录不猜不删。
+- 防再犯：session-memory.test.js覆盖唯一/歧义/未知/跨代理；涉及模型输出限制必须调用真实pi.recallLastMessage。
+
+### 2026-09-13 配置存在item不等于已传SDK或已持久化
+- 已复现：retry自定义词表仅在item和子代理装配处，首次主代理漏传，sessionData.selection也漏存，重启丢失。
+- 修复：主代理createAgent传retry、sessionData显式保存；不让默认配置追溯覆盖旧会话。
+- 防再犯：session-persistence.test.js串联首次主代理→库selection→重启主代理→子代理，不能仅断言item字段。

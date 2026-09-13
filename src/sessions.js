@@ -486,7 +486,7 @@ export class Sessions {
       sessionFile: item.agent?.sessionFile?.() ?? item.sessionFile ?? null,
       selection: item.agent ? { ...item.agent.config?.(), capabilities: item.capabilities,
         subagentCapabilities: item.subagentCapabilities, subagentModel: item.subagentModel,
-        subagentThinking: item.subagentThinking, queueType: item.queueType,
+        subagentThinking: item.subagentThinking, queueType: item.queueType, retry: item.retry,
         trustProject: item.trustProject, useDefaults: false } : item.selection };
   }
 
@@ -510,6 +510,10 @@ export class Sessions {
   }
 
   writeChange(item, change) {
+    if (Array.isArray(change)) {
+      for (const part of change) this.writeChange(item, part);
+      return;
+    }
     if (change.session) {
       const { id, ...patch } = change.session;
       this.store.updateSession(item.id, patch);
@@ -791,6 +795,7 @@ export class Sessions {
         ...(selection.thinking ? { thinking: selection.thinking } : {}),
         capabilities: item.capabilities,
         compaction: selection.compaction,
+        retry: item.retry,
         trustProject: item.trustProject,
         cwd,
         sessionDir: storageDir,
@@ -831,6 +836,22 @@ export class Sessions {
         historyIndex = index + 1;
       }
     }
+    // 崩溃可能发生在摘要落库后、message.end回填ID前。仅补唯一助手时间戳；
+    // 缺失或同毫秒多条的旧记录保留原样，不猜关联、不据此删除历史。
+    const assistantIds = new Map();
+    for (const { id, message } of history) {
+      if (message?.role !== "assistant" || !Number.isFinite(message.timestamp)) continue;
+      assistantIds.set(message.timestamp, assistantIds.has(message.timestamp) ? null : id);
+    }
+    const linkRecord = (record) => {
+      if (record.agentId !== "main" || record.entryId) return false;
+      const entryId = assistantIds.get(record.messageTimestamp);
+      if (!entryId) return false;
+      record.entryId = entryId;
+      return true;
+    };
+    const linkedSummaries = item.summaries.filter(linkRecord);
+    item.summaryTriggers.forEach(linkRecord);
     // 旧版重试位置迁移（一次性，随本次 persist 固化）：
     // - 界内已有 count 的记录不重算，只补最近同代理 entryId 锚点供前端压缩归属。
     // - 无 count 或越界旧值（早期撤回未清理）：从首个等待起点在「消费时间线」上重定——
@@ -906,6 +927,7 @@ export class Sessions {
       } else if (this.store) {
         // 恢复时的中断状态与 JSONL 对账只写一次，不进入日常保存热路径。
         await this.persist(item);
+        for (const record of linkedSummaries) this.store.saveSummary(id, record);
         for (const task of item.tasks.snapshot()) this.store.saveTask(id, task);
         for (const record of item.summaryTriggers) this.store.saveEvent(id, "summary_trigger", record);
         for (const record of item.retries) this.store.saveEvent(id, "retry", record);
@@ -1180,6 +1202,7 @@ export class Sessions {
     if (item.status !== "idle" || item.cancelling) await this.cancel(id);
     const recalled = await item.agent.recall();
     if (recalled) {
+      const changes = [];
       // 网页历史跟着回退：否则重新 attach 仍会画出被撤回的输入和被打断的半截回答。
       const cut = item.messages.findIndex((record) => record.agentId === "main" && record.entryId === recalled.entryId);
       if (cut >= 0) {
@@ -1187,10 +1210,10 @@ export class Sessions {
         const removedIds = new Set(previousMessages.slice(cut).filter((entry) => entry.agentId === "main").map((entry) => entry.entryId).filter(Boolean));
         const removedSummaries = item.summaries.filter((entry) => entry.agentId === "main" && removedIds.has(entry.entryId));
         item.summaries = item.summaries.filter((entry) => !removedSummaries.includes(entry));
-        await this.persist(item, { deletedSummaries: removedSummaries.map((entry) => entry.id) });
+        changes.push({ deletedSummaries: removedSummaries.map((entry) => entry.id) });
         const removedTriggers = item.summaryTriggers.filter((entry) => entry.agentId === "main" && removedIds.has(entry.entryId));
         item.summaryTriggers = item.summaryTriggers.filter((entry) => !removedTriggers.includes(entry));
-        await this.persist(item, { deletedEvents: { type: "summary_trigger", records: removedTriggers } });
+        changes.push({ deletedEvents: { type: "summary_trigger", records: removedTriggers } });
         // 撤回只回退主代理，独立子任务已经发生的输出必须保留。
         const keptBefore = [0];
         item.messages = previousMessages.filter((record, index) => {
@@ -1216,12 +1239,15 @@ export class Sessions {
           else delete retry.messageCount;
           const anchors = surviving.get(retry.agentId || "main");
           if (retry.anchorEntryId && !anchors?.has(retry.anchorEntryId)) delete retry.anchorEntryId;
-          await this.persist(item, { event: { type: "retry", record: retry } });
+          changes.push({ event: { type: "retry", record: retry } });
         }
-        await this.persist(item, { deletedEvents: { type: "retry", records: previousRetries.filter((entry) => !item.retries.includes(entry)) } });
+        changes.push({ deletedEvents: { type: "retry", records: previousRetries.filter((entry) => !item.retries.includes(entry)) } });
       }
       delete item.live.main;
-      await this.persist(item);
+      changes.push({ session: this.sessionData(item) });
+      // SDK分支已经回退：写库失败也必须同步网页并交还输入。整组短事务，
+      // 错误由既有error事件报告，失败增量留到下次保存/关闭重试。
+      this.saveChange(item, changes);
     }
     return { ...item.agent.withdraw(), recalled };
   }

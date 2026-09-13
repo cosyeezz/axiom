@@ -157,6 +157,28 @@ test("未加载会话改名失败，打开或关闭仍重试未落盘修改", as
   }
 });
 
+test("会话重试词表保存并在重启后传给主代理和子代理", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-retry-selection-"));
+  const seen = [], retry = { retryable: ["custom transient"], nonRetryable: ["custom denied"] };
+  const selected = Object.assign(async (_, selection) => { seen.push(selection); return factory(); }, { catalog: factory.catalog });
+  let sessions = new Sessions(selected, undefined, join(root, "storage"));
+  try {
+    const id = await sessions.create(root, { retry });
+    assert.deepEqual(seen.at(-1).retry, retry, "首次主代理也必须接收配置");
+    assert.deepEqual(sessions.store.getSession(id).selection.retry, retry);
+    await sessions.close();
+    sessions = new Sessions(selected, undefined, join(root, "storage"));
+    await sessions.load();
+    const item = await sessions.ensureLoaded(id);
+    assert.deepEqual(item.retry, retry);
+    assert.deepEqual(seen.at(-1).retry, retry, "恢复后的主代理使用原词表");
+    item.notificationsPaused = true;
+    const [taskId] = item.tasks.start(["child"]);
+    await item.tasks.jobs.get(taskId).done;
+    assert.deepEqual(seen.at(-1).retry, retry, "子代理继承同一会话词表");
+  } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test("取消正在恢复但最终失败的会话仍成功，不重建SDK或丢记录", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-cancel-load-"));
   let begin, fail;
