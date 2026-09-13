@@ -734,6 +734,10 @@ export function initModelManager({ root, request, onSaved }) {
   }
 
   // 连接区只留日常必改项：id（仅草稿）/ Base URL / API 协议 / API Key；其余全部折叠。
+  // 下拉框复用应用既有的 .selectors 外观（深色小圆角 + 伪元素小箭头），原生箭头在深色下太抢眼。
+  function selectControl(select) {
+    return el("span", { class: "selectors mm-select" }, el("label", {}, select));
+  }
   function connectionFields(form, existingId) {
     const apiKeyInput = el("input", { type: "password", value: form.apiKeyValue, autocomplete: "off", spellcheck: "false",
       placeholder: form.apiKeyMasked
@@ -752,10 +756,10 @@ export function initModelManager({ root, request, onSaved }) {
       field("Base URL", el("input", { type: "text", value: form.baseUrl, spellcheck: "false",
         placeholder: "https://…/v1（本地服务如 http://localhost:11434/v1）",
         oninput: (event) => { form.baseUrl = event.target.value; } }), undefined, true),
-      field("API 协议", el("select", { "aria-label": "API 协议",
+      field("API 协议", selectControl(el("select", { "aria-label": "API 协议",
         onchange: (event) => { form.api = event.target.value; } },
         new Option("（不设置）", "", false, form.api === ""),
-        ...API_TYPES.map(([value, label]) => new Option(label, value, false, form.api === value))),
+        ...API_TYPES.map(([value, label]) => new Option(label, value, false, form.api === value)))),
         "Chat Completions 兼容性最好；改完记得保存", true),
       field("API Key", el("span", { class: "mm-key" }, apiKeyInput,
         el("label", { class: "mm-check" }, reveal, "显示"),
@@ -1071,10 +1075,10 @@ export function initModelManager({ root, request, onSaved }) {
       field("最大输出（tokens）", el("input", { type: "text", inputmode: "numeric", value: form.maxTokens,
         placeholder: "默认 16384", spellcheck: "false",
         oninput: (event) => { form.maxTokens = event.target.value; sync(); } })),
-      field("API 协议覆盖", el("select", { "aria-label": "API 协议覆盖",
+      field("API 协议覆盖", selectControl(el("select", { "aria-label": "API 协议覆盖",
         onchange: (event) => { form.api = event.target.value; sync(); } },
         new Option("跟随供应商", "", false, form.api === ""),
-        ...API_TYPES.map(([value, label]) => new Option(label, value, false, form.api === value)))),
+        ...API_TYPES.map(([value, label]) => new Option(label, value, false, form.api === value))))),
       el("div", { class: "mm-model-checks" },
         el("label", { class: "mm-check" }, el("input", { type: "checkbox", checked: form.reasoning,
           onchange: (event) => { form.reasoning = event.target.checked; sync(); } }), "支持推理"),

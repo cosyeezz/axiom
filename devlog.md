@@ -763,3 +763,9 @@
 ## 2026-09-12 22:40 — 模型设置合并最新 master
 - 原因：用户要求合并并推送；master 已迁移 SQLite，保留新存储实现并适配 discover 只读加载、收藏断言及隔离预览，保留分栏与勾选导入。涉及 src/model-config.js、public/model-manager.js、模型测试与预览、README、协议、索引；合并双方 devlog/knowledge 记录。
 - 验证：两份 Playwright 回归通过；全量最终 299 通过、1 跳过、0 失败。此前守护测试出现恢复时序断言与 Windows EBUSY（单独15/15通过），未为此次合并改动守护逻辑。
+
+## 2026-09-13 08:35 — 设置面板 API 协议下拉改为应用既有下拉外观
+- 原因：用户反馈「API 协议」仍是全宽原生 select，原生箭头+浅蓝高亮的弹层样式与面板整体割裂，要求对齐应用内既有的紧凑下拉（截图：composer 底部 commandcode / DeepSeek V4.1 Flash / max 三个控件）。
+- 内容：`public/model-manager.js` 新增 `selectControl()`，把「API 协议」「API 协议覆盖」两个 select 包进 `span.selectors.mm-select > label`，直接复用 `style.css` 里 `.selectors select`（深色 raised 底、6px 圆角、32px 高、右内边距 28px）与 `.selectors label:has(select):after` 的 CSS 小箭头；删除 `model-manager.css` 里会被同权重覆盖、且会把 28px 右内边距压掉的 `.mm-field select` 旧规则，改为两行局部微调（`.mm-select { flex:none; padding:0 }`、`.mm-select select { max-width:100% }`）。
+- 验证：Playwright 截图 900/420/360px 与参考图一致（紧凑圆角下拉 + 小箭头）、无横向溢出；`node --test tests/model-manager.test.js` 24/24；全量 `npm test` 296 项 293 过 1 跳过，2 项失败集中在 `tests/workspace-tabs.test.js`（并发负载抖动，单独跑 8/8 全绿）。
+- 涉及：public/model-manager.js、public/model-manager.css、devlog.md、.pi/skills/codebase-map/index。

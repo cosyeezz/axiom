@@ -284,7 +284,9 @@ button.mm-icon-delete:focus-visible { color: var(--danger); }
   padding: 5px 10px;
   font-size: 12px;
 }
-.mm-field select { min-height: 34px; padding: 4px 6px; font-size: 12px; }
+/* 复用 style.css 的 .selectors 下拉外观：去掉它横向滚动条用的内边距与弹性宽度。 */
+.mm-select { flex: none; padding: 0; }
+.mm-select select { max-width: 100%; }
 .mm-key { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .mm-key input:first-child { flex: 1; min-width: 0; }
 .mm-check {
