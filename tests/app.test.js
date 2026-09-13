@@ -1015,6 +1015,45 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     window.scrollLatest();
     paint();
     assert.equal($("transcript").scrollTop, 123, "jump pauses auto-follow");
+    // 运行中吸底：流式输出增高后浏览器补发的 scroll 事件不能判成“用户离开了底部”。
+    // 用限位的 scrollTop 模拟真实浏览器的贴底（JSDOM 自身不会限位）。
+    let transcriptHeight = 1800;
+    const transcriptClient = 300;
+    let transcriptTop = 0;
+    Object.defineProperties($("transcript"), {
+      scrollTop: {
+        configurable: true,
+        get: () => transcriptTop,
+        set: (value) => { transcriptTop = Math.max(0, Math.min(value, transcriptHeight - transcriptClient)); },
+      },
+      scrollHeight: { configurable: true, get: () => transcriptHeight },
+      clientHeight: { configurable: true, get: () => transcriptClient },
+    });
+    $("latest").click();
+    paint();
+    assert.equal($("transcript").scrollTop, 1500, "回到最新先贴到底部");
+    $("transcript").dispatchEvent(new window.Event("scroll"));
+    transcriptHeight = 1980; // 补底的滚动事件尚未派发，内容已被流式输出撑高。
+    $("transcript").dispatchEvent(new window.Event("scroll"));
+    assert.equal($("latest").hidden, true, "补发的滚动事件不暂停吸底");
+    window.scrollLatest();
+    paint();
+    assert.equal($("transcript").scrollTop, 1680, "运行中继续贴底");
+    $("transcript").dispatchEvent(new window.WheelEvent("wheel", { deltaY: -240 }));
+    $("transcript").scrollTop = 900;
+    $("transcript").dispatchEvent(new window.Event("scroll"));
+    assert.equal($("latest").hidden, false, "用户上滚才暂停吸底");
+    window.scrollLatest();
+    paint();
+    assert.equal($("transcript").scrollTop, 900, "暂停后不抢走阅读位置");
+    $("transcript").scrollTop = 1680;
+    $("transcript").dispatchEvent(new window.Event("scroll"));
+    assert.equal($("latest").hidden, true, "滚回最底部自动恢复吸底");
+    window.scrollLatest();
+    paint();
+    assert.equal($("transcript").scrollTop, 1680);
+    for (const key of ["scrollTop", "scrollHeight", "clientHeight"]) delete $("transcript")[key];
+    $("transcript").scrollTop = 0;
     const runtime = {
       model: "other/child", thinking: "high", systemPrompt: '<img src=x onerror="alert(1)">\nSystem instructions',
       usage: { input: 100, cacheRead: 800, cacheWrite: 100 },

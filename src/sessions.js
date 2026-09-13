@@ -1142,26 +1142,9 @@ export class Sessions {
     }
   }
 
-  async prompt(id, text, queueType, images) {
-    if (!text.trim() && !images?.length) throw new Error("请求内容不能为空：请输入文本或附加图片");
-    const item = this.get(id).loaded ? this.get(id) : await this.ensureLoaded(id);
-    if (images?.length) {
-      // 必须在回执前拒绝：一旦入队或启动，SDK 会静默丢弃不支持模型的图片。
-      assertPromptImages(images);
-      const model = this.createAgent.catalog().find((m) => m.key === item.agent.config?.()?.model);
-      if (model?.input && !model.input.includes("image"))
-        throw new Error(`当前模型 ${model.key} 不支持图片输入，请先切换到具备视觉能力的模型`);
-    }
-    if (item.status === "running") {
-      await item.agent.enqueue(text, queueType || item.queueType, images);
-      return item.runId;
-    }
-    if (item.status !== "idle" || item.configuring || item.closing) throw new Error("Session is busy");
+  // 运行骨架（prompt 与手动重试共用）：runId/status 广播 → result() 取错 → 收尾持久化与 idle 复位。
+  startRun(item, run) {
     item.notificationsPaused = false;
-    if (item.title === "新会话" && !item.titleManual) item.title = (text.trim() || "[图片]").slice(0, 60);
-    const titleRequest = !item.titleRequested && !item.titleManual;
-    item.titleRequested = true;
-    item.titlePending = titleRequest;
     item.updatedAt = Date.now();
     item.runId = randomUUID();
     item.status = "running";
@@ -1171,7 +1154,7 @@ export class Sessions {
     });
     item.work = (async () => {
       try {
-        await item.agent.prompt(text, titleRequest || images?.length ? { ...(images?.length ? { images } : {}), ...(titleRequest ? { titleRequest } : {}) } : undefined);
+        await run();
         item.agent.result();
       } catch (error) {
         item.emit({
@@ -1192,6 +1175,38 @@ export class Sessions {
       }
     })();
     return item.runId;
+  }
+
+  // 手动重试：不带新输入续跑上一次异常停止的请求（删掉末尾失败的 assistant 后 continue()）。
+  // 可续判定在启动前同步做完：不可续时直接报错给回执，不留 running → idle 的空转。
+  async retry(id) {
+    const item = this.get(id).loaded ? this.get(id) : await this.ensureLoaded(id);
+    if (item.status !== "idle" || item.configuring || item.closing) throw new Error("Session is busy");
+    if (!item.agent.resumable()) throw new Error("没有可重试的请求：上一次运行已正常结束");
+    return this.startRun(item, () => item.agent.resume());
+  }
+
+  async prompt(id, text, queueType, images) {
+    if (!text.trim() && !images?.length) throw new Error("请求内容不能为空：请输入文本或附加图片");
+    const item = this.get(id).loaded ? this.get(id) : await this.ensureLoaded(id);
+    if (images?.length) {
+      // 必须在回执前拒绝：一旦入队或启动，SDK 会静默丢弃不支持模型的图片。
+      assertPromptImages(images);
+      const model = this.createAgent.catalog().find((m) => m.key === item.agent.config?.()?.model);
+      if (model?.input && !model.input.includes("image"))
+        throw new Error(`当前模型 ${model.key} 不支持图片输入，请先切换到具备视觉能力的模型`);
+    }
+    if (item.status === "running") {
+      await item.agent.enqueue(text, queueType || item.queueType, images);
+      return item.runId;
+    }
+    if (item.status !== "idle" || item.configuring || item.closing) throw new Error("Session is busy");
+    if (item.title === "新会话" && !item.titleManual) item.title = (text.trim() || "[图片]").slice(0, 60);
+    const titleRequest = !item.titleRequested && !item.titleManual;
+    item.titleRequested = true;
+    item.titlePending = titleRequest;
+    return this.startRun(item, () =>
+      item.agent.prompt(text, titleRequest || images?.length ? { ...(images?.length ? { images } : {}), ...(titleRequest ? { titleRequest } : {}) } : undefined));
   }
 
   // 撤回：recall 时把这一轮已进入上下文的输入退回输入框（先停稳、无模型输出才允许）；

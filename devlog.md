@@ -1,5 +1,45 @@
 # 开发记录
 
+## 2026-09-13 供应商协议「不设置」保存回显修复
+- 原因：providerForm 把已有供应商缺失的 api 当作新建模板，回读时补成 openai-completions，再次保存还可能写回该默认值。
+- 修改：仅新建表单采用模板默认协议；已有配置缺失 api 保持空值，不改后端协议校验、模型继承或界面样式。
+- 验证：新增回归覆盖清除发送 null、成功回读、再次保存、刷新和新建模板默认值；修复前复现，修复后模型面板 25 项通过；全量 307 项中 306 通过、1 跳过。首次全量因 service 测试清理临时数据库遇 EBUSY 失败，未改相关代码，重跑全绿。
+- 涉及：public/model-manager.js、tests/model-manager.test.js、README.md、devlog.md、codebase-map 知识库与生成索引。
+
+## 2026-09-13 开发服务重建失败保护与恢复
+- 原因：4320 的旧守护状态显示重建在停服后才因残留 `.node_modules-backup` 拒绝切换，随后兜底 worker 因 SDK 文件缺失退出；维护期间退出被 `restarting` 屏蔽，兜底失败没有恢复普通崩溃重试。
+- 修改：准备阶段提前检查备份，不停止健康 worker、不删除不明确的备份；兜底启动失败明确记录未就绪，确认 worker 已退出后恢复有上限的崩溃重试。回滚失败或停止未确认仍保留现场，不盲目启动。
+- 验证：新增残留备份保活及兜底失败有限重试回归测试；修正旧测试先等 worker ready 再断言启动次数的竞态。相关测试 34/34；全量 npm test 305 项，304 通过、1 跳过、0 失败。首次相关测试因 worktree 尚未安装依赖失败，独立 npm ci 后通过。
+- 决策：不自动删除备份，不在故障时自动联网重装；备份内容不完整的来源尚未证实，避免猜测性覆盖依赖。此次故障运行实例已安全重启恢复，源码修复与运行恢复分别验证。
+- 涉及：scripts/service.mjs、tests/service.test.js、README.md、devlog.md。
+
+## 2026-09-13 07:43 UTC 模型面板视觉修补：协议下拉不再截断、连接区纵向堆叠、复选框不再变大方块
+- 原因：用户看了实际截图提三点：①「API 协议」下拉的选项文案太长被切掉（`OpenAI Chat Completions（兼容性最…`），原生下拉本身也显拥挤；②宽屏下「API 协议 / API Key」两字段并排互相挤压，提示文字被折成两行；必须竖屏兼容、宁可向下扩展也不挤压；③折叠区里 Bearer 头的复选框被全局 `input { width:100%; min-height:40px }` 撑成一个灰大方块，与旁边文字极不协调。
+- 实现：①`API_TYPES` 标签去掉括号后缀（只留 `OpenAI Chat Completions` 等），兼容性提示下移到字段 hint；原生 select 不会省略号截断，只能从文案长度上解决。②连接区四个字段全部改成 `mm-field-wide` 单列堆叠（含 API 协议），`.mm-form` 列宽下限 200→240px、`.mm-model-grid` 170→200px，窄屏更早退化为单列；`.mm-advanced .mm-check` 允许换行（其它 `.mm-check` 保持 nowrap），Bearer 字段改为整行宽。③新增 `.mm input[type="checkbox"] { flex:none; width/height:14px; min-height:0 }`，删掉只覆盖 `.mm-check input` 的局部规则，之后任何裸复选框都不会再被撑开；Bearer 复选框包进 `<label class="mm-check">` 并带上可见说明文字（原本只有 aria-label，视觉上是个孤立方块）。④模型摘要行的 id/名称改成单行省略号截断并补 `title`（窄屏原本会在单词中间断行，如 `claude-/opus-5`）。
+- 验证：用 Playwright + 静态页临时挂在 public/model-manager.js（stub `request`）截图对比：900/420/360px 三档均无横向溢出（`scrollWidth <= innerWidth`）、复选框实测 14×14、模型行保持单行省略；截图用完即删，未入库。全量 `npm test` 303 项：302 通过、1 跳过、0 失败（首次并发跑出现 service.test.js 既有计时断言波动，重跑全绿）。
+- 涉及：public/model-manager.js、public/model-manager.css、本日志与 codebase-map 索引。
+
+## 2026-09-13 07:16 UTC 运行中吸底滚动只在用户滚动时暂停
+- 原因：用户反馈运行中自动吸底会莫名停下。根因是 `#transcript`/子代理面板的 onscroll 按“距底部 <80px”无条件重算跟随状态：贴底时 `scrollTop = scrollHeight` 产生的滚动事件要等下一帧才派发，而同步追加的工具记录/流式正文已把内容撑高超过 80px，于是被误判成“用户离开了底部”；一旦暂停，用户很难再靠滚到底部追上持续增高的内容。
+- 实现：public/app.js 抽出 `atLatest()`/`readFollow()`，跟随状态只由贴底和用户意图决定（滚轮、触摸、键盘、按下滚动条标记 200ms 意图窗口；无意图的向上位移仍视为拖动滚动条），程序跳转、折叠补偿、布局重排引发的滚动事件不再改变状态。新增内容观察器：`#output` 与子代理输出增高就补一次贴底，覆盖图片解码、折叠展开等不经过 `scrollLatest` 的路径；切换会话与重建弹窗时解除观察。
+- 涉及文件：public/app.js、tests/app.test.js、tests/autoscroll-ui.py（新增）、README.md、devlog.md、knowledge.md 与 codebase-map 索引。
+- 验证：tests/app.test.js 用限位 scrollTop 复现“补发滚动事件 + 内容增高”场景（改回旧规则时该断言必失败）；真实 Chromium（`node tests/conversation-preview.mjs` + `python tests/autoscroll-ui.py`）13 项通过：初始贴底、增高跟随、上滚暂停与不抢位、滚回底部恢复、补发事件不暂停、无脚本错误。全量 `npm test` 301 项：300 通过、1 跳过、0 失败。未调用模型、未重启正式服务。
+## 2026-09-13 07:11 UTC 模型与供应商面板：删除移到导航行、重命名后端原子命令、右侧折叠重组
+- 原因：用户五点反馈——删除入口在右侧详情里不好找、两段式「点两次」确认易误触也不够清楚、改名完全没有入口（只能删除重建，会丢 modelOverrides）、右侧详情一眼望去字段太多太乱、关键配置被淹没。
+- 实现：①新增协议命令 `models.provider.rename {providerId,newProviderId,baseFingerprint}`（.strict()），`src/model-config.js` 的 `renameProvider` 在乐观锁内整体搬移条目并同步内联 id 字段；前端无法用 save+delete 复现（两命令之间的失败会丢配置、且无独立写 modelOverrides 的命令），故独立成一条原子写。②左侧导航项改 `.mm-nav-row` 行容器 + `.mm-nav-actions`，悬停/键盘聚焦显示铅笔与删除图标（`opacity:0`，触屏常显），删除图标悬停变红；图标路径与会话右键菜单同源（添加 `ICONS`，`createElementNS` 构造，不引第三方图标库）。③删除/改名统一走原生 `<dialog>`+`showModal`（Esc 与焦点陷阱免实现），弹窗挂在 `body` 上，`close` 即移除；确认按钮 `type="button"`，取消不发请求；jsdom 无 `showModal/close`，用 `openModal/closeModal` 垫片。④右侧详情分成「连接 / 模型」两段：连接区只留 `id`（仅草稿）/ Base URL / API 协议 / API Key 四个宽窄分列字段，Bearer 头与自定义请求头收进 `<details class="mm-advanced">`（展开态存 `form.advancedOpen`，顺带修掉旧版展开高级区后新增请求头重渲染就自动折回的 bug）；模型行也改为 `<details>` 折叠摘要行（id + 异名 + 推理/图片徽标 + 脏点 + 删除图标，新建行默认展开，保存成功自动收起），保存按钮仍是 `.mm-model-actions` 第一个按钮。⑤重命名成功后 `rekeyProviderCaches()` 把 `editForms/newRows/modelRows/discover` 从旧 id 搬到新 id，正在编辑但未保存的内容不丢；删除则清缓存并清空选中。⑥弹窗容器样式复用 `style.css` 已有的 `#session-action` 选择器组（新增 `.mm-dialog`），只在本模块 CSS 补宽度与校验提示色，未新增颜色 token。
+- 验证：`tests/model-manager.test.js` 重写删除用例为「图标→弹窗→取消不发请求 / 确认才发」并新增重命名用例（非法 id 与重名留在弹窗、id 未变直接关窗、Enter 提交、成功后新 id 入选且未保存草稿跟随）；`tests/model-config.test.js` 新增 `provider.rename` 后端用例（未知/重名拒绝且指纹不变、成功迁移 modelOverrides 与未知字段、旧指纹被拒）。该 worktree 无 `node_modules`，先建 `node_modules` junction 指向 `F:\worktrees\node_modules`（`src/server.js` 按项目内相对路径读 marked/dompurify）后才能跑后端测试。全量 `npm test`：301 通过、1 跳过；唯一失败 `tests/app.test.js` 的时序断言在单独运行时通过（并发负载下的既有 flaky，与本次改动无关）。未在浏览器手测。
+- 涉及：src/protocol.js、src/model-config.js、public/model-manager.js、public/model-manager.css、public/style.css、docs/model-config-protocol.md、tests/model-manager.test.js、tests/model-config.test.js、README.md、本日志与 codebase-map 索引。
+
+## 2026-09-13 06:55 UTC SQLite 安装入口的 Node 版本前置检查
+- 原因：静态导入 node:sqlite 早于安装脚本的版本检查，旧 Node 先报未知内置模块；安装脚本及 README 存在过时版本/JSON 存储描述。
+- 实现：src/database.js 复用原 nodeOk 规则，在同步加载 SQLite 前统一拒绝不支持的 Node；scripts/install.mjs 重导出规则供现有测试使用，移除不可达的重复检查。无需新依赖、启动标志或修改 npm 全局安装命令。install.sh、install.ps1 与 README.md 同步版本及 SQLite 说明。
+- 验证：tests/install.test.js 用子进程模拟 Node 20/22.12/23，验证安装、守护、直接启动三入口在加载 SQLite 前提示升级；安装/数据库 11 项通过。两次全量并发运行出现不同的既有时序断言失败（service/app），服务测试单独15项通过；全量串行 node --test --test-concurrency=1 tests/*.test.js 为300通过、1跳过、0失败。未升级全局包或重启当前服务。
+- 涉及：src/database.js、scripts/install.mjs、tests/install.test.js、install.sh、install.ps1、README.md、本日志、代码索引及排障知识。
+## 2026-09-13 05:12 UTC 摘要列表紧凑化
+- 原因：时间行误继承全局 header 的64px高度、24px缩进及底线，设置段落规则又覆盖正文，列表过于稀疏。
+- 修改：public/style.css 隔离摘要时间行，时间/轮次靠左同排，正文间距4px、条目上下12px，正文保持13px；README.md 同步说明。不改变排序和摘要生成、不加依赖。
+- 验证：tests/summary-compact.test.js 新增样式回归，摘要UI共9项通过。全量282项280通过、1跳过、1服务恢复时序失败；该服务测试文件单独重跑15项全部通过。尚未真实浏览器验收，暂不合并。
+- 涉及：上述文件、devlog.md、codebase-map 索引与知识库。
 ## 2026-09-13 05:54 UTC 性能计量复核与最终口径
 - 合入G修正f71e524（9351a7e），主审继续修复：非零退出被合法JSON掩盖、exit早于stdout排空、旧绑定字节遗漏namespace/key、token观察窗口漏message.start；所有子结果close后解析并检查退出码。锁实验victim先连接，holder拿锁后IPC通知写入，排除Node启动耗时，5000ms超时及原门槛不变。
 - 数据修正：任务progress按真实单条快照，不在旧侧人为累积数组；通知位每次切换、计时每次递增，排除同值空写；快照加ESM标记，不额外计语法探测开销。finally释放相位监视器，自检数据库关闭。
@@ -810,3 +850,52 @@
 ## 2026-09-12 22:40 — 模型设置合并最新 master
 - 原因：用户要求合并并推送；master 已迁移 SQLite，保留新存储实现并适配 discover 只读加载、收藏断言及隔离预览，保留分栏与勾选导入。涉及 src/model-config.js、public/model-manager.js、模型测试与预览、README、协议、索引；合并双方 devlog/knowledge 记录。
 - 验证：两份 Playwright 回归通过；全量最终 299 通过、1 跳过、0 失败。此前守护测试出现恢复时序断言与 Windows EBUSY（单独15/15通过），未为此次合并改动守护逻辑。
+
+## 2026-09-13 08:35 — 设置面板 API 协议下拉改为应用既有下拉外观
+- 原因：用户反馈「API 协议」仍是全宽原生 select，原生箭头+浅蓝高亮的弹层样式与面板整体割裂，要求对齐应用内既有的紧凑下拉（截图：composer 底部 commandcode / DeepSeek V4.1 Flash / max 三个控件）。
+- 内容：`public/model-manager.js` 新增 `selectControl()`，把「API 协议」「API 协议覆盖」两个 select 包进 `span.selectors.mm-select > label`，直接复用 `style.css` 里 `.selectors select`（深色 raised 底、6px 圆角、32px 高、右内边距 28px）与 `.selectors label:has(select):after` 的 CSS 小箭头；删除 `model-manager.css` 里会被同权重覆盖、且会把 28px 右内边距压掉的 `.mm-field select` 旧规则，改为两行局部微调（`.mm-select { flex:none; padding:0 }`、`.mm-select select { max-width:100% }`）。
+- 验证：Playwright 截图 900/420/360px 与参考图一致（紧凑圆角下拉 + 小箭头）、无横向溢出；`node --test tests/model-manager.test.js` 24/24；全量 `npm test` 296 项 293 过 1 跳过，2 项失败集中在 `tests/workspace-tabs.test.js`（并发负载抖动，单独跑 8/8 全绿）。
+- 涉及：public/model-manager.js、public/model-manager.css、devlog.md、.pi/skills/codebase-map/index。
+
+## 2026-09-13 08:55 — API Key「显示」复选框改为小眼睛图标，并澄清密钥不回显
+- 原因：用户指出「已配置（掩码值）——留空保留 / 输入新值替换」+「☐ 显示」的写法有误导——勾选后并不会显示已存密钥（后端 GET 只回传 `{masked,kind}`，前端永远拿不到明文），看起来像坏掉的开关。
+- 内容：`public/model-manager.js` 里把 `显示` 复选框换成输入框内右侧的小眼睛图标按钮（`ICONS.eye` / `ICONS.eyeOff` 两条路径，点击切换 `type` 与 `aria-pressed`，同时更新 `title`/`aria-label`）；文案改成「已配置（掩码值）——留空保留」+ hint「密钥不回显（只能看到「已配置」）。留空 = 保留，输入 = 替换，勾「清除已存」= 删除；小眼睛只看本次输入」。`public/model-manager.css` 把输入框与小眼睛包进 `.mm-key-input` 定位容器（`.mm-key .mm-key-input input` 加 34px 右内边距，按钮绝对定位右 5px 居中，`aria-pressed=true` 时高亮），「清除已存」复选框仍在字段行内、不被覆盖。
+- 验证：Playwright 实测（900/420px）点击后 `type` 变 `text`、`aria-pressed=true`、图标换成斜杠眼、无横向溢出，截图确认小眼睛叠在输入框右端；`tests/model-manager.test.js` 24/24（新增小眼睛切换 + 回显后输入框仍为空的断言）；全量 `npm test` 305 项 304 过 1 跳过 0 失败。
+- 涉及：public/model-manager.js、public/model-manager.css、tests/model-manager.test.js、devlog.md、.pi/skills/codebase-map/index。
+
+## 2026-09-13 09:20 — 设置面板两处排版修补：Bearer 鉴权行、摘要记忆数值字段
+- 原因：用户反馈「高级连接 → Authorization: Bearer 头」看不懂且没对齐；「摘要记忆」三个数值字段排版不行（长句子换行后读不出对应关系：主代理每 [3] / 轮提醒一次摘要 分两行）。
+- 内容：
+  - Bearer 行（public/model-manager.js / model-manager.css）：字段名改「Bearer 鉴权」，复选框文案改「自动附加 Authorization: Bearer <apiKey> 请求头」，新增 hint 说明作用与边界（多数 OpenAI 兼容网关需要；自定义请求头里已写 Authorization 时不覆盖——与 src/model-config.js:379 行为一致）。根因修复：`.mm-advanced .mm-check` 的 `align-items: flex-start` 让 14px 复选框浮在 17.6px 行高文字的上方，改回 `center`（实测 boxCenterOffset 1.8px → 0）。
+  - 摘要记忆（public/index.html / style.css）：三个字段从句子式内联（`主代理每 [input] 轮提醒一次摘要`）改为堆叠式 `.memory-field`（标签在上、输入框 + 单位在下），文案改「主代理提醒间隔 / 子代理提醒间隔（轮）」「单条摘要上限（字）」；新增 `.settings-selectors:has(> .memory-field)` 加大列间距，输入框收到 32px 高、12px 字（原全局 input 规则是 40px/16px）。
+- 验证：Playwright 实测 1280/900/420px——三字段标签均单行、输入框 104×32、单位与输入框同一行、无横向溢出；Bearer 复选框 14×14 且与文字垂直居中对齐（offset 0）；全量 `npm test` 305 项 304 过 1 跳过 0 失败。
+- 涉及：public/model-manager.js、public/model-manager.css、public/index.html、public/style.css、devlog.md、.pi/skills/codebase-map/index。
+
+## 2026-09-13 09:40 — 设置弹窗滚动时分类列固定
+- 原因：用户反馈设置弹窗滚动后左侧分类（默认新会话设置 / 远程控制 / 模型与供应商 / 服务与更新）跟着滚走，切分类得先滚回顶部。
+- 内容：`public/style.css` 把 `.settings-layout` 由整块滚动改为 `overflow: hidden`，分类列与右侧面板各自成为滚动容器（`#settings .settings-nav, #settings .settings-body { min-width: 0; min-height: 0; overflow: auto; scrollbar-gutter: stable }`）；≤700px 单列布局回到整块滚动，但分类列改 `position: sticky; top: 0; max-height: 45dvh`（配 `background: var(--surface)`、`z-index: 2`），窄屏滚下去同样能看到分类。
+- 验证：Playwright 用真实 dialog 片段（index.html 的 `#settings` 块 + 造 60 段占位内容）实测 1200/700/420px：滚到底后分类列 `navTop` 完全不变（145/145/141），右侧内容分别在自身容器内滚动；全量 `npm test` 305 项 304 过 1 跳过 0 失败。
+- 涉及：public/style.css、devlog.md、.pi/skills/codebase-map/index。
+
+## 2026-09-13 10:10 — 修复跨行 `<axiom_summary>` 导致闭合标签漏进正文、摘要未入库
+- 原因：用户截图里助手正文末尾出现裸的 `</axiom_summary>`。根因是 `public/memory-tags.js` 的 `TAG` 正则内容用 `[^\n]`，只认单行有界标签；模型实际把开启标签、正文、闭合标签分三行写。按行处理时：开启标签行同行无闭合 → 整行丢弃；正文行无标签 → 原样保留；闭合标签行不匹配 `OPEN`（`<name>` 而非 `</name>`）→ 原样保留，Markdown 把正文与闭合标签并成一段就成了截图效果。同一原因下 `extractMemoryTags` 也提取不到，该条摘要没入库（trigger 记 missing）。
+- 内容：`public/memory-tags.js` —— `TAG` 内容改 `[\s\S]`，标签可跨行，提取时 `replace(/\s+/g," ")` 把换行折叠为空格；新增 `segments()` 按代码围栏把连续同类行合成段，段内整段匹配（围栏内仍原样保留）；strip 用 `HOLE`（`\u0000`）占位替换被删标签，整行只剩占位符才丢弃以免留空行；首个无配对闭合的开启标签截到段尾（流式中的摘要整块隐藏）；新增 `CLOSE` 正则删除落单闭合标签，兜住开启标签丢失（跨围栏、被截断）时的漏出。
+- 验证：`tests/memory-tags.test.js` 旧断言 `extractMemoryTags("<summary>跨行\n不认</summary>") === {}` 翻转为 `{ summary: "跨行 认" }`；新增两条测试覆盖截图那种标签独占行的跨行摘要（入库 + 整块隐藏）、裸闭合标签、开启标签落在围栏内、以及流式闭合前整块隐藏。`npm test` 308 项 307 过 1 跳过 0 失败。
+- 涉及：public/memory-tags.js、tests/memory-tags.test.js、README.md、devlog.md。
+
+## 2026-09-13 10:20 — 异常停止后在会话流末尾增加手动重试（续跑）入口
+- 原因：自动重试只覆盖「可恢复失败」，手动 Esc 停止（归为 cancelled）与终态错误停下来后没有任何再来一次的入口，只能重打一遍输入；用户明确要求按钮贴在被打断的位置，不放发送区。
+- 内容：
+  - `src/retry.js`：抽出并导出 `dropFailedAssistant(session)`（仅移除末尾失败/截断的助手消息，末尾是 user/toolResult 时空操作）与 `canResume(session)` + `RESUMABLE_STOP_REASONS`（`error/aborted/length/toolUse`）；只认异常的正面证据，`stopReason=stop` 与缺失 `stopReason` 都不给重试（宁可漏不可误，避免测试/历史里无 stopReason 的消息误挂按钮）。createAutoRetry 内部改用导出版本，行为不变。
+  - `src/pi.js`：agent 返回对象新增 `resumable()` / `resume()`。resume 清 `lastResult` 后 `retry.run(() => { dropFailedAssistant(session); return session.agent.continue(); })`——不重发用户输入，续跑再失败仍吃自动退避；故意不跑 compaction（maybeApply 会重写消息数组，与 continue 靠末尾接续的前提冲突）。
+  - `src/protocol.js` / `src/server.js`：新增 `session.retry` 命令（`{ id, type, sessionId }.strict()`）与分发 `data = { runId: await sessions.retry(request.sessionId) }`。
+  - `src/sessions.js`：从 `prompt()` 抽出 `startRun(item, run)` 运行骨架（runId/status 广播 → run() → result() 取错 → 收尾持久化 + idle 复位 + scheduleTaskNotifications），`prompt()` 与新增的 `retry(id)` 共用；retry 在启动前同步校验 `status==="idle" && !configuring && !closing && agent.resumable()`，不可续直接抛错给回执，不留 running→idle 空转。
+  - `public/app.js` / `public/style.css`：新增 `lastMainMessage`/`interrupted` 状态与 `canResumeMessage`（服务端规则的前端副本）；`syncRetryPrompt()` 维护单例 `.retry-prompt` 节点（提示 + 「↻ 重试」按钮 → `request("session.retry", { sessionId })`），按 interrupted && 空闲 && 已连接 && 有会话 append/remove 到 `#output` 末尾；`agent.message.end`(main) 更新 lastMainMessage，`session.state` running 清标记、idle 重判，刷新恢复时从 `messages.findLast(agentId==="main")` 初始化。样式复用 retry-card 同款 `--line/--surface/--muted` token。
+- 验证：新增 `tests/manual-retry.test.js` 5 项（canResume 正负样本、dropFailedAssistant 三种末尾、sessions.retry 续跑/回执 runId/忙碌与不可续守卫不广播状态/续跑再失败仍回 idle、protocol strict + server 分发、前端入口显隐与点击载荷）；全量 `npm test` 311 项 310 过 1 跳过 0 失败。
+- 涉及：src/retry.js、src/pi.js、src/protocol.js、src/server.js、src/sessions.js、public/app.js、public/style.css、tests/manual-retry.test.js、README.md、devlog.md、.pi/skills/codebase-map/index。
+
+## 2026-09-13 04:30 — worktree 流程补充「任务完成后自动合并 master 并推送」
+- 原因：用户要求任务完成后自动拉取最新 `master`、完成主从合并并推送，不再每步征求确认。此前流程写的是「提交并 push → 合并回 master 并推送」，没有明确 push 前先把最新 master 合进功能分支，实际已出现本地 master 与 origin/master 分叉各 2 个提交的情况。
+- 内容：`AGENTS.md` worktree 段落——流程行改为「验证 → 提交 → 拉取最新 `master` 并合并进功能分支（冲突在功能分支内解决）→ push 功能分支 → 合并回 `master` 并推送 → 清理 worktree」，把合并方向定为先 master→功能分支（冲突在功能分支解决，master 只接快进式合并）；新增一条：任务完成后自动执行收尾，仅当 master 工作区不干净、存在未完成合并、或冲突无法安全自动解决时暂停并报告。`README.md:147`「维护：发布更新」同步为同一套流程措辞，避免两处文档打架。
+- 验证：纯文档改动，无代码变更，未跑测试套件；人工复核两处流程描述一致。本次收尾按新规则实测走通（fetch → merge origin/master → push 功能分支 → 合并回 master → push）。
+- 涉及：AGENTS.md、README.md、devlog.md。

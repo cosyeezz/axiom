@@ -5,15 +5,18 @@
 //   models.provider.discover({providerId}) → { models:[{id,name?,input?,reasoning?,contextWindow?,maxTokens?}], truncated? }
 //     （只读发现已保存供应商的可用模型；结果仅作勾选待选清单，不自动保存/启用任何模型）
 //   密钥（apiKey / headers.*）GET 时为 { masked, kind } 掩码；保存支持 { keep:true } / 字符串 / null
-// 布局：左侧供应商导航（可搜索供应商或模型，内置/扩展目录作为只读导航项），
-// 右侧详情（基础连接字段优先、高级字段折叠、模型分组管理）；窄屏退化为单列。
+// 布局：左侧供应商导航（可搜索供应商或模型，内置/扩展目录作为只读导航项；自定义项悬停
+// 显示重命名/删除图标，删除与重命名都走原生 <dialog> 确认），右侧详情分「连接」（只留 id /
+// 协议 / Base URL / API Key）与「模型」两段，其余配置收进折叠区，模型行同样折叠成摘要行；
+// 窄屏退化为单列。
 // 草稿语义：未保存的编辑表单跨重渲染与刷新保留（editForms/newRows/modelRows），
 // 只有保存成功或用户显式取消才丢弃；保存失败在面板内提示并可重试。
 // 导出 initModelManager({ root, request, onSaved }) → { load }；root 由 index.html 提供，
 // onSaved 供主入口刷新模型下拉；所有请求失败在面板内展示，绝不向上抛。
 
+// 选项文案保持短：原生 select 不会截断提示，窄屏下拉框放不下就会被切掉。
 const API_TYPES = [
-  ["openai-completions", "OpenAI Chat Completions（兼容性最好）"],
+  ["openai-completions", "OpenAI Chat Completions"],
   ["openai-responses", "OpenAI Responses"],
   ["anthropic-messages", "Anthropic Messages"],
   ["google-generative-ai", "Google Generative AI"],
@@ -98,12 +101,12 @@ function el(tag, attrs = {}, ...children) {
 }
 let fieldSeq = 0;
 // 字段统一 label[for] 关联：点击标签聚焦控件，键盘/读屏可用。
-function field(labelText, control, hint) {
+function field(labelText, control, hint, wide = false) {
   const target = ["INPUT", "SELECT", "TEXTAREA"].includes(control.tagName)
     ? control
     : control.querySelector("input, select, textarea");
   if (target && !target.id) target.id = `mm-f-${++fieldSeq}`;
-  return el("div", { class: "mm-field" },
+  return el("div", { class: `mm-field${wide ? " mm-field-wide" : ""}` },
     el("label", { class: "mm-field-label", for: target?.id }, labelText), control,
     hint ? el("span", { class: "mm-field-hint" }, hint) : null);
 }
@@ -123,6 +126,62 @@ function parseJsonText(text) {
   catch (error) { return { error: `高级字段 JSON 无法解析：${error.message}` }; }
 }
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+// 图标与会话操作菜单同源（app.js session-actions），保证同一套视觉语言。
+const ICONS = {
+  rename: "M16 3l5 5L8 21H3v-5L16 3zM13 6l5 5M3 16l5 5",
+  delete: "M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7",
+  eye: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7zM12 15a3 3 0 100-6 3 3 0 000 6z",
+  eyeOff: "M3 4l18 16M10.6 5.2A10.4 10.4 0 0112 5c6.5 0 10 7 10 7a17.3 17.3 0 01-3.3 4.1M6.7 6.9A17.4 17.4 0 002 12s3.5 7 10 7c1.6 0 3-.4 4.3-1.1M9.9 9.9a3 3 0 004.2 4.2",
+};
+function icon(path) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  const shape = document.createElementNS(SVG_NS, "path");
+  shape.setAttribute("d", path);
+  svg.append(shape);
+  return svg;
+}
+
+// 原生 <dialog> + showModal()：Esc 关闭、焦点陷阱、背景遮罩全由浏览器提供，不自造弹层。
+// jsdom 未实现 showModal/close，退化为 open 属性（仅测试环境走到）。
+function openModal(dialog) {
+  if (typeof dialog.showModal === "function") dialog.showModal();
+  else dialog.setAttribute("open", "");
+}
+function closeModal(dialog) {
+  if (typeof dialog.close === "function") dialog.close();
+  else {
+    dialog.removeAttribute("open");
+    dialog.dispatchEvent(new Event("close"));
+  }
+}
+// 确认/输入对话框：始终挂在 body（脱离面板重渲染），关闭即移除。
+// onConfirm 返回字符串 = 校验失败：留在弹窗里显示，不关闭也不发请求。
+function openDialog({ title, description, body, confirmLabel, danger = false, onConfirm }) {
+  const error = el("p", { class: "mm-dialog-error", role: "alert" });
+  const dialog = el("dialog", { class: "mm-dialog", "aria-labelledby": "mm-dialog-title" },
+    el("div", { class: "settings-body" },
+      el("h2", { id: "mm-dialog-title" }, title),
+      description ? el("p", { class: "mm-dialog-desc" }, description) : null,
+      body ?? null,
+      error,
+      el("div", { class: "dialog-actions" },
+        el("button", { type: "button", class: "secondary", onclick: () => closeModal(dialog) }, "取消"),
+        el("button", { type: "button", class: danger ? "danger" : undefined,
+          onclick: () => {
+            const problem = onConfirm();
+            if (typeof problem === "string" && problem) { error.textContent = problem; return; }
+            closeModal(dialog);
+          } }, confirmLabel))));
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  openModal(dialog);
+  (body?.querySelector("input") ?? dialog.querySelector(".dialog-actions button:last-child")).focus();
+  return { dialog, submit: () => dialog.querySelector(".dialog-actions button:last-child").click() };
+}
+
 export function initModelManager({ root, request, onSaved }) {
   if (!root || !(root instanceof Node)) throw new Error("initModelManager 需要一个根容器节点");
   const state = {
@@ -133,7 +192,7 @@ export function initModelManager({ root, request, onSaved }) {
     // 拉取面板状态（键 providerId）：status=loading/ready/error/blocked，models/byId=发现结果原文，
     // checked=勾选的模型 id，token=丢弃过期响应（并发拉取/切回旧供应商）。结果只在内存，不落盘。
     discover: new Map(),
-    armed: null, loadToken: 0,
+    loadToken: 0,
   };
 
   const skeleton = buildSkeleton();
@@ -271,15 +330,109 @@ export function initModelManager({ root, request, onSaved }) {
     return false;
   }
 
-  function navItem(id, title, meta, { draft = false } = {}) {
+  function navItem(id, title, meta, { draft = false, actions = [] } = {}) {
     const selected = state.selected === id;
-    return el("button", { type: "button",
-      class: `mm-nav-item${selected ? " mm-nav-selected" : ""}${draft ? " mm-nav-draft" : ""}`,
+    const button = el("button", { type: "button",
+      class: `mm-nav-item${draft ? " mm-nav-draft" : ""}`,
       "aria-current": selected ? "true" : undefined,
       onclick: () => { state.selected = id; renderProviders(); } },
       el("span", { class: "mm-nav-id" }, title,
         !draft && isPending(id) ? el("span", { class: "mm-dot", title: "有未保存的修改", "aria-label": "有未保存的修改" }) : null),
       meta ? el("span", { class: "mm-nav-meta" }, meta) : null);
+    return el("div", { class: `mm-nav-row${selected ? " mm-nav-selected" : ""}` },
+      button,
+      actions.length ? el("span", { class: "mm-nav-actions" }, ...actions) : null);
+  }
+
+  // 行内图标按钮（导航项与模型行共用）：默认隐藏，悬停/聚焦时出现；删除图标悬停变红。
+  // preventDefault 防止总结行内的图标点击顺带展开/收起。
+  function iconButton(kind, label, onclick) {
+    return el("button", { type: "button", class: `mm-icon-btn mm-icon-${kind}`, title: label,
+      "aria-label": label, "aria-haspopup": "dialog",
+      onclick: (event) => { event.preventDefault(); event.stopPropagation(); onclick(); } }, icon(ICONS[kind]));
+  }
+
+  // 重命名后把按旧 id 缓存的草稿/未保存行搬到新 id，避免用户正在编辑的内容被丢掉。
+  function rekeyProviderCaches(from, to) {
+    if (state.editForms.has(from)) { state.editForms.set(to, state.editForms.get(from)); state.editForms.delete(from); }
+    if (state.newRows.has(from)) { state.newRows.set(to, state.newRows.get(from)); state.newRows.delete(from); }
+    const prefix = `${from}\u0000`;
+    for (const [key, row] of [...state.modelRows.entries()]) {
+      if (!key.startsWith(prefix)) continue;
+      state.modelRows.delete(key);
+      state.modelRows.set(`${to}\u0000${row.snap.id}`, row);
+    }
+    state.discover.delete(from);
+  }
+
+  // ── 删除 / 重命名：统一原生 dialog 确认，不再用「点两次」的表内确认 ────────
+  function confirmDeleteProvider(provider) {
+    const models = Array.isArray(provider.models) ? provider.models.length : 0;
+    openDialog({
+      title: `删除供应商「${provider.id}」？`,
+      description: `该供应商${models ? `及其 ${models} 个模型配置` : "配置"}会被删除，此操作不可撤销。`,
+      confirmLabel: "删除",
+      danger: true,
+      onConfirm: () => void submit(null, () =>
+          request("models.provider.delete", { providerId: provider.id, baseFingerprint: state.fingerprint }),
+        {
+          successMessage: `已删除供应商「${provider.id}」。`,
+          onSuccess: () => {
+            state.editForms.delete(provider.id);
+            state.newRows.delete(provider.id);
+            pruneProviderRows(provider.id);
+            state.discover.delete(provider.id);
+            if (state.selected === provider.id) state.selected = "";
+          },
+        }),
+    });
+  }
+
+  function confirmDeleteModel(providerId, modelId) {
+    openDialog({
+      title: `删除模型「${modelId}」？`,
+      description: `将从供应商「${providerId}」移除该模型配置，此操作不可撤销。`,
+      confirmLabel: "删除",
+      danger: true,
+      onConfirm: () => void submit(null, () =>
+          request("models.model.delete", { providerId, modelId, baseFingerprint: state.fingerprint }),
+        {
+          successMessage: `已删除模型「${modelId}」。`,
+          onSuccess: () => state.modelRows.delete(`${providerId}\u0000${modelId}`),
+        }),
+    });
+  }
+
+  function openRenameDialog(provider) {
+    const input = el("input", { type: "text", value: provider.id, spellcheck: "false", maxlength: "64",
+      autocomplete: "off", "aria-label": "新的供应商 id" });
+    const { dialog, submit: requestRename } = openDialog({
+      title: `重命名供应商「${provider.id}」`,
+      description: "模型与内置覆盖配置随新 id 一起迁移；指向旧 id 的收藏需要重新添加。",
+      body: el("div", { class: "mm-field" },
+        el("label", { class: "mm-field-label", for: "mm-rename-id" }, "新的供应商 id"), input),
+      confirmLabel: "重命名",
+      onConfirm: () => {
+        const next = input.value.trim();
+        if (!PROVIDER_ID.test(next)) return "id 需以字母或数字开头，仅含字母、数字、点、下划线、连字符（≤64 位）";
+        if (next === provider.id) return undefined;
+        if (state.providers.some((item) => item.id === next)) return `供应商「${next}」已存在，请换一个 id`;
+        void submit(null, () =>
+            request("models.provider.rename", { providerId: provider.id, newProviderId: next, baseFingerprint: state.fingerprint }),
+          {
+            successMessage: `已将供应商「${provider.id}」重命名为「${next}」。`,
+            onSuccess: () => { rekeyProviderCaches(provider.id, next); state.selected = next; },
+          });
+        return undefined;
+      },
+    });
+    input.id = "mm-rename-id";
+    // 单入口：输入框内按 Enter 提交；聚焦在按钮上时交给按钮自身的点击，避免重复提交。
+    dialog.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.target.tagName === "BUTTON") return;
+      event.preventDefault();
+      requestRename();
+    });
   }
 
   function renderNavList() {
@@ -296,7 +449,12 @@ export function initModelManager({ root, request, onSaved }) {
         const overrides = provider.modelOverrides && typeof provider.modelOverrides === "object"
           ? Object.keys(provider.modelOverrides).length : 0;
         items.push(navItem(provider.id, provider.id,
-          `${models} 个模型${overrides ? ` · 覆盖 ${overrides} 项` : ""}`));
+          `${models} 个模型${overrides ? ` · 覆盖 ${overrides} 项` : ""}`, {
+            actions: [
+              iconButton("rename", `重命名供应商「${provider.id}」`, () => openRenameDialog(provider)),
+              iconButton("delete", `删除供应商「${provider.id}」`, () => confirmDeleteProvider(provider)),
+            ],
+          }));
       }
     }
     if (builtin.length) {
@@ -374,7 +532,7 @@ export function initModelManager({ root, request, onSaved }) {
       snap,
       id: snap.id || suggestId(template?.id === "custom" || !template ? "my-provider" : template.id),
       baseUrl: snap.baseUrl ?? template?.baseUrl ?? "",
-      api: snap.api ?? template?.api ?? "openai-completions",
+      api: provider ? (snap.api ?? "") : (template?.api ?? "openai-completions"),
       authHeader: Boolean(snap.authHeader),
       apiKeyValue: isMask(snap.apiKey) ? "" : String(snap.apiKey ?? template?.apiKey ?? ""),
       apiKeyMasked: isMask(snap.apiKey),
@@ -507,27 +665,31 @@ export function initModelManager({ root, request, onSaved }) {
       el("div", { class: "mm-provider-title" },
         el("strong", {}, draft.saved ? "继续编辑新供应商" : "添加供应商"),
         field("模板", templateSelect, "切换模板会覆盖连接字段与示例模型")),
-      el("div", { class: "mm-form" }, ...providerControls(form)),
-      extrasField(form, "provider"),
-      el("div", { class: "mm-form-actions" },
-        el("button", { type: "button", class: "mm-primary",
-          onclick: (event) => void saveProviderForm(event.currentTarget, form, { draft }) },
-          draft.saved ? "保存供应商" : "创建供应商"),
-        el("button", { type: "button", class: "secondary", onclick: closeDraft }, draft.saved ? "完成" : "取消")),
-      el("div", { class: "mm-models-head" },
-        el("h5", {}, "模型"),
-        el("button", { type: "button", class: "secondary", onclick: () => {
-          draft.rows.push({ mid: `mm-new-${Date.now()}-${draft.rows.length}`, snap: {} });
-          renderProviders();
-        } }, "添加模型")),
-      draft.rows.length
-        ? el("div", { class: "mm-models" }, ...draft.rows.map((row) =>
-            modelRow(form.id.trim() || "未命名供应商", row, { isNew: true, onRemove: () => {
-              draft.rows = draft.rows.filter((item) => item !== row);
-              renderProviders();
-            } })))
-        : el("p", { class: "mm-hint" }, "暂无模型；模板示例会自动填充，也可用「添加模型」录入。"),
-      el("p", { class: "mm-hint" }, "模型逐条保存（upsert），未保存的示例模型不会写入文件。"));
+      el("div", { class: "mm-section" },
+        el("h5", { class: "mm-section-title" }, "连接"),
+        el("div", { class: "mm-form" }, ...connectionFields(form)),
+        advancedConnection(form),
+        extrasField(form, "provider"),
+        el("div", { class: "mm-form-actions" },
+          el("button", { type: "button", class: "mm-primary",
+            onclick: (event) => void saveProviderForm(event.currentTarget, form, { draft }) },
+            draft.saved ? "保存供应商" : "创建供应商"),
+          el("button", { type: "button", class: "secondary", onclick: closeDraft }, draft.saved ? "完成" : "取消"))),
+      el("div", { class: "mm-section" },
+        el("div", { class: "mm-models-head" },
+          el("h5", {}, `模型（${draft.rows.length}）`),
+          el("button", { type: "button", class: "secondary", onclick: () => {
+            draft.rows.push({ mid: `mm-new-${Date.now()}-${draft.rows.length}`, snap: {} });
+            renderProviders();
+          } }, "添加模型")),
+        draft.rows.length
+          ? el("div", { class: "mm-models" }, ...draft.rows.map((row) =>
+              modelRow(form.id.trim() || "未命名供应商", row, { isNew: true, onRemove: () => {
+                draft.rows = draft.rows.filter((item) => item !== row);
+                renderProviders();
+              } })))
+          : el("p", { class: "mm-hint" }, "暂无模型；模板示例会自动填充，也可用「添加模型」录入。"),
+        el("p", { class: "mm-hint" }, "模型逐条保存（upsert），未保存的示例模型不会写入文件。")));
   }
 
   // ── 详情：既有供应商编辑器 ──────────────────────────────────────────────
@@ -542,91 +704,106 @@ export function initModelManager({ root, request, onSaved }) {
       el("div", { class: "mm-provider-title" },
         el("strong", { class: "mm-mono" }, provider.id),
         el("span", { class: "mm-provider-meta" },
-          "id 创建后不可修改；改名请删除后重建",
-          overrides ? ` · ${overrides} 项内置模型覆盖` : "")),
-      el("div", { class: "mm-form" }, ...providerControls(form, provider.id)),
-      extrasField(form, "provider"),
-      el("div", { class: "mm-form-actions" },
-        el("button", { type: "button", class: "mm-primary",
-          onclick: (event) => void saveProviderForm(event.currentTarget, form, { existing: provider.id }) }, "保存供应商"),
-        el("button", { type: "button", class: "secondary", title: "只读拉取该供应商当前可用的模型列表",
-          onclick: () => void startDiscover(provider.id, form) }, "拉取模型列表…"),
-        el("button", { type: "button", class: "secondary", onclick: () => {
-          state.editForms.delete(provider.id);
-          state.newRows.delete(provider.id);
-          pruneProviderRows(provider.id);
-          renderProviders();
-        } }, "取消"),
-        deleteButton(`provider:${provider.id}`, (button) => {
-          void submit(button, () =>
-            request("models.provider.delete", { providerId: provider.id, baseFingerprint: state.fingerprint }),
-            { successMessage: `已删除供应商「${provider.id}」。` })
-            .then((ok) => {
-              if (!ok) return;
-              state.editForms.delete(provider.id);
-              state.newRows.delete(provider.id);
-              pruneProviderRows(provider.id);
-              state.discover.delete(provider.id);
-              if (state.selected === provider.id) state.selected = "";
-            });
-        })),
-      discoverPanel(provider),
-      el("div", { class: "mm-models-head" },
-        el("h5", {}, `模型（${freshRows.length + pending.length}）`),
-        el("button", { type: "button", class: "secondary", onclick: () => {
-          const list = state.newRows.get(provider.id) ?? [];
-          list.push({ mid: `mm-new-${Date.now()}-${list.length}`, snap: {} });
-          state.newRows.set(provider.id, list);
-          renderProviders();
-        } }, "添加模型")),
-      freshRows.length + pending.length
-        ? el("div", { class: "mm-models" },
-            ...freshRows.map((model) => modelRow(provider.id, model)),
-            ...pending.map((row) => modelRow(provider.id, row, { isNew: true, onRemove: () => {
-              state.newRows.set(provider.id, (state.newRows.get(provider.id) ?? []).filter((item) => item !== row));
+          `${freshRows.length} 个模型${overrides ? ` · 覆盖 ${overrides} 项内置模型` : ""}`)),
+      el("div", { class: "mm-section" },
+        el("h5", { class: "mm-section-title" }, "连接"),
+        el("div", { class: "mm-form" }, ...connectionFields(form, provider.id)),
+        advancedConnection(form),
+        extrasField(form, "provider"),
+        el("div", { class: "mm-form-actions" },
+          el("button", { type: "button", class: "mm-primary",
+            onclick: (event) => void saveProviderForm(event.currentTarget, form, { existing: provider.id }) }, "保存供应商"),
+          el("button", { type: "button", class: "secondary", onclick: () => {
+            state.editForms.delete(provider.id);
+            state.newRows.delete(provider.id);
+            pruneProviderRows(provider.id);
+            renderProviders();
+          } }, "取消"))),
+      el("div", { class: "mm-section" },
+        el("div", { class: "mm-models-head" },
+          el("h5", {}, `模型（${freshRows.length + pending.length}）`),
+          el("span", { class: "mm-models-actions" },
+            el("button", { type: "button", class: "secondary", title: "只读拉取该供应商当前可用的模型列表",
+              onclick: () => void startDiscover(provider.id, form) }, "拉取模型列表…"),
+            el("button", { type: "button", class: "secondary", onclick: () => {
+              const list = state.newRows.get(provider.id) ?? [];
+              list.push({ mid: `mm-new-${Date.now()}-${list.length}`, snap: {} });
+              state.newRows.set(provider.id, list);
               renderProviders();
-            } })))
-        : el("p", { class: "mm-hint" }, "该供应商暂无 models 条目（可能仅覆盖内置供应商的 baseUrl/headers）。"));
+            } }, "添加模型"))),
+        discoverPanel(provider),
+        freshRows.length + pending.length
+          ? el("div", { class: "mm-models" },
+              ...freshRows.map((model) => modelRow(provider.id, model)),
+              ...pending.map((row) => modelRow(provider.id, row, { isNew: true, onRemove: () => {
+                state.newRows.set(provider.id, (state.newRows.get(provider.id) ?? []).filter((item) => item !== row));
+                renderProviders();
+              } })))
+          : el("p", { class: "mm-hint" }, "该供应商暂无 models 条目（可能仅覆盖内置供应商的 baseUrl/headers）。")));
   }
 
-  function providerControls(form, existingId) {
+  // 连接区只留日常必改项：id（仅草稿）/ Base URL / API 协议 / API Key；其余全部折叠。
+  // 下拉框复用应用既有的 .selectors 外观（深色小圆角 + 伪元素小箭头），原生箭头在深色下太抢眼。
+  function selectControl(select) {
+    return el("span", { class: "selectors mm-select" }, el("label", {}, select));
+  }
+  function connectionFields(form, existingId) {
     const apiKeyInput = el("input", { type: "password", value: form.apiKeyValue, autocomplete: "off", spellcheck: "false",
       placeholder: form.apiKeyMasked
-        ? `已配置（${MASK_KINDS[form.apiKeyKind] ?? "掩码值"}）——留空保留，输入新值替换`
+        ? `已配置（${MASK_KINDS[form.apiKeyKind] ?? "掩码值"}）——留空保留`
         : "留空不设置；可填 sk-…、$ENV_VAR 或 ${ENV}",
       oninput: (event) => { form.apiKeyValue = event.target.value; } });
-    const reveal = el("input", { type: "checkbox", "aria-label": "显示 API Key",
-      onchange: (event) => { apiKeyInput.type = event.target.checked ? "text" : "password"; } });
+    // 小眼睛只切换「本次输入」的可见性（已存密钥后端只回传拖码），提示文案必须说清，
+    // 否则会被误以为能查看已存密钥。
+    const reveal = el("button", { type: "button", class: "mm-icon-btn mm-key-reveal",
+      title: "显示本次输入的内容", "aria-label": "显示本次输入的 API Key", "aria-pressed": "false",
+      onclick: () => {
+        const shown = apiKeyInput.type === "text";
+        apiKeyInput.type = shown ? "password" : "text";
+        reveal.setAttribute("aria-pressed", String(!shown));
+        reveal.title = shown ? "显示本次输入的内容" : "隐藏本次输入的内容";
+        reveal.setAttribute("aria-label", `${shown ? "显示" : "隐藏"}本次输入的 API Key`);
+        reveal.querySelector("path").setAttribute("d", shown ? ICONS.eye : ICONS.eyeOff);
+      } }, icon(ICONS.eye));
     const clearKey = el("input", { type: "checkbox", checked: form.apiKeyClear, "aria-label": "清除已保存的 API Key",
       onchange: (event) => { form.apiKeyClear = event.target.checked; apiKeyInput.disabled = event.target.checked; } });
+    const idField = existingId ? [] : [field("供应商 id", el("input", { type: "text", value: form.id,
+      placeholder: "例如 my-proxy；与内置供应商同名即为覆盖", spellcheck: "false",
+      oninput: (event) => { form.id = event.target.value; renderNavList(); } }), "创建后不可修改；改名用左侧列表的铅笔图标", true)];
+    return [
+      ...idField,
+      field("Base URL", el("input", { type: "text", value: form.baseUrl, spellcheck: "false",
+        placeholder: "https://…/v1（本地服务如 http://localhost:11434/v1）",
+        oninput: (event) => { form.baseUrl = event.target.value; } }), undefined, true),
+      field("API 协议", selectControl(el("select", { "aria-label": "API 协议",
+        onchange: (event) => { form.api = event.target.value; } },
+        new Option("（不设置）", "", false, form.api === ""),
+        ...API_TYPES.map(([value, label]) => new Option(label, value, false, form.api === value)))),
+        "Chat Completions 兼容性最好；改完记得保存", true),
+      field("API Key", el("span", { class: "mm-key" },
+        el("span", { class: "mm-key-input" }, apiKeyInput, reveal),
+        form.apiKeyMasked ? el("label", { class: "mm-check mm-check-danger" }, clearKey, "清除已存") : null),
+        "密钥不回显（只能看到「已配置」）。留空 = 保留，输入 = 替换，勾「清除已存」= 删除；小眼睛只看本次输入"),
+    ];
+  }
+
+  // 高级连接：默认折叠，展开状态在重渲染（如新增请求头）后保留。
+  function advancedConnection(form) {
     const headersBox = el("div", { class: "mm-headers" },
       ...form.headerRows.map((row) => headerRow(form, row)),
       el("button", { type: "button", class: "secondary mm-headers-add", onclick: () => {
         form.headerRows.push({ name: "", value: "", masked: false, kind: "" });
         renderProviders();
       } }, "添加请求头"));
-    const idField = existingId ? [] : [field("供应商 id", el("input", { type: "text", value: form.id,
-      placeholder: "例如 my-proxy；与内置供应商同名即为覆盖", spellcheck: "false",
-      oninput: (event) => { form.id = event.target.value; renderNavList(); } }), "创建后不可修改")];
-    return [
-      ...idField,
-      field("Base URL", el("input", { type: "text", value: form.baseUrl, spellcheck: "false",
-        placeholder: "https://…/v1（本地服务如 http://localhost:11434/v1）",
-        oninput: (event) => { form.baseUrl = event.target.value; } })),
-      field("API 协议", el("select", { "aria-label": "API 协议",
-        onchange: (event) => { form.api = event.target.value; } },
-        new Option("（不设置）", "", false, form.api === ""),
-        ...API_TYPES.map(([value, label]) => new Option(label, value, false, form.api === value)))),
-      field("API Key", el("span", { class: "mm-key" }, apiKeyInput,
-        el("label", { class: "mm-check" }, reveal, "显示"),
-        form.apiKeyMasked ? el("label", { class: "mm-check mm-check-danger" }, clearKey, "清除已存") : null),
-        "密钥不回显：留空保留现值，只有新输入的值会被传输"),
-      field("Authorization: Bearer 头", el("span", { class: "mm-key" }, el("input", { type: "checkbox", checked: form.authHeader,
-        "aria-label": "附加 Authorization Bearer 头",
-        onchange: (event) => { form.authHeader = event.target.checked; } })),
-        "自动附加 Authorization: Bearer <apiKey>"),
-      field("自定义请求头", headersBox, "值支持 $ENV 引用；掩码值留空即原样保留"),
-    ];
+    return el("details", { class: "mm-advanced", open: Boolean(form.advancedOpen),
+      ontoggle: (event) => { form.advancedOpen = event.target.open; } },
+      el("summary", {}, "高级连接（Bearer 头 / 自定义请求头）"),
+      el("div", { class: "mm-form" },
+        field("Bearer 鉴权", el("label", { class: "mm-check" }, el("input", { type: "checkbox", checked: form.authHeader,
+          onchange: (event) => { form.authHeader = event.target.checked; } }),
+          "自动附加 Authorization: Bearer <apiKey> 请求头"),
+          "开启后请求会带上 Authorization: Bearer <你的密钥>；多数 OpenAI 兼容网关需要；自定义请求头里已写 Authorization 时不覆盖", true),
+        field("自定义请求头", headersBox, "值支持 $ENV 引用；掩码值留空即原样保留")));
   }
 
   function headerRow(form, row) {
@@ -903,11 +1080,6 @@ export function initModelManager({ root, request, onSaved }) {
       if (isNew) onRemove?.();
       else state.modelRows.delete(`${providerId}\u0000${form.snap.id}`);
     };
-    const deleteModel = (button) =>
-      void submit(button, () =>
-        request("models.model.delete", { providerId, modelId: String(row.snap.id ?? ""), baseFingerprint: state.fingerprint }),
-        { successMessage: `已删除模型「${row.snap.id}」。` })
-        .then((ok) => { if (ok) state.modelRows.delete(`${providerId}\u0000${row.snap.id}`); });
     const idInput = el("input", { type: "text", value: isNew ? String(form.id ?? "") : String(row.snap.id ?? ""),
       spellcheck: "false", disabled: !isNew,
       title: isNew ? undefined : "模型 id 创建后不可修改；改名请新建一条再删除旧条目",
@@ -923,10 +1095,10 @@ export function initModelManager({ root, request, onSaved }) {
       field("最大输出（tokens）", el("input", { type: "text", inputmode: "numeric", value: form.maxTokens,
         placeholder: "默认 16384", spellcheck: "false",
         oninput: (event) => { form.maxTokens = event.target.value; sync(); } })),
-      field("API 协议覆盖", el("select", { "aria-label": "API 协议覆盖",
+      field("API 协议覆盖", selectControl(el("select", { "aria-label": "API 协议覆盖",
         onchange: (event) => { form.api = event.target.value; sync(); } },
         new Option("跟随供应商", "", false, form.api === ""),
-        ...API_TYPES.map(([value, label]) => new Option(label, value, false, form.api === value)))),
+        ...API_TYPES.map(([value, label]) => new Option(label, value, false, form.api === value))))),
       el("div", { class: "mm-model-checks" },
         el("label", { class: "mm-check" }, el("input", { type: "checkbox", checked: form.reasoning,
           onchange: (event) => { form.reasoning = event.target.checked; sync(); } }), "支持推理"),
@@ -935,34 +1107,28 @@ export function initModelManager({ root, request, onSaved }) {
     const advanced = extrasField(form, "model");
     advanced.addEventListener("toggle", sync);
     sync();
-    return el("div", { class: "mm-model" },
+    const displayId = isNew ? (String(form.id ?? "").trim() || "新模型") : String(row.snap.id ?? "");
+    const displayName = String(form.name ?? "").trim();
+    // 新建/未保存的行默认展开，已保存的行折叠成摘要行；展开状态跨重渲染保留。
+    if (row.expanded === undefined) row.expanded = isNew;
+    return el("details", { class: `mm-model${isNew ? " mm-model-new" : ""}`, open: row.expanded,
+      ontoggle: (event) => { row.expanded = event.target.open; } },
+      el("summary", { class: "mm-model-summary" },
+        el("span", { class: "mm-caret", "aria-hidden": "true" }, "▸"),
+        el("span", { class: "mm-model-id mm-mono", title: displayId }, displayId),
+        displayName && displayName !== displayId ? el("span", { class: "mm-model-name", title: displayName }, displayName) : null,
+        el("span", { class: "mm-catalog-model-tags" },
+          form.reasoning ? badge("推理") : null,
+          form.image ? badge("图片") : null),
+        !isNew && modelDirty(form, false)
+          ? el("span", { class: "mm-dot", title: "有未保存的修改", "aria-label": "有未保存的修改" })
+          : null,
+        el("span", { class: "mm-model-row-actions" },
+          isNew && onRemove
+            ? iconButton("delete", `移除未保存的模型「${displayId}」`, onRemove)
+            : iconButton("delete", `删除模型「${displayId}」`, () => confirmDeleteModel(providerId, String(row.snap.id ?? ""))))),
       grid, advanced,
-      el("div", { class: "mm-model-actions" },
-        saveButton,
-        isNew && onRemove
-          ? el("button", { type: "button", class: "secondary", onclick: onRemove }, "移除")
-          : deleteButton(`model:${providerId}:${row.snap.id}`, deleteModel, { armedLabel: "确认删除模型？" })));
-  }
-
-  // 两段式删除确认：第一次点击进入待确认态（4 秒或失焦后还原），第二次才真正执行。
-  function deleteButton(armKey, onConfirm, { armedLabel = "确认删除？" } = {}) {
-    const button = el("button", { type: "button", class: "secondary mm-danger", "aria-label": "删除" }, "删除");
-    let timer;
-    const disarm = () => {
-      if (state.armed === armKey) state.armed = null;
-      clearTimeout(timer);
-      button.textContent = "删除";
-      button.classList.remove("mm-armed");
-    };
-    button.addEventListener("click", () => {
-      if (state.armed === armKey) { disarm(); onConfirm(button); return; }
-      state.armed = armKey;
-      button.textContent = armedLabel;
-      button.classList.add("mm-armed");
-      timer = setTimeout(disarm, 4000);
-    });
-    button.addEventListener("blur", () => { if (state.armed === armKey) disarm(); });
-    return button;
+      el("div", { class: "mm-model-actions" }, saveButton));
   }
 
   renderProviders();

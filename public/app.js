@@ -55,6 +55,8 @@ for (const id of ["provider", "model", "thinking", "subagent-provider", "subagen
 const modelManager = initModelManager({ root: $("models-panel"), request, onSaved: refreshModelCatalog });
 const serviceUi = initServiceSettings({ request, isReady: () => connected });
 let compactions = [], mainItems = [], summaries = [];
+// 手动重试靠主代理末尾消息判定：与服务端 canResume 同一条规则，避免两边判断不一致。
+let lastMainMessage = null, interrupted = false;
 const compactionNodes = new Map(), taskEntries = new Map();
 let images = [], imageLoading = false;
 let completionVersion = 0, completionToken, completionEntries = [], completionIndex = 0;
@@ -118,38 +120,68 @@ function resizePrompt() {
   $("prompt").style.height = (phone && !$("prompt").value ? 44 : Math.min($("prompt").scrollHeight, 240)) + "px";
 }
 let scrollFrame, locatedScroll;
+const FOLLOW_GAP = 80;
+const scrollIntent = new WeakMap();
+const lastScrollTops = new WeakMap();
+// 只有用户自己的滚动（滚轮、触摸、键盘、按住滚动条/正文拖动）才允许暂停吸底。
+const noteScrollIntent = (el) => scrollIntent.set(el, performance.now());
+// 吸底与“贴底”共用同一把尺子：距底部不足 FOLLOW_GAP 就算在底部。
+const atLatest = (el) => el.scrollHeight - el.scrollTop - el.clientHeight < FOLLOW_GAP;
+// 跟随状态只由贴底和用户意图决定：内容增高、布局重排、程序跳转产生的 scroll 事件
+// 会在下一帧补底之前把距离算大，若照旧判定为“用户离开底部”，运行中的流式输出就会莫名停下。
+function readFollow(el, current) {
+  const top = el.scrollTop;
+  const previous = lastScrollTops.get(el);
+  lastScrollTops.set(el, top);
+  if (atLatest(el)) return true;
+  if (performance.now() - (scrollIntent.get(el) || 0) < 200) return false;
+  // 没有意图事件的向上移动（拖动滚动条）也要暂停，只是为顶部按钮等回落留 4px 余量。
+  return previous !== undefined && top < previous - 4 ? false : current;
+}
+const scrollToLatest = (el) => { el.scrollTop = el.scrollHeight; };
 function scrollLatest() {
   scheduleCallGroups();
   if (changing || scrollFrame !== undefined || (!follow && !activeTask?.follow)) return;
   scrollFrame = requestAnimationFrame(() => {
     scrollFrame = undefined;
     if (changing) return;
-    if (follow) $("transcript").scrollTop = $("transcript").scrollHeight;
-    if (activeTask?.node.open && activeTask.follow)
-      activeTask.output.scrollTop = activeTask.output.scrollHeight;
+    if (follow) scrollToLatest($("transcript"));
+    if (activeTask?.node.open && activeTask.follow) scrollToLatest(activeTask.output);
   });
 }
+const transcript = $("transcript");
+// 内容一增高就贴底：图片解码、折叠展开、同步追加的工具卡片等不走 scrollLatest 的路径也自动跟随。
+const growthWatch = new Map();
+const growthObserver = typeof ResizeObserver === "function"
+  ? new ResizeObserver((entries) => { for (const { target } of entries) growthWatch.get(target)?.(); })
+  : null;
+function watchGrowth(el, apply) { growthWatch.set(el, apply); growthObserver?.observe(el); }
+function forgetGrowth(el) { growthWatch.delete(el); growthObserver?.unobserve(el); }
+for (const event of ["wheel", "touchstart", "touchmove", "keydown", "pointerdown"])
+  transcript.addEventListener(event, () => noteScrollIntent(transcript), { capture: true, passive: true });
 const renderer = createStreamRenderer(renderMarkdown, scrollLatest);
-$("transcript").onscroll = () => {
-  const el = $("transcript");
-  $("earliest").hidden = el.scrollTop < 80;
-  // A programmatic jump near the bottom must not re-enable follow.
-  if (el.scrollTop === locatedScroll) return;
+watchGrowth($("output"), () => { if (follow) scrollLatest(); });
+transcript.onscroll = () => {
+  $("earliest").hidden = transcript.scrollTop < FOLLOW_GAP;
+  // 程序跳转（子代理摘要、回到最早）也触发 scroll，不能当作“用户离开了底部”。
+  if (transcript.scrollTop === locatedScroll) return;
   locatedScroll = undefined;
-  follow = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  follow = readFollow(transcript, follow);
   $("latest").hidden = follow;
 };
 $("earliest").onclick = () => {
   follow = false;
-  $("transcript").scrollTop = 0;
-  locatedScroll = $("transcript").scrollTop;
+  transcript.scrollTop = 0;
+  locatedScroll = transcript.scrollTop;
+  lastScrollTops.set(transcript, transcript.scrollTop);
   $("earliest").hidden = true;
   $("latest").hidden = false;
-  $("transcript").focus({ preventScroll: true });
+  transcript.focus({ preventScroll: true });
 };
 $("latest").onclick = () => {
   locatedScroll = undefined;
   follow = true;
+  lastScrollTops.set(transcript, transcript.scrollTop);
   $("latest").hidden = true;
   scrollLatest();
 };
@@ -226,6 +258,7 @@ function controls() {
   $("stop").disabled = !busy || unavailable || sessionMissing;
   $("stop").hidden = !busy;
   $("send").hidden = busy;
+  syncRetryPrompt();
   for (const id of ["new", "custom-new"]) $(id).disabled = unavailable || !models.length;
   for (const button of document.querySelectorAll(".session-actions button")) button.disabled = !button.closest(".session-copy-menu") && !button.matches(".session-copy, .session-hide") && unavailable;
   $("status").dataset.connected = String(connected);
@@ -1250,7 +1283,10 @@ function foldCompaction(data) {
   placeCompactedTasks();
   mergeThoughts($("output"));
   // 折叠改变上方高度，按保留消息的位移补偿滚动位置，保持阅读锚点而不强制到底部。
-  if (anchor) $("transcript").scrollTop += anchor.getBoundingClientRect().top - top;
+  if (anchor) {
+    transcript.scrollTop += anchor.getBoundingClientRect().top - top;
+    lastScrollTops.set(transcript, transcript.scrollTop);
+  }
 }
 function compactionEditor(initial, mainModel) {
   initial = { ...compactionDefaults, ...initial };
@@ -1443,6 +1479,38 @@ function renderQueue(queue = {}) {
   })));
   $("message-queue").hidden = !$("message-queue").children.length;
 }
+// 异常停止（Esc 停止、终态错误、重试用尽）后在会话流末尾给一个手动重试入口。
+// 只对主代理，子代理由主代理续跑带动；判定与 src/retry.js canResume 同步（只认异常的正面证据）。
+const canResumeMessage = (message) =>
+  !!message && (message.role !== "assistant" || ["error", "aborted", "length", "toolUse"].includes(message.stopReason));
+let retryPrompt;
+function syncRetryPrompt() {
+  if (!(interrupted && !busy && connected && !changing && sessionId && !sessionMissing)) return void retryPrompt?.remove();
+  if (!retryPrompt) {
+    retryPrompt = document.createElement("div");
+    retryPrompt.className = "retry-prompt";
+    const hint = document.createElement("span");
+    hint.textContent = "上一次请求未正常结束。";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "secondary";
+    button.textContent = "↻ 重试";
+    button.title = "接着上次中断的地方继续，不重发你的输入";
+    button.onclick = async () => {
+      button.disabled = true;
+      // 成功后服务端转 running，session.state 会把本卡片收走；失败则原地重新可点。
+      try { await request("session.retry", { sessionId }); }
+      catch (e) { error(e); button.disabled = false; }
+    };
+    retryPrompt.append(hint, button);
+    retryPrompt.button = button;
+  }
+  retryPrompt.button.disabled = false;
+  if ($("output").lastElementChild === retryPrompt) return;
+  $("output").querySelector(".empty")?.remove();
+  $("output").append(retryPrompt);
+  scrollLatest();
+}
 const retryCards = new Map();
 function placeCompactedRetries() {
   for (const record of retryCards.values()) {
@@ -1528,6 +1596,7 @@ function event(message) {
   const { type, agentId = "main", data } = message;
   if (type === "agent.compaction.status" && agentId === "main") renderCompactionStatus(data);
   if (type === "agent.message.end" && agentId === "main") {
+    lastMainMessage = data.message;
     trackTaskEntries(data.message, data.entryId);
     placeCompactedTasks();
   }
@@ -1574,6 +1643,9 @@ function event(message) {
     busy = data.status !== "idle";
     if (data.status === "running") waiting("main");
     else stopActivity("main", data.status === "cancelling" ? "正在停止…" : "已结束");
+    // 停稳了才判断能不能续：message.end 总先于 idle 到达，此时 lastMainMessage 已是本轮结果。
+    if (data.status === "running") interrupted = false;
+    else if (data.status === "idle") interrupted = canResumeMessage(lastMainMessage);
     controls();
   }
   if (type === "agent.message.start" && data.message.role === "assistant") {
@@ -1653,11 +1725,12 @@ function event(message) {
       for (const button of node.querySelectorAll("[data-scroll]")) button.onclick = () => {
         task.follow = button.dataset.scroll === "bottom";
         task.output.scrollTop = task.follow ? task.output.scrollHeight : 0;
+        lastScrollTops.set(task.output, task.output.scrollTop);
       };
-      task.output.onscroll = () => {
-        const el = task.output;
-        task.follow = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-      };
+      for (const event of ["wheel", "touchstart", "touchmove", "keydown", "pointerdown"])
+        task.output.addEventListener(event, () => noteScrollIntent(task.output), { capture: true, passive: true });
+      task.output.onscroll = () => { task.follow = readFollow(task.output, task.follow); };
+      watchGrowth(task.output, () => { if (node.open && task.follow) scrollLatest(); });
       node.onclose = () => { if (!node.open && activeTask === task) activeTask = undefined; };
       node.onclick = (e) => {
         if (e.target !== node) return;
@@ -1690,6 +1763,7 @@ function event(message) {
 }
 function snapshot(state) {
   locatedScroll = undefined;
+  lastScrollTops.delete(transcript);
   clearTimeout(escapeTimer);
   escapeTimer = undefined;
   recallArmedUntil = 0;
@@ -1710,10 +1784,13 @@ function snapshot(state) {
   $("workspace-label").textContent = state.cwd;
   updatePageTitle();
   busy = state.status !== "idle";
+  lastMainMessage = state.messages.findLast((entry) => entry.agentId === "main")?.message || null;
+  interrupted = !busy && canResumeMessage(lastMainMessage);
   $("output").replaceChildren();
   live.clear();
   toolItems.clear();
   waitingItems.clear();
+  for (const task of tasks.values()) forgetGrowth(task.output);
   tasks.clear();
   renderTaskRuns();
   retryCards.clear();
@@ -1831,13 +1908,13 @@ function snapshot(state) {
   closeCompletion();
   $("context-menu").hidePopover?.();
   follow = view?.follow ?? true;
+  lastScrollTops.delete(transcript);
   $("latest").hidden = follow;
   scrollFrame = requestAnimationFrame(() => {
     scrollFrame = undefined;
     resizePrompt();
-    $("transcript").scrollTop = follow
-      ? $("transcript").scrollHeight
-      : (view?.scroll ?? 0);
+    transcript.scrollTop = follow ? transcript.scrollHeight : (view?.scroll ?? 0);
+    lastScrollTops.set(transcript, transcript.scrollTop);
   });
   renderQueue(state.queue);
   runtime = state.runtime;

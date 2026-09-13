@@ -456,6 +456,21 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
         }),
       );
     },
+    // 改名 = 整条搬家（含 models/modelOverrides），单次写盘、指纹乐观锁照旧；
+    // 前端无法用 save+delete 复现（modelOverrides 没有独立写命令）。
+    renameProvider({ providerId, newProviderId, baseFingerprint }) {
+      return enqueue(() =>
+        mutate(baseFingerprint, (providers) => {
+          if (!(providerId in providers)) throw new Error(`Unknown provider：${providerId}`);
+          if (newProviderId in providers) throw new Error(`供应商「${newProviderId}」已存在，请换一个 id`);
+          const entry = providers[providerId];
+          if (entry && typeof entry === "object" && !Array.isArray(entry) && "id" in entry)
+            entry.id = newProviderId;
+          delete providers[providerId];
+          providers[newProviderId] = entry;
+        }),
+      );
+    },
     saveModel({ providerId, model, baseFingerprint }) {
       const input = modelConfigIn.parse(model);
       return enqueue(() =>
@@ -495,6 +510,8 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
           return this.saveProvider(request);
         case "models.provider.delete":
           return this.deleteProvider(request);
+        case "models.provider.rename":
+          return this.renameProvider(request);
         case "models.model.save":
           return this.saveModel(request);
         case "models.model.delete":

@@ -135,6 +135,9 @@ export async function update(sha, execute = run, cwd = root) {
 // rebuild 三段式：prepare 在服务仍在时把依赖装进独立暂存目录并验证 SDK（不碰在用 node_modules）；
 // swap 在 worker 停止后换入；build 由调用方在 swap 后执行；commit 在新实例 ready 后删备份。
 export async function prepareRebuild(cwd = root, execute = run) {
+  // 在停止健康 worker 之前拒绝不明确的备份；不能自动删除可能唯一可用的旧依赖。
+  if (existsSync(join(cwd, ".node_modules-backup")))
+    throw new Error(`备份目录已存在，未停止服务或更改依赖；请检查后手动恢复：${join(cwd, ".node_modules-backup")}`);
   const stage = join(cwd, `.axiom-stage-${process.pid}`);
   await rm(stage, { recursive: true, force: true });
   await mkdir(stage, { recursive: true });
@@ -351,9 +354,18 @@ export async function supervise() {
     child.send({ type: "service.accepted", requestId, operationId }, () => {});
     setTimeout(() => { void runOp(mode, message.sha, operationId).catch((error) => { console.error(error); process.exitCode = 1; }); }, 150);
   }
+  async function restoreWorker(error) {
+    if (!await spawnWorker(sanitize(error, redactions))) {
+      await state.fail(`${error}；恢复实例未就绪，请检查日志并通过维护入口尝试恢复`);
+      return !workerAlive();
+    }
+    return false;
+  }
   async function runOp(mode, sha, operationId) {
+    let retryRecovery = false;
     try {
       clearTimeout(restartTimer);
+      restartTimer = null;
       failures = 0; // 恢复/维护路径重新起算崩溃重试
       let stage, swapped = false;
       try {
@@ -379,7 +391,7 @@ export async function supervise() {
         }
         await state.fail(cause);
         if (workerAlive()) resume();
-        else await spawnWorker(sanitize(cause.message, redactions));
+        else retryRecovery = await restoreWorker(cause.message);
         return;
       }
       // starting 阶段由 spawnWorker 统一记录，此处不再重复。
@@ -411,12 +423,17 @@ export async function supervise() {
         }
         console.error(note);
         await state.fail(note);
-        await spawnWorker(sanitize(note, redactions));
+        retryRecovery = await restoreWorker(note);
       }
     } catch (error) {
       await state.fail(error);
       if (workerAlive()) resume();
-    } finally { restarting = false; }
+    } finally {
+      restarting = false;
+      // 维护期间退出由 runOp 接管；兜底实例也启动失败时不能吞掉退出后永久离线。
+      if (retryRecovery && !workerAlive() && !stopping && !restartTimer)
+        restartTimer = setTimeout(() => { restartTimer = null; if (!restarting && !stopping) spawnWorker(); }, crashBackoffMs);
+    }
   }
   function stopChild() {
     return new Promise((done, fail) => {

@@ -67,6 +67,39 @@ test("模板常量覆盖常见供应商与本地服务", () => {
   h.window.close();
 });
 
+test("供应商协议清除后回读、再次保存和刷新仍保持不设置，新建仍用模板", async () => {
+  const h = harness();
+  const loaded = h.manager.load();
+  h.flushGet({ providers: [{ id: "p1", api: "anthropic-messages" }] });
+  await loaded;
+  const apiSelect = () => h.detail().querySelector('select[aria-label="API 协议"]');
+  assert.equal(apiSelect().value, "anthropic-messages");
+  apiSelect().value = "";
+  apiSelect().dispatchEvent(new h.window.Event("change", { bubbles: true }));
+  h.button("保存供应商").click();
+  const save = h.lastPending("models.provider.save");
+  assert.equal(save.args.provider.api, null);
+  save.settled = true;
+  save.resolve({});
+  await h.settle();
+  h.flushGet({ fingerprint: "fp-2", providers: [{ id: "p1" }] });
+  await h.settle();
+  assert.equal(apiSelect().value, "", "保存回读不能补成 OpenAI");
+  h.button("保存供应商").click();
+  assert.equal(Object.hasOwn(h.lastPending("models.provider.save").args.provider, "api"), false);
+  h.lastPending("models.provider.save").resolve({});
+  await h.settle();
+  h.flushGet();
+  await h.settle();
+  const refreshed = h.manager.load();
+  h.flushGet();
+  await refreshed;
+  assert.equal(apiSelect().value, "");
+  h.button("添加供应商").click();
+  assert.equal(apiSelect().value, "openai-completions", "新建模板默认值不变");
+  h.window.close();
+});
+
 test("加载后导航分组展示自定义与内置目录，详情默认显示模型名称+实际ID+能力", async () => {
   const h = harness();
   const loaded = h.manager.load();
@@ -131,6 +164,17 @@ test("自定义供应商进编辑器，目录项只读且掩码密钥不泄露�
   assert.match(keyInput.placeholder, /留空保留/);
   const headerValue = form.querySelector(".mm-header-row input[type='password']");
   assert.equal(headerValue.value, "");
+  // 小眼睛只切换本次输入的可见性，且不篡改已配置的值。
+  const eye = form.querySelector(".mm-key-reveal");
+  assert.equal(eye.getAttribute("aria-pressed"), "false");
+  const iconBefore = eye.querySelector("path").getAttribute("d");
+  eye.click();
+  assert.equal(keyInput.type, "text", "点小眼睛可将本次输入切换为明文");
+  assert.notEqual(eye.querySelector("path").getAttribute("d"), iconBefore, "图标同步切换为斜杠眼");
+  assert.equal(eye.getAttribute("aria-pressed"), "true");
+  eye.click();
+  assert.equal(keyInput.type, "password");
+  assert.equal(keyInput.value, "", "回显后密钥仍为空，不会把已存密钥泄露到界面");
   assert.equal(h.root().textContent.includes("masked"), false, "掩码对象不出现在界面文本中");
 
   // 内置 anthropic 是只读目录页：模型清单 + 覆盖入口，无编辑字段。
@@ -264,7 +308,7 @@ test("密钥保存语义：空=keep、新值=字符串、清除=null、禁止新
   h.window.close();
 });
 
-test("供应商与模型删除都是两段式确认，第二次点击才发请求", async () => {
+test("删除改为导航/行内图标 + 原生弹窗确认：取消不发请求，确认才发", async () => {
   const h = harness();
   const loaded = h.manager.load();
   h.flushGet({
@@ -273,16 +317,26 @@ test("供应商与模型删除都是两段式确认，第二次点击才发请�
   await h.settle();
   await loaded;
   await h.selectProvider("p1");
-  const modelDelete = [...h.detail().querySelectorAll(".mm-model-actions button")]
-    .find((node) => node.textContent === "删除");
-  modelDelete.click();
+  const dialog = () => h.window.document.querySelector(".mm-dialog");
+  const dialogButton = (text) => [...dialog().querySelectorAll(".dialog-actions button")].find((node) => node.textContent === text);
+  const modelDelete = () => h.detail().querySelector(".mm-model-row-actions .mm-icon-delete");
+
+  // 模型：图标 → 弹窗；取消不发请求
+  modelDelete().click();
   await h.settle();
-  assert.equal(modelDelete.textContent, "确认删除模型？");
-  assert.equal(h.calls.length, 1, "第一次点击不发请求");
-  modelDelete.click();
+  assert.match(dialog().textContent, /删除模型「m1」/);
+  assert.equal(h.calls.length, 1, "只打开弹窗，不发请求");
+  dialogButton("取消").click();
+  await h.settle();
+  assert.equal(h.calls.length, 1, "取消不发请求");
+  assert.equal(dialog(), null, "弹窗关闭后从 DOM 摘除");
+
+  // 再次打开 → 确认才发请求
+  modelDelete().click();
+  await h.settle();
+  dialogButton("删除").click();
   await h.settle();
   const modelDel = h.lastPending("models.model.delete");
-  assert.ok(modelDel);
   assert.deepEqual(j(modelDel.args), { providerId: "p1", modelId: "m1", baseFingerprint: "fp-1" });
   modelDel.settled = true;
   modelDel.resolve({ fingerprint: "fp-7" });
@@ -292,14 +346,13 @@ test("供应商与模型删除都是两段式确认，第二次点击才发请�
   assert.match(h.root().textContent, /已删除模型「m1」/);
   assert.equal(h.detail().querySelectorAll(".mm-model").length, 0, "模型行已移除");
 
-  // 供应商：详情动作里的两段式删除
-  const providerDelete = h.button("删除");
+  // 供应商：删除移到左侧导航行的图标
   const beforeProviderDelete = h.calls.length;
-  providerDelete.click();
+  h.navItem("p1").parentElement.querySelector(".mm-icon-delete").click();
   await h.settle();
-  assert.equal(providerDelete.textContent, "确认删除？");
-  assert.equal(h.calls.length, beforeProviderDelete, "第一次点击不发请求");
-  providerDelete.click();
+  assert.match(dialog().textContent, /删除供应商「p1」/);
+  assert.equal(h.calls.length, beforeProviderDelete, "只打开弹窗，不发请求");
+  dialogButton("删除").click();
   await h.settle();
   const del = h.lastPending("models.provider.delete");
   assert.deepEqual(j(del.args), { providerId: "p1", baseFingerprint: "fp-7" });
@@ -311,6 +364,57 @@ test("供应商与模型删除都是两段式确认，第二次点击才发请�
   assert.match(h.root().textContent, /已删除供应商「p1」/);
   assert.equal(h.detail().querySelector(".mm-model"), null, "供应商详情已退场");
   assert.ok(!h.navItem("p1"), "导航项已移除");
+  h.window.close();
+});
+
+test("重命名走原子命令：弹窗校验失败留在弹窗，成功后缓存随新 id 迁移", async () => {
+  const h = harness();
+  const loaded = h.manager.load();
+  const provider = { id: "p1", baseUrl: "https://p1.example.com/v1", api: "openai-completions", apiKey: masked("literal"), models: [{ id: "m1", contextWindow: 1000 }] };
+  h.flushGet({ providers: [provider] });
+  await h.settle();
+  await loaded;
+  await h.selectProvider("p1");
+  // 制造一份未保存编辑，验证重命名后草稿跟着迁移
+  h.setInput(h.detail().querySelector(".mm-form input[type='text']"), "https://edited.example.com/v1");
+  const dialog = () => h.window.document.querySelector(".mm-dialog");
+  const confirm = () => [...dialog().querySelectorAll(".dialog-actions button")].find((node) => node.textContent === "重命名");
+  const openRename = async () => { h.navItem("p1").parentElement.querySelector(".mm-icon-rename").click(); await h.settle(); };
+
+  await openRename();
+  const input = dialog().querySelector("input[type='text']");
+  assert.equal(input.value, "p1", "输入框预填当前 id");
+  h.setInput(input, "bad id!");
+  confirm().click();
+  await h.settle();
+  assert.equal(h.calls.length, 1, "非法 id 不发请求");
+  assert.ok(dialog(), "校验失败时弹窗保留");
+  assert.match(dialog().querySelector(".mm-dialog-error").textContent, /仅含字母/);
+
+  h.setInput(input, "p1");
+  confirm().click();
+  await h.settle();
+  assert.equal(h.calls.length, 1, "id 未变化不发请求");
+  assert.equal(dialog(), null, "无改动直接关窗");
+
+  await openRename();
+  const input2 = dialog().querySelector("input[type='text']");
+  h.setInput(input2, "p1-new");
+  const enter = new h.window.Event("keydown", { bubbles: true });
+  enter.key = "Enter";
+  input2.dispatchEvent(enter);
+  await h.settle();
+  const rename = h.lastPending("models.provider.rename");
+  assert.deepEqual(j(rename.args), { providerId: "p1", newProviderId: "p1-new", baseFingerprint: "fp-1" });
+  rename.settled = true;
+  rename.resolve({ fingerprint: "fp-2" });
+  await h.settle();
+  h.flushGet({ fingerprint: "fp-2", providers: [{ ...provider, id: "p1-new" }] });
+  await h.settle();
+  assert.match(h.root().textContent, /已将供应商「p1」重命名为「p1-new」/);
+  const navIds = () => [...h.root().querySelectorAll(".mm-nav-id")].map((node) => node.textContent);
+  assert.deepEqual(navIds(), ["p1-new"], "导航只剩新 id");
+  assert.equal(h.detail().querySelector(".mm-form input[type='text']").value, "https://edited.example.com/v1", "未保存编辑随新 id 保留");
   h.window.close();
 });
 

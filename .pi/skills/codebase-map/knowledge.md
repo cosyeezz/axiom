@@ -413,6 +413,11 @@
 - 修复：src/atomic-write.js 使用唯一临时文件，对 EPERM/EACCES/EBUSY 最多重试6次（共1.575秒等待），永久失败保留目标原文件并清理本次临时文件；sessions.persist 所有调用共用。
 - 防再犯：tests/atomic-write.test.js 注入占用与永久失败，检查成功恢复、旧文件不丢和非占用错误不重试；禁止先删目标来绕过 rename。
 
+### 2026-09-13 SQLite 加载早于安装版本检查
+- 根因：install → service → database 静态导入 node:sqlite，旧 Node 在 nodeOk 检查前就报未知内置模块；npm engines 默认只警告。
+- 修复：src/database.js 在 createRequire 加载 SQLite 前统一校验版本，所有入口共用；install.sh/ps1 同步最低版本提示。
+- 防再犯：tests/install.test.js 子进程模拟旧 Node，并拦截 SQLite 加载，覆盖安装、守护及直接启动入口；仅改动态导入但不前置检查无效。
+
 ### 2026-09-12 SQLite 替代临时 JSON 保存修复
 - 最终决策：前述 atomic-write 临时方案已移除，会话管理改用 database.js SQLite，Pi JSONL 保留历史。迁移必须逐文件标记，坏文件修复后可重试；JSONL 缺失跳过恢复，禁止静默创建空会话覆盖记录。
 - 防再犯：Node 22.5–22.12 无标志不能加载 node:sqlite，安装要求22.13+（22.x）或24+；Windows 测试清理前须关闭数据库。数据库/迁移/凭据/守护回归及全量275项验证通过（1跳过）。
@@ -432,6 +437,22 @@
 - 根因：`workspace.browse` 与 `files.browse` 的 `query` 只在当前层用 `entry.name.includes()` 子串过滤，既不递归也不模糊；`app.js` 在 `public/` 里，根层永远匹配不到。
 - 修复：src/sessions.js 抽出 `fuzzyHit()`/`matchRank()` 与 BFS `searchEntries()`，`query` 非空时递归搜索当前 `path` 子树（跳过 `.git`/`node_modules`/符号链接）、只匹配名称、按匹配质量排序后一次返回（不分页，上限 60 条、目录上限 400）；`workspace.browse` 增加 `query`，前端把 `@` 后最后一段当 `query` 发出。
 - 防再犯：tests/session-flow.test.js、tests/workspace-picker.test.js 断言递归与模糊（`appjs` → `src/deep/nested-app.js`）；tests/app.test.js 的 workspace.browse 桩件按 `req.query` 返回根目录没有的 `src/app.js`，保证「根层没有也能命中」这条回归；改搜索前先直连 `Sessions.browse()` 在真实工作空间量耗时，别凭感觉加索引/防抖。
+
+### 2026-09-13 运行中吸底滚动被自己补发的 scroll 事件停掉
+- 症状：会话运行中自动吸底会突然停下，之后只能手动滚到最底部才短暂恢复；子代理面板同样如此。
+- 根因：onscroll 用 `scrollHeight - scrollTop - clientHeight < 80` 无条件重算跟随。程序补底写入的 scrollTop 要等下一帧的 scroll steps 才派发 scroll 事件，而同步追加的工具记录/流式正文已经把内容撑高超过 80px，事件里的距离是「旧 scrollTop + 新 scrollHeight」，于是被判成用户离开底部；暂停后内容继续增高，用户永远追不上 80px 阈值。
+- 修复：public/app.js 的 `readFollow()` 只承认用户意图（wheel/touch/keydown/pointerdown 的 200ms 窗口）与无意图向上位移可以暂停，贴底一律恢复；滚动事件不再参与计算布局。内容增高改由内容观察器（`watchGrowth`/ResizeObserver）兜底补底，覆盖图片解码、折叠展开等不经过 scrollLatest 的路径。
+- 防再犯：tests/app.test.js 用带限位的 scrollTop getter 模拟真实浏览器贴底，断言“内容增高后补发的 scroll 事件不暂停吸底”（把 readFollow 改回 `atLatest` 单条件即失败）；tests/autoscroll-ui.py 在真实 Chromium + conversation-preview 里重复同样场景。JSDOM 不限位 scrollTop，写这类测试必须自己限位，否则距离算负、假通过。
+### 2026-09-13 摘要列表稀疏与全局样式串用
+- 根因：summary-meta 使用 header 继承顶栏高度与缩进；settings-body p 覆盖摘要正文。
+- 修复：style.css 隔离时间行尺寸、限定弹窗直属 header、提高摘要正文选择器精度。
+- 防再犯：tests/summary-compact.test.js 核对计算样式；标题栏保持64px，摘要时间行使用自然高度。
+
+### 2026-09-13 供应商未设置协议被表单默认值覆盖
+- 症状：选择不设置并保存后显示 OpenAI，再次保存可能误写协议。
+- 根因：providerForm 对已有配置和新建模板共用 openai-completions 回退。
+- 修复：public/model-manager.js 仅新建使用模板默认值，已有配置缺失 api 回显空值。
+- 防再犯：tests/model-manager.test.js 覆盖清除、回读、再次保存、刷新与新建模板；默认值只用于创建，不用于解释缺失的已保存字段。
 
 ### 2026-09-13 SQLite 拆表后的事务与失败重试
 - 根因：实体删除内部 BEGIN 与会话批量保存嵌套会抛事务错误；增量失败不能靠下一次全量快照补救；懒加载替换元数据对象会漏掉失败改名队列。
