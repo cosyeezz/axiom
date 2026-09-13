@@ -18,7 +18,7 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  */
 const MODULE_INFO = {
   "src/session-memory.js": "标题与增量摘要登记、触发复盘、委派背景与被动进度",
-  "src/memory-policy.js": "主子代理摘要规则与环境配置校验",
+  "src/memory-policy.js": "主子代理摘要规则与配置页参数校验",
   "tests/memory-policy.test.js": "摘要默认提示词、配置和非法值回归",
   "public/memory-tags.js": "主子代理共享简单标签提取与流式显示过滤",
   "tests/session-memory.test.js": "摘要时序、被动进度、标题保护与JSON恢复回归",
@@ -49,6 +49,9 @@ const MODULE_INFO = {
   "src/pi.js": "createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）",
   "src/retry.js": "模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续",
   "src/compaction.js": "后台独立摘要、token/占比阈值、快照校验与 turn 安全提交",
+  "tests/session-persistence.test.js": "密集会话保存顺序与完整性回归",
+  "src/database.js": "共享 SQLite 存储、WAL 与迁移标记",
+  "src/pi-model-storage.js": "模型与凭据 SQLite 权威存储、Pi 派生兼容文件",
   "src/sessions.js": "Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化",
   "src/server.js": "createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发",
   "src/protocol.js": "zod 协议：selection / command 判别联合（消息类型见 L3）",

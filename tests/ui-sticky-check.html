@@ -1,0 +1,62 @@
+<!doctype html>
+<!-- 独立 UI 检查页：验证子代理 task-dialog 内 sticky 叠层已禁用，且主输出保持 sticky。
+     手动打开或无头验证：
+     chrome --headless=new --dump-dom "file:///<repo>/tests/ui-sticky-check.html" | grep check-result -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>UI sticky check</title>
+<link rel="stylesheet" href="../public/style.css">
+<style> .filler { height: 600px; } </style>
+</head>
+<body>
+<!-- 主输出副本：sticky 行为必须保留 -->
+<main id="output">
+  <details class="call-group" open id="main-call-group">
+    <summary><span class="call-preview"><div class="call-preview-row"><div class="activity-line" data-state="running"><span class="activity-icon" data-icon="waiting"></span><span class="activity-label">Working</span></div></div></span></summary>
+    <div class="call-list">
+      <details class="thinking-record" open id="main-thinking"><summary><div class="activity-line" data-state="stopped"><span class="activity-label">thinking</span></div></summary><div class="markdown thinking-content">…</div></details>
+      <div class="filler"></div>
+    </div>
+  </details>
+</main>
+
+<!-- 子代理对话框副本：sticky 必须禁用、Working 条不得为黑底 -->
+<dialog class="task-dialog" open data-status="running">
+  <div class="task-top"><header><h2>subagent</h2></header></div>
+  <div class="task-body" id="dialog-body">
+    <h3>任务</h3>
+    <pre class="task-description">demo</pre>
+    <details class="task-system-prompt" open id="dialog-sysprompt"><summary>系统提示词（运行时）</summary><pre>…</pre></details>
+    <details class="call-group" open id="dialog-call-group">
+      <summary><span class="call-preview"><div class="call-preview-row"><div class="activity-line" data-state="running"><span class="activity-icon" data-icon="waiting"></span><span class="activity-label">Working</span></div></div></span></summary>
+      <div class="call-list">
+        <details class="thinking-record" open id="dialog-thinking"><summary><div class="activity-line" data-state="stopped"><span class="activity-label">thinking</span></div></summary><div class="markdown thinking-content">…</div></details>
+        <details class="tool-record" open id="dialog-tool"><summary><div class="tool-activity" data-state="running"><span class="activity-icon"></span><span class="activity-label">Read</span><span class="tool-target">a.js</span></div></summary><div class="tool-detail">…</div></details>
+        <div class="filler"></div>
+      </div>
+    </details>
+    <div class="filler"></div>
+  </div>
+</dialog>
+
+<pre id="check-result">PENDING</pre>
+<script>
+const checks = [
+  ['dialog call-group summary 不再 sticky', getComputedStyle(document.getElementById('dialog-call-group').firstElementChild).position, 'static'],
+  ['dialog thinking-record summary 不再 sticky', getComputedStyle(document.getElementById('dialog-thinking').firstElementChild).position, 'static'],
+  ['dialog tool-record summary 不再 sticky', getComputedStyle(document.getElementById('dialog-tool').firstElementChild).position, 'static'],
+  ['dialog task-system-prompt summary 不再 sticky', getComputedStyle(document.getElementById('dialog-sysprompt').firstElementChild).position, 'static'],
+  ['dialog Working 条无黑底', getComputedStyle(document.getElementById('dialog-call-group').firstElementChild).backgroundColor, 'rgba(0, 0, 0, 0)'],
+  ['主输出 call-group summary 保持 sticky', getComputedStyle(document.getElementById('main-call-group').firstElementChild).position, 'sticky'],
+  ['主输出 thinking-record summary 保持 sticky', getComputedStyle(document.getElementById('main-thinking').firstElementChild).position, 'sticky'],
+];
+document.getElementById('dialog-body').scrollTop = 40; // 触发滚动，确认无遮挡层
+const lines = checks.map(([name, got, want]) => `${got === want ? 'PASS' : 'FAIL'}  ${name}  (got: ${got}, want: ${want})`);
+const ok = checks.every(([, got, want]) => got === want);
+lines.unshift(ok ? 'ALL PASS' : 'HAS FAIL');
+document.getElementById('check-result').textContent = lines.join('\n');
+document.title = ok ? 'CHECK-PASS' : 'CHECK-FAIL';
+</script>
+</body>
+</html>

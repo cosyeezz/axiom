@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { chmod, copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { rm, writeFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { dirname, join } from "node:path";
+import { canonicalModelsJson } from "./pi-model-storage.js";
 import { modelConfigIn, providerConfigIn } from "./protocol.js";
 
 // SDK 0.85.1 未公开导出 ModelConfig（models.json schema 校验器），从实际安装位置
@@ -20,9 +20,9 @@ try {
   sdkResolveConfigValue = undefined;
 }
 
-// pi 自定义供应商/模型（~/.pi/agent/models.json）的安全编辑 + 全局收藏。
+// pi 自定义供应商/模型的安全编辑 + 全局收藏：权威数据在 SQLite（pi-model-storage），
+// 本模块只负责协议语义（指纹乐观锁、合并规则、脱敏、SDK 校验闸门），不再直接读写文件。
 // 协议：docs/model-config-protocol.md。服务端永不读取/回显/记录密钥明文。
-const EMPTY_FINGERPRINT = createHash("sha256").update("").digest("hex");
 const digest = (raw) => createHash("sha256").update(raw).digest("hex");
 const LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const FAVORITE_GROUPS = ["provider", "model", "thinking"];
@@ -243,15 +243,9 @@ function parseDiscoverBody(api, body) {
   return { models, truncated: false };
 }
 
-async function readFavorites(path) {
-  let parsed;
-  try {
-    parsed = JSON.parse(await readFile(path, "utf8"));
-  } catch (error) {
-    if (error.code === "ENOENT") return Object.fromEntries(FAVORITE_GROUPS.map((group) => [group, []]));
-    if (error instanceof SyntaxError) throw new Error(`收藏文件损坏（${path}）：${error.message}`);
-    throw error;
-  }
+// 收藏存 SQLite（models/favorites）；读取时归一化：过滤非法、去重、截断到上限，
+// 与旧文件语义一致；库内值只可能由本模块写入，结构异常一律回退空表。
+function normalizeFavorites(parsed) {
   return Object.fromEntries(
     FAVORITE_GROUPS.map((group) => {
       const list = Array.isArray(parsed?.[group]) ? parsed[group] : [];
@@ -260,13 +254,7 @@ async function readFavorites(path) {
   );
 }
 
-export function createModelsService({
-  factory,
-  modelsPath = join(getAgentDir(), "models.json"),
-  favoritesPath,
-  discoverTimeoutMs = 15_000,
-  discoverFetch,
-}) {
+export function createModelsService({ factory, storage, discoverTimeoutMs = 15_000, discoverFetch }) {
   // 单进程内串行化：配置写与收藏写共用一条 promise 链，避免读-改-写交错。
   let chain = Promise.resolve();
   const enqueue = (run) => {
@@ -277,95 +265,55 @@ export function createModelsService({
     );
     return task;
   };
-  const readRaw = async () => {
-    try {
-      return await readFile(modelsPath, "utf8");
-    } catch (error) {
-      if (error.code === "ENOENT") return null;
-      throw error;
-    }
-  };
+  // 权威配置的指纹：对规范序列化做摘要；权威为空与旧「文件缺失」同语义（空配置）。
+  const fingerprintOf = (config) => digest(canonicalModelsJson(config));
 
   async function get() {
-    const content = await readRaw();
+    const config = storage.readConfig();
     const result = {
-      fingerprint: content === null ? EMPTY_FINGERPRINT : digest(content),
-      path: modelsPath,
+      fingerprint: fingerprintOf(config),
+      path: storage.compatPath,
       providers: [],
       catalog: factory.catalog(),
     };
-    if (content === null) return result;
-    let config;
-    try {
-      config = JSON.parse(content);
-    } catch {
-      // 不回传 error.message：V8 的 JSON SyntaxError 可能附带文件原文片段（密钥风险）。
-      result.parseError = "models.json 不是有效 JSON，无法展示当前配置";
-      return result;
-    }
-    if (!config || typeof config !== "object" || Array.isArray(config)) {
-      result.parseError = "models.json 结构无效：顶层必须是对象";
-      return result;
-    }
+    // 导入期告警只在权威配置为空时展示：一旦用户开始配置，旧文件的问题不再 relevant。
+    const imported = storage.importErrors();
+    if (!Object.keys(config.providers ?? {}).length && imported.length)
+      result.parseError = imported.map(({ source, error }) => `${source}：${error}`).join("；");
     // providers 缺失视为空配置（与写路径一致）；仅类型不符才报 parseError。
     const providers = config.providers === undefined ? {} : config.providers;
     if (providers === null || typeof providers !== "object" || Array.isArray(providers)) {
-      result.parseError = "models.json 结构无效：providers 必须是对象";
+      result.parseError = "模型配置结构无效：providers 必须是对象";
       return result;
     }
     result.providers = Object.entries(providers).map(([id, provider]) => maskProvider(id, provider));
     return result;
   }
 
-  // 所有写命令：指纹乐观锁 → 解析（损坏/结构无效一律拒绝，绝不覆盖）→ 变更 →
-  // SDK 真实 schema 校验 → 备份 → 临时文件 + rename 原子写 → 刷新 SDK 模型目录。
+  // 所有写命令：指纹乐观锁 → 权威读取 → 变更 → SDK 真实 schema 校验 → 权威落库（含派生
+  // 兼容文件重建）→ 刷新 SDK 模型目录。全部写命令经 enqueue 串行，读-改-写不会交错；
+  // SQLite 单文件无「外部编辑」入口，旧双指纹复查窗口随文件写入一并消失。
   async function mutate(baseFingerprint, apply) {
-    const content = await readRaw();
-    const fingerprint = content === null ? EMPTY_FINGERPRINT : digest(content);
-    if (fingerprint !== baseFingerprint) throw new Error("models.json 已被外部修改，请刷新配置页后重试");
-    let config;
-    if (content === null) {
-      config = { providers: {} };
-    } else {
-      try {
-        config = JSON.parse(content);
-      } catch {
-        // 不带 error.message：可能包含文件原文片段（密钥风险）。
-        throw new Error("models.json 不是有效 JSON，已拒绝写入以避免覆盖损坏内容");
-      }
-      if (!config || typeof config !== "object" || Array.isArray(config))
-        throw new Error("models.json 结构无效，已拒绝写入以避免覆盖");
-      if (config.providers === undefined) config.providers = {};
-      else if (config.providers === null || typeof config.providers !== "object" || Array.isArray(config.providers))
-        throw new Error("models.json 结构无效（providers 必须是对象），已拒绝写入以避免覆盖");
-    }
+    const config = storage.readConfig();
+    if (fingerprintOf(config) !== baseFingerprint) throw new Error("模型配置已被外部修改，请刷新配置页后重试");
+    const providers = config.providers === undefined ? {} : config.providers;
+    if (providers === null || typeof providers !== "object" || Array.isArray(providers))
+      throw new Error("模型配置结构无效（providers 必须是对象），已拒绝写入以避免覆盖");
+    if (config.providers === undefined) config.providers = {};
     apply(config.providers);
-    const json = `${JSON.stringify(config, null, 2)}\n`;
     if (!sdkModelConfig) throw new Error("无法加载 Pi 配置校验器，已拒绝保存；请检查 SDK 版本");
-    await mkdir(dirname(modelsPath), { recursive: true });
-    const tmp = `${modelsPath}.tmp-${process.pid}-${Date.now()}`;
-    // 0600：models.json 可能含真实密钥，临时文件与备份一律收紧；rename 后正式文件继承该权限。
-    await writeFile(tmp, json, { mode: 0o600 });
+    // SDK 校验器只接受文件路径：规范序列化写入临时文件校验后即删（临时文件永不落密钥副本留盘）。
+    const tmp = `${storage.compatPath}.tmp-validate-${process.pid}-${Date.now()}`;
+    await writeFile(tmp, canonicalModelsJson(config), { mode: 0o600 });
     try {
-      if (sdkModelConfig) {
-        const check = await sdkModelConfig.load(tmp);
-        if (check.getError()) throw new Error("models.json 未通过校验，已放弃保存；请检查 Pi 模型参数与供应商配置");
-      }
-      // 复查指纹：堵住 SDK 校验期间的外部改动窗口期，rename 前最后一道锁。
-      const latest = await readRaw();
-      if ((latest === null ? EMPTY_FINGERPRINT : digest(latest)) !== baseFingerprint)
-        throw new Error("models.json 已被外部修改，请刷新配置页后重试");
-      if (content !== null) {
-        await copyFile(modelsPath, `${modelsPath}.bak`);
-        await chmod(`${modelsPath}.bak`, 0o600);
-      }
-      await rename(tmp, modelsPath);
-    } catch (error) {
+      const check = await sdkModelConfig.load(tmp);
+      if (check.getError()) throw new Error("模型配置未通过校验，已放弃保存；请检查 Pi 模型参数与供应商配置");
+    } finally {
       await rm(tmp, { force: true }).catch(() => {});
-      throw error;
     }
+    await storage.writeConfig(config);
     if (factory.refreshModels) await factory.refreshModels();
-    return { fingerprint: digest(json) };
+    return { fingerprint: fingerprintOf(config) };
   }
 
   const sameId = (id) => (entry) => entry && typeof entry === "object" && entry.id === id;
@@ -375,31 +323,20 @@ export function createModelsService({
 
   async function writeFavorites({ kind, key, favorite }) {
     validFavoriteKey(kind, key);
-    const store = await readFavorites(favoritesPath);
+    const store = normalizeFavorites(storage.getFavorites());
     const list = store[kind];
     const index = list.indexOf(key);
     if (favorite && index < 0) list.push(key);
     if (!favorite && index >= 0) list.splice(index, 1);
     for (const group of FAVORITE_GROUPS)
       if (store[group].length > FAVORITE_CAP) throw new Error(`${group} 收藏最多 ${FAVORITE_CAP} 条`);
-    await mkdir(dirname(favoritesPath), { recursive: true });
-    const tmp = `${favoritesPath}.tmp-${process.pid}-${Date.now()}`;
-    await writeFile(tmp, `${JSON.stringify({ version: 1, ...store }, null, 2)}\n`);
-    await rename(tmp, favoritesPath);
+    storage.setFavorites(store);
     return store;
   }
 
   // 在线拉取供应商模型列表（只读）：读已保存凭据/地址 → 单次 GET → 解析；不写盘、不触发 refreshModels/广播。
   async function discover(providerId) {
-    const content = await readRaw();
-    if (content === null) throw new Error(`Unknown provider：${providerId}`);
-    let config;
-    try {
-      config = JSON.parse(content);
-    } catch {
-      // 不带 error.message：可能含文件原文片段（密钥风险）。
-      throw new Error("models.json 不是有效 JSON，无法读取该供应商配置");
-    }
+    const config = storage.readConfig();
     const providers = config?.providers;
     if (providers === null || typeof providers !== "object" || Array.isArray(providers))
       throw new Error("models.json 结构无效（providers 必须是对象），无法读取该供应商配置");
@@ -516,7 +453,7 @@ export function createModelsService({
         }),
       );
     },
-    favorites: () => readFavorites(favoritesPath),
+    favorites: () => normalizeFavorites(storage.getFavorites()),
     // 单项 mutation：读-改-写单条，返回全量三组对象；不做整表替换，避免并发丢失。
     setFavorite: (request) => enqueue(() => writeFavorites(request)),
     handle(request) {

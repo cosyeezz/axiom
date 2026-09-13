@@ -140,7 +140,7 @@ export function createFilePicker(request) {
           locationsEl = el("div", { id: "file-picker-locations", class: "fp-locations" })),
         el("section", { class: "fp-main" },
           searchInput = el("input", {
-            id: "file-picker-search", type: "search", placeholder: "在当前目录搜索…", autocomplete: "off", "aria-label": "在当前目录搜索",
+            id: "file-picker-search", type: "search", placeholder: "搜索文件或文件夹（含子目录）…", autocomplete: "off", "aria-label": "搜索文件或文件夹",
             oninput: () => { clearTimeout(searchTimer); gen++; validDirectory = false; selected = null; busy(true); updateFooter(); searchTimer = setTimeout(reload, SEARCH_DEBOUNCE); },
             onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); clearTimeout(searchTimer); reload(); } },
           }),
@@ -224,9 +224,13 @@ export function createFilePicker(request) {
   // ---- 渲染 ----
 
   function row(entry) {
-    const btn = el("button", { type: "button", class: "fp-row", title: entry.name, ...(entry.directory ? {} : { "aria-pressed": "false" }) },
-      fileIcon(entry),
-      el("span", { class: "fp-name" }, entry.name ?? entry.path));
+    // 搜索命中来自递归结果，附上相对目录，避免父子目录里的同名文件无法区分。
+    const at = String(entry.path ?? "").lastIndexOf("/");
+    const dir = lastCall?.query && at > 0 ? entry.path.slice(0, at) : "";
+    const name = el("span", { class: "fp-name" }, entry.name ?? entry.path);
+    if (dir) name.append(el("span", { class: "fp-dir" }, `${dir}/`));
+    const btn = el("button", { type: "button", class: "fp-row", title: dir ? entry.path : entry.name, ...(entry.directory ? {} : { "aria-pressed": "false" }) },
+      fileIcon(entry), name);
     if (entry.directory) {
       btn.append(el("span", { class: "fp-row-arrow", "aria-hidden": "true" }, "›"));
       btn.addEventListener("click", () => navigate(entry.path));

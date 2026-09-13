@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MEMORY_SUMMARY_LIMITS } from "./memory-policy.js";
 
 const id = z.string().min(1);
 const capabilities = z.object({
@@ -71,6 +72,13 @@ export const selection = z.object({
   thinking: thinking.unwrap().nullable().optional(),
   subagentThinking: thinking.unwrap().nullable().optional(),
 });
+// 摘要记忆参数：独立命令读写（SQLite 持久化，不进 selection / JSON 默认配置体系）。
+// 边界与 memory-policy.js 共用 MEMORY_SUMMARY_LIMITS，规则验证一致。
+export const memorySummary = z.object({
+  mainTurns: z.number().int().min(MEMORY_SUMMARY_LIMITS.turns[0]).max(MEMORY_SUMMARY_LIMITS.turns[1]),
+  subagentTurns: z.number().int().min(MEMORY_SUMMARY_LIMITS.turns[0]).max(MEMORY_SUMMARY_LIMITS.turns[1]),
+  maxChars: z.number().int().min(MEMORY_SUMMARY_LIMITS.chars[0]).max(MEMORY_SUMMARY_LIMITS.chars[1]),
+}).strict();
 // 具名会话预设：沿用 selection schema；trustProject/useDefaults 不在 schema 内，保存即剥离。
 export const preset = z.object({
   id: z.string().uuid(),
@@ -181,7 +189,8 @@ export const command = z.discriminatedUnion("type", [
     })
     .strict(),
   z.object({ id, type: z.literal("workspace.reveal"), sessionId: id }).strict(),
-  z.object({ id, type: z.literal("workspace.browse"), sessionId: id, path: z.string().max(4096).default("") }).strict(),
+  // query 非空时按名称模糊递归搜索整个工作空间（@ 补全用）。
+  z.object({ id, type: z.literal("workspace.browse"), sessionId: id, path: z.string().max(4096).default(""), query: z.string().max(200).default("") }).strict(),
   // 统一文件浏览：sessionId 存在则限定工作空间（相对路径），否则浏览主机绝对目录（工作空间选择器）。
   z
     .object({
@@ -249,6 +258,8 @@ export const command = z.discriminatedUnion("type", [
   }).strict(),
   z.object({ id, type: z.literal("session.defaults.get"), cwd: workspace }).strict(),
   selection.extend({ id, type: z.literal("session.defaults.configure"), cwd: workspace }).strict(),
+  z.object({ id, type: z.literal("memory.summary.get") }).strict(),
+  z.object({ id, type: z.literal("memory.summary.configure"), summary: memorySummary }).strict(),
   z.object({ id, type: z.literal("session.presets.list") }).strict(),
   z
     .object({

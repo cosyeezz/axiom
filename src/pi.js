@@ -6,7 +6,7 @@ import {
 import { capabilityLoader, discoverCapabilities, refreshProjectSkills } from "./capabilities.js";
 import { stripMemoryTags } from "../public/memory-tags.js";
 import { createBackgroundCompaction, entryIdFor, normalizeCompaction, summarizedEntryIds } from "./compaction.js";
-import { SUMMARY_DELEGATE, SUMMARY_REMINDER, memoryPolicy } from "./memory-policy.js";
+import { SUMMARY_DELEGATE, SUMMARY_REMINDER } from "./memory-policy.js";
 import { createAutoRetry } from "./retry.js";
 import { createJiti } from "jiti";
 const { getSupportedThinkingLevels } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai/compat");
@@ -93,7 +93,7 @@ const TITLE_INSTRUCTION = "另在本次回复开头单独一行输出<title>不�
 
 // 会话记忆接入：context 钩子在每次 LLM 请求（含同一次 prompt 的工具后续轮）实时取背景，
 // 工具后新产生的子代理进度因此能进入下一次请求；titleRequest 的标题指令只随当次首个请求注入一次；
-// 每满 N 个累计 turn（主 3/子 6，建会话时由 memory-policy 定死，逐请求不重读）在下一次请求前附加一次
+// 每满 N 个累计 turn（默认主 3/子 6，建会话时由 memory-policy 按持久化配置定死，逐请求不重读）在下一次请求前附加一次
 // [摘要提醒]（不额外发请求，lastReminderTurn 记录已提醒的 turn，重试同一请求不会重发），
 // 真正注入时回调 onTrigger 供复盘；委派触发不在此层：模型按系统提示词随 delegate 回复自带正文标签，
 // 由 onReply 在 message_end（先于 delegate 执行）登记。
@@ -127,18 +127,18 @@ function memoryExtension(state, memory, policy) {
   };
 }
 
-export async function createPiFactory({ cwd, model: requested }) {
+export async function createPiFactory({ cwd, model: requested, modelRuntimeOptions }) {
   // 模型目录可被模型配置页刷新（models.json 写入后）：available 用可变绑定，
   // 旧会话的 configure/压缩模型校验才能看到新目录；已绑定的模型对象本身不热更新（SDK 行为）。
-  let modelRuntime = await ModelRuntime.create();
+  let modelRuntime = await ModelRuntime.create(modelRuntimeOptions);
   let available = await modelRuntime.getAvailable();
   const startup = await discoverCapabilities(cwd, { loadAdapter: false });
   const defaultKey = requested || `${startup.settingsManager.getDefaultProvider()}/${startup.settingsManager.getDefaultModel()}`;
   const factory = async (customTools = [], selection = {}) => {
     const workspace = selection.cwd || cwd;
     const memory = selection.memory || null;
-    // 策略在建会话时捕获一次并校验环境变量（非法直接失败），逐请求不重读，避免中途漂移。
-    const policy = memory ? memoryPolicy(memory.role) : null;
+    // 策略建会话时随记忆装配捕获一次（memoryHooks 计算，含配置校验），逐请求不重读，避免中途漂移。
+    const policy = memory?.policy ?? null;
     const memoryState = memory ? { turn: memory.turn || 0, pending: null, lastReminderTurn: 0 } : null;
     // 启动不依赖模型；每次建会话从最新目录选择，网页首次配置后无需重启。
     const key = selection.model || defaultKey;
@@ -173,7 +173,7 @@ export async function createPiFactory({ cwd, model: requested }) {
     }
     const { session } = await createAgentSession({
       cwd: workspace,
-      modelRuntime: await ModelRuntime.create(),
+      modelRuntime: await ModelRuntime.create(modelRuntimeOptions),
       model: selected,
       thinkingLevel: selection.thinking,
       settingsManager,
@@ -339,7 +339,7 @@ export async function createPiFactory({ cwd, model: requested }) {
   factory.capabilities = async (workspace = cwd, trustProject = false) =>
     (await discoverCapabilities(workspace, { trustProject, loadAdapter: false })).catalog;
   factory.refreshModels = async () => {
-    modelRuntime = await ModelRuntime.create();
+    modelRuntime = await ModelRuntime.create(modelRuntimeOptions);
     available = await modelRuntime.getAvailable();
     return factory.catalog();
   };

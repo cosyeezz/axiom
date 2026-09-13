@@ -10,6 +10,7 @@ test("project skill defaults stay scoped, survive restart and load through direc
   const root = await mkdtemp(join(tmpdir(), "axiom-project-skills-"));
   const a = join(root, "a"), b = join(root, "b"), alias = join(root, "alias"), agentDir = join(root, "agent");
   const defaults = join(root, "defaults.json");
+  let sessions, restored, legacy;
   try {
     for (const base of [join(a, ".pi"), join(b, ".pi"), agentDir]) {
       await mkdir(join(base, "skills", "sample"), { recursive: true });
@@ -21,7 +22,7 @@ test("project skill defaults stay scoped, survive restart and load through direc
     factory.cwd = a;
     factory.catalog = () => [];
     factory.capabilities = async (cwd) => (await discoverCapabilities(cwd, { agentDir, loadAdapter: false })).catalog;
-    const sessions = new Sessions(factory, defaults);
+    sessions = new Sessions(factory, defaults);
     const catalog = await factory.capabilities(alias);
     assert.equal(catalog.cwd, await realpath(a));
     assert.equal(catalog.skills.filter((s) => s.scope === "project").length, 1);
@@ -30,9 +31,10 @@ test("project skill defaults stay scoped, survive restart and load through direc
     assert.deepEqual((await sessions.workspaceDefaults(a)).capabilities, selected);
     const globalIds = catalog.skills.filter((s) => s.scope === "global").map((s) => s.id);
     assert.deepEqual((await sessions.workspaceDefaults(b)).capabilities.skills, globalIds);
-    const disk = JSON.parse(await readFile(defaults, "utf8"));
+    // 默认配置在共享 SQLite 库（不再写磁盘 JSON）。
+    const disk = sessions.database.get("defaults", "defaults");
     assert.deepEqual(disk.capabilities.skills, globalIds);
-    const restored = new Sessions(factory, defaults);
+    restored = new Sessions(factory, defaults);
     await restored.loadDefaults();
     assert.deepEqual((await restored.workspaceDefaults(alias)).capabilities, selected);
     const resources = await discoverCapabilities(alias, { agentDir, loadAdapter: false });
@@ -43,7 +45,7 @@ test("project skill defaults stay scoped, survive restart and load through direc
       assert(loader.getSkills().skills.some((s) => s.filePath === catalog.skills.find((s) => s.scope === "project").id));
     } finally { loader.getExtensions().runtime.invalidate(); }
     // Legacy defaults must not poison another project's editor or overwrite project A's selection.
-    const legacy = new Sessions(factory);
+    legacy = new Sessions(factory);
     legacy.defaultSelection.capabilities = { ...selected, skills: selected.skills.map((id) =>
       id === catalog.skills.find((s) => s.scope === "project").id ? join(alias, ".pi/skills/sample/SKILL.md") : id) };
     assert.deepEqual((await legacy.workspaceDefaults(alias)).capabilities, selected);
@@ -52,5 +54,5 @@ test("project skill defaults stay scoped, survive restart and load through direc
     assert.deepEqual((await legacy.workspaceDefaults(a)).capabilities, selected);
     await restored.configureDefaults(b, { thinking: "off" });
     assert.deepEqual((await restored.workspaceDefaults(a)).capabilities, selected);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally { await sessions?.close(); await restored?.close(); await legacy?.close(); await rm(root, { recursive: true, force: true }); }
 });

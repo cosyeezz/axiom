@@ -78,6 +78,7 @@
               <button type="button" id="add-image" class="icon-button" title="上传图片，也可在输入框粘贴截图" aria-label="上传图片"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h18v18H3ZM3 17l6-6 4 4 3-3 5 5M15 7h2"/></svg></button>
               <input id="image-files" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
               <div id="context-chips" aria-label="待发送上下文"></div>
+              <span id="task-timer" role="timer" aria-label="当前任务累计运行时间" hidden><span class="task-timer-dot" aria-hidden="true"></span><span id="task-timer-value">0s</span></span>
             </div>
             <div id="context-menu" popover>
               <button type="button" data-context="skill" title="加载技能指令"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 3 6 6 3-6 3-3 6-3-6-6-3 6-3Z"/></svg><span>Skill</span><span class="context-chevron" aria-hidden="true">›</span></button>
@@ -122,6 +123,10 @@
                 ><button type="submit" class="secondary" id="send-steer" data-queue="steer" title="在下一个可介入节点补充指令，不中断正在运行的工具" hidden>Steer</button><button type="submit" class="secondary" id="send-followup" data-queue="followUp" title="等待当前这一轮结束后发送，不影响当前执行" hidden>Follow-up</button><button id="send">Send</button>
               </div>
               <div id="session-runtime" class="runtime-summary" role="status" aria-live="polite"></div>
+              <div class="mobile-controls">
+                <span id="mobile-runtime" aria-live="polite"></span>
+                <button type="button" id="mobile-expand" class="secondary" aria-expanded="false" aria-controls="session-runtime">展开</button>
+              </div>
             </form>
             <div class="composer-footer" id="composer-help">
               <span>/ Skill · @ 文件/文件夹 · Enter 发送 · Shift / Ctrl / ⌘ + Enter 换行 · Ctrl+Z 撤销 · Ctrl+C 清空文字</span
@@ -221,6 +226,15 @@
           <h3>会话能力</h3>
           <p>与下方选择实时同步；自动保存成功后用于新会话。</p>
           <p id="defaults-preview"></p>
+        </section>
+        <section aria-labelledby="memory-summary-title">
+          <h3 id="memory-summary-title">摘要记忆</h3>
+          <div class="selectors settings-selectors">
+            <label for="memory-main-turns"><span>主代理每</span><input type="number" id="memory-main-turns" min="1" max="100" step="1" aria-describedby="memory-summary-help"><span>轮提醒一次摘要</span></label>
+            <label for="memory-subagent-turns"><span>子代理每</span><input type="number" id="memory-subagent-turns" min="1" max="100" step="1" aria-describedby="memory-summary-help"><span>轮提醒一次摘要</span></label>
+            <label for="memory-max-chars"><span>单条摘要小于</span><input type="number" id="memory-max-chars" min="2" max="100" step="1" aria-describedby="memory-summary-help"><span>字</span></label>
+          </div>
+          <p id="memory-summary-help">达到轮次时，系统在下一次模型请求前自动注入一条[摘要提醒]，模型回复末尾的 axiom_summary 标签会进入工作记忆。保存后新建的会话立即生效；已打开的会话保持创建时的设置，服务重启后生效。</p>
         </section>
         <section aria-labelledby="subagent-title" hidden>
           <h3 id="subagent-title">子代理</h3>

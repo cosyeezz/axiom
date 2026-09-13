@@ -22,7 +22,7 @@ test("memory hooks order, turn numbering, per-request context, one-shot title an
       import { createServer } from 'node:http';
       import { join } from 'node:path';
       import { createPiFactory } from './src/pi.js';
-      import { SUMMARY_DELEGATE, SUMMARY_REMINDER, SUMMARY_SYSTEM_PROMPT } from './src/memory-policy.js';
+      import { SUMMARY_DELEGATE, SUMMARY_REMINDER, SUMMARY_SYSTEM_PROMPT, memoryPolicy } from './src/memory-policy.js';
       import { defineTool } from '@earendil-works/pi-coding-agent';
 
       const events = [];
@@ -35,6 +35,7 @@ test("memory hooks order, turn numbering, per-request context, one-shot title an
       const memory = {
         role: 'main',
         turn: 0,
+        policy: memoryPolicy('main'), // 真实装配由 memoryHooks 提供；此处用缺省策略模拟
         onReply({ message, turn }) { events.push(['reply', turn, textOf(message)]); },
         onTurn({ toolResults, turn }) { events.push(['turn', turn, toolResults.length]); },
         onTrigger(data) { triggers.push(data); },
@@ -174,6 +175,7 @@ test("memory hooks order, turn numbering, per-request context, one-shot title an
         const subTriggers = [];
         const subMemory = {
           role: 'subagent', turn: 0,
+          policy: memoryPolicy('subagent'),
           onReply() {}, onTurn() {},
           onTrigger(data) { subTriggers.push(data); },
           context() { subContextCalls += 1; return ''; },
@@ -201,11 +203,10 @@ test("memory hooks order, turn numbering, per-request context, one-shot title an
           await subAgent.dispose();
         }
 
-        // —— 环境变量覆盖：建会话时捕获，interval 1 + maxChars 29 逐请求不变 ——
-        process.env.AXIOM_MAIN_SUMMARY_TURNS = '1';
-        process.env.AXIOM_SUMMARY_MAX_CHARS = '29';
+        // —— 持久化配置随记忆装配：建会话捕获，interval 1 + maxChars 29 逐请求不变 ——
+        const policy = memoryPolicy('main', { mainTurns: 1, maxChars: 29 });
         const triggers2 = [];
-        const envMemory = { role: 'main', turn: 0, onReply() {}, onTurn() {},
+        const envMemory = { role: 'main', turn: 0, policy, onReply() {}, onTurn() {},
           onTrigger(data) { triggers2.push(data); }, context() { return ''; } };
         const envStart = requests.length;
         script = [{ text: 'a' }, { text: 'b' }];
@@ -223,14 +224,9 @@ test("memory hooks order, turn numbering, per-request context, one-shot title an
         assert.deepEqual(triggers2, [
           { turn: 2, interval: 1, maxChars: 29, prompt: SUMMARY_REMINDER, systemPrompt: SUMMARY_SYSTEM_PROMPT.replace('<30字', '<29字') },
         ]);
-        delete process.env.AXIOM_MAIN_SUMMARY_TURNS;
-        delete process.env.AXIOM_SUMMARY_MAX_CHARS;
 
-        // —— 非法环境配置在建会话时（任何模型请求前）即失败 ——
-        process.env.AXIOM_SUMMARY_MAX_CHARS = '1'; // 上限至少2
-        await assert.rejects(() => factory([probe], { memory: { role: 'main', turn: 0,
-          onReply() {}, onTurn() {}, onTrigger() {}, context() {} } }), /AXIOM_SUMMARY_MAX_CHARS/);
-        delete process.env.AXIOM_SUMMARY_MAX_CHARS;
+        // —— 非法配置在 memoryPolicy 计算时（建会话装配期）即失败，早于任何模型请求 ——
+        assert.throws(() => memoryPolicy('main', { maxChars: 1 }), /字数上限/);
         console.log('memory-ok');
       } finally {
         server.close();

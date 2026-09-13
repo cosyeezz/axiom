@@ -1,5 +1,24 @@
 # 开发记录
 
+## 2026-09-12 19:37 UTC 文件/文件夹搜索与 @ 补全：名称模糊匹配 + 工作空间递归
+- 原因：输入框上沿「＋」与 `@` 补全都只能在当前目录里按子串过滤名称，工作空间根目录只有 `public/` 这类目录名，输入 `@app` 或 `@apjs` 根本匹配不到 `public/app.js`，用户反馈「艾特的时候输入无法匹配」。
+- 实现：`src/sessions.js` 新增 `fuzzyHit()`（忽略大小写、字符按顺序出现即命中）与 `matchRank()`（完全相等 → 前缀 → 子串越靠前越好 → 子序列），`listFiles()` 在 `query` 非空时改走 BFS 递归搜索 `searchEntries()`：只匹配名称、不回读文件、跳过 `.git`/`node_modules`/符号链接，按匹配质量排序后一次返回（`nextOffset: null`），递归目录数封顶 400、单目录不可读只跳过；无搜索词时保持原目录优先排序 + 分页（每页 200）。`browse()`/`workspace.browse` 增加 `query` 参数（`protocol.js` 同步为 `query: z.string().max(200).default("")`），`app.js` 的 `@` 补全把最后一段作为 `query` 发给服务端，技能搜索（＋ 菜单与 `/` 补全）同样改为名称模糊、说明仍按子串。`file-picker.js` 搜索命中行右侧显示所在相对目录，避免深浅目录同名文件无法区分。
+- 涉及：src/{sessions,server,protocol}.js、public/{app,file-picker}.js、public/file-picker.css、tests/{session-flow,workspace-picker,app}.test.js、README.md、本日志与 codebase-map 索引。
+- 验证：session-flow / workspace-picker 改为断言递归 + 模糊 + 不分页（`query: "appjs"` 命中 `src/deep/nested-app.js`），app.test.js 新增 `@app` 命中根目录没有的 `src/app.js` 的回归用例；worktree 全量 `npm test` 258 项：257 通过、1 跳过、0 失败。直连 `Sessions.browse()` 在真实 Axiom 工作空间实测：`@app` 38ms 4 命中、`@apjs` 7ms、`@sessionMjs` 6ms，均按匹配质量把 `public/app.js`、`src/session-memory.js` 排在前。
+## 2026-09-12 手机阅读优先（桌面布局不变）
+- 原因：手机输入区和多层吸顶遮挡正文；用户要求信息最大化、单行输入、双数值状态及统一展开入口，不能影响桌面。
+- 修改：≤700px 默认折叠顶栏/模型/上下文工具/任务快捷列表；保留发送与安全操作、附件和错误。输入一行起步，限制自动增高与底栏最大占比；状态仅两个百分比，去操作指引与详情吸顶，跳转不浮遮。沿用 Linear token，不加依赖。
+- 涉及：public/{index.html,app.js,style.css}、tests/mobile-reading-ui.py、README.md、devlog.md、codebase-map 索引与知识库。
+- 复核决策：保留用户指定的统一展开入口（切会话先展开），转屏不重置展开选择；`:has()` 沿用项目既有现代浏览器要求，旧内核仍可通过展开移除引用。独立只读复核未发现桌面隔离问题。
+- 验证：Chromium 390×844、320×568、390×420、667×375；展开/收起、长输入和队列、页面无横向溢出；1440px 修改前后计算样式与坐标一致。npm test 258 项，257 通过、1 跳过。短视口非真实软键盘验收，未重启使用中的正式服务。
+
+## 2026-09-12 任务计时器（输入框「+」行最右端）
+- 原因：需要直观看到当前任务进行了多久；口径必须与侧栏绿点一致，停止后重新输入要继续累计而不是清零。
+- 实现：后端在 `session.state` / `task.state` 事件里按「会话执行中」累计 `elapsedMs`（进入 running 开表、离开结算），随会话 JSON 落盘，事件回执与 `sessions.list` 带 `elapsedMs` / `runningSince`；前端每秒重算并渲染，停止后定格。取消/关闭空闲会话也会发 cancelling，因此以 running 而非「非 idle」开表。绿点口径抽成 `pointStatus()`，`sessions.list` 与事件回执共用，计时与侧栏绿点永远同源。
+- 参考成熟实现：[OpenAI Codex 状态行](https://github.com/openai/codex) 的 pause/resume 计时与 `59s` / `1m 00s` / `1h 02m 03s` 紧凑格式；Claude Code 的「减少动态效果不应冻结计时」教训；`font-variant-numeric: tabular-nums` 防每秒跳动。不引入前端框架或额外依赖。
+- 涉及：src/sessions.js、public/{index.html,app.js,style.css}、tests/{task-timer,app}.test.js、README.md、本日志与 codebase-map 索引。
+- 验证：tests/task-timer.test.js 覆盖开表、结算、续跑累计、落盘恢复；tests/app.test.js 页面用例覆盖「无记录不占位、运行中累计、停止后定格、再次执行继续累加」。worktree 全量 `npm test` 256 项：255 通过、1 跳过、0 失败。Chromium 静态预览核对运行/停止两态配色、脉冲动画、`tabular-nums`、与「+」同排且右对齐、390px 无溢出（非真实会话端到端验收）。
+
 ## 2026-09-12 18:10 UTC 设置页签切换高度稳定
 - 原因：设置弹窗随内容长度改变高度，居中布局导致切换分类上下跳动。
 - 修复：固定 80dvh 高度，头部不收缩，分类与正文区域内部滚动并预留滚动条宽度；仅使用 CSS，保留 Linear surface/line/accent token，不影响其他弹窗。
@@ -712,3 +731,12 @@
 - README 同步分栏设计来源、只读拉取并勾选添加、思考收藏键与浏览器回归命令；reindex 登记新增测试。
 - tests/model-selection-preview.mjs 使用隔离供应商与 mock discoverFetch，并去除配置中的运行时回调，修复 structuredClone 导致预览无法连接。
 - 新增 tests/model-settings-ui.py：思考收藏刷新持久且不切换、拉取后仅保存勾选项、1440/390/320 布局；两份浏览器回归通过。全量 npm test：274 通过、1 跳过、0 失败。
+
+## 2026-09-12 SQLite 统一配置与管理
+- 原因：摘要 JSON 替换在 Windows 报 EPERM；用户要求跨平台配置页与 SQLite 权威存储，API Key 明文保存。
+- 内容：新增 database/pi-model-storage，迁移 sessions/model-config/remote/maint-state 的管理数据；main/pi/server 接线，摘要设置页、模型页文案与协议同步。保留 Pi JSONL，迁移按文件幂等、缺失历史不覆盖；Node 支持范围升为22.13+（22.x）或24+。
+- 验证：数据库、迁移、凭据真实 SDK、配置 UI、守护测试均有回归；全量最后一项守护时序测试首次失败、单独重跑15/15通过，最终全量复跑275项：274通过、0失败、1跳过。
+
+## 2026-09-12 22:40 — 模型设置合并最新 master
+- 原因：用户要求合并并推送；master 已迁移 SQLite，保留新存储实现并适配 discover 只读加载、收藏断言及隔离预览，保留分栏与勾选导入。涉及 src/model-config.js、public/model-manager.js、模型测试与预览、README、协议、索引；合并双方 devlog/knowledge 记录。
+- 验证：两份 Playwright 回归通过；全量最终 299 通过、1 跳过、0 失败。此前守护测试出现恢复时序断言与 Windows EBUSY（单独15/15通过），未为此次合并改动守护逻辑。

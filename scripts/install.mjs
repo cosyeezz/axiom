@@ -22,10 +22,10 @@ export const parseArgs = (argv = []) => {
   return opts;
 };
 
-// node >=22.5（package.json engines）
+// node 22.13+ LTS 或 24+（package.json engines）
 export const nodeOk = (version = process.versions.node) => {
   const [major, minor] = version.split(".").map(Number);
-  return major > 22 || (major === 22 && minor >= 5);
+  return major >= 24 || (major === 22 && minor >= 13);
 };
 
 export const openCommand = (platform = process.platform) =>
@@ -58,7 +58,7 @@ const probe = async (target) => {
 const ask = async (rl, question) => (await rl.question(`${question} [Y/n] `)).trim().toLowerCase() !== "n";
 
 export async function install(argv = process.argv.slice(2), io = console, isTTY = process.stdin.isTTY) {
-  if (!nodeOk()) throw new Error(`需要 Node.js >=22.5，当前 ${process.versions.node}，请升级后重试`);
+  if (!nodeOk()) throw new Error(`需要 Node.js 22.13+（22.x）或 24+，当前 ${process.versions.node}，请升级后重试`);
   if (existsSync(join(root, ".env.local"))) process.loadEnvFile(join(root, ".env.local"));
   const opts = parseArgs(argv);
   if (isTTY) {

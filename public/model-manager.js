@@ -1,4 +1,4 @@
-// 设置页「模型与供应商」面板：编辑 ~/.pi/agent/models.json 的自定义/覆盖供应商与模型。
+// 设置页「模型与供应商」面板：编辑 Axiom SQLite 中 的自定义/覆盖供应商与模型。
 // 协议见 docs/model-config-protocol.md v1：
 //   models.config.get → { fingerprint, path, parseError?, providers:[…], catalog:[…] }
 //   models.provider.save/delete、models.model.save/delete（baseFingerprint 防外部改动覆盖）
@@ -150,7 +150,7 @@ export function initModelManager({ root, request, onSaved }) {
       el("div", { class: "mm-head" },
         el("div", { class: "mm-head-text" },
           el("h3", {}, "模型与供应商"),
-          el("p", { class: "mm-path", title: "被编辑的配置文件" }, "models.json")),
+          el("p", { class: "mm-path", title: "配置存储位置" }, "Axiom SQLite")),
         el("div", { class: "mm-head-actions" },
           el("button", { type: "button", class: "secondary", onclick: () => void load() }, "刷新"),
           el("button", { type: "button", onclick: () => openDraft() }, "添加供应商"))),
@@ -183,13 +183,13 @@ export function initModelManager({ root, request, onSaved }) {
       const data = await request("models.config.get", {});
       if (token !== state.loadToken) return;
       state.loaded = true;
-      state.path = data.path || "models.json";
+      state.path = data.path || "Axiom SQLite";
       state.fingerprint = data.fingerprint || "";
       state.parseError = data.parseError || "";
       state.providers = Array.isArray(data.providers) ? data.providers : [];
       state.catalog = Array.isArray(data.catalog) ? data.catalog : [];
       if (!silent) clearAlert();
-      if (state.parseError) showAlert("warn", `models.json 不是有效 JSON，自定义条目暂不可编辑：${state.parseError}`,
+      if (state.parseError) showAlert("warn", `旧模型配置导入失败，请在此重新配置：${state.parseError}`,
         [{ label: "重新加载", onclick: () => void load() }]);
       pathLine().textContent = state.path;
       renderProviders();
@@ -218,7 +218,7 @@ export function initModelManager({ root, request, onSaved }) {
     } catch (error) {
       showAlert(isConflict(error) ? "warn" : "error",
         isConflict(error)
-          ? "models.json 已被外部修改（可能是 pi 或其他窗口），当前更改未写入。请重新加载后再编辑。"
+          ? "模型配置已被其他窗口修改，当前更改未写入。请重新加载后再编辑。"
           : `保存失败：${error.message || error}`,
         [{ label: "重新加载", onclick: () => void load() }]);
       if (button) { button.disabled = false; button.textContent = label; }
@@ -778,7 +778,7 @@ export function initModelManager({ root, request, onSaved }) {
     entry.saving = false;
     if (savedCount > 0) await load({ silent: true });
     if (conflict)
-      showAlert("warn", `models.json 已被外部修改：已写入 ${savedCount} 个模型，其余保持勾选未写入。请重新加载后重试。`,
+      showAlert("warn", `模型配置已被外部修改：已写入 ${savedCount} 个模型，其余保持勾选未写入。请重新加载后重试。`,
         [{ label: "重新加载", onclick: () => void load() }]);
     else if (failures.length)
       showAlert("error", `已添加 ${savedCount} 个模型，${failures.length} 个失败（保留勾选，可直接重试）：${failures.join("；")}`);

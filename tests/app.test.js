@@ -166,7 +166,10 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
             break;
           case "workspace.reveal": data = { opened: true }; break;
           case "workspace.browse":
-            data = { path: req.path, entries: req.path ? [{ name: "app.js", path: "src/app.js", directory: false }] : [{ name: "src", path: "src", directory: true }] };
+            // query 非空时模拟服务端：在整个工作空间内模糊搜索名称（app.js 不在根列表里）。
+            data = { path: req.path, entries: req.query
+              ? [{ name: "app.js", path: "src/app.js", directory: false }, { name: "src", path: "src", directory: true }].filter((entry) => entry.name.includes(req.query))
+              : req.path ? [{ name: "app.js", path: "src/app.js", directory: false }] : [{ name: "src", path: "src", directory: true }] };
             break;
           case "capabilities.list":
             data = { needsTrust: req.trustProject ? false : needsTrust || req.cwd === "C:\\untrusted", warnings: [], skills: [{ id: "skill-a", name: "Skill A", scope: "global" }, { id: "skill-b", name: "Skill B", scope: "project" }], mcp: [{ id: "browser", name: "Browser" }], plugins: [{ id: "search", name: "Search" }] };
@@ -527,6 +530,10 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     input("@src/app"); await settle(); completionKey("Enter");
     assert.equal($("context-chips").children.length, 1, "references deduplicate");
     $("context-chips").firstChild.click();
+    // 回归：根目录没有 app.js，@ 输入必须靠服务端在工作空间内递归模糊搜索才能命中。
+    input("@app"); await settle();
+    assert.match($("prompt-completion").textContent, /文件：src\/app\.js/);
+    completionKey("Escape"); input("");
     input("@src/app"); input("普通正文"); await settle();
     assert.equal($("prompt-completion").hidden, true, "late browse replies cannot reopen completion");
     input("/"); completionKey("Escape");
@@ -1342,7 +1349,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
             ];
             break;
           case "sessions.list":
-            data = [{ id: state.sessionId, title: state.title, cwd: state.cwd, status: "idle", updatedAt: Date.now() }];
+            data = [{ id: state.sessionId, title: state.title, cwd: state.cwd, status: "idle", elapsedMs: state.elapsedMs, runningSince: state.runningSince, updatedAt: Date.now() }];
             break;
           case "session.attach":
             data = state;
@@ -1601,6 +1608,27 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     assert.equal(lastPresetSave.selection.compaction.enabled, true, "compaction edits travel with the saved selection");
     assert.equal(lastPresetSave.selection.compaction.tokenThreshold, 70000);
     assert.equal(lastCreation, undefined, "saving a preset never creates a session");
+
+    // 任务计时：与「+」同行最右端，运行中累计、停止后定格、再次运行继续累加。
+    assert.equal($("task-timer").hidden, true, "没有运行记录时不占位");
+    state.elapsedMs = 63_000;
+    state.runningSince = Date.now() - 2_000;
+    emit("session.state", { status: "running", elapsedMs: state.elapsedMs, runningSince: state.runningSince });
+    await settle();
+    assert.equal($("task-timer").hidden, false);
+    assert.equal($("task-timer").dataset.running, "true");
+    assert.equal($("task-timer-value").textContent, "1m 05s", "运行中把当前这段计入显示");
+    state.elapsedMs = 67_000;
+    state.runningSince = null;
+    emit("session.state", { status: "idle", elapsedMs: 67_000, runningSince: null });
+    await settle();
+    assert.equal($("task-timer").dataset.running, "false");
+    assert.equal($("task-timer-value").textContent, "1m 07s", "停止后定格服务端结算的累计值");
+    state.runningSince = Date.now();
+    emit("session.state", { status: "running", elapsedMs: 67_000, runningSince: state.runningSince });
+    await settle();
+    assert.equal($("task-timer-value").textContent, "1m 07s", "再次执行继续累加而不是清零");
+    assert.match($("task-timer").title, /累计运行 1m 07s/);
   } finally {
     dom.window.close();
   }

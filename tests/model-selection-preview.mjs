@@ -2,7 +2,9 @@
 import { createServerApp } from "../src/server.js";
 import { Sessions } from "../src/sessions.js";
 import { createModelsService } from "../src/model-config.js";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import { Database } from "../src/database.js";
+import { createPiModelStorage } from "../src/pi-model-storage.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -30,8 +32,10 @@ factory.catalog = () => catalog;
 factory.capabilities = async () => ({ skills: [], plugins: [], mcp: [], warnings: [], needsTrust: false });
 const sessions = new Sessions(factory, join(home, "defaults.json"), join(home, "sessions"));
 await sessions.create(home);
-await writeFile(join(home, "models.json"), JSON.stringify({ providers: { preview: { api: "openai-completions", baseUrl: "http://localhost:9/v1", apiKey: "preview", models: [] } } }));
-const models = createModelsService({ factory, modelsPath: join(home, "models.json"), favoritesPath: join(home, "models-favorites.json"),
+const database = new Database(join(home, "models-test.db"));
+const storage = createPiModelStorage({ database, home, piDir: join(home, "pi") });
+storage.writeConfig({ providers: { preview: { api: "openai-completions", baseUrl: "http://localhost:9/v1", apiKey: "preview", models: [] } } });
+const models = createModelsService({ factory, storage,
   discoverFetch: async () => new Response(JSON.stringify({ data: [{ id: "chosen-model", name: "Chosen model" }, { id: "untouched-model" }] })),
 });
 const app = createServerApp(sessions, { models });
@@ -40,6 +44,7 @@ app.server.listen(port, "127.0.0.1", () => console.log(`Model UI preview: http:/
 async function close() {
   await app.close();
   await sessions.close();
+  database.close();
   await rm(home, { recursive: true, force: true });
 }
 process.on("SIGINT", () => { void close().then(() => process.exit()); });

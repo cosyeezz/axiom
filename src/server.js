@@ -286,7 +286,7 @@ export function createServerApp(sessions, service = {}) {
               data = await sessions.revealWorkspace(request.sessionId);
               break;
             case "workspace.browse":
-              data = await sessions.browse(request.sessionId, request.path);
+              data = await sessions.browse(request.sessionId, request.path, request.query);
               break;
             case "models.list":
               data = sessions.createAgent.catalog();
@@ -316,6 +316,12 @@ export function createServerApp(sessions, service = {}) {
               break;
             case "session.configure":
               data = await sessions.configure(request.sessionId, request);
+              break;
+            case "memory.summary.get":
+              data = sessions.getMemorySummary();
+              break;
+            case "memory.summary.configure":
+              data = await sessions.configureMemorySummary(request.summary);
               break;
             case "session.defaults.get":
               data = request.cwd ? await sessions.workspaceDefaults(request.cwd) : sessions.getDefaults();

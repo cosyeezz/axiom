@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { JSDOM } from "jsdom";
 import { createMaintState } from "../scripts/maint-state.mjs";
 import { startMaintServer } from "../scripts/maint-server.mjs";
+import { Database } from "../src/database.js";
 
 const source = (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^export /gm, "");
 const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
@@ -237,7 +238,8 @@ test("在线轮询权威更新重启锁：准备失败/完成后无需重连即�
 
 test("维护通道真实 HTTP 契约：/status 扁平记录、Bearer 404、/recover 202/409/400，前端实测", { timeout: 15000 }, async () => {
   const dir = await mkdtemp(join(tmpdir(), "axiom-maint-"));
-  const state = await createMaintState({ file: join(dir, "state.json"), redactions: [["hunter2", "***"]] });
+  const database = new Database(join(dir, "axiom.db"));
+  const state = await createMaintState({ database, key: "state-test", legacyFile: join(dir, "state.json"), redactions: [["hunter2", "***"]] });
   let workerGone = true;
   const server = await startMaintServer({
     state, token: "hunter2",
@@ -308,6 +310,7 @@ test("维护通道真实 HTTP 契约：/status 扁平记录、Bearer 404、/reco
   } finally {
     await server.close();
     await state.flush();
+    database.close();
     await rm(dir, { recursive: true, force: true });
   }
 });

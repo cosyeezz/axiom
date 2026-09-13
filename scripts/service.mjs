@@ -8,6 +8,7 @@ import { createServer as createControlServer, createConnection } from "node:net"
 import { createHash, randomBytes } from "node:crypto";
 import { dirname, delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Database } from "../src/database.js";
 import { npmSpec, commitFile, validateCommit } from "../src/update.js";
 import { createMaintState, sanitize } from "./maint-state.mjs";
 import { startMaintServer } from "./maint-server.mjs";
@@ -33,7 +34,7 @@ export const npmRun = (execute, args, cwd = root, capture = false) => {
     ? execute(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `${npm} ${args.join(" ")}`], cwd, capture)
     : execute(npm, args, cwd, capture);
 };
-// 安装实例标签：安装根 realpath + 端口。控制管道与维护状态文件共用，
+// 安装实例标签：安装根 realpath + 端口。控制管道与维护状态存储键共用，
 // 保证同一安装（同 root+port）只有一份状态，不同安装/端口（如旧 dev 守护）互不混写。
 export function installTag(address, cwd = root) {
   return createHash("sha256").update(`${realpathSync(cwd)}:${new URL(address).port}`).digest("hex").slice(0, 24);
@@ -189,12 +190,17 @@ export async function supervise() {
   output = ["ignore", log, log];
   const workerLog = createWriteStream(logPath, { flags: "a" });
   const token = randomBytes(32).toString("hex");
-  // 状态文件按安装实例隔离（root+port 哈希，与控制管道同源）：并存的旧 dev 守护与当前守护各写各的，绝不共享状态。
+  // 维护状态入 SQLite（与业务共用 AXIOM_HOME/axiom.db），按安装实例（root+port 哈希，与控制管道同源）
+  // 以 key 隔离：并存的旧 dev 守护与当前守护各写各的，绝不共享状态。
+  // 旧 service-state JSON 仅首次启动读一次作迁移源（保留不删，数据库此后是唯一权威）。
   // 证据不依赖共享的 service.log：worker stdio 管道分实例抓取进各自状态；token/安装路径/用户目录脱敏。
+  const database = new Database(join(logDir, "axiom.db"));
   const stateFile = join(logDir, `service-state-${installTag(address)}.json`);
   // 错误与环境变量一律先脱敏：AXIOM_SERVICE_ERROR 会经 service.status 原样到达页面，禁止暴露路径/源码位置。
   const redactions = [[token, "***"], [realpathSync(root), "<install>"], [logDir, "<home>"], [homedir(), "<home>"]];
-  const state = await createMaintState({ file: stateFile, redactions });
+  const state = await createMaintState({ database, key: `state-${installTag(address)}`, legacyFile: stateFile, redactions });
+  // 连接生命周期：所有退出路径（信号/管道停止/worker 退出停止）先冲刷状态、关库、关控制管道再退。
+  const exit = (code) => { try { database.close(); } catch {} control.close(() => process.exit(code)); };
   // 崩溃重试终态（同 systemd StartLimitBurst/PM2 max_restarts）：连续崩溃达上限后停止自动重启，
   // 恢复走维护入口 POST /recover；worker 稳定运行超 30s 重置计数（稳定窗口）。
   const maxCrashRetries = Number(process.env.AXIOM_MAX_CRASH_RETRIES ?? 5);
@@ -233,7 +239,7 @@ export async function supervise() {
       stopping = true;
       clearTimeout(restartTimer);
       socket.end(JSON.stringify({ service: "axiom", pid: process.pid }), () => {
-        void state.flush().then(() => control.close(() => process.exit(0)));
+        void state.flush().then(() => exit(0));
       });
     });
   });
@@ -275,7 +281,7 @@ export async function supervise() {
       state.data.ready = false;
       state.appendLog(`worker 退出（${code ?? "signal"}）\n`);
       if (restarting) return;
-      if (stopping) { void state.flush().then(() => control.close(() => process.exit(code || 0))); return; }
+      if (stopping) { void state.flush().then(() => exit(code || 0)); return; }
       if (Date.now() - startedAt > 30000) failures = 0;
       if (failures >= maxCrashRetries) {
         const message = `worker 连续崩溃已达上限（${maxCrashRetries} 次自动重试），守护进程进入终态，不再自动重启；可通过维护入口 POST /recover 恢复`;
@@ -428,7 +434,7 @@ export async function supervise() {
     clearTimeout(restartTimer);
     void stopChild()
       .then(() => state.flush())
-      .then(() => control.close(() => process.exit(0)))
+      .then(() => exit(0))
       .catch((error) => { console.error(error); process.exitCode = 1; });
   });
   spawnWorker();
