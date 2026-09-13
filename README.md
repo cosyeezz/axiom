@@ -231,7 +231,7 @@ Axiom 使用原生 JavaScript，目前没有编译脚本，因此重建时不会
 - 模型配置采用左侧供应商搜索导航、右侧详情与折叠高级字段，窄屏自动单列；参考 [Cherry Studio](https://github.com/CherryHQ/cherry-studio/pull/16858) 的分栏管理与 [OpenCode](https://opencode.ai/docs/models/) 的模型能力组织方式，不引入额外 UI 依赖。
 - 保存供应商连接后，可「拉取模型列表」并搜索、勾选，再点击「添加选中的模型」；拉取本身只读，不会把全部结果自动加入配置。支持 OpenAI 兼容、Anthropic、Google 模型接口；已添加项禁选，部分添加失败可重试，未返回的模型能力不猜测。
 - 思考收藏以 `provider/model:程度` 隔离，允许模型 ID 含冒号；星标只改变排序，不改变当前选择。浏览器回归：先运行 `node tests/model-selection-preview.mjs`，再运行 `python tests/model-selection-ui.py` 和 `python tests/model-settings-ui.py`（需 Python Playwright 与 Chromium，预览不使用真实凭据）。
-- 「设置 → 模型与供应商」管理 SQLite 中的模型配置：查看已有配置、添加常见供应商或自定义地址、修改 API 协议和模型参数。它不同于会话默认配置；旧 Pi models.json 仅导入，保存后同步 SDK 使用的 models.compat.json，不修改旧 Pi 文件。
+- 「设置 → 模型与供应商」管理 SQLite 中的模型配置：查看已有配置、添加常见供应商或自定义地址、修改 API 协议和模型参数。已有供应商选择 API 协议「不设置」后，保存、刷新仍保持未设置，不自动补成 OpenAI；新建供应商仍按所选模板预填协议。它不同于会话默认配置；旧 Pi models.json 仅导入，保存后同步 SDK 使用的 models.compat.json，不修改旧 Pi 文件。
 - 供应商重命名与删除在左侧导航行内完成：悬停（或键盘聚焦）显示铅笔与删除图标，删除图标悬停变红，两者都用原生弹窗二次确认，可 Esc 取消。重命名由后端一次写盘完成（`models.provider.rename`），模型、内置覆盖与未保存草稿随新 id 迁移；重名或非法 id 在弹窗内提示，不会发出请求。
 - 配置保存保留未编辑的高级字段和已有凭据；密钥不回传明文，编辑时留空表示保持。支持 `$ENV_VAR` 环境变量引用，不允许从网页添加执行命令型凭据。删除只移除自定义配置，不会删除 Pi 内置模型或登录凭据。保存前检测文件版本冲突，避免覆盖外部修改。
 - 保存后更新模型目录；新建会话或重新选择模型使用新配置。已经运行的会话不会强制换掉已绑定模型，避免中断当前请求。

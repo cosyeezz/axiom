@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/13 04:09:47）
+# Axiom 多级代码索引（生成于 2026/9/13 04:22:11）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -78,7 +78,7 @@
 | tests/message-activity.test.js | 407 | node --test 测试（npm test） | page, assistant, thought, call |
 | tests/mobile-reading-ui.py | 103 | node --test 测试（npm test） | - |
 | tests/model-config.test.js | 785 | node --test 测试（npm test） | sha, EMPTY, tempDir, openDatabases |
-| tests/model-manager.test.js | 984 | node --test 测试（npm test） | source, tick, j, masked |
+| tests/model-manager.test.js | 1017 | node --test 测试（npm test） | source, tick, j, masked |
 | tests/model-onboarding-ui.test.js | 154 | node --test 测试（npm test） | stripImports, modelSources, contrastSource, pickerSource |
 | tests/model-onboarding.test.js | 55 | node --test 测试（npm test） | - |
 | tests/model-picker.test.js | 311 | node --test 测试（npm test） | source, tick, nap, OPTS |
@@ -1150,7 +1150,7 @@
 | mockFetch | const | 544 |
 | jsonResponse | const | 553 |
 
-### tests/model-manager.test.js（984 行） — node --test 测试（npm test）
+### tests/model-manager.test.js（1017 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1159,41 +1159,43 @@
 | j | const | 10 |
 | masked | const | 12 |
 | harness | function | 14 |
-| setInput_on | method | 201 |
-| setInput_on | function | 229 |
-| modelDelete | method | 292 |
-| dialogButton | method | 296 |
-| modelDelete | method | 302 |
-| dialogButton | method | 304 |
-| dialogButton | method | 322 |
-| confirm | method | 355 |
-| confirm | method | 362 |
-| row | method | 466 |
-| row | method | 477 |
-| discoverPanelEl | const | 746 |
-| discoverRows | const | 747 |
-| rowBox | const | 748 |
-| addSelectedButton | const | 749 |
-| fetchButton | const | 750 |
-| checkRow | const | 751 |
-| rowBox | method | 752 |
-| rowBox | method | 753 |
-| fetchButton | method | 763 |
-| checkRow | method | 784 |
+| apiSelect | method | 77 |
+| apiSelect | method | 78 |
+| setInput_on | method | 234 |
+| setInput_on | function | 262 |
+| modelDelete | method | 325 |
+| dialogButton | method | 329 |
+| modelDelete | method | 335 |
+| dialogButton | method | 337 |
+| dialogButton | method | 355 |
+| confirm | method | 388 |
+| confirm | method | 395 |
+| row | method | 499 |
+| row | method | 510 |
+| discoverPanelEl | const | 779 |
+| discoverRows | const | 780 |
+| rowBox | const | 781 |
+| addSelectedButton | const | 782 |
+| fetchButton | const | 783 |
+| checkRow | const | 784 |
+| rowBox | method | 785 |
+| rowBox | method | 786 |
 | fetchButton | method | 796 |
-| checkRow | method | 808 |
-| checkRow | method | 809 |
-| addSelectedButton | method | 810 |
-| fetchButton | method | 844 |
-| addSelectedButton | method | 851 |
-| addSelectedButton | method | 870 |
-| fetchButton | method | 892 |
-| fetchButton | method | 900 |
-| fetchButton | method | 923 |
-| fetchButton | method | 942 |
-| fetchButton | method | 945 |
-| fetchButton | method | 962 |
-| fetchButton | method | 968 |
+| checkRow | method | 817 |
+| fetchButton | method | 829 |
+| checkRow | method | 841 |
+| checkRow | method | 842 |
+| addSelectedButton | method | 843 |
+| fetchButton | method | 877 |
+| addSelectedButton | method | 884 |
+| addSelectedButton | method | 903 |
+| fetchButton | method | 925 |
+| fetchButton | method | 933 |
+| fetchButton | method | 956 |
+| fetchButton | method | 975 |
+| fetchButton | method | 978 |
+| fetchButton | method | 995 |
+| fetchButton | method | 1001 |
 
 ### tests/model-onboarding-ui.test.js（154 行） — node --test 测试（npm test）
 
