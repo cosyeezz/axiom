@@ -451,15 +451,16 @@ async function runGates(baselineDir, newDir) {
       const stats = { sql: 0, bytes: 0 };
       instrument(g.db, stats);
       g.store.saveTask(small.id, { id: small.tasks[0].id, notified: true });
-      const smallBytes = stats.bytes; stats.bytes = 0;
+      const smallBytes = stats.bytes, smallSql = stats.sql; stats.bytes = 0; stats.sql = 0;
       g.store.saveTask(big.id, { id: big.tasks[0].id, notified: true });
-      const bigBytes = stats.bytes;
+      const bigBytes = stats.bytes, bigSql = stats.sql;
       const stillNotified = g.store.listTasks(big.id).find((t) => t.id === big.tasks[0].id)?.notified === true;
-      const pass = bigBytes <= smallBytes + 512 && stillNotified;
+      // SQL 次数必须 ≥1：否则计量层没观测到写入（如语句缓存被预热绕过代理），门槛空转无效。
+      const pass = bigBytes <= smallBytes + 512 && stillNotified && smallSql >= 1 && bigSql >= 1;
       check("门2 notified 不携带 runtime/result",
         pass,
-        `notified 更新写入字节：小任务 ${smallBytes}B vs 大任务(64KB result+16KB runtime) ${bigBytes}B，语义保留=${stillNotified}` +
-        (pass ? "" : "；notified 更新写入随 runtime/result 体积放大，须独立列修复"));
+        `notified 更新写入字节：小任务 ${smallBytes}B vs 大任务(64KB result+16KB runtime) ${bigBytes}B（SQL 各 ${smallSql}/${bigSql} 次），语义保留=${stillNotified}` +
+        (pass ? "" : smallSql < 1 || bigSql < 1 ? "；SQL 计量未观测到写入，门槛失效" : "；notified 更新写入随 runtime/result 体积放大，须独立列修复"));
     } catch (e) { check("门2 notified 不携带 runtime/result", false, `异常：${e.message}`); }
     finally { g.db.close(); rmSync(g.tmp, { recursive: true, force: true }); }
   }
@@ -543,6 +544,17 @@ async function lockHolder(dbPath, holdMs, newDir) {
 
 async function lockVictim(dbPath, newDir) {
   const { Database } = await import(pathToFileURL(join(newDir, "src/database.js")));
+  const { DatabaseSync } = await import("node:sqlite");
+  // 同步化：两子进程并发启动，victim 可能抢在 holder 持锁前写入（实测发生过）。
+  // 探针连接 busy_timeout=0：能立即拿到写锁 = holder 尚未就位，让 50ms 重试；
+  // BEGIN IMMEDIATE 失败 = holder 已持锁，才开始计时测量。
+  const probe = new DatabaseSync(dbPath);
+  probe.exec("PRAGMA busy_timeout = 0");
+  for (let i = 0; i < 200; i++) {
+    try { probe.exec("BEGIN IMMEDIATE"); probe.exec("COMMIT"); await new Promise((r) => setTimeout(r, 50)); }
+    catch { break; }
+  }
+  probe.close();
   const db = new Database(dbPath); // busy_timeout=5000 由生产构造器设置，不调参
   const t0 = process.hrtime.bigint();
   try {
