@@ -824,3 +824,9 @@
   - `public/app.js` / `public/style.css`：新增 `lastMainMessage`/`interrupted` 状态与 `canResumeMessage`（服务端规则的前端副本）；`syncRetryPrompt()` 维护单例 `.retry-prompt` 节点（提示 + 「↻ 重试」按钮 → `request("session.retry", { sessionId })`），按 interrupted && 空闲 && 已连接 && 有会话 append/remove 到 `#output` 末尾；`agent.message.end`(main) 更新 lastMainMessage，`session.state` running 清标记、idle 重判，刷新恢复时从 `messages.findLast(agentId==="main")` 初始化。样式复用 retry-card 同款 `--line/--surface/--muted` token。
 - 验证：新增 `tests/manual-retry.test.js` 5 项（canResume 正负样本、dropFailedAssistant 三种末尾、sessions.retry 续跑/回执 runId/忙碌与不可续守卫不广播状态/续跑再失败仍回 idle、protocol strict + server 分发、前端入口显隐与点击载荷）；全量 `npm test` 311 项 310 过 1 跳过 0 失败。
 - 涉及：src/retry.js、src/pi.js、src/protocol.js、src/server.js、src/sessions.js、public/app.js、public/style.css、tests/manual-retry.test.js、README.md、devlog.md、.pi/skills/codebase-map/index。
+
+## 2026-09-13 04:30 — worktree 流程补充「任务完成后自动合并 master 并推送」
+- 原因：用户要求任务完成后自动拉取最新 `master`、完成主从合并并推送，不再每步征求确认。此前流程写的是「提交并 push → 合并回 master 并推送」，没有明确 push 前先把最新 master 合进功能分支，实际已出现本地 master 与 origin/master 分叉各 2 个提交的情况。
+- 内容：`AGENTS.md` worktree 段落——流程行改为「验证 → 提交 → 拉取最新 `master` 并合并进功能分支（冲突在功能分支内解决）→ push 功能分支 → 合并回 `master` 并推送 → 清理 worktree」，把合并方向定为先 master→功能分支（冲突在功能分支解决，master 只接快进式合并）；新增一条：任务完成后自动执行收尾，仅当 master 工作区不干净、存在未完成合并、或冲突无法安全自动解决时暂停并报告。`README.md:147`「维护：发布更新」同步为同一套流程措辞，避免两处文档打架。
+- 验证：纯文档改动，无代码变更，未跑测试套件；人工复核两处流程描述一致。本次收尾按新规则实测走通（fetch → merge origin/master → push 功能分支 → 合并回 master → push）。
+- 涉及：AGENTS.md、README.md、devlog.md。
