@@ -90,6 +90,38 @@ test("recall removes only summaries attached to retracted main messages", async 
   } finally { await sessions.close(); }
 });
 
+test("恢复补齐唯一匹配的摘要与触发关联，不猜同毫秒或缺失时间的旧记录", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-memory-link-"));
+  const history = [
+    { id: "a1", message: { ...reply("<axiom_summary>已确认</axiom_summary>"), timestamp: 100 } },
+    { id: "a2", message: { ...reply("重复"), timestamp: 200 } },
+    { id: "a3", message: { ...reply("重复"), timestamp: 200 } },
+  ];
+  const factory = Object.assign(async () => ({ config: () => ({ model: "test/one" }),
+    subscribe: () => () => {}, historyEntries: () => history, abort: async () => {}, dispose: async () => {},
+  }), { catalog: () => [{ key: "test/one" }] });
+  let sessions = new Sessions(factory, undefined, join(root, "storage"));
+  try {
+    const id = await sessions.create(root);
+    for (const record of [
+      { id: "unique", agentId: "main", messageTimestamp: 100, text: "已确认" },
+      { id: "ambiguous", agentId: "main", messageTimestamp: 200, text: "不可猜" },
+      { id: "unknown", agentId: "main", text: "保留旧记录" },
+      { id: "child", agentId: "child", messageTimestamp: 100, text: "子任务不误关联" },
+    ]) await sessions.persist(sessions.get(id), { summary: record });
+    await sessions.persist(sessions.get(id), { event: { type: "summary_trigger", record:
+      { id: "trigger", agentId: "main", status: "recorded", messageTimestamp: 100 } } });
+    await sessions.close();
+    sessions = new Sessions(factory, undefined, join(root, "storage"));
+    await sessions.load();
+    const item = await sessions.ensureLoaded(id);
+    assert.deepEqual(item.summaries.map(e => e.entryId), ["a1", undefined, undefined, undefined]);
+    assert.equal(item.summaryTriggers[0].entryId, "a1");
+    assert.equal(sessions.store.getSession(id).summaries[0].entryId, "a1", "补齐关联要落盘");
+    assert.equal(parentSummaryContext(item), "已确认\n不可猜\n保留旧记录", "不凭不完整证据删除旧事实");
+  } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test("summary audit retains missing, oversized, failed and delegate reports", () => {
   const item = { summaries: [], memoryTurns: {}, emit: () => {} };
   const hooks = memoryHooks(item, () => {});
@@ -107,6 +139,44 @@ test("summary audit retains missing, oversized, failed and delegate reports", ()
   assert.equal(item.summaryTriggers.at(-1).reason, "delegate");
   assert.equal(item.summaryTriggers.at(-1).summaryId, item.summaries.at(-1).id);
   assert.equal(item.summaries.length, 2);
+});
+
+test("hooks describe precise changes, saving nothing when nothing changed", () => {
+  const item = { summaries: [], memoryTurns: {}, progressDeliveries: [], summaryTriggers: [], tasks: { jobs: new Map() }, emit: () => {}, title: "新会话", titlePending: true };
+  const saves = [];
+  const main = memoryHooks(item, (change) => saves.push(change));
+  main.onTrigger({ turn: 1, interval: 3, maxChars: 30, prompt: "提醒" });
+  assert.deepEqual(saves, [{ event: { type: "summary_trigger", record: item.summaryTriggers[0] } }]);
+  main.onReply({ message: reply("<title>新标题</title><summary>结论</summary>"), turn: 1 });
+  assert.equal(saves[1].title, true);
+  assert.equal(saves[1].summary.text, "结论");
+  assert.equal(saves[1].event.record.status, "recorded");
+  assert.equal(saves[1].event.record.summaryId, saves[1].summary.id);
+  assert.equal(saves.length, 2, "one save per reply even with multiple changes");
+  main.onReply({ message: reply("无标签无触发器"), turn: 2 });
+  assert.equal(saves.length, 2, "no trigger and no summary means no save");
+  main.onTrigger({ turn: 3, interval: 3, maxChars: 30, prompt: "提醒" });
+  assert.equal(saves.length, 3);
+  main.onReply({ message: { ...reply(""), stopReason: "aborted" }, turn: 3 });
+  assert.equal(saves[3].event.record.status, "aborted", "failed replies only update the trigger");
+  assert.equal(saves[3].summary, undefined);
+  assert.equal(saves.length, 4);
+  main.onTurn({ turn: 1, toolResults: [{ toolCallId: "a", toolName: "read", isError: true }] });
+  assert.deepEqual(saves[4].turn, { agentId: "main", turn: 1 });
+  assert.equal(saves[4].summary.toolResults[0].isError, true);
+  const job = { id: "child", status: "running" };
+  item.tasks.jobs.set("child", job);
+  const child = memoryHooks(item, (change) => saves.push(change), job);
+  child.onReply({ message: reply("<progress>定位完成</progress>"), turn: 3 });
+  assert.equal(saves[5].summary.agentId, "child");
+  assert.deepEqual(saves[5].progress, { taskId: "child", record: job.progress });
+  assert.equal(saves[5].title, undefined, "subagents never set the title");
+  saves.length = 0;
+  job.progress = { id: "p1", text: "进度" };
+  main.context();
+  assert.ok(saves[0].delivery.id, "delivery records get a stable id");
+  assert.deepEqual(saves[0].delivered, [{ taskId: "child", progressId: "p1" }]);
+  assert.equal(item.progressDeliveries.at(-1).id, saves[0].delivery.id);
 });
 
 test("invalid, missing and failed model reports do not change the title", () => {
@@ -140,7 +210,9 @@ test("first prompt title only, manual title wins, records persist across restart
     return agent;
   };
   factory.catalog = () => [{ key: "test/model" }];
-  const sessions = new Sessions(factory, undefined, root);
+  // 库随 storage 目录旁自建（dirname(storagePath)/axiom.db）：用 root/storage 让库落在各测试
+  // 独占的 Temp root 内，避免落到公共 Temp 目录互串。
+  const sessions = new Sessions(factory, undefined, join(root, "storage"));
   let restored;
   try {
     const id = await sessions.create(root);
@@ -155,12 +227,13 @@ test("first prompt title only, manual title wins, records persist across restart
     assert.equal(agents[0].calls[1].options, undefined);
     assert.equal(sessions.get(id).title, "手动命名");
     // 管理数据在共享 SQLite 库（不再写磁盘 JSON 快照）。
-    const disk = sessions.database.get("sessions", id);
+    const disk = sessions.store.getSession(id);
     assert.equal(disk.summaries.length, 2);
     assert.equal(disk.titleManual, true);
     await sessions.close();
-    restored = new Sessions(factory, undefined, root);
+    restored = new Sessions(factory, undefined, join(root, "storage"));
     await restored.load();
+    await restored.ensureLoaded(id);
     assert.equal(restored.snapshot(id).summaries.length, 2);
     assert.equal(restored.get(id).title, "手动命名");
   } finally {

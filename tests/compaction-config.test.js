@@ -53,6 +53,7 @@ test("compaction settings, message IDs and successful records survive restart; f
     restored = new Sessions(factory, defaultsPath, storagePath);
     await restored.loadDefaults();
     await restored.load();
+    await restored.ensureLoaded(id);
     assert.deepEqual(restored.getDefaults().compaction, config);
     assert.deepEqual(restored.snapshot(id).compactions, [record]);
     assert.equal(restored.snapshot(id).messages[0].entryId, "m1");
@@ -93,6 +94,7 @@ test("restored sessions pick up the latest default compaction; other selection s
     restored = new Sessions(factory, defaultsPath, storagePath);
     await restored.loadDefaults();
     await restored.load();
+    await restored.ensureLoaded(id);
     // 重启后：恢复会话改用最新默认压缩配置，其余配置不变
     assert.deepEqual(restored.snapshot(id).config.compaction, latest);
     assert.equal(restored.snapshot(id).config.model, "p/main");

@@ -152,30 +152,39 @@ export async function createRemoteAccess({
   const NAMESPACE = "remote";
   const CONFIG_KEY = "config";
   const defaultConfig = () => ({ enabled: false, email: "" });
-  // ponytail: 缺失/损坏一律回退默认禁用（安全侧优先），首次保存即自愈
-  const parseConfig = (raw) => {
+  // ponytail: 缺失/损坏一律回退 fallback 默认禁用（安全侧优先），首次保存即自愈。
+  // 兼容两种读法：旧 string（历史在此处预 stringify，经 Database JSON 序列化成双重编码）
+  // 与新 object（Database.get 已 JSON.parse，直接得到对象）；其他类型同样 fail closed。
+  const parseConfig = (raw, fallback) => {
     try {
-      return configSchema.parse(JSON.parse(raw));
+      return configSchema.parse(typeof raw === "string" ? JSON.parse(raw) : raw);
     } catch {
-      return defaultConfig();
+      return fallback;
     }
   };
   // SQLite 唯一权威：无值时幂等导入旧 JSON（只读，绝不回写），结果固化进 SQLite。
+  // 命中旧 string 格式时一次成功读取即迁移成 object（Database.set 自行 JSON 序列化，
+  // 不再预 stringify）；坏结构不迁移（保持默认禁用，下次保存自愈），绝不削弱鉴权。
   const loadShared = async () => {
     const stored = await database.get(NAMESPACE, CONFIG_KEY);
-    if (stored != null) return parseConfig(stored);
+    if (stored != null) {
+      const parsed = parseConfig(stored, null);
+      if (!parsed) return defaultConfig();
+      if (typeof stored === "string") await database.set(NAMESPACE, CONFIG_KEY, parsed);
+      return parsed;
+    }
     let imported;
     try {
-      imported = parseConfig(await readFile(path, "utf8"));
+      imported = parseConfig(await readFile(path, "utf8"), defaultConfig());
     } catch {
       imported = defaultConfig();
     }
-    await database.set(NAMESPACE, CONFIG_KEY, JSON.stringify(imported));
+    await database.set(NAMESPACE, CONFIG_KEY, imported);
     return imported;
   };
   const persistConfig = async (next) => {
     if (database) {
-      await database.set(NAMESPACE, CONFIG_KEY, JSON.stringify(next));
+      await database.set(NAMESPACE, CONFIG_KEY, next); // Database 已 JSON 序列化，不再预 stringify
       return;
     }
     const temporary = `${path}.${process.pid}.tmp`;
@@ -184,7 +193,9 @@ export async function createRemoteAccess({
   };
   let config = defaultConfig();
   try {
-    config = database ? await loadShared() : parseConfig(await readFile(path, "utf8"));
+    config = database
+      ? await loadShared()
+      : parseConfig(await readFile(path, "utf8"), defaultConfig());
   } catch {
     // 数据库不可用与文件缺失/损坏同策略：fail closed 默认禁用，不阻断启动
   }

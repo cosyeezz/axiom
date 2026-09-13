@@ -453,3 +453,53 @@
 - 根因：providerForm 对已有配置和新建模板共用 openai-completions 回退。
 - 修复：public/model-manager.js 仅新建使用模板默认值，已有配置缺失 api 回显空值。
 - 防再犯：tests/model-manager.test.js 覆盖清除、回读、再次保存、刷新与新建模板；默认值只用于创建，不用于解释缺失的已保存字段。
+
+### 2026-09-13 SQLite 拆表后的事务与失败重试
+- 根因：实体删除内部 BEGIN 与会话批量保存嵌套会抛事务错误；增量失败不能靠下一次全量快照补救；懒加载替换元数据对象会漏掉失败改名队列。
+- 修复：session-store/sessions 统一同步 SAVEPOINT；pendingWrites 按序重试；ensureLoaded 与关闭先提交元数据失败队列；任务终态不在通知入口重复保存大结果。
+- 防再犯：tests/session-persistence.test.js 注入 query_only 与后半段 SQL 失败；recall.test.js 检查撤回与同 ID 子代理事件隔离；task-notifications.test.js 断言终态仅存一次、通知更新只改单任务字段。Windows finally 必须先关闭数据库再删除临时目录。
+
+### 2026-09-13 一致性备份残片与重复迁移读取
+- 根因：VACUUM INTO 固定目标失败可能留下残片，existsSync 下次把它当成功备份；先读全部旧 JSON 再检查标记使重启依然随全部旧历史膨胀。
+- 修复：session-store.js 临时目标600权限，VACUUM 成功后更名，异常清理；SQL 排除已迁移键，再逐条取旧值，不跨迁移事务持有迭代游标。
+- 防再犯：session-store.test.js 注入失败残片、恢复后必须重做备份；重复迁移禁止读取 sessions 源。坏 JSON 错误只报键位，不透传含原文的 SyntaxError。
+
+### 2026-09-13 主库600不代表WAL/SHM已受保护
+- 已复现：Linux Node22.23.1，旧 Database 主库600而WAL/SHM644；chmod 晚于连接初始化与建表。
+- 修复：database.js 打开连接前用600创建/收紧主库与已有sidecar，保留父目录；新WAL/SHM继承主库600。Windows依赖目录ACL，不能把POSIX测试当Windows隔离证明。
+- 防再犯：database.test.js 在POSIX测试首次写入及第二连接收紧旧sidecar，同时检查父目录未变；Windows icacls 检查实际继承主体，不自动改共享目录权限。
+
+### 2026-09-13 维护失败不等于恢复进程已启动
+- 症状：service.test.js 偶发 workers 1≠2；rebuild 停止错误已报告但恢复 worker 尚未启动。
+- 根因：runOp 先 await state.fail，再 fork/spawnWorker；测试只等 status failed 便读取启动次数。
+- 修复：复用 until 等 ready 且 workers=2，再检查严格次数与原依赖未动，不改产品流程或用固定sleep掩盖竞态。测试桩 maint-env 需完整写临时文件后 rename，避免状态读取撞上直接覆写的空/半截 JSON。
+
+### 2026-09-13 ID匹配优化不等于整个历史恢复没有平方扫描
+- 已复现：256条消息/重试读取消息65,664次；retry迁移每次map/filter与slice找锚点，compactions逐条find，仍重复扫描全部历史。
+- 修复：sessions.js 单次按代理建时间线/锚点后二分查询，压缩按ID索引；同毫秒、倒退、排队编写时间不可靠仍不猜位置。
+- 防再犯：session-flow.test.js getter与toJSON计数验证规模上限和最终顺序，不靠易抖动的耗时阈值；不要只审第一个优化后的循环。
+
+### 2026-09-13 取消加载失败的会话不能连带失败
+- 根因：cancel直接await item.loading，加载失败传染取消；remove同场景已忽略加载失败后清理。
+- 修复：cancel等待加载settle后继续原有未加载返回分支，无SDK时无需再取消，不删除原记录。
+- 防再犯：session-persistence.test.js 可控SDK拒绝，验证打开报错、取消完成且库记录仍在。
+
+### 2026-09-13 SDK已撤回后保存失败不能截断网页同步和回执
+- 已复现：query_only使事件删除失败，旧代码在裁切messages之前await抛错；无事件时最后persist失败则已撤回但不给用户输入回执。
+- 修复：sessions.withdraw先完成内存裁切，再经saveChange提交数组变更，复用单个SAVEPOINT与pendingWrites；失败可见但仍交还输入，后半段失败不允许前半段独立落盘。
+- 防再犯：recall.test.js用真实recallLastMessage判定与SDK树桩、真实SQLite只读故障和后半段注入验证回执/网页/重试，不用强制成功的recall桩声称复现真实撤回边界。
+
+### 2026-09-13 摘要缺ID与撤回污染不能混为同一复现
+- 根因：memory.onReply先落摘要，Pi message.end回调微任务后才补entryId，崩溃恢复只补了messages；旧探针却绕过真实已回答不可撤回的限制，过度推断污染。
+- 修复：恢复构建唯一助手时间戳索引补摘要/触发关联并落盘；同毫秒多条、缺时间、子代理记录不猜不删。
+- 防再犯：session-memory.test.js覆盖唯一/歧义/未知/跨代理；涉及模型输出限制必须调用真实pi.recallLastMessage。
+
+### 2026-09-13 配置存在item不等于已传SDK或已持久化
+- 已复现：retry自定义词表仅在item和子代理装配处，首次主代理漏传，sessionData.selection也漏存，重启丢失。
+- 修复：主代理createAgent传retry、sessionData显式保存；不让默认配置追溯覆盖旧会话。
+- 防再犯：session-persistence.test.js串联首次主代理→库selection→重启主代理→子代理，不能仅断言item字段。
+
+### 2026-09-13 基准必须测真实变化并等待子进程完整退出
+- 根因：合法JSON可掩盖后续非零退出，exit时stdout未必排空；同值通知写入及错误的进度数组让新旧工作量不一致，旧字节计量漏绑定键；锁实验把进程启动算入持锁等待。
+- 修复：sqlite-benchmark.mjs在close后同时要求退出码0与合法JSON，计量单点化含绑定键；使用真实快照及每次变化的通知/计时字段，victim连接就绪后经IPC才开始测锁。
+- 防再犯：self-check验证失败判定，保留原硬门槛；绑定字节不是磁盘写入量，空历史fake SDK不能证明历史扫描复杂度，另用session-flow getter计数回归。

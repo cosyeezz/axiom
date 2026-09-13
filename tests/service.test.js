@@ -47,7 +47,8 @@ const buildWorkspace = async (npm = false) => {
 const WORKER = `
 const fs = require('node:fs');
 fs.writeFileSync('workers', String((parseInt(fs.existsSync('workers') ? fs.readFileSync('workers', 'utf8') : '0', 10) || 0) + 1));
-fs.writeFileSync('maint-env', JSON.stringify({ url: process.env.AXIOM_MAINTENANCE_URL || '', token: process.env.AXIOM_MAINTENANCE_TOKEN || '', instanceId: process.env.AXIOM_INSTANCE_ID || '' }));
+fs.writeFileSync('maint-env.tmp', JSON.stringify({ url: process.env.AXIOM_MAINTENANCE_URL || '', token: process.env.AXIOM_MAINTENANCE_TOKEN || '', instanceId: process.env.AXIOM_INSTANCE_ID || '' }));
+fs.renameSync('maint-env.tmp', 'maint-env');
 fs.writeFileSync('workerPid', String(process.pid));
 process.on('uncaughtException', (e) => { fs.writeFileSync('worker-error', String((e && e.stack) || e)); process.exit(1); });
 process.on('message', (m) => {
@@ -318,7 +319,8 @@ test("rebuild cancels swap when worker stop exits non-zero", async () => {
     assert.equal(existsSync(join(root, ".node_modules-backup")), false);
     assert.equal(existsSync(join(root, "build-called")), false);
     assert.equal(await readMaybe(join(root, "node_modules", "old-marker")), "1", "依赖原样保留");
-    await until(async () => (await getStatus(root)).ready);
+    // failed 先落盘，之后才 fork 恢复 worker；等待真实 ready，不能把维护失败当恢复已完成。
+    await until(async () => (await getStatus(root)).ready && await readMaybe(join(root, "workers")) === "2");
     assert.equal(parseInt(await readFile(join(root, "workers"), "utf8"), 10), 2, "旧代码拉起恢复服务");
   } finally { await teardown(base, child); }
 });

@@ -756,6 +756,37 @@ test("parseError 时提示且目录可浏览；加载失败不抛出并提供重
   h.window.close();
 });
 
+test("已保存未应用保留新指纹；重试只回读应用，不重复保存或删除", async () => {
+  const h = harness();
+  try {
+    const loaded = h.manager.load();
+    h.flushGet({ providers: [{ id: "p1", baseUrl: "https://p.example.com", api: "openai-completions" }] });
+    await loaded;
+    await h.selectProvider("p1");
+    h.button("保存供应商").click();
+    await h.settle();
+    const save = h.lastPending("models.provider.save");
+    save.settled = true;
+    save.resolve({ fingerprint: "fp-new", applied: false, applyError: "运行时尚未刷新" });
+    await h.settle();
+    h.flushGet({ fingerprint: "fp-new", applied: false, applyError: "运行时尚未刷新" });
+    await h.settle();
+    const root = h.window.document.getElementById("root");
+    assert.match(root.textContent, /配置已保存，但尚未应用/);
+    assert.doesNotMatch(root.textContent, /保存失败/);
+    h.button("重试应用").click();
+    await h.settle();
+    assert.equal(h.calls.filter(c => c.type === "models.provider.save").length, 1);
+    h.flushGet({ applied: true, applyError: null });
+    await h.settle();
+    assert.doesNotMatch(root.textContent, /尚未应用/);
+    assert.equal(h.saved.length, 2, "应用恢复后同步刷新主界面目录");
+    h.button("保存供应商").click();
+    await h.settle();
+    assert.equal(h.lastPending("models.provider.save").args.baseFingerprint, "fp-new");
+  } finally { h.window.close(); }
+});
+
 test("渲染只产出文本节点，绝无注入路径", async () => {
   const h = harness();
   const loaded = h.manager.load();

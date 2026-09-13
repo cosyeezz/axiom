@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { chmod, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "../src/database.js";
@@ -69,7 +69,80 @@ test("database close 后操作抛错而不是静默失败", async () => {
   try {
     assert.throws(() => db.get("ns", "k"));
     assert.throws(() => db.set("ns", "k", 2));
+    assert.throws(() => db.list("ns"));
+    assert.throws(() => db.prepare("SELECT 1"));
+    assert.throws(() => db.exec("SELECT 1"));
   } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("database 暴露 prepare/exec；PRAGMA 生效：busy_timeout 先于 journal_mode、外键开、query_only 真实拦截写入", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "axiom-db-"));
+  const db = new Database(join(dir, "axiom.db"));
+  try {
+    assert.equal(db.prepare("SELECT value FROM store WHERE namespace = ?").get("none"), undefined);
+    assert.equal(db.prepare("PRAGMA foreign_keys").get().foreign_keys, 1);
+    assert.equal(db.prepare("PRAGMA busy_timeout").get().timeout, 5000);
+    assert.equal(db.prepare("PRAGMA journal_mode").get().journal_mode, "wal");
+    // 主审验收手法：query_only 置开后写入必须真实抛错，置回恢复。
+    db.exec("PRAGMA query_only = ON");
+    assert.throws(() => db.set("ns", "k", 1));
+    db.exec("PRAGMA query_only = OFF");
+    db.set("ns", "k", 1);
+    assert.deepEqual(db.get("ns", "k"), 1);
+    // exec 支持多语句（SessionStore 建表/事务用同一入口）。
+    db.exec("CREATE TABLE t (x); INSERT INTO t VALUES (1); INSERT INTO t VALUES (2);");
+    assert.equal(db.prepare("SELECT count(*) AS n FROM t").get().n, 2);
+  } finally {
+    db.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("POSIX 主库/WAL/SHM 在首次写入前即600，重开收紧旧sidecar且不改父目录", { skip: process.platform === "win32" }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "axiom-mode-"));
+  const path = join(dir, "axiom.db");
+  let db, second;
+  try {
+    const parentMode = (await stat(dir)).mode & 0o777;
+    db = new Database(path);
+    db.set("auth", "synthetic", { key: "test-only" });
+    for (const file of [path, `${path}-wal`, `${path}-shm`]) {
+      assert.equal((await stat(file)).mode & 0o777, 0o600);
+      await chmod(file, 0o644);
+    }
+    second = new Database(path);
+    for (const file of [path, `${path}-wal`, `${path}-shm`])
+      assert.equal((await stat(file)).mode & 0o777, 0o600);
+    assert.equal((await stat(dir)).mode & 0o777, parentMode);
+  } finally {
+    second?.close();
+    db?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("VACUUM INTO 快照：迁移前一致性备份可生成且可完整读回", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "axiom-vacuum-"));
+  const db = new Database(join(dir, "axiom.db"));
+  let snapshot = null;
+  try {
+    db.set("sessions", "k1", { id: "s1", cwd: "F:/x" });
+    db.set("migrated", "done", true);
+    // Windows 临时路径含盘符/反斜杠，SQLite 单引号字符串里反斜杠无特殊含义，统一换成正斜杠。
+    snapshot = join(dir, "backup.db").split("\\").join("/");
+    db.exec(`VACUUM INTO '${snapshot}'`);
+    const copied = new Database(snapshot);
+    try {
+      assert.deepEqual(copied.get("sessions", "k1"), { id: "s1", cwd: "F:/x" });
+      assert.deepEqual(copied.list("migrated"), [{ key: "done", value: true }]);
+    } finally {
+      copied.close();
+    }
+    await stat(snapshot); // 快照确实落盘
+  } finally {
+    db.close();
     await rm(dir, { recursive: true, force: true });
   }
 });

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "../src/database.js";
@@ -71,6 +71,7 @@ test("SQLite 优先：库内已有配置时导入不再写入；无旧配置时�
     const { storage, database } = makeStorage(dir);
     open = [database];
     await storage.writeConfig({ providers: { ui: { baseUrl: "https://ui.example.com" } } });
+    await storage.syncCompatFile(storage.readConfig());
     await storage.init();
     assert.deepEqual(storage.readConfig(), { providers: { ui: { baseUrl: "https://ui.example.com" } } });
     assert.equal(storage.importErrors().length, 0);
@@ -113,6 +114,109 @@ test("损坏的旧配置：记录导入告警、不污染权威、原文件不�
     // 幂等：再次 init 不追加
     await storage.init();
     assert.equal(storage.importErrors().length, 2);
+  } finally {
+    database?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("坏文件不打完成标记：修复原文件后再次 init 自动导入，陈旧告警清除", async () => {
+  const dir = await tempDir();
+  let database;
+  try {
+    await mkdir(join(dir, "pi"), { recursive: true });
+    await writeFile(join(dir, "pi", "models.json"), "{oops");
+    const source = join(dir, "pi", "models.json");
+    const { storage, database: db } = makeStorage(dir);
+    database = db;
+    await storage.init();
+    assert.deepEqual(storage.readConfig(), { providers: {} });
+    assert.equal(database.get("migrated", source), undefined, "坏文件不打迁移标记");
+    assert.equal(storage.importErrors().length, 1);
+    // 修复源文件 → 再次 init → 自动导入、告警清除、标记生效
+    await writeFile(
+      source,
+      `${JSON.stringify({ providers: { fixed: { baseUrl: "https://f.example.com", api: "openai-completions" } } }, null, 2)}\n`,
+    );
+    await storage.init();
+    assert.equal(storage.readConfig().providers.fixed.baseUrl, "https://f.example.com");
+    assert.equal(database.get("migrated", source), true);
+    assert.deepEqual(storage.importErrors(), []);
+    // 标记生效：改源文件不再覆盖权威
+    await writeFile(source, `{"providers":{"changed":{}}}`);
+    await storage.init();
+    assert.equal(storage.readConfig().providers.changed, undefined);
+  } finally {
+    database?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("混合坏 auth：好条目入库且不打标记，UI 新值不被重导覆盖，修复后坏条目可补导入", async () => {
+  const dir = await tempDir();
+  let database;
+  try {
+    await seedPiAuth(dir, { good: { type: "api_key", key: "sk-old" }, broken: { type: "wat" } });
+    const source = join(dir, "pi", "auth.json");
+    const { storage, database: db } = makeStorage(dir);
+    database = db;
+    await storage.init();
+    assert.deepEqual(database.get("auth", "good"), { type: "api_key", key: "sk-old" });
+    assert.equal(database.get("auth", "broken"), undefined);
+    assert.equal(database.get("migrated", source), undefined, "混合坏条目不打迁移标记");
+    assert.match(storage.importErrors().at(-1).error, /broken/);
+    // 用户经 UI 改了 good 的新值；随后把源文件里的 broken 修好
+    await storage.credentials.modify("good", () => ({ type: "api_key", key: "sk-new" }));
+    await seedPiAuth(dir, { good: { type: "api_key", key: "sk-old" }, broken: { type: "api_key", key: "sk-fix" } });
+    await storage.init();
+    assert.deepEqual(database.get("auth", "good"), { type: "api_key", key: "sk-new" }, "权威新值不被重导覆盖");
+    assert.deepEqual(database.get("auth", "broken"), { type: "api_key", key: "sk-fix" }, "修复后补导入");
+    assert.equal(database.get("migrated", source), true);
+    assert.deepEqual(storage.importErrors(), []);
+  } finally {
+    database?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("导入告警去重：反复 init 同一批坏文件不追加重复条目", async () => {
+  const dir = await tempDir();
+  let database;
+  try {
+    await mkdir(join(dir, "pi"), { recursive: true });
+    await writeFile(join(dir, "pi", "models.json"), "{oops");
+    await seedPiAuth(dir, { p: { type: "api_key", key: "sk-1" }, bad: { type: "wat" } });
+    const { storage, database: db } = makeStorage(dir);
+    database = db;
+    await storage.init();
+    const count = storage.importErrors().length;
+    assert.equal(count, 2);
+    for (let i = 0; i < 3; i += 1) await storage.init();
+    assert.equal(storage.importErrors().length, count, "重复告警不追加");
+  } finally {
+    database?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("compat 原子写：rename 失败完整清理临时文件且绝不先删目标，恢复后可重建", async () => {
+  const dir = await tempDir();
+  let database;
+  try {
+    const { storage, database: db } = makeStorage(dir);
+    database = db;
+    await storage.init();
+    const original = await readFile(storage.compatPath, "utf8");
+    // 故障注入：目标位置被目录占用 → rename 必败（旧实现会在此泄漏 .tmp 文件）
+    await rm(storage.compatPath);
+    await mkdir(storage.compatPath);
+    await assert.rejects(() => storage.syncCompatFile({ providers: {} }));
+    assert.deepEqual((await readdir(dir)).filter((n) => n.includes(".tmp-")), [], "临时文件已清理");
+    // 恢复：移除占位目录后重新派生成功
+    await rm(storage.compatPath, { recursive: true });
+    await storage.syncCompatFile({ providers: {} });
+    assert.equal(await readFile(storage.compatPath, "utf8"), canonicalModelsJson({ providers: {} }));
+    assert.notEqual(original, undefined);
   } finally {
     database?.close();
     await rm(dir, { recursive: true, force: true });
@@ -176,6 +280,7 @@ test("派生兼容文件：init 后生成、writeConfig 后同步、与权威规
     assert.equal(existsSync(storage.compatPath), true, "空权威也生成兼容文件（SDK 启动即可读）");
     const config = { providers: { p: { baseUrl: "https://p.example.com", apiKey: "sk-1", models: [{ id: "m1" }] } } };
     await storage.writeConfig(config);
+    await storage.syncCompatFile(config);
     assert.equal(await readFile(storage.compatPath, "utf8"), canonicalModelsJson(config));
     // 权限收紧（Windows 无 POSIX 模型，跳过断言）
     if (process.platform !== "win32") {
@@ -208,6 +313,7 @@ test("SDK 注入：runtimeOptions 提供 credentials + modelsPath，ModelRuntime
         },
       },
     });
+    await storage.syncCompatFile(storage.readConfig());
     await storage.credentials.modify("testp", () => ({ type: "api_key", key: "sk-runtime" }));
 
     const { ModelRuntime } = await import("@earendil-works/pi-coding-agent");

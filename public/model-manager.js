@@ -241,7 +241,7 @@ export function initModelManager({ root, request, onSaved }) {
   // ── 加载 ────────────────────────────────────────────────────────────────
   // 草稿表单不因回读/刷新而清空；只在保存成功或用户取消时精确清除。
   // silent=true 用于写操作后的回读：保留提示条（例如「已保存」不被冲掉）。
-  async function load({ silent = false } = {}) {
+  async function load({ silent = false, notify = false } = {}) {
     const token = ++state.loadToken;
     state.loading = true;
     try {
@@ -257,8 +257,12 @@ export function initModelManager({ root, request, onSaved }) {
       if (!silent) clearAlert();
       if (state.parseError) showAlert("warn", `旧模型配置导入失败，请在此重新配置：${state.parseError}`,
         [{ label: "重新加载", onclick: () => void load() }]);
+      if (data.applied === false) showAlert("warn", `配置已保存，但尚未应用：${data.applyError || "请重试应用"}`,
+        [{ label: "重试应用", onclick: () => void load({ notify: true }) }]);
       pathLine().textContent = state.path;
       renderProviders();
+      if (notify && data.applied !== false) await Promise.resolve(onSaved?.()).catch(() => {});
+      return data;
     } catch (error) {
       if (token !== state.loadToken) return;
       showAlert("error", `无法加载模型配置：${error.message || error}`,
@@ -277,8 +281,11 @@ export function initModelManager({ root, request, onSaved }) {
       const result = await run();
       state.fingerprint = result?.fingerprint || state.fingerprint;
       onSuccess?.();
-      await load({ silent: true });
-      if (successMessage) showAlert("ok", successMessage);
+      const current = await load({ silent: true });
+      const application = current?.applied !== undefined ? current : result;
+      if (application?.applied === false) showAlert("warn", `配置已保存，但尚未应用：${application.applyError || "请重试应用"}`,
+        [{ label: "重试应用", onclick: () => void load({ notify: true }) }]);
+      else if (current && successMessage) showAlert("ok", successMessage);
       await Promise.resolve(onSaved?.()).catch(() => {});
       return true;
     } catch (error) {
