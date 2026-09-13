@@ -1,6 +1,6 @@
 /* public/tooltip.css — 全站统一悬浮提示。
-   主题：Linear token（--raised 表面 #18191a + --line hairline #23252a + --ink 文本 #f7f8f8），
-   深/浅主题切换只需覆盖 :root 变量，本组件自动适配。
+   主题：深色沿用 :root token（--raised 表面 + --line hairline + --ink 文本）；
+   浅色下按业内惯例（GitHub / Figma）反色成深色提示片，避免浅灰底 + hairline 在白底上看不出边界。
    挂载与定位由 tooltip.js 负责；动态 left/top 走 CSSOM 写入，本文件不含定位。 */
 
 #ax-tooltip {
@@ -16,16 +16,16 @@
   max-height: calc(100vh - 16px);
   overflow: auto; /* 超长内容自身可滚动；tooltip.js 对其内部滚动不关闭 */
   padding: 6px 10px;
-  border: 1px solid var(--line);
+  border: 1px solid light-dark(#2b2d33, var(--line));
   border-radius: 8px;
-  background: var(--raised);
-  color: var(--ink);
+  background: light-dark(#2b2d33, var(--raised));
+  color: light-dark(#f7f8f8, var(--ink));
   font-size: 12px;
   line-height: 1.45;
   letter-spacing: 0;
   white-space: pre-line; /* 保留 title 里的换行 */
   overflow-wrap: anywhere; /* 长路径强制断行 */
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 4px 16px light-dark(#00000029, #00000073);
   opacity: 0;
   visibility: hidden;
   transform: translateY(2px);

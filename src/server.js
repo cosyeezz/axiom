@@ -10,6 +10,7 @@ const assets = new Map(
     ["/", "public/index.html", "text/html"],
     ["/favicon.svg", "public/favicon.svg", "image/svg+xml"],
     ["/style.css", "public/style.css", "text/css"],
+    ["/theme.js", "public/theme.js"],
     ["/app.js", "public/app.js"],
     ["/service-settings.js", "public/service-settings.js"],
     ["/file-picker.js", "public/file-picker.js"],

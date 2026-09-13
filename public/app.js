@@ -201,6 +201,23 @@ mobile.onchange = () => {
   resizePrompt();
 };
 sidebar(!mobile.matches);
+// 明暗主题：theme.js 已在首帧前写好 data-theme，这里只负责切换、持久化与按钮语义。
+// theme-color 跟着改，移动端浏览器地址栏才不会跟页面对不上。
+const themeColors = { dark: "#010102", light: "#f7f8fa" };
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", themeColors[theme]);
+  const label = `切换到${theme === "dark" ? "浅色" : "深色"}主题`;
+  $("toggle-theme").setAttribute("aria-pressed", String(theme === "light"));
+  $("toggle-theme").title = label;
+  $("toggle-theme").setAttribute("aria-label", label);
+}
+applyTheme(document.documentElement.dataset.theme === "light" ? "light" : "dark");
+$("toggle-theme").onclick = () => {
+  const theme = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+  applyTheme(theme);
+  try { localStorage.setItem("axiom.theme", theme); } catch {}
+};
 $("mobile-expand").onclick = () => {
   const expanded = document.querySelector(".shell").classList.toggle("mobile-expanded");
   $("mobile-expand").setAttribute("aria-expanded", String(expanded));

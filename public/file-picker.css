@@ -11,11 +11,11 @@
   border-radius: 14px;
   background: var(--surface);
   color: var(--ink);
-  box-shadow: 0 20px 60px rgb(0 0 0 / 35%);
+  box-shadow: 0 20px 60px light-dark(#00000024, #00000059);
   overflow: hidden;
 }
 #file-picker::backdrop {
-  background: rgb(8 8 14 / 50%);
+  background: light-dark(#1c1d2159, #08080e80);
   backdrop-filter: blur(2px);
 }
 #file-picker .fp-shell {
@@ -62,9 +62,10 @@
   min-height: 36px;
   padding: 0 10px;
   background: var(--raised);
+  color: var(--ink);
   font-weight: 500;
 }
-#file-picker .fp-iconbtn:hover:not(:disabled) { background: var(--accent); }
+#file-picker .fp-iconbtn:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
 #file-picker .fp-iconbtn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* 面包屑 */
@@ -199,9 +200,10 @@
   min-height: 32px;
   padding: 4px 16px;
   background: var(--raised);
+  color: var(--ink);
   font-weight: 500;
 }
-#file-picker .fp-more:hover:not(:disabled) { background: var(--accent); }
+#file-picker .fp-more:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
 #file-picker .fp-status {
   min-height: 18px;
   margin: 0;
@@ -218,7 +220,7 @@
   color: var(--ink);
   font-size: 12px;
 }
-#file-picker .fp-status .fp-retry:hover:not(:disabled) { background: var(--accent); }
+#file-picker .fp-status .fp-retry:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
 
 /* 底部：当前选择 + 取消/确认 */
 #file-picker .fp-foot {
@@ -238,7 +240,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-#file-picker .fp-cancel { background: var(--raised); }
+#file-picker .fp-cancel { background: var(--raised); color: var(--ink); }
 #file-picker .fp-cancel:hover:not(:disabled) { background: var(--line); }
 #file-picker .fp-confirm { min-width: 96px; }
 #file-picker .fp-confirm:hover:not(:disabled) { filter: brightness(1.12); }

@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-13 明/暗主题切换与侧栏字号下调
+- 内容：右上角新增 `#toggle-theme`（太阳/月亮图标，`aria-pressed` 标记浅色）。`public/style.css` 的 `:root` 重写为单一 `light-dark()` token 表，`:root[data-theme]` 只翻 `color-scheme`；新增 `--line-strong`/`--on-accent`/`--accent-hover`/`--hover`/`--shadow-soft|mid|strong`，约 30 处硬编码颜色改为 token 或 `color-mix`。`file-picker`/`model-manager`/`model-picker`/`tooltip` 四个 css 同步 token 化（提示浮层在浅色下反转为暗色芯片）。侧栏字号 aside 13px、品牌 19→17px、侧栏内次级文字 12→11px。
+- 原因：白天使用需要浅色底；浅色调色取 Linear light / GitHub Primer / Vercel Geist 三家成熟方案的交集。侧栏字号偏大，抑制后主区对话更突出。
+- 决策：默认暗色，不跟随 `prefers-color-scheme`，只认显式切换，存 `localStorage` 的 `axiom.theme`。首屏前由阻塞加载的 `public/theme.js` 写 `data-theme` 防闪白（CSP 禁 inline script，故独立文件 + 服务端资源表登记）。强调色底文字固定 `--on-accent: #ffffff`（#5e6ad2 与浅色 `--ink` 不足 4.5:1）。`::backdrop` 遮罩继承不可靠，继续用字面值。
+- 修复：`.icon-button:hover`（0,1,1）输给通用 `button:hover:not(:disabled)`（0,2,1），悬停变成实心强调色底配 `--ink`（浅 2.81 / 暗 2.7，旧版就已存在）；补上 `:not(:disabled)` 后恢复 10% 强调色淡底。
+- 验证：Playwright 逐面截图复核设置弹窗、新建会话、提示浮层、右键菜单、文件选择器、模型面板/自定义下拉、任务弹窗、补全弹窗、展开工具记录、diff 加减色、手机侧栏；对比度扫描（含 hover、按祖先背景做 alpha 合成）两个主题零失败。把新 css 的 `light-dark()` 折叠到暗色分支后与旧版逐行比对，确认暗色无回归（仅 `summary` 与 `.selectors select` 两处遗留 `#d0d6e0` 正式归入 `--body-ink`）。npm test 362 项全绿（service.test.js 并发下偶现 EBUSY 抖动，单跑 17/17）。
+- 涉及：`public/index.html`、`public/theme.js`（新）、`public/app.js`、`public/style.css`、`public/{file-picker,model-manager,model-picker,tooltip}.css`、`src/server.js`（静态资源表）、`.pi/skills/codebase-map/scripts/reindex.mjs` + 重建 `INDEX.md`、`README.md`、`devlog.md`。
+
 ## 2026-09-13 同步最新 master 后复验
 - 合并 origin/master（68e361b），保留手机阅读、GitHub 图标等并行改动；测试冲突按上游移除文字对比模块、本分支新增 model-auth 加载合并，日志和知识库保留双方记录，索引重建。
 - 合并后 npm test：362 项，360 通过、2 跳过、0 失败（上游删除文字对比模块对应测试，故总数比合并前减少）；git diff --check 通过。

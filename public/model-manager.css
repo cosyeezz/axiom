@@ -203,9 +203,9 @@ button.mm-icon-delete:focus-visible { color: var(--danger); }
   background: var(--surface);
 }
 .mm-alert-text { flex: 1 1 240px; overflow-wrap: anywhere; }
-.mm-alert-error { border-color: #f2a6a666; color: var(--danger); background: #f2a6a614; }
-.mm-alert-warn { border-color: #e2b97866; color: var(--highlight); background: #e2b97814; }
-.mm-alert-ok { border-color: #27a64466; color: var(--success); background: #27a64414; }
+.mm-alert-error { border-color: color-mix(in srgb, var(--danger) 40%, transparent); color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); }
+.mm-alert-warn { border-color: color-mix(in srgb, var(--highlight) 40%, transparent); color: var(--highlight); background: color-mix(in srgb, var(--highlight) 8%, transparent); }
+.mm-alert-ok { border-color: color-mix(in srgb, var(--success) 40%, transparent); color: var(--success); background: color-mix(in srgb, var(--success) 8%, transparent); }
 .mm-alert-actions { display: flex; gap: 8px; }
 .mm-alert-actions button { min-height: 28px; padding: 2px 10px; font-size: 12px; }
 
@@ -219,7 +219,7 @@ button.mm-icon-delete:focus-visible { color: var(--danger); }
   font-size: 11px;
   white-space: nowrap;
 }
-.mm-badge-accent { color: var(--accent-ink); border-color: #5e6ad266; }
+.mm-badge-accent { color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
 
 /* 详情内标题 */
 .mm-provider-title {
@@ -278,7 +278,7 @@ button.mm-icon-delete:focus-visible { color: var(--danger); }
   accent-color: var(--accent);
 }
 .mm-field-label { font-size: 11px; color: var(--muted); cursor: pointer; }
-.mm-field-hint { font-size: 11px; color: #62666d; overflow-wrap: anywhere; }
+.mm-field-hint { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
 .mm-field input[type="text"],
 .mm-field input[type="password"],
 .mm-field input[type="number"],
@@ -348,7 +348,7 @@ button.mm-icon-delete:focus-visible { color: var(--danger); }
 .mm-form-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 .mm-form-actions button { min-height: 32px; padding: 4px 12px; font-size: 12px; }
 .mm-primary { background: var(--accent); }
-.mm-primary:hover:not(:disabled) { background: #828fff; }
+.mm-primary:hover:not(:disabled) { background: var(--accent-hover); }
 
 /* 模型行 */
 /* 详情分段：连接 / 模型之间用分割线，而不是并排一堆同级标题 */
