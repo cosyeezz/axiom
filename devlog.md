@@ -744,3 +744,9 @@
   - compat 临时文件改 randomUUID 唯一名，write/rename 任一步失败完整清理；rename 瞬时占用（EPERM/EBUSY）有限退避重试 2 次，绝不先删目标；校验临时文件同样 randomUUID 并把 writeFile 移入 try/finally。
 - 验证：npm test 全量 288 项 287 通过 0 失败 1 跳过（此前 service.test.js 偶发失败为基线时序抖动，stash 对比确认与本分支无关）；新增 7 条故障注入测试（compat 失败回执+同指纹重派生、refresh 失败回执、GET 自愈、修复坏源再 init、混合 auth 不覆盖新值、告警去重、rename 失败清理临时文件）。测试全部使用独立临时目录，未触碰真实配置。
 - 涉及文件：src/model-config.js、src/pi-model-storage.js、tests/model-config.test.js、tests/pi-model-storage.test.js、README.md。
+
+## 2026-09-12 SessionStore 四表实体存储（feat/sqlite-storage）
+- 原因：单会话整 JSON 每次保存全量重写，通知/进度高频更新代价大，且无法按实体增量查询。
+- 内容：新增 src/session-store.js——sessions/summaries/session_events/tasks 四表 + store 配置表保留；事件身份 (session_id,type,agent_id,key) 部分唯一索引；tasks 元数据列（memory_turn/notified/progress_delivered/progress）权威、record 存任务内容，仅元数据变化只 UPDATE 列不读不写大 record；无 id 摘要 `anon-<sha256前20>` 稳定 id；change(work) SAVEPOINT 供多实体原子变更；importLegacySession/migrateLegacy 单事务迁移（坏行告警保留源、精确标记、幂等不覆盖新表）。src/database.js：busy_timeout 先于 journal_mode、外键 ON、暴露 prepare/exec、list() 坏行逐行隔离且告警只报键位不带内容。
+- 验证：node --test tests/database.test.js tests/session-store.test.js 18/18 通过；全量 268 项中 9 个失败经基线（stash 后重跑）确认为既有环境性失败，与本次无关。
+- 涉及：src/database.js、src/session-store.js、tests/database.test.js、tests/session-store.test.js。集成（sessions.js 接线、README）由主审后续处理。

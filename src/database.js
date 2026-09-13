@@ -14,9 +14,12 @@ export class Database {
     // 父目录不存在则逐级创建（与旧 storagePath/defaultsPath 行为一致）。
     mkdirSync(dirname(path), { recursive: true });
     this.#db = new DatabaseSync(path);
-    // WAL：崩溃安全且读写不互斥；busy_timeout 兜底外部工具（sqlite3 CLI 等）短暂持锁。
-    this.#db.exec("PRAGMA journal_mode = WAL");
+    // busy_timeout 必须先于 journal_mode：切 WAL 需要短暂独占锁，先设兜底才不会撞锁即抛。
     this.#db.exec("PRAGMA busy_timeout = 5000");
+    // WAL：崩溃安全且读写不互斥。
+    this.#db.exec("PRAGMA journal_mode = WAL");
+    // 级联删除（SessionStore 子表 ON DELETE CASCADE）依赖外键约束；SQLite 默认关闭，按连接开启。
+    this.#db.exec("PRAGMA foreign_keys = ON");
     this.#db.exec(
       "CREATE TABLE IF NOT EXISTS store (namespace TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (namespace, key))",
     );
@@ -45,9 +48,26 @@ export class Database {
   }
 
   // 该 namespace 下全部条目：[{ key, value }]，按 key 稳定排序。
+  // 坏 JSON 逐行隔离：告警并跳过损坏行，好行照常返回；SQL 错误（连接断开等）照常抛出。
   list(namespace) {
-    return this.#db.prepare("SELECT key, value FROM store WHERE namespace = ? ORDER BY key").all(namespace)
-      .map(({ key, value }) => ({ key, value: JSON.parse(value) }));
+    const items = [];
+    for (const { key, value } of this.#db.prepare("SELECT key, value FROM store WHERE namespace = ? ORDER BY key").iterate(namespace)) {
+      try {
+        items.push({ key, value: JSON.parse(value) });
+      } catch (error) {
+        console.warn(`命名空间 ${namespace} 键 ${key} 的值不是合法 JSON，已跳过：${error.message}`);
+      }
+    }
+    return items;
+  }
+
+  // 供 SessionStore 等同库模块复用连接的最小能力：预编译语句与裸 SQL（建表/事务/PRAGMA）。
+  prepare(sql) {
+    return this.#db.prepare(sql);
+  }
+
+  exec(sql) {
+    this.#db.exec(sql);
   }
 
   close() {

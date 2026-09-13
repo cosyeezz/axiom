@@ -69,7 +69,33 @@ test("database close 后操作抛错而不是静默失败", async () => {
   try {
     assert.throws(() => db.get("ns", "k"));
     assert.throws(() => db.set("ns", "k", 2));
+    assert.throws(() => db.list("ns"));
+    assert.throws(() => db.prepare("SELECT 1"));
+    assert.throws(() => db.exec("SELECT 1"));
   } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("database 暴露 prepare/exec；PRAGMA 生效：busy_timeout 先于 journal_mode、外键开、query_only 真实拦截写入", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "axiom-db-"));
+  const db = new Database(join(dir, "axiom.db"));
+  try {
+    assert.equal(db.prepare("SELECT value FROM store WHERE namespace = ?").get("none"), undefined);
+    assert.equal(db.prepare("PRAGMA foreign_keys").get().foreign_keys, 1);
+    assert.equal(db.prepare("PRAGMA busy_timeout").get().timeout, 5000);
+    assert.equal(db.prepare("PRAGMA journal_mode").get().journal_mode, "wal");
+    // 主审验收手法：query_only 置开后写入必须真实抛错，置回恢复。
+    db.exec("PRAGMA query_only = ON");
+    assert.throws(() => db.set("ns", "k", 1));
+    db.exec("PRAGMA query_only = OFF");
+    db.set("ns", "k", 1);
+    assert.deepEqual(db.get("ns", "k"), 1);
+    // exec 支持多语句（SessionStore 建表/事务用同一入口）。
+    db.exec("CREATE TABLE t (x); INSERT INTO t VALUES (1); INSERT INTO t VALUES (2);");
+    assert.equal(db.prepare("SELECT count(*) AS n FROM t").get().n, 2);
+  } finally {
+    db.close();
     await rm(dir, { recursive: true, force: true });
   }
 });
