@@ -360,7 +360,7 @@ test("保存失败与外部修改冲突都在面板内展示，冲突可重新�
   conflict.settled = true;
   conflict.reject(new Error("models.json 已被外部修改"));
   await h.settle();
-  assert.match(root.textContent, /已被外部修改/);
+  assert.match(root.textContent, /已被其他窗口修改/);
   const reload = [...root.querySelectorAll(".mm-alert button")].find((node) => node.textContent === "重新加载");
   reload.click();
   await h.settle();
@@ -388,7 +388,7 @@ test("parseError 时提示且不丢目录；加载失败不抛出并提供重试
   await h.settle();
   await loaded;
   let root = h.window.document.getElementById("root");
-  assert.match(root.textContent, /不是有效 JSON/);
+  assert.match(root.textContent, /旧模型配置导入失败/);
   assert.match(root.textContent, /openai\/gpt-5.1/, "目录照常展示");
   assert.match(root.textContent, /尚无自定义供应商/);
   assert.doesNotMatch(root.textContent, /保存失败/);

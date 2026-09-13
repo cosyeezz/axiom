@@ -5,6 +5,8 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { stat, mkdir, copyFile } from "node:fs/promises";
 import { constants, readFileSync } from "node:fs";
 import { createPiFactory } from "./pi.js";
+import { Database } from "./database.js";
+import { createPiModelStorage } from "./pi-model-storage.js";
 import { Sessions } from "./sessions.js";
 import { createModelsService } from "./model-config.js";
 import { createServerApp } from "./server.js";
@@ -18,7 +20,8 @@ if (!Number.isInteger(port) || port < 1 || port > 65535)
 const cwd = resolve(process.env.AXIOM_CWD || process.cwd());
 if (!(await stat(cwd)).isDirectory())
   throw new Error("AXIOM_CWD must be a directory");
-const factory = await createPiFactory({ cwd, model: process.env.AXIOM_MODEL });
+// home 解析必须早于 factory：模型配置/凭据的 SQLite 权威存储要先完成首次幂等导入、
+// 重建派生兼容文件，SDK 首次读模型目录（factory 内 ModelRuntime.create）时数据已就绪。
 const home = resolve(process.env.AXIOM_HOME || join(homedir(), ".axiom"));
 await mkdir(home, { recursive: true });
 try {
@@ -26,9 +29,19 @@ try {
 } catch (error) {
   if (!["ENOENT", "EEXIST"].includes(error.code)) throw error;
 }
-const sessions = new Sessions(factory, join(home, "defaults.json"), join(home, "workspaces"));
-// 模型配置（models.json）编辑与收藏：路径注入便于测试与数据目录适配。
-const models = createModelsService({ factory, favoritesPath: join(home, "models-favorites.json") });
+// 共享 SQLite 单例：会话/预设/默认配置、模型配置与凭据、远程访问配置共用一个库；
+// 关闭时机在 app.close 完全之后（stop 内），保证退出前的最后一次保存不会撞上已关闭的库。
+const database = new Database(join(home, "axiom.db"));
+const modelStorage = createPiModelStorage({ database, home });
+await modelStorage.init();
+const factory = await createPiFactory({
+  cwd,
+  model: process.env.AXIOM_MODEL,
+  modelRuntimeOptions: modelStorage.runtimeOptions(),
+});
+const sessions = new Sessions(factory, join(home, "defaults.json"), join(home, "workspaces"), database);
+// 模型配置服务：权威在 modelStorage（SQLite），此处只提供协议语义。
+const models = createModelsService({ factory, storage: modelStorage });
 await sessions.loadDefaults();
 await sessions.load();
 const service = {
@@ -72,7 +85,7 @@ app.server.listen(port, "127.0.0.1", () => {
   initRemote().catch((error) => console.error("远程访问初始化失败：", error));
 });
 async function initRemote() {
-  const remote = await createRemoteAccess({ home, app, tailscale: createTailscale() });
+  const remote = await createRemoteAccess({ home, app, database, tailscale: createTailscale() });
   service.remoteStatus = remote.status;
   service.remoteConfigure = remote.configure;
   service.remoteLogin = remote.login;
@@ -83,10 +96,14 @@ async function initRemote() {
 }
 let closing;
 function stop() {
-  closing ||= app.close().then(() => process.exit(0)).catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
+  closing ||= app.close()
+    // 关库必须排在 app.close 完全之后：会话/任务的最后一笔保存发生在关闭路径内。
+    .then(() => database.close())
+    .then(() => process.exit(0))
+    .catch((error) => {
+      console.error(error);
+      process.exit(1);
+    });
 }
 for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, stop);
 process.on("message", (message) => {

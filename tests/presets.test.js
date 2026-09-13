@@ -15,8 +15,9 @@ const makeFactory = () => {
 
 test("presets CRUD persist across restart and strip trustProject/useDefaults", async () => {
   const dir = await mkdtemp(join(tmpdir(), "axiom-presets-"));
+  let sessions, restored;
   try {
-    const sessions = new Sessions(makeFactory(), join(dir, "defaults.json"));
+    sessions = new Sessions(makeFactory(), join(dir, "defaults.json"));
     assert.deepEqual(await sessions.listPresets(), { presets: [] });
     const saved = await sessions.savePreset({
       name: " 开发 ",
@@ -33,20 +34,24 @@ test("presets CRUD persist across restart and strip trustProject/useDefaults", a
     const store = { presets: [updated] };
     assert.deepEqual(await sessions.listPresets(), store);
     // 重启（同目录新实例）读回
-    assert.deepEqual(await new Sessions(makeFactory(), join(dir, "defaults.json")).listPresets(), store);
+    restored = new Sessions(makeFactory(), join(dir, "defaults.json"));
+    assert.deepEqual(await restored.listPresets(), store);
     await sessions.deletePreset(saved.id);
     assert.deepEqual(await sessions.listPresets(), { presets: [] });
     await assert.rejects(sessions.deletePreset(saved.id), /Unknown preset/);
     await assert.rejects(sessions.savePreset({ presetId: randomUUID(), name: "x", selection: {} }), /Unknown preset/);
   } finally {
+    await sessions?.close();
+    await restored?.close();
     await rm(dir, { recursive: true, force: true });
   }
 });
 
 test("presets reject invalid input and keep the stored file intact", async () => {
   const dir = await mkdtemp(join(tmpdir(), "axiom-presets-"));
+  let sessions;
   try {
-    const sessions = new Sessions(makeFactory(), join(dir, "defaults.json"));
+    sessions = new Sessions(makeFactory(), join(dir, "defaults.json"));
     const good = await sessions.savePreset({ name: "good", selection: {} });
     await assert.rejects(sessions.savePreset({ name: "  ", selection: {} }));
     await assert.rejects(sessions.savePreset({ name: "x".repeat(81), selection: {} }));
@@ -55,14 +60,16 @@ test("presets reject invalid input and keep the stored file intact", async () =>
     await assert.rejects(sessions.savePreset({ name: "ok", selection: { capabilities: { skills: ["a"], extra: 1 } } }));
     assert.deepEqual(await sessions.listPresets(), { presets: [good] });
   } finally {
+    await sessions?.close();
     await rm(dir, { recursive: true, force: true });
   }
 });
 
 test("concurrent preset saves serialize without losing writes", async () => {
   const dir = await mkdtemp(join(tmpdir(), "axiom-presets-"));
+  let sessions;
   try {
-    const sessions = new Sessions(makeFactory(), join(dir, "defaults.json"));
+    sessions = new Sessions(makeFactory(), join(dir, "defaults.json"));
     await Promise.all(Array.from({ length: 6 }, (_, i) =>
       sessions.savePreset({ name: `p${i}`, selection: { model: "a/b" } })));
     const { presets } = await sessions.listPresets();
@@ -70,18 +77,21 @@ test("concurrent preset saves serialize without losing writes", async () => {
     await Promise.all(presets.map((preset) => sessions.deletePreset(preset.id)));
     assert.deepEqual(await sessions.listPresets(), { presets: [] });
   } finally {
+    await sessions?.close();
     await rm(dir, { recursive: true, force: true });
   }
 });
 
 test("stale preset cwd fails at session creation, not at list", async () => {
   const dir = await mkdtemp(join(tmpdir(), "axiom-presets-"));
+  let sessions;
   try {
-    const sessions = new Sessions(makeFactory(), join(dir, "defaults.json"), join(dir, "storage"));
+    sessions = new Sessions(makeFactory(), join(dir, "defaults.json"), join(dir, "storage"));
     const saved = await sessions.savePreset({ name: "gone", cwd: join(dir, "missing"), selection: {} });
     assert.deepEqual(await sessions.listPresets(), { presets: [saved] });
     await assert.rejects(sessions.create(saved.cwd), /ENOENT/);
   } finally {
+    await sessions?.close();
     await rm(dir, { recursive: true, force: true });
   }
 });

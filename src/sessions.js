@@ -1,10 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { realpath, stat, readFile, mkdir, writeFile, rename, rm, readdir } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
+import { realpath, stat, readFile, mkdir, writeFile, rm, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
+import { Database } from "./database.js";
 import { basename, dirname, join, relative, isAbsolute, resolve, sep, parse } from "node:path";
 
-import { selection as selectionSchema, presetStore, compaction as compactionSchema, compactionDefaults, assertPromptImages } from "./protocol.js";
+import { selection as selectionSchema, presetStore, memorySummary as memorySummarySchema, compaction as compactionSchema, compactionDefaults, assertPromptImages } from "./protocol.js";
+import { memorySummaryDefaults } from "./memory-policy.js";
 import { Tasks } from "./tasks.js";
 import { delegationTools } from "./tools.js";
 import { resolveCapabilities } from "./capabilities.js";
@@ -164,9 +167,17 @@ async function hostLocations() {
 }
 
 export class Sessions {
-  constructor(createAgent, defaultsPath, storagePath) {
+  constructor(createAgent, defaultsPath, storagePath, database) {
     this.storagePath = storagePath;
     this.defaultsPath = defaultsPath;
+    // 共享 SQLite 库：优先外部注入（main 组装同一实例）；未注入时从 defaultsPath 或
+    // storagePath 旁自建 axiom.db，让旧调用方零改动即得持久化；两者都没有则纯内存。
+    const sidecar = defaultsPath ? join(dirname(defaultsPath), "axiom.db")
+      : storagePath ? join(dirname(storagePath), "axiom.db") : null;
+    this.ownsDatabase = !database && !!sidecar;
+    this.database = database || (sidecar ? new Database(sidecar) : null);
+    this.memorySummary = structuredClone(memorySummaryDefaults);
+    this.loadMemorySummary();
     this.savingDefaults = Promise.resolve();
     this.projectSkills = {};
     this.savingPresets = Promise.resolve();
@@ -176,24 +187,81 @@ export class Sessions {
     this.defaultSelection = { compaction: { ...compactionDefaults }, retry: null, queueType: "steer", model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
   }
 
-  async loadDefaults() {
-    if (!this.defaultsPath) return;
-    try {
-      const { projectSkills = {}, ...data } = JSON.parse(await readFile(this.defaultsPath, "utf8"));
-      const saved = selectionSchema.strict().parse(data);
-      if (!projectSkills || typeof projectSkills !== "object" || Array.isArray(projectSkills)) throw new Error("无效的项目技能配置");
-      for (const entry of Object.values(projectSkills)) {
-        if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("无效的项目技能配置");
-        for (const [role, ids] of Object.entries(entry)) {
-          if (!["capabilities", "subagentCapabilities"].includes(role) || !Array.isArray(ids) || ids.some((id) => typeof id !== "string"))
-            throw new Error("无效的项目技能选择");
-        }
+  // 默认配置验证与装配：schema + projectSkills 结构；验证通过是写库与迁移标记的前提。
+  applyDefaults(data) {
+    const { projectSkills = {}, ...saved } = data ?? {};
+    const parsed = selectionSchema.strict().parse(saved);
+    if (!projectSkills || typeof projectSkills !== "object" || Array.isArray(projectSkills)) throw new Error("无效的项目技能配置");
+    for (const entry of Object.values(projectSkills)) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("无效的项目技能配置");
+      for (const [role, ids] of Object.entries(entry)) {
+        if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) throw new Error("无效的项目技能选择");
       }
-      this.projectSkills = projectSkills;
-      Object.assign(this.defaultSelection, saved);
-    } catch (error) {
-      if (error.code !== "ENOENT") throw new Error(`默认新会话配置读取失败：${error.message}`);
     }
+    this.projectSkills = projectSkills;
+    Object.assign(this.defaultSelection, parsed);
+  }
+
+  // 默认新会话配置以 SQLite 为权威：优先读库；首次启动从旧 defaults.json 一次性迁移。
+  async loadDefaults() {
+    if (!this.database) return;
+    const stored = this.database.get("defaults", "defaults");
+    if (stored !== undefined) return this.applyDefaults(stored);
+    await this.migrateDefaults();
+    this.migratePresets();
+  }
+
+  // 旧 defaults.json 一次性迁入库：验证通过才写库并标记；此后 JSON 只是遗留文件，
+  // 不再作为权威——坏 JSON 只警告不标记（保留重试机会），也绝不阻断启动。
+  async migrateDefaults() {
+    if (!this.defaultsPath || this.database.get("migrated", this.defaultsPath)) return;
+    try {
+      const data = JSON.parse(await readFile(this.defaultsPath, "utf8"));
+      this.applyDefaults(data);
+      this.database.set("defaults", "defaults", data);
+      this.database.set("migrated", this.defaultsPath, true);
+    } catch (error) {
+      if (error.code !== "ENOENT") console.warn(`旧默认配置迁移失败，保留原文件 ${this.defaultsPath}：${error.message}`);
+    }
+  }
+
+  // 旧 presets.json 同样一次性迁入库；与 defaults 一样「验证成功才标记」，源文件保留。
+  migratePresets() {
+    const path = this.defaultsPath ? join(dirname(this.defaultsPath), "presets.json") : null;
+    if (!path || this.database.get("migrated", path)) return;
+    try {
+      const store = presetStore.parse(JSON.parse(readFileSync(path, "utf8")));
+      if (this.database.get("presets", "store") === undefined) this.database.set("presets", "store", store);
+      this.database.set("migrated", path, true);
+    } catch (error) {
+      if (error.code !== "ENOENT") console.warn(`旧会话预设迁移失败，保留原文件 ${path}：${error.message}`);
+    }
+  }
+
+  // —— 全局摘要设置（memorySummary）：SQLite namespace "settings"；构造时读取，
+  // 重启后按最新全局值生效；运行中会话持有创建时的快照，不热更。
+  // 坏记录只警告并回退默认值，不阻断启动。
+  loadMemorySummary() {
+    if (!this.database) return;
+    const saved = this.database.get("settings", "memorySummary");
+    if (saved === undefined) return;
+    try {
+      this.memorySummary = memorySummarySchema.parse({ ...memorySummaryDefaults, ...saved });
+    } catch (error) {
+      console.warn(`摘要设置读取失败，使用默认值：${error.message}`);
+    }
+  }
+
+  getMemorySummary() {
+    return structuredClone(this.memorySummary);
+  }
+
+  // 保存前 zod 校验（坏值直接抛给 WS 通用错误回执），先持久化再更新内存值。
+  configureMemorySummary(value) {
+    const next = memorySummarySchema.parse(value);
+    this.database.set("settings", "memorySummary", next);
+    this.memorySummary = next;
+    return structuredClone(next);
   }
   getDefaults() {
     return structuredClone(this.defaultSelection);
@@ -255,16 +323,7 @@ export class Sessions {
       }
       projectSkills[workspaceKey] = entry;
     }
-    if (this.defaultsPath) {
-      const temporary = `${this.defaultsPath}.${randomUUID()}.tmp`;
-      await mkdir(dirname(this.defaultsPath), { recursive: true });
-      try {
-        await writeFile(temporary, JSON.stringify({ ...next, projectSkills }, null, 2) + "\n", { mode: 0o600 });
-        await rename(temporary, this.defaultsPath);
-      } finally {
-        await rm(temporary, { force: true });
-      }
-    }
+    if (this.database) this.database.set("defaults", "defaults", { ...next, projectSkills });
     this.defaultSelection = next;
     this.projectSkills = projectSkills;
     return result;
@@ -302,39 +361,27 @@ export class Sessions {
     return config;
   }
 
-  // —— 具名会话预设：沿用 selection schema，持久化 defaultsPath 同目录 presets.json。
+  // —— 具名会话预设：沿用 selection schema，整包存 SQLite（namespace "presets"）。
   // 保存只做 schema 校验（selection.parse 剥离 trustProject/useDefaults）；目录或能力失效
   // 留给会话创建时报错，不阻止保存与列表读取。
-  get presetsPath() {
-    return this.defaultsPath ? join(dirname(this.defaultsPath), "presets.json") : null;
-  }
   async listPresets() {
-    const path = this.presetsPath;
-    if (!path) return { presets: [] };
+    if (!this.database) return { presets: [] };
     try {
-      return presetStore.parse(JSON.parse(await readFile(path, "utf8")));
+      const stored = this.database.get("presets", "store");
+      return stored === undefined ? { presets: [] } : presetStore.parse(stored);
     } catch (error) {
-      if (error.code === "ENOENT") return { presets: [] };
       throw new Error(`会话预设读取失败：${error.message}`);
     }
   }
-  // 串行读-改-写：并发保存走同一 promise 链避免相互覆盖；临时文件 + rename 原子落盘。
+  // 串行读-改-写：并发保存走同一 promise 链避免相互覆盖；单条 UPSERT 由 SQLite 保证原子。
   mutatePresets(mutate) {
-    const path = this.presetsPath;
-    if (!path) return Promise.reject(new Error("未启用会话预设持久化"));
+    if (!this.database) return Promise.reject(new Error("未启用会话预设持久化"));
     const work = this.savingPresets.catch(() => {}).then(async () => {
       const presets = (await this.listPresets()).presets;
       const resultId = mutate(presets);
       // 写前整包自检：不合规数据（含手工编辑的坏 name/selection）在落盘前拦截。
       const store = presetStore.parse({ presets });
-      const temporary = `${path}.${randomUUID()}.tmp`;
-      await mkdir(dirname(path), { recursive: true });
-      try {
-        await writeFile(temporary, JSON.stringify(store, null, 2) + "\n", { mode: 0o600 });
-        await rename(temporary, path);
-      } finally {
-        await rm(temporary, { force: true });
-      }
+      this.database.set("presets", "store", store);
       return resultId ? store.presets.find((preset) => preset.id === resultId) : null;
     });
     this.savingPresets = work.catch(() => {});
@@ -367,39 +414,73 @@ export class Sessions {
   async load() {
     if (!this.storagePath) return;
     await mkdir(this.storagePath, { recursive: true });
+    await this.migrateLegacySessions();
+    // 库是恢复权威：逐条重建；压缩配置重置为最新默认，其余保持原样。
+    for (const { key, value: saved } of this.database?.list("sessions") ?? []) {
+      try {
+        // 历史文件缺失时绝不恢复：SDK 会静默在该路径开新会话（空历史），随后的 persist
+        // 还会把空状态写回库记录。这里跳过并保留库记录原状，文件找回（如备份还原）后
+        // 下次启动照常恢复。
+        if (saved.sessionFile && !existsSync(saved.sessionFile)) {
+          console.warn(`会话 ${key} 的历史文件缺失，本次跳过恢复并保留库记录：${saved.sessionFile}`);
+          continue;
+        }
+        saved.selection ??= {};
+        saved.selection.compaction = structuredClone(this.defaultSelection.compaction);
+        await this.create(saved.cwd, saved.selection, saved);
+      } catch (error) {
+        // 单条损坏不拖垮其他会话；记录保留在库中，便于诊断。
+        console.warn(`会话恢复失败 ${key}：${error.message}`);
+      }
+    }
+  }
+
+  // 旧版磁盘会话（workspaces/<hash>/<id>.json）一次性迁入库：解析验证成功才写库+标记，
+  // 源文件保留（迁移永不破坏原始数据）。标记精确到文件：单文件失败只跳过它自己，修复后
+  // 下次启动重试，不牵连同目录其他文件。顺序为先落库再标记（各自单条 UPSERT 原子），
+  // 两步之间崩溃会重扫同一文件，但「库同 id 以库为准」保证幂等不重复导入。库中已有同 id
+  // 记录时以库为准不覆盖；删除会话时旧 JSON 一并清理，即使清理中断，文件标记仍在，绝不复活。
+  async migrateLegacySessions() {
     for (const workspace of await readdir(this.storagePath, { withFileTypes: true })) {
       if (!workspace.isDirectory()) continue;
-      for (const file of await readdir(join(this.storagePath, workspace.name))) {
+      const directory = join(this.storagePath, workspace.name);
+      for (const file of await readdir(directory)) {
         if (!file.endsWith(".json")) continue;
-        const path = join(this.storagePath, workspace.name, file);
+        const path = join(directory, file);
+        const marker = `sessions/${path}`;
+        if (this.database?.get("migrated", marker)) continue;
         try {
           const saved = JSON.parse(await readFile(path, "utf8"));
-          // 重启时统一采用最新默认压缩配置，其余会话配置保持原样。
-          saved.selection.compaction = structuredClone(this.defaultSelection.compaction);
-          await this.create(saved.cwd, saved.selection, saved);
+          if (typeof saved?.id !== "string" || !saved.id) throw new Error("缺少会话 id");
+          if (typeof saved?.cwd !== "string" || !saved.cwd) throw new Error("缺少会话工作空间");
+          if (saved.selection !== undefined && (typeof saved.selection !== "object" || Array.isArray(saved.selection) || saved.selection === null))
+            throw new Error("无效的会话配置");
+          // 完整模型消息不再入库：历史权威是 Pi JSONL，恢复时重建。
+          delete saved.messages;
+          if (this.database?.get("sessions", saved.id) === undefined) this.database?.set("sessions", saved.id, saved);
+          this.database?.set("migrated", marker, true);
         } catch (error) {
-          console.warn(`会话恢复失败，保留原文件 ${path}：${error.message}`);
+          console.warn(`旧会话迁移失败，保留原文件 ${path}：${error.message}`);
         }
       }
     }
   }
   persist(item) {
-    if (!item.storageDir) return Promise.resolve();
-    const data = JSON.stringify({ id: item.id, cwd: item.cwd, title: item.title,
+    if (!this.database) return Promise.resolve();
+    const data = { id: item.id, cwd: item.cwd, title: item.title,
       titleManual: item.titleManual, titleRequested: item.titleRequested,
       summaries: item.summaries, memoryTurns: item.memoryTurns, progressDeliveries: item.progressDeliveries, summaryTriggers: item.summaryTriggers,
-      createdAt: item.createdAt, updatedAt: item.updatedAt, messages: item.messages, compactions: item.compactions, retries: item.retries, tasks: item.tasks.snapshot(),
+      createdAt: item.createdAt, updatedAt: item.updatedAt, compactions: item.compactions, retries: item.retries, tasks: item.tasks.snapshot(),
       elapsedMs: item.elapsedMs, runningSince: item.runningSince,
       sessionFile: item.agent.sessionFile?.(),
       selection: { ...item.agent.config?.(), capabilities: item.capabilities,
         subagentCapabilities: item.subagentCapabilities, subagentModel: item.subagentModel,
         subagentThinking: item.subagentThinking, queueType: item.queueType,
-        trustProject: item.trustProject, useDefaults: false } });
-    const work = (item.saving || Promise.resolve()).catch(() => {}).then(async () => {
-      const file = join(item.storageDir, `${item.id}.json`);
-      const temporary = `${file}.tmp`;
-      await writeFile(temporary, data, { mode: 0o600 });
-      await rename(temporary, file);
+        trustProject: item.trustProject, useDefaults: false } };
+    // 立即序列化快照（保存的是调用那一刻的数据，不等前一个保存完成）。
+    const payload = JSON.stringify(data);
+    const work = (item.saving || Promise.resolve()).catch(() => {}).then(() => {
+      this.database.set("sessions", item.id, JSON.parse(payload));
     });
     item.saving = work;
     return work;
@@ -479,6 +560,9 @@ export class Sessions {
       titleManual: saved?.titleManual ?? !!saved,
       titleRequested: saved?.titleRequested ?? !!saved,
       titlePending: false,
+      // 摘要策略随会话创建定死：新会话取当前全局值（保存后新建即生效），运行中不热更；
+      // selection.memorySummary 仅供测试注入。
+      memorySummary: structuredClone(selection.memorySummary ?? this.memorySummary),
       summaries: saved?.summaries || [],
       memoryTurns: saved?.memoryTurns || {},
       progressDeliveries: saved?.progressDeliveries || [],
@@ -650,8 +734,10 @@ export class Sessions {
       if (importedFile) await rm(importedFile, { force: true });
       throw error;
     }
-    // 导入会话没有网页快照：历史直接取 JSONL 分支，保留 entryId 用于压缩折叠与后续续聊。
-    if (importedFile)
+    // 导入与库恢复的会话都没有完整消息快照（模型消息不再入库）：主代理历史从 Pi JSONL
+    // 当前分支重建（撤回/压缩后的分支即真实历史），entryId 保留用于压缩折叠与撤回定位；
+    // 子代理消息不落 JSONL，恢复后不再逐条回放（任务卡仍带最终结果）。
+    if (importedFile || (saved && !item.messages.length))
       item.messages = (item.agent.historyEntries?.() || []).map((entry) => ({ agentId: "main", message: entry.message, entryId: entry.id }));
     // Upgrade legacy web history IDs and recover compaction commits saved in Pi JSONL
     // before a crash could persist the web snapshot. Match in order, never by timestamp alone.
@@ -1044,14 +1130,25 @@ export class Sessions {
     item.unsubscribe();
     await item.agent.dispose();
     await this.persist(item);
-    if (deleting && item.storageDir) {
-      if (item.agent.sessionFile?.()) await rm(item.agent.sessionFile(), { force: true });
-      await rm(join(item.storageDir, `${id}.json`), { force: true });
+    if (deleting) {
+      // 删除顺序：先删库记录再清理文件；若中途崩溃，标记过的旧 JSON 不会复活会话。
+      this.database?.delete("sessions", id);
+      if (item.storageDir) {
+        if (item.agent.sessionFile?.()) await rm(item.agent.sessionFile(), { force: true });
+        // 旧版磁盘快照兜底清理（已迁移标记的目录不会再被扫描）。
+        await rm(join(item.storageDir, `${id}.json`), { force: true });
+      }
     }
     item.listeners.clear();
     this.items.delete(id);
   }
   async close() {
     await Promise.all([...this.items.keys()].map((id) => this.remove(id, false)));
+    // 只有本实例自建的库才由这里关闭；外部注入的库由注入方（main）统一管理。
+    // 置 null 保证重复 close 幂等。
+    if (this.ownsDatabase && this.database) {
+      this.database.close();
+      this.database = null;
+    }
   }
 }

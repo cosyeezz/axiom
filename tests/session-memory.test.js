@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Sessions } from "../src/sessions.js";
 import { memoryHooks, parentSummaryContext } from "../src/session-memory.js";
+import { SUMMARY_SYSTEM_PROMPT } from "../src/memory-policy.js";
 
 const reply = (text) => ({ role: "assistant", stopReason: "stop", content: [{ type: "text", text }] });
 
@@ -153,7 +154,8 @@ test("first prompt title only, manual title wins, records persist across restart
     await sessions.get(id).work;
     assert.equal(agents[0].calls[1].options, undefined);
     assert.equal(sessions.get(id).title, "手动命名");
-    const disk = JSON.parse(await readFile(join(sessions.get(id).storageDir, `${id}.json`), "utf8"));
+    // 管理数据在共享 SQLite 库（不再写磁盘 JSON 快照）。
+    const disk = sessions.database.get("sessions", id);
     assert.equal(disk.summaries.length, 2);
     assert.equal(disk.titleManual, true);
     await sessions.close();
@@ -166,4 +168,21 @@ test("first prompt title only, manual title wins, records persist across restart
     await sessions.close();
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("summary params come from the session memory config and hooks expose the same policy", () => {
+  const item = { summaries: [], memoryTurns: {}, progressDeliveries: [], summaryTriggers: [], tasks: { jobs: new Map() }, emit: () => {},
+    memorySummary: { mainTurns: 2, subagentTurns: 4, maxChars: 10 } };
+  const main = memoryHooks(item, () => {});
+  assert.deepEqual(main.policy, { interval: 2, maxChars: 10, systemPrompt: SUMMARY_SYSTEM_PROMPT.replace("<30字", "<10字") });
+  // 有效摘要须严格小于 maxChars：9 字记录、10 字拒绝
+  main.onReply({ message: reply(`<summary>${"记".repeat(9)}</summary>`), turn: 1 });
+  main.onReply({ message: reply(`<summary>${"记".repeat(10)}</summary>`), turn: 2 });
+  assert.equal(item.summaries.length, 1);
+  assert.equal(item.summaries[0].text, "记".repeat(9));
+  // 无配置的 item（老会话/直接构造）回退默认 3/6/30，与 memoryPolicy 缺省一致
+  const legacy = memoryHooks({ summaries: [], memoryTurns: {}, progressDeliveries: [], summaryTriggers: [], tasks: { jobs: new Map() }, emit: () => {} });
+  assert.deepEqual(legacy.policy, { interval: 3, maxChars: 30, systemPrompt: SUMMARY_SYSTEM_PROMPT });
+  const child = memoryHooks(item, () => {}, { id: "child", status: "running" });
+  assert.deepEqual(child.policy, { interval: 4, maxChars: 10, systemPrompt: SUMMARY_SYSTEM_PROMPT.replace("<30字", "<10字") });
 });

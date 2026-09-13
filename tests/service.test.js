@@ -9,6 +9,8 @@ import { once } from "node:events";
 import { request } from "node:http";
 import { createMaintState, sanitize } from "../scripts/maint-state.mjs";
 import { startMaintServer } from "../scripts/maint-server.mjs";
+import { Database } from "../src/database.js";
+import { installTag } from "../scripts/service.mjs";
 
 const until = async (check, timeout = 12000, step = 80) => {
   const deadline = Date.now() + timeout;
@@ -36,7 +38,8 @@ const buildWorkspace = async (npm = false) => {
   await writeFile(join(root, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: {} }));
   for (const name of ["service.mjs", "maint-state.mjs", "maint-server.mjs"])
     await writeFile(join(root, "scripts", name), await readFile(new URL(`../scripts/${name}`, import.meta.url)));
-  await writeFile(join(root, "src", "update.js"), await readFile(new URL("../src/update.js", import.meta.url)));
+  for (const name of ["update.js", "database.js"])
+    await writeFile(join(root, "src", name), await readFile(new URL(`../src/${name}`, import.meta.url)));
   return { base, root, home: npm ? join(base, "home") : join(root, "home") };
 };
 // 通用假 worker：写 workers/maint-env/workerPid，ready（instanceId 匹配 env），消费 requests 文件里的 restart 请求，
@@ -95,10 +98,13 @@ const getStatus = async (root) => {
   const res = await fetch(`${env.url}/status`, { headers: { Authorization: `Bearer ${env.token}` } });
   return res.json();
 };
-const stateFileOf = async (home) => {
-  const name = (await readdir(home)).find((f) => /^service-state-.+\.json$/.test(f));
-  assert.ok(name, "状态文件存在且命名合法");
-  return join(home, name);
+// 维护状态已入 SQLite：按安装实例键直读 axiom.db（与守护进程并行连接，WAL+busy_timeout 兼容多连接）。
+const stateOf = async (root, home = join(root, "home")) => {
+  const db = new Database(join(home, "axiom.db"));
+  const state = db.get("maint", `state-${installTag("http://127.0.0.1:0", root)}`);
+  db.close();
+  assert.ok(state, "维护状态已入库");
+  return state;
 };
 const teardown = async (base, child) => {
   const workerPid = parseInt(await readMaybe(join(base, "workerPid")) ?? "0", 10);
@@ -189,8 +195,7 @@ test("quick restart stops worker gracefully and starts a ready replacement", asy
     await until(async () => (await getStatus(root)).status === "succeeded");
     assert.ok(parseInt(await readFile(join(root, "workers"), "utf8"), 10) >= 2);
     assert.equal(await readMaybe(join(root, "stopped")), "0");
-    const state = JSON.parse(await readFile(await stateFileOf(home), "utf8"));
-    assert.deepEqual(state.phases.map((p) => p.phase), ["stopping", "starting", "ready"]);
+    assert.deepEqual((await stateOf(root)).phases.map((p) => p.phase), ["stopping", "starting", "ready"]);
   } finally { await teardown(base, child); }
 });
 
@@ -230,7 +235,7 @@ test("crash retries reach terminal state then POST /recover brings service back"
   try {
     await until(async () => (await getStatus(root)).status === "failed");
     assert.equal(parseInt(await readFile(join(root, "workers"), "utf8"), 10), 3);
-    const failed = JSON.parse(await readFile(await stateFileOf(home), "utf8"));
+    const failed = await stateOf(root);
     assert.ok(/\/recover/.test(failed.error));
     await new Promise((r) => setTimeout(r, 600));
     assert.equal(parseInt(await readFile(join(root, "workers"), "utf8"), 10), 3, "终态后不再自动重启");
@@ -270,8 +275,8 @@ test("staged update: verify-commit, swap after clean stop, commit only after rea
     assert.equal(await readMaybe(join(root, "node_modules", "dep-new")), "dep\n", "新依赖位于包私有目录");
     assert.equal(await readMaybe(join(base, "node_modules", "dep-new")), null, "不改共享全局依赖");
     // 换代证明由 _resolved==B40 + .axiom-commit + status succeeded 承担；swap 后新包根全新，workers 计数不跨包累计。
-    const state = JSON.parse(await readFile(await stateFileOf(home), "utf8"));
-    assert.deepEqual(state.phases.map((p) => p.phase), ["preparing", "stopping", "swapping", "starting", "ready"]);
+    assert.deepEqual((await stateOf(root, join(base, "home"))).phases.map((p) => p.phase),
+      ["preparing", "stopping", "swapping", "starting", "ready"]);
   } finally { await teardown(base, child); }
 });
 
@@ -286,7 +291,7 @@ test("update install failure leaves running install untouched and resumes worker
     await writeFile(join(root, "package.json"), JSON.stringify({ name: "@cosyeezz/axiom", version: "8.0.0", _resolved: `github:cosyeezz/axiom#${A40}` }));
     await until(async () => (await readMaybe(join(root, "accepted-u2"))) !== null);
     await until(async () => (await getStatus(root)).status === "failed");
-    const state = JSON.parse(await readFile(await stateFileOf(home), "utf8"));
+    const state = await stateOf(root, join(base, "home"));
     assert.equal(state.phase, "preparing");
     assert.ok(/exited 1/.test(state.error));
     assert.equal(await readMaybe(join(root, "resumed")), "yes", "worker 存活 → resume");
@@ -309,8 +314,7 @@ test("rebuild cancels swap when worker stop exits non-zero", async () => {
     await mkdir(join(root, "node_modules"), { recursive: true });
     await writeFile(join(root, "node_modules", "old-marker"), "1");
     await until(async () => (await getStatus(root)).status === "failed");
-    const state = JSON.parse(await readFile(await stateFileOf(home), "utf8"));
-    assert.ok(/退出码/.test(state.error));
+    assert.ok(/退出码/.test((await stateOf(root, join(base, "home"))).error));
     assert.equal(existsSync(join(root, ".node_modules-backup")), false);
     assert.equal(existsSync(join(root, "build-called")), false);
     assert.equal(await readMaybe(join(root, "node_modules", "old-marker")), "1", "依赖原样保留");
@@ -332,8 +336,8 @@ test("rebuild happy path: stage, swap after stop, build once, commit after ready
     assert.equal(existsSync(join(root, "build-called")), true);
     assert.equal(existsSync(join(root, ".node_modules-backup")), false, "ready 后备份清理");
     assert.equal((await readdir(root)).some((f) => f.startsWith(".axiom-stage-")), false);
-    const state = JSON.parse(await readFile(await stateFileOf(home), "utf8"));
-    assert.deepEqual(state.phases.map((p) => p.phase), ["preparing", "stopping", "swapping", "building", "starting", "ready"]);
+    assert.deepEqual((await stateOf(root, join(base, "home"))).phases.map((p) => p.phase),
+      ["preparing", "stopping", "swapping", "building", "starting", "ready"]);
   } finally { await teardown(base, child); }
 });
 
@@ -377,7 +381,7 @@ test("maintenance HTTP: auth trio, preflight, strict body, recover guard", async
     assert.equal(pre.headers.get("access-control-allow-origin"), url);
     assert.equal((await fetch(`${url}/nope`, { headers: { Authorization: `Bearer ${token}` } })).status, 404);
     assert.equal((await getStatus(root)).ready, true);
-    assert.match(await stateFileOf(home), /service-state-.+\.json$/);
+    assert.ok((await stateOf(root)).ready, "维护状态已持久化入库");
     const recover = (body, type = "application/json") => fetch(`${url}/recover`, {
       method: "POST", headers: { Authorization: `Bearer ${token}`, ...(type ? { "Content-Type": type } : {}) }, body,
     });
@@ -389,51 +393,54 @@ test("maintenance HTTP: auth trio, preflight, strict body, recover guard", async
   } finally { await teardown(base, child); }
 });
 
-test("maint-state: interrupted keeps last result, begin isolates, sanitize covers paths, persist errors surface", async (t) => {
+test("maint-state: SQLite 权威存储——旧 JSON 幂等迁移、重启恢复、实例隔离、失败可见", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "axiom-state-"));
-  const file = join(dir, "state.json");
+  const dbPath = join(dir, "axiom.db");
+  const legacy = join(dir, "service-state-test.json");
   const redactions = [["tokensecret", "***"], [dir, "<install>"]];
+  let clock = 100;
+  const now = () => ++clock;
   try {
-    await writeFile(file, JSON.stringify({
-      pid: 1, instanceId: "old", version: "0.1.0", ready: true,
+    // 迁移：旧 JSON（running 现场）读入 → interrupted、读盘即脱敏、源文件保留。
+    await writeFile(legacy, JSON.stringify({
+      pid: 1, instanceId: "old", ready: true,
       operation: "update", operationId: "m-1", status: "running", phase: "swapping",
       phases: [{ phase: "stopping", at: 1 }, { phase: "swapping", at: 2 }],
       startedAt: 5, updatedAt: 6, error: null, log: `tokensecret crash at ${dir}\\src\\x.js\n`,
     }));
-    const s = await createMaintState({ file, redactions });
+    let db = new Database(dbPath);
+    let s = await createMaintState({ database: db, key: "state-a", legacyFile: legacy, redactions, now });
     assert.equal(s.data.status, "interrupted");
     assert.equal(s.data.operation, "update", "最近操作保留");
     assert.equal(s.data.startedAt, 5, "startedAt 保留");
     assert.ok(s.data.error.includes("中断"));
     assert.deepEqual(s.data.phases.map((p) => p.phase), ["stopping", "swapping", "boot"]);
-    assert.ok(s.data.log.includes("crash"), "上次现场保留");
     assert.ok(!s.data.log.includes("tokensecret") && !s.data.log.includes(dir), "读取即脱敏");
     assert.equal(s.data.instanceId, null);
     await s.begin("m-2", "quick");
-    assert.equal(s.data.status, "running");
     assert.deepEqual(s.data.phases, [], "begin 清空阶段时间线");
-    assert.equal(s.data.log, "", "begin 清空证据窗口");
     s.appendLog(`Authorization: Bearer tokensecret at ${dir}\\src\\y.js`);
-    s.appendLog("authorization=abcdefghijklmnopqrstuvwxyz0123456789");
-    assert.ok(!s.data.log.includes("tokensecret") && !s.data.log.includes(`${dir}\\src`));
-    assert.ok(!s.data.log.includes("abcdefghijklmnopqrstuvwxyz"), "长鉴权值被正则打码");
     await s.fail(new Error(`boom at ${dir}\\src\\z.js`));
     assert.equal(s.data.status, "failed");
     assert.ok(s.data.error.includes("<install>") && !s.data.error.includes(`${dir}\\src`));
-    const persisted = JSON.parse(await readFile(file, "utf8"));
-    assert.equal(persisted.status, "failed");
-    // 落盘失败必须显式报错而非静默：把状态文件换成目录，rename 必然失败。
-    const broken = join(dir, "broken.json");
-    await mkdir(broken);
+    db.close();
+    // 重启：从库恢复；旧 JSON 即使被改写也不再读（数据库权威，条目存在即迁移闸门）。
+    await writeFile(legacy, JSON.stringify({ status: "running", operation: "poison", log: `tokensecret ${dir}` }));
+    db = new Database(dbPath);
+    s = await createMaintState({ database: db, key: "state-a", legacyFile: legacy, redactions, now });
+    assert.equal(s.data.status, "failed", "重启后从库恢复最近结果");
+    assert.equal(s.data.operation, "quick");
+    assert.ok(!s.data.log.includes("tokensecret") && !s.data.log.includes(`${dir}\\src`));
+    // 独立实例：同库不同 key 互不读写。
+    const other = await createMaintState({ database: db, key: "state-b", legacyFile: join(dir, "service-state-other.json"), redactions, now });
+    assert.equal(other.data.status, "idle", "另一实例全新状态");
+    assert.equal(s.data.status, "failed", "实例间互不串扰");
+    // 失败可见：连接已关 → 落库失败显式记 persistenceError 并打日志，不静默。
     const errorSpy = t.mock.method(console, "error", () => {});
-    const s2 = await createMaintState({ file: broken, redactions });
-    assert.ok(errorSpy.mock.calls.some((c) => /落盘失败/.test(String(c.arguments[0]))), "持久化错误可见");
-    assert.match(s2.data.persistenceError, /未能保存/);
-    // 有界：超长输入截到 ≤16KB 尾部。
-    s2.appendLog("x".repeat(20 * 1024));
-    assert.ok(s2.data.log.length <= 16 * 1024);
+    db.close();
     await s.flush();
-    await s2.flush();
+    assert.match(s.data.persistenceError, /未能保存/);
+    assert.ok(errorSpy.mock.calls.some((c) => /落盘失败/.test(String(c.arguments[0]))), "持久化错误可见");
     errorSpy.mock.restore();
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

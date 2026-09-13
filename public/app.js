@@ -27,6 +27,8 @@ let allSessions = [],
   follow = true;
 const views = new Map();
 const compactionDefaults = { enabled: false, tokenThreshold: 100000, percentThreshold: 70, model: null, thinking: "off", keepRecentTokens: 20000 };
+// 摘要记忆参数默认值，与 src/memory-policy.js 的 memorySummaryDefaults 保持一致。
+const memorySummaryDefaults = { mainTurns: 3, subagentTurns: 6, maxChars: 30 };
 const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 let modelFavorites = { provider: [], model: [], thinking: [] };
 // 思考收藏键带模型上下文，符合后端 provider/model:level 契约（model id 含冒号时后端按最后一个冒号切分）；
@@ -380,6 +382,33 @@ async function configure(thinking) {
     if (failure) $("settings-feedback").textContent = `保存失败：${failure}`;
   }
 }
+// 摘要记忆参数：设置页「默认新会话设置」独立小节，get 填充、change 即存（服务端持久化并校验边界）。
+const memorySummaryInputs = ["memory-main-turns", "memory-subagent-turns", "memory-max-chars"];
+async function loadMemorySummary() {
+  try {
+    const summary = await request("memory.summary.get");
+    $("memory-main-turns").value = summary.mainTurns ?? memorySummaryDefaults.mainTurns;
+    $("memory-subagent-turns").value = summary.subagentTurns ?? memorySummaryDefaults.subagentTurns;
+    $("memory-max-chars").value = summary.maxChars ?? memorySummaryDefaults.maxChars;
+  } catch (e) {
+    $("settings-feedback").textContent = `摘要设置加载失败：${e.message}`;
+  }
+}
+async function saveMemorySummary() {
+  try {
+    const summary = await request("memory.summary.configure", { summary: Object.fromEntries(
+      [["memory-main-turns", "mainTurns"], ["memory-subagent-turns", "subagentTurns"], ["memory-max-chars", "maxChars"]]
+        .map(([id, key]) => [key, Number($(id).value)]),
+    ) });
+    $("memory-main-turns").value = summary.mainTurns;
+    $("memory-subagent-turns").value = summary.subagentTurns;
+    $("memory-max-chars").value = summary.maxChars;
+    $("settings-feedback").textContent = "摘要设置已保存 · 新建会话生效";
+  } catch (e) {
+    $("settings-feedback").textContent = `摘要设置保存失败：${e.message}`;
+  }
+}
+for (const id of memorySummaryInputs) $(id).addEventListener("change", () => void saveMemorySummary());
 function showSettingsPanel(panel) {
   for (const name of ["defaults", "remote", "models", "service"]) {
     $(`${name}-panel`).hidden = name !== panel;
@@ -404,6 +433,7 @@ $("open-settings").onclick = () => {
   controls();
   if (!$("settings").open) $("settings").showModal();
   if (models.length) openCreation(true);
+  void loadMemorySummary();
 };
 $("settings").onclick = (e) => {
   if (e.target !== $("settings")) return;
