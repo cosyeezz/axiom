@@ -782,3 +782,11 @@
 - 内容：`public/model-manager.js` 里把 `显示` 复选框换成输入框内右侧的小眼睛图标按钮（`ICONS.eye` / `ICONS.eyeOff` 两条路径，点击切换 `type` 与 `aria-pressed`，同时更新 `title`/`aria-label`）；文案改成「已配置（掩码值）——留空保留」+ hint「密钥不回显（只能看到「已配置」）。留空 = 保留，输入 = 替换，勾「清除已存」= 删除；小眼睛只看本次输入」。`public/model-manager.css` 把输入框与小眼睛包进 `.mm-key-input` 定位容器（`.mm-key .mm-key-input input` 加 34px 右内边距，按钮绝对定位右 5px 居中，`aria-pressed=true` 时高亮），「清除已存」复选框仍在字段行内、不被覆盖。
 - 验证：Playwright 实测（900/420px）点击后 `type` 变 `text`、`aria-pressed=true`、图标换成斜杠眼、无横向溢出，截图确认小眼睛叠在输入框右端；`tests/model-manager.test.js` 24/24（新增小眼睛切换 + 回显后输入框仍为空的断言）；全量 `npm test` 305 项 304 过 1 跳过 0 失败。
 - 涉及：public/model-manager.js、public/model-manager.css、tests/model-manager.test.js、devlog.md、.pi/skills/codebase-map/index。
+
+## 2026-09-13 09:20 — 设置面板两处排版修补：Bearer 鉴权行、摘要记忆数值字段
+- 原因：用户反馈「高级连接 → Authorization: Bearer 头」看不懂且没对齐；「摘要记忆」三个数值字段排版不行（长句子换行后读不出对应关系：主代理每 [3] / 轮提醒一次摘要 分两行）。
+- 内容：
+  - Bearer 行（public/model-manager.js / model-manager.css）：字段名改「Bearer 鉴权」，复选框文案改「自动附加 Authorization: Bearer <apiKey> 请求头」，新增 hint 说明作用与边界（多数 OpenAI 兼容网关需要；自定义请求头里已写 Authorization 时不覆盖——与 src/model-config.js:379 行为一致）。根因修复：`.mm-advanced .mm-check` 的 `align-items: flex-start` 让 14px 复选框浮在 17.6px 行高文字的上方，改回 `center`（实测 boxCenterOffset 1.8px → 0）。
+  - 摘要记忆（public/index.html / style.css）：三个字段从句子式内联（`主代理每 [input] 轮提醒一次摘要`）改为堆叠式 `.memory-field`（标签在上、输入框 + 单位在下），文案改「主代理提醒间隔 / 子代理提醒间隔（轮）」「单条摘要上限（字）」；新增 `.settings-selectors:has(> .memory-field)` 加大列间距，输入框收到 32px 高、12px 字（原全局 input 规则是 40px/16px）。
+- 验证：Playwright 实测 1280/900/420px——三字段标签均单行、输入框 104×32、单位与输入框同一行、无横向溢出；Bearer 复选框 14×14 且与文字垂直居中对齐（offset 0）；全量 `npm test` 305 项 304 过 1 跳过 0 失败。
+- 涉及：public/model-manager.js、public/model-manager.css、public/index.html、public/style.css、devlog.md、.pi/skills/codebase-map/index。

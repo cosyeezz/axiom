@@ -878,6 +878,33 @@ textarea {
 #settings .selectors select {
   max-width: 100%;
 }
+/* 摘要记忆：数值输入改成「标签在上、输入框+单位在下」的堆叠布局，
+   避免原来「主代理每 [3] 轮提醒一次摘要」长句换行后读不出对应关系。 */
+.settings-selectors:has(> .memory-field) {
+  column-gap: 18px;
+  row-gap: 12px;
+}
+.settings-selectors .memory-field {
+  display: grid;
+  grid-template-columns: minmax(104px, 1fr) auto;
+  gap: 4px;
+  align-items: center;
+  max-width: 240px;
+}
+.settings-selectors .memory-field > .memory-field-label {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--muted);
+}
+.settings-selectors .memory-field > input {
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.settings-selectors .memory-field > .memory-field-unit {
+  font-size: 11px;
+  color: var(--muted);
+}
 #settings-feedback {
   border-top: 1px solid var(--line);
   padding-top: 16px;

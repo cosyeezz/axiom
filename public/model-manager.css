@@ -322,7 +322,8 @@ button.mm-icon-delete:focus-visible { color: var(--danger); }
 /* 高级字段（折叠） */
 .mm-advanced { margin-top: 10px; }
 /* 折叠区里的复选框说明较长，允许换行（其它 .mm-check 保持单行） */
-.mm-advanced .mm-check { white-space: normal; align-items: flex-start; }
+/* 折叠区里的复选框说明较长，允许换行；仍保持居中对齐，否则复选框会浮到文字上方。 */
+.mm-advanced .mm-check { white-space: normal; align-items: center; }
 .mm-advanced summary {
   font-size: 11px;
   color: var(--muted);

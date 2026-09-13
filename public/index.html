@@ -230,9 +230,9 @@
         <section aria-labelledby="memory-summary-title">
           <h3 id="memory-summary-title">摘要记忆</h3>
           <div class="selectors settings-selectors">
-            <label for="memory-main-turns"><span>主代理每</span><input type="number" id="memory-main-turns" min="1" max="100" step="1" aria-describedby="memory-summary-help"><span>轮提醒一次摘要</span></label>
-            <label for="memory-subagent-turns"><span>子代理每</span><input type="number" id="memory-subagent-turns" min="1" max="100" step="1" aria-describedby="memory-summary-help"><span>轮提醒一次摘要</span></label>
-            <label for="memory-max-chars"><span>单条摘要小于</span><input type="number" id="memory-max-chars" min="2" max="100" step="1" aria-describedby="memory-summary-help"><span>字</span></label>
+            <label class="memory-field" for="memory-main-turns"><span class="memory-field-label">主代理提醒间隔</span><input type="number" id="memory-main-turns" min="1" max="100" step="1" aria-describedby="memory-summary-help"><span class="memory-field-unit">轮</span></label>
+            <label class="memory-field" for="memory-subagent-turns"><span class="memory-field-label">子代理提醒间隔</span><input type="number" id="memory-subagent-turns" min="1" max="100" step="1" aria-describedby="memory-summary-help"><span class="memory-field-unit">轮</span></label>
+            <label class="memory-field" for="memory-max-chars"><span class="memory-field-label">单条摘要上限</span><input type="number" id="memory-max-chars" min="2" max="100" step="1" aria-describedby="memory-summary-help"><span class="memory-field-unit">字</span></label>
           </div>
           <p id="memory-summary-help">达到轮次时，系统在下一次模型请求前自动注入一条[摘要提醒]，模型回复末尾的 axiom_summary 标签会进入工作记忆。保存后新建的会话立即生效；已打开的会话保持创建时的设置，服务重启后生效。</p>
         </section>

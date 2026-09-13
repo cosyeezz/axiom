@@ -792,9 +792,10 @@ export function initModelManager({ root, request, onSaved }) {
       ontoggle: (event) => { form.advancedOpen = event.target.open; } },
       el("summary", {}, "高级连接（Bearer 头 / 自定义请求头）"),
       el("div", { class: "mm-form" },
-        field("Authorization: Bearer 头", el("label", { class: "mm-check" }, el("input", { type: "checkbox", checked: form.authHeader,
+        field("Bearer 鉴权", el("label", { class: "mm-check" }, el("input", { type: "checkbox", checked: form.authHeader,
           onchange: (event) => { form.authHeader = event.target.checked; } }),
-          "自动附加 Authorization: Bearer <apiKey>"), undefined, true),
+          "自动附加 Authorization: Bearer <apiKey> 请求头"),
+          "开启后请求会带上 Authorization: Bearer <你的密钥>；多数 OpenAI 兼容网关需要；自定义请求头里已写 Authorization 时不覆盖", true),
         field("自定义请求头", headersBox, "值支持 $ENV 引用；掩码值留空即原样保留")));
   }
 
