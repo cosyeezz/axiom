@@ -6,7 +6,7 @@
 
 ## 数据模型
 
-被编辑文件：`getAgentDir()/models.json`（pi 自定义供应商/模型，结构见 pi docs/models.md）。
+权威存储：Axiom SQLite 的 models/config；旧 Pi models.json 只用于首次导入，models.compat.json 是供 SDK 使用的派生镜像。
 
 ### 密钥脱敏（GET 永不回传明文）
 
@@ -24,21 +24,20 @@
 
 | 客户端发送 | 含义 |
 |---|---|
-| `{ "keep": true }` | 保留文件中的现值（无现值则报错“无可保留的密钥”） |
+| `{ "keep": true }` | 保留库中的现值（无现值则报错“无可保留的密钥”） |
 | 字符串 | 新值；**禁止前导 `!`**（不允许新增命令执行型凭据；`$$`/`$!` 转义与环境变量插值允许） |
 | `null` | 删除该字段 |
 | 字段整体缺省 | 不改动（provider.save 为合并语义时） |
 
-服务端不解析、不执行、不日志记录任何密钥内容。
+配置读写不执行或记录密钥；在线拉取仅解析环境变量并用于请求，不回传明文。
 
 ### fingerprint（防外部改动覆盖）
 
-`sha256(models.json 原始字节)`；文件不存在时为 `sha256("")`（常量）。
+`sha256(canonicalModelsJson(权威配置))`；空配置同样按规范序列化计算。
 所有写命令必须携带 `baseFingerprint`（来自最近一次 `models.config.get`）。
-不匹配 → `ok:false`，error 含 **“已被外部修改”**，文件不变。客户端收到后应重新拉取。
+不匹配 → `ok:false`，error 含 **“已被外部修改”**，权威配置不变。客户端收到后应重新拉取。
 
-**损坏保护**：文件存在但无法解析（含 JSONC 注释）或 providers 非对象时，
-写命令一律报错拒绝，**绝不覆盖损坏文件**；GET 仍可用（`parseError` 字段报告原因，fingerprint 照常返回）。
+**损坏保护**：库内 providers 非对象时拒绝写入；旧文件导入失败通过 parseError 提示，允许在页面重新配置，不覆盖旧文件。
 
 ## 命令
 
@@ -47,9 +46,9 @@
 ```jsonc
 {
   "fingerprint": "…",          // sha256 hex
-  "path": "…/models.json",
-  "parseError": "…",           // 可选：文件存在但不是有效 JSON（不支持 JSONC 注释）；此时 providers 为空、写命令拒绝执行
-  "providers": [               // models.json 中的自定义/覆盖供应商，保持文件顺序；未知字段原样返回
+  "path": "…/models.compat.json",
+  "parseError": "…",           // 可选：旧配置导入告警或库内结构无效
+  "providers": [               // SQLite 中的自定义/覆盖供应商，保持配置顺序；未知字段原样返回
     {
       "id": "my-provider",
       "name": "…", "baseUrl": "https://…", "api": "openai-completions",
@@ -66,7 +65,7 @@
 }
 ```
 
-配置页可编辑范围 = `providers`（models.json）。内置供应商出现在 `catalog` 供参照，
+配置页可编辑范围 = `providers`（SQLite）。内置供应商出现在 `catalog` 供参照，
 不直接编辑（覆盖内置供应商 = 在 providers 里新建同名 id）。
 
 ### models.provider.save `{ providerId, provider, baseFingerprint }` → `{ fingerprint }`
@@ -75,7 +74,7 @@
 - `provider`：**合并语义**（不存在则创建）：
   - 已知字段 `name / baseUrl / api / oauth / authHeader / compat / apiKey / headers` 覆盖；发送 `null` 删除该字段
   - `apiKey` / `headers.*` 值支持掩码保留（见上表）
-  - 文件里已有的 `models`、`modelOverrides` **不受本命令影响**；provider 对象上的未知顶层字段**原样保留**（无论是否回传）
+  - 配置里已有的 `models`、`modelOverrides` **不受本命令影响**；provider 对象上的未知顶层字段**原样保留**（无论是否回传）
   - `provider` 中出现 `models` / `modelOverrides` 键 → 报错（模型请走 models.model.save/delete）
 - `baseUrl` 若提供必须为 http/https 绝对 URL（`new URL` 可解析），否则报错
 - 返回新 `fingerprint`；成功后触发 `models.config.changed` 广播
@@ -98,10 +97,34 @@
 
 按 id 删除；provider 或模型不存在 → 报错。
 
+### models.provider.discover `{ providerId }` → `{ models, truncated }`（只读）
+
+从供应商在线拉取模型列表，供 UI 勾选后逐条调用 `models.model.save` 加入配置。**本命令不写盘、不启用模型、不触发 `refreshModels` / `models.config.changed`**，也无 baseFingerprint（不修改文件）。
+
+- 读取已保存供应商的 `baseUrl` / `api` / `apiKey` / `headers`；**任何响应都不回传密钥明文**
+- 凭据解析：`!command` 命令型值**直接拒绝**（不执行）；`$VAR`/`${VAR}`/`$$`/`$!` 沿用 SDK 真实插值语义；解析不出（如环境变量缺失）→ 安全报错
+- 按 `api` 类型请求（官方接口已核实）：
+
+| api | 请求 |
+|---|---|
+| `openai-completions` / `openai-responses` | `GET {baseUrl}/models`，`Authorization: Bearer`（无 apiKey 时省略，兼容本地服务器） |
+| `anthropic-messages` | `GET {baseUrl\|https://api.anthropic.com}/v1/models?limit=1000`，`x-api-key` + `anthropic-version: 2023-06-01`（无 apiKey 报错） |
+| `google-generative-ai` | `GET {baseUrl\|…/v1beta}/models?pageSize=1000`，`x-goog-api-key`（无 apiKey 报错） |
+
+- `authHeader: true` 时额外附 `Authorization: Bearer`（无法解析 apiKey 时报错）；`oauth` 供应商不支持
+- 超时 15 秒；响应体上限 5 MiB；`redirect: "error"`（重定向可能带走凭据，直接拒绝）；允许用户显式配置的本地 http 地址（如 Ollama）
+- 返回：`models` 为 `{ id, name?, contextWindow?, maxTokens? }` 数组（最多 500 条，超出 slice 后 `truncated: true`）；
+  `truncated` 另在 Anthropic `has_more` / Google `nextPageToken` 时为 true。
+  **只透传接口确实给出的字段**：OpenAI 兼容接口仅 id（及服务器自带的 name）；Anthropic `display_name`→`name`；
+  Google 去掉 `models/` 前缀为 id、`displayName`→`name`、`inputTokenLimit`→`contextWindow`、`outputTokenLimit`→`maxTokens`，
+  并按 `supportedGenerationMethods` 含 `generateContent` 过滤（embedding/TTS 等非对话模型）；
+  **未知 reasoning/上下文一律省略，不从名称猜测**
+- 错误脱敏：固定中文文案 + HTTP 状态码；**绝不包含请求头、密钥、上游响应体**（网络错误/超时/重定向/非 JSON/结构无法识别/响应体过大各有独立文案）
+
 ### 写命令副作用（成功后依次）
 
-1. 备份：原 `models.json` → `models.json.bak`（覆盖旧备份）
-2. 临时文件 + `rename` 原子写；写入前用 SDK 真实 schema 校验，失败不落盘并返回安全错误消息，不回传可能包含凭据的原始错误；校验器不可用时拒绝写入
+1. 用 SDK 真实 schema 校验候选配置；校验器不可用或校验失败时拒绝写入，错误不包含凭据。
+2. 保存 SQLite 权威配置，同步 models.compat.json 派生镜像（不改旧 Pi 文件）。
 3. `refreshModels`：重建 `ModelRuntime`（**不联网**），`models.list` / `models.config.get`
    立即反映新目录；**新建会话与模型切换即刻生效**
 4. 广播 `models.config.changed`
@@ -114,11 +137,11 @@
 三组扁平有序 key 列表（组内唯一、按收藏先后排序，每组上限 200）：
 
 - `provider`：供应商 id，如 `"anthropic"`
-- `model`：模型完整 key，如 `"anthropic/claude-…"`（不含 `:`）
+- `model`：模型完整 key，如 `"anthropic/claude-…"`；允许模型 ID 中的冒号，如 `"ollama/llama3.1:8b"`
 - `thinking`：模型+思考等级，key 形如 `"anthropic/claude-…:high"`
   （最后一个 `:` 后为等级：`off|minimal|low|medium|high|xhigh|max`）
 
-存储：`$AXIOM_HOME`（默认 `~/.axiom`）`/models-favorites.json`，原子写：
+存储：Axiom SQLite 的 models/favorites；旧 models-favorites.json 仅用于导入：
 
 ```json
 { "version": 1, "provider": [], "model": [], "thinking": [] }

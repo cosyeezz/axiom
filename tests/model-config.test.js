@@ -29,7 +29,7 @@ const closeOpenDatabases = () => {
   for (const database of openDatabases.splice(0)) database.close();
 };
 
-function makeService(dir, catalog = []) {
+function makeService(dir, catalog = [], extra = {}) {
   let refreshes = 0;
   const factory = {
     catalog: () => catalog,
@@ -42,7 +42,7 @@ function makeService(dir, catalog = []) {
   openDatabases.push(database);
   // piDir 指向临时空目录：导入逻辑不触碰真实 ~/.pi。
   const storage = createPiModelStorage({ database, home: dir, piDir: join(dir, "pi") });
-  const models = createModelsService({ factory, storage });
+  const models = createModelsService({ factory, storage, ...extra });
   return { models, storage, database, refreshes: () => refreshes };
 }
 
@@ -360,7 +360,11 @@ test("收藏：三组 key、单项 mutation、去重、校验、持久化、上�
     assert.deepEqual(state.model, []);
 
     await assert.rejects(() => models.setFavorite({ kind: "model", key: "noprovider", favorite: true }), /provider\/model/);
-    await assert.rejects(() => models.setFavorite({ kind: "model", key: "a/b:c", favorite: true }), /冒号/);
+    // Ollama 风格模型 id 合法含冒号：收藏按原 key 保存与展示（thinking 组才按最后冒号切分等级）
+    state = await models.setFavorite({ kind: "model", key: "ollama/llama3.1:8b", favorite: true });
+    assert.deepEqual(state.model, ["ollama/llama3.1:8b"]);
+    assert.deepEqual(database.get("models", "favorites").model, ["ollama/llama3.1:8b"]);
+    await assert.rejects(() => models.setFavorite({ kind: "thinking", key: "ollama/llama3.1:8b:bogus", favorite: true }), /level/);
     await assert.rejects(() => models.setFavorite({ kind: "thinking", key: "anthropic/claude-x:bogus", favorite: true }), /level/);
     await assert.rejects(() => models.setFavorite({ kind: "provider", key: "bad id", favorite: true }), /key/);
 
@@ -386,7 +390,7 @@ test("收藏：三组 key、单项 mutation、去重、校验、持久化、上�
 test("WS：两个客户端共享 favorites/config.changed 广播，命令走协议校验", async () => {
   const dir = await tempDir();
   try {
-    const { models } = makeService(dir);
+    const { models } = makeService(dir, [], { discoverFetch: async () => new Response(JSON.stringify({ data: [{ id: "discovered" }] })) });
     const sessions = new Sessions(async () => ({}));
     const app = createServerApp(sessions, { models });
     app.server.listen(0, "127.0.0.1");
@@ -468,12 +472,262 @@ test("WS：两个客户端共享 favorites/config.changed 广播，命令走协�
         request(b, { id: "s2", type: "models.provider.save", providerId: "llm", provider: { apiKey: "!x" }, baseFingerprint: saved.data.fingerprint }),
         /! 开头/,
       );
+      eventsB.length = 0;
+      const discovered = await request(a, { id: "d1", type: "models.provider.discover", providerId: "llm" });
+      assert.deepEqual(discovered.data.models, [{ id: "discovered" }]);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      assert.equal(eventsB.some((event) => event.type === "models.config.changed"), false, "只读拉取不广播配置变更");
       const favorites = await request(b, { id: "f2", type: "models.favorites.get" });
       assert.deepEqual(favorites.data, set.data);
     } finally {
       a?.terminate();
       b?.terminate();
       await app.close();
+    }
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// —— models.provider.discover（只读在线拉取模型列表）——
+// mock fetch 隔离：不触网、不读真实凭据；captured 供断言 URL/headers/redirect。
+const discoverKey = "sk-discover-test-key";
+const mockFetch = (handler) => {
+  const calls = [];
+  const fn = async (url, init) => {
+    calls.push({ url, init });
+    return handler(url, init);
+  };
+  fn.calls = calls;
+  return fn;
+};
+const jsonResponse = (body, status = 200) =>
+  new Response(typeof body === "string" ? body : JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+test("协议层：models.provider.discover 形状校验", () => {
+  assert.equal(command.parse({ id: "d0", type: "models.provider.discover", providerId: "p1" }).type, "models.provider.discover");
+  assert.throws(() => command.parse({ id: "d1", type: "models.provider.discover" }));
+  assert.throws(() => command.parse({ id: "d2", type: "models.provider.discover", providerId: "bad id!" }));
+  assert.throws(() => command.parse({ id: "d3", type: "models.provider.discover", providerId: "p1", extra: 1 }));
+});
+
+test("discover/openai 兼容：$VAR 密钥解析、Bearer、只读不写盘、错误脱敏", async () => {
+  const dir = await tempDir();
+  try {
+    const fetchMock = mockFetch(() => jsonResponse({ data: [{ id: "m-1" }, { id: "m-2", name: "Model Two", object: "model" }] }));
+    const svc = makeService(dir, [], { discoverFetch: fetchMock });
+    const { models, refreshes } = svc;
+    const raw = `${JSON.stringify(
+      { providers: { prov1: { baseUrl: "https://api.example.com/v1", api: "openai-completions", apiKey: "$AXIOM_DISCOVER_TEST_KEY" } } },
+      null,
+      2,
+    )}\n`;
+    await seed(svc, raw);
+    process.env.AXIOM_DISCOVER_TEST_KEY = discoverKey;
+    try {
+      const data = await models.handle({ type: "models.provider.discover", providerId: "prov1" });
+      assert.deepEqual(data.models, [{ id: "m-1" }, { id: "m-2", name: "Model Two" }]);
+      assert.equal(data.truncated, false);
+      const call = fetchMock.calls[0];
+      assert.equal(call.url, "https://api.example.com/v1/models");
+      assert.equal(call.init.method, "GET");
+      assert.equal(call.init.redirect, "error", "必须禁止重定向");
+      assert.equal(call.init.headers.Authorization, `Bearer ${discoverKey}`);
+      // 只读：文件字节不变、不触发 refreshModels、响应不含密钥明文
+      assert.deepEqual(svc.storage.readConfig(), JSON.parse(raw));
+      assert.equal(await compat(dir), canonicalModelsJson(JSON.parse(raw)));
+      assert.equal(refreshes(), 0);
+      assert.ok(!JSON.stringify(data).includes(discoverKey));
+    } finally {
+      delete process.env.AXIOM_DISCOVER_TEST_KEY;
+    }
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("discover/openai：无 apiKey 时不带 Authorization（本地服务器语义），headers 沿用 $VAR", async () => {
+  const dir = await tempDir();
+  try {
+    const fetchMock = mockFetch(() => jsonResponse({ data: [{ id: "llama3.1:8b" }] }));
+    const svc = makeService(dir, [], { discoverFetch: fetchMock });
+    const { models } = svc;
+    await seed(svc, {
+      providers: { ollama: { baseUrl: "http://localhost:11434/v1/", api: "openai-completions", headers: { "x-tenant": "$AXIOM_DISCOVER_TENANT" } } },
+    });
+    process.env.AXIOM_DISCOVER_TENANT = "team-a";
+    try {
+      const data = await models.handle({ type: "models.provider.discover", providerId: "ollama" });
+      assert.deepEqual(data.models, [{ id: "llama3.1:8b" }]);
+      assert.equal(fetchMock.calls[0].url, "http://localhost:11434/v1/models", "尾部斜杠被去掉");
+      assert.equal(fetchMock.calls[0].init.headers.Authorization, undefined);
+      assert.equal(fetchMock.calls[0].init.headers["x-tenant"], "team-a");
+    } finally {
+      delete process.env.AXIOM_DISCOVER_TENANT;
+    }
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("discover/anthropic：默认官方地址、x-api-key、display_name、has_more→truncated", async () => {
+  const dir = await tempDir();
+  try {
+    const fetchMock = mockFetch(() => jsonResponse({ data: [{ type: "model", id: "claude-x", display_name: "Claude X" }], has_more: true }));
+    const svc = makeService(dir, [], { discoverFetch: fetchMock });
+    const { models } = svc;
+    await seed(svc, { providers: { anthropic: { api: "anthropic-messages", apiKey: discoverKey } } });
+    const data = await models.handle({ type: "models.provider.discover", providerId: "anthropic" });
+    assert.equal(fetchMock.calls[0].url, "https://api.anthropic.com/v1/models?limit=1000");
+    assert.equal(fetchMock.calls[0].init.headers["x-api-key"], discoverKey);
+    assert.equal(fetchMock.calls[0].init.headers["anthropic-version"], "2023-06-01");
+    assert.deepEqual(data.models, [{ id: "claude-x", name: "Claude X" }]);
+    assert.equal(data.truncated, true);
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("discover/google：generateContent 过滤、去前缀、真实 token 上限、nextPageToken→truncated", async () => {
+  const dir = await tempDir();
+  try {
+    const fetchMock = mockFetch(() =>
+      jsonResponse({
+        models: [
+          { name: "models/gemini-x", displayName: "Gemini X", inputTokenLimit: 1048576, outputTokenLimit: 65536, supportedGenerationMethods: ["generateContent"] },
+          { name: "models/embedding-y", supportedGenerationMethods: ["embedContent"] },
+          { name: "models/no-methods", supportedGenerationMethods: [] },
+          { name: "models/unknown-methods" },
+          { garbage: true },
+        ],
+        nextPageToken: "ChZp",
+      }),
+    );
+    const svc = makeService(dir, [], { discoverFetch: fetchMock });
+    const { models } = svc;
+    await seed(svc, { providers: { g: { baseUrl: "https://generativelanguage.googleapis.com/v1beta", api: "google-generative-ai", apiKey: discoverKey } } });
+    const data = await models.handle({ type: "models.provider.discover", providerId: "g" });
+    assert.equal(fetchMock.calls[0].url, "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000");
+    assert.equal(fetchMock.calls[0].init.headers["x-goog-api-key"], discoverKey);
+    assert.deepEqual(data.models, [
+      { id: "gemini-x", name: "Gemini X", contextWindow: 1048576, maxTokens: 65536 },
+      { id: "unknown-methods" },
+    ]);
+    assert.equal(data.truncated, true);
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("discover 安全：!command 拒绝、env 缺失、HTTP 错误、超时、重定向拒绝、坏 JSON、响应体超限", async () => {
+  const dir = await tempDir();
+  try {
+    const fetchMock = mockFetch((url) => {
+      if (String(url).includes("http-401")) return jsonResponse({ error: "SECRET-UPSTREAM-BODY" }, 401);
+      if (String(url).includes("redirected")) {
+        // 模拟 undici 在 redirect:"error" 下遇 3xx 的真实行为：不返回响应，直接抛 TypeError
+        throw new TypeError("fetch failed");
+      }
+      if (String(url).includes("bad-json")) return jsonResponse("not-json{{{");
+      if (String(url).includes("too-big")) return jsonResponse("x".repeat(5 * 1024 * 1024 + 16));
+      return jsonResponse({ data: [] });
+    });
+    const timeoutMock = mockFetch(() => {
+      throw Object.assign(new Error("Timed out"), { name: "TimeoutError" });
+    });
+    const networkMock = mockFetch(() => {
+      throw new Error("ECONNREFUSED 127.0.0.1:1 sensitive-value");
+    });
+    const svc = makeService(dir, [], { discoverFetch: fetchMock });
+    const { models } = svc;
+    await seed(svc, {
+      providers: {
+        "cmd-key": { baseUrl: "https://a.example.com/v1", api: "openai-completions", apiKey: "!secret-cmd" },
+        "env-missing": { baseUrl: "https://a.example.com/v1", api: "openai-completions", apiKey: "$AXIOM_MISSING_VAR_XYZ" },
+        "http-401": { baseUrl: "https://a.example.com/http-401/v1", api: "openai-completions", apiKey: discoverKey },
+        redirected: { baseUrl: "https://a.example.com/redirected/v1", api: "openai-completions" },
+        "bad-json": { baseUrl: "https://a.example.com/bad-json/v1", api: "openai-completions" },
+        "too-big": { baseUrl: "https://a.example.com/too-big/v1", api: "openai-completions" },
+        "no-base": { api: "openai-completions" },
+        "bad-api": { baseUrl: "https://a.example.com/v1", api: "mystery-api" },
+        oauthed: { baseUrl: "https://a.example.com", api: "anthropic-messages", apiKey: discoverKey, oauth: "radius" },
+      },
+    });
+    const fail = async (providerId, pattern) => {
+      await assert.rejects(() => models.handle({ type: "models.provider.discover", providerId }), (error) => {
+        assert.match(error.message, pattern);
+        assert.ok(!error.message.includes(discoverKey), "错误不得包含密钥明文");
+        return true;
+      });
+    };
+    await fail("cmd-key", /命令执行型凭据/);
+    assert.equal(fetchMock.calls.length, 0, "命令型凭据不得发起请求");
+    await fail("env-missing", /凭据无法解析/);
+    assert.equal(fetchMock.calls.length, 0, "凭据解析失败不得发起请求");
+    await fail("http-401", /HTTP 401/);
+    await fail("redirected", /无法连接/);
+    await fail("bad-json", /不是有效 JSON/);
+    await fail("too-big", /响应体过大/);
+    await fail("no-base", /baseUrl/);
+    await fail("bad-api", /不支持的 api 类型/);
+    await fail("oauthed", /OAuth/);
+    // HTTP 401 的错误不得包含上游响应体
+    let message = "";
+    await assert.rejects(() => models.handle({ type: "models.provider.discover", providerId: "http-401" }), (error) => {
+      message = error.message;
+      return true;
+    });
+    assert.ok(!message.includes("SECRET-UPSTREAM-BODY"), "错误不得包含上游响应体");
+
+    const timeout = makeService(dir, [], { discoverFetch: timeoutMock }).models;
+    await assert.rejects(() => timeout.handle({ type: "models.provider.discover", providerId: "http-401" }), /超时/);
+    const network = makeService(dir, [], { discoverFetch: networkMock }).models;
+    await assert.rejects(() => network.handle({ type: "models.provider.discover", providerId: "http-401" }), (error) => {
+      assert.ok(!error.message.includes("sensitive-value"), "网络错误不得透传底层 error.message");
+      return true;
+    });
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("discover 边界：损坏结构拒绝、Unknown provider、501 条截断、authHeader 缺 key", async () => {
+  const dir = await tempDir();
+  try {
+    const many = Array.from({ length: 501 }, (_, i) => ({ id: `m-${i}` }));
+    const fetchMock = mockFetch(() => jsonResponse({ data: many }));
+    const svc = makeService(dir, [], { discoverFetch: fetchMock });
+    const { models } = svc;
+    await seed(svc, {
+      providers: {
+        big: { baseUrl: "https://a.example.com/v1", api: "openai-completions" },
+        auth: { baseUrl: "https://a.example.com/v1", api: "openai-completions", authHeader: true },
+      },
+    });
+    const data = await models.handle({ type: "models.provider.discover", providerId: "big" });
+    assert.equal(data.models.length, 500);
+    assert.equal(data.truncated, true);
+    assert.equal(data.models[499].id, "m-499");
+
+    await assert.rejects(() => models.handle({ type: "models.provider.discover", providerId: "auth" }), /authHeader 已启用但无法解析 apiKey/);
+    await assert.rejects(() => models.handle({ type: "models.provider.discover", providerId: "ghost" }), /Unknown provider/);
+
+    await seed(svc, { providers: [] });
+    await assert.rejects(() => models.handle({ type: "models.provider.discover", providerId: "big" }), /结构无效/);
+
+    const emptyDir = await tempDir();
+    try {
+      const empty = makeService(emptyDir, [], { discoverFetch: fetchMock });
+      await assert.rejects(() => empty.models.handle({ type: "models.provider.discover", providerId: "any" }), /Unknown provider/);
+    } finally {
+      closeOpenDatabases();
+      await rm(emptyDir, { recursive: true, force: true });
     }
   } finally {
     closeOpenDatabases();

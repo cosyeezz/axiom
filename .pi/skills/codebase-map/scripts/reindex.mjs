@@ -68,6 +68,7 @@ const MODULE_INFO = {
   "public/model-manager.js": "Pi 模型管理：供应商模板、模型编辑与安全保存反馈",
   "public/model-manager.css": "模型配置页：供应商列表、编辑表单与响应式布局",
   "src/model-config.js": "Pi models.json 无损配置读写与共享收藏持久化",
+  "tests/model-settings-ui.py": "模型设置浏览器验收：思考收藏持久、仅勾选添加与窄屏布局",
   "tests/model-selection-ui.py": "模型选择与配置真实浏览器验收：收藏共享、配置编辑、窄屏与键盘",
   "tests/model-selection-preview.mjs": "模型选择 UI 隔离验收服务：临时配置与模拟会话，不读取用户凭据",
   "public/markdown.js": "marked + DOMPurify 渲染（XSS 边界）",

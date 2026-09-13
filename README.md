@@ -228,7 +228,10 @@ Axiom 使用原生 JavaScript，目前没有编译脚本，因此重建时不会
 
 - 输入区、默认新会话设置、预设、主/子代理和自动压缩的模型选择共用一份目录与收藏。供应商、模型、思考程度分别收藏；模型按 `provider/id` 区分，避免同名模型串用。收藏仅调整下拉顺序，不改变当前选择，不自动切换模型。
 - 每个选项右侧预留五角星位置：鼠标移入或键盘聚焦显示黄色星标，已收藏常显；触屏直接显示按钮。点击星标不会选中条目或关闭菜单；再次点击取消。收藏项稳定置顶，其余保持原顺序。支持方向键、Home/End、输入查找、Enter 选择、Esc 关闭和键盘访问星标。
-- 「设置 → 模型与供应商」管理 Pi 的 `models.json`：查看已有配置、添加常见供应商或自定义地址、修改 API 协议和模型参数。它不同于会话默认配置，修改的是本机 Pi 模型文件；使用 `PI_CODING_AGENT_DIR` 时跟随该目录，否则为 `~/.pi/agent/models.json`。
+- 模型配置采用左侧供应商搜索导航、右侧详情与折叠高级字段，窄屏自动单列；参考 [Cherry Studio](https://github.com/CherryHQ/cherry-studio/pull/16858) 的分栏管理与 [OpenCode](https://opencode.ai/docs/models/) 的模型能力组织方式，不引入额外 UI 依赖。
+- 保存供应商连接后，可「拉取模型列表」并搜索、勾选，再点击「添加选中的模型」；拉取本身只读，不会把全部结果自动加入配置。支持 OpenAI 兼容、Anthropic、Google 模型接口；已添加项禁选，部分添加失败可重试，未返回的模型能力不猜测。
+- 思考收藏以 `provider/model:程度` 隔离，允许模型 ID 含冒号；星标只改变排序，不改变当前选择。浏览器回归：先运行 `node tests/model-selection-preview.mjs`，再运行 `python tests/model-selection-ui.py` 和 `python tests/model-settings-ui.py`（需 Python Playwright 与 Chromium，预览不使用真实凭据）。
+- 「设置 → 模型与供应商」管理 SQLite 中的模型配置：查看已有配置、添加常见供应商或自定义地址、修改 API 协议和模型参数。它不同于会话默认配置；旧 Pi models.json 仅导入，保存后同步 SDK 使用的 models.compat.json，不修改旧 Pi 文件。
 - 配置保存保留未编辑的高级字段和已有凭据；密钥不回传明文，编辑时留空表示保持。支持 `$ENV_VAR` 环境变量引用，不允许从网页添加执行命令型凭据。删除只移除自定义配置，不会删除 Pi 内置模型或登录凭据。保存前检测文件版本冲突，避免覆盖外部修改。
 - 保存后更新模型目录；新建会话或重新选择模型使用新配置。已经运行的会话不会强制换掉已绑定模型，避免中断当前请求。
 - 设计依据：[Linear 收藏](https://linear.app/docs/favorites)的星标切换与置顶入口；[WAI-ARIA Listbox](https://www.w3.org/WAI/ARIA/apg/patterns/listbox/)明确选项不适合嵌入额外按钮，因此选择与收藏采用独立控件。沿用现有近黑表面、细边框、`#5e6ad2` 焦点色，黄色只用于收藏状态，不增加装饰色。
