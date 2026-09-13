@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 22:17:55）
+# Axiom 多级代码索引（生成于 2026/9/12 22:32:30）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -44,7 +44,7 @@
 | src/server.js | 459 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | assets, createServerApp |
 | src/session-memory.js | 117 | 标题与增量摘要登记、触发复盘、委派背景与被动进度 | textOf, escape, memoryHooks, parentSummaryContext |
 | src/session-store.js | 528 | 会话四表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, SessionStore |
-| src/sessions.js | 1288 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | BROWSE_PAGE, SEARCH_LIMIT, SEARCH_DIR_LIMIT, IGNORED_ENTRIES |
+| src/sessions.js | 1300 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | BROWSE_PAGE, SEARCH_LIMIT, SEARCH_DIR_LIMIT, IGNORED_ENTRIES |
 | src/tasks.js | 122 | Tasks：子任务（委托）生命周期 | Tasks |
 | src/tools.js | 97 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
@@ -100,13 +100,14 @@
 | tests/service-settings.test.js | 377 | node --test 测试（npm test） | source, html, setup |
 | tests/service.test.js | 488 | node --test 测试（npm test） | until, readMaybe, killTree, buildWorkspace |
 | tests/session-created-at.test.js | 44 | node --test 测试（npm test） | factory |
-| tests/session-flow.test.js | 385 | node --test 测试（npm test） | flowFactory, jsonlFactory |
+| tests/session-flow.test.js | 417 | node --test 测试（npm test） | flowFactory, jsonlFactory |
 | tests/session-memory.test.js | 230 | node --test 测试（npm test） | reply |
 | tests/session-migration.test.js | 264 | node --test 测试（npm test） | factory, workspaceHash |
-| tests/session-persistence.test.js | 188 | node --test 测试（npm test） | factory |
+| tests/session-persistence.test.js | 210 | node --test 测试（npm test） | factory |
 | tests/session-sidebar-ui.py | 104 | node --test 测试（npm test） | - |
 | tests/session-store.test.js | 500 | node --test 测试（npm test） | withStore, fullSaved |
 | tests/smoke.js | 67 | node --test 测试（npm test） | TIMEOUT, sessions |
+| tests/sqlite-benchmark.mjs | 742 | node --test 测试（npm test） | parseArgs, args, scriptPath, repoDir |
 | tests/stream-renderer.test.js | 99 | node --test 测试（npm test） | - |
 | tests/task-notifications.test.js | 197 | node --test 测试（npm test） | factoryFixture, tick, until |
 | tests/task-timer.test.js | 55 | node --test 测试（npm test） | factory, state, settle |
@@ -864,7 +865,7 @@
 | saveTask | method | 489 |
 | listTasks | method | 521 |
 
-### src/sessions.js（1288 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
+### src/sessions.js（1300 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -912,21 +913,21 @@
 | rename | method | 555 |
 | importSession | method | 568 |
 | create | method | 595 |
-| scheduleTaskNotifications | method | 912 |
-| deliverTaskNotifications | method | 924 |
-| get | method | 948 |
-| revealWorkspace | method | 953 |
-| browse | method | 967 |
-| listFiles | method | 973 |
-| refreshSkills | method | 1035 |
-| snapshot | method | 1041 |
-| subscribe | method | 1071 |
-| configure | method | 1077 |
-| prompt | method | 1111 |
-| withdraw | method | 1165 |
-| cancel | method | 1217 |
-| remove | method | 1240 |
-| close | method | 1278 |
+| scheduleTaskNotifications | method | 924 |
+| deliverTaskNotifications | method | 936 |
+| get | method | 960 |
+| revealWorkspace | method | 965 |
+| browse | method | 979 |
+| listFiles | method | 985 |
+| refreshSkills | method | 1047 |
+| snapshot | method | 1053 |
+| subscribe | method | 1083 |
+| configure | method | 1089 |
+| prompt | method | 1123 |
+| withdraw | method | 1177 |
+| cancel | method | 1229 |
+| remove | method | 1252 |
+| close | method | 1290 |
 
 ### src/tasks.js（122 行） — Tasks：子任务（委托）生命周期
 
@@ -1302,7 +1303,7 @@
 |---|---|---|
 | factory | const | 8 |
 
-### tests/session-flow.test.js（385 行） — node --test 测试（npm test）
+### tests/session-flow.test.js（417 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1322,7 +1323,7 @@
 | factory | const | 10 |
 | workspaceHash | const | 20 |
 
-### tests/session-persistence.test.js（188 行） — node --test 测试（npm test）
+### tests/session-persistence.test.js（210 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1364,6 +1365,60 @@
 | assert | method | 51 |
 | assert | method | 56 |
 | assert | method | 57 |
+
+### tests/sqlite-benchmark.mjs（742 行） — node --test 测试（npm test）
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| parseArgs | function | 29 |
+| args | const | 39 |
+| scriptPath | const | 40 |
+| repoDir | const | 41 |
+| mode | const | 42 |
+| bytesOf | const | 46 |
+| since | const | 47 |
+| kb | const | 48 |
+| pct | const | 49 |
+| rss | const | 50 |
+| fileStat | const | 51 |
+| loopMonitor | function | 54 |
+| instrument | function | 70 |
+| countingStore | function | 104 |
+| SIZES | const | 119 |
+| REPS | const | 125 |
+| filler | const | 127 |
+| makeSession | function | 130 |
+| writeFileSync | method | 133 |
+| makeDataset | function | 175 |
+| oldPersist | function | 183 |
+| runStorage | function | 201 |
+| runPhase | method | 246 |
+| runPhase | method | 254 |
+| rmSync | method | 317 |
+| fakeAgentFactory | function | 323 |
+| runE2E | function | 343 |
+| else | method | 354 |
+| rmSync | method | 403 |
+| runGates | function | 409 |
+| lockHolder | function | 534 |
+| lockVictim | function | 545 |
+| runLock | function | 574 |
+| rmSync | method | 596 |
+| main | function | 602 |
+| writeFileSync | method | 624 |
+| spawnSync | method | 625 |
+| cpSync | method | 632 |
+| rmSync | method | 695 |
+| line | method | 699 |
+| line | method | 700 |
+| line | method | 701 |
+| line | method | 702 |
+| line | method | 722 |
+| line | method | 723 |
+| line | method | 728 |
+| line | method | 730 |
+| line | method | 735 |
+| emit | method | 737 |
 
 ### tests/task-notifications.test.js（197 行） — node --test 测试（npm test）
 

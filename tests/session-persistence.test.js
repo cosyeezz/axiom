@@ -157,6 +157,28 @@ test("未加载会话改名失败，打开或关闭仍重试未落盘修改", as
   }
 });
 
+test("取消正在恢复但最终失败的会话仍成功，不重建SDK或丢记录", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-cancel-load-"));
+  let begin, fail;
+  const started = new Promise(resolve => { begin = resolve; });
+  const failing = Object.assign(async () => { begin(); await new Promise((_, reject) => { fail = reject; }); },
+    { catalog: factory.catalog });
+  let sessions = new Sessions(factory, undefined, join(root, "storage"));
+  try {
+    const id = await sessions.create(root);
+    await sessions.close();
+    sessions = new Sessions(failing, undefined, join(root, "storage"));
+    await sessions.load();
+    const opening = assert.rejects(sessions.ensureLoaded(id), /SDK unavailable/);
+    await started;
+    const cancelling = sessions.cancel(id);
+    fail(new Error("SDK unavailable"));
+    await Promise.all([opening, cancelling]);
+    assert.equal(sessions.get(id).loaded, false);
+    assert.equal(sessions.store.hasSession(id), true);
+  } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test("重启只读元数据；列表改名不建SDK，并发打开只恢复一次", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-lazy-"));
   let created = 0;

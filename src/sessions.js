@@ -838,39 +838,48 @@ export class Sessions {
     //   是入队时间，早于真实消费，不可用），无落盘历史可查时退回 message.timestamp；
     //   无消费时间时，助手之后出现的 user 可能来自队列，不能用编写时间推断位置。
     //   仍无可靠位置则保持未知，绝不保留越界数值。
-    const consumedAt = new Map((item.agent.historyEntries?.() || [])
+    const consumedAt = new Map(history
       .filter((entry) => Number.isFinite(Date.parse(entry.timestamp)))
       .map((entry) => [entry.id, Date.parse(entry.timestamp)]));
-    const anchorFor = (agent, count) => item.messages.slice(0, count)
-      .findLast((entry) => entry.agentId === agent && entry.entryId);
+    // 一次按代理建立时间线/锚点，随后二分；不能每条重试重新扫描、复制全部消息。
+    const timelines = new Map();
+    if (item.retries.length) item.messages.forEach((entry, index) => {
+      const agent = entry.agentId;
+      if (!timelines.has(agent)) timelines.set(agent, { rows: [], anchors: [], valid: true, assistant: false, queued: false });
+      const line = timelines.get(agent), message = entry.message;
+      const ts = agent === "main" && consumedAt.size ? consumedAt.get(entry.entryId) : message?.timestamp;
+      line.valid &&= Number.isFinite(ts) && (!line.rows.length || ts >= line.rows.at(-1).ts);
+      line.queued ||= message?.role === "user" && line.assistant;
+      line.assistant ||= message?.role === "assistant";
+      line.rows.push({ index, ts });
+      if (entry.entryId) line.anchors.push({ index, entryId: entry.entryId });
+    });
+    const after = (rows, field, value) => {
+      let low = 0, high = rows.length;
+      while (low < high) {
+        const middle = Math.floor((low + high) / 2);
+        if (rows[middle][field] <= value) low = middle + 1;
+        else high = middle;
+      }
+      return low;
+    };
     for (const retry of item.retries) {
-      const agent = retry.agentId || "main";
+      const agent = retry.agentId || "main", line = timelines.get(agent);
       if (!(Number.isInteger(retry.messageCount) && retry.messageCount >= 0 && retry.messageCount <= item.messages.length)) {
         delete retry.messageCount;
         const first = retry.history?.[0];
-        const sameAgent = item.messages.map((entry, index) => ({ index, entry }))
-          .filter(({ entry }) => entry.agentId === agent);
-        let boundary = null;
-        let sawAssistant = false;
-        const hasQueuedInput = sameAgent.some(({ entry }) => {
-          if (entry.message?.role === "user" && sawAssistant) return true;
-          if (entry.message?.role === "assistant") sawAssistant = true;
-          return false;
-        });
-        if ((agent === "main" && consumedAt.size || !hasQueuedInput) && sameAgent.length && Number.isFinite(first?.nextRetryAt) && Number.isFinite(first?.delayMs) && first.delayMs >= 0) {
+        if (line?.valid && (agent === "main" && consumedAt.size || !line.queued) &&
+            Number.isFinite(first?.nextRetryAt) && Number.isFinite(first?.delayMs) && first.delayMs >= 0) {
           const startedAt = first.nextRetryAt - first.delayMs;
-          const timeline = sameAgent.map(({ entry, index }) => ({ index,
-            ts: agent === "main" && consumedAt.size ? consumedAt.get(entry.entryId) : entry.message?.timestamp }));
-          if (timeline.every(({ ts }, i) => Number.isFinite(ts) && ts !== startedAt
-            && (i === 0 || ts >= timeline[i - 1].ts))) {
-            const next = timeline.find(({ ts }) => ts > startedAt);
-            boundary = next ? next.index : timeline.at(-1).index + 1;
-          }
+          const next = after(line.rows, "ts", startedAt);
+          // 同毫秒仍视为歧义，不因优化而猜边界。
+          if (line.rows[next - 1]?.ts !== startedAt)
+            retry.messageCount = line.rows[next]?.index ?? line.rows.at(-1).index + 1;
         }
-        if (boundary !== null) retry.messageCount = boundary;
       }
       if (Number.isInteger(retry.messageCount) && retry.messageCount >= 0 && retry.messageCount <= item.messages.length) {
-        const anchor = anchorFor(agent, retry.messageCount);
+        const anchors = line?.anchors ?? [];
+        const anchor = anchors[after(anchors, "index", retry.messageCount - 1) - 1];
         if (anchor) retry.anchorEntryId = anchor.entryId;
         else delete retry.anchorEntryId;
       } else {
@@ -878,10 +887,13 @@ export class Sessions {
         delete retry.anchorEntryId;
       }
     }
+    const compactionById = new Map();
+    for (const entry of item.compactions)
+      if (!compactionById.has(entry.id)) compactionById.set(entry.id, entry);
     for (const record of item.agent.compactions?.() || []) {
-      const saved = item.compactions.find((entry) => entry.id === record.id);
+      const saved = compactionById.get(record.id);
       if (saved) Object.assign(saved, record);
-      else item.compactions.push(record);
+      else { item.compactions.push(record); compactionById.set(record.id, record); }
     }
     item.unsubscribe = item.agent.subscribe((event) =>
       item.emit({ ...event, agentId: "main", runId: item.runId }),
@@ -1217,7 +1229,7 @@ export class Sessions {
   async cancel(id) {
     const item = this.get(id);
     if (item.loading) {
-      await item.loading;
+      await item.loading.catch(() => {});
       return this.cancel(id);
     }
     if (!item.loaded) return;

@@ -49,7 +49,8 @@ const MODULE_INFO = {
   "src/pi.js": "createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）",
   "src/retry.js": "模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续",
   "src/compaction.js": "后台独立摘要、token/占比阈值、快照校验与 turn 安全提交",
-  "tests/session-persistence.test.js": "密集会话保存顺序与完整性回归",
+  "tests/session-persistence.test.js": "增量保存/失败重试、懒加载与取消恢复回归",
+  "tests/sqlite-benchmark.mjs": "SQLite 新旧合成数据、写入/启动/锁等待性能验收",
   "src/database.js": "共享 SQLite 连接、小配置 KV、WAL 与一致性备份",
   "src/session-store.js": "会话四表、实体增量更新、逐会话事务与旧数据迁移",
   "src/pi-model-storage.js": "模型与凭据 SQLite 权威存储、Pi 派生兼容文件",
@@ -91,7 +92,7 @@ const MODULE_INFO = {
   "tests/image-input.test.js": "图片协议/签名/模型限制、真实队列附件快照与撤回、大图 WS 回归",
   "tests/workspace-picker.test.js": "Windows 原生目录选择置顶 owner、取消/超时/失败释放锁回归",
   "tests/project-skills.test.js": "项目技能来源、工作空间默认隔离、旧配置迁移与目录链接加载回归",
-  "tests/session-flow.test.js": "会话落盘/恢复/删除、队列和运行中模型切换回归",
+  "tests/session-flow.test.js": "会话落盘/恢复/删除、历史索引与队列/模型切换回归",
   "tests/presets.test.js": "具名预设协议、原子持久化与安全边界回归",
   "tests/": "node --test 测试（npm test）",
 };

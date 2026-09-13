@@ -448,3 +448,13 @@
 - 症状：service.test.js 偶发 workers 1≠2；rebuild 停止错误已报告但恢复 worker 尚未启动。
 - 根因：runOp 先 await state.fail，再 fork/spawnWorker；测试只等 status failed 便读取启动次数。
 - 修复：复用 until 等 ready 且 workers=2，再检查严格次数与原依赖未动，不改产品流程或用固定sleep掩盖竞态。测试桩 maint-env 需完整写临时文件后 rename，避免状态读取撞上直接覆写的空/半截 JSON。
+
+### 2026-09-13 ID匹配优化不等于整个历史恢复没有平方扫描
+- 已复现：256条消息/重试读取消息65,664次；retry迁移每次map/filter与slice找锚点，compactions逐条find，仍重复扫描全部历史。
+- 修复：sessions.js 单次按代理建时间线/锚点后二分查询，压缩按ID索引；同毫秒、倒退、排队编写时间不可靠仍不猜位置。
+- 防再犯：session-flow.test.js getter与toJSON计数验证规模上限和最终顺序，不靠易抖动的耗时阈值；不要只审第一个优化后的循环。
+
+### 2026-09-13 取消加载失败的会话不能连带失败
+- 根因：cancel直接await item.loading，加载失败传染取消；remove同场景已忽略加载失败后清理。
+- 修复：cancel等待加载settle后继续原有未加载返回分支，无SDK时无需再取消，不删除原记录。
+- 防再犯：session-persistence.test.js 可控SDK拒绝，验证打开报错、取消完成且库记录仍在。

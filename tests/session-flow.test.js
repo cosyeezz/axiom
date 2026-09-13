@@ -250,6 +250,38 @@ test("legacy retry boundaries migrate once and survive repeated service restarts
   } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+test("history IDs, retry boundaries and compaction recovery do not rescan whole history per record", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-history-scan-"));
+  const n = 256, base = Date.parse("2026-01-01T00:00:00Z");
+  let reads = 0, serialized = 0, compactionReads = 0;
+  const history = Array.from({ length: n }, (_, i) => ({ id: `e${i}`,
+    timestamp: new Date(base + i * 10).toISOString(),
+    message: { role: "assistant", content: `重复${i % 4}`,
+      toJSON() { serialized++; return { role: this.role, content: this.content }; } } }));
+  const messages = history.map((entry, i) => ({ agentId: "main",
+    ...(i % 2 ? {} : { entryId: entry.id }), get message() { reads++; return entry.message; } }));
+  const compactions = history.map((_, i) => ({ get id() { compactionReads++; return `cp${i}`; }, set id(value) { assert.equal(value, `cp${i}`); }, summary: "旧" }));
+  const factory = Object.assign(async (...args) => ({ ...await flowFactory(...args),
+    historyEntries: () => history,
+    compactions: () => history.map((_, i) => ({ id: `cp${i}`, summary: "JSONL权威" })),
+  }), { catalog: flowFactory.catalog });
+  const sessions = new Sessions(factory);
+  try {
+    const id = await sessions.create(root, {}, { messages, compactions,
+      retries: history.map((_, i) => ({ id: `r${i}`, agentId: "main", status: "succeeded",
+        ...(i % 2 ? {} : { messageCount: n }),
+        history: [{ nextRetryAt: base + n / 2 * 10 + 5 + 2000, delayMs: 2000 }] })) });
+    const item = sessions.get(id);
+    assert.ok(reads <= n * 40, `消息读取 ${reads} 次，不能逐重试重新扫描全历史`);
+    assert.ok(serialized <= n * 4, `消息序列化 ${serialized} 次，重复内容须单向匹配`);
+    assert.ok(compactionReads <= n * 8, `压缩ID读取 ${compactionReads} 次，不能逐条find`);
+    assert.deepEqual(item.messages.map(r => r.entryId), history.map(r => r.id));
+    assert.deepEqual(item.retries.map(r => [r.messageCount, r.anchorEntryId]),
+      history.map((_, i) => i % 2 ? [n / 2 + 1, `e${n / 2}`] : [n, `e${n - 1}`]));
+    assert.ok(item.compactions.every(r => r.summary === "JSONL权威"));
+  } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 // 会话模式 files.browse：相对路径、工作空间边界、递归模糊搜索、分页与导航字段。
 test("files.browse session mode stays inside the workspace and pages filtered entries", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-files-"));

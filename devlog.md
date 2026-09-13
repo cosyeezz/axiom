@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-13 05:32 UTC 历史恢复索引与取消失败边界
+- 已复现：256条消息、256条重试使旧恢复逻辑读取消息65,664次；ID匹配已线性但后续retry逐条map/filter/slice，compaction逐条find仍为平方扫描。取消恰好正在恢复且SDK失败的会话会连带抛加载错误，虽无运行任务可取消。
+- 修复：src/sessions.js 按代理一次构建单调时间线与锚点，重试二分查询；同毫秒歧义、时间倒退、缺失时间、排队输入规则保持，压缩按ID对账。cancel等待失败加载后继续原有未加载直接返回语义，不重建SDK、不删记录。
+- 验证：tests/session-flow.test.js getter计数回归先红后绿，不依赖耗时阈值；tests/session-persistence.test.js 取消加载失败先红后绿。会话流程/保存/撤回/摘要30项全部通过；全量324项：322通过、0失败、2平台跳过，git diff --check通过。最终只读复核继续收口。
+- 基准：集成0582534/05bad78，但主审发现分位数未排序、SQL字节双计/混入读参数、事件循环采样未tick与部分静态门槛，旧报告精确数字暂不采信；独立任务修正计量与失败出口后重跑，不降低门槛。历史非平方硬门槛由上述getter测试承担。
+- 文档：README同步元数据启动/按需恢复/历史索引、基准入口；清除默认配置仍原子替换JSON和无守护/自启的过期描述。涉及上述源/测试、README.md、devlog.md、codebase-map脚本/索引/知识；正式服务和正式库仍未触碰。
+
 ## 2026-09-13 UTC SQLite 存储修正：remote/config 去双重编码 + 维护记录假错误/无界 phases 修复
 - 原因：通用 Database 已对 value 做 JSON 序列化，remote/config 旧代码预 stringify 导致双重编码（库中存的是带引号的 JSON string）；maint persist 把上一次落库失败留下的 persistenceError 随下一次快照一起固化进库，重启后显示假错误；phases 只在 `phase()` 入口限长，restore 与 workerReady 追加不截尾，历史脏数据可无界放大。
 - 实现：`src/remote.js` 不再预 stringify（set 直接传对象）；parseConfig 兼容旧 string 与新 object（其他类型同样 fail closed），命中旧 string 且解析成功时一次读取即迁移成 object，坏结构不迁移、回退默认禁用，鉴权逻辑未动；`scripts/maint-state.mjs` persist 先 `delete data.persistenceError` 再存，失败时错误只留内存（下次成功自愈），restore 读入即丢弃残留 persistenceError（历史库已固化的也不显示），追加阶段收敛到唯一 `pushPhase()` 入口（超限从头部裁剪），restore 超长残留先截尾再补 boot，非数组 phases 防御性置空。
