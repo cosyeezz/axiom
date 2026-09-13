@@ -8,7 +8,6 @@ import { Database } from "../src/database.js";
 import { createPiModelStorage, canonicalModelsJson } from "../src/pi-model-storage.js";
 import { runOpponent } from "./helpers/model-concurrency-child.mjs";
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // 独立测试：临时目录同时充当 Axiom home 与假 ~/.pi（piDir），不触碰真实用户配置与密钥。
 async function tempDir() {
@@ -337,10 +336,9 @@ test("SDK 注入：runtimeOptions 提供 credentials + modelsPath，ModelRuntime
 
 test("CAS 原语：期望原文不匹配拒绝写入，行缺失仅首次插入成功", async () => {
   const dir = await tempDir();
-  let database;
+  const database = new Database(join(dir, "custom-authority.db"));
   try {
-    const { storage, database: db } = makeStorage(dir);
-    database = db;
+    const storage = createPiModelStorage({ database, home: dir, piDir: join(dir, "pi") });
     await storage.init();
     const absent = storage.configState();
     assert.equal(absent.raw, undefined);
@@ -359,6 +357,20 @@ test("CAS 原语：期望原文不匹配拒绝写入，行缺失仅首次插入�
     assert.equal(storage.casFavorites(favorites.raw, empty), true);
     assert.equal(storage.casFavorites(favorites.raw, empty), false);
     assert.equal(database.get("models", "favorites").version, 1);
+    await storage.credentials.modify("p", () => ({ type: "api_key", key: "test" }));
+    assert.equal(database.get("auth", "p").key, "test");
+    for (const [namespace, key, read] of [
+      ["models", "config", () => storage.configState()],
+      ["models", "favorites", () => storage.favoritesState()],
+      ["auth", "p", () => storage.credentials.modify("p", () => assert.fail("坏值不能进入回调"))],
+    ]) {
+      database.prepare("UPDATE store SET value = ? WHERE namespace = ? AND key = ?").run('secret-must-not-leak{', namespace, key);
+      await assert.rejects(async () => read(), error => {
+        assert.match(error.message, /不是有效 JSON/);
+        assert.doesNotMatch(error.message, /secret-must-not-leak/);
+        return true;
+      });
+    }
   } finally {
     database?.close();
     await rm(dir, { recursive: true, force: true });
@@ -373,29 +385,15 @@ test("两进程并发 credentials.modify：CAS 拒绝后写者，杜绝静默丢
     database = db;
     await storage.init();
     const opponent = runOpponent({ dir, op: "credentials" });
-    await opponent.ready();
-    const local = storage.credentials
-      .modify("p", async (current) => {
-        await sleep(200); // parent 拉长异步窗口：go 屏障后 child 的读+写（~20ms）都落在此窗口内，
-        // 两者 expectedRaw 同为「行不存在」→ 单语句 CAS 必拒后写者，双成功不可能。
-        return { type: "api_key", key: "sk-parent", prev: current?.key ?? null };
-        return { type: "api_key", key: "sk-parent", prev: current?.key ?? null };
-      })
-      .then(
-        () => ({ ok: true }),
-        (error) => ({ ok: false, message: error?.message }),
-      );
-    const [parentOutcome, childOutcome] = await Promise.all([local, opponent.result()]);
-    await opponent.exit();
-    const outcomes = [parentOutcome, childOutcome];
-    assert.equal(outcomes.filter((outcome) => outcome.ok).length, 1, `应恰好一方成功：${JSON.stringify(outcomes)}`);
-    for (const outcome of outcomes) if (!outcome.ok) assert.match(outcome.message, /已被其他进程修改/);
-    const final = await storage.credentials.read("p");
-    assert.equal(
-      [final.key === "sk-parent", final.key === "sk-child"].filter(Boolean).length,
-      1,
-      "终值只能是胜者写入",
-    );
+    try {
+      await opponent.ready(); // 子进程已经读取旧凭据，fn尚未返回
+      await storage.credentials.modify("p", () => ({ type: "api_key", key: "sk-parent" }));
+      opponent.release();
+      const outcome = await opponent.result();
+      assert.equal(outcome.ok, false);
+      assert.match(outcome.message, /已被其他进程修改/);
+      assert.equal((await storage.credentials.read("p")).key, "sk-parent");
+    } finally { await opponent.close(); }
   } finally {
     database?.close();
     await rm(dir, { recursive: true, force: true });

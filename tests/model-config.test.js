@@ -600,72 +600,34 @@ test("WS：两个客户端共享 favorites/config.changed 广播，命令走协�
   }
 });
 
-// —— 两进程并发（同 HOME 双开实例的真实丢更新场景）——
-// 对手是独立 node 进程，走完全相同的公开 API；经 tests/helpers 行协议屏障同时起跑，
-// 除 stdout 消息外无任何测试后门。runOpponent 的 op 与本地调用一一对称。
-
-test("两进程并发 saveProvider：同指纹仅一方成功，CAS 杜绝双成功覆盖", { timeout: 30000 }, async () => {
-  const dir = await tempDir();
-  try {
-    const { models } = makeService(dir);
-    const opponent = runOpponent({ dir, op: "config" });
-    await opponent.ready();
-    const local = (async () => {
-      const view = await models.handle({ type: "models.config.get" });
-      await models.saveProvider({ providerId: "p", provider: { name: "from-parent" }, baseFingerprint: view.fingerprint });
-      return { ok: true };
-    })().catch((error) => ({ ok: false, message: error?.message }));
-    const [parentOutcome, childOutcome] = await Promise.all([local, opponent.result()]);
-    await opponent.exit();
-    const outcomes = [parentOutcome, childOutcome];
-    assert.equal(outcomes.filter((outcome) => outcome.ok).length, 1, `应恰好一方成功：${JSON.stringify(outcomes)}`);
-    for (const outcome of outcomes) if (!outcome.ok) assert.match(outcome.message, /已被外部修改/);
-    // 终态：权威与派生镜像一致，只有胜者写入的那份配置
-    const view = await models.handle({ type: "models.config.get" });
-    assert.equal(view.providers.length, 1);
-    assert.deepEqual(JSON.parse(await compat(dir)).providers.p.name, view.providers[0].name);
-  } finally {
-    closeOpenDatabases();
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("两进程并发 setFavorite：双成功必须串行无丢失，单成功终态只含胜者", { timeout: 120000 }, async () => {
-  // 同步读-改-写的进程间交错窗口不可控：断言不变式而非固定结局——
-  // 双成功 ⟺ 两进程完全串行（后者读已见前者写）⟹ 终态并集；单成功 ⟹ 终态仅胜者。
-  // 丢更新（双成功但只剩一个 key）在任何时序下都禁止。
-  for (let round = 0; round < 8; round += 1) {
+// 子进程已读旧权威、停在CAS前；父进程先写成功再放行，确定性检查过期写拒绝。
+for (const op of ["config", "favorites"]) {
+  test(`两进程 ${op}：旧权威捕获后被他人更新，过期CAS必须拒绝`, { timeout: 30000 }, async () => {
     const dir = await tempDir();
+    let opponent;
     try {
-      const database = new Database(join(dir, "axiom.db"));
-      openDatabases.push(database);
-      const storage = createPiModelStorage({ database, home: dir, piDir: join(dir, "pi") });
-      const models = createModelsService({ factory: { catalog: () => [] }, storage });
-      const opponent = runOpponent({ dir, op: "favorites" });
+      const { models, storage } = makeService(dir);
+      opponent = runOpponent({ dir, op });
       await opponent.ready();
-      const local = models.setFavorite({ kind: "model", key: "parent/model", favorite: true }).then(
-        () => ({ ok: true }),
-        (error) => ({ ok: false, message: error?.message }),
-      );
-      const [parentOutcome, childOutcome] = await Promise.all([local, opponent.result()]);
-      await opponent.exit();
-      const outcomes = [parentOutcome, childOutcome];
-      const okCount = outcomes.filter((outcome) => outcome.ok).length;
-      const state = await models.favorites();
-      if (okCount === 2) {
-        assert.deepEqual(
-          state.model.sort(),
-          ["child/model", "parent/model"],
-          `第${round}轮双成功却丢更新：${JSON.stringify({ outcomes, state })}`,
-        );
+      if (op === "config") {
+        await models.saveProvider({ providerId: "p", provider: { name: "from-parent" }, baseFingerprint: (await models.get()).fingerprint });
       } else {
-        assert.equal(okCount, 1, `第${round}轮结局异常：${JSON.stringify(outcomes)}`);
-        assert.equal(state.model.length, 1, `第${round}轮终态应只含胜者：${JSON.stringify(state)}`);
-        assert.ok(["parent/model", "child/model"].includes(state.model[0]));
+        await models.setFavorite({ kind: "model", key: "parent/model", favorite: true });
+      }
+      opponent.release();
+      const outcome = await opponent.result();
+      assert.equal(outcome.ok, false);
+      assert.match(outcome.message, /已被/);
+      if (op === "config") {
+        assert.equal(storage.readConfig().providers.p.name, "from-parent");
+        assert.deepEqual(JSON.parse(await compat(dir)), storage.readConfig());
+      } else {
+        assert.deepEqual((await models.favorites()).model, ["parent/model"]);
       }
     } finally {
+      await opponent?.close();
       closeOpenDatabases();
       await rm(dir, { recursive: true, force: true });
     }
-  }
-});
+  });
+}

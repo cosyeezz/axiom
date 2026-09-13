@@ -248,7 +248,7 @@ export function createModelsService({ factory, storage }) {
     if (!storage.casConfig(expectedRaw, config)) throw new Error("模型配置已被外部修改，请刷新配置页后重试");
     const fingerprint = fingerprintOf(config);
     try {
-      // 从权威库重建派生文件（非入参快照）：并发写入后本进程的镜像也不落伍，与 GET 自愈一致。
+      // 重新读取权威以缩小陈旧窗口；文件写入跨await，仍不保证跨进程镜像实时一致。
       await storage.syncCompatFile(storage.readConfig());
       if (factory.refreshModels) await factory.refreshModels();
       pendingApply = null;
@@ -266,7 +266,7 @@ export function createModelsService({ factory, storage }) {
 
   async function writeFavorites({ kind, key, favorite }) {
     validFavoriteKey(kind, key);
-    // 起点捕获 + 单语句 CAS：同步读-改-写的跨进程丢更新同样被语句级原子性挡住。
+    // 收藏同样用CAS，避免额外事务接口；冲突明确拒绝，由用户刷新重试，不虚报成功。
     const { raw, value } = storage.favoritesState();
     const store = normalizeFavorites(value);
     const list = store[kind];

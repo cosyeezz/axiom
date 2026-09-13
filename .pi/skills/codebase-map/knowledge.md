@@ -458,3 +458,8 @@
 - 根因：cancel直接await item.loading，加载失败传染取消；remove同场景已忽略加载失败后清理。
 - 修复：cancel等待加载settle后继续原有未加载返回分支，无SDK时无需再取消，不删除原记录。
 - 防再犯：session-persistence.test.js 可控SDK拒绝，验证打开报错、取消完成且库记录仍在。
+
+### 2026-09-13 CAS不能另开硬编码权威库，并发测试不能猜时序
+- 根因：按home另开连接绕过传入Database及权限配置；JSON.parse错误泄露坏值片段；固定sleep不能保证两个进程已读同一旧值。
+- 修复：pi-model-storage复用权威连接并固定解析错误；并发helper在捕获旧值后停住，父进程写完才放行，确定性拒绝旧CAS；close后检查结果，finally先终止子进程再关库清理。
+- 防再犯：测试非默认数据库文件名、三类坏JSON、模型/收藏/凭据三条跨进程路径；CAS仅保护权威，派生文件跨await仍可能陈旧。

@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
 import { readFile, rename, rm, writeFile } from "node:fs/promises";
-import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
@@ -93,20 +91,7 @@ export function createPiModelStorage({ database, home, piDir = getAgentDir() }) 
   };
 
   // ---- 跨进程 CAS：修同 HOME 多进程读-改-写丢更新 --------------------------------
-  // 权威库文件（main.js 以 join(home, "axiom.db") 打开）。每次 CAS 开短连接用完即关：
-  // 无常驻第二连接/版本列/锁文件/新依赖（node:sqlite 为内置）。比较+写入是单条 SQL
-  // 语句＝SQLite 语句级原子事务；WAL 下多连接安全，busy_timeout 兜底写锁竞争。
-  const dbPath = join(home, "axiom.db");
-  const withStore = (run) => {
-    mkdirSync(home, { recursive: true });
-    const db = new DatabaseSync(dbPath);
-    try {
-      db.exec("PRAGMA busy_timeout = 5000");
-      return run(db);
-    } finally {
-      db.close();
-    }
-  };
+  // 复用传入的权威连接，比较与写入在单条同步 SQL 内完成，不持锁跨异步操作。
   const readRaw = (db, namespace, key) =>
     db.prepare("SELECT value FROM store WHERE namespace = ? AND key = ?").get(namespace, key)?.value;
   // expectedRaw 为 undefined（行尚不存在）→ 仅当行仍不存在时插入；否则原文全等才覆盖。
@@ -119,27 +104,23 @@ export function createPiModelStorage({ database, home, piDir = getAgentDir() }) 
       : db.prepare("UPDATE store SET value = ? WHERE namespace = ? AND key = ? AND value = ?").run(next, namespace, key, expectedRaw).changes === 1;
 
   // 写路径起点捕获：raw 为库内原文（CAS 期望值）；config 解析兜底与 readConfig 同语义。
-  const configState = () =>
-    withStore((db) => {
-      const raw = readRaw(db, NAMESPACE, CONFIG_KEY);
-      const stored = raw === undefined ? undefined : JSON.parse(raw);
-      return { raw, config: isPlainObject(stored) ? stored : { providers: {} } };
-    });
-  // 库内为紧凑 JSON（与 database.set 一致）；非派生文件的规范序列化。
-  const casConfig = (raw, config) => withStore((db) => compareAndSet(db, NAMESPACE, CONFIG_KEY, raw, JSON.stringify(config)));
-  const favoritesState = () =>
-    withStore((db) => {
-      const raw = readRaw(db, NAMESPACE, FAVORITES_KEY);
-      return { raw, value: raw === undefined ? undefined : JSON.parse(raw) };
-    });
+  const readState = (namespace, key) => {
+    const raw = readRaw(database, namespace, key);
+    try { return { raw, value: raw === undefined ? undefined : JSON.parse(raw) }; }
+    catch { throw new Error(`数据库记录无效：${namespace}/${key}（不是有效 JSON）`); }
+  };
+  const configState = () => {
+    const { raw, value } = readState(NAMESPACE, CONFIG_KEY);
+    return { raw, config: isPlainObject(value) ? value : { providers: {} } };
+  };
+  const casConfig = (raw, config) => compareAndSet(database, NAMESPACE, CONFIG_KEY, raw, JSON.stringify(config));
+  const favoritesState = () => readState(NAMESPACE, FAVORITES_KEY);
   const casFavorites = (raw, store) =>
-    withStore((db) => compareAndSet(db, NAMESPACE, FAVORITES_KEY, raw, JSON.stringify({ version: 1, ...store })));
-  const credentialState = (providerId) =>
-    withStore((db) => {
-      const raw = readRaw(db, AUTH_NAMESPACE, providerId);
-      const stored = raw === undefined ? undefined : JSON.parse(raw);
-      return { raw, current: isCredential(stored) ? stored : undefined };
-    });
+    compareAndSet(database, NAMESPACE, FAVORITES_KEY, raw, JSON.stringify({ version: 1, ...store }));
+  const credentialState = (providerId) => {
+    const { raw, value } = readState(AUTH_NAMESPACE, providerId);
+    return { raw, current: isCredential(value) ? value : undefined };
+  };
 
   // ---- 凭据（auth/<providerId>）：pi-ai CredentialStore 实现 ---------------------
   // 单进程单写者：modify/delete 走同一条 promise 链串行化；跨进程见下方 CAS。
@@ -188,7 +169,7 @@ export function createPiModelStorage({ database, home, piDir = getAgentDir() }) 
         // 与 SDK AuthStorage.modify 一致：fn 返回 undefined 表示放弃变更，保留现值。
         if (next === undefined) return current;
         // 异步 fn 期间他人可能已写：CAS 原文比较失败即冲突——固定脱敏错误，不自动重放。
-        if (!withStore((db) => compareAndSet(db, AUTH_NAMESPACE, providerId, expectedRaw, JSON.stringify(next))))
+        if (!compareAndSet(database, AUTH_NAMESPACE, providerId, expectedRaw, JSON.stringify(next)))
           throw new Error("凭据已被其他进程修改，本次写入已取消，请重试");
         return structuredClone(next);
       });

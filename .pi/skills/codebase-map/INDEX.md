@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 22:32:30）
+# Axiom 多级代码索引（生成于 2026/9/12 23:42:59）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -35,8 +35,8 @@
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
 | src/main.js | 114 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, home, database |
 | src/memory-policy.js | 39 | 主子代理摘要规则与配置页参数校验 | SUMMARY_SYSTEM_PROMPT, SUMMARY_REMINDER, SUMMARY_DELEGATE, MEMORY_SUMMARY_LIMITS |
-| src/model-config.js | 347 | Pi models.json 无损配置读写与共享收藏持久化 | sdkModelConfig, digest, LEVELS, FAVORITE_GROUPS |
-| src/pi-model-storage.js | 259 | 模型与凭据 SQLite 权威存储、Pi 派生兼容文件 | sdkResolveConfigValue, sdkIsCommandConfigValue, NAMESPACE, AUTH_NAMESPACE |
+| src/model-config.js | 353 | Pi models.json 无损配置读写与共享收藏持久化 | sdkModelConfig, digest, LEVELS, FAVORITE_GROUPS |
+| src/pi-model-storage.js | 297 | 模型与凭据 SQLite 权威存储、Pi 派生兼容文件 | sdkResolveConfigValue, sdkIsCommandConfigValue, NAMESPACE, AUTH_NAMESPACE |
 | src/pi.js | 357 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, queueStateOf, hasModelOutput, withdrawQueue |
 | src/protocol.js | 324 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/remote.js | 547 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
@@ -66,6 +66,7 @@
 | tests/database.test.js | 149 | node --test 测试（npm test） | - |
 | tests/defaults.test.js | 37 | node --test 测试（npm test） | - |
 | tests/file-picker.test.js | 67 | node --test 测试（npm test） | source, tick |
+| tests/helpers/model-concurrency-child.mjs | 82 | node --test 测试（npm test） | barrier, runOpponent |
 | tests/image-input.test.js | 169 | node --test 测试（npm test） | pngBase64, jpegBase64, image, parsePrompt |
 | tests/inline-images.test.js | 42 | node --test 测试（npm test） | text, a, b, user |
 | tests/install.test.js | 55 | node --test 测试（npm test） | - |
@@ -76,7 +77,7 @@
 | tests/memory-ui.test.js | 183 | node --test 测试（npm test） | page, record |
 | tests/message-activity.test.js | 407 | node --test 测试（npm test） | page, assistant, thought, call |
 | tests/mobile-reading-ui.py | 103 | node --test 测试（npm test） | - |
-| tests/model-config.test.js | 601 | node --test 测试（npm test） | sha, EMPTY, tempDir, openDatabases |
+| tests/model-config.test.js | 634 | node --test 测试（npm test） | sha, EMPTY, tempDir, openDatabases |
 | tests/model-manager.test.js | 461 | node --test 测试（npm test） | source, tick, j, masked |
 | tests/model-onboarding-ui.test.js | 154 | node --test 测试（npm test） | stripImports, modelSources, contrastSource, pickerSource |
 | tests/model-onboarding.test.js | 55 | node --test 测试（npm test） | - |
@@ -85,7 +86,7 @@
 | tests/model-selection-ui.py | 60 | node --test 测试（npm test） | - |
 | tests/model-thinking-favorites.test.js | 122 | node --test 测试（npm test） | appSource, pickerSource, contrastSource, modelSources |
 | tests/pi-memory.test.js | 240 | node --test 测试（npm test） | - |
-| tests/pi-model-storage.test.js | 334 | node --test 测试（npm test） | tempDir, makeStorage, seedPiModels, seedPiAuth |
+| tests/pi-model-storage.test.js | 402 | node --test 测试（npm test） | tempDir, makeStorage, seedPiModels, seedPiAuth |
 | tests/presets.test.js | 112 | node --test 测试（npm test） | makeFactory |
 | tests/project-skills.test.js | 59 | node --test 测试（npm test） | - |
 | tests/recall.test.js | 150 | node --test 测试（npm test） | user, assistant, thinking, fixture |
@@ -699,7 +700,7 @@
 | within | const | 18 |
 | memoryPolicy | function | 24 |
 
-### src/model-config.js（347 行） — Pi models.json 无损配置读写与共享收藏持久化
+### src/model-config.js（353 行） — Pi models.json 无损配置读写与共享收藏持久化
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -723,7 +724,7 @@
 | normalizeFavorites | function | 156 |
 | createModelsService | function | 165 |
 
-### src/pi-model-storage.js（259 行） — 模型与凭据 SQLite 权威存储、Pi 派生兼容文件
+### src/pi-model-storage.js（297 行） — 模型与凭据 SQLite 权威存储、Pi 派生兼容文件
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1064,6 +1065,15 @@
 | source | const | 6 |
 | tick | const | 7 |
 
+### tests/helpers/model-concurrency-child.mjs（82 行） — node --test 测试（npm test）
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| barrier | const | 11 |
+| writeSync | method | 12 |
+| runOpponent | function | 17 |
+| createInterface | method | 29 |
+
 ### tests/image-input.test.js（169 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
@@ -1110,18 +1120,19 @@
 | call | const | 46 |
 | entry | const | 47 |
 
-### tests/model-config.test.js（601 行） — node --test 测试（npm test）
+### tests/model-config.test.js（634 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| sha | const | 18 |
-| EMPTY | const | 20 |
-| tempDir | function | 22 |
-| openDatabases | const | 27 |
-| closeOpenDatabases | const | 28 |
-| makeService | function | 32 |
-| seed | const | 53 |
-| compat | const | 60 |
+| sha | const | 19 |
+| EMPTY | const | 21 |
+| tempDir | function | 23 |
+| openDatabases | const | 28 |
+| closeOpenDatabases | const | 29 |
+| makeService | function | 33 |
+| seed | const | 54 |
+| compat | const | 61 |
+| test | method | 605 |
 
 ### tests/model-manager.test.js（461 行） — node --test 测试（npm test）
 
@@ -1194,14 +1205,14 @@
 | opts | const | 78 |
 | stars | const | 79 |
 
-### tests/pi-model-storage.test.js（334 行） — node --test 测试（npm test）
+### tests/pi-model-storage.test.js（402 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| tempDir | function | 11 |
-| makeStorage | function | 16 |
-| seedPiModels | const | 21 |
-| seedPiAuth | const | 25 |
+| tempDir | function | 13 |
+| makeStorage | function | 18 |
+| seedPiModels | const | 23 |
+| seedPiAuth | const | 27 |
 
 ### tests/presets.test.js（112 行） — node --test 测试（npm test）
 

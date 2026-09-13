@@ -50,6 +50,7 @@ const MODULE_INFO = {
   "src/retry.js": "模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续",
   "src/compaction.js": "后台独立摘要、token/占比阈值、快照校验与 turn 安全提交",
   "tests/session-persistence.test.js": "增量保存/失败重试、懒加载与取消恢复回归",
+  "tests/helpers/model-concurrency-child.mjs": "跨进程CAS回归：捕获旧权威后的确定性屏障与退出清理",
   "tests/sqlite-benchmark.mjs": "SQLite 新旧合成数据、写入/启动/锁等待性能验收",
   "src/database.js": "共享 SQLite 连接、小配置 KV、WAL 与一致性备份",
   "src/session-store.js": "会话四表、实体增量更新、逐会话事务与旧数据迁移",
