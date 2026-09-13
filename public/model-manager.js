@@ -525,7 +525,7 @@ export function initModelManager({ root, request, onSaved }) {
       snap,
       id: snap.id || suggestId(template?.id === "custom" || !template ? "my-provider" : template.id),
       baseUrl: snap.baseUrl ?? template?.baseUrl ?? "",
-      api: snap.api ?? template?.api ?? "openai-completions",
+      api: provider ? (snap.api ?? "") : (template?.api ?? "openai-completions"),
       authHeader: Boolean(snap.authHeader),
       apiKeyValue: isMask(snap.apiKey) ? "" : String(snap.apiKey ?? template?.apiKey ?? ""),
       apiKeyMasked: isMask(snap.apiKey),

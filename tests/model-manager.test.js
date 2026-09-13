@@ -67,6 +67,39 @@ test("模板常量覆盖常见供应商与本地服务", () => {
   h.window.close();
 });
 
+test("供应商协议清除后回读、再次保存和刷新仍保持不设置，新建仍用模板", async () => {
+  const h = harness();
+  const loaded = h.manager.load();
+  h.flushGet({ providers: [{ id: "p1", api: "anthropic-messages" }] });
+  await loaded;
+  const apiSelect = () => h.detail().querySelector('select[aria-label="API 协议"]');
+  assert.equal(apiSelect().value, "anthropic-messages");
+  apiSelect().value = "";
+  apiSelect().dispatchEvent(new h.window.Event("change", { bubbles: true }));
+  h.button("保存供应商").click();
+  const save = h.lastPending("models.provider.save");
+  assert.equal(save.args.provider.api, null);
+  save.settled = true;
+  save.resolve({});
+  await h.settle();
+  h.flushGet({ fingerprint: "fp-2", providers: [{ id: "p1" }] });
+  await h.settle();
+  assert.equal(apiSelect().value, "", "保存回读不能补成 OpenAI");
+  h.button("保存供应商").click();
+  assert.equal(Object.hasOwn(h.lastPending("models.provider.save").args.provider, "api"), false);
+  h.lastPending("models.provider.save").resolve({});
+  await h.settle();
+  h.flushGet();
+  await h.settle();
+  const refreshed = h.manager.load();
+  h.flushGet();
+  await refreshed;
+  assert.equal(apiSelect().value, "");
+  h.button("添加供应商").click();
+  assert.equal(apiSelect().value, "openai-completions", "新建模板默认值不变");
+  h.window.close();
+});
+
 test("加载后导航分组展示自定义与内置目录，详情默认显示模型名称+实际ID+能力", async () => {
   const h = harness();
   const loaded = h.manager.load();
