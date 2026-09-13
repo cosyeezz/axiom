@@ -801,3 +801,9 @@
 - 内容：`public/style.css` 把 `.settings-layout` 由整块滚动改为 `overflow: hidden`，分类列与右侧面板各自成为滚动容器（`#settings .settings-nav, #settings .settings-body { min-width: 0; min-height: 0; overflow: auto; scrollbar-gutter: stable }`）；≤700px 单列布局回到整块滚动，但分类列改 `position: sticky; top: 0; max-height: 45dvh`（配 `background: var(--surface)`、`z-index: 2`），窄屏滚下去同样能看到分类。
 - 验证：Playwright 用真实 dialog 片段（index.html 的 `#settings` 块 + 造 60 段占位内容）实测 1200/700/420px：滚到底后分类列 `navTop` 完全不变（145/145/141），右侧内容分别在自身容器内滚动；全量 `npm test` 305 项 304 过 1 跳过 0 失败。
 - 涉及：public/style.css、devlog.md、.pi/skills/codebase-map/index。
+
+## 2026-09-13 10:10 — 内置/扩展供应商与模型可隐藏（models.hidden.set）
+- 原因：内置目录与模型选择器条目只增不减，用户不想再选到的模型会一直出现在候选里；需要一个不影响 Pi 运行时的纯 Axiom 侧隐藏入口。
+- 内容：新增 `models.hidden.set { key, hidden }` 协议命令（key = 供应商 id 或 `provider/id`），SQLite models 命名空间新增独立 `hidden` 键（不写 models.json，SDK schema 只认 provider 定义）；`model-config.js` 的 `listCatalog()` 过滤隐藏项（供应商级隐藏在有同名自定义覆盖时让位），`models.config.get` 回传 `hidden` 清单；`server.js` 的 `models.list`（选取入口）改用过滤后目录，Pi 运行时 `catalog()` 不动；模型管理页目录行加隐藏图标 + 二次确认弹窗，隐藏清单集中在左侧「已隐藏」页一键恢复。
+- 验证：全量 `npm test` 307 项 306 过 1 跳过 0 失败（含新增 models.hidden.set 测试：单模型/整供应商隐藏、覆盖让位、恢复幂等、未知 key 与非法载荷拒绝、models.json 不被污染）。
+- 涉及：src/protocol.js、src/server.js、src/model-config.js、src/pi-model-storage.js、public/model-manager.js、public/model-manager.css、tests/model-config.test.js、README.md、devlog.md、.pi/skills/codebase-map/INDEX.md。
