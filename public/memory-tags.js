@@ -1,37 +1,43 @@
 // 会话记忆标签：助手在回复中用 <title>/<summary>/<progress> 自报标题与摘要。
 // extractMemoryTags 供后端落库（src/session-memory.js），stripMemoryTags 供展示过滤（前端流式与 result() 去标签）。
-// 只解析简单单行有界标签；代码围栏（``` 行，允许缩进，未闭合视为代码到结尾）内一律不处理。
+// 标签可跨行（模型常把开启标签、正文、闭合标签分行写）；代码围栏（``` 行，允许缩进，未闭合视为代码到结尾）内一律不处理。
 
 // 保留旧标签读取兼容，新的模型输出统一使用 axiom_summary。
 const TAGS = ["axiom_summary", "summary", "title", "progress"];
 const NAMES = TAGS.join("|");
-// 单行有界标签；内容排除其他标签起点，杜绝贪婪吞并同类标签与嵌套。
-const TAG = new RegExp(`<(${NAMES})>((?:(?!<(?:/?(?:${NAMES})))[^\\n])*?)</\\1>`, "gi");
+// 有界标签，内容可跨行；内容排除其他标签起点，杜绝贪婪吞并同类标签与嵌套。
+const TAG = new RegExp(`<(${NAMES})>((?:(?!<(?:/?(?:${NAMES})))[\\s\\S])*?)</\\1>`, "gi");
 const OPEN = new RegExp(`<(${NAMES})>`, "gi");
+const CLOSE = new RegExp(`</(${NAMES})>`, "gi");
 const MARKS = TAGS.flatMap((tag) => [`<${tag}>`, `</${tag}>`]);
 const FENCE = /^\s*```/;
+// 已删标签的占位符：整行只剩占位符就丢弃该行，不留空档。
+const HOLE = "\u0000";
 
-// 逐行标记代码状态：围栏行与围栏内的行都是代码。
-function codeFlags(text) {
+// 按代码围栏切段：连续同类（代码/非代码）行合成一段，段内可跨行匹配标签。
+function segments(text) {
+  const out = [];
   let code = false;
-  return String(text).split("\n").map((line) => {
+  for (const line of String(text).split("\n")) {
     const fence = FENCE.test(line);
     const inCode = fence || code;
     if (fence) code = !code;
-    return { line, inCode };
-  });
+    if (out.length && out.at(-1).inCode === inCode) out.at(-1).lines.push(line);
+    else out.push({ inCode, lines: [line] });
+  }
+  return out;
 }
 
-// 提取模型自报标签，返回 { summary?, title?, progress? }（缺省键不出现）。
-// 标签须单行有界，可在行中/行尾/同行多个；title 取首个，summary/progress 取最后（最新）。
+// 提取模型自报标签，返回 { axiom_summary?, summary?, title?, progress? }（缺省键不出现）。
+// 标签内容可跨行（换行折叠为空格）；title 取首个，summary/progress 取最后（最新）。
 export function extractMemoryTags(text) {
   if (typeof text !== "string" || !text) return {};
   const found = {};
-  for (const { line, inCode } of codeFlags(text)) {
+  for (const { inCode, lines } of segments(text)) {
     if (inCode) continue;
-    for (const [, name, body] of line.matchAll(TAG)) {
+    for (const [, name, body] of lines.join("\n").matchAll(TAG)) {
       const key = name.toLowerCase();
-      const value = body.trim();
+      const value = body.trim().replace(/\s+/g, " ");
       if (!value || (key === "title" && (key in found || [...value].length > 10))) continue;
       found[key] = value;
     }
@@ -39,36 +45,35 @@ export function extractMemoryTags(text) {
   return found;
 }
 
-// 从展示文本去除记忆标签（不改原文）：完整标签删除，行内最后一个无配对闭合的
-// 开启标签截到行尾；streaming=true 再隐藏行尾正在输入的标签残片（"<sum"、"</t" 等）。
+// 从展示文本去除记忆标签（不改原文）：完整标签删除，首个无配对闭合的开启标签截到段尾
+// （正在流式输入的摘要），落单的闭合标签删除；streaming=true 再隐藏行尾正在输入的标签残片（"<sum"、"</t" 等）。
 // 代码围栏内不做任何处理。
 export function stripMemoryTags(text, { streaming = false } = {}) {
   if (typeof text !== "string" || !text) return text;
   const kept = [];
-  for (const { line, inCode } of codeFlags(text)) {
+  for (const { inCode, lines } of segments(text)) {
     if (inCode) {
-      kept.push({ line, inCode });
+      kept.push(...lines.map((line) => ({ line, inCode })));
       continue;
     }
     // 反复剥壳：嵌套在外层的完整标签在内层剥掉后才完整可见。
-    let stripped = line, prev;
+    let stripped = lines.join("\n").replaceAll(HOLE, ""), prev;
     do {
       prev = stripped;
-      stripped = stripped.replace(TAG, "");
+      stripped = stripped.replace(TAG, HOLE);
     } while (stripped !== prev);
-    let cut = -1;
     for (const match of stripped.matchAll(OPEN)) {
       const at = match.index;
-      if (cut >= 0 && at >= cut) continue;
-      if (!new RegExp(`</${match[1]}>`, "i").test(stripped.slice(at + match[0].length)) && (cut < 0 || at < cut)) cut = at;
+      if (new RegExp(`</${match[1]}>`, "i").test(stripped.slice(at + match[0].length))) continue;
+      stripped = stripped.slice(0, at) + HOLE;
+      break;
     }
-    if (cut >= 0) {
-      if (!stripped.slice(0, cut).trim()) continue; // 未闭合前无正文：整行丢弃，不留空档
-      kept.push({ line: stripped.slice(0, cut), inCode });
-      continue;
+    stripped = stripped.replace(CLOSE, HOLE); // 开启标签丢失（跨围栏、被截断）时不让闭合标签漏进正文
+    for (const line of stripped.split("\n")) {
+      const bare = line.replaceAll(HOLE, "");
+      if (line !== bare && !bare.trim()) continue; // 整行只有标签
+      kept.push({ line: bare, inCode });
     }
-    if (!stripped.trim() && stripped !== line) continue; // 整行只有完整标签
-    kept.push({ line: stripped, inCode });
   }
   let lines = kept.map(({ line }) => line);
   if (streaming && kept.length && !kept.at(-1).inCode) {

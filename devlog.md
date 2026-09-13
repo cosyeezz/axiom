@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-13 供应商协议「不设置」保存回显修复
+- 原因：providerForm 把已有供应商缺失的 api 当作新建模板，回读时补成 openai-completions，再次保存还可能写回该默认值。
+- 修改：仅新建表单采用模板默认协议；已有配置缺失 api 保持空值，不改后端协议校验、模型继承或界面样式。
+- 验证：新增回归覆盖清除发送 null、成功回读、再次保存、刷新和新建模板默认值；修复前复现，修复后模型面板 25 项通过；全量 307 项中 306 通过、1 跳过。首次全量因 service 测试清理临时数据库遇 EBUSY 失败，未改相关代码，重跑全绿。
+- 涉及：public/model-manager.js、tests/model-manager.test.js、README.md、devlog.md、codebase-map 知识库与生成索引。
+
 ## 2026-09-13 开发服务重建失败保护与恢复
 - 原因：4320 的旧守护状态显示重建在停服后才因残留 `.node_modules-backup` 拒绝切换，随后兜底 worker 因 SDK 文件缺失退出；维护期间退出被 `restarting` 屏蔽，兜底失败没有恢复普通崩溃重试。
 - 修改：准备阶段提前检查备份，不停止健康 worker、不删除不明确的备份；兜底启动失败明确记录未就绪，确认 worker 已退出后恢复有上限的崩溃重试。回滚失败或停止未确认仍保留现场，不盲目启动。
@@ -807,3 +813,25 @@
 - 内容：新增 `models.hidden.set { key, hidden }` 协议命令（key = 供应商 id 或 `provider/id`），SQLite models 命名空间新增独立 `hidden` 键（不写 models.json，SDK schema 只认 provider 定义）；`model-config.js` 的 `listCatalog()` 过滤隐藏项（供应商级隐藏在有同名自定义覆盖时让位），`models.config.get` 回传 `hidden` 清单；`server.js` 的 `models.list`（选取入口）改用过滤后目录，Pi 运行时 `catalog()` 不动；模型管理页目录行加隐藏图标 + 二次确认弹窗，隐藏清单集中在左侧「已隐藏」页一键恢复。
 - 验证：全量 `npm test` 307 项 306 过 1 跳过 0 失败（含新增 models.hidden.set 测试：单模型/整供应商隐藏、覆盖让位、恢复幂等、未知 key 与非法载荷拒绝、models.json 不被污染）。
 - 涉及：src/protocol.js、src/server.js、src/model-config.js、src/pi-model-storage.js、public/model-manager.js、public/model-manager.css、tests/model-config.test.js、README.md、devlog.md、.pi/skills/codebase-map/INDEX.md。
+## 2026-09-13 10:10 — 修复跨行 `<axiom_summary>` 导致闭合标签漏进正文、摘要未入库
+- 原因：用户截图里助手正文末尾出现裸的 `</axiom_summary>`。根因是 `public/memory-tags.js` 的 `TAG` 正则内容用 `[^\n]`，只认单行有界标签；模型实际把开启标签、正文、闭合标签分三行写。按行处理时：开启标签行同行无闭合 → 整行丢弃；正文行无标签 → 原样保留；闭合标签行不匹配 `OPEN`（`<name>` 而非 `</name>`）→ 原样保留，Markdown 把正文与闭合标签并成一段就成了截图效果。同一原因下 `extractMemoryTags` 也提取不到，该条摘要没入库（trigger 记 missing）。
+- 内容：`public/memory-tags.js` —— `TAG` 内容改 `[\s\S]`，标签可跨行，提取时 `replace(/\s+/g," ")` 把换行折叠为空格；新增 `segments()` 按代码围栏把连续同类行合成段，段内整段匹配（围栏内仍原样保留）；strip 用 `HOLE`（`\u0000`）占位替换被删标签，整行只剩占位符才丢弃以免留空行；首个无配对闭合的开启标签截到段尾（流式中的摘要整块隐藏）；新增 `CLOSE` 正则删除落单闭合标签，兜住开启标签丢失（跨围栏、被截断）时的漏出。
+- 验证：`tests/memory-tags.test.js` 旧断言 `extractMemoryTags("<summary>跨行\n不认</summary>") === {}` 翻转为 `{ summary: "跨行 认" }`；新增两条测试覆盖截图那种标签独占行的跨行摘要（入库 + 整块隐藏）、裸闭合标签、开启标签落在围栏内、以及流式闭合前整块隐藏。`npm test` 308 项 307 过 1 跳过 0 失败。
+- 涉及：public/memory-tags.js、tests/memory-tags.test.js、README.md、devlog.md。
+
+## 2026-09-13 10:20 — 异常停止后在会话流末尾增加手动重试（续跑）入口
+- 原因：自动重试只覆盖「可恢复失败」，手动 Esc 停止（归为 cancelled）与终态错误停下来后没有任何再来一次的入口，只能重打一遍输入；用户明确要求按钮贴在被打断的位置，不放发送区。
+- 内容：
+  - `src/retry.js`：抽出并导出 `dropFailedAssistant(session)`（仅移除末尾失败/截断的助手消息，末尾是 user/toolResult 时空操作）与 `canResume(session)` + `RESUMABLE_STOP_REASONS`（`error/aborted/length/toolUse`）；只认异常的正面证据，`stopReason=stop` 与缺失 `stopReason` 都不给重试（宁可漏不可误，避免测试/历史里无 stopReason 的消息误挂按钮）。createAutoRetry 内部改用导出版本，行为不变。
+  - `src/pi.js`：agent 返回对象新增 `resumable()` / `resume()`。resume 清 `lastResult` 后 `retry.run(() => { dropFailedAssistant(session); return session.agent.continue(); })`——不重发用户输入，续跑再失败仍吃自动退避；故意不跑 compaction（maybeApply 会重写消息数组，与 continue 靠末尾接续的前提冲突）。
+  - `src/protocol.js` / `src/server.js`：新增 `session.retry` 命令（`{ id, type, sessionId }.strict()`）与分发 `data = { runId: await sessions.retry(request.sessionId) }`。
+  - `src/sessions.js`：从 `prompt()` 抽出 `startRun(item, run)` 运行骨架（runId/status 广播 → run() → result() 取错 → 收尾持久化 + idle 复位 + scheduleTaskNotifications），`prompt()` 与新增的 `retry(id)` 共用；retry 在启动前同步校验 `status==="idle" && !configuring && !closing && agent.resumable()`，不可续直接抛错给回执，不留 running→idle 空转。
+  - `public/app.js` / `public/style.css`：新增 `lastMainMessage`/`interrupted` 状态与 `canResumeMessage`（服务端规则的前端副本）；`syncRetryPrompt()` 维护单例 `.retry-prompt` 节点（提示 + 「↻ 重试」按钮 → `request("session.retry", { sessionId })`），按 interrupted && 空闲 && 已连接 && 有会话 append/remove 到 `#output` 末尾；`agent.message.end`(main) 更新 lastMainMessage，`session.state` running 清标记、idle 重判，刷新恢复时从 `messages.findLast(agentId==="main")` 初始化。样式复用 retry-card 同款 `--line/--surface/--muted` token。
+- 验证：新增 `tests/manual-retry.test.js` 5 项（canResume 正负样本、dropFailedAssistant 三种末尾、sessions.retry 续跑/回执 runId/忙碌与不可续守卫不广播状态/续跑再失败仍回 idle、protocol strict + server 分发、前端入口显隐与点击载荷）；全量 `npm test` 311 项 310 过 1 跳过 0 失败。
+- 涉及：src/retry.js、src/pi.js、src/protocol.js、src/server.js、src/sessions.js、public/app.js、public/style.css、tests/manual-retry.test.js、README.md、devlog.md、.pi/skills/codebase-map/index。
+
+## 2026-09-13 04:30 — worktree 流程补充「任务完成后自动合并 master 并推送」
+- 原因：用户要求任务完成后自动拉取最新 `master`、完成主从合并并推送，不再每步征求确认。此前流程写的是「提交并 push → 合并回 master 并推送」，没有明确 push 前先把最新 master 合进功能分支，实际已出现本地 master 与 origin/master 分叉各 2 个提交的情况。
+- 内容：`AGENTS.md` worktree 段落——流程行改为「验证 → 提交 → 拉取最新 `master` 并合并进功能分支（冲突在功能分支内解决）→ push 功能分支 → 合并回 `master` 并推送 → 清理 worktree」，把合并方向定为先 master→功能分支（冲突在功能分支解决，master 只接快进式合并）；新增一条：任务完成后自动执行收尾，仅当 master 工作区不干净、存在未完成合并、或冲突无法安全自动解决时暂停并报告。`README.md:147`「维护：发布更新」同步为同一套流程措辞，避免两处文档打架。
+- 验证：纯文档改动，无代码变更，未跑测试套件；人工复核两处流程描述一致。本次收尾按新规则实测走通（fetch → merge origin/master → push 功能分支 → 合并回 master → push）。
+- 涉及：AGENTS.md、README.md、devlog.md。

@@ -447,3 +447,9 @@
 - 根因：summary-meta 使用 header 继承顶栏高度与缩进；settings-body p 覆盖摘要正文。
 - 修复：style.css 隔离时间行尺寸、限定弹窗直属 header、提高摘要正文选择器精度。
 - 防再犯：tests/summary-compact.test.js 核对计算样式；标题栏保持64px，摘要时间行使用自然高度。
+
+### 2026-09-13 供应商未设置协议被表单默认值覆盖
+- 症状：选择不设置并保存后显示 OpenAI，再次保存可能误写协议。
+- 根因：providerForm 对已有配置和新建模板共用 openai-completions 回退。
+- 修复：public/model-manager.js 仅新建使用模板默认值，已有配置缺失 api 回显空值。
+- 防再犯：tests/model-manager.test.js 覆盖清除、回读、再次保存、刷新与新建模板；默认值只用于创建，不用于解释缺失的已保存字段。

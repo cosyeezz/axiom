@@ -381,6 +381,9 @@ export function createServerApp(sessions, service = {}) {
             case "cancel":
               await sessions.cancel(request.sessionId);
               break;
+            case "session.retry":
+              data = { runId: await sessions.retry(request.sessionId) };
+              break;
             case "tasks.read":
               data = await sessions
                 .get(request.sessionId)
