@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/13 09:35:20）
+# Axiom 多级代码索引（生成于 2026/9/13 10:20:50）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -10,7 +10,7 @@
 | public/file-picker.js | 355 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/index.html | 317 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown.js | 247 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, textLanguages, isText |
-| public/memory-tags.js | 94 | 主子代理共享简单标签提取与流式显示过滤 | TAGS, NAMES, TAG, OPEN |
+| public/memory-tags.js | 111 | 主子代理共享简单标签提取与流式显示过滤 | TAGS, NAMES, TAG, OPEN |
 | public/model-manager.css | 474 | 模型配置页：供应商列表、编辑表单与响应式布局 | - |
 | public/model-manager.js | 1215 | Pi 模型管理：供应商模板、模型编辑与安全保存反馈 | API_TYPES, PROVIDER_TEMPLATES, PROVIDER_ID, MASK_KINDS |
 | public/model-picker.css | 88 | 共享收藏下拉：暗色浮层、星标、触屏与焦点样式 | - |
@@ -42,7 +42,7 @@
 | src/retry.js | 173 | 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_DELAY_MS, MAX_RETRIES, delayFor |
 | src/server.js | 465 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | assets, createServerApp |
 | src/session-memory.js | 29 | 标题提取登记、轮次预算挂钩与委派背景 | textOf, memoryHooks |
-| src/session-store.js | 457 | 会话四表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, TABLES, INDEXES |
+| src/session-store.js | 458 | 会话三表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, TABLES, INDEXES |
 | src/sessions.js | 1286 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | BROWSE_PAGE, SEARCH_LIMIT, SEARCH_DIR_LIMIT, IGNORED_ENTRIES |
 | src/task-budget.js | 36 | 主子代理轮次预算规则、收尾提示词与配置页参数校验 | WRAP_UP_PROMPT, TASK_BUDGET_LIMITS, taskBudgetDefaults, within |
 | src/tasks.js | 121 | Tasks：子任务（委托）生命周期 | Tasks |
@@ -74,7 +74,7 @@
 | tests/manual-retry.test.js | 187 | node --test 测试（npm test） | session, assistant, page, message |
 | tests/markdown.test.js | 166 | node --test 测试（npm test） | - |
 | tests/memory-preview.mjs | 22 | node --test 测试（npm test） | state, sessions, app |
-| tests/memory-tags.test.js | 70 | node --test 测试（npm test） | - |
+| tests/memory-tags.test.js | 83 | node --test 测试（npm test） | - |
 | tests/memory-ui.test.js | 98 | node --test 测试（npm test） | page |
 | tests/message-activity.test.js | 407 | node --test 测试（npm test） | page, assistant, thought, call |
 | tests/mobile-reading-ui.py | 103 | node --test 测试（npm test） | - |
@@ -423,21 +423,25 @@
 | jsonControls | function | 103 |
 | renderMarkdown | function | 142 |
 
-### public/memory-tags.js（94 行） — 主子代理共享简单标签提取与流式显示过滤
+### public/memory-tags.js（111 行） — 主子代理共享简单标签提取与流式显示过滤
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| TAGS | const | 7 |
-| NAMES | const | 8 |
-| TAG | const | 10 |
-| OPEN | const | 11 |
-| CLOSE | const | 12 |
-| MARKS | const | 13 |
-| FENCE | const | 14 |
-| HOLE | const | 16 |
-| segments | function | 19 |
-| extractMemoryTags | function | 34 |
-| stripMemoryTags | function | 53 |
+| TAGS | const | 8 |
+| NAMES | const | 9 |
+| TAG | const | 11 |
+| OPEN | const | 12 |
+| CLOSE | const | 13 |
+| MARKS | const | 14 |
+| FENCE | const | 15 |
+| INLINE_CODE | const | 17 |
+| HOLE | const | 19 |
+| MASK | const | 23 |
+| maskInlineCode | function | 24 |
+| unmaskInlineCode | const | 29 |
+| segments | function | 35 |
+| extractMemoryTags | function | 50 |
+| stripMemoryTags | function | 69 |
 
 ### public/model-manager.js（1215 行） — Pi 模型管理：供应商模板、模型编辑与安全保存反馈
 
@@ -869,7 +873,7 @@
 | textOf | const | 4 |
 | memoryHooks | function | 11 |
 
-### src/session-store.js（457 行） — 会话四表、实体增量更新、逐会话事务与旧数据迁移
+### src/session-store.js（458 行） — 会话三表、实体增量更新、逐会话事务与旧数据迁移
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -887,15 +891,15 @@
 | listSessions | method | 168 |
 | listPendingSessionIds | method | 189 |
 | getSession | method | 197 |
-| insertSession | method | 296 |
-| importLegacySession | method | 322 |
-| migrateLegacy | method | 339 |
-| updateSession | method | 361 |
-| deleteSession | method | 385 |
-| saveEvent | method | 391 |
-| deleteEvents | method | 410 |
-| saveTask | method | 428 |
-| listTasks | method | 451 |
+| insertSession | method | 297 |
+| importLegacySession | method | 323 |
+| migrateLegacy | method | 340 |
+| updateSession | method | 362 |
+| deleteSession | method | 386 |
+| saveEvent | method | 392 |
+| deleteEvents | method | 411 |
+| saveTask | method | 429 |
+| listTasks | method | 452 |
 
 ### src/sessions.js（1286 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
 

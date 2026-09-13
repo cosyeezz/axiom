@@ -452,7 +452,7 @@ export class Sessions {
 
   // 旧版磁盘会话（workspaces/<hash>/<id>.json）一次性迁入库：解析验证成功才写库+标记，
   // 源文件保留（迁移永不破坏原始数据）。标记精确到文件：单文件失败只跳过它自己，修复后
-  // 下次启动重试，不牵连同目录其他文件。四表导入与标记经存储层单事务提交。库中已有同 id
+  // 下次启动重试，不牵连同目录其他文件。三表导入与标记经存储层单事务提交。库中已有同 id
   // 记录时以库为准不覆盖；删除会话时旧 JSON 一并清理，即使清理中断，文件标记仍在，绝不复活。
   async migrateLegacySessions() {
     for (const workspace of await readdir(this.storagePath, { withFileTypes: true })) {

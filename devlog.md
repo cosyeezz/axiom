@@ -952,3 +952,10 @@
   - README.md 第 15 行补一句：围栏与行内代码内的同名标签原样保留。
 - 验证：新增 tests/memory-tags.test.js「行内代码里的标签是讨论内容」用例（复现串、`` `<title>` ``、双反引号、行内与真标签混排、extract 只认真标签）；实测带死字段的旧 JSON 导入后 record 仅剩 task/status/id；全量 `npm test` 357 项，355 过 / 0 失败 / 2 跳过（既有 SKIP）。worktree 首次需 `npm ci`。
 - 涉及：public/memory-tags.js、src/session-store.js、tests/memory-tags.test.js、README.md、devlog.md、docs/sqlite-refactor-plan.md（删）、.pi/skills/codebase-map/knowledge.md。
+
+## 2026-09-13 11:35 — 「会话四表」表述改回三表
+
+- 原因：重建索引时发现 session-store 的模块职责仍写「会话四表」。`summaries` 表已随摘要机制删除，实际只建 sessions / session_events / tasks 三张（`store` 属 database.js），文件头早已写三表，内部注释与索引没跟上。
+- 内容：reindex.mjs 的 MODULE_INFO、src/sessions.js:455 与 src/session-store.js:319 的迁移注释、tests/session-store.test.js:206 的用例名，四处「四表」改「三表」。
+- 验证：全量 `npm test` 357 项，355 过 / 0 失败 / 2 跳过；重建 INDEX.md 后模块表描述同步为三表。
+- 涉及：.pi/skills/codebase-map/scripts/reindex.mjs、src/sessions.js、src/session-store.js、tests/session-store.test.js、devlog.md。

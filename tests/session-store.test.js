@@ -203,7 +203,7 @@ test("change 包多实体全有或全无；嵌套内层回滚不影响外层", (
     assert.deepEqual(store.getSession("s1").retries.map((r) => r.id), ["retry-0", "retry-2"]);
   }));
 
-test("importLegacySession：四表+标记单事务；重跑与同 id 不覆盖", () =>
+test("importLegacySession：三表+标记单事务；重跑与同 id 不覆盖", () =>
   withStore((store, db) => {
     const saved = fullSaved();
     assert.equal(store.importLegacySession(saved, "sessions/F:/old/s1.json"), true);
