@@ -217,15 +217,17 @@ export function createModelsService({ factory, storage }) {
   }
 
   // 所有写命令：指纹乐观锁 → 权威读取 → 变更 → SDK 真实 schema 校验 → 权威落库 →
-  // 派生兼容文件重建 + SDK 模型目录刷新（应用阶段）。全部写命令经 enqueue 串行，读-改-写不会交错。
-  // 回执协议：库写入失败（指纹冲突/校验拒绝/SQLite 异常）照常抛错，权威未变；
+  // 派生兼容文件重建 + SDK 模型目录刷新（应用阶段）。全部写命令经 enqueue 单进程内串行；
+  // 跨进程丢更新由落库 CAS 防护（比较起点权威原文，冲突即拒绝，不自动重放）。
+  // 回执协议：库写入失败（指纹/CAS 冲突/校验拒绝/SQLite 异常）照常抛错，权威未变；
   // 库已落库但派生/刷新失败时不抛——权威已变，抛错会让 UI 误以为保存失败而丢弃编辑。
   // 此时返回 { fingerprint, applied: false, applyError }，同时记为挂起状态：后续任意
   // models.config.get 读取路径顺带重试派生+刷新并在响应返回 applyError（有 = 已保存未应用，
   // 无 = 已应用）。GET 幂等且不重放 mutation，是最安全的自愈入口；也可拿同一 fingerprint
   // 重试保存，乐观锁照常通过，apply 幂等重算同一配置。
   async function mutate(baseFingerprint, apply) {
-    const config = storage.readConfig();
+    // 起点捕获库内权威原文：异步校验窗口结束后用它做单语句 CAS 比较，跨进程不丢更新。
+    const { raw: expectedRaw, config } = storage.configState();
     if (fingerprintOf(config) !== baseFingerprint) throw new Error("模型配置已被外部修改，请刷新配置页后重试");
     const providers = config.providers === undefined ? {} : config.providers;
     if (providers === null || typeof providers !== "object" || Array.isArray(providers))
@@ -242,10 +244,12 @@ export function createModelsService({ factory, storage }) {
     } finally {
       await rm(tmp, { force: true }).catch(() => {});
     }
-    await storage.writeConfig(config);
+    // 异步校验窗口内他人可能已写：单语句 CAS（原文全等才覆盖）原子落库，失败即冲突。
+    if (!storage.casConfig(expectedRaw, config)) throw new Error("模型配置已被外部修改，请刷新配置页后重试");
     const fingerprint = fingerprintOf(config);
     try {
-      await storage.syncCompatFile(config);
+      // 从权威库重建派生文件（非入参快照）：并发写入后本进程的镜像也不落伍，与 GET 自愈一致。
+      await storage.syncCompatFile(storage.readConfig());
       if (factory.refreshModels) await factory.refreshModels();
       pendingApply = null;
     } catch (error) {
@@ -262,14 +266,16 @@ export function createModelsService({ factory, storage }) {
 
   async function writeFavorites({ kind, key, favorite }) {
     validFavoriteKey(kind, key);
-    const store = normalizeFavorites(storage.getFavorites());
+    // 起点捕获 + 单语句 CAS：同步读-改-写的跨进程丢更新同样被语句级原子性挡住。
+    const { raw, value } = storage.favoritesState();
+    const store = normalizeFavorites(value);
     const list = store[kind];
     const index = list.indexOf(key);
     if (favorite && index < 0) list.push(key);
     if (!favorite && index >= 0) list.splice(index, 1);
     for (const group of FAVORITE_GROUPS)
       if (store[group].length > FAVORITE_CAP) throw new Error(`${group} 收藏最多 ${FAVORITE_CAP} 条`);
-    storage.setFavorites(store);
+    if (!storage.casFavorites(raw, store)) throw new Error("收藏已被其他窗口修改，请刷新后重试");
     return store;
   }
 
