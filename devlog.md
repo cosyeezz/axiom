@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-13 06:55 UTC SQLite 安装入口的 Node 版本前置检查
+- 原因：静态导入 node:sqlite 早于安装脚本的版本检查，旧 Node 先报未知内置模块；安装脚本及 README 存在过时版本/JSON 存储描述。
+- 实现：src/database.js 复用原 nodeOk 规则，在同步加载 SQLite 前统一拒绝不支持的 Node；scripts/install.mjs 重导出规则供现有测试使用，移除不可达的重复检查。无需新依赖、启动标志或修改 npm 全局安装命令。install.sh、install.ps1 与 README.md 同步版本及 SQLite 说明。
+- 验证：tests/install.test.js 用子进程模拟 Node 20/22.12/23，验证安装、守护、直接启动三入口在加载 SQLite 前提示升级；安装/数据库 11 项通过。两次全量并发运行出现不同的既有时序断言失败（service/app），服务测试单独15项通过；全量串行 node --test --test-concurrency=1 tests/*.test.js 为300通过、1跳过、0失败。未升级全局包或重启当前服务。
+- 涉及：src/database.js、scripts/install.mjs、tests/install.test.js、install.sh、install.ps1、README.md、本日志、代码索引及排障知识。
+
 ## 2026-09-12 19:37 UTC 文件/文件夹搜索与 @ 补全：名称模糊匹配 + 工作空间递归
 - 原因：输入框上沿「＋」与 `@` 补全都只能在当前目录里按子串过滤名称，工作空间根目录只有 `public/` 这类目录名，输入 `@app` 或 `@apjs` 根本匹配不到 `public/app.js`，用户反馈「艾特的时候输入无法匹配」。
 - 实现：`src/sessions.js` 新增 `fuzzyHit()`（忽略大小写、字符按顺序出现即命中）与 `matchRank()`（完全相等 → 前缀 → 子串越靠前越好 → 子序列），`listFiles()` 在 `query` 非空时改走 BFS 递归搜索 `searchEntries()`：只匹配名称、不回读文件、跳过 `.git`/`node_modules`/符号链接，按匹配质量排序后一次返回（`nextOffset: null`），递归目录数封顶 400、单目录不可读只跳过；无搜索词时保持原目录优先排序 + 分页（每页 200）。`browse()`/`workspace.browse` 增加 `query` 参数（`protocol.js` 同步为 `query: z.string().max(200).default("")`），`app.js` 的 `@` 补全把最后一段作为 `query` 发给服务端，技能搜索（＋ 菜单与 `/` 补全）同样改为名称模糊、说明仍按子串。`file-picker.js` 搜索命中行右侧显示所在相对目录，避免深浅目录同名文件无法区分。

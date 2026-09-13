@@ -1,6 +1,15 @@
-import { DatabaseSync } from "node:sqlite";
+import { createRequire } from "node:module";
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+
+export const nodeOk = (version = process.versions.node) => {
+  const [major, minor] = version.split(".").map(Number);
+  return major >= 24 || (major === 22 && minor >= 13);
+};
+
+// 所有入口共用：先检查版本，再加载 SQLite，避免旧 Node 抢先报未知内置模块。
+if (!nodeOk()) throw new Error(`需要 Node.js 22.13+（22.x）或 24+，当前 ${process.versions.node}，请升级后重试`);
+const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite");
 
 // Axiom 共享 SQLite 存储：namespace + key 两级 KV，值以 JSON 文本存单表。
 // 单写者进程 + WAL + busy_timeout；set 是单条 UPSERT 语句，由 SQLite 语句级事务保证原子，

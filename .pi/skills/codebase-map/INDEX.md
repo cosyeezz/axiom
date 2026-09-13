@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 22:40:08）
+# Axiom 多级代码索引（生成于 2026/9/12 23:55:31）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -24,14 +24,14 @@
 | public/tooltip.js | 225 | 共享悬停说明：动态 title、键盘、定位与无障碍 | SHOW_DELAY, HIDE_DELAY, GAP, EDGE |
 | scripts/autostart.mjs | 133 | Windows/macOS/Linux 当前用户登录自动启动安装/卸载 | run, projectDir, serviceEntry, label |
 | scripts/dev.mjs | 12 | 开发入口：DEV 标识、4320 端口与独立数据目录 | - |
-| scripts/install.mjs | 101 | 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器 | root, parseArgs, nodeOk, openCommand |
+| scripts/install.mjs | 95 | 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器 | root, parseArgs, openCommand, ensurePi |
 | scripts/maint-server.mjs | 86 | loopback维护HTTP：来源校验、随机凭证、状态与离线恢复 | MAX_BODY, hash, json, startMaintServer |
 | scripts/maint-state.mjs | 105 | 守护维护状态：持久化阶段、最近结果与有界脱敏证据 | NAMESPACE, LOG_LIMIT, sanitize, createMaintState |
 | scripts/service.mjs | 503 | 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道 | root, output, run, npmRun |
 | scripts/uninstall.mjs | 18 | 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据 | uninstall |
 | src/capabilities.js | 139 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/compaction.js | 390 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
-| src/database.js | 57 | 共享 SQLite 存储、WAL 与迁移标记 | Database |
+| src/database.js | 66 | 共享 SQLite 存储、WAL 与迁移标记 | nodeOk, Database |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
 | src/main.js | 114 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, home, database |
 | src/memory-policy.js | 39 | 主子代理摘要规则与配置页参数校验 | SUMMARY_SYSTEM_PROMPT, SUMMARY_REMINDER, SUMMARY_DELEGATE, MEMORY_SUMMARY_LIMITS |
@@ -67,7 +67,7 @@
 | tests/file-picker.test.js | 67 | node --test 测试（npm test） | source, tick |
 | tests/image-input.test.js | 169 | node --test 测试（npm test） | pngBase64, jpegBase64, image, parsePrompt |
 | tests/inline-images.test.js | 42 | node --test 测试（npm test） | text, a, b, user |
-| tests/install.test.js | 55 | node --test 测试（npm test） | - |
+| tests/install.test.js | 79 | node --test 测试（npm test） | - |
 | tests/markdown.test.js | 166 | node --test 测试（npm test） | - |
 | tests/memory-policy.test.js | 58 | node --test 测试（npm test） | - |
 | tests/memory-preview.mjs | 24 | node --test 测试（npm test） | state, sessions, app |
@@ -546,20 +546,19 @@
 | actions | const | 110 |
 | main | function | 116 |
 
-### scripts/install.mjs（101 行） — 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器
+### scripts/install.mjs（95 行） — 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| root | const | 14 |
-| parseArgs | const | 16 |
-| nodeOk | const | 26 |
-| openCommand | const | 31 |
-| ensurePi | const | 37 |
-| viaShell | const | 44 |
-| probe | const | 50 |
-| ask | const | 58 |
-| install | function | 60 |
-| invoked | const | 98 |
+| root | const | 15 |
+| parseArgs | const | 17 |
+| openCommand | const | 26 |
+| ensurePi | const | 32 |
+| viaShell | const | 39 |
+| probe | const | 45 |
+| ask | const | 53 |
+| install | function | 55 |
+| invoked | const | 92 |
 
 ### scripts/maint-server.mjs（86 行） — loopback维护HTTP：来源校验、随机凭证、状态与离线恢复
 
@@ -649,16 +648,17 @@
 | throwIfAborted | method | 131 |
 | createBackgroundCompaction | function | 204 |
 
-### src/database.js（57 行） — 共享 SQLite 存储、WAL 与迁移标记
+### src/database.js（66 行） — 共享 SQLite 存储、WAL 与迁移标记
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| Database | class | 10 |
-| constructor | method | 13 |
-| get | method | 30 |
-| set | method | 35 |
-| list | method | 48 |
-| close | method | 53 |
+| nodeOk | const | 5 |
+| Database | class | 19 |
+| constructor | method | 22 |
+| get | method | 39 |
+| set | method | 44 |
+| list | method | 57 |
+| close | method | 62 |
 
 ### src/inline-images.js（32 行） — 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列
 

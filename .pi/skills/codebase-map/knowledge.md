@@ -413,6 +413,11 @@
 - 修复：src/atomic-write.js 使用唯一临时文件，对 EPERM/EACCES/EBUSY 最多重试6次（共1.575秒等待），永久失败保留目标原文件并清理本次临时文件；sessions.persist 所有调用共用。
 - 防再犯：tests/atomic-write.test.js 注入占用与永久失败，检查成功恢复、旧文件不丢和非占用错误不重试；禁止先删目标来绕过 rename。
 
+### 2026-09-13 SQLite 加载早于安装版本检查
+- 根因：install → service → database 静态导入 node:sqlite，旧 Node 在 nodeOk 检查前就报未知内置模块；npm engines 默认只警告。
+- 修复：src/database.js 在 createRequire 加载 SQLite 前统一校验版本，所有入口共用；install.sh/ps1 同步最低版本提示。
+- 防再犯：tests/install.test.js 子进程模拟旧 Node，并拦截 SQLite 加载，覆盖安装、守护及直接启动入口；仅改动态导入但不前置检查无效。
+
 ### 2026-09-12 SQLite 替代临时 JSON 保存修复
 - 最终决策：前述 atomic-write 临时方案已移除，会话管理改用 database.js SQLite，Pi JSONL 保留历史。迁移必须逐文件标记，坏文件修复后可重试；JSONL 缺失跳过恢复，禁止静默创建空会话覆盖记录。
 - 防再犯：Node 22.5–22.12 无标志不能加载 node:sqlite，安装要求22.13+（22.x）或24+；Windows 测试清理前须关闭数据库。数据库/迁移/凭据/守护回归及全量275项验证通过（1跳过）。

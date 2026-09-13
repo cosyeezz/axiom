@@ -10,6 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { rebuild, run } from "./service.mjs";
 import { main as autostart } from "./autostart.mjs";
+export { nodeOk } from "../src/database.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -20,12 +21,6 @@ export const parseArgs = (argv = []) => {
     else if (arg === "--no-browser") opts.browser = false;
     else throw new Error(`未知参数：${arg}（支持 --no-autostart、--no-browser）`);
   return opts;
-};
-
-// node 22.13+ LTS 或 24+（package.json engines）
-export const nodeOk = (version = process.versions.node) => {
-  const [major, minor] = version.split(".").map(Number);
-  return major >= 24 || (major === 22 && minor >= 13);
 };
 
 export const openCommand = (platform = process.platform) =>
@@ -58,7 +53,6 @@ const probe = async (target) => {
 const ask = async (rl, question) => (await rl.question(`${question} [Y/n] `)).trim().toLowerCase() !== "n";
 
 export async function install(argv = process.argv.slice(2), io = console, isTTY = process.stdin.isTTY) {
-  if (!nodeOk()) throw new Error(`需要 Node.js 22.13+（22.x）或 24+，当前 ${process.versions.node}，请升级后重试`);
   if (existsSync(join(root, ".env.local"))) process.loadEnvFile(join(root, ".env.local"));
   const opts = parseArgs(argv);
   if (isTTY) {
