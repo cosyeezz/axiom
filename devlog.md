@@ -959,3 +959,9 @@
 - 内容：reindex.mjs 的 MODULE_INFO、src/sessions.js:455 与 src/session-store.js:319 的迁移注释、tests/session-store.test.js:206 的用例名，四处「四表」改「三表」。
 - 验证：全量 `npm test` 357 项，355 过 / 0 失败 / 2 跳过；重建 INDEX.md 后模块表描述同步为三表。
 - 涉及：.pi/skills/codebase-map/scripts/reindex.mjs、src/sessions.js、src/session-store.js、tests/session-store.test.js、devlog.md。
+
+### 2026-09-13T17:36:36.164Z 子代理重试绑定任务
+- 内容/原因：重启不恢复子消息，混合 messageCount 不能定位；改为复用 SQLite 已保存的 agentId/taskId，将重试固定置于任务说明后。迟到元数据自动迁回，多次重试不重复，主代理路径不变；不新增存储字段或样式。
+- 涉及：public/app.js、tests/message-activity.test.js、README.md、.pi/skills/codebase-map/knowledge.md、INDEX.md。
+- 验证：定向10项及 app/session-flow/session-persistence 20项通过；全量验证见后续记录。
+- 最终验证：node --test --test-concurrency=1 全量357项，355通过、2跳过；默认并行两次在未改动 app.test.js 异步断言失败（排序/导入跳转），定向与串行通过。追加实时子消息之后重试也固定归位检查，定向10项再次通过。

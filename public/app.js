@@ -1513,10 +1513,17 @@ const retryCards = new Map();
 function placeCompactedRetries() {
   for (const record of retryCards.values()) {
     if (record.agentId !== "main") {
-      const output = tasks.get(record.agentId)?.output;
-      if (output && !output.contains(record.node)) {
+      const task = tasks.get(record.agentId);
+      if (!task) continue;
+      // agentId 就是持久化的任务 ID；子任务重试固定归属任务，不猜消息下标。
+      if (!task.retries) {
+        task.retries = document.createElement("div");
+        task.retries.className = "task-retries";
+        task.description.after(task.retries);
+      }
+      if (record.node.parentElement !== task.retries) {
         const oldArchive = record.node.closest(".retry-archive");
-        (oldArchive ? retryArchive(output) : output).append(record.node);
+        task.retries.append(record.node);
         if (oldArchive && !oldArchive.querySelector(".retry-card")) oldArchive.remove();
       }
       continue;
@@ -1553,7 +1560,7 @@ function renderRetry(agentId = "main", data, historical = false) {
     node.append(summary, status, history);
     const output = tasks.get(agentId)?.output || $("output");
     output.querySelector(".empty")?.remove();
-    const unknown = historical && (!Number.isInteger(data.messageCount) || data.messageCount < 0);
+    const unknown = agentId === "main" && historical && (!Number.isInteger(data.messageCount) || data.messageCount < 0);
     (unknown || (agentId !== "main" && !tasks.has(agentId)) ? retryArchive(output) : output).append(node);
     const label = document.createElement("span");
     summary.append(label, disclosureHint());

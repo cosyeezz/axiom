@@ -169,11 +169,17 @@ test("main and child retries stay isolated, including missing task metadata", as
     const messages = [entry(assistant([{ type: "text", text: "主回答" }]), "main"),
       entry(assistant([{ type: "text", text: "子回答" }]), "child-answer", "child")];
     const retries = [{ ...retry, agentId: "main" }, { ...retry, agentId: "child" }];
+    w.event({ sessionId: "activity", type: "task.state", taskId: "child", data: child });
+    emit("agent.message.end", { message: messages[1].message }, "child");
+    emit("agent.retry", retry, "child");
+    assert(w.document.querySelector("#task-child .task-description + .task-retries > .retry-card"));
     for (let i = 0; i < 2; i++) {
       restore({ messages, retries, tasks: [child] }); paint(); paint();
       assert.equal(output.querySelectorAll(".retry-card").length, 1);
       const body = w.document.querySelector("#task-child .task-body");
-      assert.equal(body.querySelector(".retry-card").nextElementSibling.classList.contains("message"), true);
+      assert.equal(body.querySelector(".task-description").nextElementSibling.className, "task-retries");
+      assert(body.querySelector(".task-retries > .retry-card"));
+      assert.equal(body.querySelector(".retry-archive"), null);
       emit("agent.retry", { ...retry, status: "cancelled" }, "child");
       assert.match(body.textContent, /重试已停止/);
       assert.match(output.querySelector(".retry-card").textContent, /重试成功/);
@@ -182,7 +188,22 @@ test("main and child retries stay isolated, including missing task metadata", as
     assert(output.querySelector(".retry-archive .retry-card"));
     w.event({ sessionId: "activity", type: "task.state", taskId: "child", data: child });
     assert.equal(output.querySelector(".retry-card"), null);
-    assert(w.document.querySelector("#task-child .retry-archive .retry-card"));
+    assert(w.document.querySelector("#task-child .task-retries > .retry-card"));
+    assert.equal(w.document.querySelector(".retry-archive"), null);
+    // 重启后只剩主历史，子任务计数越界/缺失也必须按任务 ID 原位恢复。
+    for (const messageCount of [99, undefined]) {
+      restore({ messages: [messages[0]], tasks: [child, { ...child, id: "other" }],
+        retries: ["child", "other"].flatMap(agentId => ["first", "second"].map(id =>
+          ({ ...retry, id, agentId, messageCount }))) });
+      paint(); paint();
+      for (const id of ["child", "other"]) {
+        const body = w.document.querySelector(`#task-${id} .task-body`);
+        assert.equal(body.querySelector(".task-description").nextElementSibling.className, "task-retries");
+        assert.equal(body.querySelectorAll(".task-retries > .retry-card").length, 2);
+      }
+      assert.equal(output.querySelector(".retry-card"), null);
+      assert.equal(w.document.querySelector(".retry-archive"), null);
+    }
   } finally { dom.window.close(); }
 });
 
