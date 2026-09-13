@@ -99,3 +99,27 @@ test("database 暴露 prepare/exec；PRAGMA 生效：busy_timeout 先于 journal
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("VACUUM INTO 快照：迁移前一致性备份可生成且可完整读回", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "axiom-vacuum-"));
+  const db = new Database(join(dir, "axiom.db"));
+  let snapshot = null;
+  try {
+    db.set("sessions", "k1", { id: "s1", cwd: "F:/x" });
+    db.set("migrated", "done", true);
+    // Windows 临时路径含盘符/反斜杠，SQLite 单引号字符串里反斜杠无特殊含义，统一换成正斜杠。
+    snapshot = join(dir, "backup.db").split("\\").join("/");
+    db.exec(`VACUUM INTO '${snapshot}'`);
+    const copied = new Database(snapshot);
+    try {
+      assert.deepEqual(copied.get("sessions", "k1"), { id: "s1", cwd: "F:/x" });
+      assert.deepEqual(copied.list("migrated"), [{ key: "done", value: true }]);
+    } finally {
+      copied.close();
+    }
+    await stat(snapshot); // 快照确实落盘
+  } finally {
+    db.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

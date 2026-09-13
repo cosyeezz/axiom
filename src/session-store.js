@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { chmodSync, existsSync } from "node:fs";
 
 // 会话实体存储：sessions / summaries / session_events / tasks 四表替代「单会话整 JSON」。
 // 读写同步、prepared 语句复用、多语句操作走 SAVEPOINT（事务外等价 BEGIN/COMMIT，事务内自动
@@ -118,15 +119,17 @@ export class SessionStore {
     }
   }
 
-  // 有 id 用原 id；无 id 按原形哈希生成稳定 id（同一原形重复迁移/保存不会重复成行）。
-  #recordId(record) {
+  // 有 id 用原 id；否则用调用方给的 fallback，都没有才按原形哈希生成稳定 id。
+  // 导入路径 fallback 是原序号（同内容两条各自成行不丢）；运行期 fallback 是哈希（重放幂等）。
+  #recordId(record, fallback) {
     if (record?.id != null && record.id !== "") return String(record.id);
+    if (fallback != null) return fallback;
     return `anon-${createHash("sha256").update(JSON.stringify(record ?? null)).digest("hex").slice(0, 20)}`;
   }
 
-  // 原形缺 id 键时读出补上生成的 id（库里仍存原形 metadata，不改写）。
+  // 原形缺 id 键且给定的 id 非空时，读出补上身份（库里仍存原形，不改写）。
   #withId(parsed, id) {
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed.id == null
+    return id != null && parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed.id == null
       ? { ...parsed, id }
       : parsed;
   }
@@ -181,9 +184,11 @@ export class SessionStore {
         return this.#taskRecord(sessionId, taskId, notified, progress_delivered, progress, record);
       });
     const events = (type) =>
-      this.#sql("SELECT record FROM session_events WHERE session_id = ? AND type = ? ORDER BY rowid")
+      this.#sql("SELECT key, record FROM session_events WHERE session_id = ? AND type = ? ORDER BY rowid")
         .all(sessionId, type)
-        .map(({ record }) => this.#parse("session_events", sessionId, type, record));
+        // key 列即事件身份：无 id 旧数据导入时已按原序号生成稳定 id，读出回填，
+        // 恢复后带 id 重写走 upsert 不重复；progress_delivery 无 key 保持无 id。
+        .map(({ key, record }) => this.#withId(this.#parse("session_events", sessionId, type, record), key));
     const summaries = this.#sql("SELECT id, record FROM summaries WHERE session_id = ? ORDER BY rowid")
       .all(sessionId)
       .map(({ id, record }) => this.#withId(this.#parse("summaries", sessionId, id, record), id));
@@ -231,21 +236,22 @@ export class SessionStore {
       throw new Error(`会话 ${saved.id} 的 selection 必须是对象`);
   }
 
-  #insertSummaryRow(sessionId, record) {
+  #insertSummaryRow(sessionId, record, fallbackId) {
     this.#sql("INSERT INTO summaries (session_id, id, agent_id, record) VALUES (?, ?, ?, ?)").run(
       sessionId,
-      this.#recordId(record),
+      this.#recordId(record, fallbackId),
       record?.agentId ?? "main",
       JSON.stringify(record ?? null),
     );
   }
 
-  #insertEventRow(sessionId, type, record) {
+  // fallbackId：导入路径给原序号稳定 id；缺省（运行期无 id 事件）追加 key NULL。
+  #insertEventRow(sessionId, type, record, fallbackId) {
     this.#sql("INSERT INTO session_events (session_id, type, agent_id, key, record) VALUES (?, ?, ?, ?, ?)").run(
       sessionId,
       type,
       record?.agentId ?? "main",
-      record?.id != null ? String(record.id) : null,
+      record?.id != null ? String(record.id) : (fallbackId ?? null),
       JSON.stringify(record ?? null),
     );
   }
@@ -285,10 +291,12 @@ export class SessionStore {
       saved.sessionFile ?? null,
       saved.selection != null ? JSON.stringify(saved.selection) : null,
     );
-    for (const record of saved.summaries ?? []) this.#insertSummaryRow(saved.id, record);
-    for (const record of saved.compactions ?? []) this.#insertEventRow(saved.id, "compaction", record);
-    for (const record of saved.retries ?? []) this.#insertEventRow(saved.id, "retry", record);
-    for (const record of saved.summaryTriggers ?? []) this.#insertEventRow(saved.id, "summary_trigger", record);
+    // 缺 id 的子实体按数组原序号生成稳定 id（anon-<序号>）：同内容两条各自成行不丢，
+    // 重导入（同数组序）得到同一 id；带 id 的用原 id，序号跳号无妨。
+    (saved.summaries ?? []).forEach((record, index) => this.#insertSummaryRow(saved.id, record, `anon-${index}`));
+    (saved.compactions ?? []).forEach((record, index) => this.#insertEventRow(saved.id, "compaction", record, `anon-${index}`));
+    (saved.retries ?? []).forEach((record, index) => this.#insertEventRow(saved.id, "retry", record, `anon-${index}`));
+    (saved.summaryTriggers ?? []).forEach((record, index) => this.#insertEventRow(saved.id, "summary_trigger", record, `anon-${index}`));
     for (const record of saved.progressDeliveries ?? []) this.#insertEventRow(saved.id, "progress_delivery", record);
     for (const task of saved.tasks ?? []) this.#insertTaskRow(saved.id, task, saved.memoryTurns?.[task.id] ?? null);
   }
@@ -299,8 +307,21 @@ export class SessionStore {
     this.#change(() => this.#insertAll(saved));
   }
 
-  // 迁移专用（同步单保存点）：四表导入 + 写精确标记，全有或全无。不在本层复制备份：
-  // 迁移源（store 旧行 / 旧 JSON 文件）由调用方保留即可，库级一致性快照可用 exec("VACUUM INTO …")。
+  // 首次真正导入前的库级一致性快照：VACUUM INTO 到 <主库>.pre-store-migration.db。
+  // 快照已存在则跳过（保留首次快照，重跑不覆盖）；备份失败（磁盘/权限）直接抛错中止迁移，
+  // 绝不无备份迁移。由实际迁移入口 importLegacySession 在每次真正导入前调用。
+  #ensureMigrationBackup() {
+    const target = `${this.#database.path}.pre-store-migration.db`;
+    if (existsSync(target)) return;
+    this.#database.exec(`VACUUM INTO '${target.replaceAll("'", "''")}'`);
+    try {
+      chmodSync(target, 0o600); // 与主库一致的属主权限；Windows 无 POSIX 权限模型，失败忽略
+    } catch {}
+  }
+
+  // 迁移专用（同步单保存点）：四表导入 + 写精确标记，全有或全无。
+  // 首次真正导入前自动 VACUUM INTO 生成磁盘一致性备份（见 #ensureMigrationBackup）；
+  // 迁移源（store 旧行 / 旧 JSON 文件）另由调用方保留。
   // 返回 true=本次导入；false=跳过（已有标记，或新表已有同 id 记录——以新表为准不覆盖，仅补标记防重扫）。
   importLegacySession(saved, marker) {
     if (typeof marker !== "string" || !marker) throw new Error("importLegacySession：缺少迁移标记 marker");
@@ -310,6 +331,7 @@ export class SessionStore {
       this.#database.set("migrated", marker, true);
       return false;
     }
+    this.#ensureMigrationBackup();
     this.#change(() => {
       this.#insertAll(saved);
       this.#database.set("migrated", marker, true);
@@ -382,7 +404,13 @@ export class SessionStore {
   saveSummary(sessionId, record) {
     this.#sql(
       "INSERT INTO summaries (session_id, id, agent_id, record) VALUES (?, ?, ?, ?) ON CONFLICT(session_id, id) DO UPDATE SET agent_id = excluded.agent_id, record = excluded.record",
-    ).run(sessionId, this.#recordId(record), record?.agentId ?? "main", JSON.stringify(record ?? null));
+    ).run(
+      sessionId,
+      // 运行期无 id 按原形哈希：writeChange 重放同一摘要时幂等不重复成行。
+      this.#recordId(record),
+      record?.agentId ?? "main",
+      JSON.stringify(record ?? null),
+    );
   }
 
   // agentId 过滤 + limit（取最近 N 条并还原为时间线顺序）。
