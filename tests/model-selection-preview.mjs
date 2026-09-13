@@ -3,6 +3,8 @@ import { createServerApp } from "../src/server.js";
 import { Sessions } from "../src/sessions.js";
 import { createModelsService } from "../src/model-config.js";
 import { mkdtemp, rm } from "node:fs/promises";
+import { Database } from "../src/database.js";
+import { createPiModelStorage } from "../src/pi-model-storage.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,6 +16,8 @@ const catalog = [
   { provider: "openai", id: "gpt-5-mini", name: "GPT-5 mini" },
 ].map((m) => ({ ...m, key: `${m.provider}/${m.id}`, levels: ["off", "low", "medium", "high"], input: ["text", "image"] }));
 const factory = async (_tools, selection = {}) => {
+  // SDK consumes runtime callbacks; the fixture must not leak them into serializable config.
+  selection = JSON.parse(JSON.stringify(selection));
   let value = { ...selection, model: selection.model || catalog[0].key, thinking: selection.thinking || "medium", levels: catalog[0].levels, skills: [], capabilities: { skills: [], mcp: [], plugins: [] } };
   return {
     config: () => value,
@@ -28,13 +32,19 @@ factory.catalog = () => catalog;
 factory.capabilities = async () => ({ skills: [], plugins: [], mcp: [], warnings: [], needsTrust: false });
 const sessions = new Sessions(factory, join(home, "defaults.json"), join(home, "sessions"));
 await sessions.create(home);
-const models = createModelsService({ factory, modelsPath: join(home, "models.json"), favoritesPath: join(home, "models-favorites.json") });
+const database = new Database(join(home, "models-test.db"));
+const storage = createPiModelStorage({ database, home, piDir: join(home, "pi") });
+storage.writeConfig({ providers: { preview: { api: "openai-completions", baseUrl: "http://localhost:9/v1", apiKey: "preview", models: [] } } });
+const models = createModelsService({ factory, storage,
+  discoverFetch: async () => new Response(JSON.stringify({ data: [{ id: "chosen-model", name: "Chosen model" }, { id: "untouched-model" }] })),
+});
 const app = createServerApp(sessions, { models });
 const port = Number(process.env.PREVIEW_PORT || 4337);
 app.server.listen(port, "127.0.0.1", () => console.log(`Model UI preview: http://127.0.0.1:${port}`));
 async function close() {
   await app.close();
   await sessions.close();
+  database.close();
   await rm(home, { recursive: true, force: true });
 }
 process.on("SIGINT", () => { void close().then(() => process.exit()); });

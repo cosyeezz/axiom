@@ -755,6 +755,18 @@
 - 修改：public/markdown.js 增加 fixCjkBold 预处理（仅围栏外，成对 `**` 首尾标点移出，渲染文本不变）；tests/markdown.test.js 补 4 条断言。README 无需改（318 行描述的「强调」行为本就应含中文）。
 - 验证：npm test 三轮 225 项（224 通过、1 跳过、0 失败）；真实渲染探针覆盖截图原文/冒号/引号/正常加粗。有一轮曾出现 expected 2 的抖动断言，随后同代码连续三轮全绿，按既有基线抖动记录，不归因本次改动。
 
+### 2026-09-12 — 恢复后端工作：models.provider.discover 只读拉取 + Ollama 冒号收藏修复（Axiom-model-settings-recovery）
+- 背景：旧 worktree F:/worktrees/Axiom-model-settings 被清空，未提交工作不可恢复；本条记录在 F:/worktrees/Axiom-model-settings-recovery（分支 feat/model-settings-recovery，基线 cb7686f）重建全部改动，未 git 提交（交主代理验收合并）。
+- 冒号修复恢复：src/model-config.js validFavoriteKey 删除 model key 禁冒号行，model 组整体作 modelKey（colon=-1），thinking 组仍按最后冒号切分等级；docs 收藏章节改为「允许模型 ID 中的冒号，如 ollama/llama3.1:8b」；tests/model-config.test.js 冒号拒绝断言改为正向回归（收藏/持久化/无 thinking 误匹配）。
+- discover 新增（只读）：protocol.js 加 z.literal("models.provider.discover")+providerId strict schema；model-config.js 深加载 SDK resolve-config-value.js（$VAR/$ {VAR}/$$/$! 真实插值，!command 拒不执行），DISCOVER_APIS 四 api 类型（openai-completions/responses、anthropic-messages、google-generative-ai，官方接口已核实），redirect:"error" 防 Key 外泄、15s 超时、响应体 5MiB 上限、>500 条截断，错误全部固定中文文案+HTTP 状态码不含请求头/密钥/上游响应体；不写盘、不触发 refreshModels、不广播、无 baseFingerprint。
+- 限制内未改 src/server.js，主代理需补：case 组（src/server.js ~295 行）加 case "models.provider.discover" 走 service.models.handle；广播分支（~305 行）排除 discover（只读不得触发 models.config.changed）。
+- 验证：worktree 本地 npm ci（旧 node_modules 是指向主仓库残缺 SDK 的 junction，pi-coding-agent dist 整体缺失，共享路径全部 ERR_MODULE_NOT_FOUND）；tests/model-config.test.js 18/18（含 7 个 discover 套件）、tests/model-thinking-favorites.test.js 1/1（Ollama 冒号键回归）、全量 tests/*.test.js 270 项 0 失败（model-manager XSS 断言曾单次抖动，复跑稳定全绿）。mock 保真度修正：redirect 拒绝场景改为 mock 抛 TypeError 模拟 undici 真实行为（原 mock 返 302 响应对象绕过了 redirect:"error" 逻辑）。
+
+## 2026-09-12 12:20 — 模型管理验收收尾
+- README 同步分栏设计来源、只读拉取并勾选添加、思考收藏键与浏览器回归命令；reindex 登记新增测试。
+- tests/model-selection-preview.mjs 使用隔离供应商与 mock discoverFetch，并去除配置中的运行时回调，修复 structuredClone 导致预览无法连接。
+- 新增 tests/model-settings-ui.py：思考收藏刷新持久且不切换、拉取后仅保存勾选项、1440/390/320 布局；两份浏览器回归通过。全量 npm test：274 通过、1 跳过、0 失败。
+
 ## 2026-09-12 SQLite 统一配置与管理
 - 原因：摘要 JSON 替换在 Windows 报 EPERM；用户要求跨平台配置页与 SQLite 权威存储，API Key 明文保存。
 - 内容：新增 database/pi-model-storage，迁移 sessions/model-config/remote/maint-state 的管理数据；main/pi/server 接线，摘要设置页、模型页文案与协议同步。保留 Pi JSONL，迁移按文件幂等、缺失历史不覆盖；Node 支持范围升为22.13+（22.x）或24+。
@@ -794,3 +806,7 @@
 - 验证：权限改动前全量321项：320通过、0失败、1原有跳过；存储/迁移/持久化38/38。权限改动后 Linux 数据库+存储25/25（包括新旧 sidecar600、备份失败再试、重复迁移不读源）；Windows同组24通过、1平台跳过。全量最终复跑与独立复核/性能报告继续收口。
 - 涉及：src/{sessions,server,session-store,database,model-config}.js、public/model-manager.js、tests/{capabilities,compaction-config,model-config,model-manager,recall,service-api,session-flow,session-memory,session-migration,session-persistence,task-notifications,database,session-store,service}.test.js、README.md、docs/sqlite-refactor-plan.md、codebase-map三层索引/知识。
 - 全量复跑曾复现既有 `rebuild cancels swap` 时序失败（workers 1≠2）：service.mjs 先 state.fail 落盘才 fork 恢复进程，测试误把 status failed 当恢复完成。tests/service.test.js 复用 until 等真实 ready 且 workers=2，再保留原严格断言；不加固定 sleep、不降低判定、不改守护产品逻辑。定向复跑另外暴露测试桩直接覆写 maint-env 被读到半截 JSON，改为完整临时文件后 rename；随后全量322项：320通过、0失败、2跳过（原有平台用例及Windows跳过POSIX权限测试，后者已在Linux实跑）。
+
+## 2026-09-12 22:40 — 模型设置合并最新 master
+- 原因：用户要求合并并推送；master 已迁移 SQLite，保留新存储实现并适配 discover 只读加载、收藏断言及隔离预览，保留分栏与勾选导入。涉及 src/model-config.js、public/model-manager.js、模型测试与预览、README、协议、索引；合并双方 devlog/knowledge 记录。
+- 验证：两份 Playwright 回归通过；全量最终 299 通过、1 跳过、0 失败。此前守护测试出现恢复时序断言与 Windows EBUSY（单独15/15通过），未为此次合并改动守护逻辑。

@@ -403,6 +403,10 @@
 - 修复：public/style.css 为 #settings 固定 80dvh，打开时采用纵向 flex，头部固定、settings-layout 内部滚动并预留滚动条位置。
 - 防再犯：tests/service-settings-ui.py 在桌面与窄屏比较四页签真实坐标，长内容验证内部滚动和固定关闭栏；display:flex 仅用于 [open]，避免已关闭弹窗仍显示。
 
+### 2026-09-12 12:20 预览配置不可复制
+- 症状：浏览器预览连接后无法进入工作区；根因：factory selection 含嵌套 onTrigger 回调，测试桩直接 structuredClone。
+- 修复：tests/model-selection-preview.mjs 仅保留 JSON 配置数据；用 model-selection-ui.py/model-settings-ui.py 防回归。
+
 ### 2026-09-12 摘要 JSON 替换被 Windows 拒绝
 - 症状：摘要保存时 .json.tmp → .json 的 rename 报 EPERM；此操作是文件替换，不是会话改名。
 - 根因：既有会话保存已串行，但文件替换无瞬时占用重试，且临时文件名固定；仅凭报错不能确定占用进程或排除持久权限问题。
