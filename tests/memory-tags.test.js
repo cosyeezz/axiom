@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { extractMemoryTags, stripMemoryTags } from "../public/memory-tags.js";
 
-test("extract 只认单行有界标签，行中/行尾/同行多个均可", () => {
+test("extract 认有界标签，行中/行尾/同行多个均可", () => {
   assert.deepEqual(extractMemoryTags("<axiom_summary>完成验证</axiom_summary>"), { axiom_summary: "完成验证" });
   assert.equal(stripMemoryTags("正文<axiom_summary>完成验证</axiom_summary>"), "正文");
   assert.equal(stripMemoryTags("正文<axiom_sum", { streaming: true }), "正文");
@@ -21,9 +21,9 @@ test("extract 防贪婪吞并同类，title 取首个，summary/progress 取最�
   assert.deepEqual(extractMemoryTags("<summary>a <title>b</title> c</summary>"), { title: "b" });
 });
 
-test("extract 忽略代码围栏与跨行内容，trim 内容，大小写不敏感", () => {
+test("extract 忽略代码围栏，跨行折行为空格，trim 内容，大小写不敏感", () => {
   assert.deepEqual(extractMemoryTags("```\n<title>代码内</title>\n```\n<summary>外</summary>"), { summary: "外" });
-  assert.deepEqual(extractMemoryTags("<summary>跨行\n不认</summary>"), {});
+  assert.deepEqual(extractMemoryTags("<summary>跨行\n认</summary>"), { summary: "跨行 认" });
   assert.deepEqual(extractMemoryTags("<summary>  空  </summary>"), { summary: "空" });
   assert.deepEqual(extractMemoryTags("<SUMMARY>大写</SUMMARY>"), { summary: "大写" });
   assert.deepEqual(extractMemoryTags(""), {});
@@ -43,6 +43,22 @@ test("strip 隐藏未闭合开启标签，代码围栏与普通比较符不受�
   assert.equal(stripMemoryTags("答案<summary>未闭合"), "答案");
   assert.equal(stripMemoryTags("```\n<summary>保留</summary>\n```"), "```\n<summary>保留</summary>\n```");
   assert.equal(stripMemoryTags("5 < 3 且 a>b"), "5 < 3 且 a>b");
+});
+
+test("标签独占行的跨行摘要：入库并整块隐藏，落单闭合标签不漏出", () => {
+  const reply = "定案：走续跑\n<axiom_summary>\n定案：重试按钮挂 updateActivity，语义为续跑非重发\n</axiom_summary>";
+  assert.deepEqual(extractMemoryTags(reply), { axiom_summary: "定案：重试按钮挂 updateActivity，语义为续跑非重发" });
+  assert.equal(stripMemoryTags(reply), "定案：走续跑");
+  assert.equal(stripMemoryTags("正文\n</axiom_summary>"), "正文");
+  assert.equal(stripMemoryTags("正文 </summary> 尾"), "正文  尾");
+  // 开启标签落在代码围栏内：围栏原样保留，围栏外的闭合标签不漏出
+  assert.equal(stripMemoryTags("```\n<summary>\n```\n正文\n</summary>"), "```\n<summary>\n```\n正文");
+});
+
+test("strip 流式：跨行摘要在闭合前整块隐藏", () => {
+  const head = "定案：走续跑\n<axiom_summary>\n定案：重试按钮";
+  assert.equal(stripMemoryTags(head, { streaming: true }), "定案：走续跑");
+  assert.equal(stripMemoryTags(head + "\n</axiom_su", { streaming: true }), "定案：走续跑");
 });
 
 test("strip 流式隐藏行尾标签残片", () => {

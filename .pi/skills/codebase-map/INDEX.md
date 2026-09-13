@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/13 02:03:36）
+# Axiom 多级代码索引（生成于 2026/9/13 03:48:42）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -10,7 +10,7 @@
 | public/file-picker.js | 355 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/index.html | 329 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown.js | 247 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, textLanguages, isText |
-| public/memory-tags.js | 87 | 主子代理共享简单标签提取与流式显示过滤 | TAGS, NAMES, TAG, OPEN |
+| public/memory-tags.js | 92 | 主子代理共享简单标签提取与流式显示过滤 | TAGS, NAMES, TAG, OPEN |
 | public/model-manager.css | 471 | 模型配置页：供应商列表、编辑表单与响应式布局 | - |
 | public/model-manager.js | 1130 | Pi 模型管理：供应商模板、模型编辑与安全保存反馈 | API_TYPES, PROVIDER_TEMPLATES, PROVIDER_ID, MASK_KINDS |
 | public/model-picker.css | 88 | 共享收藏下拉：暗色浮层、星标、触屏与焦点样式 | - |
@@ -72,7 +72,7 @@
 | tests/markdown.test.js | 166 | node --test 测试（npm test） | - |
 | tests/memory-policy.test.js | 58 | node --test 测试（npm test） | - |
 | tests/memory-preview.mjs | 24 | node --test 测试（npm test） | state, sessions, app |
-| tests/memory-tags.test.js | 58 | node --test 测试（npm test） | - |
+| tests/memory-tags.test.js | 74 | node --test 测试（npm test） | - |
 | tests/memory-ui.test.js | 183 | node --test 测试（npm test） | page, record |
 | tests/message-activity.test.js | 407 | node --test 测试（npm test） | page, assistant, thought, call |
 | tests/mobile-reading-ui.py | 103 | node --test 测试（npm test） | - |
@@ -415,7 +415,7 @@
 | jsonControls | function | 103 |
 | renderMarkdown | function | 142 |
 
-### public/memory-tags.js（87 行） — 主子代理共享简单标签提取与流式显示过滤
+### public/memory-tags.js（92 行） — 主子代理共享简单标签提取与流式显示过滤
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -423,11 +423,13 @@
 | NAMES | const | 7 |
 | TAG | const | 9 |
 | OPEN | const | 10 |
-| MARKS | const | 11 |
-| FENCE | const | 12 |
-| codeFlags | function | 15 |
-| extractMemoryTags | function | 27 |
-| stripMemoryTags | function | 45 |
+| CLOSE | const | 11 |
+| MARKS | const | 12 |
+| FENCE | const | 13 |
+| HOLE | const | 15 |
+| segments | function | 18 |
+| extractMemoryTags | function | 33 |
+| stripMemoryTags | function | 51 |
 
 ### public/model-manager.js（1130 行） — Pi 模型管理：供应商模板、模型编辑与安全保存反馈
 
