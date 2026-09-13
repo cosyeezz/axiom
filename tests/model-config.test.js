@@ -287,6 +287,54 @@ test("model.save/delete：upsert、provider 自动创建、headers keep、删除
   }
 });
 
+test("provider.rename：整体迁移条目与内联 id，重名/未知拒绝且不写盘", async () => {
+  const dir = await tempDir();
+  try {
+    const svc = makeService(dir);
+    await seed(svc, {
+      providers: {
+        "my-proxy": {
+          id: "my-proxy",
+          baseUrl: "https://p.example.com/v1",
+          apiKey: "sk-test",
+          models: [{ id: "m1" }],
+          modelOverrides: { m1: { contextWindow: 4096 } },
+          customField: { keep: true },
+        },
+        taken: { baseUrl: "https://t.example.com" },
+      },
+    });
+    const { models } = svc;
+    const before = (await models.handle({ type: "models.config.get" })).fingerprint;
+
+    await assert.rejects(
+      () => models.renameProvider({ providerId: "ghost", newProviderId: "x", baseFingerprint: before }), /Unknown provider/,
+    );
+    await assert.rejects(
+      () => models.renameProvider({ providerId: "my-proxy", newProviderId: "taken", baseFingerprint: before }), /已存在/,
+    );
+    assert.equal((await models.handle({ type: "models.config.get" })).fingerprint, before, "失败的改名不写盘");
+
+    const after = (await models.renameProvider({ providerId: "my-proxy", newProviderId: "my-proxy-2", baseFingerprint: before })).fingerprint;
+    const raw = JSON.parse(await compat(dir));
+    assert.deepEqual(Object.keys(raw.providers).sort(), ["my-proxy-2", "taken"]);
+    // 条目内联 id 同步，其余内容（含 modelOverrides 与未知字段）原样迁移
+    assert.equal(raw.providers["my-proxy-2"].id, "my-proxy-2");
+    assert.equal(raw.providers["my-proxy-2"].apiKey, "sk-test");
+    assert.deepEqual(raw.providers["my-proxy-2"].modelOverrides, { m1: { contextWindow: 4096 } });
+    assert.deepEqual(raw.providers["my-proxy-2"].customField, { keep: true });
+    assert.notEqual(after, before, "指纹随内容变化");
+
+    await assert.rejects(
+      () => models.renameProvider({ providerId: "my-proxy-2", newProviderId: "again", baseFingerprint: before }),
+      /已被外部修改/,
+    );
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("并发防护：过期指纹拒绝、库内结构非法拒绝写入", async () => {
   const dir = await tempDir();
   try {

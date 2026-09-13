@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-13 07:11 UTC 模型与供应商面板：删除移到导航行、重命名后端原子命令、右侧折叠重组
+- 原因：用户五点反馈——删除入口在右侧详情里不好找、两段式「点两次」确认易误触也不够清楚、改名完全没有入口（只能删除重建，会丢 modelOverrides）、右侧详情一眼望去字段太多太乱、关键配置被淹没。
+- 实现：①新增协议命令 `models.provider.rename {providerId,newProviderId,baseFingerprint}`（.strict()），`src/model-config.js` 的 `renameProvider` 在乐观锁内整体搬移条目并同步内联 id 字段；前端无法用 save+delete 复现（两命令之间的失败会丢配置、且无独立写 modelOverrides 的命令），故独立成一条原子写。②左侧导航项改 `.mm-nav-row` 行容器 + `.mm-nav-actions`，悬停/键盘聚焦显示铅笔与删除图标（`opacity:0`，触屏常显），删除图标悬停变红；图标路径与会话右键菜单同源（添加 `ICONS`，`createElementNS` 构造，不引第三方图标库）。③删除/改名统一走原生 `<dialog>`+`showModal`（Esc 与焦点陷阱免实现），弹窗挂在 `body` 上，`close` 即移除；确认按钮 `type="button"`，取消不发请求；jsdom 无 `showModal/close`，用 `openModal/closeModal` 垫片。④右侧详情分成「连接 / 模型」两段：连接区只留 `id`（仅草稿）/ Base URL / API 协议 / API Key 四个宽窄分列字段，Bearer 头与自定义请求头收进 `<details class="mm-advanced">`（展开态存 `form.advancedOpen`，顺带修掉旧版展开高级区后新增请求头重渲染就自动折回的 bug）；模型行也改为 `<details>` 折叠摘要行（id + 异名 + 推理/图片徽标 + 脏点 + 删除图标，新建行默认展开，保存成功自动收起），保存按钮仍是 `.mm-model-actions` 第一个按钮。⑤重命名成功后 `rekeyProviderCaches()` 把 `editForms/newRows/modelRows/discover` 从旧 id 搬到新 id，正在编辑但未保存的内容不丢；删除则清缓存并清空选中。⑥弹窗容器样式复用 `style.css` 已有的 `#session-action` 选择器组（新增 `.mm-dialog`），只在本模块 CSS 补宽度与校验提示色，未新增颜色 token。
+- 验证：`tests/model-manager.test.js` 重写删除用例为「图标→弹窗→取消不发请求 / 确认才发」并新增重命名用例（非法 id 与重名留在弹窗、id 未变直接关窗、Enter 提交、成功后新 id 入选且未保存草稿跟随）；`tests/model-config.test.js` 新增 `provider.rename` 后端用例（未知/重名拒绝且指纹不变、成功迁移 modelOverrides 与未知字段、旧指纹被拒）。该 worktree 无 `node_modules`，先建 `node_modules` junction 指向 `F:\worktrees\node_modules`（`src/server.js` 按项目内相对路径读 marked/dompurify）后才能跑后端测试。全量 `npm test`：301 通过、1 跳过；唯一失败 `tests/app.test.js` 的时序断言在单独运行时通过（并发负载下的既有 flaky，与本次改动无关）。未在浏览器手测。
+- 涉及：src/protocol.js、src/model-config.js、public/model-manager.js、public/model-manager.css、public/style.css、docs/model-config-protocol.md、tests/model-manager.test.js、tests/model-config.test.js、README.md、本日志与 codebase-map 索引。
+
 ## 2026-09-13 06:55 UTC SQLite 安装入口的 Node 版本前置检查
 - 原因：静态导入 node:sqlite 早于安装脚本的版本检查，旧 Node 先报未知内置模块；安装脚本及 README 存在过时版本/JSON 存储描述。
 - 实现：src/database.js 复用原 nodeOk 规则，在同步加载 SQLite 前统一拒绝不支持的 Node；scripts/install.mjs 重导出规则供现有测试使用，移除不可达的重复检查。无需新依赖、启动标志或修改 npm 全局安装命令。install.sh、install.ps1 与 README.md 同步版本及 SQLite 说明。

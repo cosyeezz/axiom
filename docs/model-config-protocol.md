@@ -83,6 +83,14 @@
 
 删除整个 provider 条目（含其 models/modelOverrides）。不存在 → 报错。
 
+### models.provider.rename `{ providerId, newProviderId, baseFingerprint }` → `{ fingerprint }`
+
+按新 id 整条搬家（`models` / `modelOverrides` / 未知字段 / 密钥原值一并跟随，不回传、不重写）。
+
+- 两个 id 均需满足 provider id 白名单；`providerId` 不存在或 `newProviderId` 已存在 → 报错（不覆盖同名条目）
+- 改名是本命令唯一入口：前端无法用 save + delete 复现（`modelOverrides` 没有独立写命令，会被悄悄丢掉）
+- 成功后触发 `models.config.changed`；依赖旧 id 的收藏（favorites）不会自动改名
+
 ### models.model.save `{ providerId, model, baseFingerprint }` → `{ fingerprint }`
 
 - 按 `model.id` 在 `providers[providerId].models` 中 **upsert**（整条替换）

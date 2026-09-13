@@ -779,6 +779,7 @@ textarea {
 #session-action,
 #restart-dialog,
 #summaries,
+.mm-dialog,
 .task-dialog {
   width: min(600px, calc(100% - 32px));
   max-height: calc(100dvh - 32px);

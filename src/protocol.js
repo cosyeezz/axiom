@@ -225,6 +225,15 @@ export const command = z.discriminatedUnion("type", [
   z
     .object({
       id,
+      type: z.literal("models.provider.rename"),
+      providerId: providerKey,
+      newProviderId: providerKey,
+      baseFingerprint: fingerprintIn,
+    })
+    .strict(),
+  z
+    .object({
+      id,
       type: z.literal("models.model.save"),
       providerId: providerKey,
       model: modelConfigIn,
