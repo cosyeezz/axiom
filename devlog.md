@@ -959,3 +959,19 @@
 - 内容：reindex.mjs 的 MODULE_INFO、src/sessions.js:455 与 src/session-store.js:319 的迁移注释、tests/session-store.test.js:206 的用例名，四处「四表」改「三表」。
 - 验证：全量 `npm test` 357 项，355 过 / 0 失败 / 2 跳过；重建 INDEX.md 后模块表描述同步为三表。
 - 涉及：.pi/skills/codebase-map/scripts/reindex.mjs、src/sessions.js、src/session-store.js、tests/session-store.test.js、devlog.md。
+
+## 2026-09-13 11:02 — 右上角加 GitHub 图标；移除文字对比度调节，正文固定最高档
+
+- 原因：用户要求右上角一个可点进开源页的 GitHub 图标；同时「A」对比度按钮不再需要，直接把正文文字定死在原先 150% 那一档，省掉一个控件、一段本地存储和两份资源。
+- 内容：
+  - public/index.html：`.service-controls` 首位新增 `a#github-link.icon-button`，指向 https://github.com/cosyeezz/axiom ，`target="_blank"` + `rel="noopener noreferrer"`，内嵌 GitHub mark 单 path SVG（无新增图标依赖）；删掉 `/text-contrast.css` 的 link。
+  - public/style.css：`--body-ink` #d0d6e0 → #dee2e9、`--muted` #8a8f98 → #adb1b7（各混入 30% 白，等于原 150% 档结果，#adb1b7 对 #010102 约 9.7:1）；新增 `--dim-line: #8a8f98` 供 `--muted` 的两处非文字用途钉回原色（`.selectors label:has(select):after` 下拉箭头、`.tool-activity` 默认 `--activity-ink`）；新增 `#github-link` 两条（grid 居中、去下划线、17px svg 用 currentColor 填充，复用 `.icon-button` 32px 方形与 hover）。
+  - public/app.js、src/server.js：删 `initTextContrast` 的 import 与调用、删两条静态资源路由。
+  - 删 public/text-contrast.js、public/text-contrast.css、tests/text-contrast.test.js。
+  - 9 个测试 harness（app/compaction-ui/manual-retry/memory-ui/message-activity/model-onboarding-ui/model-thinking-favorites/remote-ui/workspace-tabs）去掉注入 text-contrast.js 的读取与 eval 插值。
+  - tests/app.test.js 在既有 header 图标用例里补断言：href/rel 正确、高度 32px、`text-decoration: none`、`#text-contrast-button` 不再存在。
+  - tests/conversation-ui.py：对比度面板那段换成 GitHub 图标的 tooltip 文案与 href/target 校验。
+  - README.md：品牌正文色改 #dee2e9；tooltip 段落改写为 GitHub 图标 + 固定高对比度说明；`npm test` 注释去掉「对比度」。
+  - .pi/skills/codebase-map/：SKILL.md 架构图与 reindex.mjs 的 MODULE_INFO 去掉三条 text-contrast 条目，重建 INDEX.md（118 文件、0 未登记）。
+- 验证：`npm test` 348 项，346 过 / 0 失败 / 2 跳过（既有 SKIP；较上轮 357 少 9 项＝删掉的 text-contrast 用例）。Playwright 实测：图标位于 header 最右侧服务区首位（1440 宽下 x=1296、32×32），静止色 rgb(173,177,183)、hover 转 --ink，tooltip 显示「在 GitHub 查看源码」，href/target/rel 均符合预期；`--body-ink`/`--muted`/`--dim-line` 计算值分别为 #dee2e9/#adb1b7/#8a8f98。tests/conversation-ui.py 全量跑不通（`#workspace` 30s 不可见），在 master 上同样复现，属本环境既有问题，非本次改动引入。
+- 涉及：public/index.html、public/style.css、public/app.js、src/server.js、public/text-contrast.js（删）、public/text-contrast.css（删）、tests/text-contrast.test.js（删）、tests/app.test.js、tests/conversation-ui.py、tests/compaction-ui.test.js、tests/manual-retry.test.js、tests/memory-ui.test.js、tests/message-activity.test.js、tests/model-onboarding-ui.test.js、tests/model-thinking-favorites.test.js、tests/remote-ui.test.js、tests/workspace-tabs.test.js、README.md、devlog.md、.pi/skills/codebase-map/。

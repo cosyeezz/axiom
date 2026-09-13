@@ -100,7 +100,6 @@ async function page() {
   const memoryTags = (await readFile(new URL("../public/memory-tags.js", import.meta.url), "utf8")).replace(/^export /gm, "");
   const source = memoryTags + "\n" + (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/app.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "");
   const picker = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
-  const contrast = (await readFile(new URL("../public/text-contrast.js", import.meta.url), "utf8")).replace(/^export /gm, "");
   const dom = new JSDOM(html, { url: "http://localhost", runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window;
   w.matchMedia = () => ({ matches: false });
@@ -121,7 +120,7 @@ async function page() {
     const exports = [...module.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
     w.eval(`Object.assign(window, (() => { ${module.replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`);
   }
-  w.eval(`${contrast}\n${picker}\n${source}\nconnected = true; socket = new WebSocket();`);
+  w.eval(`${picker}\n${source}\nconnected = true; socket = new WebSocket();`);
   const base = { sessionId: "retry", title: "Retry", cwd: "C:/work", status: "idle", config: { model: "test/model", thinking: "off", levels: ["off"], skills: [] }, messages: [], tasks: [], live: {}, tools: {} };
   const restore = (changes = {}) => w.snapshot({ ...base, ...changes });
   const emit = (type, data, agentId = "main") => w.event({ sessionId: base.sessionId, type, data, agentId });

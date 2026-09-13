@@ -3,12 +3,10 @@ import { stripMemoryTags } from "./memory-tags.js";
 import { createStreamRenderer } from "./stream-renderer.js";
 import { createFilePicker, fileIcon } from "./file-picker.js";
 import "./tooltip.js";
-import { initTextContrast } from "./text-contrast.js";
 import { createModelPicker } from "./model-picker.js";
 import { initModelManager } from "./model-manager.js";
 import { initServiceSettings } from "./service-settings.js";
 
-initTextContrast();
 const filePicker = createFilePicker(request);
 const $ = (id) => document.getElementById(id);
 let ws,

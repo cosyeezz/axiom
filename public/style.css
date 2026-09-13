@@ -5,8 +5,11 @@
   --raised: #18191a;
   --line: #23252a;
   --ink: #f7f8f8;
-  --body-ink: #d0d6e0;
-  --muted: #8a8f98;
+  /* 正文文字 token 固定为高对比度（原值 #d0d6e0 / #8a8f98 各混入 30% 白）；
+     --muted 在下拉箭头与默认工具图标上非文字用途，那两处用 --dim-line 钉回原色。 */
+  --body-ink: #dee2e9;
+  --muted: #adb1b7;
+  --dim-line: #8a8f98;
   --accent: #5e6ad2;
   --accent-ink: #828fff;
   /* Conversation semantics: lighter versions of the file picker's blue/teal/gold/violet families. */
@@ -648,6 +651,8 @@ button.danger:hover:not(:disabled) { background: #c13e50; }
 .context-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; min-width: 0; }
 .icon-button { width: 32px; height: 32px; padding: 0; flex-shrink: 0; border-radius: 9px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); font-size: 22px; }
 .icon-button:hover { color: var(--ink); border-color: #5e6ad280; background: #5e6ad21a; }
+#github-link { display: grid; place-items: center; text-decoration: none; }
+#github-link svg { width: 17px; height: 17px; fill: currentColor; }
 #add-context { display: grid; place-items: center; width: 28px; height: 28px; min-height: 28px; border: 0; border-radius: 7px; background: transparent; }
 #add-context svg { width: 18px; height: 18px; color: var(--muted); }
 #add-context:hover:not(:disabled), #add-context:focus-visible { background: var(--raised); }
@@ -977,8 +982,8 @@ textarea {
   bottom: 14px;
   width: 5px;
   height: 5px;
-  border-right: 1px solid var(--muted);
-  border-bottom: 1px solid var(--muted);
+  border-right: 1px solid var(--dim-line);
+  border-bottom: 1px solid var(--dim-line);
   transform: rotate(45deg);
   pointer-events: none;
 }
@@ -1271,7 +1276,7 @@ details[open] > summary .disclosure-action .when-open { display: inline-flex; al
 .disclosure-action svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 summary:hover > .disclosure-action { color: var(--ink); }
 .tool-record > summary .activity-line, .thinking-record > summary .activity-line { flex: 1; }
-.tool-activity { --activity-ink: var(--muted); display: grid; grid-template-columns: 20px auto minmax(0, 1fr) auto; column-gap: 8px; }
+.tool-activity { --activity-ink: var(--dim-line); display: grid; grid-template-columns: 20px auto minmax(0, 1fr) auto; column-gap: 8px; }
 .tool-activity:is([data-tool-icon="read"], [data-tool-icon="search"], [data-tool-icon="web"]) { --activity-ink: var(--info); }
 .tool-activity[data-tool-icon="bash"] { --activity-ink: var(--code-ink); }
 .tool-activity:is([data-tool-icon="edit"], [data-tool-icon="write"]) { --activity-ink: var(--highlight); }

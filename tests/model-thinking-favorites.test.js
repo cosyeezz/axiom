@@ -8,7 +8,6 @@ import { createStreamRenderer } from "../public/stream-renderer.js";
 // （model id 含冒号时后端按最后一个冒号切分），星标渲染按映射键匹配，无模型上下文无星。
 const appSource = (await readFile(new URL("../public/memory-tags.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/app.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "");
 const pickerSource = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
-const contrastSource = (await readFile(new URL("../public/text-contrast.js", import.meta.url), "utf8")).replace(/^export /gm, "");
 const modelSources = await Promise.all(["model-picker", "model-manager"].map(async (name) => {
   const source = await readFile(new URL(`../public/${name}.js`, import.meta.url), "utf8");
   const exports = [...source.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
@@ -68,7 +67,7 @@ async function bootPage() {
       });
     }
   };
-  window.eval(`${modelSources}\n${contrastSource}\n${pickerSource}\n${appSource}`);
+  window.eval(`${modelSources}\n${pickerSource}\n${appSource}`);
   const drain = async () => { for (let i = 0; i < 6; i++) await new Promise(setImmediate); };
   return { dom, window, $, requests, drain, sockets };
 }

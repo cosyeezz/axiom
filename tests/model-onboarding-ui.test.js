@@ -11,7 +11,6 @@ const modelSources = await Promise.all(["model-picker", "model-manager"].map(asy
   const exports = [...source.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
   return `Object.assign(window, (() => { ${stripImports(source)}\nreturn {${exports.join(",")}}; })());`;
 })).then((parts) => parts.join("\n"));
-const contrastSource = stripImports(await readFile(new URL("../public/text-contrast.js", import.meta.url), "utf8"));
 const pickerSource = stripImports(await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8"));
 const memoryTagsSource = stripImports(await readFile(new URL("../public/memory-tags.js", import.meta.url), "utf8"));
 const appSource = memoryTagsSource + "\n" + stripImports(await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")) + "\n" + stripImports(await readFile(new URL("../public/app.js", import.meta.url), "utf8"));
@@ -68,7 +67,7 @@ const harness = async () => {
   }
   window.WebSocket = Socket;
   const settle = () => new Promise((resolve) => setImmediate(resolve));
-  window.eval(`${modelSources}\n${contrastSource}\n${pickerSource}\n${appSource}`);
+  window.eval(`${modelSources}\n${pickerSource}\n${appSource}`);
   return {
     window, $, sockets, requests, settle,
     open: async () => { await settle(); sockets.at(-1).open(); await settle(); },

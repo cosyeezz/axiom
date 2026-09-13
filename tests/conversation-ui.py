@@ -105,21 +105,13 @@ with sync_playwright() as p:
     for width in [1440, 390, 320]:
         page.set_viewport_size({"width": width, "height": 1000 if width == 1440 else 844})
         load("ui-review")
-        contrast = page.locator('#text-contrast-button')
-        contrast.hover()
+        github = page.locator('#github-link')
+        github.hover()
         expect(page.locator('#ax-tooltip.ax-show')).to_be_visible()
-        expect(page.locator('#ax-tooltip')).to_have_text('文字对比度')
+        expect(page.locator('#ax-tooltip')).to_have_text('在 GitHub 查看源码')
         page.keyboard.press('Escape')
-        contrast.click()
-        expect(page.locator('#text-contrast-popover')).to_be_visible()
-        page.locator('#text-contrast-range').fill('150')
-        assert page.locator('html').get_attribute('data-text-contrast') == '150'
-        page.reload()
-        page.wait_for_selector('#workspace:not([hidden])')
-        assert page.locator('html').get_attribute('data-text-contrast') == '150'
-        page.locator('#text-contrast-button').click()
-        page.locator('#text-contrast-reset').click()
-        page.keyboard.press('Escape')
+        assert github.get_attribute('href') == 'https://github.com/cosyeezz/axiom'
+        assert github.get_attribute('target') == '_blank'
         body = page.locator('#output .message > .markdown').filter(has=page.locator('h2')).first
         assert style(body, "fontSize") == "14px"
         assert style(body.locator('strong').first, "fontWeight") == "650"
