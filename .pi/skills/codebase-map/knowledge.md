@@ -397,3 +397,13 @@
 - 根因：原生居中 dialog 仅限最大高度，实际高度随页签内容变化。
 - 修复：public/style.css 为 #settings 固定 80dvh，打开时采用纵向 flex，头部固定、settings-layout 内部滚动并预留滚动条位置。
 - 防再犯：tests/service-settings-ui.py 在桌面与窄屏比较四页签真实坐标，长内容验证内部滚动和固定关闭栏；display:flex 仅用于 [open]，避免已关闭弹窗仍显示。
+
+### 2026-09-12 摘要 JSON 替换被 Windows 拒绝
+- 症状：摘要保存时 .json.tmp → .json 的 rename 报 EPERM；此操作是文件替换，不是会话改名。
+- 根因：既有会话保存已串行，但文件替换无瞬时占用重试，且临时文件名固定；仅凭报错不能确定占用进程或排除持久权限问题。
+- 修复：src/atomic-write.js 使用唯一临时文件，对 EPERM/EACCES/EBUSY 最多重试6次（共1.575秒等待），永久失败保留目标原文件并清理本次临时文件；sessions.persist 所有调用共用。
+- 防再犯：tests/atomic-write.test.js 注入占用与永久失败，检查成功恢复、旧文件不丢和非占用错误不重试；禁止先删目标来绕过 rename。
+
+### 2026-09-12 SQLite 替代临时 JSON 保存修复
+- 最终决策：前述 atomic-write 临时方案已移除，会话管理改用 database.js SQLite，Pi JSONL 保留历史。迁移必须逐文件标记，坏文件修复后可重试；JSONL 缺失跳过恢复，禁止静默创建空会话覆盖记录。
+- 防再犯：Node 22.5–22.12 无标志不能加载 node:sqlite，安装要求22.13+（22.x）或24+；Windows 测试清理前须关闭数据库。数据库/迁移/凭据/守护回归及全量275项验证通过（1跳过）。

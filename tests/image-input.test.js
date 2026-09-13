@@ -65,8 +65,9 @@ test("不支持图片的模型在回执前拒绝，支持时透传 prompt 与队
     { key: "test/vision", input: ["text", "image"] },
   ];
   const root = await mkdtemp(join(tmpdir(), "axiom-image-"));
+  let sessions;
   try {
-    const sessions = new Sessions(factory, undefined, join(root, "sessions"));
+    sessions = new Sessions(factory, undefined, join(root, "sessions"));
     const id = await sessions.create(root, { model: "test/text-only" });
     const images = [image()];
     await assert.rejects(sessions.prompt(id, "看图", undefined, images), /不支持图片输入/);
@@ -79,6 +80,7 @@ test("不支持图片的模型在回执前拒绝，支持时透传 prompt 与队
     await sessions.prompt(id, "插话", "steer", images);
     assert.deepEqual(calls.enqueue.at(-1), { text: "插话", type: "steer", images });
   } finally {
+    await sessions?.close();
     await rm(root, { recursive: true, force: true });
   }
 });

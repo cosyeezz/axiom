@@ -9,16 +9,25 @@ import { once } from "node:events";
 import { WebSocket } from "ws";
 import { command } from "../src/protocol.js";
 import { createModelsService } from "../src/model-config.js";
+import { Database } from "../src/database.js";
+import { createPiModelStorage, canonicalModelsJson } from "../src/pi-model-storage.js";
 import { Sessions } from "../src/sessions.js";
 import { createServerApp } from "../src/server.js";
 
-// 独立后端测试：临时目录 + fake factory，不触碰真实 ~/.pi 与任何真实密钥。
+// 独立后端测试：临时目录 + fake factory + 独立 SQLite，不触碰真实 ~/.pi 与任何真实密钥。
 const sha = (raw) => createHash("sha256").update(raw).digest("hex");
-const EMPTY = sha("");
+// 权威为空（未配置）时的指纹：与空文件同语义。
+const EMPTY = sha(canonicalModelsJson({ providers: {} }));
 
 async function tempDir() {
   return mkdtemp(join(tmpdir(), "axiom-model-config-"));
 }
+
+// 测试内打开的库连接登记于此：finally 统一 close，否则 Windows 清理临时目录会 EBUSY。
+const openDatabases = [];
+const closeOpenDatabases = () => {
+  for (const database of openDatabases.splice(0)) database.close();
+};
 
 function makeService(dir, catalog = []) {
   let refreshes = 0;
@@ -29,19 +38,20 @@ function makeService(dir, catalog = []) {
       return catalog;
     },
   };
-  const models = createModelsService({
-    factory,
-    modelsPath: join(dir, "models.json"),
-    favoritesPath: join(dir, "models-favorites.json"),
-  });
-  return { models, refreshes: () => refreshes };
+  const database = new Database(join(dir, "axiom.db"));
+  openDatabases.push(database);
+  // piDir 指向临时空目录：导入逻辑不触碰真实 ~/.pi。
+  const storage = createPiModelStorage({ database, home: dir, piDir: join(dir, "pi") });
+  const models = createModelsService({ factory, storage });
+  return { models, storage, database, refreshes: () => refreshes };
 }
 
-const seed = async (dir, content) => {
-  const path = join(dir, "models.json");
-  await writeFile(path, typeof content === "string" ? content : `${JSON.stringify(content, null, 2)}\n`);
-  return path;
-};
+// 种子：直接写权威库（绕过服务层校验，模拟任意既有状态），同步派生文件保持一致。
+const seed = (svc, content) =>
+  svc.storage.writeConfig(typeof content === "string" ? JSON.parse(content) : content);
+
+// 派生兼容文件读取：SDK 实际读的镜像，内容应始终等于权威配置。
+const compat = (dir) => readFile(join(dir, "models.compat.json"), "utf8");
 
 test("协议层：模型配置与收藏命令的形状校验", () => {
   assert.equal(
@@ -67,7 +77,7 @@ test("协议层：模型配置与收藏命令的形状校验", () => {
   assert.throws(() => command.parse({ id: "6", type: "models.config.get", extra: 1 }));
 });
 
-test("models.config.get：文件缺失时空指纹与空列表", async () => {
+test("models.config.get：权威为空时空指纹与空列表", async () => {
   const dir = await tempDir();
   try {
     const { models } = makeService(dir, [{ key: "a/b" }]);
@@ -77,14 +87,15 @@ test("models.config.get：文件缺失时空指纹与空列表", async () => {
     assert.deepEqual(data.catalog, [{ key: "a/b" }]);
     assert.equal(data.parseError, undefined);
   } finally {
+    closeOpenDatabases();
     await rm(dir, { recursive: true, force: true });
   }
 });
 
-test("provider.save：原子落盘、目录刷新、备份语义", async () => {
+test("provider.save：权威落库、派生文件同步、目录刷新", async () => {
   const dir = await tempDir();
   try {
-    const { models, refreshes } = makeService(dir);
+    const { models, database, refreshes } = makeService(dir);
     const created = await models.saveProvider({
       providerId: "my-proxy",
       provider: { name: "My Proxy", baseUrl: "https://p.example.com/v1", api: "openai-completions", apiKey: "sk-test" },
@@ -92,22 +103,25 @@ test("provider.save：原子落盘、目录刷新、备份语义", async () => {
     });
     assert.notEqual(created.fingerprint, EMPTY);
     assert.equal(refreshes(), 1);
-    const raw = JSON.parse(await readFile(join(dir, "models.json"), "utf8"));
+    // 权威：SQLite 中的值含真实密钥（用户明确同意的明文存储）。
+    const raw = database.get("models", "config");
     assert.equal(raw.providers["my-proxy"].apiKey, "sk-test");
-    assert.equal(existsSync(join(dir, "models.json.bak")), false, "首次创建无需备份");
+    // 派生：compat 文件与权威一致（SDK 运行时的唯一模型目录来源）。
+    assert.deepEqual(JSON.parse(await compat(dir)), raw);
 
     // GET 脱敏
     const view = await models.handle({ type: "models.config.get" });
-    assert.equal(view.providers[0].apiKey, { masked: true, kind: "literal" }.masked === true ? view.providers[0].apiKey : view.providers[0].apiKey);
     assert.deepEqual(view.providers[0].apiKey, { masked: true, kind: "literal" });
     assert.equal(JSON.stringify(view).includes("sk-test"), false, "响应永不包含密钥明文");
 
-    // 覆盖写产生备份
+    // 覆盖写：权威与派生同步更新
     await models.saveProvider({ providerId: "my-proxy", provider: { name: "Renamed" }, baseFingerprint: created.fingerprint });
-    const backup = JSON.parse(await readFile(join(dir, "models.json.bak"), "utf8"));
-    assert.equal(backup.providers["my-proxy"].name, "My Proxy");
-    assert.equal(JSON.parse(await readFile(join(dir, "models.json"), "utf8")).providers["my-proxy"].name, "Renamed");
+    const renamed = database.get("models", "config");
+    assert.equal(renamed.providers["my-proxy"].name, "Renamed");
+    assert.equal(renamed.providers["my-proxy"].apiKey, "sk-test");
+    assert.deepEqual(JSON.parse(await compat(dir)), renamed);
   } finally {
+    closeOpenDatabases();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -115,7 +129,8 @@ test("provider.save：原子落盘、目录刷新、备份语义", async () => {
 test("已有密钥保持：!command/env 值经 keep 原样保留，null 删除", async () => {
   const dir = await tempDir();
   try {
-    await seed(dir, {
+    const svc = makeService(dir);
+    await seed(svc, {
       providers: {
         vaulted: {
           baseUrl: "https://v.example.com",
@@ -125,7 +140,7 @@ test("已有密钥保持：!command/env 值经 keep 原样保留，null 删除",
         },
       },
     });
-    const { models } = makeService(dir);
+    const { models } = svc;
     const before = await models.handle({ type: "models.config.get" });
     assert.deepEqual(before.providers[0].apiKey, { masked: true, kind: "command" });
     assert.deepEqual(before.providers[0].headers["x-key"], { masked: true, kind: "env" });
@@ -139,28 +154,30 @@ test("已有密钥保持：!command/env 值经 keep 原样保留，null 删除",
       provider: { apiKey: { keep: true }, headers: { "x-key": { keep: true }, "x-drop": null } },
       baseFingerprint: fingerprint,
     });
-    const raw = JSON.parse(await readFile(join(dir, "models.json"), "utf8"));
-    assert.equal(raw.providers.vaulted.apiKey, "!op read 'op://vault/item'");
-    assert.equal(raw.providers.vaulted.headers["x-key"], "$VAULT_KEY");
-    assert.equal(raw.providers.vaulted.headers["x-drop"], undefined);
+    const raw = svc.database.get("models", "config").providers.vaulted;
+    assert.equal(raw.apiKey, "!op read 'op://vault/item'");
+    assert.equal(raw.headers["x-key"], "$VAULT_KEY");
+    assert.equal(raw.headers["x-drop"], undefined);
     // 未知字段/已有 baseUrl 不受影响
-    assert.equal(raw.providers.vaulted.baseUrl, "https://v.example.com");
+    assert.equal(raw.baseUrl, "https://v.example.com");
 
     await assert.rejects(() =>
       models.saveProvider({ providerId: "vaulted", provider: { apiKey: { keep: true } }, baseFingerprint: fingerprint }),
       /已被外部修改/,
     );
   } finally {
+    closeOpenDatabases();
     await rm(dir, { recursive: true, force: true });
   }
 });
 
-test("信任边界：新增 !command 凭据与非法 baseUrl 被拒绝，文件不变", async () => {
+test("信任边界：新增 !command 凭据与非法 baseUrl 被拒绝，权威不变", async () => {
   const dir = await tempDir();
   try {
-    const path = await seed(dir, { providers: { a: { baseUrl: "https://a.example.com", apiKey: "$A_KEY" } } });
-    const before = await readFile(path, "utf8");
-    const { models } = makeService(dir);
+    const svc = makeService(dir);
+    await seed(svc, { providers: { a: { baseUrl: "https://a.example.com", apiKey: "$A_KEY" } } });
+    const before = await compat(dir);
+    const { models } = svc;
     const view = await models.handle({ type: "models.config.get" });
     const fingerprint = view.fingerprint;
     // keep 缺现值（providerId 不存在）：zod 同步抛错需包成 rejection 才能被 assert.rejects 捕获
@@ -181,8 +198,9 @@ test("信任边界：新增 !command 凭据与非法 baseUrl 被拒绝，文件�
     await assert.rejects(() =>
       models.saveProvider({ providerId: "a", provider: { baseUrl: "not a url" }, baseFingerprint: fingerprint }), /URL/,
     );
-    assert.equal(await readFile(path, "utf8"), before);
+    assert.equal(await compat(dir), before);
   } finally {
+    closeOpenDatabases();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -190,7 +208,8 @@ test("信任边界：新增 !command 凭据与非法 baseUrl 被拒绝，文件�
 test("未知字段与 models/modelOverrides 在 provider.save 后原样保留", async () => {
   const dir = await tempDir();
   try {
-    await seed(dir, {
+    const svc = makeService(dir);
+    await seed(svc, {
       providers: {
         keeps: {
           baseUrl: "https://k.example.com",
@@ -201,10 +220,10 @@ test("未知字段与 models/modelOverrides 在 provider.save 后原样保留", 
         },
       },
     });
-    const { models } = makeService(dir);
+    const { models } = svc;
     const view = await models.handle({ type: "models.config.get" });
     await models.saveProvider({ providerId: "keeps", provider: { name: "Renamed" }, baseFingerprint: view.fingerprint });
-    const raw = JSON.parse(await readFile(join(dir, "models.json"), "utf8")).providers.keeps;
+    const raw = JSON.parse(await compat(dir)).providers.keeps;
     assert.deepEqual(raw.customFutureField, { nested: [1, 2] });
     assert.deepEqual(raw.models, [{ id: "m1", name: "Model One", reasoning: true }]);
     assert.deepEqual(raw.modelOverrides, { "b/m1": { name: "Override" } });
@@ -217,6 +236,7 @@ test("未知字段与 models/modelOverrides 在 provider.save 后原样保留", 
       ), /models.model/,
     );
   } finally {
+    closeOpenDatabases();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -224,10 +244,11 @@ test("未知字段与 models/modelOverrides 在 provider.save 后原样保留", 
 test("model.save/delete：upsert、provider 自动创建、headers keep、删除", async () => {
   const dir = await tempDir();
   try {
-    await seed(dir, {
+    const svc = makeService(dir);
+    await seed(svc, {
       providers: { p: { baseUrl: "https://p.example.com", api: "openai-completions", models: [{ id: "m1", headers: { "x-k": "sk-old" } }] } },
     });
-    const { models } = makeService(dir);
+    const { models } = svc;
     let view = await models.handle({ type: "models.config.get" });
     let fingerprint = view.fingerprint;
 
@@ -241,14 +262,14 @@ test("model.save/delete：upsert、provider 自动创建、headers keep、删除
       model: { id: "m2", contextWindow: 8192 },
       baseFingerprint: fingerprint,
     })).fingerprint;
-    let raw = JSON.parse(await readFile(join(dir, "models.json"), "utf8"));
+    let raw = JSON.parse(await compat(dir));
     assert.equal(raw.providers.p.models[0].headers["x-k"], "sk-old");
     assert.equal(raw.providers.p.models[0].name, "M1");
     assert.deepEqual(raw.providers.p.models[1], { id: "m2", contextWindow: 8192 });
 
     // provider 不存在则自动创建
     await models.saveModel({ providerId: "fresh", model: { id: "f1" }, baseFingerprint: fingerprint });
-    raw = JSON.parse(await readFile(join(dir, "models.json"), "utf8"));
+    raw = JSON.parse(await compat(dir));
     assert.deepEqual(raw.providers.fresh.models, [{ id: "f1" }]);
     view = await models.handle({ type: "models.config.get" });
 
@@ -256,57 +277,50 @@ test("model.save/delete：upsert、provider 自动创建、headers keep、删除
       models.deleteModel({ providerId: "p", modelId: "nope", baseFingerprint: view.fingerprint }), /Unknown model/,
     );
     await models.deleteModel({ providerId: "p", modelId: "m1", baseFingerprint: view.fingerprint });
-    raw = JSON.parse(await readFile(join(dir, "models.json"), "utf8"));
+    raw = JSON.parse(await compat(dir));
     assert.deepEqual(raw.providers.p.models.map((m) => m.id), ["m2"]);
     view = await models.handle({ type: "models.config.get" });
     await assert.rejects(() => models.deleteProvider({ providerId: "ghost", baseFingerprint: view.fingerprint }), /Unknown provider/);
   } finally {
+    closeOpenDatabases();
     await rm(dir, { recursive: true, force: true });
   }
 });
 
-test("并发防护：过期指纹拒绝、损坏与结构无效文件拒绝写入", async () => {
+test("并发防护：过期指纹拒绝、库内结构非法拒绝写入", async () => {
   const dir = await tempDir();
   try {
-    const path = await seed(dir, { providers: { a: { baseUrl: "https://a.example.com" } } });
-    const { models } = makeService(dir);
+    const svc = makeService(dir);
+    await seed(svc, { providers: { a: { baseUrl: "https://a.example.com" } } });
+    const { models, database } = svc;
     const view = await models.handle({ type: "models.config.get" });
 
-    // 外部改动后旧指纹被拒
-    await writeFile(path, `${JSON.stringify({ providers: { a: { baseUrl: "https://changed.example.com" } } }, null, 2)}\n`);
+    // 外部写入库后旧指纹被拒（模拟另一进程/直接改库）
+    database.set("models", "config", { providers: { a: { baseUrl: "https://changed.example.com" } } });
     await assert.rejects(() =>
       models.saveProvider({ providerId: "a", provider: { name: "x" }, baseFingerprint: view.fingerprint }), /已被外部修改/,
     );
 
-    // 损坏 JSON：GET 报 parseError，写一律拒绝，字节不变
-    const corrupt = "{oops";
-    await writeFile(path, corrupt);
-    const broken = await models.handle({ type: "models.config.get" });
-    assert.match(broken.parseError, /不是有效 JSON/);
-    await assert.rejects(() =>
-      models.saveProvider({ providerId: "a", provider: { name: "x" }, baseFingerprint: broken.fingerprint }), /拒绝写入/,
-    );
-    assert.equal(await readFile(path, "utf8"), corrupt);
-
-    // providers 非对象：同样拒绝
-    await writeFile(path, '{"providers": []}');
+    // providers 非对象（只能来自外部篡改）：GET 报 parseError，写一律拒绝
+    database.set("models", "config", { providers: [] });
     const invalid = await models.handle({ type: "models.config.get" });
     assert.match(invalid.parseError, /结构无效/);
     await assert.rejects(() =>
       models.saveProvider({ providerId: "a", provider: { name: "x" }, baseFingerprint: invalid.fingerprint }), /结构无效/,
     );
-    assert.equal(await readFile(path, "utf8"), '{"providers": []}');
   } finally {
+    closeOpenDatabases();
     await rm(dir, { recursive: true, force: true });
   }
 });
 
-test("SDK 校验闸门：轻校验放过的垃圾在落盘前被拒，无临时文件残留", async () => {
+test("SDK 校验闸门：轻校验放过的垃圾在落库前被拒，无临时文件残留", async () => {
   const dir = await tempDir();
   try {
-    const path = await seed(dir, { providers: { a: { baseUrl: "https://a.example.com", apiKey: "sk-1" } } });
-    const before = await readFile(path, "utf8");
-    const { models } = makeService(dir);
+    const svc = makeService(dir);
+    await seed(svc, { providers: { a: { baseUrl: "https://a.example.com", apiKey: "sk-1" } } });
+    const before = await compat(dir);
+    const { models } = svc;
     const view = await models.handle({ type: "models.config.get" });
     await assert.rejects(() =>
       models.saveProvider({ providerId: "a", provider: { apiKey: "" }, baseFingerprint: view.fingerprint }), /未通过校验/,
@@ -317,10 +331,11 @@ test("SDK 校验闸门：轻校验放过的垃圾在落盘前被拒，无临时�
         models.saveProvider({ providerId: "a", provider: { headers: { "x-k": 42 } }, baseFingerprint: view.fingerprint }),
       ), /expected string/i,
     );
-    assert.equal(await readFile(path, "utf8"), before);
+    assert.equal(await compat(dir), before);
     const leftover = (await readdir(dir)).filter((name) => name.includes(".tmp-"));
     assert.deepEqual(leftover, []);
   } finally {
+    closeOpenDatabases();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -328,7 +343,7 @@ test("SDK 校验闸门：轻校验放过的垃圾在落盘前被拒，无临时�
 test("收藏：三组 key、单项 mutation、去重、校验、持久化、上限", async () => {
   const dir = await tempDir();
   try {
-    const { models } = makeService(dir);
+    const { models, database } = makeService(dir);
     assert.deepEqual(await models.favorites(), { provider: [], model: [], thinking: [] });
 
     let state = await models.setFavorite({ kind: "model", key: "anthropic/claude-x", favorite: true });
@@ -349,17 +364,21 @@ test("收藏：三组 key、单项 mutation、去重、校验、持久化、上�
     await assert.rejects(() => models.setFavorite({ kind: "thinking", key: "anthropic/claude-x:bogus", favorite: true }), /level/);
     await assert.rejects(() => models.setFavorite({ kind: "provider", key: "bad id", favorite: true }), /key/);
 
-    // 持久化与跨实例
-    const persisted = JSON.parse(await readFile(join(dir, "models-favorites.json"), "utf8"));
+    // 持久化与跨实例（同一 SQLite 文件重开连接，权威仍在）
+    const persisted = database.get("models", "favorites");
     assert.equal(persisted.version, 1);
     assert.deepEqual(persisted.thinking, ["anthropic/claude-x:high"]);
-    const { models: again } = makeService(dir);
-    assert.deepEqual(await again.favorites(), await models.favorites());
+    const againDatabase = new Database(join(dir, "axiom.db"));
+    openDatabases.push(againDatabase);
+    const againStorage = createPiModelStorage({ database: againDatabase, home: dir, piDir: join(dir, "pi") });
+    const againModels = createModelsService({ factory: { catalog: () => [] }, storage: againStorage });
+    assert.deepEqual(await againModels.favorites(), JSON.parse(JSON.stringify(state)));
 
     // 每组上限 200：provider 组已有 "anthropic" 占 1 席，再填 199 条后拒绝第 201 条
     for (let i = 0; i < 199; i += 1) await models.setFavorite({ kind: "provider", key: `p${i}`, favorite: true });
     await assert.rejects(() => models.setFavorite({ kind: "provider", key: "overflow", favorite: true }), /最多 200 条/);
   } finally {
+    closeOpenDatabases();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -457,6 +476,7 @@ test("WS：两个客户端共享 favorites/config.changed 广播，命令走协�
       await app.close();
     }
   } finally {
+    closeOpenDatabases();
     await rm(dir, { recursive: true, force: true });
   }
 });

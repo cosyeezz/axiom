@@ -9,10 +9,13 @@ test("parseArgs 默认全开，参数可关闭，未知参数报错", () => {
   assert.throws(() => parseArgs(["--bogus"]), /未知参数/);
 });
 
-test("nodeOk 校验 Node >=22.5", () => {
-  assert.equal(nodeOk("22.5.0"), true);
+test("nodeOk 校验 Node 22.13+ LTS 或 24+", () => {
+  assert.equal(nodeOk("22.5.0"), false);
+  assert.equal(nodeOk("22.13.0"), true);
+  assert.equal(nodeOk("23.0.0"), false);
   assert.equal(nodeOk("22.4.9"), false);
-  assert.equal(nodeOk("23.1.0"), true);
+  assert.equal(nodeOk("23.1.0"), false);
+  assert.equal(nodeOk("24.0.0"), true);
 });
 
 test("ensurePi 缺少 Pi CLI 时全局安装最新版", async () => {

@@ -6,12 +6,15 @@ const textOf = (message) => (message.content || []).filter((block) => block.type
 const escape = (text) => text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
 // Only model self-reports belong here; tool outcomes remain separate evidence.
+// 摘要参数建会话时从 item.memorySummary 捕获一次（逐请求不重读）；缺省回退默认 3/6/30。
+// 同一 policy 对象同时供本文件校验与 pi 层（hooks.policy）使用，两处规则永远一致。
 export function memoryHooks(item, save, job) {
   const agentId = job?.id || "main";
-  const policy = memoryPolicy(job ? "subagent" : "main");
+  const policy = memoryPolicy(job ? "subagent" : "main", item.memorySummary);
   item.summaryTriggers ||= [];
   return {
     role: job ? "subagent" : "main",
+    policy,
     turn: item.memoryTurns[agentId] || 0,
     onTrigger(data) {
       item.summaryTriggers.push({ id: randomUUID(), agentId, timestamp: Date.now(), reason: "interval", status: "pending", ...data });

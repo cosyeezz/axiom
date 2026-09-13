@@ -156,3 +156,27 @@ test("助手文本流式与成稿都剥离记忆标签，用户手写标签不�
     assert.match(user.textContent, /用户问题/);
   } finally { dom.window.close(); }
 });
+
+test("摘要设置：memory.summary.get 填充面板，change 即存并回显服务端确认值", async () => {
+  const { dom, w } = await page();
+  try {
+    w.eval(`window.__rpc = []; request = async (type, data = {}) => {
+      window.__rpc.push([type, data]);
+      return type === "memory.summary.get" ? { mainTurns: 5, subagentTurns: 7, maxChars: 40 } : data.summary;
+    };`);
+    await w.loadMemorySummary();
+    const value = (id) => w.document.getElementById(id).value;
+    assert.equal(value("memory-main-turns"), "5");
+    assert.equal(value("memory-subagent-turns"), "7");
+    assert.equal(value("memory-max-chars"), "40");
+    value("memory-max-chars") && (w.document.getElementById("memory-max-chars").value = "25");
+    w.document.getElementById("memory-max-chars").dispatchEvent(new w.Event("change"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const configure = w.__rpc.find(([type]) => type === "memory.summary.configure");
+    assert.deepEqual(JSON.parse(JSON.stringify(configure[1])), { summary: { mainTurns: 5, subagentTurns: 7, maxChars: 25 } });
+    assert.equal(value("memory-max-chars"), "25");
+    assert.match(w.document.getElementById("settings-feedback").textContent, /已保存/);
+    // 打开设置时拉取一次当前值
+    assert.ok(w.__rpc.some(([type]) => type === "memory.summary.get"));
+  } finally { dom.window.close(); }
+});

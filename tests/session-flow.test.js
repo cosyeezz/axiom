@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, readdir, mkdir, writeFile, symlink, readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, appendFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { Sessions } from "../src/sessions.js";
@@ -9,18 +9,30 @@ import { Sessions } from "../src/sessions.js";
 test("sessions persist across shutdown, queue by type, switch models while running, and delete on disk", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-flow-"));
   const storage = join(root, "sessions");
-  const factory = async (_, selection) => {
+  // 模拟 SDK 职责边界：agent 的 JSONL 是历史权威（消息消费时落盘），网页快照只存管理数据。
+  const factory = async (_, selection = {}) => {
     let model = selection.model || "test/one", listener, finish;
     const queue = { steering: [], followUp: [] };
+    const file = selection.sessionFile || join(selection.sessionDir, "session.jsonl");
+    let seq = 0;
     return {
       config: () => ({ model, thinking: "off", levels: ["off"] }),
       configure: async (next) => { model = next.model; return { model }; },
       subscribe: (fn) => { listener = fn; return () => {}; },
-      prompt: (text) => { listener({ type: "agent.message.end", data: { message: { role: "user", content: text } } }); return new Promise((resolve) => { finish = resolve; }); },
+      prompt: (text) => {
+        const entry = { id: `e${++seq}`, message: { role: "user", content: text } };
+        appendFileSync(file, JSON.stringify(entry) + "\n");
+        listener({ type: "agent.message.end", data: { message: entry.message, entryId: entry.id } });
+        return new Promise((resolve) => { finish = resolve; });
+      },
       enqueue: async (text, type) => { queue[type === "steer" ? "steering" : "followUp"].push(text); },
       queue: () => queue,
       withdraw: () => { const old = structuredClone(queue); queue.steering = []; queue.followUp = []; return old; },
       abort: async () => { finish?.(); }, result: () => "ok", dispose: async () => {},
+      sessionFile: () => file,
+      // historyEntries 必须同步返回（create/retry 重算直接消费返回值，不 await Promise）；
+      // 首次 prompt 前文件尚不存在。
+      historyEntries: () => { try { return readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; } },
     };
   };
   factory.catalog = () => [{ key: "test/one" }, { key: "test/two" }];
@@ -69,16 +81,18 @@ test("sessions persist across shutdown, queue by type, switch models while runni
     assert.equal(state.retries[2].messageCount, position);
     assert.equal(state.retries[2].error, undefined);
     await restored.remove(id);
+    await restored.close();
     const [workspace] = await readdir(storage);
     assert.deepEqual(await readdir(join(storage, workspace)), []);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-const flowFactory = async () => ({
+const flowFactory = async (_, selection = {}) => ({
   config: () => ({ model: "test/one", thinking: "off" }),
   subscribe: () => () => {}, prompt: async () => {}, enqueue: async () => {},
   queue: () => ({ steering: [], followUp: [] }), withdraw: () => ({}),
   abort: async () => {}, result: () => "ok", dispose: async () => {},
+  sessionFile: () => selection.sessionFile, historyEntries: () => [],
 });
 flowFactory.catalog = () => [{ key: "test/one" }];
 
@@ -163,28 +177,60 @@ test("out-of-range legacy counts are re-derived from known boundaries or dropped
 test("legacy retry boundaries migrate once and survive repeated service restarts", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-retry-order-"));
   const storage = join(root, "sessions");
+  await mkdir(storage, { recursive: true });
+  // 模拟 SDK 职责边界：JSONL 记录消费时间线（ISO），子代理消息不落盘（与真实行为一致）。
+  const jsonl = join(storage, "legacy.jsonl");
+  const base = Date.parse("2026-01-01T00:00:00.000Z");
+  await writeFile(jsonl, [
+    { id: "u0", timestamp: new Date(base + 100).toISOString(), message: { role: "user", content: "hello" } },
+    { id: "a1", timestamp: new Date(base + 150).toISOString(), message: { role: "assistant", content: [], stopReason: "error" } },
+    { id: "a2", timestamp: new Date(base + 300).toISOString(), message: { role: "assistant", content: "done" } },
+  ].map((entry) => JSON.stringify(entry)).join("\n") + "\n");
+  const restoreFactory = async (_, selection = {}) => ({
+    config: () => ({ model: "test/one", thinking: "off" }),
+    subscribe: () => () => {}, prompt: async () => {}, enqueue: async () => {},
+    queue: () => ({ steering: [], followUp: [] }), withdraw: () => ({}),
+    abort: async () => {}, result: () => "ok", dispose: async () => {},
+    sessionFile: () => selection.sessionFile,
+    historyEntries: () => selection.sessionFile
+      ? readFileSync(selection.sessionFile, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line))
+      : [],
+  });
+  restoreFactory.catalog = () => [{ key: "test/one" }];
   const retry = (id, extra = {}) => ({ id, agentId: "main", status: "succeeded", attempt: 1,
-    history: [{ attempt: 1, nextRetryAt: 2200, delayMs: 2000 }], ...extra });
+    history: [{ attempt: 1, nextRetryAt: base + 2500, delayMs: 2000 }], ...extra });
   let sessions = new Sessions(flowFactory, undefined, storage);
   try {
-    const id = await sessions.create(root, {}, { id: "legacy", messages: [
-      { agentId: "main", message: { role: "user", content: "hello", timestamp: 100 } },
-      { agentId: "main", message: { role: "assistant", content: [], stopReason: "error", timestamp: 150 } },
-      { agentId: "child", message: { role: "assistant", content: [], timestamp: 180 } },
-      { agentId: "main", message: { role: "assistant", content: "done", timestamp: 300 } },
-    ], retries: [retry("old"), retry("fixed", { messageCount: 1 }),
+    // —— 内存路径：旧快照仍带完整 messages（首个 persist 前的旧版升级），可从 message 时间线迁移。
+    const id = await sessions.create(root, {}, { id: "legacy", sessionFile: jsonl, messages: [
+      { agentId: "main", message: { role: "user", content: "hello", timestamp: base + 100 } },
+      { agentId: "main", message: { role: "assistant", content: [], stopReason: "error", timestamp: base + 150 } },
+      { agentId: "child", message: { role: "assistant", content: [], timestamp: base + 180 } },
+      { agentId: "main", message: { role: "assistant", content: "done", timestamp: base + 300 } },
+    ], retries: [retry("old", { history: [{ attempt: 1, nextRetryAt: base + 2200, delayMs: 2000 }] }), retry("fixed", { messageCount: 1 }),
       retry("child", { agentId: "child" }), retry("missing", { history: [] }),
-      retry("ambiguous", { history: [{ nextRetryAt: 2150, delayMs: 2000 }] })] });
+      retry("ambiguous", { history: [{ nextRetryAt: base + 2150, delayMs: 2000 }] })] });
     // 旧记录时间线不可用时明确归档，不猜位置。
     // ambiguous/missing 均保持未知。
     assert.deepEqual(sessions.snapshot(id).retries.map(r => r.messageCount), [3, 1, 3, undefined, undefined]);
+    await sessions.close();
+
+    // —— 重启路径：快照不再存 messages，主代理历史从 JSONL 分支重建；位置已随首次 persist 固化，
+    //    重复重启不漂移；子代理消息不回放（count 界内保留但失去锚点）。
     for (let restart = 0; restart < 2; restart++) {
-      await sessions.close();
-      sessions = new Sessions(flowFactory, undefined, storage);
+      sessions = new Sessions(restoreFactory, undefined, storage);
       await sessions.load();
-      assert.deepEqual(sessions.snapshot(id).retries.map(r => r.messageCount), [3, 1, 3, undefined, undefined]);
-      assert.equal(sessions.snapshot(id).retries[0].history[0].nextRetryAt, 2200);
+      const [old, fixed, child, missing, ambiguous] = sessions.snapshot(id).retries;
+      assert.deepEqual([old.messageCount, fixed.messageCount, child.messageCount, missing.messageCount, ambiguous.messageCount],
+        [3, 1, 3, undefined, undefined]);
+      assert.equal(old.anchorEntryId, "a2", "锚点补最近同代理 JSONL entryId");
+      assert.equal(child.anchorEntryId, undefined, "子代理消息不落 JSONL，恢复后无锚点");
+      assert.equal(old.history[0].nextRetryAt, base + 2200);
+      // 主代理历史从 JSONL 重建（child 不回放）。
+      assert.deepEqual(sessions.snapshot(id).messages.map((r) => r.entryId), ["u0", "a1", "a2"]);
+      await sessions.close();
     }
+    sessions = new Sessions(flowFactory, undefined, storage);
     const queued = await sessions.create(root, {}, { messages: [
       { agentId: "main", message: { role: "assistant", stopReason: "error", timestamp: 100, content: [] } },
       { agentId: "main", message: { role: "user", timestamp: 150, content: "排队输入" } },
@@ -205,8 +251,9 @@ test("legacy retry boundaries migrate once and survive repeated service restarts
 test("files.browse session mode stays inside the workspace and pages filtered entries", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-files-"));
   const storage = join(root, "sessions");
+  let sessions;
   try {
-    const sessions = new Sessions(flowFactory, undefined, storage);
+    sessions = new Sessions(flowFactory, undefined, storage);
     const id = await sessions.create(root);
     await mkdir(join(root, "src"));
     await mkdir(join(root, ".git"));
@@ -253,7 +300,7 @@ test("files.browse session mode stays inside the workspace and pages filtered en
     await assert.rejects(sessions.listFiles({ sessionId: id, path: ".." }), /只能浏览当前工作空间/);
     await assert.rejects(sessions.listFiles({ sessionId: id, path: join(root, "..") }), /只能浏览当前工作空间/);
     await assert.rejects(sessions.listFiles({ sessionId: id, path: "missing" }), /目录不存在/);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally { await sessions?.close(); await rm(root, { recursive: true, force: true }); }
 });
 
 // 导入 pi JSONL：复制进本实例存储、重建网页历史与标题，删除会话不触碰原文件。
@@ -289,8 +336,9 @@ test("session.import copies a pi jsonl session, rebuilds history and protects th
   };
   factory.catalog = () => [{ key: "test/one" }];
   factory.cwd = target;
+  let sessions;
   try {
-    const sessions = new Sessions(factory, undefined, storage);
+    sessions = new Sessions(factory, undefined, storage);
     const original = await readFile(source, "utf8");
     const id = await sessions.importSession(source, target);
     const state = sessions.snapshot(id);
@@ -304,7 +352,6 @@ test("session.import copies a pi jsonl session, rebuilds history and protects th
     assert.equal(JSON.parse(header).id, id);
     assert.deepEqual(history, original.split("\n").slice(1), "历史条目原样保留");
     await sessions.rename(id, "独立副本");
-    await sessions.close();
     const restored = new Sessions(factory, undefined, storage);
     await restored.load();
     assert.equal(restored.snapshot(id).cwd, target);
@@ -322,5 +369,6 @@ test("session.import copies a pi jsonl session, rebuilds history and protects th
     const bogus = join(root, "bogus.jsonl");
     await writeFile(bogus, '{"type":"message","id":"x"}\n');
     await assert.rejects(sessions.importSession(bogus), /缺少 session 头/);
-  } finally { await rm(root, { recursive: true, force: true }); }
+    await restored.close();
+  } finally { await sessions?.close(); await rm(root, { recursive: true, force: true }); }
 });

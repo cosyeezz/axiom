@@ -1,21 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { SUMMARY_DELEGATE, SUMMARY_REMINDER, SUMMARY_SYSTEM_PROMPT, memoryPolicy } from "../src/memory-policy.js";
-
-// 环境变量逐例隔离：undefined 表示删除该键，结束后按快照还原。
-function withEnv(env, run) {
-  const saved = new Map(Object.entries(env).map(([key]) => [key, process.env[key]]));
-  for (const [key, value] of Object.entries(env)) {
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
-  }
-  try { run(); } finally {
-    for (const [key, value] of saved) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
-  }
-}
+import { MEMORY_SUMMARY_LIMITS, SUMMARY_DELEGATE, SUMMARY_REMINDER, SUMMARY_SYSTEM_PROMPT, memoryPolicy, memorySummaryDefaults } from "../src/memory-policy.js";
 
 test("提示词原文一字不改（含工作记忆后缀）", () => {
   assert.equal(SUMMARY_SYSTEM_PROMPT,
@@ -24,38 +9,49 @@ test("提示词原文一字不改（含工作记忆后缀）", () => {
   assert.equal(SUMMARY_DELEGATE, "调用 delegate 委派任务时也须输出上述摘要，与提醒同时发生时只输出一次。");
 });
 
-test("缺省策略：主 3 子 6，maxChars 30，系统提示词原文", () => {
-  withEnv({ AXIOM_MAIN_SUMMARY_TURNS: undefined, AXIOM_SUBAGENT_SUMMARY_TURNS: undefined, AXIOM_SUMMARY_MAX_CHARS: undefined }, () => {
-    assert.deepEqual(memoryPolicy("main"), { interval: 3, maxChars: 30, systemPrompt: SUMMARY_SYSTEM_PROMPT });
-    assert.deepEqual(memoryPolicy("subagent"), { interval: 6, maxChars: 30, systemPrompt: SUMMARY_SYSTEM_PROMPT });
-    assert.deepEqual(memoryPolicy(), memoryPolicy("main"));
-  });
+test("缺省策略：主 3 子 6，maxChars 30，系统提示词原文；无配置对象或缺字段同样回默认", () => {
+  assert.deepEqual(memoryPolicy("main"), { interval: 3, maxChars: 30, systemPrompt: SUMMARY_SYSTEM_PROMPT });
+  assert.deepEqual(memoryPolicy("subagent"), { interval: 6, maxChars: 30, systemPrompt: SUMMARY_SYSTEM_PROMPT });
+  assert.deepEqual(memoryPolicy(), memoryPolicy("main"));
+  assert.deepEqual(memoryPolicy("main", null), memoryPolicy("main"));
+  assert.deepEqual(memoryPolicy("main", {}), memoryPolicy("main"));
+  // 配置缺某角色字段时只回退该字段，已配置字段不受另一角色影响
+  assert.deepEqual(memoryPolicy("subagent", { mainTurns: 9 }), { interval: 6, maxChars: 30, systemPrompt: SUMMARY_SYSTEM_PROMPT });
+  assert.deepEqual(memoryPolicy("main", { subagentTurns: 9 }), { interval: 3, maxChars: 30, systemPrompt: SUMMARY_SYSTEM_PROMPT });
 });
 
-test("环境变量覆盖：每次调用实时解析，边界值生效", () => {
-  withEnv({ AXIOM_MAIN_SUMMARY_TURNS: "5", AXIOM_SUBAGENT_SUMMARY_TURNS: "2", AXIOM_SUMMARY_MAX_CHARS: "29" }, () => {
-    assert.equal(memoryPolicy("main").interval, 5);
-    assert.equal(memoryPolicy("subagent").interval, 2);
-    assert.equal(memoryPolicy("main").maxChars, 29); // 严格小于 30 的上界
-  });
-  for (const limit of [30, 40, 100]) withEnv({ AXIOM_SUMMARY_MAX_CHARS: String(limit) }, () => {
-    assert.equal(memoryPolicy().maxChars, limit);
-    assert.ok(memoryPolicy().systemPrompt.includes(`<${limit}字`));
-  });
-  withEnv({ AXIOM_SUMMARY_MAX_CHARS: "2" }, () => assert.equal(memoryPolicy("main").maxChars, 2)); // 下界
-});
-
-test("非法环境变量直接报错（建会话即失败，早于任何模型请求）", () => {
-  for (const [env, role] of [
-    [{ AXIOM_MAIN_SUMMARY_TURNS: "0" }, "main"],
-    [{ AXIOM_MAIN_SUMMARY_TURNS: "-1" }, "main"],
-    [{ AXIOM_MAIN_SUMMARY_TURNS: "2.5" }, "main"],
-    [{ AXIOM_MAIN_SUMMARY_TURNS: "abc" }, "main"],
-    [{ AXIOM_SUBAGENT_SUMMARY_TURNS: "0" }, "subagent"],
-    [{ AXIOM_SUMMARY_MAX_CHARS: "1" }, "main"],
-    [{ AXIOM_SUMMARY_MAX_CHARS: "2.5" }, "main"],
-    [{ AXIOM_SUMMARY_MAX_CHARS: "abc" }, "main"],
-  ]) {
-    withEnv(env, () => assert.throws(() => memoryPolicy(role), Object.keys(env)[0]));
+test("持久化配置覆盖：轮数与字数按会话配置生效，提示词同步替换", () => {
+  const custom = { mainTurns: 5, subagentTurns: 2, maxChars: 29 };
+  assert.equal(memoryPolicy("main", custom).interval, 5);
+  assert.equal(memoryPolicy("subagent", custom).interval, 2);
+  assert.equal(memoryPolicy("main", custom).maxChars, 29); // 严格小于 30 的上界
+  for (const limit of [30, 40, 100]) {
+    const policy = memoryPolicy("main", { maxChars: limit });
+    assert.equal(policy.maxChars, limit);
+    assert.ok(policy.systemPrompt.includes(`<${limit}字`));
   }
+  assert.equal(memoryPolicy("main", { mainTurns: 1 }).interval, 1);
+  assert.equal(memoryPolicy("subagent", { subagentTurns: 100 }).interval, 100);
+  assert.ok(memoryPolicy("main", { maxChars: 2 }).systemPrompt.includes("<2字")); // 下界
+});
+
+test("非法配置直接报错（建会话即失败，早于任何模型请求），边界与协议一致", () => {
+  for (const [summary, role] of [
+    [{ mainTurns: 0 }, "main"],
+    [{ mainTurns: -1 }, "main"],
+    [{ mainTurns: 2.5 }, "main"],
+    [{ mainTurns: "3" }, "main"],
+    [{ mainTurns: 101 }, "main"],
+    [{ subagentTurns: 0 }, "subagent"],
+    [{ subagentTurns: 101 }, "subagent"],
+    [{ maxChars: 1 }, "main"],
+    [{ maxChars: 2.5 }, "main"],
+    [{ maxChars: 101 }, "main"],
+    [{ maxChars: "30" }, "main"],
+  ]) assert.throws(() => memoryPolicy(role, summary), /须为 \d+-\d+ 的整数/);
+});
+
+test("默认值与协议边界常数：与 protocol.js 的 zod schema 共用同一组常数", () => {
+  assert.deepEqual(memorySummaryDefaults, { mainTurns: 3, subagentTurns: 6, maxChars: 30 });
+  assert.deepEqual(MEMORY_SUMMARY_LIMITS, { turns: [1, 100], chars: [2, 100] });
 });

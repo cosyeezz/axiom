@@ -4,6 +4,7 @@ import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Sessions } from "../src/sessions.js";
+import { Database } from "../src/database.js";
 
 function factoryFixture() {
   const mains = [], children = [];
@@ -76,7 +77,8 @@ test("completion is persisted, batched after parent settles, and credentials sur
     await Promise.all(ids.map((id) => item.tasks.jobs.get(id).done));
     await tick();
     assert.equal(mains[0].calls.length, 1, "running parent is not interrupted");
-    const disk = JSON.parse(await readFile(join(item.storageDir, `${id}.json`), "utf8"));
+    // 管理数据在共享 SQLite 库（不再写磁盘 JSON 快照）。
+    const disk = sessions.database.get("sessions", id);
     assert(disk.tasks.every((job) => job.resultId && !job.notified));
     mains[0].finish();
     await until(() => mains[0].calls.length === 2);
@@ -135,10 +137,12 @@ test("undelivered persisted notification replays on restart; save failure never 
     await tick(); first.children[0].finish();
     await item.tasks.jobs.get(taskId).done;
     await sessions.close();
-    const file = join(item.storageDir, `${id}.json`);
-    const saved = JSON.parse(await readFile(file, "utf8"));
+    // 模拟旧记录：会话关闭后直接写库注入运行中的 legacy 任务，重启后应取消并补发通知。
+    const db = new Database(join(root, "axiom.db"));
+    const saved = db.get("sessions", id);
     saved.tasks.push({ id: "legacy-running", task: "old task", status: "running" });
-    await writeFile(file, JSON.stringify(saved));
+    db.set("sessions", id, saved);
+    db.close();
     const next = factoryFixture();
     restored = new Sessions(next.factory, undefined, join(root, "storage"));
     await restored.load();

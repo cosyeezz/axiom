@@ -1,7 +1,10 @@
 // Tailscale 远程访问：独立 HTTP server 只绑定本机 Tailscale IP（严格 100.64.0.0/10），
 // 用 `tailscale whois --json IP:port` 验证来源用户的 LoginName（绝不信任客户端请求头）。
-// 配置持久化在 AXIOM_HOME/remote.json，默认禁用，只能由本地连接修改；
-// 只允许「与本机登录账号同 LoginName」的 tailnet 用户，本机身份变更立即 fail closed。
+// 配置持久化：传入 database（共享 SQLite，get(namespace,key)/set(namespace,key,value)）时
+// 以 SQLite 为唯一权威（namespace "remote"；首次启动幂等导入 AXIOM_HOME/remote.json，
+// 旧文件只读保留、此后不再读写）；未传 database 时维持 remote.json 原子读写（测试/独立用法）。
+// 默认禁用，只能由本地连接修改；只允许「与本机登录账号同 LoginName」的 tailnet 用户，
+// 本机身份变更立即 fail closed。
 import { execFile, spawn } from "node:child_process";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -137,6 +140,7 @@ const LOGIN_OUTPUT_CAP = 256 * 1024; // 登录子进程输出总量上限，防�
 export async function createRemoteAccess({
   home,
   app,
+  database = null, // 共享 SQLite：get(namespace,key) / set(namespace,key,value)；缺省回退 remote.json
   tailscale = createTailscale(),
   ttlMs = 30_000,
   spawnLogin = defaultSpawnLogin,
@@ -145,11 +149,44 @@ export async function createRemoteAccess({
   bindHost = null, // 测试注入：默认用验证过的本机 Tailscale IP
 }) {
   const path = join(home, "remote.json");
-  let config = { enabled: false, email: "" };
+  const NAMESPACE = "remote";
+  const CONFIG_KEY = "config";
+  const defaultConfig = () => ({ enabled: false, email: "" });
+  // ponytail: 缺失/损坏一律回退默认禁用（安全侧优先），首次保存即自愈
+  const parseConfig = (raw) => {
+    try {
+      return configSchema.parse(JSON.parse(raw));
+    } catch {
+      return defaultConfig();
+    }
+  };
+  // SQLite 唯一权威：无值时幂等导入旧 JSON（只读，绝不回写），结果固化进 SQLite。
+  const loadShared = async () => {
+    const stored = await database.get(NAMESPACE, CONFIG_KEY);
+    if (stored != null) return parseConfig(stored);
+    let imported;
+    try {
+      imported = parseConfig(await readFile(path, "utf8"));
+    } catch {
+      imported = defaultConfig();
+    }
+    await database.set(NAMESPACE, CONFIG_KEY, JSON.stringify(imported));
+    return imported;
+  };
+  const persistConfig = async (next) => {
+    if (database) {
+      await database.set(NAMESPACE, CONFIG_KEY, JSON.stringify(next));
+      return;
+    }
+    const temporary = `${path}.${process.pid}.tmp`;
+    await writeFile(temporary, JSON.stringify(next, null, 2) + "\n", { mode: 0o600 });
+    await rename(temporary, path); // 临时文件 + rename 原子落盘
+  };
+  let config = defaultConfig();
   try {
-    config = configSchema.parse(JSON.parse(await readFile(path, "utf8")));
+    config = database ? await loadShared() : parseConfig(await readFile(path, "utf8"));
   } catch {
-    // ponytail: 缺失/损坏一律回退默认禁用（安全侧优先），首次保存即自愈
+    // 数据库不可用与文件缺失/损坏同策略：fail closed 默认禁用，不阻断启动
   }
 
   let server = null;
@@ -369,9 +406,7 @@ export async function createRemoteAccess({
           throw new Error(`允许邮箱须与本机登录账号一致（当前登录：${fresh.loginEmail}）`);
       }
       const next = { enabled, email };
-      const temporary = `${path}.${process.pid}.tmp`;
-      await writeFile(temporary, JSON.stringify(next, null, 2) + "\n", { mode: 0o600 });
-      await rename(temporary, path); // 临时文件 + rename 原子落盘
+      await persistConfig(next); // SQLite 或原子落盘 remote.json（按是否传入 database）
       config = next;
       await stop();
       whoisCache.clear();

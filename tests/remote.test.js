@@ -89,6 +89,24 @@ const fakeChild = (output) => {
   return child;
 };
 
+// 共享 SQLite 最小接口 mock：get(namespace,key) / set(namespace,key,value)，带调用计数。
+const fakeDatabase = () => {
+  const store = new Map();
+  const calls = { get: 0, set: 0 };
+  return {
+    store,
+    calls,
+    get: async (ns, key) => {
+      calls.get += 1;
+      return store.get(`${ns}/${key}`) ?? null;
+    },
+    set: async (ns, key, value) => {
+      calls.set += 1;
+      store.set(`${ns}/${key}`, String(value));
+    },
+  };
+};
+
 // bindHost=127.0.0.1 仅为可测试性；生产绑定 mock 状态里的 100.84.72.19。
 const setup = async ({
   email = EMAIL,
@@ -256,6 +274,72 @@ test("默认禁用；配置原子持久化（0600/无临时残留）；串行 FI
     bindHost: "127.0.0.1",
   });
   const broken = await remote3.status();
+  assert.equal(broken.enabled, false);
+  assert.equal(broken.active, false);
+});
+
+test("共享 database：幂等导入旧 JSON 且旧文件只读；SQLite 唯一权威；configure 只写库", async (t) => {
+  const home = await mkdtemp(join(tmpdir(), "axiom-remote-db-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const file = join(home, "remote.json");
+  await writeFile(file, JSON.stringify({ enabled: true, email: EMAIL }, null, 2) + "\n", "utf8");
+  const original = await readFile(file, "utf8");
+  const db = fakeDatabase();
+  const create = async () => {
+    const app = createServerApp({ close: async () => {} });
+    t.after(() => app.close());
+    return createRemoteAccess({ home, app, database: db, tailscale: mockTailscale(), bindHost: "127.0.0.1" });
+  };
+
+  // 首次启动：从旧 JSON 幂等导入，enabled 许可自动上线
+  const remote = await create();
+  let s = await remote.status();
+  assert.equal(s.enabled, true);
+  assert.equal(s.active, true);
+  assert.deepEqual(JSON.parse(db.store.get("remote/config")), { enabled: true, email: EMAIL });
+  assert.equal(await readFile(file, "utf8"), original); // 旧文件只读保留，未被改写
+
+  // 重启：SQLite 权威，旧 JSON 改动被忽略且不重复导入
+  await writeFile(file, JSON.stringify({ enabled: false, email: "evil@example.com" }), "utf8");
+  const stale = await readFile(file, "utf8");
+  const remote2 = await create();
+  s = await remote2.status();
+  assert.equal(s.enabled, true);
+  assert.equal(s.active, true);
+  assert.equal(db.calls.set, 1); // 幂等：未再次导入
+
+  // configure：只写 SQLite，旧 JSON 保持只读，无临时文件残留
+  await remote2.configure({ enabled: false });
+  s = await remote2.status();
+  assert.equal(s.enabled, false);
+  assert.equal(s.active, false);
+  assert.deepEqual(JSON.parse(db.store.get("remote/config")), { enabled: false, email: "" });
+  assert.equal(await readFile(file, "utf8"), stale);
+  assert.equal((await readdir(home)).filter((f) => f.endsWith(".tmp")).length, 0);
+});
+
+test("共享 database：无旧 JSON 默认禁用并落库；损坏 SQLite 值 fail closed", async (t) => {
+  const home = await mkdtemp(join(tmpdir(), "axiom-remote-db2-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+
+  // 库与旧文件皆空：导入默认禁用并固化，不产生 remote.json
+  const db = fakeDatabase();
+  const app = createServerApp({ close: async () => {} });
+  t.after(() => app.close());
+  const remote = await createRemoteAccess({ home, app, database: db, tailscale: mockTailscale(), bindHost: "127.0.0.1" });
+  const s = await remote.status();
+  assert.equal(s.enabled, false);
+  assert.equal(s.active, false);
+  assert.deepEqual(JSON.parse(db.store.get("remote/config")), { enabled: false, email: "" });
+  assert.equal(await readdir(home).then((f) => f.includes("remote.json")), false);
+
+  // 库中值损坏：同 JSON 损坏策略，回退默认禁用（fail closed）
+  const db2 = fakeDatabase();
+  db2.store.set("remote/config", "{oops");
+  const app2 = createServerApp({ close: async () => {} });
+  t.after(() => app2.close());
+  const remote2 = await createRemoteAccess({ home, app: app2, database: db2, tailscale: mockTailscale(), bindHost: "127.0.0.1" });
+  const broken = await remote2.status();
   assert.equal(broken.enabled, false);
   assert.equal(broken.active, false);
 });

@@ -95,6 +95,8 @@ test("withdraw with recall trims the web history and leaves the queue alone when
 test("withdraw drops retracted main retries, keeps earlier and subagent ones without stale positions", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-recall-retries-"));
   let recalled = { entryId: "u1", text: "撤回的输入", images: [] };
+  // 撤回后的 JSONL 分支只剩 u0；子代理消息不落 JSONL（与真实行为一致）。
+  const branch = [{ id: "u0", message: { role: "user", content: "保留的输入" } }];
   const factory = async () => ({
     config: () => ({ model: "test/one", thinking: "off", levels: ["off"] }),
     configure: async () => ({}),
@@ -102,6 +104,7 @@ test("withdraw drops retracted main retries, keeps earlier and subagent ones wit
     queue: () => ({ steering: [], followUp: [] }),
     withdraw: () => ({ steering: [], followUp: [] }),
     recall: async () => recalled,
+    historyEntries: () => branch,
     abort: async () => {}, result: () => "ok", dispose: async () => {},
   });
   factory.catalog = () => [{ key: "test/one" }];
@@ -127,15 +130,16 @@ test("withdraw drops retracted main retries, keeps earlier and subagent ones wit
     assert.deepEqual(item.retries.map((r) => [r.messageCount, r.anchorEntryId]),
       [[1, "u0"], [undefined, undefined], [2, "c9"]],
       "保留记录不得残留越界 count 或失效锚点，新消息不会让旧卡漂移");
-    // 持久化后重开：清理结果稳定，不回弹。
+    // 持久化后重开：主代理历史从 JSONL 分支重建（c9 不回放）；child 卡 count=2 超过重建后的
+    // 1 条主代理消息 → 清为未知，绝不残留越界数值；kept 界内保留。
     await sessions.close();
     const reopened = new Sessions(factory, undefined, join(root, "sessions"));
     await reopened.load();
     assert.deepEqual(reopened.snapshot(id).retries.map((r) => [r.id, r.messageCount]),
-      [["kept", 1], ["unknown", undefined], ["child", 2]]);
-    assert.deepEqual(reopened.snapshot(id).messages.map(r => r.entryId), ["u0", "c9"]);
+      [["kept", 1], ["unknown", undefined], ["child", undefined]]);
+    assert.deepEqual(reopened.snapshot(id).messages.map(r => r.entryId), ["u0"]);
     reopened.get(id).emit({ type: "agent.message.end", data: { message: { role: "user", content: "后续输入" }, entryId: "u2" } });
-    assert.equal(reopened.snapshot(id).retries.find(r => r.id === "child").messageCount, 2);
+    assert.equal(reopened.snapshot(id).retries.find(r => r.id === "child").messageCount, undefined);
     await reopened.close();
   } finally { await rm(root, { recursive: true, force: true }); }
 });
