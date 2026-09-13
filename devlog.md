@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-13 开发服务重建失败保护与恢复
+- 原因：4320 的旧守护状态显示重建在停服后才因残留 `.node_modules-backup` 拒绝切换，随后兜底 worker 因 SDK 文件缺失退出；维护期间退出被 `restarting` 屏蔽，兜底失败没有恢复普通崩溃重试。
+- 修改：准备阶段提前检查备份，不停止健康 worker、不删除不明确的备份；兜底启动失败明确记录未就绪，确认 worker 已退出后恢复有上限的崩溃重试。回滚失败或停止未确认仍保留现场，不盲目启动。
+- 验证：新增残留备份保活及兜底失败有限重试回归测试；修正旧测试先等 worker ready 再断言启动次数的竞态。相关测试 34/34；全量 npm test 305 项，304 通过、1 跳过、0 失败。首次相关测试因 worktree 尚未安装依赖失败，独立 npm ci 后通过。
+- 决策：不自动删除备份，不在故障时自动联网重装；备份内容不完整的来源尚未证实，避免猜测性覆盖依赖。此次故障运行实例已安全重启恢复，源码修复与运行恢复分别验证。
+- 涉及：scripts/service.mjs、tests/service.test.js、README.md、devlog.md。
+
 ## 2026-09-13 07:43 UTC 模型面板视觉修补：协议下拉不再截断、连接区纵向堆叠、复选框不再变大方块
 - 原因：用户看了实际截图提三点：①「API 协议」下拉的选项文案太长被切掉（`OpenAI Chat Completions（兼容性最…`），原生下拉本身也显拥挤；②宽屏下「API 协议 / API Key」两字段并排互相挤压，提示文字被折成两行；必须竖屏兼容、宁可向下扩展也不挤压；③折叠区里 Bearer 头的复选框被全局 `input { width:100%; min-height:40px }` 撑成一个灰大方块，与旁边文字极不协调。
 - 实现：①`API_TYPES` 标签去掉括号后缀（只留 `OpenAI Chat Completions` 等），兼容性提示下移到字段 hint；原生 select 不会省略号截断，只能从文案长度上解决。②连接区四个字段全部改成 `mm-field-wide` 单列堆叠（含 API 协议），`.mm-form` 列宽下限 200→240px、`.mm-model-grid` 170→200px，窄屏更早退化为单列；`.mm-advanced .mm-check` 允许换行（其它 `.mm-check` 保持 nowrap），Bearer 字段改为整行宽。③新增 `.mm input[type="checkbox"] { flex:none; width/height:14px; min-height:0 }`，删掉只覆盖 `.mm-check input` 的局部规则，之后任何裸复选框都不会再被撑开；Bearer 复选框包进 `<label class="mm-check">` 并带上可见说明文字（原本只有 aria-label，视觉上是个孤立方块）。④模型摘要行的 id/名称改成单行省略号截断并补 `title`（窄屏原本会在单词中间断行，如 `claude-/opus-5`）。
