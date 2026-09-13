@@ -724,3 +724,9 @@
 - 原因：摘要 JSON 替换在 Windows 报 EPERM；用户要求跨平台配置页与 SQLite 权威存储，API Key 明文保存。
 - 内容：新增 database/pi-model-storage，迁移 sessions/model-config/remote/maint-state 的管理数据；main/pi/server 接线，摘要设置页、模型页文案与协议同步。保留 Pi JSONL，迁移按文件幂等、缺失历史不覆盖；Node 支持范围升为22.13+（22.x）或24+。
 - 验证：数据库、迁移、凭据真实 SDK、配置 UI、守护测试均有回归；全量最后一项守护时序测试首次失败、单独重跑15/15通过，最终全量复跑275项：274通过、0失败、1跳过。
+
+## 2026-09-12 SessionStore 四表实体存储（feat/sqlite-storage）
+- 原因：单会话整 JSON 每次保存全量重写，通知/进度高频更新代价大，且无法按实体增量查询。
+- 内容：新增 src/session-store.js——sessions/summaries/session_events/tasks 四表 + store 配置表保留；事件身份 (session_id,type,agent_id,key) 部分唯一索引；tasks 元数据列（memory_turn/notified/progress_delivered/progress）权威、record 存任务内容，仅元数据变化只 UPDATE 列不读不写大 record；无 id 摘要 `anon-<sha256前20>` 稳定 id；change(work) SAVEPOINT 供多实体原子变更；importLegacySession/migrateLegacy 单事务迁移（坏行告警保留源、精确标记、幂等不覆盖新表）。src/database.js：busy_timeout 先于 journal_mode、外键 ON、暴露 prepare/exec、list() 坏行逐行隔离且告警只报键位不带内容。
+- 验证：node --test tests/database.test.js tests/session-store.test.js 18/18 通过；全量 268 项中 9 个失败经基线（stash 后重跑）确认为既有环境性失败，与本次无关。
+- 涉及：src/database.js、src/session-store.js、tests/database.test.js、tests/session-store.test.js。集成（sessions.js 接线、README）由主审后续处理。
