@@ -40,7 +40,6 @@ desktop/pake.json ── Pake 独立桌面壳（macOS Universal / Windows x64）
                  ├─ model-manager.js     设置页 Pi 供应商/模型管理，模板与安全编辑
                  ├─ file-picker.js       共享文件/目录选择、分类图标、按目录分页加载
                  ├─ tooltip.js/css       全站统一暗色悬停提示（接管原生 title、键盘/Popover/Esc）
-                 ├─ text-contrast.js/css 文字对比度 100–150 十档，存 localStorage（右上角按钮）
                  ├─ markdown.js          marked + DOMPurify（XSS 边界）
                  └─ stream-renderer.js   流式增量渲染状态机
       │  WebSocket JSON（command，src/protocol.js zod 校验）

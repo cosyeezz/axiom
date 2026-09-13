@@ -12,7 +12,6 @@ async function page(extra = "") {
   const memoryTags = (await readFile(new URL("../public/memory-tags.js", import.meta.url), "utf8")).replace(/^export /gm, "");
   const source = memoryTags + "\n" + (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/app.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "");
   const picker = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
-  const contrast = (await readFile(new URL("../public/text-contrast.js", import.meta.url), "utf8")).replace(/^export /gm, "");
 // master 模型模块脚手架（同 tests/app.test.js）：app.js 顶层调用 initModelManager，缺它会 ReferenceError
 const modelSources = await Promise.all(["model-picker", "model-auth", "model-manager"].map(async (name) => {
   const source = await readFile(new URL(`../public/${name}.js`, import.meta.url), "utf8");
@@ -33,7 +32,7 @@ const modelSources = await Promise.all(["model-picker", "model-auth", "model-man
   w.renderMarkdown = new Function("marked", "DOMPurify", `${markdown}; return renderMarkdown;`)(marked, createPurify(w));
   w.createStreamRenderer = (render, after) => createStreamRenderer(render, after, w.requestAnimationFrame, w.cancelAnimationFrame);
   w.WebSocket = class { static OPEN = 1; readyState = 1; send(data) { (this.sent ||= []).push(data); } };
-  w.eval(`${modelSources}\n${contrast}\n${picker}\n${source}\nconnected = true;\n${extra}`);
+  w.eval(`${modelSources}\n${picker}\n${source}\nconnected = true;\n${extra}`);
   const state = { sessionId: "remote", title: "Remote", cwd: "C:/work", status: "idle", config: { model: "test/model", thinking: "off", levels: ["off"], skills: [] }, messages: [], tasks: [], live: {}, tools: {} };
   w.snapshot(state);
   return { w, $: (id) => w.document.getElementById(id) };

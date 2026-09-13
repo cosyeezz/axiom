@@ -7,7 +7,6 @@ import createPurify from "dompurify";
 import { createStreamRenderer } from "../public/stream-renderer.js";
 
 const pickerSource = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
-const contrastSource = (await readFile(new URL("../public/text-contrast.js", import.meta.url), "utf8")).replace(/^export /gm, "");
 const modelSources = await Promise.all(["model-picker", "model-auth", "model-manager"].map(async (name) => {
   const source = await readFile(new URL(`../public/${name}.js`, import.meta.url), "utf8");
   const exports = [...source.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
@@ -30,6 +29,12 @@ test("header path icons do not inherit the global button minimum height", async 
       assert.equal(computed(`#${id}`).height, "24px");
       assert.equal(computed(`#${id}`).minHeight, "24px");
     }
+    const github = dom.window.document.getElementById("github-link");
+    assert.equal(github.getAttribute("href"), "https://github.com/cosyeezz/axiom", "右上角图标指向开源页");
+    assert.equal(github.getAttribute("rel"), "noopener noreferrer", "新标签页打开不泄露 opener");
+    assert.equal(computed("#github-link").height, "32px", "与其他 .icon-button 等高");
+    assert.equal(computed("#github-link").textDecoration, "none");
+    assert.equal(dom.window.document.getElementById("text-contrast-button"), null, "对比度按钮已移除");
     const runs = dom.window.document.getElementById("task-runs");
     assert.equal(runs.hidden, true, "run summary ships hidden until a subagent starts");
     runs.hidden = false;
@@ -286,7 +291,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("prompt").dispatchEvent(new window.Event("input"));
   };
   try {
-    window.eval(`${modelSources}\n${contrastSource}\n${pickerSource}\n${serviceSource}\n${source}\nwindow.sidebarCheck = async () => {
+    window.eval(`${modelSources}\n${pickerSource}\n${serviceSource}\n${source}\nwindow.sidebarCheck = async () => {
       allSessions = allSessions.map((s) => ({...s, sessionFile: null}));
       await updateSessions();
       return allSessions.find((s) => s.id === 'b').sessionFile;
@@ -1469,7 +1474,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
   };
   const emit = (type, data) => sockets.at(-1).receive({ type, sessionId: state.sessionId, data });
   try {
-    window.eval(`${modelSources}\n${contrastSource}\n${pickerSource}\n${serviceSource}\n${source}`);
+    window.eval(`${modelSources}\n${pickerSource}\n${serviceSource}\n${source}`);
     sockets[0].open();
     await settle();
     paint();

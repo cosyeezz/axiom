@@ -1,4 +1,4 @@
-"""Run PREVIEW_PORT=4338 node tests/conversation-preview.mjs, then this script.
+"""Run PREVIEW_PORT=4342 node tests/conversation-preview.mjs, then this script.
 Uses installed Python Playwright; no model calls or user data.
 """
 import os
@@ -6,24 +6,50 @@ import subprocess
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
+# 折叠（纯阅读）状态下必须不可见：顶栏、输入、所有 composer 辅助（含队列/图片/压缩进度/上下文条/底部帮助）、earliest/latest。
+COLLAPSED_HIDDEN = ['main > header', '#prompt', '#composer .selectors', '.composer-footer', '#session-runtime',
+                    '#earliest', '#latest', '.context-bar', '#message-queue', '#task-runs', '#compaction-progress']
+
 with sync_playwright() as p:
     browser = p.chromium.launch()
     page = browser.new_page(viewport={"width": 390, "height": 844}, has_touch=True)
     errors = []
     page.on("pageerror", lambda e: (errors.append(str(e)), print('PAGE ERROR', str(e))))
-    page.goto(os.environ.get("PREVIEW_URL", "http://127.0.0.1:4338"))
+    url = os.environ.get("PREVIEW_URL", "http://127.0.0.1:4342")
+    temp = os.environ.get('TEMP', '/tmp')
+    page.goto(url)
     page.wait_for_selector("#workspace:not([hidden])")
     page.wait_for_timeout(200)
     page.evaluate('localStorage.setItem("axiom.session", "ui-review")')
     page.reload()
     page.wait_for_selector("#workspace:not([hidden])")
+    page.wait_for_timeout(200)
     prompt = page.locator("#prompt")
-    assert not page.locator('main > header').is_visible()
-    assert not page.locator('#composer .selectors').is_visible()
-    page.locator('#mobile-expand').click()
-    assert page.locator('main > header').is_visible()
-    assert page.locator('#composer .selectors').is_visible()
-    page.locator('#mobile-expand').click()
+    # 折叠：先取消 preview 默认的 hidden，验证是 CSS 折叠规则在隐藏，而不是数据缺失。
+    page.evaluate("for (const id of ['earliest', 'latest', 'message-queue', 'task-runs', 'compaction-progress']) document.getElementById(id).hidden = false")
+    still = [sel for sel in COLLAPSED_HIDDEN if page.locator(sel).first.is_visible()]
+    assert not still, still
+    controls = page.locator(".mobile-controls")
+    assert controls.is_visible()
+    expand = page.locator("#mobile-expand")
+    assert expand.text_content() == "展开" and expand.get_attribute("aria-expanded") == "false"
+    status = page.locator("#mobile-runtime")
+    text = status.text_content()
+    # 底部一行状态：双百分比 · 供应商 · 模型 · 思考，单行不换行。
+    assert status.is_visible() and "axiom" in text and text.count("·") >= 3, text
+    assert status.evaluate("el => el.clientHeight") <= 20, text
+    page.screenshot(path=os.path.join(temp, 'axiom-mobile-collapsed.png'))
+    # 展开：输入（14px）、模型选择、顶栏、辅助行全部可见，底部状态仍在。
+    expand.click()
+    assert expand.text_content() == "收起" and expand.get_attribute("aria-expanded") == "true"
+    shown = [sel for sel in ['main > header', '#prompt', '#composer .selectors', '.context-bar'] if not page.locator(sel).first.is_visible()]
+    assert not shown, shown
+    assert prompt.evaluate("el => getComputedStyle(el).fontSize") == "14px"
+    assert status.is_visible()
+    page.screenshot(path=os.path.join(temp, 'axiom-mobile-expanded.png'))
+    expand.click()
+    assert prompt.is_hidden()  # 再点收起，回到纯阅读
+    expand.click()
     for width, height in [(390, 844), (320, 568), (390, 420), (667, 375)]:
         page.set_viewport_size({"width": width, "height": height})
         page.wait_for_timeout(100)
@@ -60,7 +86,7 @@ with sync_playwright() as p:
             ];
         }''')
         assert all(checks), (width, height, checks)
-        page.screenshot(path=os.path.join(os.environ.get('TEMP', '/tmp'), f'axiom-mobile-{width}-{height}.png'))
+        page.screenshot(path=os.path.join(temp, f'axiom-mobile-{width}-{height}.png'))
         print(f"PASS mobile {width}x{height}")
     page.set_viewport_size({"width": 1440, "height": 1000})
     page.wait_for_timeout(100)
@@ -69,6 +95,7 @@ with sync_playwright() as p:
     assert prompt.bounding_box()["height"] >= 96
     assert page.locator(".composer-footer").is_visible()
     assert page.locator("#latest").evaluate("el => getComputedStyle(el).position") == "absolute"
+    page.screenshot(path=os.path.join(temp, 'axiom-desktop.png'))
     # Compare every element's desktop geometry and computed CSS against the base stylesheet.
     snapshot = '''() => [...document.querySelectorAll('body *')].map(el => {
         const r = el.getBoundingClientRect(), s = getComputedStyle(el);
@@ -89,7 +116,7 @@ with sync_playwright() as p:
         base = subprocess.check_output(['git', 'show', f'HEAD:public/{name}'], cwd=Path(__file__).resolve().parents[1]).decode('utf-8') + '\n.mobile-controls { display: none; }'
         route_path = '/' if name == 'index.html' else '/' + name
         mime = 'text/html' if name.endswith('html') else ('text/css' if name.endswith('css') else 'text/javascript')
-        page.route(os.environ.get("PREVIEW_URL", "http://127.0.0.1:4338") + route_path, lambda route, request, body=base, kind=mime: route.fulfill(body=body, content_type=kind))
+        page.route(url + route_path, lambda route, request, body=base, kind=mime: route.fulfill(body=body, content_type=kind))
     page.reload()
     page.wait_for_selector('#workspace:not([hidden])')
     page.wait_for_timeout(400)

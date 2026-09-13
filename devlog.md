@@ -1,5 +1,9 @@
 # 开发记录
 
+## 2026-09-13 同步最新 master 后复验
+- 合并 origin/master（68e361b），保留手机阅读、GitHub 图标等并行改动；测试冲突按上游移除文字对比模块、本分支新增 model-auth 加载合并，日志和知识库保留双方记录，索引重建。
+- 合并后 npm test：362 项，360 通过、2 跳过、0 失败（上游删除文字对比模块对应测试，故总数比合并前减少）；git diff --check 通过。
+
 ## 2026-09-13 统一模型配置与历史会话恢复：集成验证
 - 内容与原因：供应商不再分内置只读/自定义；模型字段覆盖保留未编辑定义，七级思考勾选与高级映射同步。配置页直接桥接 SDK 登录/登出，凭据仅落 SQLite，连接隔离、取消/超时与错误脱敏。首次导入门闩关闭后不跟随 Pi 文件，不双写。
 - 会话修复：历史恢复使用完整定义验证暂未鉴权模型，保留原模型；新建仍校验可用目录，真正未知模型仍拒绝。前端保留当前不可选模型占位，并丢弃跨会话迟到配置回执；修正模型初始虚假脏状态与思考勾选视觉同步。
@@ -11,6 +15,11 @@
 - 修改：仅 README.md、docs/model-config-protocol.md、devlog.md 三个文件。协议文档：新增思考等级统一口径小节、models.model.override/models.hidden.set/models.auth.* 三节，models.config.get 响应补 applied/applyError/authProviders/hidden 与 catalog 字段说明，数据模型节补不双写与导入门闩语义，收藏 thinking key 注明七级与末位冒号切分。README：订阅登录改为可在设置页完成；「模型与供应商」bullet 改为统一编辑口径（内置模型逐字段覆盖、勾选思考等级、隐藏而非删除、默认新会话模型位置不变）；SQLite 节补一次导入门闩与不双写。devlog：本条。
 - 未改：src/ 与 public/ 全部代码、tests、其他文档。
 - 验证：尚待验证。未运行任何测试或构建；文档与代码的一致性仅经人工阅读比对（protocol.js/model-auth.js/model-config.js/pi-model-storage.js/pi.js/model-manager.js/model-auth.js），待后续轮次跑全量 npm test 与页面手测后再合并。
+## 2026-09-13 手机纯阅读折叠
+- 原因：真机截图中输入、进度与跳转仍占据大量空间；用户要求收起后仅展示会话和一行状态。
+- 修改：≤700px 收起所有输入辅助区与最早/最新入口，保留单行双百分比/供应商模型思考信息及展开按钮；展开恢复输入和模型，输入14px，草稿附件不清空。桌面规则不变，沿用 Linear muted/surface 与8/12px间距。
+- 涉及：public/style.css、public/app.js、public/index.html、tests/mobile-reading-ui.py、README.md、devlog.md、索引/知识库。
+- 验证：首次 npm test 357项，355通过、2跳过；推送前重跑354通过、1项service超时、2跳过，单独重跑tests/service.test.js全部17项通过。浏览器回归在等待workspace显示时超时，手机/桌面对比未完成，不能视作验收通过；按用户明确要求合并推送。未重启正式服务。
 
 ## 2026-09-13 全部 worktree 集成与清理
 - 决策：按用户要求集成所有附加工作区；先备份未提交内容，处理已有合并冲突，验证后推送 master 并清理附加 worktree。
@@ -971,3 +980,26 @@
 - 内容：reindex.mjs 的 MODULE_INFO、src/sessions.js:455 与 src/session-store.js:319 的迁移注释、tests/session-store.test.js:206 的用例名，四处「四表」改「三表」。
 - 验证：全量 `npm test` 357 项，355 过 / 0 失败 / 2 跳过；重建 INDEX.md 后模块表描述同步为三表。
 - 涉及：.pi/skills/codebase-map/scripts/reindex.mjs、src/sessions.js、src/session-store.js、tests/session-store.test.js、devlog.md。
+
+### 2026-09-13T17:36:36.164Z 子代理重试绑定任务
+- 内容/原因：重启不恢复子消息，混合 messageCount 不能定位；改为复用 SQLite 已保存的 agentId/taskId，将重试固定置于任务说明后。迟到元数据自动迁回，多次重试不重复，主代理路径不变；不新增存储字段或样式。
+- 涉及：public/app.js、tests/message-activity.test.js、README.md、.pi/skills/codebase-map/knowledge.md、INDEX.md。
+- 验证：定向10项及 app/session-flow/session-persistence 20项通过；全量验证见后续记录。
+- 最终验证：node --test --test-concurrency=1 全量357项，355通过、2跳过；默认并行两次在未改动 app.test.js 异步断言失败（排序/导入跳转），定向与串行通过。追加实时子消息之后重试也固定归位检查，定向10项再次通过。
+- 集成复验：合并最新 origin/master 后，定向30项通过；全量串行再次355通过、2跳过。
+
+## 2026-09-13 11:02 — 右上角加 GitHub 图标；移除文字对比度调节，正文固定最高档
+
+- 原因：用户要求右上角一个可点进开源页的 GitHub 图标；同时「A」对比度按钮不再需要，直接把正文文字定死在原先 150% 那一档，省掉一个控件、一段本地存储和两份资源。
+- 内容：
+  - public/index.html：`.service-controls` 首位新增 `a#github-link.icon-button`，指向 https://github.com/cosyeezz/axiom ，`target="_blank"` + `rel="noopener noreferrer"`，内嵌 GitHub mark 单 path SVG（无新增图标依赖）；删掉 `/text-contrast.css` 的 link。
+  - public/style.css：`--body-ink` #d0d6e0 → #dee2e9、`--muted` #8a8f98 → #adb1b7（各混入 30% 白，等于原 150% 档结果，#adb1b7 对 #010102 约 9.7:1）；新增 `--dim-line: #8a8f98` 供 `--muted` 的两处非文字用途钉回原色（`.selectors label:has(select):after` 下拉箭头、`.tool-activity` 默认 `--activity-ink`）；新增 `#github-link` 两条（grid 居中、去下划线、17px svg 用 currentColor 填充，复用 `.icon-button` 32px 方形与 hover）。
+  - public/app.js、src/server.js：删 `initTextContrast` 的 import 与调用、删两条静态资源路由。
+  - 删 public/text-contrast.js、public/text-contrast.css、tests/text-contrast.test.js。
+  - 9 个测试 harness（app/compaction-ui/manual-retry/memory-ui/message-activity/model-onboarding-ui/model-thinking-favorites/remote-ui/workspace-tabs）去掉注入 text-contrast.js 的读取与 eval 插值。
+  - tests/app.test.js 在既有 header 图标用例里补断言：href/rel 正确、高度 32px、`text-decoration: none`、`#text-contrast-button` 不再存在。
+  - tests/conversation-ui.py：对比度面板那段换成 GitHub 图标的 tooltip 文案与 href/target 校验。
+  - README.md：品牌正文色改 #dee2e9；tooltip 段落改写为 GitHub 图标 + 固定高对比度说明；`npm test` 注释去掉「对比度」。
+  - .pi/skills/codebase-map/：SKILL.md 架构图与 reindex.mjs 的 MODULE_INFO 去掉三条 text-contrast 条目，重建 INDEX.md（118 文件、0 未登记）。
+- 验证：`npm test` 348 项，346 过 / 0 失败 / 2 跳过（既有 SKIP；较上轮 357 少 9 项＝删掉的 text-contrast 用例）。Playwright 实测：图标位于 header 最右侧服务区首位（1440 宽下 x=1296、32×32），静止色 rgb(173,177,183)、hover 转 --ink，tooltip 显示「在 GitHub 查看源码」，href/target/rel 均符合预期；`--body-ink`/`--muted`/`--dim-line` 计算值分别为 #dee2e9/#adb1b7/#8a8f98。tests/conversation-ui.py 全量跑不通（`#workspace` 30s 不可见），在 master 上同样复现，属本环境既有问题，非本次改动引入。
+- 涉及：public/index.html、public/style.css、public/app.js、src/server.js、public/text-contrast.js（删）、public/text-contrast.css（删）、tests/text-contrast.test.js（删）、tests/app.test.js、tests/conversation-ui.py、tests/compaction-ui.test.js、tests/manual-retry.test.js、tests/memory-ui.test.js、tests/message-activity.test.js、tests/model-onboarding-ui.test.js、tests/model-thinking-favorites.test.js、tests/remote-ui.test.js、tests/workspace-tabs.test.js、README.md、devlog.md、.pi/skills/codebase-map/。

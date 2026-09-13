@@ -12,7 +12,6 @@ async function page() {
   const memoryTags = (await readFile(new URL("../public/memory-tags.js", import.meta.url), "utf8")).replace(/^export /gm, "");
   const source = memoryTags + "\n" + (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/app.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "");
   const picker = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
-  const contrast = (await readFile(new URL("../public/text-contrast.js", import.meta.url), "utf8")).replace(/^export /gm, "");
   const dom = new JSDOM(html, { url: "http://localhost", runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window;
   w.matchMedia = () => ({ matches: false });
@@ -32,7 +31,7 @@ async function page() {
     const exports = [...module.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
     w.eval(`Object.assign(window, (() => { ${module.replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`);
   }
-  w.eval(`${contrast}\n${picker}\n${source}\nconnected = true;`);
+  w.eval(`${picker}\n${source}\nconnected = true;`);
   const state = { sessionId: "activity", title: "Activity", cwd: "C:/work", status: "idle", config: { model: "test/model", thinking: "off", levels: ["off"], skills: [] }, messages: [], tasks: [], live: {}, tools: {} };
   const restore = (changes = {}) => w.snapshot({ ...state, ...changes });
   const emit = (type, data, agentId = "main") => w.event({ sessionId: state.sessionId, type, data, agentId });
@@ -169,11 +168,17 @@ test("main and child retries stay isolated, including missing task metadata", as
     const messages = [entry(assistant([{ type: "text", text: "主回答" }]), "main"),
       entry(assistant([{ type: "text", text: "子回答" }]), "child-answer", "child")];
     const retries = [{ ...retry, agentId: "main" }, { ...retry, agentId: "child" }];
+    w.event({ sessionId: "activity", type: "task.state", taskId: "child", data: child });
+    emit("agent.message.end", { message: messages[1].message }, "child");
+    emit("agent.retry", retry, "child");
+    assert(w.document.querySelector("#task-child .task-description + .task-retries > .retry-card"));
     for (let i = 0; i < 2; i++) {
       restore({ messages, retries, tasks: [child] }); paint(); paint();
       assert.equal(output.querySelectorAll(".retry-card").length, 1);
       const body = w.document.querySelector("#task-child .task-body");
-      assert.equal(body.querySelector(".retry-card").nextElementSibling.classList.contains("message"), true);
+      assert.equal(body.querySelector(".task-description").nextElementSibling.className, "task-retries");
+      assert(body.querySelector(".task-retries > .retry-card"));
+      assert.equal(body.querySelector(".retry-archive"), null);
       emit("agent.retry", { ...retry, status: "cancelled" }, "child");
       assert.match(body.textContent, /重试已停止/);
       assert.match(output.querySelector(".retry-card").textContent, /重试成功/);
@@ -182,7 +187,22 @@ test("main and child retries stay isolated, including missing task metadata", as
     assert(output.querySelector(".retry-archive .retry-card"));
     w.event({ sessionId: "activity", type: "task.state", taskId: "child", data: child });
     assert.equal(output.querySelector(".retry-card"), null);
-    assert(w.document.querySelector("#task-child .retry-archive .retry-card"));
+    assert(w.document.querySelector("#task-child .task-retries > .retry-card"));
+    assert.equal(w.document.querySelector(".retry-archive"), null);
+    // 重启后只剩主历史，子任务计数越界/缺失也必须按任务 ID 原位恢复。
+    for (const messageCount of [99, undefined]) {
+      restore({ messages: [messages[0]], tasks: [child, { ...child, id: "other" }],
+        retries: ["child", "other"].flatMap(agentId => ["first", "second"].map(id =>
+          ({ ...retry, id, agentId, messageCount }))) });
+      paint(); paint();
+      for (const id of ["child", "other"]) {
+        const body = w.document.querySelector(`#task-${id} .task-body`);
+        assert.equal(body.querySelector(".task-description").nextElementSibling.className, "task-retries");
+        assert.equal(body.querySelectorAll(".task-retries > .retry-card").length, 2);
+      }
+      assert.equal(output.querySelector(".retry-card"), null);
+      assert.equal(w.document.querySelector(".retry-archive"), null);
+    }
   } finally { dom.window.close(); }
 });
 

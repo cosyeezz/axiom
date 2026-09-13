@@ -15,8 +15,6 @@ const assets = new Map(
     ["/file-picker.js", "public/file-picker.js"],
     ["/tooltip.js", "public/tooltip.js"],
     ["/tooltip.css", "public/tooltip.css", "text/css"],
-    ["/text-contrast.js", "public/text-contrast.js"],
-    ["/text-contrast.css", "public/text-contrast.css", "text/css"],
     ["/file-picker.css", "public/file-picker.css", "text/css"],
     ["/markdown.js", "public/markdown.js"],
     ["/stream-renderer.js", "public/stream-renderer.js"],
