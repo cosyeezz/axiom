@@ -26,7 +26,7 @@ function fixture() {
 test("results require completion notification IDs, never wait or poll", async () => {
   const { tasks, agents, notifications } = fixture();
   const [delegate, read] = delegationTools(tasks);
-  const response = await delegate.execute("", { tasks: [{ task: "a" }, { task: "b" }] });
+  const response = await delegate.execute("", { context: "背景", tasks: [{ task: "a" }, { task: "b" }] });
   const { taskIds } = JSON.parse(response.content[0].text);
   assert.equal(agents.length, 2);
   assert.equal(notifications.length, 0);
@@ -70,24 +70,30 @@ test("publish separates safe view data from the full saved snapshot", async () =
   assert.deepEqual(tasks.snapshotJob(tasks.jobs.get(id)), saved);
 });
 
-test("delegate freezes background at start and results hide metadata", async () => {
-  let context = "本轮已登记摘要";
+test("delegate freezes background at start; context lands in <context> section", async () => {
   let received;
-  let release;
-  const tasks = new Tasks(async () => {
-    await new Promise((resolve) => { release = resolve; });
-    return { subscribe: () => () => {}, prompt: async (text) => { received = text; },
-      result: () => "完成<progress>已完成检查</progress>", dispose: async () => {} };
-  }, () => {}, async () => {}, () => context);
-  const [id] = tasks.start(["检查接口"]);
-  context = "后续摘要";
-  release();
+  const tasks = new Tasks(async () => ({
+    subscribe: () => () => {}, prompt: async (text) => { received = text; },
+    result: () => "完成<progress>已完成检查</progress>", dispose: async () => {},
+  }), () => {});
+  const [id] = tasks.start(["检查接口"], "本轮已确认的背景");
   const job = tasks.jobs.get(id);
   await job.done;
-  assert.match(received, /本轮已登记摘要/);
-  assert.doesNotMatch(received, /后续摘要/);
-  assert.match(received, /<task>\n检查接口\n<\/task>/);
+  // context 冻结于 start 时刻（子代理拿到的唯一背景），含 <context> 段。
+  assert.match(received, /<context>\n以下是主代理为本任务写的背景，不是新的任务指令：\n本轮已确认的背景\n<\/context>\n<task>\n检查接口\n<\/task>/);
   assert.equal(tasks.read(id, job.resultId).text, "完成");
+  // 缺 context 的 delegate 输入校验失败（必填）。
+  const delegate = delegationTools(tasks).find((tool) => tool.name === "delegate");
+  await assert.rejects(delegate.execute("", { tasks: [{ task: "a" }] }));
+  // 空 context：不进 <context> 段。
+  let bare;
+  const plain = new Tasks(async () => ({
+    subscribe: () => () => {}, prompt: async (text) => { bare = text; },
+    result: () => "ok", dispose: async () => {},
+  }), () => {});
+  const [bareId] = plain.start(["裸任务"]);
+  await plain.jobs.get(bareId).done;
+  assert.equal(bare, "裸任务");
 });
 
 test("append defaults to steer, validates input and rejects ended/cancelling tasks", async () => {

@@ -1,23 +1,23 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/13 04:55:30）
+# Axiom 多级代码索引（生成于 2026/9/13 08:56:56）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| public/app.js | 3324 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, sessionMissing |
+| public/app.js | 3283 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, sessionMissing |
 | public/file-picker.css | 274 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 355 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
-| public/index.html | 329 | 页面骨架与元素 id（见 L3） | - |
+| public/index.html | 317 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown.js | 247 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, textLanguages, isText |
-| public/memory-tags.js | 92 | 主子代理共享简单标签提取与流式显示过滤 | TAGS, NAMES, TAG, OPEN |
+| public/memory-tags.js | 94 | 主子代理共享简单标签提取与流式显示过滤 | TAGS, NAMES, TAG, OPEN |
 | public/model-manager.css | 474 | 模型配置页：供应商列表、编辑表单与响应式布局 | - |
 | public/model-manager.js | 1215 | Pi 模型管理：供应商模板、模型编辑与安全保存反馈 | API_TYPES, PROVIDER_TEMPLATES, PROVIDER_ID, MASK_KINDS |
 | public/model-picker.css | 88 | 共享收藏下拉：暗色浮层、星标、触屏与焦点样式 | - |
 | public/model-picker.js | 300 | 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互 | GAP, EDGE, TYPEAHEAD_MS, el |
 | public/service-settings.js | 278 | 设置页服务维护：真实进度、结果、更新确认与独立维护通道 | MAINT_URL_RE, POLL_MS, initServiceSettings |
 | public/stream-renderer.js | 46 | 流式增量渲染状态机 | createStreamRenderer |
-| public/style.css | 1375 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1355 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | public/text-contrast.css | 46 | 文字专用对比度档位与调节面板 | - |
 | public/text-contrast.js | 113 | 文字对比度按钮、实时调节与本地偏好 | KEY, MIN, MAX, STEP |
 | public/tooltip.css | 50 | 共享暗色悬停说明样式 | - |
@@ -34,19 +34,19 @@
 | src/database.js | 103 | 共享 SQLite 连接、小配置 KV、WAL 与一致性备份 | nodeOk, Database |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
 | src/main.js | 114 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, home, database |
-| src/memory-policy.js | 39 | 主子代理摘要规则与配置页参数校验 | SUMMARY_SYSTEM_PROMPT, SUMMARY_REMINDER, SUMMARY_DELEGATE, MEMORY_SUMMARY_LIMITS |
 | src/model-config.js | 579 | Pi models.json 无损配置读写与共享收藏持久化 | sdkModelConfig, sdkResolveConfigValue, digest, LEVELS |
 | src/pi-model-storage.js | 304 | 模型与凭据 SQLite 权威存储、Pi 派生兼容文件 | sdkResolveConfigValue, sdkIsCommandConfigValue, NAMESPACE, AUTH_NAMESPACE |
-| src/pi.js | 369 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, queueStateOf, hasModelOutput, withdrawQueue |
-| src/protocol.js | 346 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
+| src/pi.js | 365 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, queueStateOf, hasModelOutput, withdrawQueue |
+| src/protocol.js | 345 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/remote.js | 547 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
 | src/retry.js | 173 | 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_DELAY_MS, MAX_RETRIES, delayFor |
 | src/server.js | 465 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | assets, createServerApp |
-| src/session-memory.js | 117 | 标题与增量摘要登记、触发复盘、委派背景与被动进度 | textOf, escape, memoryHooks, parentSummaryContext |
-| src/session-store.js | 528 | 会话四表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, SessionStore |
-| src/sessions.js | 1341 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | BROWSE_PAGE, SEARCH_LIMIT, SEARCH_DIR_LIMIT, IGNORED_ENTRIES |
-| src/tasks.js | 122 | Tasks：子任务（委托）生命周期 | Tasks |
-| src/tools.js | 97 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
+| src/session-memory.js | 29 | 标题提取登记、轮次预算挂钩与委派背景 | textOf, memoryHooks |
+| src/session-store.js | 457 | 会话四表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, TABLES, INDEXES |
+| src/sessions.js | 1286 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | BROWSE_PAGE, SEARCH_LIMIT, SEARCH_DIR_LIMIT, IGNORED_ENTRIES |
+| src/task-budget.js | 36 | 主子代理轮次预算规则、收尾提示词与配置页参数校验 | WRAP_UP_PROMPT, TASK_BUDGET_LIMITS, taskBudgetDefaults, within |
+| src/tasks.js | 121 | Tasks：子任务（委托）生命周期 | Tasks |
+| src/tools.js | 110 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
 | tests/activity-groups-ui.py | 201 | node --test 测试（npm test） | activityHistory, sessions |
 | tests/app.test.js | 1675 | node --test 测试（npm test） | pickerSource, contrastSource, modelSources, serviceSource |
@@ -73,10 +73,9 @@
 | tests/install.test.js | 79 | node --test 测试（npm test） | - |
 | tests/manual-retry.test.js | 187 | node --test 测试（npm test） | session, assistant, page, message |
 | tests/markdown.test.js | 166 | node --test 测试（npm test） | - |
-| tests/memory-policy.test.js | 58 | node --test 测试（npm test） | - |
-| tests/memory-preview.mjs | 24 | node --test 测试（npm test） | state, sessions, app |
-| tests/memory-tags.test.js | 74 | node --test 测试（npm test） | - |
-| tests/memory-ui.test.js | 183 | node --test 测试（npm test） | page, record |
+| tests/memory-preview.mjs | 22 | node --test 测试（npm test） | state, sessions, app |
+| tests/memory-tags.test.js | 70 | node --test 测试（npm test） | - |
+| tests/memory-ui.test.js | 98 | node --test 测试（npm test） | page |
 | tests/message-activity.test.js | 407 | node --test 测试（npm test） | page, assistant, thought, call |
 | tests/mobile-reading-ui.py | 103 | node --test 测试（npm test） | - |
 | tests/model-config.test.js | 980 | node --test 测试（npm test） | sha, EMPTY, tempDir, openDatabases |
@@ -88,11 +87,11 @@
 | tests/model-selection-ui.py | 60 | node --test 测试（npm test） | - |
 | tests/model-settings-ui.py | 44 | node --test 测试（npm test） | - |
 | tests/model-thinking-favorites.test.js | 122 | node --test 测试（npm test） | appSource, pickerSource, contrastSource, modelSources |
-| tests/pi-memory.test.js | 240 | node --test 测试（npm test） | - |
+| tests/pi-memory.test.js | 168 | node --test 测试（npm test） | - |
 | tests/pi-model-storage.test.js | 402 | node --test 测试（npm test） | tempDir, makeStorage, seedPiModels, seedPiAuth |
 | tests/presets.test.js | 112 | node --test 测试（npm test） | makeFactory |
 | tests/project-skills.test.js | 59 | node --test 测试（npm test） | - |
-| tests/recall.test.js | 206 | node --test 测试（npm test） | user, assistant, thinking, fixture |
+| tests/recall.test.js | 202 | node --test 测试（npm test） | user, assistant, thinking, fixture |
 | tests/remote-ui.py | 51 | node --test 测试（npm test） | - |
 | tests/remote-ui.test.js | 225 | node --test 测试（npm test） | page, modelSources, flush, stubRequest |
 | tests/remote.test.js | 721 | node --test 测试（npm test） | EMAIL, mockTailscale, fakeChild, fakeDatabase |
@@ -105,18 +104,18 @@
 | tests/service.test.js | 527 | node --test 测试（npm test） | until, readMaybe, killTree, buildWorkspace |
 | tests/session-created-at.test.js | 44 | node --test 测试（npm test） | factory |
 | tests/session-flow.test.js | 417 | node --test 测试（npm test） | flowFactory, jsonlFactory |
-| tests/session-memory.test.js | 262 | node --test 测试（npm test） | reply |
-| tests/session-migration.test.js | 264 | node --test 测试（npm test） | factory, workspaceHash |
-| tests/session-persistence.test.js | 232 | node --test 测试（npm test） | factory |
+| tests/session-memory.test.js | 110 | node --test 测试（npm test） | reply |
+| tests/session-migration.test.js | 266 | node --test 测试（npm test） | factory, workspaceHash |
+| tests/session-persistence.test.js | 229 | node --test 测试（npm test） | factory |
 | tests/session-sidebar-ui.py | 104 | node --test 测试（npm test） | - |
-| tests/session-store.test.js | 500 | node --test 测试（npm test） | withStore, fullSaved |
+| tests/session-store.test.js | 514 | node --test 测试（npm test） | withStore, fullSaved, LEGACY_DDL |
 | tests/smoke.js | 67 | node --test 测试（npm test） | TIMEOUT, sessions |
-| tests/sqlite-benchmark.mjs | 971 | node --test 测试（npm test） | parseArgs, args, scriptPath, repoDir |
+| tests/sqlite-benchmark.mjs | 914 | node --test 测试（npm test） | parseArgs, args, scriptPath, repoDir |
 | tests/stream-renderer.test.js | 99 | node --test 测试（npm test） | - |
-| tests/summary-compact.test.js | 21 | node --test 测试（npm test） | - |
+| tests/task-budget.test.js | 50 | node --test 测试（npm test） | - |
 | tests/task-notifications.test.js | 197 | node --test 测试（npm test） | factoryFixture, tick, until |
 | tests/task-timer.test.js | 55 | node --test 测试（npm test） | factory, state, settle |
-| tests/tasks.test.js | 111 | node --test 测试（npm test） | fixture |
+| tests/tasks.test.js | 117 | node --test 测试（npm test） | fixture |
 | tests/text-contrast.test.js | 162 | node --test 测试（npm test） | source, css, fakeStorage, throwingStorage |
 | tests/text-diagram-ui.py | 36 | node --test 测试（npm test） | - |
 | tests/tooltip.test.js | 282 | node --test 测试（npm test） | source, boot, fire, tip |
@@ -130,7 +129,7 @@
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
-### public/app.js（3324 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
+### public/app.js（3283 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -142,7 +141,7 @@
 | allSessions | const | 26 |
 | views | const | 28 |
 | compactionDefaults | const | 29 |
-| memorySummaryDefaults | const | 31 |
+| taskBudgetDefaults | const | 31 |
 | thinkingLevels | const | 32 |
 | modelFavorites | const | 33 |
 | favoriteKey | function | 36 |
@@ -212,180 +211,178 @@
 | options | method | 387 |
 | configure | function | 393 |
 | controls | method | 396 |
-| memorySummaryInputs | const | 419 |
-| loadMemorySummary | function | 420 |
-| saveMemorySummary | function | 430 |
-| showSettingsPanel | function | 445 |
-| showSettingsPanel | method | 461 |
-| showSettingsPanel | method | 465 |
-| controls | method | 466 |
-| remoteView | const | 478 |
-| remoteLoaded | const | 479 |
-| remoteAnchor | function | 480 |
-| remoteRender | function | 488 |
-| controls | method | 534 |
-| remoteLoad | function | 536 |
-| remoteAuthUrl | function | 552 |
-| remoteLogin | function | 560 |
-| remoteOnReconnect | function | 586 |
-| controls | method | 600 |
-| messageItems | const | 613 |
-| activityPaths | const | 615 |
-| setActivityIcon | function | 632 |
-| callGroupsFrame | const | 642 |
-| scheduleCallGroups | function | 643 |
-| createCallGroup | function | 652 |
-| paintCallGroup | function | 666 |
-| refreshCallGroups | function | 695 |
-| foldCallsBeforeMessage | function | 795 |
-| paintCallGroup | method | 799 |
-| disclosureHint | function | 801 |
-| activityLine | function | 821 |
-| setActivity | method | 831 |
-| setActivity | function | 834 |
-| scheduleCallGroups | method | 835 |
-| setActivityIcon | method | 837 |
-| waiting | function | 848 |
-| scheduleCallGroups | method | 850 |
-| scrollLatest | method | 856 |
-| clearWaiting | function | 858 |
-| stopActivity | function | 862 |
-| scheduleCallGroups | method | 864 |
-| clearWaiting | method | 865 |
-| updateActivity | function | 874 |
-| setActivity | method | 887 |
-| setActivity | method | 888 |
-| mergeThoughts | function | 892 |
-| diffView | const | 910 |
-| renderToolDetail | function | 915 |
-| section | method | 1001 |
-| toolState | function | 1003 |
-| clearWaiting | method | 1005 |
-| setActivity | method | 1049 |
-| renderToolDetail | method | 1050 |
-| scrollLatest | method | 1051 |
-| card | function | 1053 |
-| renderMessage | function | 1104 |
-| updateActivity | method | 1199 |
-| renderCompactionStatus | function | 1202 |
-| trackTaskEntries | function | 1219 |
-| placeCompactedTasks | function | 1230 |
-| placeCompactedRetries | method | 1231 |
-| compactionCard | function | 1240 |
-| renderMarkdown | method | 1260 |
-| foldCompaction | function | 1263 |
-| placeCompactedTasks | method | 1283 |
-| mergeThoughts | method | 1284 |
-| compactionEditor | function | 1291 |
-| options | method | 1329 |
-| fillThinking | method | 1359 |
-| retryChipList | function | 1368 |
-| retryEditor | function | 1417 |
-| renderTaskRuns | function | 1437 |
-| renderQueue | function | 1465 |
-| canResumeMessage | const | 1484 |
-| retryPrompt | const | 1486 |
-| syncRetryPrompt | function | 1487 |
-| scrollLatest | method | 1512 |
-| retryCards | const | 1514 |
-| placeCompactedRetries | function | 1515 |
-| retryArchive | function | 1532 |
-| renderRetry | function | 1545 |
-| placeCompactedRetries | method | 1581 |
-| scrollLatest | method | 1582 |
-| event | function | 1584 |
-| snapshot | function | 1764 |
-| clearTimeout | method | 1767 |
-| updatePageTitle | method | 1785 |
-| renderTaskRuns | method | 1795 |
-| renderCompactionStatus | method | 1802 |
-| restoreRetries | method | 1863 |
-| mergeThoughts | method | 1877 |
-| placeCompactedTasks | method | 1891 |
-| renderImages | method | 1905 |
-| closeCompletion | method | 1908 |
-| renderQueue | method | 1919 |
-| applyConfig | method | 1921 |
-| controls | method | 1923 |
-| reconnectTimer | const | 1925 |
-| clearTimeout | method | 1929 |
-| controls | method | 1932 |
-| scheduleReconnect | function | 2044 |
-| clearTimeout | method | 2045 |
-| importDir | const | 2049 |
-| fillModels | method | 2053 |
-| fillSubagentModels | method | 2060 |
-| closeCompletion | method | 2077 |
-| controls | method | 2082 |
-| scrollLatest | method | 2087 |
-| enableImagePreview | function | 2119 |
-| renderImages | function | 2140 |
-| addImages | function | 2165 |
-| loadImages | function | 2186 |
-| renderImages | method | 2195 |
-| selectionCopy | const | 2218 |
-| copySelection | function | 2230 |
-| escapeTimer | const | 2293 |
-| withdrawQueue | function | 2294 |
-| refreshing | const | 2376 |
-| refreshSessions | function | 2377 |
-| timerText | function | 2393 |
-| renderTaskTimer | function | 2400 |
-| applyElapsed | function | 2413 |
-| renderTaskTimer | method | 2419 |
-| updatePageTitle | function | 2421 |
-| updateSessions | function | 2425 |
-| renderTaskTimer | method | 2427 |
-| updatePageTitle | method | 2438 |
-| renderSessions | method | 2439 |
-| recoverMissingSession | function | 2441 |
+| taskBudgetInputs | const | 419 |
+| loadTaskBudget | function | 420 |
+| saveTaskBudget | function | 429 |
+| showSettingsPanel | function | 443 |
+| showSettingsPanel | method | 459 |
+| showSettingsPanel | method | 463 |
+| controls | method | 464 |
+| remoteView | const | 476 |
+| remoteLoaded | const | 477 |
+| remoteAnchor | function | 478 |
+| remoteRender | function | 486 |
+| controls | method | 532 |
+| remoteLoad | function | 534 |
+| remoteAuthUrl | function | 550 |
+| remoteLogin | function | 558 |
+| remoteOnReconnect | function | 584 |
+| controls | method | 598 |
+| messageItems | const | 611 |
+| activityPaths | const | 613 |
+| setActivityIcon | function | 630 |
+| callGroupsFrame | const | 640 |
+| scheduleCallGroups | function | 641 |
+| createCallGroup | function | 650 |
+| paintCallGroup | function | 664 |
+| refreshCallGroups | function | 693 |
+| foldCallsBeforeMessage | function | 793 |
+| paintCallGroup | method | 797 |
+| disclosureHint | function | 799 |
+| activityLine | function | 819 |
+| setActivity | method | 829 |
+| setActivity | function | 832 |
+| scheduleCallGroups | method | 833 |
+| setActivityIcon | method | 835 |
+| waiting | function | 846 |
+| scheduleCallGroups | method | 848 |
+| scrollLatest | method | 854 |
+| clearWaiting | function | 856 |
+| stopActivity | function | 860 |
+| scheduleCallGroups | method | 862 |
+| clearWaiting | method | 863 |
+| updateActivity | function | 872 |
+| setActivity | method | 885 |
+| setActivity | method | 886 |
+| mergeThoughts | function | 890 |
+| diffView | const | 908 |
+| renderToolDetail | function | 913 |
+| section | method | 999 |
+| toolState | function | 1001 |
+| clearWaiting | method | 1003 |
+| setActivity | method | 1047 |
+| renderToolDetail | method | 1048 |
+| scrollLatest | method | 1049 |
+| card | function | 1051 |
+| renderMessage | function | 1102 |
+| updateActivity | method | 1197 |
+| renderCompactionStatus | function | 1200 |
+| trackTaskEntries | function | 1217 |
+| placeCompactedTasks | function | 1228 |
+| placeCompactedRetries | method | 1229 |
+| compactionCard | function | 1238 |
+| renderMarkdown | method | 1258 |
+| foldCompaction | function | 1261 |
+| placeCompactedTasks | method | 1281 |
+| mergeThoughts | method | 1282 |
+| compactionEditor | function | 1289 |
+| options | method | 1327 |
+| fillThinking | method | 1357 |
+| retryChipList | function | 1366 |
+| retryEditor | function | 1415 |
+| renderTaskRuns | function | 1435 |
+| renderQueue | function | 1463 |
+| canResumeMessage | const | 1482 |
+| retryPrompt | const | 1484 |
+| syncRetryPrompt | function | 1485 |
+| scrollLatest | method | 1510 |
+| retryCards | const | 1512 |
+| placeCompactedRetries | function | 1513 |
+| retryArchive | function | 1530 |
+| renderRetry | function | 1543 |
+| placeCompactedRetries | method | 1579 |
+| scrollLatest | method | 1580 |
+| event | function | 1582 |
+| snapshot | function | 1755 |
+| clearTimeout | method | 1758 |
+| updatePageTitle | method | 1776 |
+| renderTaskRuns | method | 1786 |
+| renderCompactionStatus | method | 1791 |
+| restoreRetries | method | 1852 |
+| mergeThoughts | method | 1866 |
+| placeCompactedTasks | method | 1880 |
+| renderImages | method | 1894 |
+| closeCompletion | method | 1897 |
+| renderQueue | method | 1908 |
+| applyConfig | method | 1910 |
+| controls | method | 1912 |
+| reconnectTimer | const | 1914 |
+| clearTimeout | method | 1918 |
+| controls | method | 1921 |
+| scheduleReconnect | function | 2033 |
+| clearTimeout | method | 2034 |
+| importDir | const | 2038 |
+| fillModels | method | 2042 |
+| fillSubagentModels | method | 2049 |
+| closeCompletion | method | 2066 |
+| controls | method | 2071 |
+| scrollLatest | method | 2076 |
+| enableImagePreview | function | 2108 |
+| renderImages | function | 2129 |
+| addImages | function | 2154 |
+| loadImages | function | 2175 |
+| renderImages | method | 2184 |
+| selectionCopy | const | 2207 |
+| copySelection | function | 2219 |
+| escapeTimer | const | 2282 |
+| withdrawQueue | function | 2283 |
+| refreshing | const | 2365 |
+| refreshSessions | function | 2366 |
+| timerText | function | 2382 |
+| renderTaskTimer | function | 2389 |
+| applyElapsed | function | 2402 |
+| renderTaskTimer | method | 2408 |
+| updatePageTitle | function | 2410 |
+| updateSessions | function | 2414 |
+| renderTaskTimer | method | 2416 |
+| updatePageTitle | method | 2427 |
+| renderSessions | method | 2428 |
+| recoverMissingSession | function | 2430 |
+| controls | method | 2432 |
+| saveView | method | 2439 |
 | controls | method | 2443 |
-| saveView | method | 2450 |
-| controls | method | 2454 |
-| switchSession | function | 2470 |
-| saveView | method | 2472 |
-| controls | method | 2475 |
-| copySessionFile | function | 2501 |
-| positionSessionMenu | function | 2514 |
-| renderSessions | function | 2520 |
-| sessionAction | const | 2672 |
-| renderSummaries | function | 2674 |
-| renderSummaries | method | 2700 |
-| openSessionAction | function | 2704 |
-| contextIcon | function | 2745 |
-| renderContextChips | function | 2748 |
-| fuzzyHit | function | 2767 |
-| renderContextResults | function | 2774 |
-| showContextSkills | function | 2794 |
-| positionContextSkills | function | 2799 |
-| showContextSkills | method | 2811 |
-| controls | method | 2846 |
-| skillTrigger | const | 2848 |
-| showContextSkills | method | 2864 |
-| resizePrompt | method | 2873 |
-| controls | method | 2874 |
-| closeCompletion | function | 2877 |
-| highlightCompletion | function | 2885 |
-| chooseCompletion | function | 2894 |
-| closeCompletion | method | 2904 |
-| updateCompletion | function | 2907 |
-| closeCompletion | method | 2908 |
-| resizePrompt | method | 2964 |
-| controls | method | 2965 |
-| switchSession | method | 3005 |
-| creationLoad | const | 3016 |
-| refreshPresets | function | 3017 |
-| createAgentPicker | function | 3052 |
-| options | method | 3078 |
-| fill | method | 3086 |
-| fillThinking | method | 3094 |
-| options | method | 3096 |
-| loadCreation | function | 3143 |
-| openCreation | function | 3179 |
-| rememberCreation | const | 3200 |
-| updateDefaultsPreview | function | 3232 |
-| updateDefaultsPreview | method | 3256 |
-| controls | method | 3311 |
+| switchSession | function | 2459 |
+| saveView | method | 2461 |
+| controls | method | 2464 |
+| copySessionFile | function | 2490 |
+| positionSessionMenu | function | 2503 |
+| renderSessions | function | 2509 |
+| sessionAction | const | 2661 |
+| openSessionAction | function | 2663 |
+| contextIcon | function | 2704 |
+| renderContextChips | function | 2707 |
+| fuzzyHit | function | 2726 |
+| renderContextResults | function | 2733 |
+| showContextSkills | function | 2753 |
+| positionContextSkills | function | 2758 |
+| showContextSkills | method | 2770 |
+| controls | method | 2805 |
+| skillTrigger | const | 2807 |
+| showContextSkills | method | 2823 |
+| resizePrompt | method | 2832 |
+| controls | method | 2833 |
+| closeCompletion | function | 2836 |
+| highlightCompletion | function | 2844 |
+| chooseCompletion | function | 2853 |
+| closeCompletion | method | 2863 |
+| updateCompletion | function | 2866 |
+| closeCompletion | method | 2867 |
+| resizePrompt | method | 2923 |
+| controls | method | 2924 |
+| switchSession | method | 2964 |
+| creationLoad | const | 2975 |
+| refreshPresets | function | 2976 |
+| createAgentPicker | function | 3011 |
+| options | method | 3037 |
+| fill | method | 3045 |
+| fillThinking | method | 3053 |
+| options | method | 3055 |
+| loadCreation | function | 3102 |
+| openCreation | function | 3138 |
+| rememberCreation | const | 3159 |
+| updateDefaultsPreview | function | 3191 |
+| updateDefaultsPreview | method | 3215 |
+| controls | method | 3270 |
 
 ### public/file-picker.js（355 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 
@@ -426,21 +423,21 @@
 | jsonControls | function | 103 |
 | renderMarkdown | function | 142 |
 
-### public/memory-tags.js（92 行） — 主子代理共享简单标签提取与流式显示过滤
+### public/memory-tags.js（94 行） — 主子代理共享简单标签提取与流式显示过滤
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| TAGS | const | 6 |
-| NAMES | const | 7 |
-| TAG | const | 9 |
-| OPEN | const | 10 |
-| CLOSE | const | 11 |
-| MARKS | const | 12 |
-| FENCE | const | 13 |
-| HOLE | const | 15 |
-| segments | function | 18 |
-| extractMemoryTags | function | 33 |
-| stripMemoryTags | function | 51 |
+| TAGS | const | 7 |
+| NAMES | const | 8 |
+| TAG | const | 10 |
+| OPEN | const | 11 |
+| CLOSE | const | 12 |
+| MARKS | const | 13 |
+| FENCE | const | 14 |
+| HOLE | const | 16 |
+| segments | function | 19 |
+| extractMemoryTags | function | 34 |
+| stripMemoryTags | function | 53 |
 
 ### public/model-manager.js（1215 行） — Pi 模型管理：供应商模板、模型编辑与安全保存反馈
 
@@ -723,18 +720,6 @@
 | closing | const | 97 |
 | stop | function | 98 |
 
-### src/memory-policy.js（39 行） — 主子代理摘要规则与配置页参数校验
-
-| 符号 | 类型 | 行 |
-|---|---|---|
-| SUMMARY_SYSTEM_PROMPT | const | 4 |
-| SUMMARY_REMINDER | const | 7 |
-| SUMMARY_DELEGATE | const | 10 |
-| MEMORY_SUMMARY_LIMITS | const | 13 |
-| memorySummaryDefaults | const | 16 |
-| within | const | 18 |
-| memoryPolicy | function | 24 |
-
 ### src/model-config.js（579 行） — Pi models.json 无损配置读写与共享收藏持久化
 
 | 符号 | 类型 | 行 |
@@ -787,7 +772,7 @@
 | isPlainObject | method | 42 |
 | createPiModelStorage | function | 50 |
 
-### src/pi.js（369 行） — createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）
+### src/pi.js（365 行） — createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -797,10 +782,10 @@
 | withdrawQueue | function | 59 |
 | recallLastMessage | function | 69 |
 | TITLE_INSTRUCTION | const | 92 |
-| memoryExtension | function | 102 |
-| createPiFactory | function | 130 |
+| memoryExtension | function | 101 |
+| createPiFactory | function | 124 |
 
-### src/protocol.js（346 行） — zod 协议：selection / command 判别联合（消息类型见 L3）
+### src/protocol.js（345 行） — zod 协议：selection / command 判别联合（消息类型见 L3）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -819,19 +804,19 @@
 | compaction | const | 48 |
 | retryPatterns | const | 58 |
 | selection | const | 64 |
-| memorySummary | const | 77 |
-| preset | const | 83 |
-| presetStore | const | 89 |
-| providerKey | const | 91 |
-| modelKey | const | 94 |
-| secretValueIn | const | 101 |
-| secretHeadersIn | const | 106 |
-| thinkingLevelMapIn | const | 107 |
-| costIn | const | 115 |
-| providerConfigIn | const | 134 |
-| modelConfigIn | const | 150 |
-| fingerprintIn | const | 167 |
-| command | const | 168 |
+| taskBudget | const | 77 |
+| preset | const | 82 |
+| presetStore | const | 88 |
+| providerKey | const | 90 |
+| modelKey | const | 93 |
+| secretValueIn | const | 100 |
+| secretHeadersIn | const | 105 |
+| thinkingLevelMapIn | const | 106 |
+| costIn | const | 114 |
+| providerConfigIn | const | 133 |
+| modelConfigIn | const | 149 |
+| fingerprintIn | const | 166 |
+| command | const | 167 |
 
 ### src/remote.js（547 行） — Tailscale 登录身份、远程监听、同账号授权与本机配置持久化
 
@@ -877,44 +862,42 @@
 | assets | const | 7 |
 | createServerApp | function | 45 |
 
-### src/session-memory.js（117 行） — 标题与增量摘要登记、触发复盘、委派背景与被动进度
+### src/session-memory.js（29 行） — 标题提取登记、轮次预算挂钩与委派背景
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| textOf | const | 5 |
-| escape | const | 6 |
-| memoryHooks | function | 19 |
-| parentSummaryContext | function | 113 |
+| textOf | const | 4 |
+| memoryHooks | function | 11 |
 
-### src/session-store.js（528 行） — 会话四表、实体增量更新、逐会话事务与旧数据迁移
+### src/session-store.js（457 行） — 会话四表、实体增量更新、逐会话事务与旧数据迁移
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | EVENT_TYPES | const | 13 |
 | SESSION_FIELDS | const | 16 |
-| SessionStore | class | 29 |
-| constructor | method | 33 |
-| change | method | 109 |
-| hasSession | method | 139 |
-| listSessions | method | 144 |
-| listPendingSessionIds | method | 165 |
-| getSession | method | 173 |
-| insertSession | method | 305 |
-| importLegacySession | method | 331 |
-| migrateLegacy | method | 348 |
-| updateSession | method | 370 |
-| deleteSession | method | 394 |
-| setTurn | method | 400 |
-| saveSummary | method | 408 |
-| listSummaries | method | 421 |
-| deleteSummaries | method | 433 |
-| saveEvent | method | 444 |
-| deleteEvents | method | 463 |
-| pruneEvents | method | 477 |
-| saveTask | method | 489 |
-| listTasks | method | 521 |
+| TABLES | const | 31 |
+| INDEXES | const | 63 |
+| DEAD_TABLES | const | 72 |
+| DEAD_COLUMNS | const | 73 |
+| DEAD_EVENT_TYPES | const | 74 |
+| SessionStore | class | 76 |
+| constructor | method | 80 |
+| change | method | 141 |
+| hasSession | method | 163 |
+| listSessions | method | 168 |
+| listPendingSessionIds | method | 189 |
+| getSession | method | 197 |
+| insertSession | method | 296 |
+| importLegacySession | method | 322 |
+| migrateLegacy | method | 339 |
+| updateSession | method | 361 |
+| deleteSession | method | 385 |
+| saveEvent | method | 391 |
+| deleteEvents | method | 410 |
+| saveTask | method | 428 |
+| listTasks | method | 451 |
 
-### src/sessions.js（1341 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
+### src/sessions.js（1286 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -938,9 +921,9 @@
 | loadDefaults | method | 208 |
 | migrateDefaults | method | 218 |
 | migratePresets | method | 231 |
-| loadMemorySummary | method | 246 |
-| getMemorySummary | method | 257 |
-| configureMemorySummary | method | 262 |
+| loadTaskBudget | method | 246 |
+| getTaskBudget | method | 257 |
+| configureTaskBudget | method | 262 |
 | getDefaults | method | 268 |
 | workspaceDefaults | method | 271 |
 | configureDefaults | method | 289 |
@@ -957,30 +940,41 @@
 | sessionData | method | 481 |
 | persist | method | 494 |
 | writeChange | method | 512 |
-| saveChange | method | 537 |
-| list | method | 542 |
-| rename | method | 559 |
-| importSession | method | 572 |
-| create | method | 599 |
-| scheduleTaskNotifications | method | 946 |
-| deliverTaskNotifications | method | 958 |
-| get | method | 982 |
-| revealWorkspace | method | 987 |
-| browse | method | 1001 |
-| listFiles | method | 1007 |
-| refreshSkills | method | 1069 |
-| snapshot | method | 1075 |
-| subscribe | method | 1105 |
-| configure | method | 1111 |
-| startRun | method | 1146 |
-| retry | method | 1182 |
-| prompt | method | 1189 |
-| withdraw | method | 1214 |
-| cancel | method | 1270 |
-| remove | method | 1293 |
-| close | method | 1331 |
+| saveChange | method | 527 |
+| list | method | 532 |
+| rename | method | 549 |
+| importSession | method | 562 |
+| create | method | 589 |
+| scheduleTaskNotifications | method | 899 |
+| deliverTaskNotifications | method | 911 |
+| get | method | 935 |
+| revealWorkspace | method | 940 |
+| browse | method | 954 |
+| listFiles | method | 960 |
+| refreshSkills | method | 1022 |
+| snapshot | method | 1028 |
+| subscribe | method | 1057 |
+| configure | method | 1063 |
+| startRun | method | 1098 |
+| retry | method | 1134 |
+| prompt | method | 1141 |
+| withdraw | method | 1166 |
+| cancel | method | 1215 |
+| remove | method | 1238 |
+| close | method | 1276 |
 
-### src/tasks.js（122 行） — Tasks：子任务（委托）生命周期
+### src/task-budget.js（36 行） — 主子代理轮次预算规则、收尾提示词与配置页参数校验
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| WRAP_UP_PROMPT | const | 6 |
+| TASK_BUDGET_LIMITS | const | 9 |
+| taskBudgetDefaults | const | 12 |
+| within | const | 14 |
+| taskBudgetPolicy | function | 21 |
+| budgetSystemPrompt | const | 34 |
+
+### src/tasks.js（121 行） — Tasks：子任务（委托）生命周期
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -988,23 +982,23 @@
 | constructor | method | 5 |
 | start | method | 13 |
 | snapshotJob | method | 26 |
-| publish | method | 34 |
-| view | method | 39 |
-| snapshot | method | 42 |
-| run | method | 46 |
-| read | method | 91 |
-| append | method | 98 |
-| cancel | method | 108 |
+| publish | method | 33 |
+| view | method | 38 |
+| snapshot | method | 41 |
+| run | method | 45 |
+| read | method | 90 |
+| append | method | 97 |
+| cancel | method | 107 |
 
-### src/tools.js（97 行） — delegationTools：委托/凭证读取/追加工具定义（zod 入参）
+### src/tools.js（110 行） — delegationTools：委托/凭证读取/追加工具定义（zod 入参）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | delegateInput | const | 3 |
-| readInput | const | 10 |
-| appendInput | const | 13 |
-| result | const | 20 |
-| delegationTools | function | 24 |
+| readInput | const | 11 |
+| appendInput | const | 14 |
+| result | const | 21 |
+| delegationTools | function | 25 |
 
 ### src/update.js（41 行） — 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装
 
@@ -1159,21 +1153,20 @@
 | message | const | 133 |
 | prompt | const | 134 |
 
-### tests/memory-preview.mjs（24 行） — node --test 测试（npm test）
+### tests/memory-preview.mjs（22 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | state | const | 3 |
-| sessions | const | 14 |
-| app | const | 21 |
+| sessions | const | 12 |
+| app | const | 19 |
 
-### tests/memory-ui.test.js（183 行） — node --test 测试（npm test）
+### tests/memory-ui.test.js（98 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| page | function | 34 |
-| restore | method | 64 |
-| record | const | 68 |
+| page | function | 12 |
+| restore | method | 42 |
 
 ### tests/message-activity.test.js（407 行） — node --test 测试（npm test）
 
@@ -1326,7 +1319,7 @@
 |---|---|---|
 | makeFactory | const | 10 |
 
-### tests/recall.test.js（206 行） — node --test 测试（npm test）
+### tests/recall.test.js（202 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1427,49 +1420,49 @@
 | flowFactory | const | 92 |
 | jsonlFactory | const | 102 |
 
-### tests/session-memory.test.js（262 行） — node --test 测试（npm test）
+### tests/session-memory.test.js（110 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| reply | const | 10 |
+| reply | const | 9 |
 
-### tests/session-migration.test.js（264 行） — node --test 测试（npm test）
+### tests/session-migration.test.js（266 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | factory | const | 10 |
 | workspaceHash | const | 20 |
 
-### tests/session-persistence.test.js（232 行） — node --test 测试（npm test）
+### tests/session-persistence.test.js（229 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | factory | const | 9 |
 
-### tests/session-store.test.js（500 行） — node --test 测试（npm test）
+### tests/session-store.test.js（514 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | withStore | function | 11 |
 | fullSaved | function | 24 |
-| withStore | method | 56 |
-| withStore | method | 68 |
-| withStore | method | 80 |
-| withStore | method | 96 |
-| withStore | method | 108 |
-| withStore | method | 134 |
-| withStore | method | 162 |
-| withStore | method | 187 |
-| withStore | method | 219 |
-| withStore | method | 239 |
-| withStore | method | 267 |
-| withStore | method | 285 |
-| withStore | method | 314 |
-| withStore | method | 376 |
-| withStore | method | 401 |
-| withStore | method | 415 |
-| withStore | method | 440 |
-| withStore | method | 453 |
+| withStore | method | 48 |
+| withStore | method | 60 |
+| withStore | method | 71 |
+| withStore | method | 87 |
+| withStore | method | 98 |
+| withStore | method | 119 |
+| withStore | method | 139 |
+| withStore | method | 167 |
+| withStore | method | 181 |
+| withStore | method | 207 |
+| withStore | method | 225 |
+| withStore | method | 254 |
+| withStore | method | 316 |
+| withStore | method | 341 |
+| withStore | method | 355 |
+| withStore | method | 380 |
+| withStore | method | 393 |
+| LEGACY_DDL | const | 424 |
 
 ### tests/smoke.js（67 行） — node --test 测试（npm test）
 
@@ -1483,7 +1476,7 @@
 | assert | method | 56 |
 | assert | method | 57 |
 
-### tests/sqlite-benchmark.mjs（971 行） — node --test 测试（npm test）
+### tests/sqlite-benchmark.mjs（914 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1503,41 +1496,41 @@
 | WRITE_SQL | const | 85 |
 | instrument | function | 86 |
 | countingStore | function | 127 |
-| SIZES | const | 143 |
-| REPS | const | 149 |
-| filler | const | 151 |
-| makeSession | function | 154 |
-| writeFileSync | method | 157 |
-| makeDataset | function | 199 |
-| oldPersist | function | 209 |
-| runStorage | function | 227 |
-| fakeAgentFactory | function | 360 |
-| runE2E | function | 380 |
-| runGates | function | 452 |
-| lockHolder | function | 616 |
-| lockVictim | function | 635 |
-| runLock | function | 660 |
-| rmSync | method | 712 |
-| childResult | function | 717 |
-| judge | function | 727 |
-| selfCheck | function | 739 |
-| main | function | 828 |
-| writeFileSync | method | 851 |
-| spawnSync | method | 852 |
-| writeFileSync | method | 858 |
-| cpSync | method | 860 |
-| rmSync | method | 922 |
-| line | method | 926 |
-| line | method | 927 |
-| line | method | 928 |
-| line | method | 929 |
-| line | method | 930 |
-| line | method | 950 |
-| line | method | 951 |
-| line | method | 956 |
-| line | method | 958 |
-| line | method | 964 |
-| emit | method | 966 |
+| SIZES | const | 140 |
+| REPS | const | 146 |
+| filler | const | 148 |
+| makeSession | function | 151 |
+| writeFileSync | method | 154 |
+| makeDataset | function | 185 |
+| oldPersist | function | 195 |
+| runStorage | function | 212 |
+| fakeAgentFactory | function | 325 |
+| runE2E | function | 345 |
+| runGates | function | 417 |
+| lockHolder | function | 559 |
+| lockVictim | function | 578 |
+| runLock | function | 603 |
+| rmSync | method | 655 |
+| childResult | function | 660 |
+| judge | function | 670 |
+| selfCheck | function | 682 |
+| main | function | 771 |
+| writeFileSync | method | 794 |
+| spawnSync | method | 795 |
+| writeFileSync | method | 801 |
+| cpSync | method | 803 |
+| rmSync | method | 865 |
+| line | method | 869 |
+| line | method | 870 |
+| line | method | 871 |
+| line | method | 872 |
+| line | method | 873 |
+| line | method | 893 |
+| line | method | 894 |
+| line | method | 899 |
+| line | method | 901 |
+| line | method | 907 |
+| emit | method | 909 |
 
 ### tests/task-notifications.test.js（197 行） — node --test 测试（npm test）
 
@@ -1555,13 +1548,12 @@
 | state | const | 19 |
 | settle | const | 20 |
 
-### tests/tasks.test.js（111 行） — node --test 测试（npm test）
+### tests/tasks.test.js（117 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | fixture | function | 7 |
 | assert | method | 53 |
-| release | method | 84 |
 
 ### tests/text-contrast.test.js（162 行） — node --test 测试（npm test）
 
@@ -1670,8 +1662,8 @@
 
 ## L3 横切常量（跨模块定位入口）
 
-- 协议 command.type：image、inherit、radius、service.status、service.update.check、service.restart、remote.get、remote.login、remote.configure、session.rename、workspace.reveal、workspace.browse、files.browse、models.list、models.config.get、models.provider.save、models.provider.delete、models.provider.rename、models.model.save、models.model.delete、models.provider.discover、models.favorites.get、models.hidden.set、models.favorites.set、capabilities.list、session.defaults.get、session.defaults.configure、memory.summary.get、memory.summary.configure、session.presets.list、session.presets.save、session.presets.delete、session.configure、sessions.list、session.create、session.import、session.attach、session.skills.refresh、session.close、prompt、cancel、session.retry、queue.withdraw、tasks.read（src/protocol.js）
-- HTML id：sidebar、open-workspace、new、custom-new、preset-list、import-session、search、sessions、open-settings、sidebar-backdrop、toggle-sidebar、session-title、workspace-label、copy-workspace、reveal-workspace、workspace-feedback、open-summaries、status、service-dev、service-version、login、maintenance-state、connect、workspace、earliest、transcript、output、latest、message-queue、task-runs、compaction-progress、add-context、add-image、image-files、context-chips、task-timer、task-timer-value、context-menu、context-picker、context-back、context-title、context-close、context-search、context-results、context-error、image-attachments、composer、prompt、prompt-completion、composer-skill、provider、model、thinking、stop、send-steer、send-followup、send、session-runtime、mobile-runtime、mobile-expand、composer-help、error、session-action、session-action-form、session-action-title、session-action-description、session-name-label、session-name、session-action-error、session-action-cancel、session-action-submit、image-preview、image-preview-close、image-preview-image、restart-dialog、restart-form、restart-title、restart-description、restart-warning、restart-cancel、restart-submit、summaries、summaries-title、summaries-body、summaries-empty、summaries-list、task-overlays、task-template、settings、settings-title、settings-defaults-tab、settings-remote-tab、settings-models-tab、settings-service-tab、defaults-panel、selection-copy-title、selection-copy、selection-copy-help、selection-copy-feedback、queue-type、steer-help、followup-help、defaults-preview、memory-summary-title、memory-main-turns、memory-subagent-turns、memory-max-chars、memory-summary-help、subagent-title、subagent-help、subagent-provider、subagent-model、settings-feedback、defaults-title、defaults-editor、remote-panel、remote-status-title、remote-status、remote-login、remote-auth、remote-url、remote-form、remote-note、remote-enabled、remote-email、remote-email-help、remote-feedback、remote-refresh、remote-save、models-panel、service-panel、service-state-title、service-feedback、service-restart-title、restart-quick、restart-rebuild、service-recover、service-update-section、service-update-title、update-check、update-result、update-install、service-history-title、service-history、create-session、create-title、create-form、preset-fields、preset-name、preset-fixed-cwd、preset-directory、preset-delete、create-workspace、create-defaults-help、create-agents、create-compaction、create-retry、create-trust-row、create-trust、create-feedback、create-submit（public/index.html）
+- 协议 command.type：image、inherit、radius、service.status、service.update.check、service.restart、remote.get、remote.login、remote.configure、session.rename、workspace.reveal、workspace.browse、files.browse、models.list、models.config.get、models.provider.save、models.provider.delete、models.provider.rename、models.model.save、models.model.delete、models.provider.discover、models.favorites.get、models.hidden.set、models.favorites.set、capabilities.list、session.defaults.get、session.defaults.configure、task.budget.get、task.budget.configure、session.presets.list、session.presets.save、session.presets.delete、session.configure、sessions.list、session.create、session.import、session.attach、session.skills.refresh、session.close、prompt、cancel、session.retry、queue.withdraw、tasks.read（src/protocol.js）
+- HTML id：sidebar、open-workspace、new、custom-new、preset-list、import-session、search、sessions、open-settings、sidebar-backdrop、toggle-sidebar、session-title、workspace-label、copy-workspace、reveal-workspace、workspace-feedback、status、service-dev、service-version、login、maintenance-state、connect、workspace、earliest、transcript、output、latest、message-queue、task-runs、compaction-progress、add-context、add-image、image-files、context-chips、task-timer、task-timer-value、context-menu、context-picker、context-back、context-title、context-close、context-search、context-results、context-error、image-attachments、composer、prompt、prompt-completion、composer-skill、provider、model、thinking、stop、send-steer、send-followup、send、session-runtime、mobile-runtime、mobile-expand、composer-help、error、session-action、session-action-form、session-action-title、session-action-description、session-name-label、session-name、session-action-error、session-action-cancel、session-action-submit、image-preview、image-preview-close、image-preview-image、restart-dialog、restart-form、restart-title、restart-description、restart-warning、restart-cancel、restart-submit、task-overlays、task-template、settings、settings-title、settings-defaults-tab、settings-remote-tab、settings-models-tab、settings-service-tab、defaults-panel、selection-copy-title、selection-copy、selection-copy-help、selection-copy-feedback、queue-type、steer-help、followup-help、defaults-preview、task-budget-title、task-max-turns、task-wrap-up-window、task-budget-help、subagent-title、subagent-help、subagent-provider、subagent-model、settings-feedback、defaults-title、defaults-editor、remote-panel、remote-status-title、remote-status、remote-login、remote-auth、remote-url、remote-form、remote-note、remote-enabled、remote-email、remote-email-help、remote-feedback、remote-refresh、remote-save、models-panel、service-panel、service-state-title、service-feedback、service-restart-title、restart-quick、restart-rebuild、service-recover、service-update-section、service-update-title、update-check、update-result、update-install、service-history-title、service-history、create-session、create-title、create-form、preset-fields、preset-name、preset-fixed-cwd、preset-directory、preset-delete、create-workspace、create-defaults-help、create-agents、create-compaction、create-retry、create-trust-row、create-trust、create-feedback、create-submit（public/index.html）
 - HTTP 静态路由：/、/favicon.svg、/style.css、/app.js、/service-settings.js、/file-picker.js、/tooltip.js、/tooltip.css、/text-contrast.js、/text-contrast.css、/file-picker.css、/markdown.js、/stream-renderer.js、/memory-tags.js、/vendor/marked.js、/vendor/purify.js、/model-manager.js、/model-manager.css、/model-picker.js、/model-picker.css、/health（src/server.js）
 
 ## ⚠ 未登记文件（0）

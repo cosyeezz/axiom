@@ -5,30 +5,8 @@ import { JSDOM } from "jsdom";
 import { marked } from "marked";
 import createPurify from "dompurify";
 import { createStreamRenderer } from "../public/stream-renderer.js";
-import { extractMemoryTags, stripMemoryTags } from "../public/memory-tags.js";
 
-test("extractMemoryTags 取自报内容：同类多段取最后一段，无标签返回空串", () => {
-  const tags = extractMemoryTags("<title>摘要机制</title><summary>第一版</summary>正文<summary>最终版</summary><progress>进行中</progress>");
-  assert.equal(tags.title, "摘要机制");
-  assert.equal(tags.summary, "最终版");
-  assert.equal(tags.progress, "进行中");
-  assert.deepEqual(extractMemoryTags("没有任何标签的普通回复"), {});
-});
-
-test("stripMemoryTags 移除成对标签，其余文本与普通标签原样保留", () => {
-  assert.equal(stripMemoryTags("<summary>内部摘要</summary>可见正文"), "可见正文");
-  assert.equal(stripMemoryTags("结果<b>加粗</b><title>你好</title>尾部"), "结果<b>加粗</b>尾部");
-  assert.equal(stripMemoryTags("a < b 且 x<y 正常保留"), "a < b 且 x<y 正常保留");
-});
-
-test("stripMemoryTags 流式隐藏残缺标签，闭合后恢复正文", () => {
-  assert.equal(stripMemoryTags("正在 <sum", { streaming: true }), "正在 ");
-  assert.equal(stripMemoryTags("正在 <summary>进度中", { streaming: true }), "正在 ");
-  assert.equal(stripMemoryTags("正在 </t", { streaming: true }), "正在 ");
-  assert.equal(stripMemoryTags("比较 <b 与 <br", { streaming: true }), "比较 <b 与 <br");
-  assert.equal(stripMemoryTags("<summary>旧</summary> Hello <summary>新", { streaming: true }), " Hello ");
-  assert.equal(stripMemoryTags("正在 <summary>进度中</summary> 完成", { streaming: true }), "正在  完成");
-});
+// 标签提取/剥离的纯函数用例在 tests/memory-tags.test.js；本文件只覆盖页面集成行为。
 
 // Run the real page's snapshot/event handlers without a model or server.
 async function page() {
@@ -65,89 +43,18 @@ async function page() {
   return { dom, w, emit, restore, paint, output: w.document.getElementById("output") };
 }
 
-const record = (id, text, extra = {}) => ({ id, agentId: "main", turn: 1, text, timestamp: Date.UTC(2026, 8, 12, 8, 0, 0), source: "model", ...extra });
-
-test("摘要记录对话框：只列主代理记录、新到旧排序、时间与轮次纯文本", async () => {
-  const { dom, w, restore } = await page();
-  try {
-    const dialog = w.document.getElementById("summaries");
-    restore({ summaries: [
-      record("s1", "第一条"),
-      record("c1", "子代理记录", { agentId: "child", turn: 3 }),
-      record("s2", "第二条", { turn: 4 }),
-    ] });
-    w.document.getElementById("open-summaries").click();
-    assert.equal(dialog.open, true);
-    const rows = [...dialog.querySelectorAll(".summary-record")];
-    assert.equal(rows.length, 2, "subagent records stay out of the main list");
-    assert.match(rows[0].textContent, /第二条/);
-    assert.match(rows[0].querySelector(".summary-turn").textContent, /第 4 轮/);
-    assert.match(rows[1].textContent, /第一条/);
-    assert.match(rows[1].querySelector(".summary-turn").textContent, /第 1 轮/);
-    assert.ok(rows[0].querySelector("time").textContent.length > 0);
-    assert.equal(dialog.querySelector(".summary-text").childElementCount, 0, "text renders as plain text");
-    assert.equal(w.document.getElementById("summaries-empty").hidden, true);
-    dialog.close();
-    assert.equal(dialog.open, false);
-    // 空态
-    restore({ summaries: [] });
-    w.document.getElementById("open-summaries").click();
-    assert.equal(dialog.querySelectorAll(".summary-record").length, 0);
-    assert.equal(w.document.getElementById("summaries-empty").hidden, false);
-  } finally { dom.window.close(); }
-});
-
-test("session.summary 按 id 覆盖（迟到 entryId 不产生重复），session.title 更新标题", async () => {
-  const { dom, w, emit, restore } = await page();
-  try {
-    const dialog = w.document.getElementById("summaries");
-    restore({ summaries: [record("s1", "第一条")] });
-    w.document.getElementById("open-summaries").click();
-    emit("session.summary", { ...record("s1", "第一条"), entryId: "e9", toolResults: [{ toolCallId: "t1", toolName: "read", isError: true }] });
-    assert.equal(dialog.querySelectorAll(".summary-record").length, 1, "same id updates in place");
-    emit("session.summary", record("s2", "第二条", { turn: 2 }));
-    assert.equal(dialog.querySelectorAll(".summary-record").length, 2);
-    assert.match(dialog.querySelector(".summary-record").textContent, /第二条/, "newest first after live update");
-    emit("session.summary", record("c2", "子代理进度", { agentId: "child" }));
-    assert.equal(dialog.querySelectorAll(".summary-record").length, 2, "subagent records are kept but not listed");
-    dialog.close();
-    emit("session.summary", record("s3", "关闭后到达"));
-    w.document.getElementById("open-summaries").click();
-    assert.equal(dialog.querySelectorAll(".summary-record").length, 3, "records arrive while closed are shown on reopen");
-    assert.equal(w.document.getElementById("session-title").textContent, "Memory");
-    emit("session.title", { title: "新标题" });
-    assert.equal(w.document.getElementById("session-title").textContent, "新标题");
-    assert.match(w.document.title, /^新标题 · /);
-  } finally { dom.window.close(); }
-});
-
-test("撤回后快照重放会同步摘要列表（含打开中的对话框）", async () => {
-  const { dom, w, restore } = await page();
-  try {
-    const dialog = w.document.getElementById("summaries");
-    restore({ summaries: [record("s1", "保留"), record("s2", "被撤回摘要")] });
-    w.document.getElementById("open-summaries").click();
-    assert.equal(dialog.querySelectorAll(".summary-record").length, 2);
-    // 撤回清理后服务端返回的新快照
-    restore({ summaries: [record("s1", "保留")] });
-    assert.equal(dialog.open, true);
-    assert.equal(dialog.querySelectorAll(".summary-record").length, 1);
-    assert.match(dialog.querySelector(".summary-record").textContent, /保留/);
-  } finally { dom.window.close(); }
-});
-
 test("助手文本流式与成稿都剥离记忆标签，用户手写标签不受影响", async () => {
   const { dom, w, emit, paint, output } = await page();
   try {
     emit("agent.message.start", { message: { role: "assistant" } });
-    emit("agent.delta", { type: "text_delta", delta: "正在<sum" });
+    emit("agent.delta", { type: "text_delta", delta: "正在<tit" });
     paint();
     const assistant = output.querySelector(".message:not(.user) .markdown:not(.thinking-content)");
     assert.equal(assistant.textContent.trim(), "正在", "partial tag stays hidden while streaming");
-    emit("agent.delta", { type: "text_delta", delta: "mary>内部进度</summary> 完成" });
+    emit("agent.delta", { type: "text_delta", delta: "le>标题</title> 完成" });
     paint();
     assert.equal(assistant.textContent.trim(), "正在 完成");
-    emit("agent.message.end", { message: { role: "assistant", content: [{ type: "text", text: "<summary>全程</summary>最终回复" }] } });
+    emit("agent.message.end", { message: { role: "assistant", content: [{ type: "text", text: "<title>全程</title>最终回复" }] } });
     assert.equal(output.querySelector(".message:not(.user) .markdown:not(.thinking-content)").textContent.trim(), "最终回复");
     emit("agent.message.end", { message: { role: "user", content: "<summary>手写标签</summary>用户问题" } });
     const user = output.querySelector(".message.user .markdown:not(.thinking-content)");
@@ -157,26 +64,34 @@ test("助手文本流式与成稿都剥离记忆标签，用户手写标签不�
   } finally { dom.window.close(); }
 });
 
-test("摘要设置：memory.summary.get 填充面板，change 即存并回显服务端确认值", async () => {
+test("session.title 更新标题与页面标题", async () => {
+  const { dom, w, emit } = await page();
+  try {
+    assert.equal(w.document.getElementById("session-title").textContent, "Memory");
+    emit("session.title", { title: "新标题" });
+    assert.equal(w.document.getElementById("session-title").textContent, "新标题");
+    assert.match(w.document.title, /^新标题 · /);
+  } finally { dom.window.close(); }
+});
+
+test("轮次预算设置：task.budget.get 填充面板，change 即存并回显服务端确认值", async () => {
   const { dom, w } = await page();
   try {
     w.eval(`window.__rpc = []; request = async (type, data = {}) => {
       window.__rpc.push([type, data]);
-      return type === "memory.summary.get" ? { mainTurns: 5, subagentTurns: 7, maxChars: 40 } : data.summary;
+      return type === "task.budget.get" ? { maxTurns: 30, wrapUpWindow: 3 } : data.budget;
     };`);
-    await w.loadMemorySummary();
+    await w.loadTaskBudget();
     const value = (id) => w.document.getElementById(id).value;
-    assert.equal(value("memory-main-turns"), "5");
-    assert.equal(value("memory-subagent-turns"), "7");
-    assert.equal(value("memory-max-chars"), "40");
-    value("memory-max-chars") && (w.document.getElementById("memory-max-chars").value = "25");
-    w.document.getElementById("memory-max-chars").dispatchEvent(new w.Event("change"));
+    assert.equal(value("task-max-turns"), "30");
+    assert.equal(value("task-wrap-up-window"), "3");
+    w.document.getElementById("task-max-turns").value = "50";
+    w.document.getElementById("task-max-turns").dispatchEvent(new w.Event("change"));
     await new Promise((resolve) => setTimeout(resolve, 0));
-    const configure = w.__rpc.find(([type]) => type === "memory.summary.configure");
-    assert.deepEqual(JSON.parse(JSON.stringify(configure[1])), { summary: { mainTurns: 5, subagentTurns: 7, maxChars: 25 } });
-    assert.equal(value("memory-max-chars"), "25");
+    const configure = w.__rpc.find(([type]) => type === "task.budget.configure");
+    assert.deepEqual(JSON.parse(JSON.stringify(configure[1])), { budget: { maxTurns: 50, wrapUpWindow: 3 } });
+    assert.equal(value("task-max-turns"), "50");
     assert.match(w.document.getElementById("settings-feedback").textContent, /已保存/);
-    // 打开设置时拉取一次当前值
-    assert.ok(w.__rpc.some(([type]) => type === "memory.summary.get"));
+    assert.ok(w.__rpc.some(([type]) => type === "task.budget.get"));
   } finally { dom.window.close(); }
 });

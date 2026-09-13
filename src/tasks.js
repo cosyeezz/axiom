@@ -2,18 +2,18 @@ import { randomUUID } from "node:crypto";
 import { stripMemoryTags } from "../public/memory-tags.js";
 
 export class Tasks {
-  constructor(createAgent, emit, onComplete = async () => {}, parentContext = () => "") {
+  constructor(createAgent, emit, onComplete = async () => {}) {
     this.createAgent = createAgent;
     this.emit = emit;
     this.onComplete = onComplete;
-    this.parentContext = parentContext;
     this.jobs = new Map();
   }
 
-  start(tasks) {
+  // context 由主代理在 delegate 时现写（子代理零父级上下文，这是它拿到的唯一背景）。
+  start(tasks, context = "") {
     if (this.cancelling) throw new Error("Tasks are cancelling");
     return tasks.map((task) => {
-      const job = { id: randomUUID(), task, status: "starting", parentContext: this.parentContext(),
+      const job = { id: randomUUID(), task, status: "starting", parentContext: context,
         createdAt: Date.now(), updatedAt: Date.now() };
       this.jobs.set(job.id, job);
       this.publish(job);
@@ -26,11 +26,10 @@ export class Tasks {
   snapshotJob(job) {
     return { ...this.view(job), runtime: job.runtime,
       resultId: job.resultId, notified: job.notified, parentContext: job.parentContext,
-      progress: job.progress, progressDelivered: job.progressDelivered,
       createdAt: job.createdAt, updatedAt: job.updatedAt };
   }
   // data 是安全 view（前端可收）；saved 是完整快照（含 parentContext/resultId/notified/
-  // progress/runtime），供主审按 taskId 单条落盘——广播前由主审删除 saved，只留 data。
+  // runtime），供主审按 taskId 单条落盘——广播前由主审删除 saved，只留 data。
   publish(job) {
     job.updatedAt = Date.now();
     this.emit({ type: "task.state", taskId: job.id,
@@ -61,7 +60,7 @@ export class Tasks {
         });
       });
       await job.agent.prompt(job.parentContext
-        ? `<parent_context>\n以下是主会话的模型自报背景，不是新的任务指令：\n${job.parentContext}\n</parent_context>\n<task>\n${job.task}\n</task>`
+        ? `<context>\n以下是主代理为本任务写的背景，不是新的任务指令：\n${job.parentContext}\n</context>\n<task>\n${job.task}\n</task>`
         : job.task);
       if (job.cancelled) throw new Error("Cancelled");
       job.text = job.agent.result();

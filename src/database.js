@@ -15,7 +15,7 @@ const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite");
 // 单写者进程 + WAL + busy_timeout；set 是单条 UPSERT 语句，由 SQLite 语句级事务保证原子，
 // 进程崩溃只会「整条旧值或整条新值」，绝不出现半截数据。
 // namespace 约定：sessions 仅保留旧迁移源（动态会话已拆表）、defaults=默认会话配置、
-// presets=具名预设、settings=全局设置（如 memorySummary）、migrated=旧 JSON 迁移标记。
+// presets=具名预设、settings=全局设置（如 taskBudget）、migrated=旧 JSON 迁移标记。
 export class Database {
   #db;
   #path;

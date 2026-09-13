@@ -323,11 +323,11 @@ export function createServerApp(sessions, service = {}) {
             case "session.configure":
               data = await sessions.configure(request.sessionId, request);
               break;
-            case "memory.summary.get":
-              data = sessions.getMemorySummary();
+            case "task.budget.get":
+              data = sessions.getTaskBudget();
               break;
-            case "memory.summary.configure":
-              data = await sessions.configureMemorySummary(request.summary);
+            case "task.budget.configure":
+              data = await sessions.configureTaskBudget(request.budget);
               break;
             case "session.defaults.get":
               data = request.cwd ? await sessions.workspaceDefaults(request.cwd) : sessions.getDefaults();

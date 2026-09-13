@@ -648,9 +648,6 @@ button.danger:hover:not(:disabled) { background: #c13e50; }
 .context-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; min-width: 0; }
 .icon-button { width: 32px; height: 32px; padding: 0; flex-shrink: 0; border-radius: 9px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); font-size: 22px; }
 .icon-button:hover { color: var(--ink); border-color: #5e6ad280; background: #5e6ad21a; }
-#open-summaries { display: grid; place-items: center; width: 28px; height: 28px; min-height: 28px; border: 0; border-radius: 7px; background: transparent; flex-shrink: 0; }
-#open-summaries svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
-#open-summaries:hover:not(:disabled), #open-summaries:focus-visible { background: var(--raised); }
 #add-context { display: grid; place-items: center; width: 28px; height: 28px; min-height: 28px; border: 0; border-radius: 7px; background: transparent; }
 #add-context svg { width: 18px; height: 18px; color: var(--muted); }
 #add-context:hover:not(:disabled), #add-context:focus-visible { background: var(--raised); }
@@ -779,7 +776,6 @@ textarea {
 #create-session,
 #session-action,
 #restart-dialog,
-#summaries,
 .mm-dialog,
 .task-dialog {
   width: min(600px, calc(100% - 32px));
@@ -792,19 +788,6 @@ textarea {
   box-shadow: 0 24px 80px #0008;
 }
 #restart-dialog { width: min(460px, calc(100% - 32px)); }
-#summaries { width: min(560px, calc(100% - 32px)); }
-#summaries-body {
-  padding: 8px 24px 16px;
-  max-height: min(60dvh, 480px);
-  overflow: auto;
-  overscroll-behavior: contain;
-}
-#summaries-empty { margin: 0; }
-.summary-record { padding: 12px 0; border-bottom: 1px solid var(--line); }
-.summary-record:last-child { border-bottom: 0; padding-bottom: 0; }
-.summary-meta { height: auto; padding: 0; border: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-bottom: 4px; color: var(--muted); font-size: 12px; line-height: 1.5; font-variant-numeric: tabular-nums; }
-.summary-turn { padding: 1px 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--raised); font: 500 11px/1.5 var(--mono); letter-spacing: 0.04em; }
-#summaries-body .summary-text { margin: 0; line-height: 1.5; color: var(--body-ink); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
 #restart-title { margin: 0; font-size: 18px; }
 #settings { width: min(1000px, calc(100% - 32px)); height: 80dvh; overflow: hidden; }
 #settings[open] { display: flex; flex-direction: column; }
@@ -846,20 +829,17 @@ textarea {
 #create-session::backdrop,
 #session-action::backdrop,
 #restart-dialog::backdrop,
-#summaries::backdrop,
 .task-dialog::backdrop {
   background: #0009;
 }
 .task-dialog::backdrop { left: var(--sidebar-width); top: 64px; background: #0006; }
 #settings header,
 #create-session header,
-#summaries > header,
 .task-top header {
   justify-content: space-between;
 }
 #settings h2,
 #create-session h2,
-#summaries h2,
 .task-top h2 {
   font-size: 18px;
   margin: 0;
@@ -893,30 +873,30 @@ textarea {
 #settings .selectors select {
   max-width: 100%;
 }
-/* 摘要记忆：数值输入改成「标签在上、输入框+单位在下」的堆叠布局，
-   避免原来「主代理每 [3] 轮提醒一次摘要」长句换行后读不出对应关系。 */
-.settings-selectors:has(> .memory-field) {
+/* 轮次预算：数值输入改成「标签在上、输入框+单位在下」的堆叠布局，
+   避免长句换行后读不出对应关系。 */
+.settings-selectors:has(> .budget-field) {
   column-gap: 18px;
   row-gap: 12px;
 }
-.settings-selectors .memory-field {
+.settings-selectors .budget-field {
   display: grid;
   grid-template-columns: minmax(104px, 1fr) auto;
   gap: 4px;
   align-items: center;
   max-width: 240px;
 }
-.settings-selectors .memory-field > .memory-field-label {
+.settings-selectors .budget-field > .budget-field-label {
   grid-column: 1 / -1;
   font-size: 11px;
   color: var(--muted);
 }
-.settings-selectors .memory-field > input {
+.settings-selectors .budget-field > input {
   min-height: 32px;
   padding: 4px 8px;
   font-size: 12px;
 }
-.settings-selectors .memory-field > .memory-field-unit {
+.settings-selectors .budget-field > .budget-field-unit {
   font-size: 11px;
   color: var(--muted);
 }

@@ -2,6 +2,7 @@ import { z } from "zod";
 
 const delegateInput = z
   .object({
+    context: z.string().trim().min(1),
     tasks: z
       .array(z.object({ task: z.string().trim().min(1) }).strict())
       .min(1),
@@ -27,29 +28,41 @@ export function delegationTools(tasks) {
       name: "delegate",
       label: "Delegate",
       description:
-        "Start independent subagent tasks in the background and return task IDs immediately. Results are not available here: when a task finishes, a proactive notification reports its taskId and resultId; use read_result with those IDs then.",
+        "Start independent subagent tasks in the background and return task IDs immediately. Subagents start with no knowledge of this conversation: context is the only background they get. Split work into small tasks, each one concrete goal finishable in a handful of turns. Results are not available here: when a task finishes, a proactive notification reports its taskId and resultId; use read_result with those IDs then.",
       parameters: {
         type: "object",
         properties: {
+          context: {
+            type: "string",
+            minLength: 1,
+            description:
+              "Shared background for every task in this call: what is being built, conclusions already established, constraints and what not to touch. Write it for a reader who has seen none of this conversation.",
+          },
           tasks: {
             type: "array",
             minItems: 1,
             items: {
               type: "object",
-              properties: { task: { type: "string", minLength: 1 } },
+              properties: {
+                task: {
+                  type: "string",
+                  minLength: 1,
+                  description:
+                    "One concrete, independently verifiable goal. If it needs more than a handful of turns, split it into several tasks.",
+                },
+              },
               required: ["task"],
               additionalProperties: false,
             },
           },
         },
-        required: ["tasks"],
+        required: ["context", "tasks"],
         additionalProperties: false,
       },
       async execute(_id, input) {
+        const { context, tasks: requested } = delegateInput.parse(input);
         return result({
-          taskIds: tasks.start(
-            delegateInput.parse(input).tasks.map(({ task }) => task),
-          ),
+          taskIds: tasks.start(requested.map(({ task }) => task), context),
         });
       },
     },

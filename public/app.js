@@ -27,8 +27,8 @@ let allSessions = [],
   follow = true;
 const views = new Map();
 const compactionDefaults = { enabled: false, tokenThreshold: 100000, percentThreshold: 70, model: null, thinking: "off", keepRecentTokens: 20000 };
-// 摘要记忆参数默认值，与 src/memory-policy.js 的 memorySummaryDefaults 保持一致。
-const memorySummaryDefaults = { mainTurns: 3, subagentTurns: 6, maxChars: 30 };
+// 子代理轮次预算默认值，与 src/task-budget.js 的 taskBudgetDefaults 保持一致。
+const taskBudgetDefaults = { maxTurns: 20, wrapUpWindow: 2 };
 const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 let modelFavorites = { provider: [], model: [], thinking: [] };
 // 思考收藏键带模型上下文，符合后端 provider/model:level 契约（model id 含冒号时后端按最后一个冒号切分）；
@@ -54,7 +54,7 @@ for (const id of ["provider", "model", "thinking", "subagent-provider", "subagen
 }
 const modelManager = initModelManager({ root: $("models-panel"), request, onSaved: refreshModelCatalog });
 const serviceUi = initServiceSettings({ request, isReady: () => connected });
-let compactions = [], mainItems = [], summaries = [];
+let compactions = [], mainItems = [];
 // 手动重试靠主代理末尾消息判定：与服务端 canResume 同一条规则，避免两边判断不一致。
 let lastMainMessage = null, interrupted = false;
 const compactionNodes = new Map(), taskEntries = new Map();
@@ -416,32 +416,30 @@ async function configure(thinking) {
   }
 }
 // 摘要记忆参数：设置页「默认新会话设置」独立小节，get 填充、change 即存（服务端持久化并校验边界）。
-const memorySummaryInputs = ["memory-main-turns", "memory-subagent-turns", "memory-max-chars"];
-async function loadMemorySummary() {
+const taskBudgetInputs = ["task-max-turns", "task-wrap-up-window"];
+async function loadTaskBudget() {
   try {
-    const summary = await request("memory.summary.get");
-    $("memory-main-turns").value = summary.mainTurns ?? memorySummaryDefaults.mainTurns;
-    $("memory-subagent-turns").value = summary.subagentTurns ?? memorySummaryDefaults.subagentTurns;
-    $("memory-max-chars").value = summary.maxChars ?? memorySummaryDefaults.maxChars;
+    const budget = await request("task.budget.get");
+    $("task-max-turns").value = budget.maxTurns ?? taskBudgetDefaults.maxTurns;
+    $("task-wrap-up-window").value = budget.wrapUpWindow ?? taskBudgetDefaults.wrapUpWindow;
   } catch (e) {
-    $("settings-feedback").textContent = `摘要设置加载失败：${e.message}`;
+    $("settings-feedback").textContent = `轮次预算加载失败：${e.message}`;
   }
 }
-async function saveMemorySummary() {
+async function saveTaskBudget() {
   try {
-    const summary = await request("memory.summary.configure", { summary: Object.fromEntries(
-      [["memory-main-turns", "mainTurns"], ["memory-subagent-turns", "subagentTurns"], ["memory-max-chars", "maxChars"]]
+    const budget = await request("task.budget.configure", { budget: Object.fromEntries(
+      [["task-max-turns", "maxTurns"], ["task-wrap-up-window", "wrapUpWindow"]]
         .map(([id, key]) => [key, Number($(id).value)]),
     ) });
-    $("memory-main-turns").value = summary.mainTurns;
-    $("memory-subagent-turns").value = summary.subagentTurns;
-    $("memory-max-chars").value = summary.maxChars;
-    $("settings-feedback").textContent = "摘要设置已保存 · 新建会话生效";
+    $("task-max-turns").value = budget.maxTurns;
+    $("task-wrap-up-window").value = budget.wrapUpWindow;
+    $("settings-feedback").textContent = "轮次预算已保存 · 新建任务生效";
   } catch (e) {
-    $("settings-feedback").textContent = `摘要设置保存失败：${e.message}`;
+    $("settings-feedback").textContent = `轮次预算保存失败：${e.message}`;
   }
 }
-for (const id of memorySummaryInputs) $(id).addEventListener("change", () => void saveMemorySummary());
+for (const id of taskBudgetInputs) $(id).addEventListener("change", () => void saveTaskBudget());
 function showSettingsPanel(panel) {
   for (const name of ["defaults", "remote", "models", "service"]) {
     $(`${name}-panel`).hidden = name !== panel;
@@ -466,7 +464,7 @@ $("open-settings").onclick = () => {
   controls();
   if (!$("settings").open) $("settings").showModal();
   if (models.length) openCreation(true);
-  void loadMemorySummary();
+  void loadTaskBudget();
 };
 $("settings").onclick = (e) => {
   if (e.target !== $("settings")) return;
@@ -1617,13 +1615,6 @@ function event(message) {
     $("session-title").textContent = data.title || "新会话";
     updatePageTitle();
   }
-  if (type === "session.summary") {
-    // 同一记录可能随 turn_end 补充 entryId/toolResults 重发，按 id 覆盖。
-    const at = summaries.findIndex((record) => record.id === data.id);
-    if (at >= 0) summaries[at] = data;
-    else summaries.push(data);
-    if ($("summaries").open) renderSummaries();
-  }
   if (type === "agent.message.end" && data.message.role === "user") {
     clearWaiting(agentId);
     const item = card("你", tasks.get(agentId));
@@ -1795,8 +1786,6 @@ function snapshot(state) {
   renderTaskRuns();
   retryCards.clear();
   compactions = state.compactions || [];
-  summaries = state.summaries || [];
-  if ($("summaries").open) renderSummaries();
   compactionNodes.clear();
   taskEntries.clear();
   renderCompactionStatus(state.compactionStatus);
@@ -2670,36 +2659,6 @@ function renderSessions() {
 }
 $("search").oninput = renderSessions;
 let sessionAction;
-// 主会话摘要记录：时间、轮次、纯文本；只展示 agentId 为 main 的记录。
-function renderSummaries() {
-  const records = summaries.filter((record) => record.agentId === "main").reverse();
-  $("summaries-empty").hidden = records.length > 0;
-  $("summaries-list").replaceChildren(...records.map((record) => {
-    const row = document.createElement("article");
-    row.className = "summary-record";
-    const meta = document.createElement("header");
-    meta.className = "summary-meta";
-    const time = document.createElement("time");
-    const at = record.timestamp || record.messageTimestamp;
-    if (at) {
-      time.textContent = new Date(at).toLocaleString();
-      meta.append(time);
-    }
-    const turn = document.createElement("span");
-    turn.className = "summary-turn";
-    turn.textContent = `第 ${record.turn || 1} 轮`;
-    const text = document.createElement("p");
-    text.className = "summary-text";
-    text.textContent = record.text || "";
-    meta.append(turn);
-    row.append(meta, text);
-    return row;
-  }));
-}
-$("open-summaries").onclick = () => {
-  renderSummaries();
-  $("summaries").showModal();
-};
 
 function openSessionAction(kind, session) {
   if (!connected || changing) return;

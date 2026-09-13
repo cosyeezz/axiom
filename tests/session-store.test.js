@@ -33,18 +33,10 @@ function fullSaved(overrides = {}) {
     elapsedMs: 30,
     runningSince: null,
     sessionFile: "F:/demo/.jsonl",
-    summaries: [
-      { id: "m1", agentId: "main", turn: 1, text: "主摘要", timestamp: 1, messageTimestamp: 2, source: "model", entryId: "e1", toolResults: [{ toolCallId: "t1", toolName: "read", isError: false }] },
-      { id: "m2", agentId: "main", turn: 2, text: "主摘要2", timestamp: 3, source: "model" },
-      { id: "c1", agentId: "task-1", turn: 1, text: "子进度", timestamp: 4, source: "model" },
-    ],
-    memoryTurns: { main: 7, "task-1": 3 },
-    progressDeliveries: [{ timestamp: 10, text: "<subagent_progress>x</subagent_progress>" }],
-    summaryTriggers: [{ id: "tr1", agentId: "main", turn: 2, timestamp: 5, reason: "interval", status: "recorded", summaryId: "m2", messageTimestamp: 6 }],
     compactions: [{ id: "cp1", previousEntryId: "e0", preentries: 3 }],
     retries: [{ agentId: "main", id: "retry-1", messageCount: 4, anchorEntryId: "e1", status: "failed", error: "x", history: [{ status: "waiting", attempt: 1 }] }],
     tasks: [
-      { id: "task-1", task: "做事", status: "completed", text: "结果", runtime: { model: "m/x" }, resultId: "r-1", notified: true, parentContext: "背景", progress: { id: "m2", text: "进度" }, progressDelivered: "m2" },
+      { id: "task-1", task: "做事", status: "completed", text: "结果", runtime: { model: "m/x" }, resultId: "r-1", notified: true, parentContext: "背景" },
       { id: "task-2", task: "另一件", status: "cancelled", error: "服务已重启，子任务已停止" },
     ],
     selection: { model: "a/b", thinking: "high", capabilities: null, subagentModel: "c/d", subagentThinking: null, queueType: "steer", trustProject: true, useDefaults: false },
@@ -70,7 +62,6 @@ test("缺字段不造时间：最小 saved 恢复时缺什么就是什么", () =
     const saved = store.getSession("bare");
     assert.deepEqual(saved, {
       id: "bare", cwd: "F:/x", titleManual: false, titleRequested: false,
-      summaries: [], memoryTurns: { main: 0 }, progressDeliveries: [], summaryTriggers: [],
       compactions: [], retries: [], tasks: [], elapsedMs: 0, runningSince: null,
     });
     assert.deepEqual(store.listSessions(), [{ id: "bare", cwd: "F:/x", titleManual: false, titleRequested: false, elapsedMs: 0, runningSince: null }]);
@@ -99,35 +90,8 @@ test("deleteSession 级联清空子表", () =>
     assert.equal(store.hasSession("s1"), false);
     assert.deepEqual(store.listSessions(), []);
     assert.deepEqual(store.listTasks("s1"), []);
-    assert.deepEqual(store.listSummaries("s1"), []);
     assert.equal(db.prepare("SELECT count(*) AS n FROM session_events").get().n, 0);
     store.deleteSession("missing"); // 不存在安全
-  }));
-
-test("saveSummary upsert；无 id 摘要稳定生成 id 且原形保留；listSummaries 过滤与 limit；deleteSummaries", () =>
-  withStore((store) => {
-    store.insertSession({ id: "s1", cwd: "F:/x" });
-    store.saveSummary("s1", { id: "m1", agentId: "main", text: "v1" });
-    store.saveSummary("s1", { id: "m1", agentId: "main", text: "v2" });
-    store.saveSummary("s1", { id: "m2", agentId: "task-1", text: "子" });
-    assert.deepEqual(store.listSummaries("s1"), [
-      { id: "m1", agentId: "main", text: "v2" },
-      { id: "m2", agentId: "task-1", text: "子" },
-    ]);
-    assert.deepEqual(store.listSummaries("s1", "main"), [{ id: "m1", agentId: "main", text: "v2" }]);
-    assert.deepEqual(store.listSummaries("s1", "main", 5), [{ id: "m1", agentId: "main", text: "v2" }]);
-    // 无 id 原形：同一原形重复保存不重复成行；读出回填稳定 id，其余字段原样。
-    const anonymous = { agentId: "main", turn: 9, text: "旧无id摘要", timestamp: 42 };
-    store.saveSummary("s1", anonymous);
-    store.saveSummary("s1", { ...anonymous });
-    const list = store.listSummaries("s1", "main");
-    assert.equal(list.length, 2);
-    assert.match(list[1].id, /^anon-/);
-    assert.equal(list[1].text, "旧无id摘要");
-    assert.equal(list[1].timestamp, 42);
-    store.deleteSummaries("s1", [list[1].id, "m1"]);
-    assert.deepEqual(store.listSummaries("s1"), [{ id: "m2", agentId: "task-1", text: "子" }]);
-    store.deleteSummaries("s1", []); // 空安全
   }));
 
 test("saveEvent：有 id 按 (agentId,id) upsert，同 id 双代理隔离；无 id 追加；坏类型与 FK 抛错", () =>
@@ -140,25 +104,18 @@ test("saveEvent：有 id 按 (agentId,id) upsert，同 id 双代理隔离；无 
     store.saveEvent("s1", "retry", { agentId: "main", id: "retry-1", status: "waiting", delayMs: 100 });
     store.saveEvent("s1", "retry", { agentId: "task-1", id: "retry-1", status: "waiting" });
     store.saveEvent("s1", "retry", { agentId: "main", id: "retry-1", status: "succeeded" });
-    // summary_trigger upsert 更新字段。
-    store.saveEvent("s1", "summary_trigger", { id: "tr1", agentId: "main", status: "pending" });
-    store.saveEvent("s1", "summary_trigger", { id: "tr1", agentId: "main", status: "recorded", summaryId: "m1" });
-    // progress_delivery 无 id：每次追加。
-    store.saveEvent("s1", "progress_delivery", { timestamp: 1, text: "a" });
-    store.saveEvent("s1", "progress_delivery", { timestamp: 2, text: "b" });
     const saved = store.getSession("s1");
     assert.deepEqual(saved.compactions, [{ id: "cp1", previousEntryId: "e9" }]);
     assert.deepEqual(saved.retries, [
       { agentId: "main", id: "retry-1", status: "succeeded" },
       { agentId: "task-1", id: "retry-1", status: "waiting" },
     ]);
-    assert.deepEqual(saved.summaryTriggers, [{ id: "tr1", agentId: "main", status: "recorded", summaryId: "m1" }]);
-    assert.deepEqual(saved.progressDeliveries, [{ timestamp: 1, text: "a" }, { timestamp: 2, text: "b" }]);
     assert.throws(() => store.saveEvent("s1", "bogus", { id: "x" }), /未知事件类型/);
+    assert.throws(() => store.saveEvent("s1", "summary_trigger", { id: "x" }), /未知事件类型/); // 摘要机制删除后死类型被拒
     assert.throws(() => store.saveEvent("ghost", "compaction", { id: "x" })); // 外键：会话不存在
   }));
 
-test("deleteEvents 按 (agentId,id) 精确删，record 或 {agentId,id} 均可；裸 id 拒绝；pruneEvents 保留最近 N 条", () =>
+test("deleteEvents 按 (agentId,id) 精确删，record 或 {agentId,id} 均可；裸 id 拒绝", () =>
   withStore((store) => {
     store.insertSession({ id: "s1", cwd: "F:/x" });
     store.saveEvent("s1", "retry", { agentId: "main", id: "retry-1", status: "waiting" });
@@ -176,57 +133,42 @@ test("deleteEvents 按 (agentId,id) 精确删，record 或 {agentId,id} 均可�
     store.deleteEvents("s1", "retry", [{ id: "retry-1" }]); // = main 的 retry-1，不存在则 no-op
     assert.deepEqual(store.getSession("s1").retries, []);
     store.deleteEvents("s1", "retry", []); // 空安全
-    for (let i = 1; i <= 4; i++) store.saveEvent("s1", "progress_delivery", { timestamp: i, text: `p${i}` });
-    store.pruneEvents("s1", "progress_delivery", 2);
-    assert.deepEqual(store.getSession("s1").progressDeliveries, [{ timestamp: 3, text: "p3" }, { timestamp: 4, text: "p4" }]);
-    store.pruneEvents("s1", "progress_delivery", 10); // 未超限不动
-    assert.equal(store.getSession("s1").progressDeliveries.length, 2);
   }));
 
-test("saveTask：内容走合并整写，notified/progressDelivered/progress 只动独立列不重写 record", () =>
+test("saveTask：内容走合并整写，notified 只动独立列不重写 record", () =>
   withStore((store, db) => {
     store.insertSession({ id: "s1", cwd: "F:/x" });
     store.saveTask("s1", { id: "t1", task: "做事", status: "running", runtime: { turns: 2 }, parentContext: "bg" });
-    store.saveTask("s1", { id: "t1", status: "completed", text: "结果", resultId: "r1", notified: false, progress: { id: "p1", text: "进度" }, progressDelivered: "p1" });
+    store.saveTask("s1", { id: "t1", status: "completed", text: "结果", resultId: "r1", notified: false });
     assert.deepEqual(store.listTasks("s1").find((task) => task.id === "t1"), {
       id: "t1", task: "做事", status: "completed", runtime: { turns: 2 }, parentContext: "bg",
-      text: "结果", resultId: "r1", notified: false, progress: { id: "p1", text: "进度" }, progressDelivered: "p1",
+      text: "结果", resultId: "r1", notified: false,
     });
     assert.throws(() => store.saveTask("s1", { status: "x" }), /缺少 id/);
-    // 元数据 patch（子代理自报 progress + 通知）：record 字节不变（不读不写 runtime/result）。
-    const before = db.prepare("SELECT record, progress, notified FROM tasks WHERE session_id = 's1' AND id = 't1'").get();
-    store.saveTask("s1", { id: "t1", progress: { id: "p2", text: "进度2" } });
-    const after = db.prepare("SELECT record, progress, notified FROM tasks WHERE session_id = 's1' AND id = 't1'").get();
+    // 元数据 patch（仅通知）：record 字节不变（不读不写 runtime/result）。
+    const before = db.prepare("SELECT record, notified FROM tasks WHERE session_id = 's1' AND id = 't1'").get();
+    store.saveTask("s1", { id: "t1", notified: true });
+    const after = db.prepare("SELECT record, notified FROM tasks WHERE session_id = 's1' AND id = 't1'").get();
     assert.equal(after.record, before.record);
-    assert.equal(JSON.parse(after.progress).text, "进度2");
-    assert.equal(after.notified, 0);
-    store.saveTask("s1", { id: "t1", notified: true, progressDelivered: "p2" });
-    // 投影由列回填：progress/通知最新值 + 内容字段完好。
+    assert.equal(after.notified, 1);
+    // 投影由列回填：通知最新值 + 内容字段完好。
     const view = store.listTasks("s1").find((task) => task.id === "t1");
     assert.deepEqual(view, {
       id: "t1", task: "做事", status: "completed", runtime: { turns: 2 }, parentContext: "bg",
-      text: "结果", resultId: "r1", notified: true, progress: { id: "p2", text: "进度2" }, progressDelivered: "p2",
+      text: "结果", resultId: "r1", notified: true,
     });
-    // 旧任务无 notified/progress 键：投影不造键。
+    // 旧任务无 notified 键：投影不造键。
     store.saveTask("s1", { id: "t2", task: "旧快照", status: "running" });
     const bare = store.listTasks("s1").find((task) => task.id === "t2");
     assert.equal("notified" in bare, false);
-    assert.equal("progress" in bare, false);
-    assert.equal("progressDelivered" in bare, false);
   }));
 
-test("setTurn 双落点；listPendingSessionIds 查列，含 notified 缺失的旧任务", () =>
+test("listPendingSessionIds 查 notified 列，含 notified 缺失的旧任务", () =>
   withStore((store) => {
     store.insertSession({ id: "s1", cwd: "F:/x" });
     store.saveTask("s1", { id: "t1", task: "做事", status: "completed", resultId: "r1", notified: false });
     store.saveTask("s1", { id: "t2", task: "旧running快照", status: "running" }); // 无 notified/resultId
     store.saveTask("s1", { id: "t3", task: "已通知", status: "completed", resultId: "r3", notified: true });
-    store.setTurn("s1", "main", 7);
-    store.setTurn("s1", "t1", 3);
-    const saved = store.getSession("s1");
-    assert.deepEqual(saved.memoryTurns, { main: 7, t1: 3 }); // t2/t3 无轮次不造键
-    store.setTurn("s1", "t1", 5); // 轮次前进即覆盖
-    assert.equal(store.getSession("s1").memoryTurns.t1, 5);
     // 待通知：false（t1）与缺失（t2）都算；true（t3）不算。
     assert.deepEqual(store.listPendingSessionIds(), ["s1"]);
     store.saveTask("s1", { id: "t1", notified: true });
@@ -238,29 +180,27 @@ test("setTurn 双落点；listPendingSessionIds 查列，含 notified 缺失的�
 test("change 包多实体全有或全无；嵌套内层回滚不影响外层", () =>
   withStore((store) => {
     store.insertSession({ id: "s1", cwd: "F:/x" });
-    store.saveSummary("s1", { id: "m0", agentId: "main", text: "旧" });
+    store.saveEvent("s1", "retry", { agentId: "main", id: "retry-0", status: "failed" });
     assert.throws(() =>
       store.change(() => {
-        store.saveSummary("s1", { id: "m1", agentId: "main", text: "新" });
-        store.saveEvent("s1", "progress_delivery", { timestamp: 1, text: "p" });
-        store.setTurn("s1", "main", 3);
+        store.saveEvent("s1", "retry", { agentId: "main", id: "retry-1", status: "waiting" });
+        store.saveTask("s1", { id: "t1", task: "做事", status: "running" });
         throw new Error("炸");
       }), /炸/);
     const saved = store.getSession("s1");
-    assert.deepEqual(store.listSummaries("s1"), [{ id: "m0", agentId: "main", text: "旧" }]);
-    assert.deepEqual(saved.progressDeliveries, []);
-    assert.equal(saved.memoryTurns.main, 0);
+    assert.deepEqual(saved.retries, [{ agentId: "main", id: "retry-0", status: "failed" }]);
+    assert.deepEqual(saved.tasks, []);
     store.change(() => {
-      store.saveSummary("s1", { id: "m2", agentId: "main", text: "外层" });
+      store.saveEvent("s1", "retry", { agentId: "main", id: "retry-2", status: "waiting" });
       assert.throws(() =>
         store.change(() => {
-          store.saveSummary("s1", { id: "m3", agentId: "main", text: "内层" });
+          store.saveEvent("s1", "retry", { agentId: "main", id: "retry-3", status: "waiting" });
           throw new Error("内炸");
         }), /内炸/);
       // 内层已回滚，外层可见。
-      assert.deepEqual(store.listSummaries("s1").map((record) => record.id), ["m0", "m2"]);
+      assert.deepEqual(store.getSession("s1").retries.map((r) => r.id), ["retry-0", "retry-2"]);
     });
-    assert.deepEqual(store.listSummaries("s1").map((record) => record.id), ["m0", "m2"]);
+    assert.deepEqual(store.getSession("s1").retries.map((r) => r.id), ["retry-0", "retry-2"]);
   }));
 
 test("importLegacySession：四表+标记单事务；重跑与同 id 不覆盖", () =>
@@ -334,11 +274,11 @@ test("坏 JSON 错误只报键位不泄露内容；Database.list 坏行隔离不
         return true;
       },
     );
-    db.exec("INSERT INTO tasks (session_id, id, record, progress) VALUES ('s1', 't1', '{}', '{bad')");
+    db.exec("INSERT INTO tasks (session_id, id, record) VALUES ('s1', 't1', '{bad')");
     assert.throws(
       () => store.listTasks("s1"),
       (error) => {
-        assert.match(error.message, /progress/);
+        assert.match(error.message, /tasks 记录不是合法 JSON/);
         assert.doesNotMatch(error.message, /\{bad/);
         return true;
       },
@@ -449,39 +389,24 @@ test("重复迁移在SQL层跳过已标记旧JSON，不读取或解析大历史"
     assert.equal(store.getSession("s1").cwd, "test");
   }));
 
-test("旧数据缺 id：summary/trigger/compaction/retry 按原序号稳定 id，同内容两条都保留；读出带 id 供重写幂等", () =>
+test("旧数据缺 id：compaction/retry 按原序号稳定 id，同内容两条都保留；读出带 id 供重写幂等", () =>
   withStore((store) => {
-    const same = { agentId: "main", text: "同内容", timestamp: 1 };
+    const same = { agentId: "main", status: "waiting" };
     store.insertSession({
       id: "s1",
       cwd: "F:/x",
-      summaries: [
-        { ...same }, // 无 id，index 0
-        { ...same }, // 与上一条完全相同：不得被内容哈希去重
-        { id: "m3", agentId: "main", text: "带id" }, // 有 id，占用 index 2
-        { agentId: "task-1", text: "子" }, // 无 id，index 3 → anon-3
-      ],
-      summaryTriggers: [
-        { agentId: "main", turn: 1, reason: "interval" },
-        { agentId: "main", turn: 2, reason: "interval" },
-      ],
       retries: [
         { agentId: "main", id: "retry-1", status: "failed" },
-        { agentId: "main", status: "waiting" }, // 无 id → anon-1
+        { ...same }, // 无 id → anon-1
       ],
       compactions: [{ previousEntryId: "e0" }],
     });
     const restored = store.getSession("s1");
-    assert.deepEqual(
-      restored.summaries.map((r) => [r.id, r.text]),
-      [["anon-0", "同内容"], ["anon-1", "同内容"], ["m3", "带id"], ["anon-3", "子"]],
-    );
-    assert.deepEqual(restored.summaryTriggers.map((r) => r.id), ["anon-0", "anon-1"]);
     assert.deepEqual(restored.compactions.map((r) => r.id), ["anon-0"]);
     assert.deepEqual(restored.retries.map((r) => r.id), ["retry-1", "anon-1"]);
     // 原形其余字段不受影响：record 存原样，id 只是身份回填。
-    assert.deepEqual(restored.summaries[1], { ...same, id: "anon-1" });
-    // E 场景：恢复后带稳定 id 重写中断态 → upsert 命中，不 append 重复。
+    assert.deepEqual(restored.retries[1], { ...same, id: "anon-1" });
+    // 恢复后带稳定 id 重写中断态 → upsert 命中，不 append 重复。
     store.saveEvent("s1", "retry", { ...restored.retries[1], status: "succeeded" });
     assert.deepEqual(
       store.getSession("s1").retries,
@@ -492,8 +417,97 @@ test("旧数据缺 id：summary/trigger/compaction/retry 按原序号稳定 id�
     );
     // 重导入同一 saved（新会话 id）：数组序相同 → 生成的序号 id 相同（稳定，非随机）。
     store.importLegacySession({ ...restored, id: "s2" }, "sessions/from-s2.json");
-    assert.deepEqual(store.getSession("s2").summaries.map((r) => r.id), ["anon-0", "anon-1", "m3", "anon-3"]);
-    // progress_delivery 天然无 id：读出仍不带 id。
-    store.saveEvent("s1", "progress_delivery", { timestamp: 5, text: "p" });
-    assert.deepEqual(store.getSession("s1").progressDeliveries, [{ timestamp: 5, text: "p" }]);
+    assert.deepEqual(store.getSession("s2").retries.map((r) => r.id), ["retry-1", "anon-1"]);
   }));
+
+// 旧库 DDL（摘要机制删除前）：带死表死列与四类型 CHECK。
+const LEGACY_DDL = `
+  CREATE TABLE sessions (
+    id TEXT PRIMARY KEY,
+    cwd TEXT NOT NULL,
+    title TEXT,
+    title_manual INTEGER NOT NULL DEFAULT 0,
+    title_requested INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER,
+    updated_at INTEGER,
+    elapsed_ms INTEGER NOT NULL DEFAULT 0,
+    running_since INTEGER,
+    session_file TEXT,
+    main_turn INTEGER,
+    selection TEXT
+  );
+  CREATE TABLE summaries (
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    turn INTEGER,
+    text TEXT NOT NULL,
+    timestamp INTEGER,
+    PRIMARY KEY (session_id, id)
+  );
+  CREATE TABLE session_events (
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    type TEXT NOT NULL CHECK (type IN ('compaction', 'retry', 'summary_trigger', 'progress_delivery')),
+    agent_id TEXT NOT NULL,
+    key TEXT,
+    record TEXT NOT NULL
+  );
+  CREATE TABLE tasks (
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    id TEXT NOT NULL,
+    notified INTEGER,
+    memory_turn INTEGER,
+    progress TEXT,
+    progress_delivered TEXT,
+    record TEXT NOT NULL,
+    PRIMARY KEY (session_id, id)
+  );
+`;
+
+test("#normalizeSchema：旧库幂等清理死表死列死事件行，业务数据完整保留，重开不报错", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "axiom-migrate-"));
+  const path = join(dir, "axiom.db");
+  const connections = [];
+  try {
+    // 手工建旧库：塞含死结构与死事件行的数据。
+    const old = new Database(path);
+    connections.push(old);
+    old.exec(LEGACY_DDL);
+    old.exec("INSERT INTO sessions (id, cwd, title, main_turn) VALUES ('s1', 'F:/old', '旧会话', 7)");
+    old.exec("INSERT INTO summaries (session_id, id, agent_id, text) VALUES ('s1', 'm1', 'main', '旧摘要')");
+    old.exec("INSERT INTO session_events (session_id, type, agent_id, key, record) VALUES ('s1', 'compaction', 'main', 'cp1', '{\"id\":\"cp1\"}')");
+    old.exec("INSERT INTO session_events (session_id, type, agent_id, key, record) VALUES ('s1', 'retry', 'main', 'r1', '{\"id\":\"r1\",\"status\":\"failed\"}')");
+    old.exec("INSERT INTO session_events (session_id, type, agent_id, key, record) VALUES ('s1', 'summary_trigger', 'main', 'tr1', '{\"id\":\"tr1\"}')");
+    old.exec("INSERT INTO session_events (session_id, type, agent_id, key, record) VALUES ('s1', 'progress_delivery', 'main', NULL, '{\"text\":\"p\"}')");
+    old.exec("INSERT INTO tasks (session_id, id, notified, memory_turn, progress, progress_delivered, record) VALUES ('s1', 't1', 1, 3, '{\"p\":1}', 'x', '{\"task\":\"做事\"}')");
+
+    // 同一连接打开（建表 IF NOT EXISTS 不动旧结构，归一化就地清理）。
+    const store = new SessionStore(old);
+    const tables = () => old.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name);
+    const columns = (table) => old.prepare(`PRAGMA table_info(${table})`).all().map((row) => row.name);
+    assert.equal(tables().includes("summaries"), false, "死表已删");
+    assert.equal(columns("sessions").includes("main_turn"), false);
+    assert.equal(columns("tasks").includes("memory_turn"), false);
+    assert.equal(columns("tasks").includes("progress"), false);
+    assert.equal(columns("tasks").includes("progress_delivered"), false);
+    const check = old.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'session_events'").get().sql;
+    assert.equal(check.includes("summary_trigger"), false, "CHECK 已重建为两类型");
+    assert.equal(check.includes("progress_delivery"), false);
+    const events = old.prepare("SELECT type, record FROM session_events ORDER BY type").all();
+    assert.deepEqual(events.map((row) => row.type), ["compaction", "retry"], "死事件行被清，业务事件保留");
+    assert.equal(store.getSession("s1").title, "旧会话", "会话业务数据完整");
+    assert.deepEqual(store.getSession("s1").retries, [{ id: "r1", status: "failed" }]);
+    assert.deepEqual(store.listTasks("s1"), [{ id: "t1", task: "做事", notified: true }]);
+    old.close();
+
+    // 重开一次：全库已干净，归一化空转不报错（幂等）。
+    const reopened = new Database(path);
+    connections.push(reopened);
+    const store2 = new SessionStore(reopened);
+    assert.equal(store2.getSession("s1").title, "旧会话");
+    reopened.close();
+  } finally {
+    for (const connection of connections) { try { connection.close(); } catch { /* 已关 */ } }
+    await rm(dir, { recursive: true, force: true });
+  }
+});

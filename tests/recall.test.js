@@ -116,9 +116,7 @@ test("recall keeps web history in sync when SQLite rejects writes, returns input
     const item = sessions.get(id), errors = [];
     item.messages = branch.map(entry => ({ agentId: "main", entryId: entry.id, message: entry.message }));
     item.live.main = assistant("aborted", thinking).message;
-    item.summaryTriggers = [{ id: "trigger", agentId: "main", entryId: "a1", status: "aborted" }];
     item.retries = [{ id: "retry", agentId: "main", anchorEntryId: "a1", messageCount: 4, status: "cancelled" }];
-    await sessions.persist(item, { event: { type: "summary_trigger", record: item.summaryTriggers[0] } });
     await sessions.persist(item, { event: { type: "retry", record: item.retries[0] } });
     sessions.subscribe(id, event => { if (event.type === "error") errors.push(event); });
     sessions.database.exec("PRAGMA query_only = ON");
@@ -128,21 +126,19 @@ test("recall keeps web history in sync when SQLite rejects writes, returns input
     assert.deepEqual(item.messages.map(e => e.entryId), branch.map(e => e.id));
     assert.equal(item.live.main, undefined);
     assert.deepEqual(item.retries, []);
-    assert.deepEqual(item.summaryTriggers, []);
     assert.ok(errors.length, "数据库错误仍可见，不冒充已落盘");
-    assert.equal(sessions.store.getSession(id).summaryTriggers.length, 1);
+    assert.equal(sessions.store.getSession(id).retries.length, 1);
     sessions.database.exec("PRAGMA query_only = OFF");
-    // 整组清理后半段失败时不能只删除一半；重试仍复用原有pendingWrites。
+    // 撤回清理失败时不能半途丢记录；重试仍复用原有pendingWrites。
     const original = sessions.store.deleteEvents.bind(sessions.store);
     sessions.store.deleteEvents = (sid, type, records) => {
       if (type === "retry") throw new Error("injected cleanup failure");
       return original(sid, type, records);
     };
     await assert.rejects(sessions.persist(item, {}), /injected cleanup failure/);
-    assert.equal(sessions.store.getSession(id).summaryTriggers.length, 1, "同一次撤回清理须为短事务");
+    assert.equal(sessions.store.getSession(id).retries.length, 1, "同一次撤回清理须为短事务");
     sessions.store.deleteEvents = original;
     await sessions.persist(item, {});
-    assert.equal(sessions.store.getSession(id).summaryTriggers.length, 0);
     assert.equal(sessions.store.getSession(id).retries.length, 0);
   } finally {
     sessions.database.exec("PRAGMA query_only = OFF");

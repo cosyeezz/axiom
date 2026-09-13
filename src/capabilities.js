@@ -101,7 +101,7 @@ export function refreshProjectSkills(loader, selected, catalog, all = false) {
   return loader.getSkills().skills.map(({ name, description }) => ({ name, description }));
 }
 
-export function capabilityLoader(resources, selection, customTools, extraFactories = [], summaryPrompt = null) {
+export function capabilityLoader(resources, selection, customTools, extraFactories = [], budgetPrompt = null) {
   const { catalog, settingsManager, paths, adapter, mcpConfig, createMcpAdapter, cwd, agentDir } = resources;
   const selected = resolveCapabilities(selection, catalog);
   const factories = [...extraFactories, { name: "axiom-inline-images", factory: inlineImagesExtension }];
@@ -127,11 +127,11 @@ export function capabilityLoader(resources, selection, customTools, extraFactori
       // Preserve the custom allowlist even when an extension contributes more skills on startup.
       skillsOverride: (current) => ({ ...current, skills: current.skills.filter((s) => selection == null || selected.skills.includes(s.filePath)) }),
       appendSystemPromptOverride: (current) => [...current,
-        // 摘要系统提示词（主代理含委派附加句）原文固定，来自 memory-policy；
-        // 动态 [摘要提醒] 由代码按累计 turn 注入，不让模型计数。
-        ...(summaryPrompt ? [summaryPrompt] : []),
+        // 子代理轮次预算的开工告知，原文固定，来自 task-budget；
+        // 动态 [轮次预算] 收尾提示由代码按累计 turn 注入，不让模型计数。
+        ...(budgetPrompt ? [budgetPrompt] : []),
         customTools.length
-          ? "Delegate independent work with delegate. Wait for the proactive completion notification that reports each finished task's taskId and resultId, then read that result once with read_result; do not poll. Use append to add instructions to a running subtask. Avoid concurrent edits to the same files. Report task failures honestly."
+          ? "Delegate independent work with delegate. Each task must be one concrete, independently verifiable goal a subagent can finish in a handful of turns; split larger work into several tasks instead of sending one broad task. Put shared background in context, not in every task. Wait for the proactive completion notification that reports each finished task's taskId and resultId, then read that result once with read_result; do not poll. Use append to add instructions to a running subtask. Avoid concurrent edits to the same files. Report task failures honestly."
           : "Complete the delegated task. Return concise findings and changes with evidence."],
     }),
   };

@@ -127,12 +127,9 @@ function instrument(db, stats) {
 function countingStore(store, stats) {
   const call = (name) => (...a) => { stats.calls++; return store[name](...a); };
   return {
-    saveSummary: call("saveSummary"),
     saveTask: call("saveTask"),
     saveEvent: call("saveEvent"),
     updateSession: call("updateSession"),
-    pruneEvents: call("pruneEvents"),
-    setTurn: call("setTurn"),
     insertSession: call("insertSession"),
   };
 }
@@ -141,10 +138,10 @@ function countingStore(store, stats) {
 // 注意：各 *Text/systemPrompt 数值是字符数；中文“字”UTF-8 下每字 3 字节，真实落库字节
 // 以 Buffer.byteLength 计（payloadBytesPerSession / 写字节列），字符数 ≠ 字节数。
 const SIZES = {
-  // small：8 会话 × 4 摘要(200字≈600B) × 2 任务(result 400字 + runtime 1200字)，单会话载荷 ~17KB
-  small: { sessions: 8, summaries: 4, summaryText: 200, tasks: 2, resultText: 400, systemPrompt: 1200, deliveries: 3 },
-  // large：16 会话 × 32 摘要(1000字≈3KB) × 6 任务(result 48K字≈144KB + runtime 16K字≈48KB)，单会话载荷 ~1.9MB
-  large: { sessions: 16, summaries: 32, summaryText: 1000, tasks: 6, resultText: 48 * 1024, systemPrompt: 16 * 1024, deliveries: 50 },
+  // small：8 会话 × 2 任务(result 400字 + runtime 1200字)，单会话载荷 ~14KB
+  small: { sessions: 8, tasks: 2, resultText: 400, systemPrompt: 1200 },
+  // large：16 会话 × 6 任务(result 48K字≈144KB + runtime 16K字≈48KB)，单会话载荷 ~1.9MB
+  large: { sessions: 16, tasks: 6, resultText: 48 * 1024, systemPrompt: 16 * 1024 },
 };
 const REPS = { small: 40, large: 12 };
 
@@ -170,21 +167,10 @@ function makeSession(index, size, workspaceDir, notified = true) {
       context: Array.from({ length: 20 }, (_, k) => ({ role: k % 2 ? "assistant" : "user", text: filler(100, `c${k}`) })),
       usage: { input_tokens: 1234, output_tokens: 567, cache_read_tokens: 89 }, // 任务运行详情快照允许保留 usage
     },
-    progress: { id: "progress-0", at: Date.now(), text: filler(120, "进度：") },
-    progressDelivered: "progress-0",
   }));
   return {
     id, cwd: workspaceDir, title: `会话${index}`,
     titleManual: false, titleRequested: false,
-    summaries: Array.from({ length: size.summaries }, (_, j) => ({
-      id: `sum-${index}-${j}`, agentId: "main", text: filler(size.summaryText, "摘要："),
-      turn: j, messageTimestamp: Date.now() + j,
-    })),
-    memoryTurns: { main: size.summaries, [tasks[0].id]: 3 },
-    progressDeliveries: Array.from({ length: size.deliveries }, (_, j) => ({
-      id: `progress-${j}`, taskId: tasks[0].id, at: Date.now() + j, text: filler(120, "送达："),
-    })),
-    summaryTriggers: [{ id: `trig-${index}`, status: "interrupted", messageTimestamp: Date.now() }],
     createdAt: Date.now(), updatedAt: Date.now(),
     compactions: [{ id: `cp-${index}`, summary: filler(500, "压缩：") }],
     retries: [{ id: `rt-${index}`, status: "succeeded", agentId: "main" }],
@@ -211,8 +197,7 @@ function oldPersist(item, db) {
   const data = {
     id: item.id, cwd: item.cwd, title: item.title,
     titleManual: item.titleManual, titleRequested: item.titleRequested,
-    summaries: item.summaries, memoryTurns: item.memoryTurns, progressDeliveries: item.progressDeliveries,
-    summaryTriggers: item.summaryTriggers, createdAt: item.createdAt, updatedAt: item.updatedAt,
+    createdAt: item.createdAt, updatedAt: item.updatedAt,
     compactions: item.compactions, retries: item.retries, tasks: item.tasks,
     elapsedMs: item.elapsedMs, runningSince: item.runningSince, sessionFile: item.sessionFile,
     selection: { ...item.selection },
@@ -308,33 +293,13 @@ async function runStorage({ side, size, baselineDir, newDir }) {
     const R = REPS[size];
     if (side === "old") {
       await runPhase("改标题", R, (r) => { const it = items[r % items.length]; it.title = `改名${r}`; it.updatedAt = Date.now(); return oldPersist(it, db); });
-      await runPhase("追加摘要", R, (r) => { const it = items[r % items.length]; it.summaries.push({ id: `new-${r}`, agentId: "main", text: filler(200, "新摘要："), turn: 999 }); return oldPersist(it, db); });
-      await runPhase("任务进度", R, (r) => { const it = items[r % items.length]; const t = it.tasks[0]; t.progress = { id: `progress-${r + 1}`, at: Date.now(), text: filler(120, "进度：") }; return oldPersist(it, db); });
       await runPhase("任务通知(notified)", R, (r) => { const it = items[r % items.length]; it.tasks[0].notified = !it.tasks[0].notified; return oldPersist(it, db); });
-      await runPhase("进度送达+修剪", R, (r) => {
-        const it = items[r % items.length];
-        it.progressDeliveries.push({ id: `pd-${r}`, taskId: it.tasks[0].id, at: Date.now(), text: filler(120, "送达：") });
-        if (it.progressDeliveries.length > 50) it.progressDeliveries.shift();
-        return oldPersist(it, db);
-      });
       await runPhase("计时更新(elapsedMs)", R, (r) => { const it = items[r % items.length]; it.elapsedMs += 100; return oldPersist(it, db); });
     } else {
       await runPhase("改标题", R, (r) => { const t0 = process.hrtime.bigint(); store.updateSession(dataset[r % dataset.length].id, { title: `改名${r}`, updatedAt: Date.now() }); return since(t0); });
-      await runPhase("追加摘要", R, (r) => { const t0 = process.hrtime.bigint(); store.saveSummary(dataset[r % dataset.length].id, { id: `new-${r}`, agentId: "main", text: filler(200, "新摘要："), turn: 999 }); return since(t0); });
-      await runPhase("任务进度", R, (r) => { // E 真实热路径形态：persist(item,{progress}) → saveTask 单任务
-        const t0 = process.hrtime.bigint();
-        store.saveTask(dataset[r % dataset.length].id, { id: `task-${r % dataset.length}-0`, progress: { id: `progress-${r + 1}`, at: Date.now(), text: filler(120, "进度：") } });
-        return since(t0);
-      });
       await runPhase("任务通知(notified)", R, (r) => { // E 真实热路径：deliver → persist(item,{task:{id,notified:true}})
         const t0 = process.hrtime.bigint();
         store.saveTask(dataset[r % dataset.length].id, { id: `task-${r % dataset.length}-0`, notified: Math.floor(r / dataset.length) % 2 === 0 });
-        return since(t0);
-      });
-      await runPhase("进度送达+修剪", R, (r) => {
-        const t0 = process.hrtime.bigint();
-        store.saveEvent(dataset[r % dataset.length].id, "progress_delivery", { id: `pd-${r}`, taskId: `task-${r % dataset.length}-0`, at: Date.now(), text: filler(120, "送达：") });
-        store.pruneEvents(dataset[r % dataset.length].id, "progress_delivery", 50);
         return since(t0);
       });
       await runPhase("计时更新(elapsedMs)", R, (r) => { const t0 = process.hrtime.bigint(); store.updateSession(dataset[r % dataset.length].id, { elapsedMs: dataset[r % dataset.length].elapsedMs + 100 * (Math.floor(r / dataset.length) + 1) }); return since(t0); });
@@ -474,27 +439,6 @@ async function runGates(baselineDir, newDir) {
   const mark = (g) => ({ sql: g.stats.sql, writeSql: g.stats.writeSql, writeBytes: g.stats.writeBytes });
   const delta = (g, m) => ({ sql: g.stats.sql - m.sql, writeSql: g.stats.writeSql - m.writeSql, writeBytes: g.stats.writeBytes - m.writeBytes });
 
-  // 门1：追加摘要不更新旧任务——行快照逐字节不变 + UPDATE tasks 触发器（ABORT）+ 写语句恰 1 条
-  {
-    const g = fresh();
-    try {
-      const s = makeSession(0, SIZES.small, g.workspaceDir);
-      g.store.insertSession(s);
-      const before = rawRows(g.db, "tasks", s.id);
-      forbidUpdate(g.db, "tasks", "g1");
-      const m = mark(g);
-      g.store.saveSummary(s.id, { id: "gate1-new", agentId: "main", text: "门1新摘要", turn: 42 });
-      const d = delta(g, m);
-      const after = rawRows(g.db, "tasks", s.id);
-      const summaries = g.store.listSummaries(s.id).length;
-      const same = JSON.stringify(before) === JSON.stringify(after);
-      check("门1 追加摘要不更新旧任务",
-        same && summaries === SIZES.small.summaries + 1 && d.writeSql === 1,
-        `任务行 ${before.length} 条逐字节不变=${same}，摘要数 ${summaries}（应 ${SIZES.small.summaries + 1}），写语句 ${d.writeSql} 条（应恰 1：summaries upsert）；期间任何 UPDATE tasks 都被触发器 ABORT`);
-    } catch (e) { check("门1 追加摘要不更新旧任务", false, `异常：${e.message}`); }
-    finally { g.db.close(); rmSync(g.tmp, { recursive: true, force: true }); }
-  }
-
   // 门2：notified 更新不携带 runtime/result——写负载在 SQL 绑定层唯一计量，
   // 与任务 record 体积无关；writeSql>=1 自校验计量层确实观测到了写入（防代理被语句缓存绕过）。
   {
@@ -526,17 +470,17 @@ async function runGates(baselineDir, newDir) {
     try {
       const s = makeSession(0, SIZES.small, g.workspaceDir);
       g.store.insertSession(s);
-      const before = ["tasks", "summaries", "session_events"].map((t) => rawRows(g.db, t, s.id));
-      for (const t of ["tasks", "summaries", "session_events"]) forbidUpdate(g.db, t, "g3");
+      const before = ["tasks", "session_events"].map((t) => rawRows(g.db, t, s.id));
+      for (const t of ["tasks", "session_events"]) forbidUpdate(g.db, t, "g3");
       const m = mark(g);
       g.store.updateSession(s.id, { title: "门3改名", updatedAt: Date.now() });
       const d = delta(g, m);
-      const after = ["tasks", "summaries", "session_events"].map((t) => rawRows(g.db, t, s.id));
+      const after = ["tasks", "session_events"].map((t) => rawRows(g.db, t, s.id));
       const title = g.store.getSession(s.id).title;
       const same = JSON.stringify(before) === JSON.stringify(after);
       check("门3 改标题不改任务",
         same && title === "门3改名" && d.writeSql === 1,
-        `子表行逐字节不变=${same}，标题已更新=${title === "门3改名"}，写语句 ${d.writeSql} 条（应恰 1：sessions 行）；期间任何 UPDATE tasks/summaries/session_events 都被触发器 ABORT`);
+        `子表行逐字节不变=${same}，标题已更新=${title === "门3改名"}，写语句 ${d.writeSql} 条（应恰 1：sessions 行）；期间任何 UPDATE tasks/session_events 都被触发器 ABORT`);
     } catch (e) { check("门3 改标题不改任务", false, `异常：${e.message}`); }
     finally { g.db.close(); rmSync(g.tmp, { recursive: true, force: true }); }
   }
@@ -553,7 +497,7 @@ async function runGates(baselineDir, newDir) {
       const s = makeSession(0, SIZES.small, g.workspaceDir);
       g.store.insertSession(s);
       let badColumns = [];
-      for (const table of ["sessions", "summaries", "session_events", "tasks"])
+      for (const table of ["sessions", "session_events", "tasks"])
         for (const col of g.db.prepare(`PRAGMA table_info(${table})`).all())
           if (/token|usage/i.test(col.name)) badColumns.push(`${table}.${col.name}`);
       const subs = [];
@@ -573,14 +517,13 @@ async function runGates(baselineDir, newDir) {
       await tick(); // 若存在异步保存路径，也必须落进观测窗口
       const d = delta(g, m);
       const content = [
-        ...g.db.prepare("SELECT record FROM summaries").all().map((r) => r.record),
         ...g.db.prepare("SELECT record FROM session_events").all().map((r) => r.record),
         ...g.db.prepare("SELECT selection, title FROM sessions").all().map((r) => JSON.stringify(r)),
       ].join("\n");
       const leaked = content.match(/"(\w*_)?tokens?"\s*:|"(input|output|cache_read|cache_creation)_tokens"/i);
       check("门4 逐 token 不写库",
         badColumns.length === 0 && d.sql === 0 && !leaked,
-        `无 token/usage 列=${badColumns.length === 0}${badColumns.length ? `（${badColumns.join(",")}）` : ""}；100 个含 token 事件（agent.delta×66、agent.runtime×33 带 usage）期间 SQL 总数=${d.sql}（应 0，含读）；摘要/事件/会话内容无 token 计数=${!leaked}（任务 runtime usage 与 compaction.tokensBefore 属允许快照）`);
+        `无 token/usage 列=${badColumns.length === 0}${badColumns.length ? `（${badColumns.join(",")}）` : ""}；100 个含 token 事件（agent.delta×66、agent.runtime×33 带 usage）期间 SQL 总数=${d.sql}（应 0，含读）；事件/会话内容无 token 计数=${!leaked}（任务 runtime usage 与 compaction.tokensBefore 属允许快照）`);
     } catch (e) { check("门4 逐 token 不写库", false, `异常：${e.message}`); }
     finally { try { await sessions?.close(); } catch {} g.db.close(); rmSync(g.tmp, { recursive: true, force: true }); }
   }
@@ -930,7 +873,7 @@ async function main() {
   line("口径：写字节/次 = 写语句 SQL 绑定字符串 UTF-8 字节；SQL/次 = 语句执行次数（含读写）");
   for (const size of sizes) {
     const d = report.meta.sizes[size];
-    line(`数据集 ${size}: ${d.sessions} 会话 × ${d.tasks} 任务(result ${d.resultText}字 + runtime ${d.systemPrompt}字) × ${d.summaries} 摘要`);
+    line(`数据集 ${size}: ${d.sessions} 会话 × ${d.tasks} 任务(result ${d.resultText}字 + runtime ${d.systemPrompt}字)`);
   }
   for (const size of sizes) {
     for (const side of ["old", "new"]) {

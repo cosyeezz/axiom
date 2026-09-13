@@ -1,8 +1,9 @@
-// 会话记忆标签：助手在回复中用 <title>/<summary>/<progress> 自报标题与摘要。
+// 会话记忆标签：助手在回复中用 <title> 自报会话标题。
 // extractMemoryTags 供后端落库（src/session-memory.js），stripMemoryTags 供展示过滤（前端流式与 result() 去标签）。
 // 标签可跨行（模型常把开启标签、正文、闭合标签分行写）；代码围栏（``` 行，允许缩进，未闭合视为代码到结尾）内一律不处理。
 
-// 保留旧标签读取兼容，新的模型输出统一使用 axiom_summary。
+// title 是唯一仍在提取的标签；axiom_summary/summary/progress 来自已删除的摘要机制，
+// 仍留在列表内只为展示过滤：旧会话历史里存着这些标签，不剥就会漏进正文。
 const TAGS = ["axiom_summary", "summary", "title", "progress"];
 const NAMES = TAGS.join("|");
 // 有界标签，内容可跨行；内容排除其他标签起点，杜绝贪婪吞并同类标签与嵌套。
@@ -28,8 +29,8 @@ function segments(text) {
   return out;
 }
 
-// 提取模型自报标签，返回 { axiom_summary?, summary?, title?, progress? }（缺省键不出现）。
-// 标签内容可跨行（换行折叠为空格）；title 取首个，summary/progress 取最后（最新）。
+// 提取模型自报标签，返回 { title? }（缺省键不出现；旧摘要标签不再提取）。
+// 标签内容可跨行（换行折叠为空格）；title 取首个。
 export function extractMemoryTags(text) {
   if (typeof text !== "string" || !text) return {};
   const found = {};
@@ -37,8 +38,9 @@ export function extractMemoryTags(text) {
     if (inCode) continue;
     for (const [, name, body] of lines.join("\n").matchAll(TAG)) {
       const key = name.toLowerCase();
+      if (key !== "title") continue;
       const value = body.trim().replace(/\s+/g, " ");
-      if (!value || (key === "title" && (key in found || [...value].length > 10))) continue;
+      if (!value || key in found || [...value].length > 10) continue;
       found[key] = value;
     }
   }

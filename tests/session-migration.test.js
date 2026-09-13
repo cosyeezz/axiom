@@ -108,7 +108,7 @@ test("旧磁盘会话一次性迁入并恢复；坏文件不标记可重试；�
   const good = join(workspace, "good.json");
   const broken = join(workspace, "broken.json");
   await writeFile(good, JSON.stringify({ id: "good", cwd: root, title: "旧会话", createdAt: 111, updatedAt: 222,
-    summaries: [{ text: "旧事实" }], selection: { model: "test/one" } }));
+    selection: { model: "test/one" } }));
   await writeFile(broken, "{broken");
   let sessions, again, third, fourth;
   try {
@@ -173,7 +173,7 @@ test("缺失历史仍列出会话，但打开失败且不让 SDK 用空历史覆
     const db = new Database(join(root, "axiom.db"));
     const ghostFile = join(root, "ghost.jsonl");
     const saved = { id: "ghost", cwd: root, title: "丢失历史的会话", createdAt: 1, updatedAt: 2,
-      summaries: [{ text: "还在的摘要" }], sessionFile: ghostFile, selection: {} };
+      sessionFile: ghostFile, selection: {} };
     db.set("sessions", "ghost", saved);
     db.close();
     const warnings = [];
@@ -188,7 +188,7 @@ test("缺失历史仍列出会话，但打开失败且不让 SDK 用空历史覆
     // 列表不隐藏无法恢复的会话；只有打开时检查历史，不创建空JSONL。
     assert.equal(sessions.list()[0].id, "ghost");
     await assert.rejects(sessions.ensureLoaded("ghost"), /历史文件缺失/);
-    assert.equal(sessions.store.getSession("ghost").summaries[0].text, "还在的摘要");
+    assert.equal(sessions.store.getSession("ghost").title, "丢失历史的会话");
     assert.equal(existsSync(ghostFile), false);
     // 库记录逐字节原状保留：空历史不固化，文件找回后下次启动照常恢复
     assert.deepEqual(sessions.database.get("sessions", "ghost"), saved);
@@ -221,29 +221,31 @@ test("旧文件迁移告警保留路径，但不带坏JSON原文", async () => {
   }
 });
 
-test("全局摘要设置：默认 3/6/30，configure 校验后持久化，重启恢复最新值，坏记录回退默认", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "axiom-memory-summary-"));
+test("全局轮次预算：默认 20/2，configure 校验后持久化，重启恢复最新值，坏记录回退默认", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "axiom-task-budget-"));
   let sessions;
   try {
     sessions = new Sessions(factory, join(dir, "defaults.json"));
-    assert.deepEqual(sessions.getMemorySummary(), { mainTurns: 3, subagentTurns: 6, maxChars: 30 });
-    const saved = sessions.configureMemorySummary({ mainTurns: 5, subagentTurns: 2, maxChars: 40 });
-    assert.deepEqual(saved, { mainTurns: 5, subagentTurns: 2, maxChars: 40 });
+    assert.deepEqual(sessions.getTaskBudget(), { maxTurns: 20, wrapUpWindow: 2 });
+    const saved = sessions.configureTaskBudget({ maxTurns: 50, wrapUpWindow: 5 });
+    assert.deepEqual(saved, { maxTurns: 50, wrapUpWindow: 5 });
     // 越界值抛给调用方，内存与库都不更新
-    assert.throws(() => sessions.configureMemorySummary({ mainTurns: 0, subagentTurns: 2, maxChars: 40 }));
-    assert.throws(() => sessions.configureMemorySummary({ mainTurns: 5, subagentTurns: 2, maxChars: 101 }));
-    assert.deepEqual(sessions.getMemorySummary(), { mainTurns: 5, subagentTurns: 2, maxChars: 40 });
+    assert.throws(() => sessions.configureTaskBudget({ maxTurns: 2, wrapUpWindow: 5 }));
+    assert.throws(() => sessions.configureTaskBudget({ maxTurns: 201, wrapUpWindow: 5 }));
+    assert.throws(() => sessions.configureTaskBudget({ maxTurns: 50, wrapUpWindow: 0 }));
+    assert.throws(() => sessions.configureTaskBudget({ maxTurns: 50, wrapUpWindow: 11 }));
+    assert.deepEqual(sessions.getTaskBudget(), { maxTurns: 50, wrapUpWindow: 5 });
     await sessions.close();
 
     // 重启后恢复最新全局设置
     sessions = new Sessions(factory, join(dir, "defaults.json"));
-    assert.deepEqual(sessions.getMemorySummary(), { mainTurns: 5, subagentTurns: 2, maxChars: 40 });
+    assert.deepEqual(sessions.getTaskBudget(), { maxTurns: 50, wrapUpWindow: 5 });
     await sessions.close();
 
     // 库记录损坏：警告并回退默认，不阻断启动
     const { Database } = await import("../src/database.js");
     const db = new Database(join(dir, "axiom.db"));
-    db.set("settings", "memorySummary", { mainTurns: -1 });
+    db.set("settings", "taskBudget", { maxTurns: -1 });
     db.close();
     const warnings = [];
     const original = console.warn;
@@ -253,8 +255,8 @@ test("全局摘要设置：默认 3/6/30，configure 校验后持久化，重启
     } finally {
       console.warn = original;
     }
-    assert.ok(warnings.some((message) => message.includes("摘要设置")));
-    assert.deepEqual(sessions.getMemorySummary(), { mainTurns: 3, subagentTurns: 6, maxChars: 30 });
+    assert.ok(warnings.some((message) => message.includes("轮次预算读取失败")));
+    assert.deepEqual(sessions.getTaskBudget(), { maxTurns: 20, wrapUpWindow: 2 });
     await sessions.close();
   } finally {
     await sessions?.close();

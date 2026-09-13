@@ -13,7 +13,7 @@ const factory = async () => ({
 });
 factory.catalog = () => [{ key: "test/one" }];
 
-test("摘要按条保存；改标题和通知标志不重写历史任务，原始消息不入库", async () => {
+test("事件按条保存；改标题和通知标志不重写历史任务，原始消息不入库", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-persist-"));
   const sessions = new Sessions(factory, undefined, join(root, "storage"));
   try {
@@ -22,17 +22,14 @@ test("摘要按条保存；改标题和通知标志不重写历史任务，原�
     await sessions.persist(item, { task: { id: "child", task: "test", status: "completed", notified: true,
       text: "result".repeat(10000), runtime: { systemPrompt: "system".repeat(10000) } } });
     const task = sessions.store.listTasks(id)[0];
-    // 如新增摘要/改标题意外走单任务保存，测试立即失败，不靠运行速度碰运气。
+    // 如新增事件/改标题意外走单任务保存，测试立即失败，不靠运行速度碰运气。
     const saveTask = sessions.store.saveTask;
     sessions.store.saveTask = () => assert.fail("没有任务变更，不应更新任务");
-    for (let n = 0; n < 50; n++) {
-      const summary = { id: `s${n}`, agentId: "main", turn: n, text: `事实${n}`, timestamp: n };
-      item.summaries.push(summary);
-      await sessions.persist(item, { summary });
-    }
+    for (let n = 0; n < 50; n++)
+      await sessions.persist(item, { event: { type: "retry", record: { id: `r${n}`, agentId: "main", status: "failed", attempt: n } } });
     await sessions.rename(id, "新标题");
-    assert.equal(sessions.store.listSummaries(id).length, 50);
-    assert.equal(sessions.store.listSummaries(id).at(-1).text, "事实49");
+    assert.equal(sessions.store.getSession(id).retries.length, 50);
+    assert.equal(sessions.store.getSession(id).retries.at(-1).id, "r49");
     assert.deepEqual(sessions.store.listTasks(id)[0], task);
     sessions.store.saveTask = saveTask;
     await sessions.persist(item, { task: { id: "child", notified: false } });
@@ -48,20 +45,20 @@ test("真实数据库拒绝写入时旧记录完整，解除错误后能重试",
   try {
     const id = await sessions.create(root);
     const item = sessions.get(id);
-    const summary = { id: "s1", agentId: "main", text: "第一版", timestamp: 1 };
-    await sessions.persist(item, { summary });
+    const record = { id: "r1", agentId: "main", status: "failed" };
+    await sessions.persist(item, { event: { type: "retry", record } });
     sessions.database.exec("PRAGMA query_only = ON");
-    await assert.rejects(sessions.persist(item, { summary: { ...summary, text: "失败版" } }), /readonly/i);
-    assert.equal(sessions.store.listSummaries(id)[0].text, "第一版");
+    await assert.rejects(sessions.persist(item, { event: { type: "retry", record: { ...record, status: "waiting" } } }), /readonly/i);
+    assert.equal(sessions.store.getSession(id).retries[0].status, "failed");
     sessions.database.exec("PRAGMA query_only = OFF");
-    await sessions.persist(item, { summary: { ...summary, text: "第二版" } });
-    assert.equal(sessions.store.listSummaries(id)[0].text, "第二版");
+    await sessions.persist(item, { event: { type: "retry", record: { ...record, status: "succeeded" } } });
+    assert.equal(sessions.store.getSession(id).retries[0].status, "succeeded");
     sessions.database.exec("PRAGMA query_only = ON");
-    sessions.saveChange(item, { summary: { id: "retry-on-next-save", text: "暂时失败也不丢" } });
+    sessions.saveChange(item, { event: { type: "retry", record: { id: "r2", agentId: "main", status: "waiting" } } });
     await new Promise(setImmediate);
     sessions.database.exec("PRAGMA query_only = OFF");
     await sessions.rename(id, "重试未成功的增量");
-    assert.equal(sessions.store.listSummaries(id)[1].text, "暂时失败也不丢");
+    assert.equal(sessions.store.getSession(id).retries[1].id, "r2");
   } finally {
     sessions.database.exec("PRAGMA query_only = OFF");
     await sessions.close(); await rm(root, { recursive: true, force: true });
@@ -78,14 +75,14 @@ test("同一变更后半段写失败时全体不落盘，关闭重试整个增�
     const saveEvent = sessions.store.saveEvent;
     sessions.store.saveEvent = () => { throw new Error("injected event failure"); };
     await assert.rejects(sessions.persist(item, {
-      summary: { id: "summary", agentId: "main", text: "不能只写一半" },
-      event: { type: "summary_trigger", record: { id: "trigger", agentId: "main" } },
+      event: { type: "retry", record: { id: "r1", agentId: "main" } },
+      task: { id: "t1", task: "做事", status: "running" },
     }), /injected/);
-    assert.equal(sessions.store.listSummaries(id).length, 0);
+    assert.equal(sessions.store.listTasks(id).length, 0);
     sessions.store.saveEvent = saveEvent;
     await sessions.close();
-    assert.equal(sessions.store.getSession(id).summaries.length, 1);
-    assert.equal(sessions.store.getSession(id).summaryTriggers.length, 1);
+    assert.equal(sessions.store.getSession(id).retries.length, 1);
+    assert.equal(sessions.store.listTasks(id).length, 1);
   } finally { await sessions.close(); database.close(); await rm(root, { recursive: true, force: true }); }
 });
 

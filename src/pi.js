@@ -6,7 +6,7 @@ import {
 import { capabilityLoader, discoverCapabilities, refreshProjectSkills } from "./capabilities.js";
 import { stripMemoryTags } from "../public/memory-tags.js";
 import { createBackgroundCompaction, entryIdFor, normalizeCompaction, summarizedEntryIds } from "./compaction.js";
-import { SUMMARY_DELEGATE, SUMMARY_REMINDER } from "./memory-policy.js";
+import { WRAP_UP_PROMPT, budgetSystemPrompt } from "./task-budget.js";
 import { canResume, createAutoRetry, dropFailedAssistant } from "./retry.js";
 import { createJiti } from "jiti";
 const { getSupportedThinkingLevels } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai/compat");
@@ -91,36 +91,30 @@ export async function recallLastMessage(session) {
 // 标题指令只在 titleRequest 的当次首个请求随背景注入，不进系统提示词、不改用户原文。
 const TITLE_INSTRUCTION = "另在本次回复开头单独一行输出<title>不超过10字的会话标题</title>。";
 
-// 会话记忆接入：context 钩子在每次 LLM 请求（含同一次 prompt 的工具后续轮）实时取背景，
-// 工具后新产生的子代理进度因此能进入下一次请求；titleRequest 的标题指令只随当次首个请求注入一次；
-// 每满 N 个累计 turn（默认主 3/子 6，建会话时由 memory-policy 按持久化配置定死，逐请求不重读）在下一次请求前附加一次
-// [摘要提醒]（不额外发请求，lastReminderTurn 记录已提醒的 turn，重试同一请求不会重发），
-// 真正注入时回调 onTrigger 供复盘；委派触发不在此层：模型按系统提示词随 delegate 回复自带正文标签，
-// 由 onReply 在 message_end（先于 delegate 执行）登记。
+// 会话记忆接入：context 钩子在每次 LLM 请求（含同一次 prompt 的工具后续轮）注入临时背景；
+// titleRequest 的标题指令只随当次首个请求注入一次。
+// 子代理累计 turn 到达 wrapUpAt（建会话时由 task-budget 按持久化配置定死，逐请求不重读）后，
+// 每次请求前附加一次 [轮次预算] 收尾指令（不额外发请求）。上限是软的、故意反复注入：
+// 没有硬停——abort 会让 result() 对 aborted 抛错，前面所有轮次的产出一起丢掉。
 // transformContext 仅改请求副本、不落盘，不动原始消息历史；
-// 助手 message_end（工具执行前）同步调 onReply，turn_end 调 onTurn，turn 首轮为 memory.turn+1。
+// 助手 message_end（工具执行前）同步调 onReply 取标题，turn_end 只推进本地轮次计数。
 function memoryExtension(state, memory, policy) {
   return (pi) => {
     pi.on("context", ({ messages }) => {
-      const parts = [memory.context()];
-      if (state.turn > 0 && state.turn % policy.interval === 0 && state.lastReminderTurn !== state.turn) {
-        parts.push(SUMMARY_REMINDER);
-        state.lastReminderTurn = state.turn;
-        memory.onTrigger?.({ turn: state.turn + 1, interval: policy.interval, maxChars: policy.maxChars, prompt: SUMMARY_REMINDER, systemPrompt: policy.systemPrompt });
-      }
+      const parts = [];
+      if (policy && state.turn >= policy.wrapUpAt) parts.push(WRAP_UP_PROMPT);
       if (state.pending) parts.push(state.pending);
       state.pending = null;
-      if (!parts.some(Boolean)) return undefined;
+      if (!parts.length) return undefined;
       return { messages: [...messages, {
-        role: "custom", customType: "axiom-memory", content: parts.filter(Boolean).join("\n\n"), display: false, timestamp: Date.now(),
+        role: "custom", customType: "axiom-memory", content: parts.join("\n\n"), display: false, timestamp: Date.now(),
       }] };
     });
     pi.on("message_end", ({ message }) => {
-      if (message.role === "assistant") memory.onReply({ message, turn: state.turn + 1 });
+      if (message.role === "assistant") memory.onReply({ message });
       return undefined;
     });
-    pi.on("turn_end", (event) => {
-      memory.onTurn({ message: event.message, toolResults: event.toolResults ?? [], turn: state.turn + 1 });
+    pi.on("turn_end", () => {
       state.turn += 1;
       return undefined;
     });
@@ -137,9 +131,11 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
   const factory = async (customTools = [], selection = {}) => {
     const workspace = selection.cwd || cwd;
     const memory = selection.memory || null;
-    // 策略建会话时随记忆装配捕获一次（memoryHooks 计算，含配置校验），逐请求不重读，避免中途漂移。
+    // 预算策略建会话时随记忆装配捕获一次（memoryHooks 计算，含配置校验），逐请求不重读，避免中途漂移。
+    // 主代理没有预算（policy 为 null）：人在盯，且它是会话本体，不该被截断。
     const policy = memory?.policy ?? null;
-    const memoryState = memory ? { turn: memory.turn || 0, pending: null, lastReminderTurn: 0 } : null;
+    // 轮次只在本次子代理进程内计数：子代理不跨重启续命，重启即取消，无需持久化。
+    const memoryState = memory ? { turn: 0, pending: null } : null;
     // 启动不依赖模型；每次建会话从最新目录选择，网页首次配置后无需重启。
     const key = selection.model || defaultKey;
     const selected = available.find((m) => `${m.provider}/${m.id}` === key)
@@ -164,7 +160,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
     settingsManager.applyOverrides({ retry: { provider: { maxRetries: 0 } } });
     const { loader, selected: capabilities } = capabilityLoader(resources, selection.capabilities, customTools,
       memoryState ? [memoryExtension(memoryState, memory, policy)] : [],
-      policy ? policy.systemPrompt + (memory.role === "main" ? SUMMARY_DELEGATE : "") : null);
+      policy ? budgetSystemPrompt(policy) : null);
     await loader.reload();
     const diagnostics = loader.getExtensions().errors;
     if (diagnostics.length) {

@@ -2,19 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { extractMemoryTags, stripMemoryTags } from "../public/memory-tags.js";
 
-test("extract 认有界标签，行中/行尾/同行多个均可", () => {
-  assert.deepEqual(extractMemoryTags("<axiom_summary>完成验证</axiom_summary>"), { axiom_summary: "完成验证" });
+test("extract 只认 title；旧摘要标签（axiom_summary/summary/progress）不再提取", () => {
+  assert.deepEqual(extractMemoryTags("<axiom_summary>完成验证</axiom_summary>"), {});
+  assert.deepEqual(extractMemoryTags("前言\n<summary>已知X；意图Y</summary>\n正文"), {});
+  assert.deepEqual(extractMemoryTags("<progress>五成</progress>"), {});
+  assert.deepEqual(extractMemoryTags("<title>摘要机制</title><summary>明确需求</summary>"), { title: "摘要机制" });
+  assert.deepEqual(extractMemoryTags("前缀<title>T</title>后缀"), { title: "T" });
   assert.equal(stripMemoryTags("正文<axiom_summary>完成验证</axiom_summary>"), "正文");
   assert.equal(stripMemoryTags("正文<axiom_sum", { streaming: true }), "正文");
-  assert.deepEqual(extractMemoryTags("前言\n<summary>已知X；意图Y</summary>\n正文"), { summary: "已知X；意图Y" });
-  assert.deepEqual(extractMemoryTags("<title>摘要机制</title><summary>明确需求</summary>"), { title: "摘要机制", summary: "明确需求" });
-  assert.deepEqual(extractMemoryTags("正文 <summary>末尾</summary>"), { summary: "末尾" });
-  assert.deepEqual(extractMemoryTags("前缀<title>T</title>后缀"), { title: "T" });
-  assert.deepEqual(extractMemoryTags("<progress>五成</progress>"), { progress: "五成" });
 });
 
-test("extract 防贪婪吞并同类，title 取首个，summary/progress 取最后", () => {
-  assert.deepEqual(extractMemoryTags("<summary>a</summary> 中间 <summary>b</summary>"), { summary: "b" });
+test("extract title 取首个、防贪婪吞并，超长与空值跳过", () => {
   assert.deepEqual(extractMemoryTags("<title>一</title>\n<title>二</title>"), { title: "一" });
   assert.deepEqual(extractMemoryTags("<title> </title><title>一二三四五六七八九十十一</title><title>合法</title>"), { title: "合法" });
   // 嵌套外壳不认，内层标签仍认
@@ -22,14 +20,14 @@ test("extract 防贪婪吞并同类，title 取首个，summary/progress 取最�
 });
 
 test("extract 忽略代码围栏，跨行折行为空格，trim 内容，大小写不敏感", () => {
-  assert.deepEqual(extractMemoryTags("```\n<title>代码内</title>\n```\n<summary>外</summary>"), { summary: "外" });
-  assert.deepEqual(extractMemoryTags("<summary>跨行\n认</summary>"), { summary: "跨行 认" });
-  assert.deepEqual(extractMemoryTags("<summary>  空  </summary>"), { summary: "空" });
-  assert.deepEqual(extractMemoryTags("<SUMMARY>大写</SUMMARY>"), { summary: "大写" });
+  assert.deepEqual(extractMemoryTags("```\n<title>代码内</title>\n```\n<title>外</title>"), { title: "外" });
+  assert.deepEqual(extractMemoryTags("<title>跨行\n认</title>"), { title: "跨行 认" });
+  assert.deepEqual(extractMemoryTags("<title>  空  </title>"), { title: "空" });
+  assert.deepEqual(extractMemoryTags("<TITLE>大写</TITLE>"), { title: "大写" });
   assert.deepEqual(extractMemoryTags(""), {});
 });
 
-test("strip 删除完整标签，独占行不留空档", () => {
+test("strip 删除完整标签（含已删机制的旧标签，旧会话历史仍需过滤），独占行不留空档", () => {
   assert.equal(stripMemoryTags("结论\n<summary>已知</summary>\n正文"), "结论\n正文");
   assert.equal(stripMemoryTags("<title>摘要机制</title><summary>明确需求</summary>"), "");
   assert.equal(stripMemoryTags("看 <title>T</title> 好"), "看  好");
@@ -45,9 +43,9 @@ test("strip 隐藏未闭合开启标签，代码围栏与普通比较符不受�
   assert.equal(stripMemoryTags("5 < 3 且 a>b"), "5 < 3 且 a>b");
 });
 
-test("标签独占行的跨行摘要：入库并整块隐藏，落单闭合标签不漏出", () => {
+test("标签独占行的跨行摘要：整块隐藏，落单闭合标签不漏出", () => {
   const reply = "定案：走续跑\n<axiom_summary>\n定案：重试按钮挂 updateActivity，语义为续跑非重发\n</axiom_summary>";
-  assert.deepEqual(extractMemoryTags(reply), { axiom_summary: "定案：重试按钮挂 updateActivity，语义为续跑非重发" });
+  assert.deepEqual(extractMemoryTags(reply), {});
   assert.equal(stripMemoryTags(reply), "定案：走续跑");
   assert.equal(stripMemoryTags("正文\n</axiom_summary>"), "正文");
   assert.equal(stripMemoryTags("正文 </summary> 尾"), "正文  尾");
@@ -68,6 +66,4 @@ test("strip 流式隐藏行尾标签残片", () => {
   assert.equal(stripMemoryTags("答<summary>", { streaming: true }), "答");
   assert.equal(stripMemoryTags("完成", { streaming: true }), "完成");
   assert.equal(stripMemoryTags("5 < 3", { streaming: true }), "5 < 3");
-  assert.equal(stripMemoryTags("结论\n<sum", { streaming: true }), "结论\n");
-  assert.equal(stripMemoryTags("```\n<sum", { streaming: true }), "```\n<sum");
 });

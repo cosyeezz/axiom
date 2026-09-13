@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MEMORY_SUMMARY_LIMITS } from "./memory-policy.js";
+import { TASK_BUDGET_LIMITS } from "./task-budget.js";
 
 const id = z.string().min(1);
 const capabilities = z.object({
@@ -73,11 +73,10 @@ export const selection = z.object({
   subagentThinking: thinking.unwrap().nullable().optional(),
 });
 // 摘要记忆参数：独立命令读写（SQLite 持久化，不进 selection / JSON 默认配置体系）。
-// 边界与 memory-policy.js 共用 MEMORY_SUMMARY_LIMITS，规则验证一致。
-export const memorySummary = z.object({
-  mainTurns: z.number().int().min(MEMORY_SUMMARY_LIMITS.turns[0]).max(MEMORY_SUMMARY_LIMITS.turns[1]),
-  subagentTurns: z.number().int().min(MEMORY_SUMMARY_LIMITS.turns[0]).max(MEMORY_SUMMARY_LIMITS.turns[1]),
-  maxChars: z.number().int().min(MEMORY_SUMMARY_LIMITS.chars[0]).max(MEMORY_SUMMARY_LIMITS.chars[1]),
+// 边界与 task-budget.js 共用 TASK_BUDGET_LIMITS，规则验证一致。
+export const taskBudget = z.object({
+  maxTurns: z.number().int().min(TASK_BUDGET_LIMITS.turns[0]).max(TASK_BUDGET_LIMITS.turns[1]),
+  wrapUpWindow: z.number().int().min(TASK_BUDGET_LIMITS.window[0]).max(TASK_BUDGET_LIMITS.window[1]),
 }).strict();
 // 具名会话预设：沿用 selection schema；trustProject/useDefaults 不在 schema 内，保存即剥离。
 export const preset = z.object({
@@ -276,8 +275,8 @@ export const command = z.discriminatedUnion("type", [
   }).strict(),
   z.object({ id, type: z.literal("session.defaults.get"), cwd: workspace }).strict(),
   selection.extend({ id, type: z.literal("session.defaults.configure"), cwd: workspace }).strict(),
-  z.object({ id, type: z.literal("memory.summary.get") }).strict(),
-  z.object({ id, type: z.literal("memory.summary.configure"), summary: memorySummary }).strict(),
+  z.object({ id, type: z.literal("task.budget.get") }).strict(),
+  z.object({ id, type: z.literal("task.budget.configure"), budget: taskBudget }).strict(),
   z.object({ id, type: z.literal("session.presets.list") }).strict(),
   z
     .object({

@@ -4,11 +4,9 @@ const state = {
   sessionId: "memory-preview", cwd: process.cwd(), title: "摘要机制", status: "idle", seq: 1,
   config: { model: "preview/model", thinking: "off", levels: ["off"], skills: [] },
   runtime: { model: "preview/model", thinking: "off" },
-  summaries: Array.from({ length: 12 }, (_, index) => ({ id: String(index), agentId: "main", turn: index + 1,
-    timestamp: Date.now() - (12 - index) * 60000, text: `已确认第${index + 1}项约束，继续检查相关实现。`, source: "model" })),
   messages: [
-    { agentId: "main", message: { role: "user", content: "实现摘要记录，保留 <summary> 示例文字。" } },
-    { agentId: "main", message: { role: "assistant", content: [{ type: "text", text: "已实现摘要记录。<summary>隐藏的工作摘要</summary><title>隐藏的标题</title>" }] } },
+    { agentId: "main", message: { role: "user", content: "给会话起个标题，保留 <summary> 示例文字。" } },
+    { agentId: "main", message: { role: "assistant", content: [{ type: "text", text: "已命名会话。<summary>隐藏的旧摘要</summary><title>摘要机制</title>" }] } },
   ], tasks: [], live: {}, tools: {},
 };
 const sessions = {

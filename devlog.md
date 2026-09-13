@@ -927,3 +927,16 @@
 - 内容：`AGENTS.md` worktree 段落——流程行改为「验证 → 提交 → 拉取最新 `master` 并合并进功能分支（冲突在功能分支内解决）→ push 功能分支 → 合并回 `master` 并推送 → 清理 worktree」，把合并方向定为先 master→功能分支（冲突在功能分支解决，master 只接快进式合并）；新增一条：任务完成后自动执行收尾，仅当 master 工作区不干净、存在未完成合并、或冲突无法安全自动解决时暂停并报告。`README.md:147`「维护：发布更新」同步为同一套流程措辞，避免两处文档打架。
 - 验证：纯文档改动，无代码变更，未跑测试套件；人工复核两处流程描述一致。本次收尾按新规则实测走通（fetch → merge origin/master → push 功能分支 → 合并回 master → push）。
 - 涉及：AGENTS.md、README.md、devlog.md。
+
+## 2026-09-13 09:35 — 删除增量摘要机制，改为子代理软轮次预算
+- 原因：主代理自报摘要 + 子代理 progress 推送这套机制与「注意力原则」冲突——摘要提醒和进度回注都会在主代理忙碌时挤进上下文，打断正在进行的推理；上下文维持已由后台压缩（compaction.js）覆盖，摘要属于重复投资。同时子代理缺少规模约束，容易在一个任务里无限展开探索。用户要求开发阶段精准切割：不留死列死表、不留字段冗余、不留未知空字段。
+- 内容：
+  - `src/memory-policy.js` → `src/task-budget.js`（git mv）：导出 `WRAP_UP_PROMPT`、`TASK_BUDGET_LIMITS={turns:[3,200],window:[1,10]}`、`taskBudgetDefaults={maxTurns:20,wrapUpWindow:2}`、`taskBudgetPolicy(role,budget)`（非 subagent 返回 null，否则返回含 `wrapUpAt=max(1,maxTurns-wrapUpWindow)` 的策略）、`budgetSystemPrompt`。软上限：到点每轮注入收尾指令，不 abort——abort 会让 `result()` 抛错并丢掉此前所有轮次的产出。
+  - `src/pi.js`：删摘要提醒注入、进度投影与 memoryState 的摘要字段；改为子代理累计 turn ≥ wrapUpAt 时在请求末尾追加 `WRAP_UP_PROMPT`，创建时把 `budgetSystemPrompt` 拼进系统提示词。`<title>` 提取与 `stripMemoryTags` 保留；compaction 自己的 `<axiom_compact_*>` 与 `entry.details.progress` 投影是另一套机制，未改动。
+  - `src/tools.js`：`delegate` 新增必填 `context`（批内共享一次），description 与系统提示词同时约束任务粒度；删除进度上报相关工具行为。
+  - `src/session-store.js`：DDL 拆为 `TABLES` + `INDEXES` 常量（表建好→归一化→再建索引，避免重建丢索引）；新增 `#normalizeSchema()` 幂等清理旧库——按 `PRAGMA table_info`/`sqlite_master` 自检，删 `summaries` 表、`sessions.main_turn`、`tasks.memory_turn/progress/progress_delivered` 列、`summary_trigger`/`progress_delivery` 事件行，带旧 CHECK 的 `session_events` 走建新表拷贝改名重建，全程保存点包裹，无需迁移标记，新库一条不执行。删 `saveSummary/listSummaries/deleteSummaries/setTurn/pruneEvents`，`EVENT_TYPES` 收窄为 `('compaction','retry')`。
+  - `src/session-memory.js`、`src/sessions.js`、`src/tasks.js`、`src/capabilities.js`、`src/protocol.js`、`src/server.js`：`save(change)` 只留 `title/event/task/deletedEvents`；新增 WS 命令 `task.budget.get`/`task.budget.configure`（payload `budget`，zod 边界取 `TASK_BUDGET_LIMITS`），settings key `taskBudget`。
+  - `public/`：删「摘要记录」按钮与对话框、`renderSummaries`、`session.summary` 事件处理与快照重放；设置面板「摘要记忆」换成「子代理轮次预算」双输入框（`task-max-turns` 3-200 / `task-wrap-up-window` 1-10），`loadTaskBudget`/`saveTaskBudget` 走新 WS 命令；`.memory-field` 改名 `.budget-field`，删除全部 `#summaries` / `.summary-*` 样式。`public/memory-tags.js` 提取只认 `title`，剥离列表保留旧标签（旧会话历史仍需过滤）。
+  - `tests/`：`memory-policy.test.js` → `task-budget.test.js`；`session-store.test.js` 增 `#normalizeSchema` 幂等迁移用例；`pi-memory.test.js` 覆盖 `WRAP_UP_PROMPT` 注入时机；`memory-ui.test.js` 只留 UI 集成（流式剥离标签、标题更新、轮次预算面板），标签纯函数用例归到 `memory-tags.test.js`；删 `summary-compact.test.js`（只测已删对话框的 CSS）；`sqlite-benchmark.mjs` 去掉摘要/进度阶段。
+- 验证：全量 `npm test` 356 项 354 过 2 跳过 0 失败。`rg -in "summar|progress|memory_turn|main_turn"` 在 src/ 仅剩 `#normalizeSchema` 的 DEAD_* 常量与 compaction 自有机制；public/ 零命中。SQLite 侧确认 node v24.19.0 内置 SQLite 3.53.3 支持 `ALTER TABLE DROP COLUMN`。
+- 涉及：src/task-budget.js（原 memory-policy.js）、src/pi.js、src/tools.js、src/session-store.js、src/session-memory.js、src/sessions.js、src/tasks.js、src/capabilities.js、src/protocol.js、src/server.js、src/database.js、public/app.js、public/index.html、public/style.css、public/memory-tags.js、tests/（10 个文件，含删除 summary-compact.test.js）、README.md、devlog.md、.pi/skills/codebase-map/。

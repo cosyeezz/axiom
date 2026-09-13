@@ -7,12 +7,12 @@ import { Database } from "./database.js";
 import { SessionStore } from "./session-store.js";
 import { basename, dirname, join, relative, isAbsolute, resolve, sep, parse } from "node:path";
 
-import { selection as selectionSchema, presetStore, memorySummary as memorySummarySchema, compaction as compactionSchema, compactionDefaults, assertPromptImages } from "./protocol.js";
-import { memorySummaryDefaults } from "./memory-policy.js";
+import { selection as selectionSchema, presetStore, taskBudget as taskBudgetSchema, compaction as compactionSchema, compactionDefaults, assertPromptImages } from "./protocol.js";
+import { taskBudgetDefaults } from "./task-budget.js";
 import { Tasks } from "./tasks.js";
 import { delegationTools } from "./tools.js";
 import { resolveCapabilities } from "./capabilities.js";
-import { memoryHooks, parentSummaryContext } from "./session-memory.js";
+import { memoryHooks } from "./session-memory.js";
 
 // 统一目录浏览：目录优先排序后按服务端过滤结果分页；无搜索词时不递归、不逐项 stat、跳过符号链接。
 const BROWSE_PAGE = 200;
@@ -178,8 +178,8 @@ export class Sessions {
     this.ownsDatabase = !database && !!sidecar;
     this.database = database || (sidecar ? new Database(sidecar) : null);
     this.store = this.database ? new SessionStore(this.database) : null;
-    this.memorySummary = structuredClone(memorySummaryDefaults);
-    this.loadMemorySummary();
+    this.taskBudget = structuredClone(taskBudgetDefaults);
+    this.loadTaskBudget();
     this.savingDefaults = Promise.resolve();
     this.projectSkills = {};
     this.savingPresets = Promise.resolve();
@@ -240,29 +240,29 @@ export class Sessions {
     }
   }
 
-  // —— 全局摘要设置（memorySummary）：SQLite namespace "settings"；构造时读取，
+  // —— 全局子代理轮次预算（taskBudget）：SQLite namespace "settings"；构造时读取，
   // 重启后按最新全局值生效；运行中会话持有创建时的快照，不热更。
   // 坏记录只警告并回退默认值，不阻断启动。
-  loadMemorySummary() {
+  loadTaskBudget() {
     if (!this.database) return;
     try {
-      const saved = this.database.get("settings", "memorySummary");
+      const saved = this.database.get("settings", "taskBudget");
       if (saved === undefined) return;
-      this.memorySummary = memorySummarySchema.parse({ ...memorySummaryDefaults, ...saved });
+      this.taskBudget = taskBudgetSchema.parse({ ...taskBudgetDefaults, ...saved });
     } catch (error) {
-      console.warn(`摘要设置读取失败，使用默认值：${error.message}`);
+      console.warn(`轮次预算读取失败，使用默认值：${error.message}`);
     }
   }
 
-  getMemorySummary() {
-    return structuredClone(this.memorySummary);
+  getTaskBudget() {
+    return structuredClone(this.taskBudget);
   }
 
   // 保存前 zod 校验（坏值直接抛给 WS 通用错误回执），先持久化再更新内存值。
-  configureMemorySummary(value) {
-    const next = memorySummarySchema.parse(value);
-    this.database.set("settings", "memorySummary", next);
-    this.memorySummary = next;
+  configureTaskBudget(value) {
+    const next = taskBudgetSchema.parse(value);
+    this.database.set("settings", "taskBudget", next);
+    this.taskBudget = next;
     return structuredClone(next);
   }
   getDefaults() {
@@ -519,19 +519,9 @@ export class Sessions {
       this.store.updateSession(item.id, patch);
     }
     if (change.title) this.store.updateSession(item.id, { title: item.title });
-    if (change.summary) this.store.saveSummary(item.id, change.summary);
     if (change.event) this.store.saveEvent(item.id, change.event.type, change.event.record);
     if (change.task) this.store.saveTask(item.id, change.task);
-    if (change.turn) this.store.setTurn(item.id, change.turn.agentId, change.turn.turn);
-    if (change.progress) this.store.saveTask(item.id, { id: change.progress.taskId, progress: change.progress.record });
-    if (change.deletedSummaries) this.store.deleteSummaries(item.id, change.deletedSummaries);
     if (change.deletedEvents) this.store.deleteEvents(item.id, change.deletedEvents.type, change.deletedEvents.records);
-    if (change.delivery) {
-      this.store.saveEvent(item.id, "progress_delivery", change.delivery);
-      this.store.pruneEvents(item.id, "progress_delivery", 50);
-      for (const { taskId, progressId } of change.delivered)
-        this.store.saveTask(item.id, { id: taskId, progressDelivered: progressId });
-    }
   }
 
   saveChange(item, change) {
@@ -617,13 +607,9 @@ export class Sessions {
       titleManual: saved?.titleManual ?? !!saved,
       titleRequested: saved?.titleRequested ?? !!saved,
       titlePending: false,
-      // 摘要策略随会话创建定死：新会话取当前全局值（保存后新建即生效），运行中不热更；
-      // selection.memorySummary 仅供测试注入。
-      memorySummary: structuredClone(selection.memorySummary ?? this.memorySummary),
-      summaries: saved?.summaries || [],
-      memoryTurns: saved?.memoryTurns || {},
-      progressDeliveries: saved?.progressDeliveries || [],
-      summaryTriggers: (saved?.summaryTriggers || []).map((entry) => entry.status === "pending" ? { ...entry, status: "interrupted" } : entry),
+      // 轮次预算随会话创建定死：新会话取当前全局值（保存后新建即生效），运行中不热更；
+      // selection.taskBudget 仅供测试注入。
+      taskBudget: structuredClone(selection.taskBudget ?? this.taskBudget),
       // 老记录无 createdAt，回退 updatedAt 兜底（历史文件未存创建时间，无法还原真实值）。
       createdAt: saved?.createdAt || saved?.updatedAt || Date.now(),
       updatedAt: saved?.updatedAt || Date.now(),
@@ -690,18 +676,6 @@ export class Sessions {
         }
       }
       if (event.type === "agent.message.end") {
-        if (event.data.message.role === "assistant" && event.data.entryId) {
-          const record = item.summaries.findLast((entry) => entry.agentId === agentId && !entry.entryId && entry.messageTimestamp != null && entry.messageTimestamp === event.data.message.timestamp);
-          if (record) {
-            record.entryId = event.data.entryId;
-            this.saveChange(item, { summary: record });
-          }
-          const trigger = item.summaryTriggers.findLast((entry) => entry.agentId === agentId && entry.messageTimestamp != null && entry.messageTimestamp === event.data.message.timestamp);
-          if (trigger) {
-            trigger.entryId = event.data.entryId;
-            this.saveChange(item, { event: { type: "summary_trigger", record: trigger } });
-          }
-        }
         item.messages.push({ agentId, message: event.data.message, ...(event.data.entryId ? { entryId: event.data.entryId } : {}) });
         delete item.live[agentId];
         if (agentId === "main") {
@@ -773,7 +747,6 @@ export class Sessions {
         await this.persist(item, {});
         this.scheduleTaskNotifications(item);
       },
-      () => parentSummaryContext(item),
     );
     for (const task of saved?.tasks || []) {
       const interrupted = ["starting", "running"].includes(task.status);
@@ -836,22 +809,6 @@ export class Sessions {
         historyIndex = index + 1;
       }
     }
-    // 崩溃可能发生在摘要落库后、message.end回填ID前。仅补唯一助手时间戳；
-    // 缺失或同毫秒多条的旧记录保留原样，不猜关联、不据此删除历史。
-    const assistantIds = new Map();
-    for (const { id, message } of history) {
-      if (message?.role !== "assistant" || !Number.isFinite(message.timestamp)) continue;
-      assistantIds.set(message.timestamp, assistantIds.has(message.timestamp) ? null : id);
-    }
-    const linkRecord = (record) => {
-      if (record.agentId !== "main" || record.entryId) return false;
-      const entryId = assistantIds.get(record.messageTimestamp);
-      if (!entryId) return false;
-      record.entryId = entryId;
-      return true;
-    };
-    const linkedSummaries = item.summaries.filter(linkRecord);
-    item.summaryTriggers.forEach(linkRecord);
     // 旧版重试位置迁移（一次性，随本次 persist 固化）：
     // - 界内已有 count 的记录不重算，只补最近同代理 entryId 锚点供前端压缩归属。
     // - 无 count 或越界旧值（早期撤回未清理）：从首个等待起点在「消费时间线」上重定——
@@ -920,16 +877,12 @@ export class Sessions {
       item.emit({ ...event, agentId: "main", runId: item.runId }),
     );
       if (this.store && !this.store.hasSession(id)) {
-        this.store.insertSession({ ...this.sessionData(item), summaries: item.summaries,
-          memoryTurns: item.memoryTurns, progressDeliveries: item.progressDeliveries,
-          summaryTriggers: item.summaryTriggers, compactions: item.compactions,
+        this.store.insertSession({ ...this.sessionData(item), compactions: item.compactions,
           retries: item.retries, tasks: item.tasks.snapshot() });
       } else if (this.store) {
         // 恢复时的中断状态与 JSONL 对账只写一次，不进入日常保存热路径。
         await this.persist(item);
-        for (const record of linkedSummaries) this.store.saveSummary(id, record);
         for (const task of item.tasks.snapshot()) this.store.saveTask(id, task);
-        for (const record of item.summaryTriggers) this.store.saveEvent(id, "summary_trigger", record);
         for (const record of item.retries) this.store.saveEvent(id, "retry", record);
         for (const record of item.compactions) this.store.saveEvent(id, "compaction", record);
       }
@@ -1093,7 +1046,6 @@ export class Sessions {
       },
       runId: item.runId,
       messages: item.messages,
-      summaries: item.summaries,
       compactions: item.compactions,
       compactionStatus: item.agent.compactionStatus?.() ?? null,
       retries: item.retries,
@@ -1222,13 +1174,6 @@ export class Sessions {
       const cut = item.messages.findIndex((record) => record.agentId === "main" && record.entryId === recalled.entryId);
       if (cut >= 0) {
         const previousMessages = item.messages;
-        const removedIds = new Set(previousMessages.slice(cut).filter((entry) => entry.agentId === "main").map((entry) => entry.entryId).filter(Boolean));
-        const removedSummaries = item.summaries.filter((entry) => entry.agentId === "main" && removedIds.has(entry.entryId));
-        item.summaries = item.summaries.filter((entry) => !removedSummaries.includes(entry));
-        changes.push({ deletedSummaries: removedSummaries.map((entry) => entry.id) });
-        const removedTriggers = item.summaryTriggers.filter((entry) => entry.agentId === "main" && removedIds.has(entry.entryId));
-        item.summaryTriggers = item.summaryTriggers.filter((entry) => !removedTriggers.includes(entry));
-        changes.push({ deletedEvents: { type: "summary_trigger", records: removedTriggers } });
         // 撤回只回退主代理，独立子任务已经发生的输出必须保留。
         const keptBefore = [0];
         item.messages = previousMessages.filter((record, index) => {
