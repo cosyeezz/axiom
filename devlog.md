@@ -790,3 +790,9 @@
   - 摘要记忆（public/index.html / style.css）：三个字段从句子式内联（`主代理每 [input] 轮提醒一次摘要`）改为堆叠式 `.memory-field`（标签在上、输入框 + 单位在下），文案改「主代理提醒间隔 / 子代理提醒间隔（轮）」「单条摘要上限（字）」；新增 `.settings-selectors:has(> .memory-field)` 加大列间距，输入框收到 32px 高、12px 字（原全局 input 规则是 40px/16px）。
 - 验证：Playwright 实测 1280/900/420px——三字段标签均单行、输入框 104×32、单位与输入框同一行、无横向溢出；Bearer 复选框 14×14 且与文字垂直居中对齐（offset 0）；全量 `npm test` 305 项 304 过 1 跳过 0 失败。
 - 涉及：public/model-manager.js、public/model-manager.css、public/index.html、public/style.css、devlog.md、.pi/skills/codebase-map/index。
+
+## 2026-09-13 09:40 — 设置弹窗滚动时分类列固定
+- 原因：用户反馈设置弹窗滚动后左侧分类（默认新会话设置 / 远程控制 / 模型与供应商 / 服务与更新）跟着滚走，切分类得先滚回顶部。
+- 内容：`public/style.css` 把 `.settings-layout` 由整块滚动改为 `overflow: hidden`，分类列与右侧面板各自成为滚动容器（`#settings .settings-nav, #settings .settings-body { min-width: 0; min-height: 0; overflow: auto; scrollbar-gutter: stable }`）；≤700px 单列布局回到整块滚动，但分类列改 `position: sticky; top: 0; max-height: 45dvh`（配 `background: var(--surface)`、`z-index: 2`），窄屏滚下去同样能看到分类。
+- 验证：Playwright 用真实 dialog 片段（index.html 的 `#settings` 块 + 造 60 段占位内容）实测 1200/700/420px：滚到底后分类列 `navTop` 完全不变（145/145/141），右侧内容分别在自身容器内滚动；全量 `npm test` 305 项 304 过 1 跳过 0 失败。
+- 涉及：public/style.css、devlog.md、.pi/skills/codebase-map/index。

@@ -808,7 +808,10 @@ textarea {
 #settings[open] { display: flex; flex-direction: column; }
 #settings > header { flex-shrink: 0; }
 .task-dialog { width: min(880px, calc(100% - var(--sidebar-width) - 32px)); border-color: #42455f; }
-.settings-layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); flex: 1; min-height: 0; overflow: auto; scrollbar-gutter: stable; }
+.settings-layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); flex: 1; min-height: 0; overflow: hidden; }
+/* 分类列固定不动，只有右侧内容自己滚动（原来是整块一起滚，滚下去就看不到分类）。 */
+#settings .settings-nav,
+#settings .settings-body { min-width: 0; min-height: 0; overflow: auto; scrollbar-gutter: stable; }
 .settings-nav { padding: 20px 12px; border-right: 1px solid var(--line); }
 .settings-nav button { width: 100%; white-space: normal; margin-bottom: 8px; text-align: left; }
 .settings-nav button[aria-current="page"] { background: var(--raised); color: var(--ink); border-color: var(--accent); }
@@ -824,8 +827,18 @@ textarea {
 .capability-agent .selectors label { display: grid; gap: 6px; min-width: 0; flex: 1 1 180px; font-size: 12px; }
 .capability-agent select { width: 100%; min-width: 0; }
 @media (max-width: 700px) {
-  .settings-layout { grid-template-columns: minmax(0, 1fr); }
-  .settings-nav { border-right: 0; border-bottom: 1px solid var(--line); }
+  /* 窄屏回到整块滚动，但分类列钉在顶部（给个高度上限，避免占满屏），滚下去也能切分类。 */
+  .settings-layout { grid-template-columns: minmax(0, 1fr); overflow: auto; }
+  #settings .settings-body { overflow: visible; }
+  .settings-nav {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--surface);
+    max-height: 45dvh;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
 }
 #settings::backdrop,
 #create-session::backdrop,
