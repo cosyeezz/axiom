@@ -255,6 +255,9 @@ button.mm-icon-delete:focus-visible { color: var(--danger); }
 .mm-catalog-model-name { color: var(--ink); flex: none; }
 .mm-catalog-model code { color: var(--muted); overflow-wrap: anywhere; }
 .mm-catalog-model-tags { display: flex; gap: 4px; margin-left: auto; }
+/* 目录行尾的动作（隐藏图标 / 恢复按钮）：紧跟在能力徽标之后，保持行高不变。 */
+.mm-catalog-model .mm-icon-btn { align-self: center; }
+.mm-catalog-restore { flex: none; align-self: center; min-height: 24px; padding: 2px 10px; font-size: 11px; }
 
 /* 表单网格 */
 .mm-form {

@@ -26,6 +26,8 @@ const AUTH_NAMESPACE = "auth";
 const MIGRATED_NAMESPACE = "migrated";
 const CONFIG_KEY = "config";
 const FAVORITES_KEY = "favorites";
+// Axiom 私有的内置目录可见性清单（不写入 models.json：SDK schema 只认 provider 定义）。
+const HIDDEN_KEY = "hidden";
 const IMPORT_ERROR_KEY = "importError";
 
 // 权威配置的规范序列化：指纹、SDK 校验、派生文件三处共用，保证三 view 一致。
@@ -194,6 +196,9 @@ export function createPiModelStorage({ database, home, piDir = getAgentDir() }) 
       database.set(NAMESPACE, FAVORITES_KEY, value);
   };
 
+  const readHiddenRaw = () => database.get(NAMESPACE, HIDDEN_KEY);
+  const writeHiddenRaw = (keys) => database.set(NAMESPACE, HIDDEN_KEY, { version: 1, keys });
+
   const readFavoritesRaw = () => database.get(NAMESPACE, FAVORITES_KEY);
   const writeFavoritesRaw = (store) => database.set(NAMESPACE, FAVORITES_KEY, { version: 1, ...store });
 
@@ -223,6 +228,8 @@ export function createPiModelStorage({ database, home, piDir = getAgentDir() }) 
     canonicalModelsJson,
     getFavorites: readFavoritesRaw,
     setFavorites: writeFavoritesRaw,
+    getHidden: readHiddenRaw,
+    setHidden: writeHiddenRaw,
     credentials,
     runtimeOptions,
   };

@@ -782,3 +782,47 @@ test("discover 边界：损坏结构拒绝、Unknown provider、501 条截断、
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("models.hidden.set：隐藏只影响可选入口（listCatalog），运行时目录与会话校验不动", async () => {
+  const dir = await tempDir();
+  try {
+    const catalog = [
+      { provider: "openai-codex", id: "gpt-5.4", name: "GPT-5.4", key: "openai-codex/gpt-5.4", levels: ["medium"], input: ["text"] },
+      { provider: "openai-codex", id: "gpt-5.4-mini", name: "Mini", key: "openai-codex/gpt-5.4-mini", levels: [], input: ["text"] },
+      { provider: "anthropic", id: "claude", name: "Claude", key: "anthropic/claude", levels: [], input: ["text"] },
+    ];
+    const svc = makeService(dir, catalog);
+    const keys = () => svc.models.listCatalog().map((model) => model.key);
+
+    assert.deepEqual((await svc.models.get()).hidden, []);
+    assert.deepEqual(keys(), ["openai-codex/gpt-5.4", "openai-codex/gpt-5.4-mini", "anthropic/claude"]);
+
+    // 单个模型隐藏：从可选入口消失，但 catalog（会话校验/既有会话）保持不变。
+    await svc.models.handle({ type: "models.hidden.set", key: "openai-codex/gpt-5.4", hidden: true });
+    assert.deepEqual((await svc.models.get()).hidden, ["openai-codex/gpt-5.4"]);
+    assert.deepEqual(keys(), ["openai-codex/gpt-5.4-mini", "anthropic/claude"]);
+    assert.deepEqual((await svc.models.get()).catalog.map((model) => model.key), catalog.map((model) => model.key));
+    // 已隐藏项写入权威库独立键，绝不进 models.json（SDK schema 只认 provider 定义）。
+    assert.equal("hidden" in (svc.database.get("models", "config") ?? {}), false);
+
+    // 供应商级隐藏：整条消失；一旦存在同名自定义覆盖，则让位给覆盖条目（用户已在接管该 id）。
+    await svc.models.handle({ type: "models.hidden.set", key: "openai-codex", hidden: true });
+    assert.deepEqual(keys(), ["anthropic/claude"]);
+    await seed(svc, { providers: { "openai-codex": { baseUrl: "https://p.example.com", api: "openai-completions" } } });
+    assert.deepEqual(keys(), ["openai-codex/gpt-5.4-mini", "anthropic/claude"]);
+
+    // 恢复幂等；未知 key 与非法载荷一律拒绝。
+    await svc.models.handle({ type: "models.hidden.set", key: "openai-codex", hidden: false });
+    await svc.models.handle({ type: "models.hidden.set", key: "openai-codex/gpt-5.4", hidden: false });
+    await svc.models.handle({ type: "models.hidden.set", key: "openai-codex/gpt-5.4", hidden: false });
+    assert.deepEqual((await svc.models.get()).hidden, []);
+    assert.deepEqual(keys(), catalog.map((model) => model.key));
+    await assert.rejects(() => svc.models.handle({ type: "models.hidden.set", key: "nope/gpt", hidden: true }),
+      /未知的内置供应商或模型/);
+    assert.throws(() => command.parse({ id: "h1", type: "models.hidden.set", key: "", hidden: true }));
+    assert.throws(() => command.parse({ id: "h2", type: "models.hidden.set", key: "a/b", hidden: "yes" }));
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

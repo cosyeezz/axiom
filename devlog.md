@@ -814,6 +814,11 @@
 - 验证：Playwright 用真实 dialog 片段（index.html 的 `#settings` 块 + 造 60 段占位内容）实测 1200/700/420px：滚到底后分类列 `navTop` 完全不变（145/145/141），右侧内容分别在自身容器内滚动；全量 `npm test` 305 项 304 过 1 跳过 0 失败。
 - 涉及：public/style.css、devlog.md、.pi/skills/codebase-map/index。
 
+## 2026-09-13 10:10 — 内置/扩展供应商与模型可隐藏（models.hidden.set）
+- 原因：内置目录与模型选择器条目只增不减，用户不想再选到的模型会一直出现在候选里；需要一个不影响 Pi 运行时的纯 Axiom 侧隐藏入口。
+- 内容：新增 `models.hidden.set { key, hidden }` 协议命令（key = 供应商 id 或 `provider/id`），SQLite models 命名空间新增独立 `hidden` 键（不写 models.json，SDK schema 只认 provider 定义）；`model-config.js` 的 `listCatalog()` 过滤隐藏项（供应商级隐藏在有同名自定义覆盖时让位），`models.config.get` 回传 `hidden` 清单；`server.js` 的 `models.list`（选取入口）改用过滤后目录，Pi 运行时 `catalog()` 不动；模型管理页目录行加隐藏图标 + 二次确认弹窗，隐藏清单集中在左侧「已隐藏」页一键恢复。
+- 验证：全量 `npm test` 307 项 306 过 1 跳过 0 失败（含新增 models.hidden.set 测试：单模型/整供应商隐藏、覆盖让位、恢复幂等、未知 key 与非法载荷拒绝、models.json 不被污染）。
+- 涉及：src/protocol.js、src/server.js、src/model-config.js、src/pi-model-storage.js、public/model-manager.js、public/model-manager.css、tests/model-config.test.js、README.md、devlog.md、.pi/skills/codebase-map/INDEX.md。
 ## 2026-09-13 10:10 — 修复跨行 `<axiom_summary>` 导致闭合标签漏进正文、摘要未入库
 - 原因：用户截图里助手正文末尾出现裸的 `</axiom_summary>`。根因是 `public/memory-tags.js` 的 `TAG` 正则内容用 `[^\n]`，只认单行有界标签；模型实际把开启标签、正文、闭合标签分三行写。按行处理时：开启标签行同行无闭合 → 整行丢弃；正文行无标签 → 原样保留；闭合标签行不匹配 `OPEN`（`<name>` 而非 `</name>`）→ 原样保留，Markdown 把正文与闭合标签并成一段就成了截图效果。同一原因下 `extractMemoryTags` 也提取不到，该条摘要没入库（trigger 记 missing）。
 - 内容：`public/memory-tags.js` —— `TAG` 内容改 `[\s\S]`，标签可跨行，提取时 `replace(/\s+/g," ")` 把换行折叠为空格；新增 `segments()` 按代码围栏把连续同类行合成段，段内整段匹配（围栏内仍原样保留）；strip 用 `HOLE`（`\u0000`）占位替换被删标签，整行只剩占位符才丢弃以免留空行；首个无配对闭合的开启标签截到段尾（流式中的摘要整块隐藏）；新增 `CLOSE` 正则删除落单闭合标签，兜住开启标签丢失（跨围栏、被截断）时的漏出。

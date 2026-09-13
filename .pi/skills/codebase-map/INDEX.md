@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/13 04:22:11）
+# Axiom 多级代码索引（生成于 2026/9/13 04:42:36）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -11,8 +11,8 @@
 | public/index.html | 329 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown.js | 247 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, textLanguages, isText |
 | public/memory-tags.js | 92 | 主子代理共享简单标签提取与流式显示过滤 | TAGS, NAMES, TAG, OPEN |
-| public/model-manager.css | 471 | 模型配置页：供应商列表、编辑表单与响应式布局 | - |
-| public/model-manager.js | 1130 | Pi 模型管理：供应商模板、模型编辑与安全保存反馈 | API_TYPES, PROVIDER_TEMPLATES, PROVIDER_ID, MASK_KINDS |
+| public/model-manager.css | 474 | 模型配置页：供应商列表、编辑表单与响应式布局 | - |
+| public/model-manager.js | 1208 | Pi 模型管理：供应商模板、模型编辑与安全保存反馈 | API_TYPES, PROVIDER_TEMPLATES, PROVIDER_ID, MASK_KINDS |
 | public/model-picker.css | 88 | 共享收藏下拉：暗色浮层、星标、触屏与焦点样式 | - |
 | public/model-picker.js | 300 | 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互 | GAP, EDGE, TYPEAHEAD_MS, el |
 | public/service-settings.js | 278 | 设置页服务维护：真实进度、结果、更新确认与独立维护通道 | MAINT_URL_RE, POLL_MS, initServiceSettings |
@@ -35,13 +35,13 @@
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
 | src/main.js | 114 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, home, database |
 | src/memory-policy.js | 39 | 主子代理摘要规则与配置页参数校验 | SUMMARY_SYSTEM_PROMPT, SUMMARY_REMINDER, SUMMARY_DELEGATE, MEMORY_SUMMARY_LIMITS |
-| src/model-config.js | 500 | Pi models.json 无损配置读写与共享收藏持久化 | sdkModelConfig, sdkResolveConfigValue, digest, LEVELS |
-| src/pi-model-storage.js | 230 | 模型与凭据 SQLite 权威存储、Pi 派生兼容文件 | sdkResolveConfigValue, sdkIsCommandConfigValue, NAMESPACE, AUTH_NAMESPACE |
+| src/model-config.js | 542 | Pi models.json 无损配置读写与共享收藏持久化 | sdkModelConfig, sdkResolveConfigValue, digest, LEVELS |
+| src/pi-model-storage.js | 237 | 模型与凭据 SQLite 权威存储、Pi 派生兼容文件 | sdkResolveConfigValue, sdkIsCommandConfigValue, NAMESPACE, AUTH_NAMESPACE |
 | src/pi.js | 369 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, queueStateOf, hasModelOutput, withdrawQueue |
-| src/protocol.js | 337 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
+| src/protocol.js | 346 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/remote.js | 536 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
 | src/retry.js | 173 | 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_DELAY_MS, MAX_RETRIES, delayFor |
-| src/server.js | 461 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | assets, createServerApp |
+| src/server.js | 463 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | assets, createServerApp |
 | src/session-memory.js | 94 | 标题与增量摘要登记、触发复盘、委派背景与被动进度 | textOf, escape, memoryHooks, parentSummaryContext |
 | src/sessions.js | 1170 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | BROWSE_PAGE, SEARCH_LIMIT, SEARCH_DIR_LIMIT, IGNORED_ENTRIES |
 | src/tasks.js | 112 | Tasks：子任务（委托）生命周期 | Tasks |
@@ -77,7 +77,7 @@
 | tests/memory-ui.test.js | 183 | node --test 测试（npm test） | page, record |
 | tests/message-activity.test.js | 407 | node --test 测试（npm test） | page, assistant, thought, call |
 | tests/mobile-reading-ui.py | 103 | node --test 测试（npm test） | - |
-| tests/model-config.test.js | 785 | node --test 测试（npm test） | sha, EMPTY, tempDir, openDatabases |
+| tests/model-config.test.js | 829 | node --test 测试（npm test） | sha, EMPTY, tempDir, openDatabases |
 | tests/model-manager.test.js | 1017 | node --test 测试（npm test） | source, tick, j, masked |
 | tests/model-onboarding-ui.test.js | 154 | node --test 测试（npm test） | stripImports, modelSources, contrastSource, pickerSource |
 | tests/model-onboarding.test.js | 55 | node --test 测试（npm test） | - |
@@ -438,36 +438,37 @@
 | extractMemoryTags | function | 33 |
 | stripMemoryTags | function | 51 |
 
-### public/model-manager.js（1130 行） — Pi 模型管理：供应商模板、模型编辑与安全保存反馈
+### public/model-manager.js（1208 行） — Pi 模型管理：供应商模板、模型编辑与安全保存反馈
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| API_TYPES | const | 18 |
-| PROVIDER_TEMPLATES | const | 26 |
-| PROVIDER_ID | const | 57 |
-| MASK_KINDS | const | 58 |
-| DRAFT | const | 60 |
-| MANAGED_PROVIDER_KEYS | const | 63 |
-| MANAGED_MODEL_KEYS | const | 64 |
-| isMask | const | 66 |
-| hasOwn | const | 67 |
-| clone | const | 68 |
-| keepMasked | function | 70 |
-| stable | function | 78 |
-| el | function | 86 |
-| fieldSeq | const | 102 |
-| field | function | 104 |
-| badge | function | 113 |
-| parseJsonText | function | 117 |
-| SVG_NS | const | 129 |
-| ICONS | const | 131 |
-| icon | function | 137 |
-| openModal | function | 149 |
-| closeModal | function | 153 |
-| openDialog | function | 162 |
-| openModal | method | 180 |
-| initModelManager | function | 185 |
-| renderProviders | method | 1127 |
+| API_TYPES | const | 22 |
+| PROVIDER_TEMPLATES | const | 30 |
+| PROVIDER_ID | const | 61 |
+| MASK_KINDS | const | 62 |
+| DRAFT | const | 64 |
+| HIDDEN_VIEW | const | 66 |
+| MANAGED_PROVIDER_KEYS | const | 69 |
+| MANAGED_MODEL_KEYS | const | 70 |
+| isMask | const | 72 |
+| hasOwn | const | 73 |
+| clone | const | 74 |
+| keepMasked | function | 76 |
+| stable | function | 84 |
+| el | function | 92 |
+| fieldSeq | const | 108 |
+| field | function | 110 |
+| badge | function | 119 |
+| parseJsonText | function | 123 |
+| SVG_NS | const | 135 |
+| ICONS | const | 137 |
+| icon | function | 143 |
+| openModal | function | 155 |
+| closeModal | function | 159 |
+| openDialog | function | 168 |
+| openModal | method | 186 |
+| initModelManager | function | 191 |
+| renderProviders | method | 1205 |
 
 ### public/model-picker.js（300 行） — 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互
 
@@ -728,7 +729,7 @@
 | within | const | 18 |
 | memoryPolicy | function | 24 |
 
-### src/model-config.js（500 行） — Pi models.json 无损配置读写与共享收藏持久化
+### src/model-config.js（542 行） — Pi models.json 无损配置读写与共享收藏持久化
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -757,9 +758,11 @@
 | readBodyCapped | function | 179 |
 | parseDiscoverBody | function | 205 |
 | normalizeFavorites | function | 248 |
-| createModelsService | function | 257 |
+| HIDDEN_CAP | const | 258 |
+| normalizeHidden | function | 259 |
+| createModelsService | function | 264 |
 
-### src/pi-model-storage.js（230 行） — 模型与凭据 SQLite 权威存储、Pi 派生兼容文件
+### src/pi-model-storage.js（237 行） — 模型与凭据 SQLite 权威存储、Pi 派生兼容文件
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -770,12 +773,13 @@
 | MIGRATED_NAMESPACE | const | 26 |
 | CONFIG_KEY | const | 27 |
 | FAVORITES_KEY | const | 28 |
-| IMPORT_ERROR_KEY | const | 29 |
-| canonicalModelsJson | function | 32 |
-| isPlainObject | const | 36 |
-| isCredential | const | 38 |
-| isPlainObject | method | 39 |
-| createPiModelStorage | function | 47 |
+| HIDDEN_KEY | const | 30 |
+| IMPORT_ERROR_KEY | const | 31 |
+| canonicalModelsJson | function | 34 |
+| isPlainObject | const | 38 |
+| isCredential | const | 40 |
+| isPlainObject | method | 41 |
+| createPiModelStorage | function | 49 |
 
 ### src/pi.js（369 行） — createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）
 
@@ -790,7 +794,7 @@
 | memoryExtension | function | 102 |
 | createPiFactory | function | 130 |
 
-### src/protocol.js（337 行） — zod 协议：selection / command 判别联合（消息类型见 L3）
+### src/protocol.js（346 行） — zod 协议：selection / command 判别联合（消息类型见 L3）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -860,7 +864,7 @@
 | canResume | function | 85 |
 | createAutoRetry | function | 101 |
 
-### src/server.js（461 行） — createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发
+### src/server.js（463 行） — createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1134,7 +1138,7 @@
 | call | const | 46 |
 | entry | const | 47 |
 
-### tests/model-config.test.js（785 行） — node --test 测试（npm test）
+### tests/model-config.test.js（829 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1536,7 +1540,7 @@
 
 ## L3 横切常量（跨模块定位入口）
 
-- 协议 command.type：image、inherit、radius、service.status、service.update.check、service.restart、remote.get、remote.login、remote.configure、session.rename、workspace.reveal、workspace.browse、files.browse、models.list、models.config.get、models.provider.save、models.provider.delete、models.provider.rename、models.model.save、models.model.delete、models.provider.discover、models.favorites.get、models.favorites.set、capabilities.list、session.defaults.get、session.defaults.configure、memory.summary.get、memory.summary.configure、session.presets.list、session.presets.save、session.presets.delete、session.configure、sessions.list、session.create、session.import、session.attach、session.skills.refresh、session.close、prompt、cancel、session.retry、queue.withdraw、tasks.read（src/protocol.js）
+- 协议 command.type：image、inherit、radius、service.status、service.update.check、service.restart、remote.get、remote.login、remote.configure、session.rename、workspace.reveal、workspace.browse、files.browse、models.list、models.config.get、models.provider.save、models.provider.delete、models.provider.rename、models.model.save、models.model.delete、models.provider.discover、models.favorites.get、models.hidden.set、models.favorites.set、capabilities.list、session.defaults.get、session.defaults.configure、memory.summary.get、memory.summary.configure、session.presets.list、session.presets.save、session.presets.delete、session.configure、sessions.list、session.create、session.import、session.attach、session.skills.refresh、session.close、prompt、cancel、session.retry、queue.withdraw、tasks.read（src/protocol.js）
 - HTML id：sidebar、open-workspace、new、custom-new、preset-list、import-session、search、sessions、open-settings、sidebar-backdrop、toggle-sidebar、session-title、workspace-label、copy-workspace、reveal-workspace、workspace-feedback、open-summaries、status、service-dev、service-version、login、maintenance-state、connect、workspace、earliest、transcript、output、latest、message-queue、task-runs、compaction-progress、add-context、add-image、image-files、context-chips、task-timer、task-timer-value、context-menu、context-picker、context-back、context-title、context-close、context-search、context-results、context-error、image-attachments、composer、prompt、prompt-completion、composer-skill、provider、model、thinking、stop、send-steer、send-followup、send、session-runtime、mobile-runtime、mobile-expand、composer-help、error、session-action、session-action-form、session-action-title、session-action-description、session-name-label、session-name、session-action-error、session-action-cancel、session-action-submit、image-preview、image-preview-close、image-preview-image、restart-dialog、restart-form、restart-title、restart-description、restart-warning、restart-cancel、restart-submit、summaries、summaries-title、summaries-body、summaries-empty、summaries-list、task-overlays、task-template、settings、settings-title、settings-defaults-tab、settings-remote-tab、settings-models-tab、settings-service-tab、defaults-panel、selection-copy-title、selection-copy、selection-copy-help、selection-copy-feedback、queue-type、steer-help、followup-help、defaults-preview、memory-summary-title、memory-main-turns、memory-subagent-turns、memory-max-chars、memory-summary-help、subagent-title、subagent-help、subagent-provider、subagent-model、settings-feedback、defaults-title、defaults-editor、remote-panel、remote-status-title、remote-status、remote-login、remote-auth、remote-url、remote-form、remote-note、remote-enabled、remote-email、remote-email-help、remote-feedback、remote-refresh、remote-save、models-panel、service-panel、service-state-title、service-feedback、service-restart-title、restart-quick、restart-rebuild、service-recover、service-update-section、service-update-title、update-check、update-result、update-install、service-history-title、service-history、create-session、create-title、create-form、preset-fields、preset-name、preset-fixed-cwd、preset-directory、preset-delete、create-workspace、create-defaults-help、create-agents、create-compaction、create-retry、create-trust-row、create-trust、create-feedback、create-submit（public/index.html）
 - HTTP 静态路由：/、/favicon.svg、/style.css、/app.js、/service-settings.js、/file-picker.js、/tooltip.js、/tooltip.css、/text-contrast.js、/text-contrast.css、/file-picker.css、/markdown.js、/stream-renderer.js、/memory-tags.js、/vendor/marked.js、/vendor/purify.js、/model-manager.js、/model-manager.css、/model-picker.js、/model-picker.css、/health（src/server.js）
 

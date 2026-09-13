@@ -289,7 +289,8 @@ export function createServerApp(sessions, service = {}) {
               data = await sessions.browse(request.sessionId, request.path, request.query);
               break;
             case "models.list":
-              data = sessions.createAgent.catalog();
+              // 隐藏清单只影响这里（模型选择器等选取入口），Pi 运行时目录不动。
+              data = service.models ? service.models.listCatalog() : sessions.createAgent.catalog();
               break;
             case "models.config.get":
             case "models.provider.discover":
@@ -298,7 +299,8 @@ export function createServerApp(sessions, service = {}) {
             case "models.model.save":
             case "models.model.delete":
             case "models.favorites.get":
-            case "models.favorites.set": {
+            case "models.favorites.set":
+            case "models.hidden.set": {
               if (!service.models) throw new Error("模型配置服务未启用");
               data = await service.models.handle(request);
               if (!["models.config.get", "models.favorites.get", "models.provider.discover"].includes(request.type)) {

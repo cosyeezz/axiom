@@ -254,6 +254,13 @@ function normalizeFavorites(parsed) {
   );
 }
 
+// 内置目录的隐藏清单：provider id（整条）或 `provider/id`（单个模型）。
+const HIDDEN_CAP = 500;
+function normalizeHidden(raw) {
+  const list = raw && typeof raw === "object" && Array.isArray(raw.keys) ? raw.keys : [];
+  return [...new Set(list.filter((key) => typeof key === "string"))].slice(0, HIDDEN_CAP);
+}
+
 export function createModelsService({ factory, storage, discoverTimeoutMs = 15_000, discoverFetch }) {
   // 单进程内串行化：配置写与收藏写共用一条 promise 链，避免读-改-写交错。
   let chain = Promise.resolve();
@@ -275,6 +282,7 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
       path: storage.compatPath,
       providers: [],
       catalog: factory.catalog(),
+      hidden: normalizeHidden(storage.getHidden()),
     };
     // 导入期告警只在权威配置为空时展示：一旦用户开始配置，旧文件的问题不再 relevant。
     const imported = storage.importErrors();
@@ -316,6 +324,20 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
     return { fingerprint: fingerprintOf(config) };
   }
 
+  // 隐藏只作用于 Axiom 的「可选择处」（模型选择器、本页目录）：Pi 运行时目录不动，
+  // 已用该模型的会话不会忽然报 Unknown model，只是再也选不到。同名自定义条目存在时
+  // 供应商级隐藏不生效（用户已经用覆盖接管了该 id）。
+  const hiddenSet = () => new Set(normalizeHidden(storage.getHidden()));
+  const customProviderIds = () => {
+    const providers = storage.readConfig()?.providers;
+    return new Set(providers && typeof providers === "object" && !Array.isArray(providers) ? Object.keys(providers) : []);
+  };
+  const visibleCatalog = () => {
+    const hidden = hiddenSet();
+    const custom = customProviderIds();
+    return factory.catalog().filter((m) => !hidden.has(m.key) && !(hidden.has(m.provider) && !custom.has(m.provider)));
+  };
+
   const sameId = (id) => (entry) => entry && typeof entry === "object" && entry.id === id;
   const asProvider = (value) =>
     value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -332,6 +354,21 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
       if (store[group].length > FAVORITE_CAP) throw new Error(`${group} 收藏最多 ${FAVORITE_CAP} 条`);
     storage.setFavorites(store);
     return store;
+  }
+
+  // 隐藏/恢复：key 必须存在于当前目录（供应商 id 或 `provider/id`），不写会永久失效的垃圾条目。
+  function writeHidden({ key, hidden }) {
+    const known = new Set();
+    for (const model of factory.catalog()) {
+      known.add(model.provider);
+      known.add(model.key);
+    }
+    if (!known.has(key)) throw new Error(`未知的内置供应商或模型：${key}`);
+    const list = normalizeHidden(storage.getHidden());
+    const next = hidden ? [...new Set([...list, key])] : list.filter((entry) => entry !== key);
+    if (next.length > HIDDEN_CAP) throw new Error(`隐藏清单最多 ${HIDDEN_CAP} 条`);
+    storage.setHidden(next);
+    return { hidden: next };
   }
 
   // 在线拉取供应商模型列表（只读）：读已保存凭据/地址 → 单次 GET → 解析；不写盘、不触发 refreshModels/广播。
@@ -471,6 +508,9 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
     favorites: () => normalizeFavorites(storage.getFavorites()),
     // 单项 mutation：读-改-写单条，返回全量三组对象；不做整表替换，避免并发丢失。
     setFavorite: (request) => enqueue(() => writeFavorites(request)),
+    listCatalog: visibleCatalog,
+    // 单项 mutation（与收藏同语义，无指纹锁：隐藏清单独立于 models.json）。
+    setHidden: (request) => enqueue(() => writeHidden(request)),
     handle(request) {
       switch (request.type) {
         case "models.config.get":
@@ -489,6 +529,8 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
           return this.favorites();
         case "models.favorites.set":
           return this.setFavorite(request);
+        case "models.hidden.set":
+          return this.setHidden(request);
         case "models.provider.discover":
           return discover(request.providerId);
         default:

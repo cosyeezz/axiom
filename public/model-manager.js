@@ -5,6 +5,10 @@
 //   models.provider.discover({providerId}) → { models:[{id,name?,input?,reasoning?,contextWindow?,maxTokens?}], truncated? }
 //     （只读发现已保存供应商的可用模型；结果仅作勾选待选清单，不自动保存/启用任何模型）
 //   密钥（apiKey / headers.*）GET 时为 { masked, kind } 掩码；保存支持 { keep:true } / 字符串 / null
+//   models.favorites.get/set（全局收藏，与配置写共用串行队列）
+//   models.hidden.set({ key, hidden }) → { hidden:[…] }：内置目录可见性（key = 供应商 id 或
+//     `provider/id`）。只影响 Axiom 侧的选取入口（模型选择器的 models.list + 本页目录），
+//     Pi 运行时目录不动，既有会话不会失效；恢复随时可做。
 // 布局：左侧供应商导航（可搜索供应商或模型，内置/扩展目录作为只读导航项；自定义项悬停
 // 显示重命名/删除图标，删除与重命名都走原生 <dialog> 确认），右侧详情分「连接」（只留 id /
 // 协议 / Base URL / API Key）与「模型」两段，其余配置收进折叠区，模型行同样折叠成摘要行；
@@ -58,6 +62,8 @@ const PROVIDER_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const MASK_KINDS = { command: "命令取值（!…）", env: "环境变量引用（$…）", literal: "已存值" };
 // 虚拟导航项：新建供应商草稿。冒号不是合法供应商 id 字符，不会与真实条目撞车。
 const DRAFT = ":draft";
+// 已隐藏条目的专用视图 id（不是真实供应商 id，加冒号前缀避免撞名）。
+const HIDDEN_VIEW = ":hidden";
 
 // 供编辑表单直接托管的字段；其余（compat、cost、samplingParams…）走「高级字段」JSON。
 const MANAGED_PROVIDER_KEYS = ["id", "baseUrl", "api", "authHeader", "apiKey", "headers", "models", "modelOverrides"];
@@ -186,7 +192,7 @@ export function initModelManager({ root, request, onSaved }) {
   if (!root || !(root instanceof Node)) throw new Error("initModelManager 需要一个根容器节点");
   const state = {
     loaded: false, loading: false, path: "", fingerprint: "", parseError: "",
-    providers: [], catalog: [], selected: "", query: "", draft: null,
+    providers: [], catalog: [], hidden: [], selected: "", query: "", draft: null,
     // 草稿仓库：editForms=供应商连接表单；newRows=待保存的新模型行；modelRows=既有模型行（键 providerId\0modelId）。
     editForms: new Map(), newRows: new Map(), modelRows: new Map(),
     // 拉取面板状态（键 providerId）：status=loading/ready/error/blocked，models/byId=发现结果原文，
@@ -247,6 +253,7 @@ export function initModelManager({ root, request, onSaved }) {
       state.parseError = data.parseError || "";
       state.providers = Array.isArray(data.providers) ? data.providers : [];
       state.catalog = Array.isArray(data.catalog) ? data.catalog : [];
+      state.hidden = Array.isArray(data.hidden) ? data.hidden : [];
       if (!silent) clearAlert();
       if (state.parseError) showAlert("warn", `旧模型配置导入失败，请在此重新配置：${state.parseError}`,
         [{ label: "重新加载", onclick: () => void load() }]);
@@ -306,10 +313,26 @@ export function initModelManager({ root, request, onSaved }) {
     const custom = state.providers.filter((provider) =>
       hit(provider.id) || (Array.isArray(provider.models) && provider.models.some(modelHit)) ||
       (catalogMap.get(provider.id) ?? []).some(modelHit));
+    // 隐藏只影响 Axiom 的选取入口（本页目录 + 模型选择器）：已隐藏项不再作为可选项出现。
+    const hidden = hiddenKeys();
     const builtin = [...catalogMap.entries()]
-      .filter(([id, models]) => !customIds.has(id) && (hit(id) || models.some(modelHit)))
-      .map(([id, models]) => ({ id, models }));
-    return { custom, builtin };
+      .filter(([id]) => !customIds.has(id) && !hidden.has(id))
+      .map(([id, models]) => ({ id, models: models.filter((model) => !hidden.has(model.key)) }))
+      .filter(({ id, models }) => models.length > 0 && (hit(id) || models.some(modelHit)));
+    return { custom, builtin, hidden: hiddenEntries(catalogMap, hidden) };
+  }
+
+  const hiddenKeys = () => new Set(Array.isArray(state.hidden) ? state.hidden : []);
+
+  // 已隐藏条目（整个供应商或单个模型）：名称/能力仍从目录取回，供恢复页展示与一键恢复。
+  function hiddenEntries(catalogMap = catalogByProvider(), hidden = hiddenKeys()) {
+    const entries = [];
+    for (const [id, models] of catalogMap) {
+      if (hidden.has(id)) entries.push({ key: id, kind: "provider", id, models });
+      else for (const model of models)
+        if (hidden.has(model.key)) entries.push({ key: model.key, kind: "model", id, models: [model] });
+    }
+    return entries.sort((a, b) => a.key.localeCompare(b.key));
   }
 
   // 该供应商是否存在未保存草稿（连接表单脏 / 新模型行 / 既有模型行脏）。
@@ -428,8 +451,29 @@ export function initModelManager({ root, request, onSaved }) {
     });
   }
 
+  // 隐藏/恢复：写 SQLite 清单后回读（服务端同时广播 models.config.changed，主入口刷新模型下拉）。
+  async function setHidden(key, hidden) {
+    await submit(null, () => request("models.hidden.set", { key, hidden }), {
+      successMessage: hidden
+        ? `已隐藏「${key}」：不会再出现在 Axiom 的模型选择器与目录里，可随时在「已隐藏」中恢复。`
+        : `已恢复「${key}」，重新可选。`,
+    });
+  }
+
+  function confirmHide(entry) {
+    const label = entry.kind === "provider"
+      ? `供应商「${entry.id}」${entry.models.length ? `及其 ${entry.models.length} 个模型` : ""}`
+      : `模型「${entry.key}」`;
+    openDialog({
+      title: `隐藏${label}？`,
+      description: "隐藏后不会再出现在 Axiom 的模型选择器与目录里（Pi 运行时配置不变，既有会话不受影响），随时可在左侧「已隐藏」中恢复。",
+      confirmLabel: "隐藏",
+      onConfirm: () => void setHidden(entry.key, true),
+    });
+  }
+
   function renderNavList() {
-    const { custom, builtin } = navGroups();
+    const { custom, builtin, hidden } = navGroups();
     const items = [];
     if (state.draft) {
       const label = state.draft.form?.id?.trim() || "新供应商";
@@ -451,9 +495,17 @@ export function initModelManager({ root, request, onSaved }) {
       }
     }
     if (builtin.length) {
-      items.push(el("div", { class: "mm-nav-group" }, "内置与扩展（只读）"));
+      items.push(el("div", { class: "mm-nav-group" }, "内置与扩展"));
       for (const entry of builtin)
-        items.push(navItem(entry.id, entry.id, `${entry.models.length} 个模型`));
+        items.push(navItem(entry.id, entry.id, `${entry.models.length} 个模型`, {
+          actions: [iconButton("delete", `隐藏内置供应商「${entry.id}」`, () =>
+            void confirmHide({ key: entry.id, kind: "provider", id: entry.id, models: entry.models }))],
+        }));
+    }
+    // 已隐藏清单常驻在最后：没有它就没有恢复入口（隐藏 = 从上面的分组消失）。
+    if (hidden.length) {
+      items.push(el("div", { class: "mm-nav-group" }, "已隐藏"));
+      items.push(navItem(HIDDEN_VIEW, `已隐藏（${hidden.length}）`, "可恢复显示"));
     }
     if (!items.length)
       items.push(el("p", { class: "mm-hint" },
@@ -473,12 +525,18 @@ export function initModelManager({ root, request, onSaved }) {
       return;
     }
     const catalogMap = catalogByProvider();
-    if (!state.draft && catalogMap.has(state.selected)) {
-      detailBox().replaceChildren(catalogDetail(state.selected, catalogMap.get(state.selected)));
+    if (state.selected === HIDDEN_VIEW) {
+      const entries = hiddenEntries(catalogMap);
+      if (entries.length) { detailBox().replaceChildren(hiddenDetail(entries)); return; }
+    }
+    const hidden = hiddenKeys();
+    if (!state.draft && catalogMap.has(state.selected) && !hidden.has(state.selected)) {
+      detailBox().replaceChildren(catalogDetail(state.selected,
+        (catalogMap.get(state.selected) ?? []).filter((model) => !hidden.has(model.key))));
       return;
     }
-    const { custom, builtin } = navGroups();
-    const fallback = custom[0]?.id ?? builtin[0]?.id ?? "";
+    const { custom, builtin, hidden: hiddenList } = navGroups();
+    const fallback = custom[0]?.id ?? builtin[0]?.id ?? (hiddenList.length ? HIDDEN_VIEW : "");
     if (fallback && fallback !== state.selected) {
       state.selected = fallback;
       renderDetail();
@@ -500,7 +558,9 @@ export function initModelManager({ root, request, onSaved }) {
       el("code", { class: "mm-mono" }, model.id),
       el("span", { class: "mm-catalog-model-tags" },
         model.levels?.length ? badge("推理") : null,
-        Array.isArray(model.input) && model.input.includes("image") ? badge("图片") : null));
+        Array.isArray(model.input) && model.input.includes("image") ? badge("图片") : null),
+      iconButton("delete", `隐藏模型「${model.key}」`, () =>
+        void confirmHide({ key: model.key, kind: "model", id: model.provider, models: [model] })));
   }
 
   function catalogDetail(id, models) {
@@ -509,12 +569,30 @@ export function initModelManager({ root, request, onSaved }) {
         el("strong", { class: "mm-mono" }, id),
         badge("内置 / 扩展")),
       el("p", { class: "mm-hint" },
-        "此供应商由内置配置或扩展发现提供，此处只读。要修改连接或模型，可添加同名 id 的自定义条目进行覆盖。"),
+        "此供应商由内置配置或扩展发现提供，此处只读。隐藏只影响 Axiom 的模型选择器与目录（Pi 运行时不改、既有会话不受影响），可随时恢复；改连接可添加同名覆盖，但同名覆盖模型是整条替换，会丢掉内置的成本/上下文/思考等级映射，慎用。"),
       models.length
         ? el("div", { class: "mm-catalog-models" }, ...models.map(catalogModelRow))
-        : el("p", { class: "mm-hint" }, "该供应商当前没有可用模型（可能缺少认证）。"),
+        : el("p", { class: "mm-hint" }, "该供应商当前没有可用模型（可能缺少认证，或模型都已被隐藏）。"),
       el("div", { class: "mm-form-actions" },
-        el("button", { type: "button", class: "secondary", onclick: () => openDraft(id) }, `添加同名覆盖「${id}」`)));
+        el("button", { type: "button", class: "secondary", onclick: () => openDraft(id) }, `添加同名覆盖「${id}」`),
+        el("button", { type: "button", class: "secondary", onclick: () =>
+          void confirmHide({ key: id, kind: "provider", id, models }) }, "隐藏此供应商")));
+  }
+
+  // ── 已隐藏页：隐藏清单的单一恢复入口（隐藏 = 从左侧分组消失，没有这页就无法回头） ──────
+  function hiddenDetail(entries) {
+    return el("div", {},
+      el("div", { class: "mm-provider-title" },
+        el("strong", {}, "已隐藏"),
+        badge(`${entries.length} 项`)),
+      el("p", { class: "mm-hint" },
+        "这些供应商/模型已从 Axiom 的目录与模型选择器中移除；Pi 运行时目录与既有会话不受影响。点「恢复」即重新可选。"),
+      el("div", { class: "mm-catalog-models" }, ...entries.map((entry) => el("div", { class: "mm-catalog-model" },
+        el("code", { class: "mm-mono" }, entry.kind === "provider" ? entry.id : entry.models[0].id),
+        el("span", { class: "mm-catalog-model-tags" },
+          badge(entry.kind === "provider" ? `整个供应商 · ${entry.models.length} 个模型` : entry.id)),
+        el("button", { type: "button", class: "secondary mm-catalog-restore",
+          onclick: () => void setHidden(entry.key, false) }, "恢复")))));
   }
 
   // ── 供应商表单数据 ⇄ 载荷 ───────────────────────────────────────────────
