@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/13 00:17:00）
+# Axiom 多级代码索引（生成于 2026/9/13 00:43:54）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -11,8 +11,8 @@
 | public/index.html | 329 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown.js | 247 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, textLanguages, isText |
 | public/memory-tags.js | 87 | 主子代理共享简单标签提取与流式显示过滤 | TAGS, NAMES, TAG, OPEN |
-| public/model-manager.css | 445 | 模型配置页：供应商列表、编辑表单与响应式布局 | - |
-| public/model-manager.js | 1112 | Pi 模型管理：供应商模板、模型编辑与安全保存反馈 | API_TYPES, PROVIDER_TEMPLATES, PROVIDER_ID, MASK_KINDS |
+| public/model-manager.css | 456 | 模型配置页：供应商列表、编辑表单与响应式布局 | - |
+| public/model-manager.js | 1113 | Pi 模型管理：供应商模板、模型编辑与安全保存反馈 | API_TYPES, PROVIDER_TEMPLATES, PROVIDER_ID, MASK_KINDS |
 | public/model-picker.css | 88 | 共享收藏下拉：暗色浮层、星标、触屏与焦点样式 | - |
 | public/model-picker.js | 300 | 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互 | GAP, EDGE, TYPEAHEAD_MS, el |
 | public/service-settings.js | 278 | 设置页服务维护：真实进度、结果、更新确认与独立维护通道 | MAINT_URL_RE, POLL_MS, initServiceSettings |
@@ -428,36 +428,36 @@
 | extractMemoryTags | function | 27 |
 | stripMemoryTags | function | 45 |
 
-### public/model-manager.js（1112 行） — Pi 模型管理：供应商模板、模型编辑与安全保存反馈
+### public/model-manager.js（1113 行） — Pi 模型管理：供应商模板、模型编辑与安全保存反馈
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| API_TYPES | const | 17 |
-| PROVIDER_TEMPLATES | const | 25 |
-| PROVIDER_ID | const | 56 |
-| MASK_KINDS | const | 57 |
-| DRAFT | const | 59 |
-| MANAGED_PROVIDER_KEYS | const | 62 |
-| MANAGED_MODEL_KEYS | const | 63 |
-| isMask | const | 65 |
-| hasOwn | const | 66 |
-| clone | const | 67 |
-| keepMasked | function | 69 |
-| stable | function | 77 |
-| el | function | 85 |
-| fieldSeq | const | 101 |
-| field | function | 103 |
-| badge | function | 112 |
-| parseJsonText | function | 116 |
-| SVG_NS | const | 128 |
-| ICONS | const | 130 |
-| icon | function | 134 |
-| openModal | function | 146 |
-| closeModal | function | 150 |
-| openDialog | function | 159 |
-| openModal | method | 177 |
-| initModelManager | function | 182 |
-| renderProviders | method | 1109 |
+| API_TYPES | const | 18 |
+| PROVIDER_TEMPLATES | const | 26 |
+| PROVIDER_ID | const | 57 |
+| MASK_KINDS | const | 58 |
+| DRAFT | const | 60 |
+| MANAGED_PROVIDER_KEYS | const | 63 |
+| MANAGED_MODEL_KEYS | const | 64 |
+| isMask | const | 66 |
+| hasOwn | const | 67 |
+| clone | const | 68 |
+| keepMasked | function | 70 |
+| stable | function | 78 |
+| el | function | 86 |
+| fieldSeq | const | 102 |
+| field | function | 104 |
+| badge | function | 113 |
+| parseJsonText | function | 117 |
+| SVG_NS | const | 129 |
+| ICONS | const | 131 |
+| icon | function | 135 |
+| openModal | function | 147 |
+| closeModal | function | 151 |
+| openDialog | function | 160 |
+| openModal | method | 178 |
+| initModelManager | function | 183 |
+| renderProviders | method | 1110 |
 
 ### public/model-picker.js（300 行） — 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互
 

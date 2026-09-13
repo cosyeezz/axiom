@@ -14,8 +14,9 @@
 // 导出 initModelManager({ root, request, onSaved }) → { load }；root 由 index.html 提供，
 // onSaved 供主入口刷新模型下拉；所有请求失败在面板内展示，绝不向上抛。
 
+// 选项文案保持短：原生 select 不会截断提示，窄屏下拉框放不下就会被切掉。
 const API_TYPES = [
-  ["openai-completions", "OpenAI Chat Completions（兼容性最好）"],
+  ["openai-completions", "OpenAI Chat Completions"],
   ["openai-responses", "OpenAI Responses"],
   ["anthropic-messages", "Anthropic Messages"],
   ["google-generative-ai", "Google Generative AI"],
@@ -754,7 +755,8 @@ export function initModelManager({ root, request, onSaved }) {
       field("API 协议", el("select", { "aria-label": "API 协议",
         onchange: (event) => { form.api = event.target.value; } },
         new Option("（不设置）", "", false, form.api === ""),
-        ...API_TYPES.map(([value, label]) => new Option(label, value, false, form.api === value)))),
+        ...API_TYPES.map(([value, label]) => new Option(label, value, false, form.api === value))),
+        "Chat Completions 兼容性最好；改完记得保存", true),
       field("API Key", el("span", { class: "mm-key" }, apiKeyInput,
         el("label", { class: "mm-check" }, reveal, "显示"),
         form.apiKeyMasked ? el("label", { class: "mm-check mm-check-danger" }, clearKey, "清除已存") : null),
@@ -774,10 +776,9 @@ export function initModelManager({ root, request, onSaved }) {
       ontoggle: (event) => { form.advancedOpen = event.target.open; } },
       el("summary", {}, "高级连接（Bearer 头 / 自定义请求头）"),
       el("div", { class: "mm-form" },
-        field("Authorization: Bearer 头", el("span", { class: "mm-key" }, el("input", { type: "checkbox", checked: form.authHeader,
-          "aria-label": "附加 Authorization Bearer 头",
-          onchange: (event) => { form.authHeader = event.target.checked; } })),
-          "自动附加 Authorization: Bearer <apiKey>"),
+        field("Authorization: Bearer 头", el("label", { class: "mm-check" }, el("input", { type: "checkbox", checked: form.authHeader,
+          onchange: (event) => { form.authHeader = event.target.checked; } }),
+          "自动附加 Authorization: Bearer <apiKey>"), undefined, true),
         field("自定义请求头", headersBox, "值支持 $ENV 引用；掩码值留空即原样保留")));
   }
 
@@ -1090,8 +1091,8 @@ export function initModelManager({ root, request, onSaved }) {
       ontoggle: (event) => { row.expanded = event.target.open; } },
       el("summary", { class: "mm-model-summary" },
         el("span", { class: "mm-caret", "aria-hidden": "true" }, "▸"),
-        el("span", { class: "mm-model-id mm-mono" }, displayId),
-        displayName && displayName !== displayId ? el("span", { class: "mm-model-name" }, displayName) : null,
+        el("span", { class: "mm-model-id mm-mono", title: displayId }, displayId),
+        displayName && displayName !== displayId ? el("span", { class: "mm-model-name", title: displayName }, displayName) : null,
         el("span", { class: "mm-catalog-model-tags" },
           form.reasoning ? badge("推理") : null,
           form.image ? badge("图片") : null),

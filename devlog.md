@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-13 07:43 UTC 模型面板视觉修补：协议下拉不再截断、连接区纵向堆叠、复选框不再变大方块
+- 原因：用户看了实际截图提三点：①「API 协议」下拉的选项文案太长被切掉（`OpenAI Chat Completions（兼容性最…`），原生下拉本身也显拥挤；②宽屏下「API 协议 / API Key」两字段并排互相挤压，提示文字被折成两行；必须竖屏兼容、宁可向下扩展也不挤压；③折叠区里 Bearer 头的复选框被全局 `input { width:100%; min-height:40px }` 撑成一个灰大方块，与旁边文字极不协调。
+- 实现：①`API_TYPES` 标签去掉括号后缀（只留 `OpenAI Chat Completions` 等），兼容性提示下移到字段 hint；原生 select 不会省略号截断，只能从文案长度上解决。②连接区四个字段全部改成 `mm-field-wide` 单列堆叠（含 API 协议），`.mm-form` 列宽下限 200→240px、`.mm-model-grid` 170→200px，窄屏更早退化为单列；`.mm-advanced .mm-check` 允许换行（其它 `.mm-check` 保持 nowrap），Bearer 字段改为整行宽。③新增 `.mm input[type="checkbox"] { flex:none; width/height:14px; min-height:0 }`，删掉只覆盖 `.mm-check input` 的局部规则，之后任何裸复选框都不会再被撑开；Bearer 复选框包进 `<label class="mm-check">` 并带上可见说明文字（原本只有 aria-label，视觉上是个孤立方块）。④模型摘要行的 id/名称改成单行省略号截断并补 `title`（窄屏原本会在单词中间断行，如 `claude-/opus-5`）。
+- 验证：用 Playwright + 静态页临时挂在 public/model-manager.js（stub `request`）截图对比：900/420/360px 三档均无横向溢出（`scrollWidth <= innerWidth`）、复选框实测 14×14、模型行保持单行省略；截图用完即删，未入库。全量 `npm test` 303 项：302 通过、1 跳过、0 失败（首次并发跑出现 service.test.js 既有计时断言波动，重跑全绿）。
+- 涉及：public/model-manager.js、public/model-manager.css、本日志与 codebase-map 索引。
+
 ## 2026-09-13 07:16 UTC 运行中吸底滚动只在用户滚动时暂停
 - 原因：用户反馈运行中自动吸底会莫名停下。根因是 `#transcript`/子代理面板的 onscroll 按“距底部 <80px”无条件重算跟随状态：贴底时 `scrollTop = scrollHeight` 产生的滚动事件要等下一帧才派发，而同步追加的工具记录/流式正文已把内容撑高超过 80px，于是被误判成“用户离开了底部”；一旦暂停，用户很难再靠滚到底部追上持续增高的内容。
 - 实现：public/app.js 抽出 `atLatest()`/`readFollow()`，跟随状态只由贴底和用户意图决定（滚轮、触摸、键盘、按下滚动条标记 200ms 意图窗口；无意图的向上位移仍视为拖动滚动条），程序跳转、折叠补偿、布局重排引发的滚动事件不再改变状态。新增内容观察器：`#output` 与子代理输出增高就补一次贴底，覆盖图片解码、折叠展开等不经过 `scrollLatest` 的路径；切换会话与重建弹窗时解除观察。

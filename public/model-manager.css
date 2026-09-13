@@ -259,11 +259,21 @@ button.mm-icon-delete:focus-visible { color: var(--danger); }
 /* 表单网格 */
 .mm-form {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 10px 12px;
   align-items: start;
 }
 .mm-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+/* 面板内所有复选框都不随全局 input 规则撑开（否则变成大方块） */
+.mm input[type="checkbox"] {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+}
 .mm-field-label { font-size: 11px; color: var(--muted); cursor: pointer; }
 .mm-field-hint { font-size: 11px; color: #62666d; overflow-wrap: anywhere; }
 .mm-field input[type="text"],
@@ -286,7 +296,6 @@ button.mm-icon-delete:focus-visible { color: var(--danger); }
   white-space: nowrap;
   cursor: pointer;
 }
-.mm-check input { width: auto; min-height: 0; margin: 0; accent-color: var(--accent); }
 .mm-check-danger { color: var(--danger); }
 
 /* 请求头行 */
@@ -298,6 +307,8 @@ button.mm-icon-delete:focus-visible { color: var(--danger); }
 
 /* 高级字段（折叠） */
 .mm-advanced { margin-top: 10px; }
+/* 折叠区里的复选框说明较长，允许换行（其它 .mm-check 保持单行） */
+.mm-advanced .mm-check { white-space: normal; align-items: flex-start; }
 .mm-advanced summary {
   font-size: 11px;
   color: var(--muted);
@@ -374,12 +385,12 @@ button.mm-icon-delete:focus-visible { color: var(--danger); }
 .mm-model-summary::-webkit-details-marker { display: none; }
 .mm-caret { flex: none; font-size: 10px; color: var(--muted); transition: transform 0.12s ease; }
 .mm-model[open] .mm-caret { transform: rotate(90deg); }
-.mm-model-id { color: var(--ink); overflow-wrap: anywhere; }
-.mm-model-name { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.mm-model-id { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mm-model-name { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mm-model-summary .mm-catalog-model-tags { margin-left: 0; }
 .mm-model-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 8px 10px;
   align-items: start;
 }
