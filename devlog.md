@@ -29,6 +29,11 @@
 - 实现：src/database.js 复用原 nodeOk 规则，在同步加载 SQLite 前统一拒绝不支持的 Node；scripts/install.mjs 重导出规则供现有测试使用，移除不可达的重复检查。无需新依赖、启动标志或修改 npm 全局安装命令。install.sh、install.ps1 与 README.md 同步版本及 SQLite 说明。
 - 验证：tests/install.test.js 用子进程模拟 Node 20/22.12/23，验证安装、守护、直接启动三入口在加载 SQLite 前提示升级；安装/数据库 11 项通过。两次全量并发运行出现不同的既有时序断言失败（service/app），服务测试单独15项通过；全量串行 node --test --test-concurrency=1 tests/*.test.js 为300通过、1跳过、0失败。未升级全局包或重启当前服务。
 - 涉及：src/database.js、scripts/install.mjs、tests/install.test.js、install.sh、install.ps1、README.md、本日志、代码索引及排障知识。
+## 2026-09-13 05:12 UTC 摘要列表紧凑化
+- 原因：时间行误继承全局 header 的64px高度、24px缩进及底线，设置段落规则又覆盖正文，列表过于稀疏。
+- 修改：public/style.css 隔离摘要时间行，时间/轮次靠左同排，正文间距4px、条目上下12px，正文保持13px；README.md 同步说明。不改变排序和摘要生成、不加依赖。
+- 验证：tests/summary-compact.test.js 新增样式回归，摘要UI共9项通过。全量282项280通过、1跳过、1服务恢复时序失败；该服务测试文件单独重跑15项全部通过。尚未真实浏览器验收，暂不合并。
+- 涉及：上述文件、devlog.md、codebase-map 索引与知识库。
 
 ## 2026-09-12 19:37 UTC 文件/文件夹搜索与 @ 补全：名称模糊匹配 + 工作空间递归
 - 原因：输入框上沿「＋」与 `@` 补全都只能在当前目录里按子串过滤名称，工作空间根目录只有 `public/` 这类目录名，输入 `@app` 或 `@apjs` 根本匹配不到 `public/app.js`，用户反馈「艾特的时候输入无法匹配」。

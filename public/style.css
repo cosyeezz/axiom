@@ -793,16 +793,17 @@ textarea {
 #restart-dialog { width: min(460px, calc(100% - 32px)); }
 #summaries { width: min(560px, calc(100% - 32px)); }
 #summaries-body {
+  padding: 8px 24px 16px;
   max-height: min(60dvh, 480px);
   overflow: auto;
   overscroll-behavior: contain;
 }
 #summaries-empty { margin: 0; }
-.summary-record { padding: 16px 0; border-bottom: 1px solid var(--line); }
+.summary-record { padding: 12px 0; border-bottom: 1px solid var(--line); }
 .summary-record:last-child { border-bottom: 0; padding-bottom: 0; }
-.summary-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-bottom: 6px; color: var(--muted); font-size: 12px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+.summary-meta { height: auto; padding: 0; border: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-bottom: 4px; color: var(--muted); font-size: 12px; line-height: 1.5; font-variant-numeric: tabular-nums; }
 .summary-turn { padding: 1px 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--raised); font: 500 11px/1.5 var(--mono); letter-spacing: 0.04em; }
-.summary-text { margin: 0; color: var(--body-ink); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+#summaries-body .summary-text { margin: 0; line-height: 1.5; color: var(--body-ink); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
 #restart-title { margin: 0; font-size: 18px; }
 #settings { width: min(1000px, calc(100% - 32px)); height: 80dvh; overflow: hidden; }
 #settings[open] { display: flex; flex-direction: column; }
@@ -851,7 +852,7 @@ textarea {
 .task-dialog::backdrop { left: var(--sidebar-width); top: 64px; background: #0006; }
 #settings header,
 #create-session header,
-#summaries header,
+#summaries > header,
 .task-top header {
   justify-content: space-between;
 }
