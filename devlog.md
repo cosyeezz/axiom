@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-13 05:40+ UTC 合并模型设置重设计与最新 master（冲突融合）
+- 合并 8995365（模型设置重设计+选择性导入）到 SQLite 重构分支：5 个 UU 逐一人工融合，不选边。数字验证为严格并集：model-manager.js 461/118 = ours(10/3)+theirs(451/115)；tests/model-manager 584/70、tests/model-config 380/8 同理；devlog 为双方条目拼接。INDEX.md 由 reindex 重建。提交 69023fc。
+- 合并 master（55937d4）7 个 UU：database.js 同时保留 master 的 Node 版本门控（createRequire 动态加载 node:sqlite）与本分支的 closeSync/openSync 存储安全导入；sessions.js 采用 master 的 startRun 运行骨架与 retry 入口，把本分支的懒加载（ensureLoaded）装进 prompt 与 retry，未加载会话不再 NPE；tests/service.test.js 保留本分支更强的恢复断言（ready 且 workers=2）。提交 b761552。
+- README 6 处冲突按代码事实裁决：默认配置/预设存储取 master 表述（SQLite 权威，defaults.json 仅一次性迁移，代码 database.get("defaults","defaults") 佐证），摘要触发/维护假错误/remote 双重编码迁移/会话表/懒恢复等 5 处取本分支拆表后描述，会话存储段补回 master 独有的「旧每会话 JSON 首次启动只读导入」。knowledge.md 双方条目全部保留（89 条）。
+- 验证：全量 npm test 360 项 358 通过、0 失败、2 平台跳过；首次出现的 service.test.js 两例失败（until 超时、EBUSY unlink -shm）单独复跑 2/2 通过，判定为 knowledge.md 已记录的 Windows 平台偶发问题，非合并引入（合并未触碰 service.mjs/service.test.js）。
+- 涉及：上述源/测试/文档、codebase-map 索引与知识库。
+
 ## 2026-09-13 供应商协议「不设置」保存回显修复
 - 原因：providerForm 把已有供应商缺失的 api 当作新建模板，回读时补成 openai-completions，再次保存还可能写回该默认值。
 - 修改：仅新建表单采用模板默认协议；已有配置缺失 api 保持空值，不改后端协议校验、模型继承或界面样式。
