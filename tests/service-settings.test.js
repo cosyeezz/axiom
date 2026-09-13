@@ -314,3 +314,63 @@ test("维护通道真实 HTTP 契约：/status 扁平记录、Bearer 404、/reco
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("maint-state 持久化：先清过期 persistenceError 再存，失败只留内存不落库，重启无假错误；phases 全入口有界", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "axiom-maint-state-"));
+  // 语义与真实 Database 一致的最小同步 mock（get/set 同步、JSON 序列化），可注入落库故障
+  const store = new Map(); // 原始库文本
+  let failSet = false;
+  const database = {
+    get: (ns, key) => (store.has(`${ns}/${key}`) ? JSON.parse(store.get(`${ns}/${key}`)) : undefined),
+    set: (ns, key, value) => {
+      if (failSet) throw new Error("disk full");
+      store.set(`${ns}/${key}`, JSON.stringify(value));
+    },
+  };
+  const opts = { database, key: "state-k", legacyFile: join(dir, "state.json"), redactions: [["hunter2", "***"]] };
+  try {
+    // 成功路径：库中快照永不携带 persistenceError
+    let clock = 100;
+    let state = await createMaintState({ ...opts, now: () => ++clock });
+    await state.succeed();
+    let saved = JSON.parse(store.get("maint/state-k"));
+    assert.equal("persistenceError" in saved, false, "成功落库不含 persistenceError");
+
+    // 落库失败：错误可见且只在内存，库中旧快照保持干净（不把假错误固化）
+    failSet = true;
+    await state.fail("构建失败");
+    assert.match(state.data.persistenceError, /未能保存/);
+    saved = JSON.parse(store.get("maint/state-k"));
+    assert.equal("persistenceError" in saved, false, "失败也不落 persistenceError");
+    assert.equal(saved.status, "succeeded", "失败时库中仍是上一次成功快照");
+
+    // 恢复后成功：过期错误被清除，不会一直挂着
+    failSet = false;
+    await state.succeed();
+    assert.equal(state.data.persistenceError, undefined);
+
+    // 历史库残留 persistenceError（旧版 bug 固化进库）→ 重启读入即丢弃，不显示假错误
+    store.set("maint/state-k", JSON.stringify({
+      ...JSON.parse(store.get("maint/state-k")),
+      persistenceError: "维护记录未能保存；当前结果仅在内存中，重启后可能丢失",
+      log: "含 hunter2 的历史日志",
+    }));
+    state = await createMaintState({ ...opts, now: () => 2000 });
+    assert.equal(state.data.persistenceError, undefined, "重启不显示假错误");
+    assert.doesNotMatch(state.data.log, /hunter2/);
+
+    // phases 全入口有界 200：restore 超长残留 + workerReady 反复追加都不放大
+    store.set("maint/state-k", JSON.stringify({
+      status: "idle",
+      phases: Array.from({ length: 500 }, (_, i) => ({ phase: `p${i}`, at: i })),
+    }));
+    state = await createMaintState({ ...opts, now: () => 3000 });
+    assert.equal(state.data.phases.length, 200, "restore 截尾 + boot 后恰为 200");
+    assert.equal(state.data.phases.at(-1).phase, "boot");
+    state.setWorker("w1");
+    for (let i = 0; i < 300; i++) await state.workerReady("w1", "1.0.0");
+    assert.equal(state.data.phases.length, 200, "workerReady 反复追加也有界");
+    for (let i = 0; i < 300; i++) await state.phase("tick");
+    assert.equal(state.data.phases.length, 200, "phase 追加仍有界");
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
