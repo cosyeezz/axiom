@@ -443,11 +443,6 @@
 - 根因：onscroll 用 `scrollHeight - scrollTop - clientHeight < 80` 无条件重算跟随。程序补底写入的 scrollTop 要等下一帧的 scroll steps 才派发 scroll 事件，而同步追加的工具记录/流式正文已经把内容撑高超过 80px，事件里的距离是「旧 scrollTop + 新 scrollHeight」，于是被判成用户离开底部；暂停后内容继续增高，用户永远追不上 80px 阈值。
 - 修复：public/app.js 的 `readFollow()` 只承认用户意图（wheel/touch/keydown/pointerdown 的 200ms 窗口）与无意图向上位移可以暂停，贴底一律恢复；滚动事件不再参与计算布局。内容增高改由内容观察器（`watchGrowth`/ResizeObserver）兜底补底，覆盖图片解码、折叠展开等不经过 scrollLatest 的路径。
 - 防再犯：tests/app.test.js 用带限位的 scrollTop getter 模拟真实浏览器贴底，断言“内容增高后补发的 scroll 事件不暂停吸底”（把 readFollow 改回 `atLatest` 单条件即失败）；tests/autoscroll-ui.py 在真实 Chromium + conversation-preview 里重复同样场景。JSDOM 不限位 scrollTop，写这类测试必须自己限位，否则距离算负、假通过。
-### 2026-09-13 摘要列表稀疏与全局样式串用
-- 根因：summary-meta 使用 header 继承顶栏高度与缩进；settings-body p 覆盖摘要正文。
-- 修复：style.css 隔离时间行尺寸、限定弹窗直属 header、提高摘要正文选择器精度。
-- 防再犯：tests/summary-compact.test.js 核对计算样式；标题栏保持64px，摘要时间行使用自然高度。
-
 ### 2026-09-13 供应商未设置协议被表单默认值覆盖
 - 症状：选择不设置并保存后显示 OpenAI，再次保存可能误写协议。
 - 根因：providerForm 对已有配置和新建模板共用 openai-completions 回退。

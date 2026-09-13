@@ -940,3 +940,15 @@
   - `tests/`：`memory-policy.test.js` → `task-budget.test.js`；`session-store.test.js` 增 `#normalizeSchema` 幂等迁移用例；`pi-memory.test.js` 覆盖 `WRAP_UP_PROMPT` 注入时机；`memory-ui.test.js` 只留 UI 集成（流式剥离标签、标题更新、轮次预算面板），标签纯函数用例归到 `memory-tags.test.js`；删 `summary-compact.test.js`（只测已删对话框的 CSS）；`sqlite-benchmark.mjs` 去掉摘要/进度阶段。
 - 验证：全量 `npm test` 356 项 354 过 2 跳过 0 失败。`rg -in "summar|progress|memory_turn|main_turn"` 在 src/ 仅剩 `#normalizeSchema` 的 DEAD_* 常量与 compaction 自有机制；public/ 零命中。SQLite 侧确认 node v24.19.0 内置 SQLite 3.53.3 支持 `ALTER TABLE DROP COLUMN`。
 - 涉及：src/task-budget.js（原 memory-policy.js）、src/pi.js、src/tools.js、src/session-store.js、src/session-memory.js、src/sessions.js、src/tasks.js、src/capabilities.js、src/protocol.js、src/server.js、src/database.js、public/app.js、public/index.html、public/style.css、public/memory-tags.js、tests/（10 个文件，含删除 summary-compact.test.js）、README.md、devlog.md、.pi/skills/codebase-map/。
+
+## 2026-09-13 11:20 — 行内代码里的标签不再被剥离，清理导入死字段与过时文档
+
+- 原因：讨论标签机制时写 `` `<axiom_summary>` ``，正文被当成未闭合开启标签，按「截到段尾」规则把反引号之后的整句话吞掉。顺带深扫上一轮删除摘要机制的遗留。
+- 内容：
+  - public/memory-tags.js：标签处理前把单行行内代码跨度（CommonMark 规则，N 个反引号由等长 run 闭合）掩码为 `\u0001序号\u0001`，处理后回填；extract 与 strip 共用。围栏保护逻辑不变，未闭合开启标签「截到段尾」规则不变。
+  - src/session-store.js：`#insertTaskRow` 丢掉旧整 JSON 里的 memoryTurn/progress/progressDelivered 三个死字段，不随迁移搬进新 tasks.record（旧库死列已由 #normalizeSchema 清理，JSON 侧此前仍会照搬）。
+  - 删 docs/sqlite-refactor-plan.md：写的是「最终五张业务表」与 summaries 表/main_turn/memory_turn 等实际列，与现状（store + sessions/session_events/tasks）矛盾，无任何代码或 README 引用，决策已在 devlog 留档。
+  - 删 .pi/skills/codebase-map/knowledge.md 里「摘要列表稀疏与全局样式串用」条目：对应对话框、summary-meta 样式与 tests/summary-compact.test.js 均已删除。
+  - README.md 第 15 行补一句：围栏与行内代码内的同名标签原样保留。
+- 验证：新增 tests/memory-tags.test.js「行内代码里的标签是讨论内容」用例（复现串、`` `<title>` ``、双反引号、行内与真标签混排、extract 只认真标签）；实测带死字段的旧 JSON 导入后 record 仅剩 task/status/id；全量 `npm test` 357 项，355 过 / 0 失败 / 2 跳过（既有 SKIP）。worktree 首次需 `npm ci`。
+- 涉及：public/memory-tags.js、src/session-store.js、tests/memory-tags.test.js、README.md、devlog.md、docs/sqlite-refactor-plan.md（删）、.pi/skills/codebase-map/knowledge.md。

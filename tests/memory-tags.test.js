@@ -53,6 +53,19 @@ test("标签独占行的跨行摘要：整块隐藏，落单闭合标签不漏�
   assert.equal(stripMemoryTags("```\n<summary>\n```\n正文\n</summary>"), "```\n<summary>\n```\n正文");
 });
 
+test("行内代码里的标签是讨论内容，不剥不提取，不吃后文", () => {
+  // 回归：以前 `<axiom_summary>` 被当未闭合开启标签，“截到段尾”把反引号后的整句话吃掉。
+  const talk = "摘要机制整套删除。主代理自报 `<axiom_summary>`、摘要提醒注入全部拿掉。";
+  assert.equal(stripMemoryTags(talk), talk);
+  assert.equal(stripMemoryTags(talk, { streaming: true }), talk);
+  assert.equal(stripMemoryTags("用 `<title>` 自报标题"), "用 `<title>` 自报标题");
+  assert.equal(stripMemoryTags("``<summary>`` 也留住"), "``<summary>`` 也留住");
+  assert.deepEqual(extractMemoryTags("说明 `<title>假的</title>` 结束"), {});
+  // 行内代码不影响同段真标签的剥离
+  assert.equal(stripMemoryTags("混合 `<progress>` 与<summary>删我</summary>尾巴"), "混合 `<progress>` 与尾巴");
+  assert.deepEqual(extractMemoryTags("`<title>假</title>`<title>真</title>"), { title: "真" });
+});
+
 test("strip 流式：跨行摘要在闭合前整块隐藏", () => {
   const head = "定案：走续跑\n<axiom_summary>\n定案：重试按钮";
   assert.equal(stripMemoryTags(head, { streaming: true }), "定案：走续跑");

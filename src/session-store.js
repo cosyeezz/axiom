@@ -68,7 +68,7 @@ const INDEXES = `
 
 // 摘要与子代理进度机制删除后的历史残留（旧库才有）：summaries 表、sessions.main_turn、
 // tasks 的 memory_turn/progress/progress_delivered、session_events 里 summary_trigger 与
-// progress_delivery 两类行及旧 CHECK 约束。
+// progress_delivery 两类行及旧 CHECK 约束。旧整 JSON 导入侧的同名死字段在 #insertTaskRow 丢掉。
 const DEAD_TABLES = ["summaries"];
 const DEAD_COLUMNS = { sessions: ["main_turn"], tasks: ["memory_turn", "progress", "progress_delivered"] };
 const DEAD_EVENT_TYPES = ["summary_trigger", "progress_delivery"];
@@ -257,7 +257,8 @@ export class SessionStore {
   }
 
   #insertTaskRow(sessionId, task) {
-    const { id, notified, ...record } = task;
+    // memoryTurn/progress/progressDelivered 是旧 JSON 里的死字段（机制已删），在此丢掉，不随导入进新 record。
+    const { id, notified, memoryTurn, progress, progressDelivered, ...record } = task;
     if (typeof id !== "string" || !id) throw new Error(`会话 ${sessionId} 存在缺少 id 的任务`);
     this.#sql("INSERT INTO tasks (session_id, id, notified, record) VALUES (?, ?, ?, ?)").run(
       sessionId,
