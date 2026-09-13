@@ -729,3 +729,12 @@
 - 原因：每个摘要/触发器/进度事件都触发全会话 persist（整行序列化重写），写入放大且随任务数增长；主审接线单任务/单变更保存需要精确的变更描述。
 - 修改：src/session-memory.js 的 memoryHooks(item, save, job) 保持同步时序，save 改为 save(change) 描述变更：{summary:record}、{event:{type:"summary_trigger",record}}、{turn:{agentId,turn}}、{title:true}、{progress:{taskId,record}}、{delivery:record,delivered:[{taskId,progressId}]}；一次 onReply 多变更合并同一 change，无变更不调用 save；失败回复只结算 trigger；交付记录赋稳定 id、保留 50 条审计。src/tasks.js 新增 createdAt/updatedAt（publish 刷新 updatedAt），snapshot() 复用 snapshotJob(job)；publish 广播 {type:"task.state",taskId,data:安全view含runtime,saved:完整单条快照}，saved 含 parentContext/resultId/notified/progress/runtime，广播前由主审剥离；runtime 事件仍只更新内存不逐 token 写。tests/session-memory.test.js 修复 Sessions 测试库隔离（storagePath 用 root/storage，库落各测试独占 Temp root，不再共享公共 Temp axiom.db），新增变更契约断言；tests/tasks.test.js 新增 data/saved 分离断言。
 - 验证：node --test session-memory+tasks 12 项通过；session-flow/task-notifications/message-activity/session-persistence/session-created-at 25 项通过；app.test 3 项通过。
+
+## 2026-09-12 模型存储修复：部分成功回执、导入自愈、临时文件加固
+- 原因：审查确认三处缺陷——writeConfig 先库后派生后刷新产生部分成功但向上抛错（UI 误判保存失败而权威已变）；旧配置导入坏文件即打迁移标记，用户修复原文件后永远无法重导；compat 原子写临时文件名可碰撞且 writeFile 失败路径泄漏临时文件、rename 无瞬时占用重试。
+- 内容（src/pi-model-storage.js + src/model-config.js + 两个对应测试）：
+  - writeConfig 拆为两阶段：仅权威落库；派生兼容文件由调用方经 syncCompatFile 显式重建。saveProvider/saveModel/deleteProvider/deleteModel 落库成功后派生/刷新失败时不再抛错，返回 `{fingerprint, applied:false, applyError(脱敏截断)}` 并记挂起状态；库写入失败照常抛。models.config.get 读取路径顺带重试挂起应用（GET 幂等、不重放 mutation），响应新增可选 `applyError`（有 = 已保存未应用，无 = 已应用），重试成功即清除；无挂起时 GET 不额外刷新。同一 fingerprint 重试保存仍可重新派生应用（乐观锁照常通过，apply 幂等）。不新增协议类型，server/ui 由主审接线。
+  - 导入门闩改为仅成功后打标记：读失败/坏 JSON/结构拒绝只记去重告警（同源同消息只记一条）且不打标记，修复原文件后下次 init 自动重导；导入干净时清除该来源陈旧告警。混合坏 auth：好条目入库、坏条目告警、权威已有 providerId 一律不覆盖（UI 新值优先），修复后补导入。凭据 modify 本进程串行语义保持，不加跨 await SQL 事务、不做多 worker。
+  - compat 临时文件改 randomUUID 唯一名，write/rename 任一步失败完整清理；rename 瞬时占用（EPERM/EBUSY）有限退避重试 2 次，绝不先删目标；校验临时文件同样 randomUUID 并把 writeFile 移入 try/finally。
+- 验证：npm test 全量 288 项 287 通过 0 失败 1 跳过（此前 service.test.js 偶发失败为基线时序抖动，stash 对比确认与本分支无关）；新增 7 条故障注入测试（compat 失败回执+同指纹重派生、refresh 失败回执、GET 自愈、修复坏源再 init、混合 auth 不覆盖新值、告警去重、rename 失败清理临时文件）。测试全部使用独立临时目录，未触碰真实配置。
+- 涉及文件：src/model-config.js、src/pi-model-storage.js、tests/model-config.test.js、tests/pi-model-storage.test.js、README.md。
