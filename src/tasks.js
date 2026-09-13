@@ -13,7 +13,8 @@ export class Tasks {
   start(tasks) {
     if (this.cancelling) throw new Error("Tasks are cancelling");
     return tasks.map((task) => {
-      const job = { id: randomUUID(), task, status: "starting", parentContext: this.parentContext() };
+      const job = { id: randomUUID(), task, status: "starting", parentContext: this.parentContext(),
+        createdAt: Date.now(), updatedAt: Date.now() };
       this.jobs.set(job.id, job);
       this.publish(job);
       job.done = this.run(job);
@@ -21,16 +22,25 @@ export class Tasks {
     });
   }
 
+  // 完整单条状态（超集于 view）：持久化与主审落盘用，不直接广播。
+  snapshotJob(job) {
+    return { ...this.view(job), runtime: job.runtime,
+      resultId: job.resultId, notified: job.notified, parentContext: job.parentContext,
+      progress: job.progress, progressDelivered: job.progressDelivered,
+      createdAt: job.createdAt, updatedAt: job.updatedAt };
+  }
+  // data 是安全 view（前端可收）；saved 是完整快照（含 parentContext/resultId/notified/
+  // progress/runtime），供主审按 taskId 单条落盘——广播前由主审删除 saved，只留 data。
   publish(job) {
-    this.emit({ type: "task.state", taskId: job.id, data: { ...this.view(job), runtime: job.runtime } });
+    job.updatedAt = Date.now();
+    this.emit({ type: "task.state", taskId: job.id,
+      data: { ...this.view(job), runtime: job.runtime }, saved: this.snapshotJob(job) });
   }
   view({ id, task, status, text, error }) {
     return { id, task, status, text: typeof text === "string" ? stripMemoryTags(text) : text, error };
   }
   snapshot() {
-    return [...this.jobs.values()].map((job) => ({ ...this.view(job), runtime: job.runtime,
-      resultId: job.resultId, notified: job.notified, parentContext: job.parentContext,
-      progress: job.progress, progressDelivered: job.progressDelivered }));
+    return [...this.jobs.values()].map((job) => this.snapshotJob(job));
   }
 
   async run(job) {

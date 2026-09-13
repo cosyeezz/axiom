@@ -724,3 +724,8 @@
 - 原因：摘要 JSON 替换在 Windows 报 EPERM；用户要求跨平台配置页与 SQLite 权威存储，API Key 明文保存。
 - 内容：新增 database/pi-model-storage，迁移 sessions/model-config/remote/maint-state 的管理数据；main/pi/server 接线，摘要设置页、模型页文案与协议同步。保留 Pi JSONL，迁移按文件幂等、缺失历史不覆盖；Node 支持范围升为22.13+（22.x）或24+。
 - 验证：数据库、迁移、凭据真实 SDK、配置 UI、守护测试均有回归；全量最后一项守护时序测试首次失败、单独重跑15/15通过，最终全量复跑275项：274通过、0失败、1跳过。
+
+## 2026-09-12 记忆与任务按变更增量落盘（事件级 save 契约）
+- 原因：每个摘要/触发器/进度事件都触发全会话 persist（整行序列化重写），写入放大且随任务数增长；主审接线单任务/单变更保存需要精确的变更描述。
+- 修改：src/session-memory.js 的 memoryHooks(item, save, job) 保持同步时序，save 改为 save(change) 描述变更：{summary:record}、{event:{type:"summary_trigger",record}}、{turn:{agentId,turn}}、{title:true}、{progress:{taskId,record}}、{delivery:record,delivered:[{taskId,progressId}]}；一次 onReply 多变更合并同一 change，无变更不调用 save；失败回复只结算 trigger；交付记录赋稳定 id、保留 50 条审计。src/tasks.js 新增 createdAt/updatedAt（publish 刷新 updatedAt），snapshot() 复用 snapshotJob(job)；publish 广播 {type:"task.state",taskId,data:安全view含runtime,saved:完整单条快照}，saved 含 parentContext/resultId/notified/progress/runtime，广播前由主审剥离；runtime 事件仍只更新内存不逐 token 写。tests/session-memory.test.js 修复 Sessions 测试库隔离（storagePath 用 root/storage，库落各测试独占 Temp root，不再共享公共 Temp axiom.db），新增变更契约断言；tests/tasks.test.js 新增 data/saved 分离断言。
+- 验证：node --test session-memory+tasks 12 项通过；session-flow/task-notifications/message-activity/session-persistence/session-created-at 25 项通过；app.test 3 项通过。
