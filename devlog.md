@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-13 手机纯阅读折叠
+- 原因：真机截图中输入、进度与跳转仍占据大量空间；用户要求收起后仅展示会话和一行状态。
+- 修改：≤700px 收起所有输入辅助区与最早/最新入口，保留单行双百分比/供应商模型思考信息及展开按钮；展开恢复输入和模型，输入14px，草稿附件不清空。桌面规则不变，沿用 Linear muted/surface 与8/12px间距。
+- 涉及：public/style.css、public/app.js、public/index.html、tests/mobile-reading-ui.py、README.md、devlog.md、索引/知识库。
+- 验证：首次 npm test 357项，355通过、2跳过；推送前重跑354通过、1项service超时、2跳过，单独重跑tests/service.test.js全部17项通过。浏览器回归在等待workspace显示时超时，手机/桌面对比未完成，不能视作验收通过；按用户明确要求合并推送。未重启正式服务。
+
 ## 2026-09-13 全部 worktree 集成与清理
 - 决策：按用户要求集成所有附加工作区；先备份未提交内容，处理已有合并冲突，验证后推送 master 并清理附加 worktree。
 - 保留：主仓库 AGENTS.md 的本地规则整理转入功能分支提交；临时安装目录和 NUL 不纳入源码。
@@ -959,6 +965,13 @@
 - 内容：reindex.mjs 的 MODULE_INFO、src/sessions.js:455 与 src/session-store.js:319 的迁移注释、tests/session-store.test.js:206 的用例名，四处「四表」改「三表」。
 - 验证：全量 `npm test` 357 项，355 过 / 0 失败 / 2 跳过；重建 INDEX.md 后模块表描述同步为三表。
 - 涉及：.pi/skills/codebase-map/scripts/reindex.mjs、src/sessions.js、src/session-store.js、tests/session-store.test.js、devlog.md。
+
+### 2026-09-13T17:36:36.164Z 子代理重试绑定任务
+- 内容/原因：重启不恢复子消息，混合 messageCount 不能定位；改为复用 SQLite 已保存的 agentId/taskId，将重试固定置于任务说明后。迟到元数据自动迁回，多次重试不重复，主代理路径不变；不新增存储字段或样式。
+- 涉及：public/app.js、tests/message-activity.test.js、README.md、.pi/skills/codebase-map/knowledge.md、INDEX.md。
+- 验证：定向10项及 app/session-flow/session-persistence 20项通过；全量验证见后续记录。
+- 最终验证：node --test --test-concurrency=1 全量357项，355通过、2跳过；默认并行两次在未改动 app.test.js 异步断言失败（排序/导入跳转），定向与串行通过。追加实时子消息之后重试也固定归位检查，定向10项再次通过。
+- 集成复验：合并最新 origin/master 后，定向30项通过；全量串行再次355通过、2跳过。
 
 ## 2026-09-13 11:02 — 右上角加 GitHub 图标；移除文字对比度调节，正文固定最高档
 
