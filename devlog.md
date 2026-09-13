@@ -776,3 +776,9 @@
 - 内容：`public/model-manager.js` 新增 `selectControl()`，把「API 协议」「API 协议覆盖」两个 select 包进 `span.selectors.mm-select > label`，直接复用 `style.css` 里 `.selectors select`（深色 raised 底、6px 圆角、32px 高、右内边距 28px）与 `.selectors label:has(select):after` 的 CSS 小箭头；删除 `model-manager.css` 里会被同权重覆盖、且会把 28px 右内边距压掉的 `.mm-field select` 旧规则，改为两行局部微调（`.mm-select { flex:none; padding:0 }`、`.mm-select select { max-width:100% }`）。
 - 验证：Playwright 截图 900/420/360px 与参考图一致（紧凑圆角下拉 + 小箭头）、无横向溢出；`node --test tests/model-manager.test.js` 24/24；全量 `npm test` 296 项 293 过 1 跳过，2 项失败集中在 `tests/workspace-tabs.test.js`（并发负载抖动，单独跑 8/8 全绿）。
 - 涉及：public/model-manager.js、public/model-manager.css、devlog.md、.pi/skills/codebase-map/index。
+
+## 2026-09-13 08:55 — API Key「显示」复选框改为小眼睛图标，并澄清密钥不回显
+- 原因：用户指出「已配置（掩码值）——留空保留 / 输入新值替换」+「☐ 显示」的写法有误导——勾选后并不会显示已存密钥（后端 GET 只回传 `{masked,kind}`，前端永远拿不到明文），看起来像坏掉的开关。
+- 内容：`public/model-manager.js` 里把 `显示` 复选框换成输入框内右侧的小眼睛图标按钮（`ICONS.eye` / `ICONS.eyeOff` 两条路径，点击切换 `type` 与 `aria-pressed`，同时更新 `title`/`aria-label`）；文案改成「已配置（掩码值）——留空保留」+ hint「密钥不回显（只能看到「已配置」）。留空 = 保留，输入 = 替换，勾「清除已存」= 删除；小眼睛只看本次输入」。`public/model-manager.css` 把输入框与小眼睛包进 `.mm-key-input` 定位容器（`.mm-key .mm-key-input input` 加 34px 右内边距，按钮绝对定位右 5px 居中，`aria-pressed=true` 时高亮），「清除已存」复选框仍在字段行内、不被覆盖。
+- 验证：Playwright 实测（900/420px）点击后 `type` 变 `text`、`aria-pressed=true`、图标换成斜杠眼、无横向溢出，截图确认小眼睛叠在输入框右端；`tests/model-manager.test.js` 24/24（新增小眼睛切换 + 回显后输入框仍为空的断言）；全量 `npm test` 305 项 304 过 1 跳过 0 失败。
+- 涉及：public/model-manager.js、public/model-manager.css、tests/model-manager.test.js、devlog.md、.pi/skills/codebase-map/index。

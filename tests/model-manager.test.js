@@ -131,6 +131,17 @@ test("自定义供应商进编辑器，目录项只读且掩码密钥不泄露�
   assert.match(keyInput.placeholder, /留空保留/);
   const headerValue = form.querySelector(".mm-header-row input[type='password']");
   assert.equal(headerValue.value, "");
+  // 小眼睛只切换本次输入的可见性，且不篡改已配置的值。
+  const eye = form.querySelector(".mm-key-reveal");
+  assert.equal(eye.getAttribute("aria-pressed"), "false");
+  const iconBefore = eye.querySelector("path").getAttribute("d");
+  eye.click();
+  assert.equal(keyInput.type, "text", "点小眼睛可将本次输入切换为明文");
+  assert.notEqual(eye.querySelector("path").getAttribute("d"), iconBefore, "图标同步切换为斜杠眼");
+  assert.equal(eye.getAttribute("aria-pressed"), "true");
+  eye.click();
+  assert.equal(keyInput.type, "password");
+  assert.equal(keyInput.value, "", "回显后密钥仍为空，不会把已存密钥泄露到界面");
   assert.equal(h.root().textContent.includes("masked"), false, "掩码对象不出现在界面文本中");
 
   // 内置 anthropic 是只读目录页：模型清单 + 覆盖入口，无编辑字段。

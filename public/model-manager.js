@@ -131,6 +131,8 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const ICONS = {
   rename: "M16 3l5 5L8 21H3v-5L16 3zM13 6l5 5M3 16l5 5",
   delete: "M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7",
+  eye: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7zM12 15a3 3 0 100-6 3 3 0 000 6z",
+  eyeOff: "M3 4l18 16M10.6 5.2A10.4 10.4 0 0112 5c6.5 0 10 7 10 7a17.3 17.3 0 01-3.3 4.1M6.7 6.9A17.4 17.4 0 002 12s3.5 7 10 7c1.6 0 3-.4 4.3-1.1M9.9 9.9a3 3 0 004.2 4.2",
 };
 function icon(path) {
   const svg = document.createElementNS(SVG_NS, "svg");
@@ -741,11 +743,21 @@ export function initModelManager({ root, request, onSaved }) {
   function connectionFields(form, existingId) {
     const apiKeyInput = el("input", { type: "password", value: form.apiKeyValue, autocomplete: "off", spellcheck: "false",
       placeholder: form.apiKeyMasked
-        ? `已配置（${MASK_KINDS[form.apiKeyKind] ?? "掩码值"}）——留空保留，输入新值替换`
+        ? `已配置（${MASK_KINDS[form.apiKeyKind] ?? "掩码值"}）——留空保留`
         : "留空不设置；可填 sk-…、$ENV_VAR 或 ${ENV}",
       oninput: (event) => { form.apiKeyValue = event.target.value; } });
-    const reveal = el("input", { type: "checkbox", "aria-label": "显示 API Key",
-      onchange: (event) => { apiKeyInput.type = event.target.checked ? "text" : "password"; } });
+    // 小眼睛只切换「本次输入」的可见性（已存密钥后端只回传拖码），提示文案必须说清，
+    // 否则会被误以为能查看已存密钥。
+    const reveal = el("button", { type: "button", class: "mm-icon-btn mm-key-reveal",
+      title: "显示本次输入的内容", "aria-label": "显示本次输入的 API Key", "aria-pressed": "false",
+      onclick: () => {
+        const shown = apiKeyInput.type === "text";
+        apiKeyInput.type = shown ? "password" : "text";
+        reveal.setAttribute("aria-pressed", String(!shown));
+        reveal.title = shown ? "显示本次输入的内容" : "隐藏本次输入的内容";
+        reveal.setAttribute("aria-label", `${shown ? "显示" : "隐藏"}本次输入的 API Key`);
+        reveal.querySelector("path").setAttribute("d", shown ? ICONS.eye : ICONS.eyeOff);
+      } }, icon(ICONS.eye));
     const clearKey = el("input", { type: "checkbox", checked: form.apiKeyClear, "aria-label": "清除已保存的 API Key",
       onchange: (event) => { form.apiKeyClear = event.target.checked; apiKeyInput.disabled = event.target.checked; } });
     const idField = existingId ? [] : [field("供应商 id", el("input", { type: "text", value: form.id,
@@ -761,10 +773,10 @@ export function initModelManager({ root, request, onSaved }) {
         new Option("（不设置）", "", false, form.api === ""),
         ...API_TYPES.map(([value, label]) => new Option(label, value, false, form.api === value)))),
         "Chat Completions 兼容性最好；改完记得保存", true),
-      field("API Key", el("span", { class: "mm-key" }, apiKeyInput,
-        el("label", { class: "mm-check" }, reveal, "显示"),
+      field("API Key", el("span", { class: "mm-key" },
+        el("span", { class: "mm-key-input" }, apiKeyInput, reveal),
         form.apiKeyMasked ? el("label", { class: "mm-check mm-check-danger" }, clearKey, "清除已存") : null),
-        "密钥不回显：留空保留现值，只有新输入的值会被传输"),
+        "密钥不回显（只能看到「已配置」）。留空 = 保留，输入 = 替换，勾「清除已存」= 删除；小眼睛只看本次输入"),
     ];
   }
 

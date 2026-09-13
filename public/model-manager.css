@@ -289,6 +289,18 @@ button.mm-icon-delete:focus-visible { color: var(--danger); }
 .mm-select select { max-width: 100%; }
 .mm-key { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .mm-key input:first-child { flex: 1; min-width: 0; }
+/* 小眼睛叠在输入框右端，所以包一层定位容器，不把「清除已存」也盖住 */
+.mm-key-input { position: relative; display: flex; flex: 1; min-width: 0; }
+.mm-key .mm-key-input input { flex: 1; min-width: 0; padding-right: 34px; }
+.mm-key-reveal {
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  min-height: 24px;
+}
+.mm-key-reveal[aria-pressed="true"] { color: var(--ink); background: var(--surface); }
 .mm-check {
   display: inline-flex;
   align-items: center;

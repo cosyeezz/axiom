@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/13 01:31:43）
+# Axiom 多级代码索引（生成于 2026/9/13 01:45:04）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -11,8 +11,8 @@
 | public/index.html | 329 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown.js | 247 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, textLanguages, isText |
 | public/memory-tags.js | 87 | 主子代理共享简单标签提取与流式显示过滤 | TAGS, NAMES, TAG, OPEN |
-| public/model-manager.css | 458 | 模型配置页：供应商列表、编辑表单与响应式布局 | - |
-| public/model-manager.js | 1117 | Pi 模型管理：供应商模板、模型编辑与安全保存反馈 | API_TYPES, PROVIDER_TEMPLATES, PROVIDER_ID, MASK_KINDS |
+| public/model-manager.css | 470 | 模型配置页：供应商列表、编辑表单与响应式布局 | - |
+| public/model-manager.js | 1129 | Pi 模型管理：供应商模板、模型编辑与安全保存反馈 | API_TYPES, PROVIDER_TEMPLATES, PROVIDER_ID, MASK_KINDS |
 | public/model-picker.css | 88 | 共享收藏下拉：暗色浮层、星标、触屏与焦点样式 | - |
 | public/model-picker.js | 300 | 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互 | GAP, EDGE, TYPEAHEAD_MS, el |
 | public/service-settings.js | 278 | 设置页服务维护：真实进度、结果、更新确认与独立维护通道 | MAINT_URL_RE, POLL_MS, initServiceSettings |
@@ -27,7 +27,7 @@
 | scripts/install.mjs | 95 | 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器 | root, parseArgs, openCommand, ensurePi |
 | scripts/maint-server.mjs | 86 | loopback维护HTTP：来源校验、随机凭证、状态与离线恢复 | MAX_BODY, hash, json, startMaintServer |
 | scripts/maint-state.mjs | 105 | 守护维护状态：持久化阶段、最近结果与有界脱敏证据 | NAMESPACE, LOG_LIMIT, sanitize, createMaintState |
-| scripts/service.mjs | 503 | 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道 | root, output, run, npmRun |
+| scripts/service.mjs | 520 | 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道 | root, output, run, npmRun |
 | scripts/uninstall.mjs | 18 | 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据 | uninstall |
 | src/capabilities.js | 139 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/compaction.js | 390 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
@@ -77,7 +77,7 @@
 | tests/message-activity.test.js | 407 | node --test 测试（npm test） | page, assistant, thought, call |
 | tests/mobile-reading-ui.py | 103 | node --test 测试（npm test） | - |
 | tests/model-config.test.js | 785 | node --test 测试（npm test） | sha, EMPTY, tempDir, openDatabases |
-| tests/model-manager.test.js | 973 | node --test 测试（npm test） | source, tick, j, masked |
+| tests/model-manager.test.js | 984 | node --test 测试（npm test） | source, tick, j, masked |
 | tests/model-onboarding-ui.test.js | 154 | node --test 测试（npm test） | stripImports, modelSources, contrastSource, pickerSource |
 | tests/model-onboarding.test.js | 55 | node --test 测试（npm test） | - |
 | tests/model-picker.test.js | 311 | node --test 测试（npm test） | source, tick, nap, OPTS |
@@ -99,7 +99,7 @@
 | tests/service-settings-api.test.js | 71 | node --test 测试（npm test） | - |
 | tests/service-settings-ui.py | 60 | node --test 测试（npm test） | - |
 | tests/service-settings.test.js | 317 | node --test 测试（npm test） | source, html, setup |
-| tests/service.test.js | 485 | node --test 测试（npm test） | until, readMaybe, killTree, buildWorkspace |
+| tests/service.test.js | 525 | node --test 测试（npm test） | until, readMaybe, killTree, buildWorkspace |
 | tests/session-created-at.test.js | 44 | node --test 测试（npm test） | factory |
 | tests/session-flow.test.js | 381 | node --test 测试（npm test） | flowFactory, jsonlFactory |
 | tests/session-memory.test.js | 189 | node --test 测试（npm test） | reply |
@@ -428,7 +428,7 @@
 | extractMemoryTags | function | 27 |
 | stripMemoryTags | function | 45 |
 
-### public/model-manager.js（1117 行） — Pi 模型管理：供应商模板、模型编辑与安全保存反馈
+### public/model-manager.js（1129 行） — Pi 模型管理：供应商模板、模型编辑与安全保存反馈
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -451,13 +451,13 @@
 | parseJsonText | function | 117 |
 | SVG_NS | const | 129 |
 | ICONS | const | 131 |
-| icon | function | 135 |
-| openModal | function | 147 |
-| closeModal | function | 151 |
-| openDialog | function | 160 |
-| openModal | method | 178 |
-| initModelManager | function | 183 |
-| renderProviders | method | 1114 |
+| icon | function | 137 |
+| openModal | function | 149 |
+| closeModal | function | 153 |
+| openDialog | function | 162 |
+| openModal | method | 180 |
+| initModelManager | function | 185 |
+| renderProviders | method | 1126 |
 
 ### public/model-picker.js（300 行） — 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互
 
@@ -600,7 +600,7 @@
 | createMaintState | function | 21 |
 | persist | method | 68 |
 
-### scripts/service.mjs（503 行） — 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道
+### scripts/service.mjs（520 行） — 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -618,16 +618,16 @@
 | rollbackUpdate | function | 121 |
 | update | function | 129 |
 | prepareRebuild | function | 137 |
-| swapRebuild | function | 147 |
-| commitRebuild | function | 158 |
-| rollbackRebuild | function | 162 |
-| rebuild | function | 168 |
-| READY_TIMEOUT_MS | const | 176 |
-| supervise | function | 178 |
-| mkdirSync | method | 187 |
-| spawnWorker | method | 440 |
-| invoked | const | 444 |
-| stopService | function | 445 |
+| swapRebuild | function | 150 |
+| commitRebuild | function | 161 |
+| rollbackRebuild | function | 165 |
+| rebuild | function | 171 |
+| READY_TIMEOUT_MS | const | 179 |
+| supervise | function | 181 |
+| mkdirSync | method | 190 |
+| spawnWorker | method | 457 |
+| invoked | const | 461 |
+| stopService | function | 462 |
 
 ### scripts/uninstall.mjs（18 行） — 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据
 
@@ -1119,7 +1119,7 @@
 | mockFetch | const | 544 |
 | jsonResponse | const | 553 |
 
-### tests/model-manager.test.js（973 行） — node --test 测试（npm test）
+### tests/model-manager.test.js（984 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1128,41 +1128,41 @@
 | j | const | 10 |
 | masked | const | 12 |
 | harness | function | 14 |
-| setInput_on | method | 190 |
-| setInput_on | function | 218 |
-| modelDelete | method | 281 |
-| dialogButton | method | 285 |
-| modelDelete | method | 291 |
-| dialogButton | method | 293 |
-| dialogButton | method | 311 |
-| confirm | method | 344 |
-| confirm | method | 351 |
-| row | method | 455 |
+| setInput_on | method | 201 |
+| setInput_on | function | 229 |
+| modelDelete | method | 292 |
+| dialogButton | method | 296 |
+| modelDelete | method | 302 |
+| dialogButton | method | 304 |
+| dialogButton | method | 322 |
+| confirm | method | 355 |
+| confirm | method | 362 |
 | row | method | 466 |
-| discoverPanelEl | const | 735 |
-| discoverRows | const | 736 |
-| rowBox | const | 737 |
-| addSelectedButton | const | 738 |
-| fetchButton | const | 739 |
-| checkRow | const | 740 |
-| rowBox | method | 741 |
-| rowBox | method | 742 |
-| fetchButton | method | 752 |
-| checkRow | method | 773 |
-| fetchButton | method | 785 |
-| checkRow | method | 797 |
-| checkRow | method | 798 |
-| addSelectedButton | method | 799 |
-| fetchButton | method | 833 |
-| addSelectedButton | method | 840 |
-| addSelectedButton | method | 859 |
-| fetchButton | method | 881 |
-| fetchButton | method | 889 |
-| fetchButton | method | 912 |
-| fetchButton | method | 931 |
-| fetchButton | method | 934 |
-| fetchButton | method | 951 |
-| fetchButton | method | 957 |
+| row | method | 477 |
+| discoverPanelEl | const | 746 |
+| discoverRows | const | 747 |
+| rowBox | const | 748 |
+| addSelectedButton | const | 749 |
+| fetchButton | const | 750 |
+| checkRow | const | 751 |
+| rowBox | method | 752 |
+| rowBox | method | 753 |
+| fetchButton | method | 763 |
+| checkRow | method | 784 |
+| fetchButton | method | 796 |
+| checkRow | method | 808 |
+| checkRow | method | 809 |
+| addSelectedButton | method | 810 |
+| fetchButton | method | 844 |
+| addSelectedButton | method | 851 |
+| addSelectedButton | method | 870 |
+| fetchButton | method | 892 |
+| fetchButton | method | 900 |
+| fetchButton | method | 923 |
+| fetchButton | method | 942 |
+| fetchButton | method | 945 |
+| fetchButton | method | 962 |
+| fetchButton | method | 968 |
 
 ### tests/model-onboarding-ui.test.js（154 行） — node --test 测试（npm test）
 
@@ -1291,7 +1291,7 @@
 | html | const | 12 |
 | setup | function | 14 |
 
-### tests/service.test.js（485 行） — node --test 测试（npm test）
+### tests/service.test.js（525 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
