@@ -1,5 +1,10 @@
 # 开发记录
 
+## 2026-09-13 07:16 UTC 运行中吸底滚动只在用户滚动时暂停
+- 原因：用户反馈运行中自动吸底会莫名停下。根因是 `#transcript`/子代理面板的 onscroll 按“距底部 <80px”无条件重算跟随状态：贴底时 `scrollTop = scrollHeight` 产生的滚动事件要等下一帧才派发，而同步追加的工具记录/流式正文已把内容撑高超过 80px，于是被误判成“用户离开了底部”；一旦暂停，用户很难再靠滚到底部追上持续增高的内容。
+- 实现：public/app.js 抽出 `atLatest()`/`readFollow()`，跟随状态只由贴底和用户意图决定（滚轮、触摸、键盘、按下滚动条标记 200ms 意图窗口；无意图的向上位移仍视为拖动滚动条），程序跳转、折叠补偿、布局重排引发的滚动事件不再改变状态。新增内容观察器：`#output` 与子代理输出增高就补一次贴底，覆盖图片解码、折叠展开等不经过 `scrollLatest` 的路径；切换会话与重建弹窗时解除观察。
+- 涉及文件：public/app.js、tests/app.test.js、tests/autoscroll-ui.py（新增）、README.md、devlog.md、knowledge.md 与 codebase-map 索引。
+- 验证：tests/app.test.js 用限位 scrollTop 复现“补发滚动事件 + 内容增高”场景（改回旧规则时该断言必失败）；真实 Chromium（`node tests/conversation-preview.mjs` + `python tests/autoscroll-ui.py`）13 项通过：初始贴底、增高跟随、上滚暂停与不抢位、滚回底部恢复、补发事件不暂停、无脚本错误。全量 `npm test` 301 项：300 通过、1 跳过、0 失败。未调用模型、未重启正式服务。
 ## 2026-09-13 07:11 UTC 模型与供应商面板：删除移到导航行、重命名后端原子命令、右侧折叠重组
 - 原因：用户五点反馈——删除入口在右侧详情里不好找、两段式「点两次」确认易误触也不够清楚、改名完全没有入口（只能删除重建，会丢 modelOverrides）、右侧详情一眼望去字段太多太乱、关键配置被淹没。
 - 实现：①新增协议命令 `models.provider.rename {providerId,newProviderId,baseFingerprint}`（.strict()），`src/model-config.js` 的 `renameProvider` 在乐观锁内整体搬移条目并同步内联 id 字段；前端无法用 save+delete 复现（两命令之间的失败会丢配置、且无独立写 modelOverrides 的命令），故独立成一条原子写。②左侧导航项改 `.mm-nav-row` 行容器 + `.mm-nav-actions`，悬停/键盘聚焦显示铅笔与删除图标（`opacity:0`，触屏常显），删除图标悬停变红；图标路径与会话右键菜单同源（添加 `ICONS`，`createElementNS` 构造，不引第三方图标库）。③删除/改名统一走原生 `<dialog>`+`showModal`（Esc 与焦点陷阱免实现），弹窗挂在 `body` 上，`close` 即移除；确认按钮 `type="button"`，取消不发请求；jsdom 无 `showModal/close`，用 `openModal/closeModal` 垫片。④右侧详情分成「连接 / 模型」两段：连接区只留 `id`（仅草稿）/ Base URL / API 协议 / API Key 四个宽窄分列字段，Bearer 头与自定义请求头收进 `<details class="mm-advanced">`（展开态存 `form.advancedOpen`，顺带修掉旧版展开高级区后新增请求头重渲染就自动折回的 bug）；模型行也改为 `<details>` 折叠摘要行（id + 异名 + 推理/图片徽标 + 脏点 + 删除图标，新建行默认展开，保存成功自动收起），保存按钮仍是 `.mm-model-actions` 第一个按钮。⑤重命名成功后 `rekeyProviderCaches()` 把 `editForms/newRows/modelRows/discover` 从旧 id 搬到新 id，正在编辑但未保存的内容不丢；删除则清缓存并清空选中。⑥弹窗容器样式复用 `style.css` 已有的 `#session-action` 选择器组（新增 `.mm-dialog`），只在本模块 CSS 补宽度与校验提示色，未新增颜色 token。
