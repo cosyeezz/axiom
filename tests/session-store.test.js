@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -358,4 +359,103 @@ test("坏 JSON 错误只报键位不泄露内容；Database.list 坏行隔离不
     assert.equal(warnings.length, 1);
     assert.match(warnings[0], /ns.*broken/);
     assert.doesNotMatch(warnings[0], /leak/);
+    // Database.get：坏 JSON 抛脱敏错误（不带原文与解析器消息）。
+    assert.throws(
+      () => db.get("ns", "broken"),
+      (error) => {
+        assert.match(error.message, /命名空间 ns 键 broken/);
+        assert.match(error.message, /不是合法 JSON/);
+        assert.doesNotMatch(error.message, /leak/);
+        assert.doesNotMatch(error.message, /JSON at position|Unexpected token/);
+        return true;
+      },
+    );
+  }));
+
+test("importLegacySession 首次真正导入前自动 VACUUM INTO 一致性备份；重跑不覆盖；跳过路径不备份", () =>
+  withStore((store, db, dir) => {
+    const backupPath = `${db.path}.pre-store-migration.db`;
+    const saved = fullSaved();
+    assert.equal(store.importLegacySession(saved, "sessions/old1.json"), true);
+    assert.equal(existsSync(backupPath), true); // 首次导入前已备份
+    // 快照可打开且是导入前状态：不含迁移标记，也无已导会话。
+    const snapshot = new Database(backupPath);
+    const snapStore = new SessionStore(snapshot);
+    try {
+      assert.equal(snapStore.hasSession("s1"), false);
+      assert.equal(snapshot.get("migrated", "sessions/old1.json"), undefined);
+    } finally {
+      snapshot.close();
+    }
+    // 第二条导入：备份已存在不覆盖，仍是首次快照（不含第二次导入的数据）。
+    assert.equal(store.importLegacySession({ id: "s2", cwd: "F:/y" }, "sessions/old2.json"), true);
+    const snapshot2 = new Database(backupPath);
+    try {
+      assert.equal(snapshot2.get("migrated", "sessions/old2.json"), undefined);
+    } finally {
+      snapshot2.close();
+    }
+  }));
+
+test("迁移跳过路径（重跑已标记 / 新表已有同 id）不产生备份", () =>
+  withStore((store, db) => {
+    const saved = { id: "j1", cwd: "F:/x" };
+    store.insertSession({ id: "j1", cwd: "F:/new" }); // 新表已有同 id
+    assert.equal(store.importLegacySession(saved, "sessions/dup.json"), false);
+    assert.equal(store.importLegacySession({ id: "j2", cwd: "F:/x" }, "sessions/dup2.json"), true); // 这条会备份
+    const backupPath = `${db.path}.pre-store-migration.db`;
+    assert.equal(existsSync(backupPath), true);
+    // 已标记重跑：不触碰备份（无新导入也无新快照）。
+    assert.equal(store.importLegacySession(saved, "sessions/dup.json"), false);
+    store.deleteSession("j2"); // 删掉已导会话后重跑 marker：已标记直接 false，不重导入也不备份
+    assert.equal(store.importLegacySession({ id: "j2", cwd: "F:/x" }, "sessions/dup2.json"), false);
+  }));
+
+test("旧数据缺 id：summary/trigger/compaction/retry 按原序号稳定 id，同内容两条都保留；读出带 id 供重写幂等", () =>
+  withStore((store) => {
+    const same = { agentId: "main", text: "同内容", timestamp: 1 };
+    store.insertSession({
+      id: "s1",
+      cwd: "F:/x",
+      summaries: [
+        { ...same }, // 无 id，index 0
+        { ...same }, // 与上一条完全相同：不得被内容哈希去重
+        { id: "m3", agentId: "main", text: "带id" }, // 有 id，占用 index 2
+        { agentId: "task-1", text: "子" }, // 无 id，index 3 → anon-3
+      ],
+      summaryTriggers: [
+        { agentId: "main", turn: 1, reason: "interval" },
+        { agentId: "main", turn: 2, reason: "interval" },
+      ],
+      retries: [
+        { agentId: "main", id: "retry-1", status: "failed" },
+        { agentId: "main", status: "waiting" }, // 无 id → anon-1
+      ],
+      compactions: [{ previousEntryId: "e0" }],
+    });
+    const restored = store.getSession("s1");
+    assert.deepEqual(
+      restored.summaries.map((r) => [r.id, r.text]),
+      [["anon-0", "同内容"], ["anon-1", "同内容"], ["m3", "带id"], ["anon-3", "子"]],
+    );
+    assert.deepEqual(restored.summaryTriggers.map((r) => r.id), ["anon-0", "anon-1"]);
+    assert.deepEqual(restored.compactions.map((r) => r.id), ["anon-0"]);
+    assert.deepEqual(restored.retries.map((r) => r.id), ["retry-1", "anon-1"]);
+    // 原形其余字段不受影响：record 存原样，id 只是身份回填。
+    assert.deepEqual(restored.summaries[1], { ...same, id: "anon-1" });
+    // E 场景：恢复后带稳定 id 重写中断态 → upsert 命中，不 append 重复。
+    store.saveEvent("s1", "retry", { ...restored.retries[1], status: "succeeded" });
+    assert.deepEqual(
+      store.getSession("s1").retries,
+      [
+        { agentId: "main", id: "retry-1", status: "failed" },
+        { agentId: "main", id: "anon-1", status: "succeeded" },
+      ],
+    );
+    // 重导入同一 saved（新会话 id）：数组序相同 → 生成的序号 id 相同（稳定，非随机）。
+    store.importLegacySession({ ...restored, id: "s2" }, "sessions/from-s2.json");
+    assert.deepEqual(store.getSession("s2").summaries.map((r) => r.id), ["anon-0", "anon-1", "m3", "anon-3"]);
+    // progress_delivery 天然无 id：读出仍不带 id。
+    store.saveEvent("s1", "progress_delivery", { timestamp: 5, text: "p" });
+    assert.deepEqual(store.getSession("s1").progressDeliveries, [{ timestamp: 5, text: "p" }]);
   }));

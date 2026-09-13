@@ -750,3 +750,9 @@
 - 内容：新增 src/session-store.js——sessions/summaries/session_events/tasks 四表 + store 配置表保留；事件身份 (session_id,type,agent_id,key) 部分唯一索引；tasks 元数据列（memory_turn/notified/progress_delivered/progress）权威、record 存任务内容，仅元数据变化只 UPDATE 列不读不写大 record；无 id 摘要 `anon-<sha256前20>` 稳定 id；change(work) SAVEPOINT 供多实体原子变更；importLegacySession/migrateLegacy 单事务迁移（坏行告警保留源、精确标记、幂等不覆盖新表）。src/database.js：busy_timeout 先于 journal_mode、外键 ON、暴露 prepare/exec、list() 坏行逐行隔离且告警只报键位不带内容。
 - 验证：node --test tests/database.test.js tests/session-store.test.js 18/18 通过；全量 268 项中 9 个失败经基线（stash 后重跑）确认为既有环境性失败，与本次无关。
 - 涉及：src/database.js、src/session-store.js、tests/database.test.js、tests/session-store.test.js。集成（sessions.js 接线、README）由主审后续处理。
+
+## 2026-09-12 迁移安全收口：脱敏补漏 + 首次导入前 VACUUM INTO 备份
+- 原因：主审确认两处硬阻塞——database.js get() 裸 JSON.parse（Node 21+ SyntaxError 携带原文片段）与 list() 告警拼接 error.message 均可泄露存储原文；importLegacySession 原注释把库级备份推给调用方，但集成层没有 VACUUM 入口。
+- 内容：get() 解析失败抛脱敏错误（只报 namespace/key）；list() 告警去 error.message 只报键位；Database 暴露只读 path；importLegacySession 在每次真正导入前（已标记跳过/新表同 id 跳过不触发）自动 VACUUM INTO 到 <主库>.pre-store-migration.db，快照已存在则保留首次快照不覆盖，备份失败即抛错中止迁移。
+- 验证：node --test tests/database.test.js tests/session-store.test.js 22/22 通过（新增 get 脱敏断言、备份生成/快照可读/不覆盖/跳过路径不备份等用例）。
+- 涉及：src/database.js、src/session-store.js、tests/database.test.js、tests/session-store.test.js。

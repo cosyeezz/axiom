@@ -1,7 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-
 // Axiom 共享 SQLite 存储：namespace + key 两级 KV，值以 JSON 文本存单表。
 // 单写者进程 + WAL + busy_timeout；set 是单条 UPSERT 语句，由 SQLite 语句级事务保证原子，
 // 进程崩溃只会「整条旧值或整条新值」，绝不出现半截数据。
@@ -9,11 +8,13 @@ import { dirname } from "node:path";
 // presets=具名预设、settings=全局设置（如 memorySummary）、migrated=旧 JSON 迁移标记。
 export class Database {
   #db;
+  #path;
 
   constructor(path) {
     // 父目录不存在则逐级创建（与旧 storagePath/defaultsPath 行为一致）。
     mkdirSync(dirname(path), { recursive: true });
     this.#db = new DatabaseSync(path);
+    this.#path = path;
     // busy_timeout 必须先于 journal_mode：切 WAL 需要短暂独占锁，先设兜底才不会撞锁即抛。
     this.#db.exec("PRAGMA busy_timeout = 5000");
     // WAL：崩溃安全且读写不互斥。
@@ -29,10 +30,22 @@ export class Database {
     } catch {}
   }
 
+  // 主库文件绝对路径（供迁移前 VACUUM INTO 一致性备份等使用）。
+  get path() {
+    return this.#path;
+  }
+
   // 命中返回解析后的 JSON 值，未命中返回 undefined。
+  // 坏 JSON 抛脱敏错误：只报 namespace/key 位置，不带内容片段或解析器消息（
+  // Node 21+ 的 JSON.parse SyntaxError 会携带原文片段，绝不能透传）。
   get(namespace, key) {
     const row = this.#db.prepare("SELECT value FROM store WHERE namespace = ? AND key = ?").get(namespace, key);
-    return row ? JSON.parse(row.value) : undefined;
+    if (!row) return undefined;
+    try {
+      return JSON.parse(row.value);
+    } catch {
+      throw new Error(`store：命名空间 ${namespace} 键 ${key} 的值不是合法 JSON，读取中止`);
+    }
   }
 
   set(namespace, key, value) {
@@ -49,13 +62,14 @@ export class Database {
 
   // 该 namespace 下全部条目：[{ key, value }]，按 key 稳定排序。
   // 坏 JSON 逐行隔离：告警并跳过损坏行，好行照常返回；SQL 错误（连接断开等）照常抛出。
+  // 告警只报 namespace/key，不带内容或解析器消息（防原文泄露）。
   list(namespace) {
     const items = [];
     for (const { key, value } of this.#db.prepare("SELECT key, value FROM store WHERE namespace = ? ORDER BY key").iterate(namespace)) {
       try {
         items.push({ key, value: JSON.parse(value) });
-      } catch (error) {
-        console.warn(`命名空间 ${namespace} 键 ${key} 的值不是合法 JSON，已跳过：${error.message}`);
+      } catch {
+        console.warn(`store：命名空间 ${namespace} 键 ${key} 的值不是合法 JSON，已跳过该行`);
       }
     }
     return items;
