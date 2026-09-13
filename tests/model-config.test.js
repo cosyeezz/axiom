@@ -13,6 +13,7 @@ import { Database } from "../src/database.js";
 import { createPiModelStorage, canonicalModelsJson } from "../src/pi-model-storage.js";
 import { Sessions } from "../src/sessions.js";
 import { createServerApp } from "../src/server.js";
+import { runOpponent } from "./helpers/model-concurrency-child.mjs";
 
 // 独立后端测试：临时目录 + fake factory + 独立 SQLite，不触碰真实 ~/.pi 与任何真实密钥。
 const sha = (raw) => createHash("sha256").update(raw).digest("hex");
@@ -31,9 +32,12 @@ const closeOpenDatabases = () => {
 
 function makeService(dir, catalog = [], extra = {}) {
   let refreshes = 0;
+  // 故障注入点：failRefresh 置 true 时 refreshModels 抛错，模拟 SDK 目录刷新失败。
+  const state = { failRefresh: false };
   const factory = {
     catalog: () => catalog,
     refreshModels: async () => {
+      if (state.failRefresh) throw new Error("refresh exploded: fake-secret-must-not-leak");
       refreshes += 1;
       return catalog;
     },
@@ -43,12 +47,15 @@ function makeService(dir, catalog = [], extra = {}) {
   // piDir 指向临时空目录：导入逻辑不触碰真实 ~/.pi。
   const storage = createPiModelStorage({ database, home: dir, piDir: join(dir, "pi") });
   const models = createModelsService({ factory, storage, ...extra });
-  return { models, storage, database, refreshes: () => refreshes };
+  return { models, storage, database, refreshes: () => refreshes, state };
 }
 
-// 种子：直接写权威库（绕过服务层校验，模拟任意既有状态），同步派生文件保持一致。
-const seed = (svc, content) =>
-  svc.storage.writeConfig(typeof content === "string" ? JSON.parse(content) : content);
+// 种子：直接写权威库（绕过服务层校验，模拟任意既有状态），并同步派生文件保持一致。
+const seed = async (svc, content) => {
+  const config = typeof content === "string" ? JSON.parse(content) : content;
+  svc.storage.writeConfig(config);
+  await svc.storage.syncCompatFile(config);
+};
 
 // 派生兼容文件读取：SDK 实际读的镜像，内容应始终等于权威配置。
 const compat = (dir) => readFile(join(dir, "models.compat.json"), "utf8");
@@ -86,6 +93,7 @@ test("models.config.get：权威为空时空指纹与空列表", async () => {
     assert.deepEqual(data.providers, []);
     assert.deepEqual(data.catalog, [{ key: "a/b" }]);
     assert.equal(data.parseError, undefined);
+    assert.equal(data.applyError, undefined, "无挂起时 GET 不返回 applyError");
   } finally {
     closeOpenDatabases();
     await rm(dir, { recursive: true, force: true });
@@ -102,6 +110,7 @@ test("provider.save：权威落库、派生文件同步、目录刷新", async (
       baseFingerprint: EMPTY,
     });
     assert.notEqual(created.fingerprint, EMPTY);
+    assert.equal(created.applied, true, "成功回执 applied:true");
     assert.equal(refreshes(), 1);
     // 权威：SQLite 中的值含真实密钥（用户明确同意的明文存储）。
     const raw = database.get("models", "config");
@@ -382,6 +391,116 @@ test("SDK 校验闸门：轻校验放过的垃圾在落库前被拒，无临时�
     assert.equal(await compat(dir), before);
     const leftover = (await readdir(dir)).filter((name) => name.includes(".tmp-"));
     assert.deepEqual(leftover, []);
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("部分成功回执：compat 重建失败 → applied:false + applyError，权威已落库，同指纹重试重新派生", async () => {
+  const dir = await tempDir();
+  try {
+    const svc = makeService(dir);
+    const { models, storage, database } = svc;
+    const realSync = storage.syncCompatFile;
+    // 故障注入：库写入后的派生文件重建失败（磁盘/权限类 IO 错误）
+    storage.syncCompatFile = async () => {
+      throw Object.assign(new Error("EACCES: fake-secret-must-not-leak"), { code: "EACCES" });
+    };
+    let receipt;
+    try {
+      receipt = await models.saveProvider({
+        providerId: "p",
+        provider: { name: "P", baseUrl: "https://p.example.com/v1", api: "openai-completions" },
+        baseFingerprint: EMPTY,
+      });
+    } finally {
+      storage.syncCompatFile = realSync;
+    }
+    assert.equal(receipt.applied, false);
+    assert.match(receipt.applyError, /EACCES/);
+    assert.notEqual(receipt.fingerprint, EMPTY);
+    // 库已是新配置（部分成功的事实），派生文件未生成
+    assert.equal(database.get("models", "config").providers.p.name, "P");
+    await assert.rejects(() => compat(dir), /ENOENT/);
+    // 同一 fingerprint 重试：乐观锁通过、apply 幂等重算同一配置、重新派生应用成功
+    const retried = await models.saveProvider({
+      providerId: "p",
+      provider: { name: "P", baseUrl: "https://p.example.com/v1", api: "openai-completions" },
+      baseFingerprint: receipt.fingerprint,
+    });
+    assert.equal(retried.applied, true);
+    assert.equal(retried.applyError, undefined);
+    assert.deepEqual(JSON.parse(await compat(dir)), database.get("models", "config"));
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("部分成功回执：目录刷新失败 → applied:false，库与派生已一致，修复后重试仅重刷目录", async () => {
+  const dir = await tempDir();
+  try {
+    const svc = makeService(dir);
+    const { models, database, state, refreshes } = svc;
+    state.failRefresh = true;
+    const receipt = await models.saveProvider({
+      providerId: "p",
+      provider: { name: "P", baseUrl: "https://p.example.com/v1", api: "openai-completions" },
+      baseFingerprint: EMPTY,
+    });
+    assert.equal(receipt.applied, false);
+    assert.match(receipt.applyError, /应用失败/);
+    assert.doesNotMatch(receipt.applyError, /refresh exploded|fake-secret/);
+    assert.equal(refreshes(), 0);
+    // 库与派生文件已一致，仅 SDK 目录未刷新；同指纹重试修复后只补目录刷新
+    assert.deepEqual(JSON.parse(await compat(dir)), database.get("models", "config"));
+    state.failRefresh = false;
+    const retried = await models.saveProvider({
+      providerId: "p",
+      provider: { name: "P", baseUrl: "https://p.example.com/v1", api: "openai-completions" },
+      baseFingerprint: receipt.fingerprint,
+    });
+    assert.equal(retried.applied, true);
+    assert.equal(refreshes(), 1);
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("GET 自愈：读取路径顺带重试挂起应用，成功后 applyError 消失，无挂起不额外刷新", async () => {
+  const dir = await tempDir();
+  try {
+    const svc = makeService(dir);
+    const { models, storage, database, refreshes } = svc;
+    const realSync = storage.syncCompatFile;
+    storage.syncCompatFile = async () => {
+      throw Object.assign(new Error("EBUSY: fake-secret-must-not-leak"), { code: "EBUSY" });
+    };
+    let receipt;
+    receipt = await models.saveProvider({
+      providerId: "p",
+      provider: { name: "P", baseUrl: "https://p.example.com/v1", api: "openai-completions" },
+      baseFingerprint: EMPTY,
+    });
+    assert.equal(receipt.applied, false);
+    // 挂起未修复：GET 返回 applyError（已保存未应用），UI 可展示并引导刷新重试
+    let view = await models.handle({ type: "models.config.get" });
+    assert.match(view.applyError, /EBUSY/);
+    assert.equal(view.applied, false);
+    assert.doesNotMatch(JSON.stringify(view), /fake-secret/);
+    // 修复后：任意 GET 顺带重试成功，applyError 消失，派生文件与库一致
+    storage.syncCompatFile = realSync;
+    view = await models.handle({ type: "models.config.get" });
+    assert.equal(view.applyError, undefined);
+    assert.equal(view.applied, true);
+    assert.equal(refreshes(), 1, "GET 自愈重刷目录一次");
+    assert.deepEqual(JSON.parse(await compat(dir)), database.get("models", "config"));
+    // 挂起已清除：再次 GET 不额外刷新
+    const before = refreshes();
+    await models.handle({ type: "models.config.get" });
+    assert.equal(refreshes(), before);
   } finally {
     closeOpenDatabases();
     await rm(dir, { recursive: true, force: true });
@@ -782,3 +901,79 @@ test("discover 边界：损坏结构拒绝、Unknown provider、501 条截断、
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("models.hidden.set：隐藏只影响可选入口（listCatalog），运行时目录与会话校验不动", async () => {
+  const dir = await tempDir();
+  try {
+    const catalog = [
+      { provider: "openai-codex", id: "gpt-5.4", name: "GPT-5.4", key: "openai-codex/gpt-5.4", levels: ["medium"], input: ["text"] },
+      { provider: "openai-codex", id: "gpt-5.4-mini", name: "Mini", key: "openai-codex/gpt-5.4-mini", levels: [], input: ["text"] },
+      { provider: "anthropic", id: "claude", name: "Claude", key: "anthropic/claude", levels: [], input: ["text"] },
+    ];
+    const svc = makeService(dir, catalog);
+    const keys = () => svc.models.listCatalog().map((model) => model.key);
+
+    assert.deepEqual((await svc.models.get()).hidden, []);
+    assert.deepEqual(keys(), ["openai-codex/gpt-5.4", "openai-codex/gpt-5.4-mini", "anthropic/claude"]);
+
+    // 单个模型隐藏：从可选入口消失，但 catalog（会话校验/既有会话）保持不变。
+    await svc.models.handle({ type: "models.hidden.set", key: "openai-codex/gpt-5.4", hidden: true });
+    assert.deepEqual((await svc.models.get()).hidden, ["openai-codex/gpt-5.4"]);
+    assert.deepEqual(keys(), ["openai-codex/gpt-5.4-mini", "anthropic/claude"]);
+    assert.deepEqual((await svc.models.get()).catalog.map((model) => model.key), catalog.map((model) => model.key));
+    // 已隐藏项写入权威库独立键，绝不进 models.json（SDK schema 只认 provider 定义）。
+    assert.equal("hidden" in (svc.database.get("models", "config") ?? {}), false);
+
+    // 供应商级隐藏：整条消失；一旦存在同名自定义覆盖，则让位给覆盖条目（用户已在接管该 id）。
+    await svc.models.handle({ type: "models.hidden.set", key: "openai-codex", hidden: true });
+    assert.deepEqual(keys(), ["anthropic/claude"]);
+    await seed(svc, { providers: { "openai-codex": { baseUrl: "https://p.example.com", api: "openai-completions" } } });
+    assert.deepEqual(keys(), ["openai-codex/gpt-5.4-mini", "anthropic/claude"]);
+
+    // 恢复幂等；未知 key 与非法载荷一律拒绝。
+    await svc.models.handle({ type: "models.hidden.set", key: "openai-codex", hidden: false });
+    await svc.models.handle({ type: "models.hidden.set", key: "openai-codex/gpt-5.4", hidden: false });
+    await svc.models.handle({ type: "models.hidden.set", key: "openai-codex/gpt-5.4", hidden: false });
+    assert.deepEqual((await svc.models.get()).hidden, []);
+    assert.deepEqual(keys(), catalog.map((model) => model.key));
+    await assert.rejects(() => svc.models.handle({ type: "models.hidden.set", key: "nope/gpt", hidden: true }),
+      /未知的内置供应商或模型/);
+    assert.throws(() => command.parse({ id: "h1", type: "models.hidden.set", key: "", hidden: true }));
+    assert.throws(() => command.parse({ id: "h2", type: "models.hidden.set", key: "a/b", hidden: "yes" }));
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// 子进程已读旧权威、停在CAS前；父进程先写成功再放行，确定性检查过期写拒绝。
+for (const op of ["config", "favorites"]) {
+  test(`两进程 ${op}：旧权威捕获后被他人更新，过期CAS必须拒绝`, { timeout: 30000 }, async () => {
+    const dir = await tempDir();
+    let opponent;
+    try {
+      const { models, storage } = makeService(dir);
+      opponent = runOpponent({ dir, op });
+      await opponent.ready();
+      if (op === "config") {
+        await models.saveProvider({ providerId: "p", provider: { name: "from-parent" }, baseFingerprint: (await models.get()).fingerprint });
+      } else {
+        await models.setFavorite({ kind: "model", key: "parent/model", favorite: true });
+      }
+      opponent.release();
+      const outcome = await opponent.result();
+      assert.equal(outcome.ok, false);
+      assert.match(outcome.message, /已被/);
+      if (op === "config") {
+        assert.equal(storage.readConfig().providers.p.name, "from-parent");
+        assert.deepEqual(JSON.parse(await compat(dir)), storage.readConfig());
+      } else {
+        assert.deepEqual((await models.favorites()).model, ["parent/model"]);
+      }
+    } finally {
+      await opponent?.close();
+      closeOpenDatabases();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+}

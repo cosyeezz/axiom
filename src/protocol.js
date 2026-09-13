@@ -252,6 +252,15 @@ export const command = z.discriminatedUnion("type", [
   // 只读：从供应商在线拉取模型列表（models.provider.discover）；不写盘、不自动启用。
   z.object({ id, type: z.literal("models.provider.discover"), providerId: providerKey }).strict(),
   z.object({ id, type: z.literal("models.favorites.get") }).strict(),
+  // 内置目录可见性（Axiom 侧隐藏/恢复，不改 Pi 运行时目录）：key = 供应商 id 或 `provider/id`。
+  z
+    .object({
+      id,
+      type: z.literal("models.hidden.set"),
+      key: z.string().trim().min(1).max(300),
+      hidden: z.boolean(),
+    })
+    .strict(),
   z
     .object({
       id,

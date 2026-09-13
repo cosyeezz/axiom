@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { rm, writeFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
@@ -254,6 +254,13 @@ function normalizeFavorites(parsed) {
   );
 }
 
+// 内置目录的隐藏清单：provider id（整条）或 `provider/id`（单个模型）。
+const HIDDEN_CAP = 500;
+function normalizeHidden(raw) {
+  const list = raw && typeof raw === "object" && Array.isArray(raw.keys) ? raw.keys : [];
+  return [...new Set(list.filter((key) => typeof key === "string"))].slice(0, HIDDEN_CAP);
+}
+
 export function createModelsService({ factory, storage, discoverTimeoutMs = 15_000, discoverFetch }) {
   // 单进程内串行化：配置写与收藏写共用一条 promise 链，避免读-改-写交错。
   let chain = Promise.resolve();
@@ -267,15 +274,34 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
   };
   // 权威配置的指纹：对规范序列化做摘要；权威为空与旧「文件缺失」同语义（空配置）。
   const fingerprintOf = (config) => digest(canonicalModelsJson(config));
+  // SDK/扩展异常可能夹带配置原文；仅暴露固定提示和已知系统错误码，截断不等于脱敏。
+  const sanitizeApplyError = (error) => `应用失败，请重试${["EACCES", "EPERM", "EBUSY", "ENOSPC", "ENOENT", "EIO"].includes(error?.code) ? `（${error.code}）` : ""}`;
+  // 挂起应用状态：库已落库但派生/刷新未完成。GET 读取路径顺带重试（GET 幂等、不重放任何
+  // mutation，是比客户端重发写命令更安全的自愈入口）；重试成功即清除，无挂起时 GET 不额外刷新。
+  let pendingApply = null;
 
   async function get() {
+    if (pendingApply)
+      await enqueue(async () => {
+        if (!pendingApply) return;
+        try {
+          await storage.syncCompatFile(storage.readConfig());
+          if (factory.refreshModels) await factory.refreshModels();
+          pendingApply = null;
+        } catch (error) {
+          pendingApply.applyError = sanitizeApplyError(error);
+        }
+      });
     const config = storage.readConfig();
     const result = {
       fingerprint: fingerprintOf(config),
+      applied: !pendingApply,
       path: storage.compatPath,
       providers: [],
       catalog: factory.catalog(),
+      hidden: normalizeHidden(storage.getHidden()),
     };
+    if (pendingApply) result.applyError = pendingApply.applyError;
     // 导入期告警只在权威配置为空时展示：一旦用户开始配置，旧文件的问题不再 relevant。
     const imported = storage.importErrors();
     if (!Object.keys(config.providers ?? {}).length && imported.length)
@@ -290,11 +316,18 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
     return result;
   }
 
-  // 所有写命令：指纹乐观锁 → 权威读取 → 变更 → SDK 真实 schema 校验 → 权威落库（含派生
-  // 兼容文件重建）→ 刷新 SDK 模型目录。全部写命令经 enqueue 串行，读-改-写不会交错；
-  // SQLite 单文件无「外部编辑」入口，旧双指纹复查窗口随文件写入一并消失。
+  // 所有写命令：指纹乐观锁 → 权威读取 → 变更 → SDK 真实 schema 校验 → 权威落库 →
+  // 派生兼容文件重建 + SDK 模型目录刷新（应用阶段）。全部写命令经 enqueue 单进程内串行；
+  // 跨进程丢更新由落库 CAS 防护（比较起点权威原文，冲突即拒绝，不自动重放）。
+  // 回执协议：库写入失败（指纹/CAS 冲突/校验拒绝/SQLite 异常）照常抛错，权威未变；
+  // 库已落库但派生/刷新失败时不抛——权威已变，抛错会让 UI 误以为保存失败而丢弃编辑。
+  // 此时返回 { fingerprint, applied: false, applyError }，同时记为挂起状态：后续任意
+  // models.config.get 读取路径顺带重试派生+刷新并在响应返回 applyError（有 = 已保存未应用，
+  // 无 = 已应用）。GET 幂等且不重放 mutation，是最安全的自愈入口；也可拿同一 fingerprint
+  // 重试保存，乐观锁照常通过，apply 幂等重算同一配置。
   async function mutate(baseFingerprint, apply) {
-    const config = storage.readConfig();
+    // 起点捕获库内权威原文：异步校验窗口结束后用它做单语句 CAS 比较，跨进程不丢更新。
+    const { raw: expectedRaw, config } = storage.configState();
     if (fingerprintOf(config) !== baseFingerprint) throw new Error("模型配置已被外部修改，请刷新配置页后重试");
     const providers = config.providers === undefined ? {} : config.providers;
     if (providers === null || typeof providers !== "object" || Array.isArray(providers))
@@ -303,18 +336,42 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
     apply(config.providers);
     if (!sdkModelConfig) throw new Error("无法加载 Pi 配置校验器，已拒绝保存；请检查 SDK 版本");
     // SDK 校验器只接受文件路径：规范序列化写入临时文件校验后即删（临时文件永不落密钥副本留盘）。
-    const tmp = `${storage.compatPath}.tmp-validate-${process.pid}-${Date.now()}`;
-    await writeFile(tmp, canonicalModelsJson(config), { mode: 0o600 });
+    const tmp = `${storage.compatPath}.tmp-validate-${randomUUID()}`;
     try {
+      await writeFile(tmp, canonicalModelsJson(config), { mode: 0o600 });
       const check = await sdkModelConfig.load(tmp);
       if (check.getError()) throw new Error("模型配置未通过校验，已放弃保存；请检查 Pi 模型参数与供应商配置");
     } finally {
       await rm(tmp, { force: true }).catch(() => {});
     }
-    await storage.writeConfig(config);
-    if (factory.refreshModels) await factory.refreshModels();
-    return { fingerprint: fingerprintOf(config) };
+    // 异步校验窗口内他人可能已写：单语句 CAS（原文全等才覆盖）原子落库，失败即冲突。
+    if (!storage.casConfig(expectedRaw, config)) throw new Error("模型配置已被外部修改，请刷新配置页后重试");
+    const fingerprint = fingerprintOf(config);
+    try {
+      // 重新读取权威以缩小陈旧窗口；文件写入跨await，仍不保证跨进程镜像实时一致。
+      await storage.syncCompatFile(storage.readConfig());
+      if (factory.refreshModels) await factory.refreshModels();
+      pendingApply = null;
+    } catch (error) {
+      pendingApply = { fingerprint, applyError: sanitizeApplyError(error) };
+      return { fingerprint, applied: false, applyError: pendingApply.applyError };
+    }
+    return { fingerprint, applied: true };
   }
+
+  // 隐藏只作用于 Axiom 的「可选择处」（模型选择器、本页目录）：Pi 运行时目录不动，
+  // 已用该模型的会话不会忽然报 Unknown model，只是再也选不到。同名自定义条目存在时
+  // 供应商级隐藏不生效（用户已经用覆盖接管了该 id）。
+  const hiddenSet = () => new Set(normalizeHidden(storage.getHidden()));
+  const customProviderIds = () => {
+    const providers = storage.readConfig()?.providers;
+    return new Set(providers && typeof providers === "object" && !Array.isArray(providers) ? Object.keys(providers) : []);
+  };
+  const visibleCatalog = () => {
+    const hidden = hiddenSet();
+    const custom = customProviderIds();
+    return factory.catalog().filter((m) => !hidden.has(m.key) && !(hidden.has(m.provider) && !custom.has(m.provider)));
+  };
 
   const sameId = (id) => (entry) => entry && typeof entry === "object" && entry.id === id;
   const asProvider = (value) =>
@@ -323,15 +380,32 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
 
   async function writeFavorites({ kind, key, favorite }) {
     validFavoriteKey(kind, key);
-    const store = normalizeFavorites(storage.getFavorites());
+    // 收藏同样用CAS，避免额外事务接口；冲突明确拒绝，由用户刷新重试，不虚报成功。
+    const { raw, value } = storage.favoritesState();
+    const store = normalizeFavorites(value);
     const list = store[kind];
     const index = list.indexOf(key);
     if (favorite && index < 0) list.push(key);
     if (!favorite && index >= 0) list.splice(index, 1);
     for (const group of FAVORITE_GROUPS)
       if (store[group].length > FAVORITE_CAP) throw new Error(`${group} 收藏最多 ${FAVORITE_CAP} 条`);
-    storage.setFavorites(store);
+    if (!storage.casFavorites(raw, store)) throw new Error("收藏已被其他窗口修改，请刷新后重试");
     return store;
+  }
+
+  // 隐藏/恢复：key 必须存在于当前目录（供应商 id 或 `provider/id`），不写会永久失效的垃圾条目。
+  function writeHidden({ key, hidden }) {
+    const known = new Set();
+    for (const model of factory.catalog()) {
+      known.add(model.provider);
+      known.add(model.key);
+    }
+    if (!known.has(key)) throw new Error(`未知的内置供应商或模型：${key}`);
+    const list = normalizeHidden(storage.getHidden());
+    const next = hidden ? [...new Set([...list, key])] : list.filter((entry) => entry !== key);
+    if (next.length > HIDDEN_CAP) throw new Error(`隐藏清单最多 ${HIDDEN_CAP} 条`);
+    storage.setHidden(next);
+    return { hidden: next };
   }
 
   // 在线拉取供应商模型列表（只读）：读已保存凭据/地址 → 单次 GET → 解析；不写盘、不触发 refreshModels/广播。
@@ -471,6 +545,9 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
     favorites: () => normalizeFavorites(storage.getFavorites()),
     // 单项 mutation：读-改-写单条，返回全量三组对象；不做整表替换，避免并发丢失。
     setFavorite: (request) => enqueue(() => writeFavorites(request)),
+    listCatalog: visibleCatalog,
+    // 单项 mutation（与收藏同语义，无指纹锁：隐藏清单独立于 models.json）。
+    setHidden: (request) => enqueue(() => writeHidden(request)),
     handle(request) {
       switch (request.type) {
         case "models.config.get":
@@ -489,6 +566,8 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
           return this.favorites();
         case "models.favorites.set":
           return this.setFavorite(request);
+        case "models.hidden.set":
+          return this.setHidden(request);
         case "models.provider.discover":
           return discover(request.providerId);
         default:

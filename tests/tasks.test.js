@@ -55,6 +55,21 @@ test("results require completion notification IDs, never wait or poll", async ()
   assert.equal(command.safeParse({ id: "r", type: "tasks.read", sessionId: "s", ...first, wait: false }).success, false);
 });
 
+test("publish separates safe view data from the full saved snapshot", async () => {
+  const { tasks, events } = fixture();
+  const [id] = tasks.start(["a"]);
+  await tasks.cancel();
+  const { data, saved } = events.filter((event) => event.type === "task.state").at(-1);
+  assert.deepEqual(Object.keys(data).sort(), ["error", "id", "runtime", "status", "task", "text"], "broadcast data stays a safe view");
+  assert.equal(data.status, "cancelled");
+  assert.equal("saved" in data, false);
+  assert.equal(saved.parentContext, "");
+  assert.equal("resultId" in saved, true);
+  assert.equal(typeof saved.createdAt, "number");
+  assert.equal(saved.updatedAt >= saved.createdAt, true);
+  assert.deepEqual(tasks.snapshotJob(tasks.jobs.get(id)), saved);
+});
+
 test("delegate freezes background at start and results hide metadata", async () => {
   let context = "本轮已登记摘要";
   let received;

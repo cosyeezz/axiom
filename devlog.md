@@ -1,5 +1,21 @@
 # 开发记录
 
+## 2026-09-13 全部 worktree 集成与清理
+- 决策：按用户要求集成所有附加工作区；先备份未提交内容，处理已有合并冲突，验证后推送 master 并清理附加 worktree。
+- 保留：主仓库 AGENTS.md 的本地规则整理转入功能分支提交；临时安装目录和 NUL 不纳入源码。
+- 复核：detached 工作区未跟踪 workspace-isolation.test.js 是旧版草稿（仍使用已废弃 files.browse）；master 已有更新后的 workspace.browse 测试，旧稿备份但不覆盖新版。
+- 涉及：AGENTS.md、devlog.md，以及各 SQLite 分支的原有变更。
+- 最终融合：保留隐藏/恢复模型新增功能、SQLite 拆表与懒恢复、跨进程 CAS；原始 storage/model-fixes/benchmark 文件逐字对照已吸收提交，确认重复后保留后续安全增强，五个原始分支历史合并前后源码差异为零。日志冲突保留双方条目，索引统一重建。
+- 验证：所有原 worktree HEAD 均为集成分支祖先；全量 npm test 365 项，363 通过、2 平台跳过、0 失败。基线页面时序失败单跑 3/3 通过。未启动或重启正式服务。
+- 清理保护：未提交改动、旧 detached 测试、截图及 19 个忽略日志备份至 ../worktrees/Axiom-merge-backup-20260913；保留主仓库未跟踪安装暂存目录、NUL、.env.local 与旧 stash，不删除其他仓库或非注册备份目录。
+
+## 2026-09-13 05:40+ UTC 合并模型设置重设计与最新 master（冲突融合）
+- 合并 8995365（模型设置重设计+选择性导入）到 SQLite 重构分支：5 个 UU 逐一人工融合，不选边。数字验证为严格并集：model-manager.js 461/118 = ours(10/3)+theirs(451/115)；tests/model-manager 584/70、tests/model-config 380/8 同理；devlog 为双方条目拼接。INDEX.md 由 reindex 重建。提交 69023fc。
+- 合并 master（55937d4）7 个 UU：database.js 同时保留 master 的 Node 版本门控（createRequire 动态加载 node:sqlite）与本分支的 closeSync/openSync 存储安全导入；sessions.js 采用 master 的 startRun 运行骨架与 retry 入口，把本分支的懒加载（ensureLoaded）装进 prompt 与 retry，未加载会话不再 NPE；tests/service.test.js 保留本分支更强的恢复断言（ready 且 workers=2）。提交 b761552。
+- README 6 处冲突按代码事实裁决：默认配置/预设存储取 master 表述（SQLite 权威，defaults.json 仅一次性迁移，代码 database.get("defaults","defaults") 佐证），摘要触发/维护假错误/remote 双重编码迁移/会话表/懒恢复等 5 处取本分支拆表后描述，会话存储段补回 master 独有的「旧每会话 JSON 首次启动只读导入」。knowledge.md 双方条目全部保留（89 条）。
+- 验证：全量 npm test 360 项 358 通过、0 失败、2 平台跳过；首次出现的 service.test.js 两例失败（until 超时、EBUSY unlink -shm）单独复跑 2/2 通过，判定为 knowledge.md 已记录的 Windows 平台偶发问题，非合并引入（合并未触碰 service.mjs/service.test.js）。
+- 涉及：上述源/测试/文档、codebase-map 索引与知识库。
+
 ## 2026-09-13 供应商协议「不设置」保存回显修复
 - 原因：providerForm 把已有供应商缺失的 api 当作新建模板，回读时补成 openai-completions，再次保存还可能写回该默认值。
 - 修改：仅新建表单采用模板默认协议；已有配置缺失 api 保持空值，不改后端协议校验、模型继承或界面样式。
@@ -40,6 +56,47 @@
 - 修改：public/style.css 隔离摘要时间行，时间/轮次靠左同排，正文间距4px、条目上下12px，正文保持13px；README.md 同步说明。不改变排序和摘要生成、不加依赖。
 - 验证：tests/summary-compact.test.js 新增样式回归，摘要UI共9项通过。全量282项280通过、1跳过、1服务恢复时序失败；该服务测试文件单独重跑15项全部通过。尚未真实浏览器验收，暂不合并。
 - 涉及：上述文件、devlog.md、codebase-map 索引与知识库。
+## 2026-09-13 05:54 UTC 性能计量复核与最终口径
+- 合入G修正f71e524（9351a7e），主审继续修复：非零退出被合法JSON掩盖、exit早于stdout排空、旧绑定字节遗漏namespace/key、token观察窗口漏message.start；所有子结果close后解析并检查退出码。锁实验victim先连接，holder拿锁后IPC通知写入，排除Node启动耗时，5000ms超时及原门槛不变。
+- 数据修正：任务progress按真实单条快照，不在旧侧人为累积数组；通知位每次切换、计时每次递增，排除同值空写；快照加ESM标记，不额外计语法探测开销。finally释放相位监视器，自检数据库关闭。
+- 验证：计量self-check6/6、存储/启动硬门槛6/6、两锁实验全过，退出0。05:52UTC大数据绑定字节每次约1.35MB→17–678B；无待通知SDK16→0；fake SDK启动362.5→2ms，首开34.820ms单列。300ms锁等328.3ms成功，6000ms锁等5561.7ms后预期失败。非正式数据，不把绑定字节当磁盘增量、不由WAL推导锁比例，small真实变更两侧p50均约2ms。
+- 文档完整重写docs/sqlite-performance.md，旧数字作废，以修正报告为准；README登记基准与历史独立计数回归。涉及tests/sqlite-benchmark.mjs、报告、README、本日志和索引/知识。
+- 集成预检发现master已由其他会话合入模型设置改版到8995365（33e7987），需先在功能worktree合并并复测。主仓INDEX/NUL是他人未提交内容，不动；跨进程CAS修复仍由独立任务进行。
+
+## 2026-09-13 05:45 UTC 撤回失败一致性、摘要恢复关联与重试词表
+- 已复现：PRAGMA query_only使撤回中的事件删除抛错，SDK已回退但网页历史未裁切，或网页已裁切却丢失撤回回执。修复先同步内存，再经saveChange提交整组短SAVEPOINT；失败通过既有error事件报告、pendingWrites保留整组清理，下次保存/关闭重试，仍把输入交还用户，不跨SDK持SQL事务。
+- 复核纠正：此前V01探针强行允许撤回已有完整回答的轮次，绕过真实recallLastMessage限制，不能据此确认“撤回后污染委派”。真正已确认的是崩溃窗口后摘要/触发记录缺entryId；恢复按唯一助手messageTimestamp回填并落库，同毫秒歧义/缺时间保留旧记录，不猜测删除。
+- 额外已复现：retry错误词表未传首次主代理、sessionData.selection未保存；补两处传递，重启主代理与子代理保持原词表。跨进程配置丢更新修复另由独立worktree处理，不持事务跨await。
+- 验证：tests/recall.test.js、session-memory.test.js、session-persistence.test.js三个新增用例先红后绿；38项定向全过，全量327项：325通过、0失败、2平台跳过。撤回用真实recallLastMessage+SDK树桩，另注入清理后半段失败证明整组回退后可重试，未降低断言。
+- 涉及：src/sessions.js、上述测试、README.md、devlog.md、docs/sqlite-refactor-plan.md、codebase-map知识与索引。正式服务、正式库仍未触碰；性能基准修正待最终复跑，不引用旧精确数字。
+
+## 2026-09-13 主审接管跨进程并发修复
+- 修正074d30c：pi-model-storage复用传入Database，不再按home硬编码另开连接；原文捕获解析固定脱敏错误。配置/凭据异步校验结束后单条SQL CAS，无事务跨await。收藏沿用明确冲突拒绝的CAS，避免额外事务接口与自动重放。
+- tests/helpers/model-concurrency-child.mjs改为捕获旧权威后停在CAS前（凭据停在fn内），父进程完成写入才放行；移除20/200ms sleep与8轮概率试验。结果等待close并检查退出码，异常finally终止子进程后才关闭数据库/删目录。
+- 增加非默认数据库文件名与配置/收藏/凭据三类坏JSON脱敏检查；修正派生文件注释，不承诺跨进程SDK实时同步。涉及两个产品文件、两个测试、helper、README、索引及知识库。
+- 验证：定向28/28通过，全量328项：326通过、0失败、2平台跳过。尚未合入集成分支，未触碰正式服务/数据库。
+
+
+## 2026-09-13 05:32 UTC 历史恢复索引与取消失败边界
+- 已复现：256条消息、256条重试使旧恢复逻辑读取消息65,664次；ID匹配已线性但后续retry逐条map/filter/slice，compaction逐条find仍为平方扫描。取消恰好正在恢复且SDK失败的会话会连带抛加载错误，虽无运行任务可取消。
+- 修复：src/sessions.js 按代理一次构建单调时间线与锚点，重试二分查询；同毫秒歧义、时间倒退、缺失时间、排队输入规则保持，压缩按ID对账。cancel等待失败加载后继续原有未加载直接返回语义，不重建SDK、不删记录。
+- 验证：tests/session-flow.test.js getter计数回归先红后绿，不依赖耗时阈值；tests/session-persistence.test.js 取消加载失败先红后绿。会话流程/保存/撤回/摘要30项全部通过；全量324项：322通过、0失败、2平台跳过，git diff --check通过。最终只读复核继续收口。
+- 基准：集成0582534/05bad78，但主审发现分位数未排序、SQL字节双计/混入读参数、事件循环采样未tick与部分静态门槛，旧报告精确数字暂不采信；独立任务修正计量与失败出口后重跑，不降低门槛。历史非平方硬门槛由上述getter测试承担。
+- 文档：README同步元数据启动/按需恢复/历史索引、基准入口；清除默认配置仍原子替换JSON和无守护/自启的过期描述。涉及上述源/测试、README.md、devlog.md、codebase-map脚本/索引/知识；正式服务和正式库仍未触碰。
+
+## 2026-09-13 UTC SQLite 存储修正：remote/config 去双重编码 + 维护记录假错误/无界 phases 修复
+- 原因：通用 Database 已对 value 做 JSON 序列化，remote/config 旧代码预 stringify 导致双重编码（库中存的是带引号的 JSON string）；maint persist 把上一次落库失败留下的 persistenceError 随下一次快照一起固化进库，重启后显示假错误；phases 只在 `phase()` 入口限长，restore 与 workerReady 追加不截尾，历史脏数据可无界放大。
+- 实现：`src/remote.js` 不再预 stringify（set 直接传对象）；parseConfig 兼容旧 string 与新 object（其他类型同样 fail closed），命中旧 string 且解析成功时一次读取即迁移成 object，坏结构不迁移、回退默认禁用，鉴权逻辑未动；`scripts/maint-state.mjs` persist 先 `delete data.persistenceError` 再存，失败时错误只留内存（下次成功自愈），restore 读入即丢弃残留 persistenceError（历史库已固化的也不显示），追加阶段收敛到唯一 `pushPhase()` 入口（超限从头部裁剪），restore 超长残留先截尾再补 boot，非数组 phases 防御性置空。
+- 涉及：src/remote.js、scripts/maint-state.mjs、tests/remote.test.js（fakeDatabase 对齐真实 Database 同步 JSON 语义；新增旧 string 迁移与坏 object fail closed 用例）、tests/service-settings.test.js（新增 persist 假错误/重启/phases 有界用例）、README.md（修正 remote.json/service-state JSON 的过时存储描述）、本日志。
+- 验证：remote 12/12、service-settings 9/9；全量 `npm test` 283 项 282 通过、0 失败、1 跳过（service.test.js「rebuild cancels swap」为既有时序抖动，master 未含本改动时 6 跑 4 挂，单独复跑通过）。检查两个测试文件无真实密钥：仅 user@example.com、hunter2、tokensecret 等显式虚构值，端点均为本地 mock/临时目录。
+- 边界：未改 database/main/server/service.mjs；依赖经 junction 指向 F:/Axiom/node_modules，未安装、未修改共享依赖。
+
+## 2026-09-13 04:45 UTC SQLite 拆表主接线（实施中，尚未全量验收）
+- 决策：按用户要求直接实施五表，不加双写、旧版兼容、反向迁移或专用 Worker；一致性备份、逐会话事务、幂等标记与字段对账仍是数据安全底线。
+- 主接线：`src/sessions.js` 改按实体增量保存，失败增量留待下一次写入/关闭重试，多实体变更使用同步 SAVEPOINT；启动仅读元数据、待通知会话串行恢复，首次打开以 Promise 去重。改标题/删除未打开会话不创建 SDK；缺 JSONL 记录仍可见但拒绝空历史覆盖。撤回同步清理摘要与事件；消息匹配改为 ID Map 与单调游标。
+- 并发与页面：`src/server.js` 等待恢复再 attach，慢旧请求不覆盖新订阅，加载中阻止维护；`public/model-manager.js` 区分已保存与已应用，重试当前配置不重放写操作，复用现有 Linear 提示组件，不改样式 token。
+- 涉及：上述源文件、会话/通知/迁移/模型页面/服务测试，`README.md`、`docs/sqlite-refactor-plan.md`。事件生产包 `521b5dc` 已集成；数据库/模型/配置子包仍待交付。
+- 已运行：模型页面12项、服务API3项、任务模块4项通过，语法检查与 `git diff --check` 通过。会话集成测试仍因存储包缺 `src/session-store.js` 阻塞；不能把新增未运行用例当作验收。未启动正式数据迁移或重启正式服务。
 
 ## 2026-09-12 19:37 UTC 文件/文件夹搜索与 @ 补全：名称模糊匹配 + 工作空间递归
 - 原因：输入框上沿「＋」与 `@` 补全都只能在当前目录里按子串过滤名称，工作空间根目录只有 `public/` 这类目录名，输入 `@app` 或 `@apjs` 根本匹配不到 `public/app.js`，用户反馈「艾特的时候输入无法匹配」。
@@ -778,6 +835,41 @@
 - 内容：新增 database/pi-model-storage，迁移 sessions/model-config/remote/maint-state 的管理数据；main/pi/server 接线，摘要设置页、模型页文案与协议同步。保留 Pi JSONL，迁移按文件幂等、缺失历史不覆盖；Node 支持范围升为22.13+（22.x）或24+。
 - 验证：数据库、迁移、凭据真实 SDK、配置 UI、守护测试均有回归；全量最后一项守护时序测试首次失败、单独重跑15/15通过，最终全量复跑275项：274通过、0失败、1跳过。
 
+## 2026-09-12 记忆与任务按变更增量落盘（事件级 save 契约）
+- 原因：每个摘要/触发器/进度事件都触发全会话 persist（整行序列化重写），写入放大且随任务数增长；主审接线单任务/单变更保存需要精确的变更描述。
+- 修改：src/session-memory.js 的 memoryHooks(item, save, job) 保持同步时序，save 改为 save(change) 描述变更：{summary:record}、{event:{type:"summary_trigger",record}}、{turn:{agentId,turn}}、{title:true}、{progress:{taskId,record}}、{delivery:record,delivered:[{taskId,progressId}]}；一次 onReply 多变更合并同一 change，无变更不调用 save；失败回复只结算 trigger；交付记录赋稳定 id、保留 50 条审计。src/tasks.js 新增 createdAt/updatedAt（publish 刷新 updatedAt），snapshot() 复用 snapshotJob(job)；publish 广播 {type:"task.state",taskId,data:安全view含runtime,saved:完整单条快照}，saved 含 parentContext/resultId/notified/progress/runtime，广播前由主审剥离；runtime 事件仍只更新内存不逐 token 写。tests/session-memory.test.js 修复 Sessions 测试库隔离（storagePath 用 root/storage，库落各测试独占 Temp root，不再共享公共 Temp axiom.db），新增变更契约断言；tests/tasks.test.js 新增 data/saved 分离断言。
+- 验证：node --test session-memory+tasks 12 项通过；session-flow/task-notifications/message-activity/session-persistence/session-created-at 25 项通过；app.test 3 项通过。
+
+## 2026-09-12 模型存储修复：部分成功回执、导入自愈、临时文件加固
+- 原因：审查确认三处缺陷——writeConfig 先库后派生后刷新产生部分成功但向上抛错（UI 误判保存失败而权威已变）；旧配置导入坏文件即打迁移标记，用户修复原文件后永远无法重导；compat 原子写临时文件名可碰撞且 writeFile 失败路径泄漏临时文件、rename 无瞬时占用重试。
+- 内容（src/pi-model-storage.js + src/model-config.js + 两个对应测试）：
+  - writeConfig 拆为两阶段：仅权威落库；派生兼容文件由调用方经 syncCompatFile 显式重建。saveProvider/saveModel/deleteProvider/deleteModel 落库成功后派生/刷新失败时不再抛错，返回 `{fingerprint, applied:false, applyError(脱敏截断)}` 并记挂起状态；库写入失败照常抛。models.config.get 读取路径顺带重试挂起应用（GET 幂等、不重放 mutation），响应新增可选 `applyError`（有 = 已保存未应用，无 = 已应用），重试成功即清除；无挂起时 GET 不额外刷新。同一 fingerprint 重试保存仍可重新派生应用（乐观锁照常通过，apply 幂等）。不新增协议类型，server/ui 由主审接线。
+  - 导入门闩改为仅成功后打标记：读失败/坏 JSON/结构拒绝只记去重告警（同源同消息只记一条）且不打标记，修复原文件后下次 init 自动重导；导入干净时清除该来源陈旧告警。混合坏 auth：好条目入库、坏条目告警、权威已有 providerId 一律不覆盖（UI 新值优先），修复后补导入。凭据 modify 本进程串行语义保持，不加跨 await SQL 事务、不做多 worker。
+  - compat 临时文件改 randomUUID 唯一名，write/rename 任一步失败完整清理；rename 瞬时占用（EPERM/EBUSY）有限退避重试 2 次，绝不先删目标；校验临时文件同样 randomUUID 并把 writeFile 移入 try/finally。
+- 验证：npm test 全量 288 项 287 通过 0 失败 1 跳过（此前 service.test.js 偶发失败为基线时序抖动，stash 对比确认与本分支无关）；新增 7 条故障注入测试（compat 失败回执+同指纹重派生、refresh 失败回执、GET 自愈、修复坏源再 init、混合 auth 不覆盖新值、告警去重、rename 失败清理临时文件）。测试全部使用独立临时目录，未触碰真实配置。
+- 涉及文件：src/model-config.js、src/pi-model-storage.js、tests/model-config.test.js、tests/pi-model-storage.test.js、README.md。
+
+## 2026-09-12 SessionStore 四表实体存储（feat/sqlite-storage）
+- 原因：单会话整 JSON 每次保存全量重写，通知/进度高频更新代价大，且无法按实体增量查询。
+- 内容：新增 src/session-store.js——sessions/summaries/session_events/tasks 四表 + store 配置表保留；事件身份 (session_id,type,agent_id,key) 部分唯一索引；tasks 元数据列（memory_turn/notified/progress_delivered/progress）权威、record 存任务内容，仅元数据变化只 UPDATE 列不读不写大 record；无 id 摘要 `anon-<sha256前20>` 稳定 id；change(work) SAVEPOINT 供多实体原子变更；importLegacySession/migrateLegacy 单事务迁移（坏行告警保留源、精确标记、幂等不覆盖新表）。src/database.js：busy_timeout 先于 journal_mode、外键 ON、暴露 prepare/exec、list() 坏行逐行隔离且告警只报键位不带内容。
+- 验证：node --test tests/database.test.js tests/session-store.test.js 18/18 通过；全量 268 项中 9 个失败经基线（stash 后重跑）确认为既有环境性失败，与本次无关。
+- 涉及：src/database.js、src/session-store.js、tests/database.test.js、tests/session-store.test.js。集成（sessions.js 接线、README）由主审后续处理。
+
+## 2026-09-12 迁移安全收口：脱敏补漏 + 首次导入前 VACUUM INTO 备份
+- 原因：主审确认两处硬阻塞——database.js get() 裸 JSON.parse（Node 21+ SyntaxError 携带原文片段）与 list() 告警拼接 error.message 均可泄露存储原文；importLegacySession 原注释把库级备份推给调用方，但集成层没有 VACUUM 入口。
+- 内容：get() 解析失败抛脱敏错误（只报 namespace/key）；list() 告警去 error.message 只报键位；Database 暴露只读 path；importLegacySession 在每次真正导入前（已标记跳过/新表同 id 跳过不触发）自动 VACUUM INTO 到 <主库>.pre-store-migration.db，快照已存在则保留首次快照不覆盖，备份失败即抛错中止迁移。
+- 验证：node --test tests/database.test.js tests/session-store.test.js 22/22 通过（新增 get 脱敏断言、备份生成/快照可读/不覆盖/跳过路径不备份等用例）。
+- 涉及：src/database.js、src/session-store.js、tests/database.test.js、tests/session-store.test.js。
+
+## 2026-09-13 05:20 UTC SQLite 集成：增量写、懒加载与安全收口
+- 内容：集成 A/B/C/D 提交，sessions 接 SessionStore 增量描述，失败增量保留重试、SAVEPOINT 全有全无；新建落库/历史装配失败释放 SDK 与导入副本。启动仅取元数据，首次打开去重恢复，未加载改名和关闭重试失败队列；server attach 序号防迟到订阅，加载中停止拒绝。默认配置与预设迁移独立，恢复历史 ID 用 Map 与单向游标。任务终态只存一次，通知前重检主轮状态，通知确认只改单任务列。
+- 模型：页面保留已保存未应用状态和新指纹，重读即可重试应用，不重放 mutation；错误只暴露固定提示及已知 errno，不把截断当脱敏。迁移坏 JSON 日志同样不携带解析原文。
+- 迁移：A 采用嵌套 SAVEPOINT 后撤回事务回归转绿；主审追加唯一临时备份+成功更名，失败残片清理，避免下次 exists 误判成功；SQL 排除已迁移旧源，只取待迁移键再单条解析，避免重启读全部大 JSON。不做双写、反向迁移或回滚框架，保留旧源与一致性备份。
+- 权限复现：WSL Ubuntu 22.04 / Node 22.23.1 / Linux 临时目录中，原实现主库600、WAL/SHM644；根因 chmod 在 WAL 建表后。现打开连接前创建/收紧主库与已有 sidecar（不改共享目录），新 sidecar 继承600；POSIX 权限失败显式拒绝。Windows Node24 临时目录 icacls 实测为继承ACL（含本机用户、系统、管理员及额外继承SID），不宣称 chmod 能隔离 ACL，不触碰用户目录权限。
+- 验证：权限改动前全量321项：320通过、0失败、1原有跳过；存储/迁移/持久化38/38。权限改动后 Linux 数据库+存储25/25（包括新旧 sidecar600、备份失败再试、重复迁移不读源）；Windows同组24通过、1平台跳过。全量最终复跑与独立复核/性能报告继续收口。
+- 涉及：src/{sessions,server,session-store,database,model-config}.js、public/model-manager.js、tests/{capabilities,compaction-config,model-config,model-manager,recall,service-api,session-flow,session-memory,session-migration,session-persistence,task-notifications,database,session-store,service}.test.js、README.md、docs/sqlite-refactor-plan.md、codebase-map三层索引/知识。
+- 全量复跑曾复现既有 `rebuild cancels swap` 时序失败（workers 1≠2）：service.mjs 先 state.fail 落盘才 fork 恢复进程，测试误把 status failed 当恢复完成。tests/service.test.js 复用 until 等真实 ready 且 workers=2，再保留原严格断言；不加固定 sleep、不降低判定、不改守护产品逻辑。定向复跑另外暴露测试桩直接覆写 maint-env 被读到半截 JSON，改为完整临时文件后 rename；随后全量322项：320通过、0失败、2跳过（原有平台用例及Windows跳过POSIX权限测试，后者已在Linux实跑）。
+
 ## 2026-09-12 22:40 — 模型设置合并最新 master
 - 原因：用户要求合并并推送；master 已迁移 SQLite，保留新存储实现并适配 discover 只读加载、收藏断言及隔离预览，保留分栏与勾选导入。涉及 src/model-config.js、public/model-manager.js、模型测试与预览、README、协议、索引；合并双方 devlog/knowledge 记录。
 - 验证：两份 Playwright 回归通过；全量最终 299 通过、1 跳过、0 失败。此前守护测试出现恢复时序断言与 Windows EBUSY（单独15/15通过），未为此次合并改动守护逻辑。
@@ -808,6 +900,11 @@
 - 验证：Playwright 用真实 dialog 片段（index.html 的 `#settings` 块 + 造 60 段占位内容）实测 1200/700/420px：滚到底后分类列 `navTop` 完全不变（145/145/141），右侧内容分别在自身容器内滚动；全量 `npm test` 305 项 304 过 1 跳过 0 失败。
 - 涉及：public/style.css、devlog.md、.pi/skills/codebase-map/index。
 
+## 2026-09-13 10:10 — 内置/扩展供应商与模型可隐藏（models.hidden.set）
+- 原因：内置目录与模型选择器条目只增不减，用户不想再选到的模型会一直出现在候选里；需要一个不影响 Pi 运行时的纯 Axiom 侧隐藏入口。
+- 内容：新增 `models.hidden.set { key, hidden }` 协议命令（key = 供应商 id 或 `provider/id`），SQLite models 命名空间新增独立 `hidden` 键（不写 models.json，SDK schema 只认 provider 定义）；`model-config.js` 的 `listCatalog()` 过滤隐藏项（供应商级隐藏在有同名自定义覆盖时让位），`models.config.get` 回传 `hidden` 清单；`server.js` 的 `models.list`（选取入口）改用过滤后目录，Pi 运行时 `catalog()` 不动；模型管理页目录行加隐藏图标 + 二次确认弹窗，隐藏清单集中在左侧「已隐藏」页一键恢复。
+- 验证：全量 `npm test` 307 项 306 过 1 跳过 0 失败（含新增 models.hidden.set 测试：单模型/整供应商隐藏、覆盖让位、恢复幂等、未知 key 与非法载荷拒绝、models.json 不被污染）。
+- 涉及：src/protocol.js、src/server.js、src/model-config.js、src/pi-model-storage.js、public/model-manager.js、public/model-manager.css、tests/model-config.test.js、README.md、devlog.md、.pi/skills/codebase-map/INDEX.md。
 ## 2026-09-13 10:10 — 修复跨行 `<axiom_summary>` 导致闭合标签漏进正文、摘要未入库
 - 原因：用户截图里助手正文末尾出现裸的 `</axiom_summary>`。根因是 `public/memory-tags.js` 的 `TAG` 正则内容用 `[^\n]`，只认单行有界标签；模型实际把开启标签、正文、闭合标签分三行写。按行处理时：开启标签行同行无闭合 → 整行丢弃；正文行无标签 → 原样保留；闭合标签行不匹配 `OPEN`（`<name>` 而非 `</name>`）→ 原样保留，Markdown 把正文与闭合标签并成一段就成了截图效果。同一原因下 `extractMemoryTags` 也提取不到，该条摘要没入库（trigger 记 missing）。
 - 内容：`public/memory-tags.js` —— `TAG` 内容改 `[\s\S]`，标签可跨行，提取时 `replace(/\s+/g," ")` 把换行折叠为空格；新增 `segments()` 按代码围栏把连续同类行合成段，段内整段匹配（围栏内仍原样保留）；strip 用 `HOLE`（`\u0000`）占位替换被删标签，整行只剩占位符才丢弃以免留空行；首个无配对闭合的开启标签截到段尾（流式中的摘要整块隐藏）；新增 `CLOSE` 正则删除落单闭合标签，兜住开启标签丢失（跨围栏、被截断）时的漏出。

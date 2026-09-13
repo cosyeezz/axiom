@@ -4,6 +4,36 @@ import { once } from "node:events";
 import { WebSocket } from "ws";
 import { createServerApp } from "../src/server.js";
 
+test("并发打开按最新请求订阅，加载中的会话阻止服务维护", async () => {
+  let release;
+  const loading = new Promise(resolve => { release = resolve; });
+  const subscriptions = new Set();
+  const sessions = {
+    items: new Map([["old", { loading, tasks: { jobs: new Map() } }]]),
+    list: () => [], close: async () => {},
+    ensureLoaded: async id => { if (id === "old") await loading; },
+    snapshot: id => ({ sessionId: id }),
+    subscribe: id => { subscriptions.add(id); return () => subscriptions.delete(id); },
+  };
+  const app = createServerApp(sessions, { stop: () => assert.fail("加载中不能停止") });
+  app.server.listen(0, "127.0.0.1");
+  await once(app.server, "listening");
+  const url = `http://127.0.0.1:${app.server.address().port}`;
+  const ws = new WebSocket(url.replace("http:", "ws:") + "/ws", ["axiom"]);
+  await once(ws, "open");
+  try {
+    assert.equal((await fetch(url + "/service/stop", { method: "POST" })).status, 409);
+    const response = once(ws, "message");
+    ws.send(JSON.stringify({ id: "1", type: "session.attach", sessionId: "old" }));
+    ws.send(JSON.stringify({ id: "2", type: "session.attach", sessionId: "latest" }));
+    assert.equal(JSON.parse((await response)[0]).id, "2");
+    const earlier = once(ws, "message");
+    release();
+    assert.equal(JSON.parse((await earlier)[0]).id, "1");
+    assert.deepEqual([...subscriptions], ["latest"], "慢旧请求不能切走新订阅");
+  } finally { release(); ws.terminate(); await app.close(); }
+});
+
 test("stop rejects foreign origins and busy sessions, accepts one managed shutdown", async () => {
   let status = 'running', stopped = 0;
   const app = createServerApp({ list: () => [{ status }], close: async () => {} }, {

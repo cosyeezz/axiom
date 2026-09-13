@@ -89,7 +89,8 @@ const fakeChild = (output) => {
   return child;
 };
 
-// 共享 SQLite 最小接口 mock：get(namespace,key) / set(namespace,key,value)，带调用计数。
+// 共享 SQLite 最小接口 mock：语义与真实 Database 一致（set 存 JSON 文本、get 返回解析后值），
+// store 直读得到原始库文本；带调用计数。
 const fakeDatabase = () => {
   const store = new Map();
   const calls = { get: 0, set: 0 };
@@ -98,11 +99,12 @@ const fakeDatabase = () => {
     calls,
     get: async (ns, key) => {
       calls.get += 1;
-      return store.get(`${ns}/${key}`) ?? null;
+      const raw = store.get(`${ns}/${key}`);
+      return raw === undefined ? null : JSON.parse(raw);
     },
     set: async (ns, key, value) => {
       calls.set += 1;
-      store.set(`${ns}/${key}`, String(value));
+      store.set(`${ns}/${key}`, JSON.stringify(value));
     },
   };
 };
@@ -333,15 +335,52 @@ test("共享 database：无旧 JSON 默认禁用并落库；损坏 SQLite 值 fa
   assert.deepEqual(JSON.parse(db.store.get("remote/config")), { enabled: false, email: "" });
   assert.equal(await readdir(home).then((f) => f.includes("remote.json")), false);
 
-  // 库中值损坏：同 JSON 损坏策略，回退默认禁用（fail closed）
+  // 库中值损坏（旧 string 格式但内容坏）：同 JSON 损坏策略，回退默认禁用（fail closed）
   const db2 = fakeDatabase();
-  db2.store.set("remote/config", "{oops");
+  db2.store.set("remote/config", JSON.stringify("{oops")); // 原始库文本：合法 JSON string，内容非 JSON
   const app2 = createServerApp({ close: async () => {} });
   t.after(() => app2.close());
   const remote2 = await createRemoteAccess({ home, app: app2, database: db2, tailscale: mockTailscale(), bindHost: "127.0.0.1" });
   const broken = await remote2.status();
   assert.equal(broken.enabled, false);
   assert.equal(broken.active, false);
+
+  // 库中为新 object 格式但结构损坏：同样 fail closed，且不迁移（坏结构不固化）
+  const db3 = fakeDatabase();
+  db3.store.set("remote/config", JSON.stringify({ enabled: "yes", email: 5, extra: 1 }));
+  const app3 = createServerApp({ close: async () => {} });
+  t.after(() => app3.close());
+  const remote3 = await createRemoteAccess({ home, app: app3, database: db3, tailscale: mockTailscale(), bindHost: "127.0.0.1" });
+  const brokenObject = await remote3.status();
+  assert.equal(brokenObject.enabled, false);
+  assert.equal(brokenObject.active, false);
+  assert.equal(db3.calls.set, 0, "坏结构不迁移");
+});
+
+test("共享 database：旧 string 双重编码一次读取迁成 object；后续读取不再写库", async (t) => {
+  const home = await mkdtemp(join(tmpdir(), "axiom-remote-mig-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const db = fakeDatabase();
+  // 旧版写入形态：parseConfig 里预 stringify + Database.set 再序列化 → 双重编码 string
+  db.store.set("remote/config", JSON.stringify(JSON.stringify({ enabled: true, email: EMAIL })));
+  const create = async () => {
+    const app = createServerApp({ close: async () => {} });
+    t.after(() => app.close());
+    return createRemoteAccess({ home, app, database: db, tailscale: mockTailscale(), bindHost: "127.0.0.1" });
+  };
+
+  const remote = await create();
+  const s = await remote.status();
+  assert.equal(s.enabled, true, "旧格式许可照常生效");
+  assert.equal(s.active, true);
+  // 一次读取成功 → 迁移成 object（单层 JSON，不再是带引号的 string）
+  assert.equal(db.calls.set, 1, "迁移恰好写一次");
+  assert.deepEqual(db.store.get("remote/config"), JSON.stringify({ enabled: true, email: EMAIL }));
+
+  // 重启：已是 object → 不再写库，配置不变
+  const remote2 = await create();
+  assert.equal((await remote2.status()).enabled, true);
+  assert.equal(db.calls.set, 1, "object 格式无迁移写入");
 });
 
 test("whois 认证：同账号放行；tag/他账号/未启用/伪造头/Host/Origin 拒绝；缓存与并发上限", async (t) => {

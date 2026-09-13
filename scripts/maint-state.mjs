@@ -24,6 +24,11 @@ export async function createMaintState({ database, key, legacyFile, redactions =
     operation: null, operationId: null, status: "idle", phase: "boot",
     phases: [], startedAt: null, updatedAt: null, error: null, log: "",
   };
+  // 唯一追加入口：任何来源的阶段（boot/操作/ready）都经此入列，超限从头部裁剪，保证有界。
+  const pushPhase = (name) => {
+    data.phases.push({ phase: name, at: now() });
+    if (data.phases.length > PHASE_LIMIT) data.phases.splice(0, data.phases.length - PHASE_LIMIT);
+  };
   // 恢复统一入口：结果字段全保留（读入即脱敏），只重置当前 worker 字段，
   // running 改判 interrupted（无保存原因时补固定说明），并追加本次 boot 阶段。
   const restore = (saved) => {
@@ -37,8 +42,13 @@ export async function createMaintState({ database, key, legacyFile, redactions =
         : saved.error ? sanitize(saved.error, redactions) : null,
       log: sanitize(saved.log ?? "", redactions),
       phase: "boot",
-      phases: [...saved.phases ?? [], { phase: "boot", at: now() }],
+      // 历史阶段有界截尾：脏数据/超长残留也不放大，boot 后仍 ≤ PHASE_LIMIT。
+      phases: Array.isArray(saved.phases) ? saved.phases.slice(-PHASE_LIMIT) : [],
     };
+    // persistenceError 只属于上一次运行时：历史库可能残留（旧版随快照落库），
+    // 本次会话尚未发生落库失败，读入即丢弃，重启不显示假错误。
+    delete data.persistenceError;
+    pushPhase("boot");
   };
   const stored = database.get(NAMESPACE, key);
   if (stored !== undefined) restore(stored);
@@ -54,11 +64,13 @@ export async function createMaintState({ database, key, legacyFile, redactions =
   let timer = null;
   const persist = () => {
     data.updatedAt = now();
+    // 先清过期错误再存：写入快照永不携带 persistenceError（成功路径不把旧错误固化进库，
+    // 重启后自然无假错误）；落库失败时错误只留内存（本次会话可见），同样不落库。
+    delete data.persistenceError;
     try {
       database.set(NAMESPACE, key, data);
-      delete data.persistenceError;
     } catch (error) {
-      // 落库失败必须可见（service.log 可查），绝不静默假装成功。
+      // 落库失败必须可见（service.log 可查），绝不静默假装成功；下次 persist 成功即自愈。
       data.persistenceError = "维护记录未能保存；当前结果仅在内存中，重启后可能丢失";
       console.error(`维护状态落盘失败：${error.message}`);
     }
@@ -72,8 +84,7 @@ export async function createMaintState({ database, key, legacyFile, redactions =
     flush() { clearTimeout(timer); return persist(); },
     phase(name) {
       data.phase = name;
-      data.phases.push({ phase: name, at: now() });
-      if (data.phases.length > PHASE_LIMIT) data.phases.splice(0, data.phases.length - PHASE_LIMIT);
+      pushPhase(name);
       return persist();
     },
     begin(operationId, operation) {
@@ -90,7 +101,7 @@ export async function createMaintState({ database, key, legacyFile, redactions =
       data.ready = true;
       data.version = typeof version === "string" ? version : null;
       data.phase = "ready";
-      data.phases.push({ phase: "ready", at: now() });
+      pushPhase("ready");
       return persist();
     },
     appendLog(text) { data.log = sanitize(data.log + text, redactions); debounced(); },
