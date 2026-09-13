@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-13 UTC SQLite 存储修正：remote/config 去双重编码 + 维护记录假错误/无界 phases 修复
+- 原因：通用 Database 已对 value 做 JSON 序列化，remote/config 旧代码预 stringify 导致双重编码（库中存的是带引号的 JSON string）；maint persist 把上一次落库失败留下的 persistenceError 随下一次快照一起固化进库，重启后显示假错误；phases 只在 `phase()` 入口限长，restore 与 workerReady 追加不截尾，历史脏数据可无界放大。
+- 实现：`src/remote.js` 不再预 stringify（set 直接传对象）；parseConfig 兼容旧 string 与新 object（其他类型同样 fail closed），命中旧 string 且解析成功时一次读取即迁移成 object，坏结构不迁移、回退默认禁用，鉴权逻辑未动；`scripts/maint-state.mjs` persist 先 `delete data.persistenceError` 再存，失败时错误只留内存（下次成功自愈），restore 读入即丢弃残留 persistenceError（历史库已固化的也不显示），追加阶段收敛到唯一 `pushPhase()` 入口（超限从头部裁剪），restore 超长残留先截尾再补 boot，非数组 phases 防御性置空。
+- 涉及：src/remote.js、scripts/maint-state.mjs、tests/remote.test.js（fakeDatabase 对齐真实 Database 同步 JSON 语义；新增旧 string 迁移与坏 object fail closed 用例）、tests/service-settings.test.js（新增 persist 假错误/重启/phases 有界用例）、README.md（修正 remote.json/service-state JSON 的过时存储描述）、本日志。
+- 验证：remote 12/12、service-settings 9/9；全量 `npm test` 283 项 282 通过、0 失败、1 跳过（service.test.js「rebuild cancels swap」为既有时序抖动，master 未含本改动时 6 跑 4 挂，单独复跑通过）。检查两个测试文件无真实密钥：仅 user@example.com、hunter2、tokensecret 等显式虚构值，端点均为本地 mock/临时目录。
+- 边界：未改 database/main/server/service.mjs；依赖经 junction 指向 F:/Axiom/node_modules，未安装、未修改共享依赖。
 ## 2026-09-12 19:37 UTC 文件/文件夹搜索与 @ 补全：名称模糊匹配 + 工作空间递归
 - 原因：输入框上沿「＋」与 `@` 补全都只能在当前目录里按子串过滤名称，工作空间根目录只有 `public/` 这类目录名，输入 `@app` 或 `@apjs` 根本匹配不到 `public/app.js`，用户反馈「艾特的时候输入无法匹配」。
 - 实现：`src/sessions.js` 新增 `fuzzyHit()`（忽略大小写、字符按顺序出现即命中）与 `matchRank()`（完全相等 → 前缀 → 子串越靠前越好 → 子序列），`listFiles()` 在 `query` 非空时改走 BFS 递归搜索 `searchEntries()`：只匹配名称、不回读文件、跳过 `.git`/`node_modules`/符号链接，按匹配质量排序后一次返回（`nextOffset: null`），递归目录数封顶 400、单目录不可读只跳过；无搜索词时保持原目录优先排序 + 分页（每页 200）。`browse()`/`workspace.browse` 增加 `query` 参数（`protocol.js` 同步为 `query: z.string().max(200).default("")`），`app.js` 的 `@` 补全把最后一段作为 `query` 发给服务端，技能搜索（＋ 菜单与 `/` 补全）同样改为名称模糊、说明仍按子串。`file-picker.js` 搜索命中行右侧显示所在相对目录，避免深浅目录同名文件无法区分。
