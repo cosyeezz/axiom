@@ -66,7 +66,7 @@ const ready = () => {
   if (fs.existsSync('node_modules/staged') && process.env.FAKE_START_RESULT === 'timeout') return;
   process.send({ type: 'service.ready', instanceId: process.env.AXIOM_INSTANCE_ID, version: 'test' });
 };
-if (fs.existsSync('crash')) process.exit(1);
+if (fs.existsSync('crash') || (fs.existsSync('crash-replacement') && Number(fs.readFileSync('workers', 'utf8')) > 1)) process.exit(1);
 if (!fs.existsSync('sent')) {
   fs.writeFileSync('sent', 'yes');
   const lines = fs.existsSync('requests') ? fs.readFileSync('requests', 'utf8').split('\\n').filter(Boolean) : [];
@@ -318,7 +318,47 @@ test("rebuild cancels swap when worker stop exits non-zero", async () => {
     assert.equal(existsSync(join(root, ".node_modules-backup")), false);
     assert.equal(existsSync(join(root, "build-called")), false);
     assert.equal(await readMaybe(join(root, "node_modules", "old-marker")), "1", "依赖原样保留");
+    await until(async () => (await getStatus(root)).ready);
     assert.equal(parseInt(await readFile(join(root, "workers"), "utf8"), 10), 2, "旧代码拉起恢复服务");
+  } finally { await teardown(base, child); }
+});
+
+test("rebuild with leftover backup refuses before stopping the healthy worker", async () => {
+  const { base, root } = await buildWorkspace();
+  await mkdir(join(root, '.node_modules-backup'));
+  await writeFile(join(root, '.node_modules-backup', 'keep'), 'preserved');
+  const child = await startTest(root, {
+    requests: [{ type: 'service.restart', mode: 'rebuild', requestId: 'leftover' }],
+  });
+  try {
+    await until(async () => await readMaybe(join(root, 'resumed')));
+    const state = await getStatus(root);
+    assert.equal(state.status, 'failed');
+    assert.equal(state.ready, true);
+    assert.equal(state.phase, 'preparing');
+    assert.match(state.error, /备份目录已存在/);
+    assert.equal(await readMaybe(join(root, 'stopped')), null);
+    assert.equal(await readMaybe(join(root, 'workers')), '1');
+    assert.equal(await readMaybe(join(root, '.node_modules-backup', 'keep')), 'preserved');
+    assert.equal((await readdir(root)).some((name) => name.startsWith('.axiom-stage-')), false);
+  } finally { await teardown(base, child); }
+});
+
+test("failed maintenance replacement resumes bounded crash retries instead of staying silently offline", async () => {
+  const { base, root } = await buildWorkspace();
+  const npm = await installNpmShim(base);
+  const child = await startTest(root, {
+    requests: [{ type: 'service.restart', mode: 'rebuild', requestId: 'failed-recovery' }],
+    touch: [['stop-exit', '3'], ['crash-replacement', '1']],
+    env: { AXIOM_NPM: npm, AXIOM_CRASH_BACKOFF_MS: '30', AXIOM_MAX_CRASH_RETRIES: '2' },
+  });
+  try {
+    await until(async () => /连续崩溃已达上限/.test((await getStatus(root)).error ?? ''));
+    const workers = await readMaybe(join(root, 'workers'));
+    assert.equal(Number(workers), 5, 'original + failed recovery + bounded retry sequence');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal(await readMaybe(join(root, 'workers')), workers);
+    assert.equal((await getStatus(root)).ready, false);
   } finally { await teardown(base, child); }
 });
 
