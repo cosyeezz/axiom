@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 20:25:30）
+# Axiom 多级代码索引（生成于 2026/9/12 22:15:04）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -17,7 +17,7 @@
 | public/model-picker.js | 300 | 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互 | GAP, EDGE, TYPEAHEAD_MS, el |
 | public/service-settings.js | 278 | 设置页服务维护：真实进度、结果、更新确认与独立维护通道 | MAINT_URL_RE, POLL_MS, initServiceSettings |
 | public/stream-renderer.js | 46 | 流式增量渲染状态机 | createStreamRenderer |
-| public/style.css | 1332 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1333 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | public/text-contrast.css | 46 | 文字专用对比度档位与调节面板 | - |
 | public/text-contrast.js | 113 | 文字对比度按钮、实时调节与本地偏好 | KEY, MIN, MAX, STEP |
 | public/tooltip.css | 50 | 共享暗色悬停说明样式 | - |
@@ -106,6 +106,7 @@
 | tests/session-sidebar-ui.py | 104 | node --test 测试（npm test） | - |
 | tests/smoke.js | 67 | node --test 测试（npm test） | TIMEOUT, sessions |
 | tests/stream-renderer.test.js | 99 | node --test 测试（npm test） | - |
+| tests/summary-compact.test.js | 21 | node --test 测试（npm test） | - |
 | tests/task-notifications.test.js | 165 | node --test 测试（npm test） | factoryFixture, tick, until |
 | tests/task-timer.test.js | 55 | node --test 测试（npm test） | factory, state, settle |
 | tests/tasks.test.js | 96 | node --test 测试（npm test） | fixture |

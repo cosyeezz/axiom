@@ -428,3 +428,8 @@
 - 根因：`workspace.browse` 与 `files.browse` 的 `query` 只在当前层用 `entry.name.includes()` 子串过滤，既不递归也不模糊；`app.js` 在 `public/` 里，根层永远匹配不到。
 - 修复：src/sessions.js 抽出 `fuzzyHit()`/`matchRank()` 与 BFS `searchEntries()`，`query` 非空时递归搜索当前 `path` 子树（跳过 `.git`/`node_modules`/符号链接）、只匹配名称、按匹配质量排序后一次返回（不分页，上限 60 条、目录上限 400）；`workspace.browse` 增加 `query`，前端把 `@` 后最后一段当 `query` 发出。
 - 防再犯：tests/session-flow.test.js、tests/workspace-picker.test.js 断言递归与模糊（`appjs` → `src/deep/nested-app.js`）；tests/app.test.js 的 workspace.browse 桩件按 `req.query` 返回根目录没有的 `src/app.js`，保证「根层没有也能命中」这条回归；改搜索前先直连 `Sessions.browse()` 在真实工作空间量耗时，别凭感觉加索引/防抖。
+
+### 2026-09-13 摘要列表稀疏与全局样式串用
+- 根因：summary-meta 使用 header 继承顶栏高度与缩进；settings-body p 覆盖摘要正文。
+- 修复：style.css 隔离时间行尺寸、限定弹窗直属 header、提高摘要正文选择器精度。
+- 防再犯：tests/summary-compact.test.js 核对计算样式；标题栏保持64px，摘要时间行使用自然高度。
