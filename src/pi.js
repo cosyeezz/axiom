@@ -138,7 +138,9 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
     const memoryState = memory ? { turn: 0, pending: null } : null;
     // 启动不依赖模型；每次建会话从最新目录选择，网页首次配置后无需重启。
     const key = selection.model || defaultKey;
+    // 恢复历史允许暂未鉴权的已知模型；仍保持原模型，请求时由 SDK 报凭据问题。
     const selected = available.find((m) => `${m.provider}/${m.id}` === key)
+      || (selection.sessionFile && modelRuntime.getModels().find((m) => `${m.provider}/${m.id}` === key))
       || (!selection.model && !requested && available[0]);
     if (!selected) throw new Error(available.length
       ? `模型不可用：${key}。请在设置中选择可用模型，或检查 AXIOM_MODEL。`
@@ -260,13 +262,15 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       recall: () => recallLastMessage(session),
       enqueue: (text, type, images) => (type === "steer" ? session.steer(text, images) : session.followUp(text, images)),
       async configure({ model: key, thinking, compaction }) {
-        const selected = available.find((m) => `${m.provider}/${m.id}` === key);
-        if (!selected) throw new Error("Unknown model");
+        const currentKey = `${session.model?.provider}/${session.model?.id}`;
+        const selected = available.find((m) => `${m.provider}/${m.id}` === key)
+          || (key === currentKey ? session.model : undefined);
+        if (!selected) throw new Error("模型当前不可用，请在模型配置页检查凭据或重新选择模型");
         const nextCompaction = validateCompaction(compaction ?? compactionCtrl.getConfig(), selected);
         if (thinking && !getSupportedThinkingLevels(selected).includes(thinking)) throw new Error("Unsupported thinking level");
         const previous = session.model;
         const previousThinking = session.thinkingLevel;
-        await session.setModel(selected);
+        if (selected !== session.model) await session.setModel(selected);
         const levels = session.getAvailableThinkingLevels();
         if (thinking && !levels.includes(thinking)) {
           await session.setModel(previous);
@@ -351,6 +355,21 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
     available = await modelRuntime.getAvailable();
     return factory.catalog();
   };
+  factory.authProviders = () => modelRuntime.getProviders().map((provider) => ({
+    id: provider.id, name: provider.name || provider.id,
+    methods: Object.entries(provider.auth || {}).filter(([, auth]) => typeof auth.login === "function")
+      .map(([type, auth]) => ({ type, name: auth.name || type })),
+    configured: modelRuntime.hasConfiguredAuth(provider.id),
+  }));
+  factory.login = (providerId, type, interaction) => modelRuntime.login(providerId, type, interaction);
+  factory.logout = (providerId, options) => modelRuntime.logout(providerId, options);
+  // 配置页需要未登录模型的定义；只投影可编辑的非凭据字段，绝不返回 headers/apiKey。
+  factory.modelCatalog = () => modelRuntime.getModels().map((m) => ({
+    provider: m.provider, id: m.id, name: m.name, key: `${m.provider}/${m.id}`,
+    levels: getSupportedThinkingLevels(m), input: m.input, api: m.api,
+    reasoning: m.reasoning, contextWindow: m.contextWindow, maxTokens: m.maxTokens,
+    thinkingLevelMap: m.thinkingLevelMap, cost: m.cost,
+  }));
   factory.catalog = () =>
     available.map((m) => ({
       provider: m.provider,

@@ -333,10 +333,18 @@ export class Sessions {
   async validateSelection(workspace = this.createAgent.cwd || process.cwd(), selection, inherited = []) {
     const cwd = await realpath(workspace);
     if (!(await stat(cwd)).isDirectory()) throw new Error("工作空间必须是目录");
+    // 恢复已有会话（create 注入 selection.sessionFile）：历史模型允许暂未鉴权但已定义，
+    // 与 pi.js 主代理按 sessionFile 走 getModels 的放行一致；新建/修改仍要求可用，
+    // 真正无效照常报错，不自动换模型。目录仅在确有模型要校验时读取（无 catalog 方法
+    // 的测试桩不炸），无目录方法视为空目录。
+    // 目录仅在确有模型/压缩模型要校验时才读取（与原惰性校验一致，无 catalog 方法的旧桩不炸）。
+    const models = () => selection.sessionFile
+      ? (this.createAgent.modelCatalog?.() ?? this.createAgent.catalog?.())
+      : this.createAgent.catalog?.();
     for (const key of ["model", "subagentModel"])
-      if (selection[key] != null && !this.createAgent.catalog().some((m) => m.key === selection[key]))
+      if (selection[key] != null && !models()?.some((m) => m.key === selection[key]))
         throw new Error(key === "model" ? "Unknown model" : "Unknown subagent model");
-    if (selection.compaction) this.validateCompaction(selection.compaction, selection.model);
+    if (selection.compaction) this.validateCompaction(selection.compaction, selection.model, !!selection.sessionFile);
     let catalog;
     const warnings = [];
     if (this.createAgent.capabilities) {
@@ -351,11 +359,16 @@ export class Sessions {
     return { cwd, catalog, warnings };
   }
 
-  validateCompaction(value, mainModel) {
+  // restore（恢复会话）时历史模型允许已定义未鉴权；目录仅在 key 存在时才读取（原惰性契约），
+  // 无 catalog 方法的旧桩按未知模型报错而非 TypeError。
+  validateCompaction(value, mainModel, restore = false) {
     const config = compactionSchema.parse(value);
     const key = config.model || mainModel;
     if (key) {
-      const model = this.createAgent.catalog().find((model) => model.key === key);
+      const models = restore
+        ? (this.createAgent.modelCatalog?.() ?? this.createAgent.catalog?.())
+        : this.createAgent.catalog?.();
+      const model = models?.find((model) => model.key === key);
       if (!model) throw new Error("Unknown compaction model");
       if (config.enabled && model.levels && !model.levels.includes(config.thinking))
         throw new Error("Unsupported compaction thinking level");
@@ -590,6 +603,8 @@ export class Sessions {
     const inherited = ["capabilities", "subagentCapabilities"].filter((key) =>
       saved || (selection.useDefaults !== false && selection[key] === undefined));
     selection = structuredClone({ ...(selection.useDefaults === false ? {} : await this.workspaceDefaults(workspace)), ...selection });
+    // 恢复已有会话时告知 validateSelection 放行历史模型（后续建 agent 本就传 sessionFile）。
+    if (saved?.sessionFile) selection.sessionFile = saved.sessionFile;
     const { cwd, catalog, warnings } = await this.validateSelection(workspace, selection, inherited);
     for (const warning of warnings) console.warn(`${cwd}：${warning}`);
     const id = saved?.id || randomUUID();

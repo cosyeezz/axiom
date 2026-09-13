@@ -116,10 +116,10 @@ async function page() {
   w.createStreamRenderer = (render, after) => createStreamRenderer(render, after, w.requestAnimationFrame, w.cancelAnimationFrame);
   const sent = [];
   w.WebSocket = class { static OPEN = 1; readyState = 1; send(raw) { sent.push(JSON.parse(raw)); } };
-  for (const name of ["model-picker", "model-manager"]) {
+  for (const name of ["model-picker", "model-auth", "model-manager"]) {
     const module = await readFile(new URL(`../public/${name}.js`, import.meta.url), "utf8");
     const exports = [...module.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
-    w.eval(`Object.assign(window, (() => { ${module.replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`);
+    w.eval(`Object.assign(window, (() => { ${module.replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`);
   }
   w.eval(`${contrast}\n${picker}\n${source}\nconnected = true; socket = new WebSocket();`);
   const base = { sessionId: "retry", title: "Retry", cwd: "C:/work", status: "idle", config: { model: "test/model", thinking: "off", levels: ["off"], skills: [] }, messages: [], tasks: [], live: {}, tools: {} };

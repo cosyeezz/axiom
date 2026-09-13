@@ -8,10 +8,10 @@ import { createStreamRenderer } from "../public/stream-renderer.js";
 
 const pickerSource = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
 const contrastSource = (await readFile(new URL("../public/text-contrast.js", import.meta.url), "utf8")).replace(/^export /gm, "");
-const modelSources = await Promise.all(["model-picker", "model-manager"].map(async (name) => {
+const modelSources = await Promise.all(["model-picker", "model-auth", "model-manager"].map(async (name) => {
   const source = await readFile(new URL(`../public/${name}.js`, import.meta.url), "utf8");
   const exports = [...source.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
-  return `Object.assign(window, (() => { ${source.replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`;
+  return `Object.assign(window, (() => { ${source.replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`;
 })).then((parts) => parts.join("\n"));
 const serviceSource = (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^export /gm, "");
 
@@ -125,7 +125,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
   let failDefaults = false, needsTrust = false;
   let withdrawnImages;
   let failList = false;
-  let failConfig = false;
+  let failConfig = false, holdConfig = false, heldConfig;
   let presets = [
     { id: "p1", name: "审查预设", selection: { model: "test/model", thinking: "high", capabilities: null, subagentModel: null, subagentThinking: null, subagentCapabilities: null, compaction: null } },
     { id: "p2", name: "沙盒预设", cwd: "C:\\untrusted", selection: { model: "test/model", thinking: null, capabilities: null, subagentModel: null, subagentThinking: null, subagentCapabilities: null, compaction: null } },
@@ -226,6 +226,10 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
           case "session.configure":
             if (failConfig) {
               this.receive({ type: "response", id: req.id, ok: false, error: "configuration unavailable" });
+              return;
+            }
+            if (holdConfig) {
+              heldConfig = req;
               return;
             }
             data = { ...config, subagentModel: req.subagentModel };
@@ -1260,6 +1264,25 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     await settle();
     assert.equal($("prompt").value, imageDraft);
     assert.equal($("image-attachments").children.length, 1);
+    // 旧会话的配置回执迟到时已切到另一会话（模拟断线重连后 attach 到别的会话），不得污染当前设置。
+    holdConfig = true;
+    $("model").onchange();
+    await settle();
+    assert.equal(heldConfig.sessionId, "b", "stale configure was issued for the previous session");
+    await window.eval('(async () => snapshot(await request("session.attach", { sessionId: "a" })))()');
+    await settle();
+    sockets.at(-1).receive({ type: "response", id: heldConfig.id, ok: true, data: { ...config, queueType: "followUp" } });
+    await settle();
+    assert.equal($("queue-type").value, "steer", "late response from another session leaves current settings alone");
+    $("queue-type").onchange();
+    await settle();
+    assert.equal(heldConfig.sessionId, "a");
+    sockets.at(-1).receive({ type: "response", id: heldConfig.id, ok: true, data: { ...config, queueType: "followUp" } });
+    await settle();
+    holdConfig = false;
+    assert.equal($("queue-type").value, "followUp", "configure still applies for the current session");
+    row("b").querySelector(".session-item").click();
+    await settle();
     const queuedImage = { type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" };
     withdrawnImages = { steering: [[queuedImage]], followUp: [null] };
     window.eval("renderQueue")({ steering: [""], followUp: [], images: withdrawnImages });

@@ -9,10 +9,10 @@ import { createStreamRenderer } from "../public/stream-renderer.js";
 const appSource = (await readFile(new URL("../public/memory-tags.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/app.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "");
 const pickerSource = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
 const contrastSource = (await readFile(new URL("../public/text-contrast.js", import.meta.url), "utf8")).replace(/^export /gm, "");
-const modelSources = await Promise.all(["model-picker", "model-manager"].map(async (name) => {
+const modelSources = await Promise.all(["model-picker", "model-auth", "model-manager"].map(async (name) => {
   const source = await readFile(new URL(`../public/${name}.js`, import.meta.url), "utf8");
   const exports = [...source.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
-  return `Object.assign(window, (() => { ${source.replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`;
+  return `Object.assign(window, (() => { ${source.replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`;
 })).then((parts) => parts.join("\n"));
 const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
 

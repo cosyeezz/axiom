@@ -3,7 +3,7 @@ import { rm, writeFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { canonicalModelsJson } from "./pi-model-storage.js";
-import { modelConfigIn, providerConfigIn } from "./protocol.js";
+import { modelConfigIn, modelOverrideIn, providerConfigIn } from "./protocol.js";
 
 // SDK 0.85.1 未公开导出 ModelConfig（models.json schema 校验器），从实际安装位置
 // 经包入口定位后按文件 URL 深路径加载。
@@ -298,7 +298,8 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
       applied: !pendingApply,
       path: storage.compatPath,
       providers: [],
-      catalog: factory.catalog(),
+      catalog: factory.modelCatalog?.() ?? factory.catalog(),
+      authProviders: factory.authProviders?.() ?? [],
       hidden: normalizeHidden(storage.getHidden()),
     };
     if (pendingApply) result.applyError = pendingApply.applyError;
@@ -396,7 +397,7 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
   // 隐藏/恢复：key 必须存在于当前目录（供应商 id 或 `provider/id`），不写会永久失效的垃圾条目。
   function writeHidden({ key, hidden }) {
     const known = new Set();
-    for (const model of factory.catalog()) {
+    for (const model of factory.modelCatalog?.() ?? factory.catalog()) {
       known.add(model.provider);
       known.add(model.key);
     }
@@ -529,6 +530,25 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
         }),
       );
     },
+    overrideModel({ providerId, modelId, override, baseFingerprint }) {
+      const input = modelOverrideIn.parse(override);
+      return enqueue(() => mutate(baseFingerprint, (providers) => {
+        if (!(factory.modelCatalog?.() ?? factory.catalog()).some((m) => m.provider === providerId && m.id === modelId))
+          throw new Error("未知模型，请刷新配置页后重试");
+        const base = asProvider(providers[providerId]);
+        const overrides = { ...base.modelOverrides };
+        const next = { ...overrides[modelId] };
+        for (const [key, value] of Object.entries(input)) {
+          if (value === null) delete next[key];
+          else if (key === "headers") next.headers = mergeHeaders(next.headers, value);
+          else if (["thinkingLevelMap", "cost", "compat", "samplingParams"].includes(key)) next[key] = { ...next[key], ...value };
+          else next[key] = value;
+        }
+        if (Object.keys(next).length) overrides[modelId] = next;
+        else delete overrides[modelId];
+        providers[providerId] = { ...base, modelOverrides: overrides };
+      }));
+    },
     deleteModel({ providerId, modelId, baseFingerprint }) {
       return enqueue(() =>
         mutate(baseFingerprint, (providers) => {
@@ -558,6 +578,8 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
           return this.deleteProvider(request);
         case "models.provider.rename":
           return this.renameProvider(request);
+        case "models.model.override":
+          return this.overrideModel(request);
         case "models.model.save":
           return this.saveModel(request);
         case "models.model.delete":

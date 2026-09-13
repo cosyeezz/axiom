@@ -19,6 +19,9 @@
 // onSaved 供主入口刷新模型下拉；所有请求失败在面板内展示，绝不向上抛。
 
 // 选项文案保持短：原生 select 不会截断提示，窄屏下拉框放不下就会被切掉。
+import { createModelAuth } from "./model-auth.js";
+
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const API_TYPES = [
   ["openai-completions", "OpenAI Chat Completions"],
   ["openai-responses", "OpenAI Responses"],
@@ -192,7 +195,7 @@ export function initModelManager({ root, request, onSaved }) {
   if (!root || !(root instanceof Node)) throw new Error("initModelManager 需要一个根容器节点");
   const state = {
     loaded: false, loading: false, path: "", fingerprint: "", parseError: "",
-    providers: [], catalog: [], hidden: [], selected: "", query: "", draft: null,
+    providers: [], catalog: [], authProviders: [], hidden: [], selected: "", query: "", draft: null,
     // 草稿仓库：editForms=供应商连接表单；newRows=待保存的新模型行；modelRows=既有模型行（键 providerId\0modelId）。
     editForms: new Map(), newRows: new Map(), modelRows: new Map(),
     // 拉取面板状态（键 providerId）：status=loading/ready/error/blocked，models/byId=发现结果原文，
@@ -201,6 +204,7 @@ export function initModelManager({ root, request, onSaved }) {
     loadToken: 0,
   };
 
+  const auth = createModelAuth({ request, onChanged: () => load({ notify: true }) });
   const skeleton = buildSkeleton();
   root.replaceChildren(skeleton);
   const $ = (selector) => skeleton.querySelector(selector);
@@ -218,7 +222,7 @@ export function initModelManager({ root, request, onSaved }) {
           el("p", { class: "mm-path", title: "配置存储位置" }, "Axiom SQLite")),
         el("div", { class: "mm-head-actions" },
           el("button", { type: "button", class: "secondary", onclick: () => void load() }, "刷新"),
-          el("button", { type: "button", onclick: () => openDraft() }, "添加供应商"))),
+          el("button", { type: "button", onclick: () => addProvider() }, "添加供应商"))),
       el("div", { class: "mm-alert", role: "alert" }),
       el("div", { class: "mm-split" },
         el("nav", { class: "mm-nav", "aria-label": "供应商导航" },
@@ -253,6 +257,7 @@ export function initModelManager({ root, request, onSaved }) {
       state.parseError = data.parseError || "";
       state.providers = Array.isArray(data.providers) ? data.providers : [];
       state.catalog = Array.isArray(data.catalog) ? data.catalog : [];
+      state.authProviders = Array.isArray(data.authProviders) ? data.authProviders : [];
       state.hidden = Array.isArray(data.hidden) ? data.hidden : [];
       if (!silent) clearAlert();
       if (state.parseError) showAlert("warn", `旧模型配置导入失败，请在此重新配置：${state.parseError}`,
@@ -323,7 +328,8 @@ export function initModelManager({ root, request, onSaved }) {
     // 隐藏只影响 Axiom 的选取入口（本页目录 + 模型选择器）：已隐藏项不再作为可选项出现。
     const hidden = hiddenKeys();
     const builtin = [...catalogMap.entries()]
-      .filter(([id]) => !customIds.has(id) && !hidden.has(id))
+      .filter(([id]) => !customIds.has(id) && !hidden.has(id) &&
+        (!state.authProviders.length || state.authProviders.some((p) => p.id === id && p.configured) || state.selected === id))
       .map(([id, models]) => ({ id, models: models.filter((model) => !hidden.has(model.key)) }))
       .filter(({ id, models }) => models.length > 0 && (hit(id) || models.some(modelHit)));
     return { custom, builtin, hidden: hiddenEntries(catalogMap, hidden) };
@@ -487,7 +493,7 @@ export function initModelManager({ root, request, onSaved }) {
       items.push(navItem(DRAFT, `＋ ${label}`, state.draft.saved ? "已保存 · 可继续添加模型" : "草稿（未保存）", { draft: true }));
     }
     if (custom.length) {
-      items.push(el("div", { class: "mm-nav-group" }, "自定义与覆盖"));
+      items.push(el("div", { class: "mm-nav-group" }, "供应商"));
       for (const provider of custom) {
         const models = Array.isArray(provider.models) ? provider.models.length : 0;
         const overrides = provider.modelOverrides && typeof provider.modelOverrides === "object"
@@ -502,7 +508,7 @@ export function initModelManager({ root, request, onSaved }) {
       }
     }
     if (builtin.length) {
-      items.push(el("div", { class: "mm-nav-group" }, "内置与扩展"));
+      if (!custom.length) items.push(el("div", { class: "mm-nav-group" }, "供应商"));
       for (const entry of builtin)
         items.push(navItem(entry.id, entry.id, `${entry.models.length} 个模型`, {
           actions: [iconButton("delete", `隐藏内置供应商「${entry.id}」`, () =>
@@ -537,7 +543,7 @@ export function initModelManager({ root, request, onSaved }) {
       if (entries.length) { detailBox().replaceChildren(hiddenDetail(entries)); return; }
     }
     const hidden = hiddenKeys();
-    if (!state.draft && catalogMap.has(state.selected) && !hidden.has(state.selected)) {
+    if (!state.draft && (catalogMap.has(state.selected) || state.authProviders.some((p) => p.id === state.selected)) && !hidden.has(state.selected)) {
       detailBox().replaceChildren(catalogDetail(state.selected,
         (catalogMap.get(state.selected) ?? []).filter((model) => !hidden.has(model.key))));
       return;
@@ -550,7 +556,7 @@ export function initModelManager({ root, request, onSaved }) {
       return;
     }
     detailBox().replaceChildren(el("p", { class: "mm-empty" },
-      "尚无自定义供应商。内置与扩展发现的模型不受影响（见左侧目录）；要覆盖内置供应商，可添加同名 id 的条目，或点右上角「添加供应商」。"));
+      "点击「添加供应商」选择服务并登录，或连接自己的 API。模型与思考等级在这里统一管理。"));
   }
 
   function renderProviders() {
@@ -560,28 +566,21 @@ export function initModelManager({ root, request, onSaved }) {
 
   // ── 只读目录页：模型名称 + 实际 ID + 真实能力（推理/图片） ────────────────
   function catalogModelRow(model) {
-    return el("div", { class: "mm-catalog-model" },
-      model.name && model.name !== model.id ? el("span", { class: "mm-catalog-model-name" }, model.name) : null,
-      el("code", { class: "mm-mono" }, model.id),
-      el("span", { class: "mm-catalog-model-tags" },
-        model.levels?.length ? badge("推理") : null,
-        Array.isArray(model.input) && model.input.includes("image") ? badge("图片") : null),
-      iconButton("delete", `隐藏模型「${model.key}」`, () =>
-        void confirmHide({ key: model.key, kind: "model", id: model.provider, models: [model] })));
+    return modelRow(model.provider, model, { override: true });
   }
 
   function catalogDetail(id, models) {
     return el("div", {},
       el("div", { class: "mm-provider-title" },
         el("strong", { class: "mm-mono" }, id),
-        badge("内置 / 扩展")),
-      el("p", { class: "mm-hint" },
-        "此供应商由内置配置或扩展发现提供，此处只读。隐藏只影响 Axiom 的模型选择器与目录（Pi 运行时不改、既有会话不受影响），可随时恢复；改连接可添加同名覆盖，但同名覆盖模型是整条替换，会丢掉内置的成本/上下文/思考等级映射，慎用。"),
+        badge(`${models.length} 个模型`)),
+      authSection(id),
+      el("p", { class: "mm-hint" }, "展开模型可配置名称、上下文和思考等级；只保存修改的字段，其余能力保持不变。"),
       models.length
         ? el("div", { class: "mm-catalog-models" }, ...models.map(catalogModelRow))
         : el("p", { class: "mm-hint" }, "该供应商当前没有可用模型（可能缺少认证，或模型都已被隐藏）。"),
       el("div", { class: "mm-form-actions" },
-        el("button", { type: "button", class: "secondary", onclick: () => openDraft(id) }, `添加同名覆盖「${id}」`),
+        el("button", { type: "button", class: "secondary", onclick: () => openDraft(id) }, "编辑连接 / 添加模型"),
         el("button", { type: "button", class: "secondary", onclick: () =>
           void confirmHide({ key: id, kind: "provider", id, models }) }, "隐藏此供应商")));
   }
@@ -719,7 +718,7 @@ export function initModelManager({ root, request, onSaved }) {
   }
   const modelDirty = (form, isNew) => {
     const built = buildModelPayload(form, isNew);
-    return Boolean(built.error) || stable(built.value) !== stable(keepMasked(form.snap));
+    return Boolean(built.error) || stable(built.value) !== stable(buildModelPayload(modelForm(form.snap), isNew).value);
   };
   const providerDirty = (form) => {
     const current = buildProviderPayload(form);
@@ -771,6 +770,47 @@ export function initModelManager({ root, request, onSaved }) {
   }
 
   // ── 详情：既有供应商编辑器 ──────────────────────────────────────────────
+  function authSection(id) {
+    const provider = state.authProviders.find((p) => p.id === id);
+    return provider ? auth.section(provider) : null;
+  }
+
+  function addProvider() {
+    if (!state.authProviders.length) return openDraft();
+    const select = el("select", { "aria-label": "选择供应商" },
+      new Option("自定义 API 连接", ""),
+      ...state.authProviders.map((p) => new Option(p.name || p.id, p.id)));
+    openDialog({ title: "添加供应商", description: "选择服务后登录或填写 API Key；也可以使用自定义地址。",
+      body: selectControl(select), confirmLabel: "继续", onConfirm: () => {
+        if (select.value) { state.selected = select.value; renderProviders(); }
+        else openDraft();
+      } });
+  }
+
+  function thinkingFields(form, model, sync) {
+    const extra = parseJsonText(form.extrasText);
+    const map = extra.value?.thinkingLevelMap ?? model.thinkingLevelMap ?? {};
+    return el("fieldset", { class: "mm-thinking-levels" }, el("legend", {}, "支持的思考等级"),
+      ...THINKING_LEVELS.map((level) => el("label", { class: "mm-check" },
+        el("input", { type: "checkbox", checked: Object.hasOwn(map, level) ? map[level] !== null : (model.levels || []).includes(level),
+          onchange: (event) => {
+            const current = parseJsonText(form.extrasText);
+            if (current.error) { event.target.checked = !event.target.checked; showAlert("error", current.error); return; }
+            current.value.thinkingLevelMap = { ...map, ...current.value.thinkingLevelMap,
+              [level]: event.target.checked ? (map[level] ?? level) : null };
+            form.extrasText = JSON.stringify(current.value, null, 2);
+            const textarea = event.target.closest(".mm-model")?.querySelector(".mm-extras");
+            if (textarea) textarea.value = form.extrasText;
+            if (event.target.checked && level !== "off") {
+              form.reasoning = true;
+              const reasoning = event.target.closest(".mm-model")?.querySelector(".mm-model-checks input");
+              if (reasoning) reasoning.checked = true;
+            }
+            sync();
+          } }), level)),
+      el("p", { class: "mm-hint" }, "勾选定义可选等级，不会提升服务商能力。API 映射可在高级 JSON 的 thinkingLevelMap 中调整；null 表示禁用。"));
+  }
+
   function providerEditor(provider) {
     let form = state.editForms.get(provider.id);
     if (!form) { form = providerForm(provider); state.editForms.set(provider.id, form); }
@@ -783,6 +823,7 @@ export function initModelManager({ root, request, onSaved }) {
         el("strong", { class: "mm-mono" }, provider.id),
         el("span", { class: "mm-provider-meta" },
           `${freshRows.length} 个模型${overrides ? ` · 覆盖 ${overrides} 项内置模型` : ""}`)),
+      authSection(provider.id),
       el("div", { class: "mm-section" },
         el("h5", { class: "mm-section-title" }, "连接"),
         el("div", { class: "mm-form" }, ...connectionFields(form, provider.id)),
@@ -810,6 +851,7 @@ export function initModelManager({ root, request, onSaved }) {
               renderProviders();
             } }, "添加模型"))),
         discoverPanel(provider),
+        ...state.catalog.filter((m) => m.provider === provider.id && !freshRows.some((item) => item.id === m.id) && !hiddenKeys().has(m.key)).map(catalogModelRow),
         freshRows.length + pending.length
           ? el("div", { class: "mm-models" },
               ...freshRows.map((model) => modelRow(provider.id, model)),
@@ -1127,7 +1169,7 @@ export function initModelManager({ root, request, onSaved }) {
 
   // 既有模型的行对象进缓存（键 providerId\0modelId），跨重渲染/回读保留未保存编辑；
   // snap 每次对齐最新数据，脏检查始终以最新落盘内容为基准。
-  function modelRow(providerId, snapOrRow, { isNew = false, onRemove } = {}) {
+  function modelRow(providerId, snapOrRow, { isNew = false, onRemove, override = false } = {}) {
     let row;
     if (isNew) {
       row = snapOrRow;
@@ -1139,7 +1181,16 @@ export function initModelManager({ root, request, onSaved }) {
     }
     if (!row.form) row.form = modelForm(row.snap);
     const form = row.form;
-    const build = () => buildModelPayload(form, isNew);
+    const build = () => {
+      const result = buildModelPayload(form, isNew);
+      if (override && !result.error) {
+        result.value.reasoning = Boolean(form.reasoning);
+        result.value.input = form.image ? ["text", "image"] : ["text"];
+        for (const key of ["name", "contextWindow", "maxTokens"])
+          if (!(key in result.value) && key in row.snap) result.value[key] = null;
+      }
+      return result;
+    };
     const saveButton = el("button", { type: "button", class: isNew ? "mm-primary" : "secondary",
       onclick: (event) => void saveModel(event.currentTarget) }, isNew ? "保存模型" : "保存修改");
     const sync = () => {
@@ -1152,7 +1203,10 @@ export function initModelManager({ root, request, onSaved }) {
       const built = build();
       if (built.error) return showAlert("error", `模型保存失败：${built.error}`);
       const ok = await submit(button, () =>
-          request("models.model.save", { providerId, model: built.value, baseFingerprint: state.fingerprint }),
+          request(override ? "models.model.override" : "models.model.save", override
+            ? { providerId, modelId: row.snap.id, override: Object.fromEntries(Object.entries(built.value)
+                .filter(([key, value]) => !["id", "api", "baseUrl", "provider", "key", "levels"].includes(key) && stable(value) !== stable(row.snap[key]))), baseFingerprint: state.fingerprint }
+            : { providerId, model: built.value, baseFingerprint: state.fingerprint }),
         { successMessage: `已保存模型「${built.value.id}」。` });
       if (!ok) return; // 失败：新行草稿不被移除，既有行表单保留
       if (isNew) onRemove?.();
@@ -1174,6 +1228,7 @@ export function initModelManager({ root, request, onSaved }) {
         placeholder: "默认 16384", spellcheck: "false",
         oninput: (event) => { form.maxTokens = event.target.value; sync(); } })),
       field("API 协议覆盖", selectControl(el("select", { "aria-label": "API 协议覆盖",
+        disabled: override, title: override ? "API 协议由供应商定义" : undefined,
         onchange: (event) => { form.api = event.target.value; sync(); } },
         new Option("跟随供应商", "", false, form.api === ""),
         ...API_TYPES.map(([value, label]) => new Option(label, value, false, form.api === value))))),
@@ -1204,8 +1259,10 @@ export function initModelManager({ root, request, onSaved }) {
         el("span", { class: "mm-model-row-actions" },
           isNew && onRemove
             ? iconButton("delete", `移除未保存的模型「${displayId}」`, onRemove)
-            : iconButton("delete", `删除模型「${displayId}」`, () => confirmDeleteModel(providerId, String(row.snap.id ?? ""))))),
-      grid, advanced,
+            : iconButton("delete", `删除模型「${displayId}」`, () => override
+              ? confirmHide({ key: row.snap.key, kind: "model", id: providerId, models: [row.snap] })
+              : confirmDeleteModel(providerId, String(row.snap.id ?? ""))))),
+      grid, thinkingFields(form, row.snap, sync), advanced,
       el("div", { class: "mm-model-actions" }, saveButton));
   }
 

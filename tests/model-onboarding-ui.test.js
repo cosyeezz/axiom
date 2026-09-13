@@ -6,7 +6,7 @@ import { createStreamRenderer } from "../public/stream-renderer.js";
 
 // 空模型目录启动的前端回归：保持连接引导首次配置；保存模型后无需重启即可新建会话。
 const stripImports = (source) => source.replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "");
-const modelSources = await Promise.all(["model-picker", "model-manager"].map(async (name) => {
+const modelSources = await Promise.all(["model-picker", "model-auth", "model-manager"].map(async (name) => {
   const source = await readFile(new URL(`../public/${name}.js`, import.meta.url), "utf8");
   const exports = [...source.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
   return `Object.assign(window, (() => { ${stripImports(source)}\nreturn {${exports.join(",")}}; })());`;

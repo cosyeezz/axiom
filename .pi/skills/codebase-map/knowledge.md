@@ -503,3 +503,8 @@
 - 根因：按home另开连接绕过传入Database及权限配置；JSON.parse错误泄露坏值片段；固定sleep不能保证两个进程已读同一旧值。
 - 修复：pi-model-storage复用权威连接并固定解析错误；并发helper在捕获旧值后停住，父进程写完才放行，确定性拒绝旧CAS；close后检查结果，finally先终止子进程再关库清理。
 - 防再犯：测试非默认数据库文件名、三类坏JSON、模型/收藏/凭据三条跨进程路径；CAS仅保护权威，派生文件跨await仍可能陈旧。
+
+## 2026-09-13 历史模型恢复与目录口径
+- 症状：切换旧会话报 Unknown model。恢复误用仅可用目录，未鉴权但定义仍存在的模型被拒绝；UI 缺失选项会静默落到第一项。
+- 修复：sessions/pi 恢复按完整模型定义保留原模型，新建仍仅可用；app 为缺失选项保留占位，配置回执按会话与序号隔离。model-runtime-catalog/session-model-restore/app 测试覆盖。
+- 注意：配置页模块引入 auth 子模块后，所有 JSDOM eval harness 必须先装载 auth 并剥除静态 import；模型 dirty 对比需两侧同样规范化。

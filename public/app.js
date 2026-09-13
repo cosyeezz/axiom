@@ -382,37 +382,47 @@ function applyConfig(value) {
     models.find((m) => m.key === value.subagentModel)?.provider || "",
   );
   fillSubagentModels();
-  $("provider").value = models.find((m) => m.key === value.model)?.provider;
+  const currentModel = models.find((m) => m.key === value.model);
+  $("provider").value = currentModel?.provider || "";
   fillModels();
+  if (value.model && !currentModel) {
+    // 不让缺失/隐藏的历史模型静默落到第一个选项，后续改队列也必须保留原选择。
+    $("model").add(new Option(`${value.model}（当前不可选）`, value.model, true, true));
+  }
   options(
     $("thinking"),
     value.levels.map((v) => [v, v]),
     value.thinking,
   );
 }
+// 配置请求携带发起时的会话身份与序号；切换会话或重连后，迟到的回执（成功或失败）一律丢弃，不污染当前会话。
+let configureSeq = 0;
 async function configure(thinking) {
+  const target = sessionId, seq = ++configureSeq;
   let failure;
   changing = true;
   controls();
   $("error").textContent = "";
   try {
-    applyConfig(
-      await request("session.configure", {
-        sessionId,
-        model: $("model").value,
-        queueType: $("queue-type").value,
-        subagentModel: $("subagent-model").value || null,
-        ...(thinking ? { thinking } : {}),
-      }),
-    );
+    const value = await request("session.configure", {
+      sessionId: target,
+      model: $("model").value,
+      queueType: $("queue-type").value,
+      subagentModel: $("subagent-model").value || null,
+      ...(thinking ? { thinking } : {}),
+    });
+    if (sessionId !== target || seq !== configureSeq) return;
+    applyConfig(value);
   } catch (e) {
+    if (sessionId !== target || seq !== configureSeq) return;
     error(e);
     failure = e.message || String(e);
     if (config) applyConfig(config);
   } finally {
+    if (seq !== configureSeq) return; // 已有更新一次的配置请求，由它负责收尾
     changing = false;
     controls();
-    if (failure) $("settings-feedback").textContent = `保存失败：${failure}`;
+    if (sessionId === target && failure) $("settings-feedback").textContent = `保存失败：${failure}`;
   }
 }
 // 摘要记忆参数：设置页「默认新会话设置」独立小节，get 填充、change 即存（服务端持久化并校验边界）。

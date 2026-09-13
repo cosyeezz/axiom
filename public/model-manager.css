@@ -471,3 +471,49 @@ button.mm-icon-delete:focus-visible { color: var(--danger); }
 .mm-discover-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .mm-discover-foot button { min-height: 30px; padding: 4px 12px; font-size: 12px; }
 .mm-discover-error { flex: 1 1 200px; color: var(--danger); font-size: 12px; overflow-wrap: anywhere; }
+
+/* 账号与授权（public/model-auth.js）：详情分段内的登录区块，外观与 .mm-discover 同源 */
+.mm-auth-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.mm-auth-section h4 { margin: 0; font-size: 12px; color: var(--body-ink); }
+.mm-auth-section p { margin: 0; font-size: 11px; color: var(--muted); }
+
+/* 登录弹窗：状态、事件流、提问表单纵向排列；链接与用户码可换行，输入不溢出 */
+.mm-auth-events { display: flex; flex-direction: column; gap: 8px; }
+.mm-auth-events p { margin: 0; font-size: 12px; color: var(--body-ink); overflow-wrap: anywhere; }
+.mm-auth-events a { color: var(--accent-ink); }
+.mm-auth-events code { font-family: var(--mono); font-size: 12px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--raised); overflow-wrap: anywhere; }
+.mm-auth-dialog form { display: flex; flex-direction: column; gap: 8px; }
+.mm-auth-dialog label { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 12px; }
+.mm-auth-dialog select,
+.mm-auth-dialog input { max-width: 100%; min-height: 36px; padding: 6px 10px; font-size: 13px; }
+
+/* 思考等级（fieldset > label + checkbox）：平铺换行，复用面板级 14px 复选框尺寸 */
+.mm-thinking-levels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.mm-thinking-levels legend { padding: 0 4px; font-size: 11px; color: var(--muted); }
+.mm-thinking-levels label { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); cursor: pointer; }
+
+/* 触屏：登录控件与思考等级标签提到 44px 触达目标（同 style.css 的 pointer:coarse 模式） */
+@media (pointer: coarse) {
+  .mm-auth-dialog select,
+  .mm-auth-dialog input,
+  .mm-auth-dialog form button,
+  .mm-thinking-levels label { min-height: 44px; }
+}

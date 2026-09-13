@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import { command } from "./protocol.js";
+import { createModelAuthService } from "./model-auth.js";
 
 const assets = new Map(
   [
@@ -32,6 +33,7 @@ const assets = new Map(
 // 模型管理器/选择器（前端可选资源）：落地后重启生效，缺失时安全跳过、请求 404。
 for (const [route, file, type = "text/javascript"] of [
   ["/model-manager.js", "public/model-manager.js"],
+  ["/model-auth.js", "public/model-auth.js"],
   ["/model-manager.css", "public/model-manager.css", "text/css"],
   ["/model-picker.js", "public/model-picker.js"],
   ["/model-picker.css", "public/model-picker.css", "text/css"],
@@ -43,6 +45,8 @@ for (const [route, file, type = "text/javascript"] of [
 }
 
 export function createServerApp(sessions, service = {}) {
+  const modelAuth = createModelAuthService({ auth: sessions.createAgent,
+    onChanged: () => broadcast({ type: "models.config.changed" }) });
   let stopping = false, closing = false;
   let remoteServer = null;
   let remoteAuthorize = null;
@@ -244,6 +248,7 @@ export function createServerApp(sessions, service = {}) {
     };
     ws.on("error", () => {});
     ws.on("close", () => {
+      modelAuth.close(ws);
       unsubscribe?.();
     });
     ws.on("message", (raw) => {
@@ -296,10 +301,19 @@ export function createServerApp(sessions, service = {}) {
               // 隐藏清单只影响这里（模型选择器等选取入口），Pi 运行时目录不动。
               data = service.models ? service.models.listCatalog() : sessions.createAgent.catalog();
               break;
+            case "models.auth.list":
+            case "models.auth.start":
+            case "models.auth.status":
+            case "models.auth.respond":
+            case "models.auth.cancel":
+            case "models.auth.logout":
+              data = await modelAuth.handle(request, ws);
+              break;
             case "models.config.get":
             case "models.provider.discover":
             case "models.provider.save":
             case "models.provider.delete":
+            case "models.model.override":
             case "models.model.save":
             case "models.model.delete":
             case "models.favorites.get":

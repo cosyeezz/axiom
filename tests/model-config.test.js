@@ -977,3 +977,58 @@ for (const op of ["config", "favorites"]) {
     }
   });
 }
+
+test("models.model.override：内置模型写 thinkingLevelMap 到 modelOverrides，目录不变，保留已有 cost，未知模型与旧指纹拒绝", async () => {
+  const dir = await tempDir();
+  try {
+    const catalogEntry = { key: "builtin/gpt-x", provider: "builtin", id: "gpt-x" };
+    const svc = makeService(dir, [catalogEntry]);
+    const { models } = svc;
+    const view = await models.handle({ type: "models.config.get" });
+
+    // 未知模型拒绝：目录里没有的 modelId 一律拒绝，且不写盘
+    await assert.rejects(
+      () => models.overrideModel({ providerId: "builtin", modelId: "nope", override: { contextWindow: 1 }, baseFingerprint: view.fingerprint }),
+      /未知模型/,
+    );
+    assert.equal((await models.handle({ type: "models.config.get" })).fingerprint, view.fingerprint, "拒绝不写盘");
+
+    // 内置模型且无自定义 provider：首次 override 写 cost，产生新指纹
+    const afterCost = await models.overrideModel({
+      providerId: "builtin", modelId: "gpt-x",
+      override: { cost: { input: 3, output: 15 } }, baseFingerprint: view.fingerprint,
+    });
+    assert.equal(afterCost.applied, true);
+
+    // 旧指纹拒绝：内容变化后旧指纹一律作废
+    await assert.rejects(
+      () => models.overrideModel({ providerId: "builtin", modelId: "gpt-x", override: { contextWindow: 4096 }, baseFingerprint: view.fingerprint }),
+      /已被外部修改/,
+    );
+
+    // 第二次 override 写 thinkingLevelMap（成员 null 禁用该等级），已有 cost 覆盖保留
+    await models.overrideModel({
+      providerId: "builtin", modelId: "gpt-x",
+      override: { thinkingLevelMap: { medium: "gpt-x-mid", high: null } }, baseFingerprint: afterCost.fingerprint,
+    });
+
+    const expectedOverride = {
+      cost: { input: 3, output: 15 },
+      thinkingLevelMap: { medium: "gpt-x-mid", high: null },
+    };
+
+    const result = await models.handle({ type: "models.config.get" });
+    assert.deepEqual(result.catalog, [catalogEntry], "目录本身不变");
+    const provider = result.providers.find((p) => p.id === "builtin");
+    assert.ok(provider, "override 为内置模型创建仅含 modelOverrides 的 provider 条目");
+    assert.deepEqual(JSON.parse(JSON.stringify(provider.modelOverrides)), { "gpt-x": expectedOverride });
+    assert.equal(provider.models, undefined, "不创建自定义 models 列表");
+
+    // 派生兼容文件与权威一致：只有 modelOverrides，没有 models
+    const raw = JSON.parse(await compat(dir));
+    assert.deepEqual(raw.providers.builtin, { modelOverrides: { "gpt-x": expectedOverride } });
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

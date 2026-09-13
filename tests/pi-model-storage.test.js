@@ -154,6 +154,65 @@ test("坏文件不打完成标记：修复原文件后再次 init 自动导入�
   }
 });
 
+test("导入门闩：页面配置后 pi 文件才出现不补导，清空权威也不复活", async () => {
+  const dir = await tempDir();
+  let database;
+  try {
+    // 首次启动无任何 pi 旧文件：零导入并关闭迁移窗口
+    const { storage, database: db } = makeStorage(dir);
+    database = db;
+    await storage.init();
+    assert.deepEqual(storage.readConfig(), { providers: {} });
+    // 页面配置之后 pi 文件才出现：不得补导新 provider/凭据，也不产生告警
+    await storage.writeConfig({ providers: { ui: { baseUrl: "https://ui.example.com" } } });
+    await seedPiModels(dir, { providers: { late: { baseUrl: "https://late.example.com" } } });
+    await seedPiAuth(dir, { late: { type: "api_key", key: "sk-late" } });
+    await storage.init();
+    assert.deepEqual(storage.readConfig().providers, { ui: { baseUrl: "https://ui.example.com" } }, "后出现的 models.json 不补导");
+    assert.equal(database.get("auth", "late"), undefined, "后出现的 auth.json 不补导");
+    assert.equal(storage.importErrors().length, 0);
+    // 明确清空权威（写回空配置）后源文件仍在：不复活
+    await storage.writeConfig({ providers: {} });
+    await storage.init();
+    assert.deepEqual(storage.readConfig(), { providers: {} }, "清空后旧文件不复活");
+    assert.equal(database.get("auth", "late"), undefined);
+    assert.equal(database.get("migrated", join(dir, "pi", "auth.json")), true, "门闩标记已补打");
+  } finally {
+    database?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("成功导入后外部改动不跟随：源文件后续增改、改值均不影响权威", async () => {
+  const dir = await tempDir();
+  let database;
+  try {
+    await seedPiModels(dir, { providers: { p1: { baseUrl: "https://p1.example.com", api: "openai-completions" } } });
+    await seedPiAuth(dir, { p1: { type: "api_key", key: "sk-old" } });
+    const { storage, database: db } = makeStorage(dir);
+    database = db;
+    await storage.init();
+    assert.equal(database.get("auth", "p1").key, "sk-old");
+    // 导入完成后源文件被外部改动：既有条目改值 + 新增条目，权威一律不跟随
+    await seedPiModels(dir, {
+      providers: {
+        p1: { baseUrl: "https://changed.example.com", api: "openai-completions" },
+        p2: { baseUrl: "https://p2.example.com", api: "openai-completions" },
+      },
+    });
+    await seedPiAuth(dir, { p1: { type: "api_key", key: "sk-rotated" }, p2: { type: "api_key", key: "sk-new" } });
+    await storage.init();
+    assert.equal(storage.readConfig().providers.p1.baseUrl, "https://p1.example.com", "既有 provider 不被外部改值覆盖");
+    assert.equal(storage.readConfig().providers.p2, undefined, "外部新增 provider 不导入");
+    assert.equal(database.get("auth", "p1").key, "sk-old", "既有凭据不被外部改值覆盖");
+    assert.equal(database.get("auth", "p2"), undefined, "外部新增凭据不导入");
+    assert.deepEqual(storage.importErrors(), []);
+  } finally {
+    database?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("混合坏 auth：好条目入库且不打标记，UI 新值不被重导覆盖，修复后坏条目可补导入", async () => {
   const dir = await tempDir();
   let database;

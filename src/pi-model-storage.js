@@ -20,7 +20,8 @@ try {
 // Pi 运行时零手工配置——凭据以内存 CredentialStore 注入 ModelRuntime（SDK 标准接口），
 // 模型目录因 SDK 只接受文件路径，写 Axiom 私有派生文件 models.compat.json（仅派生非权威，
 // 每次写库后全量重写，可随时删除重建）。首次启动幂等导入既有 Pi 配置（models.json/auth.json）
-// 与旧收藏文件：只读源文件、绝不回写；导入后打迁移标记，此后不再从旧文件覆盖。
+// 与旧收藏文件：只读源文件、绝不回写；仅权威为空时导入，打迁移标记后不再从旧文件覆盖，
+// 页面配置后旧文件永久退出导入来源，清空权威也不复活。
 // 密钥明文仅存 SQLite（用户明确同意）；本模块所有对外读取均不返回明文。
 const NAMESPACE = "models";
 const AUTH_NAMESPACE = "auth";
@@ -203,13 +204,18 @@ export function createPiModelStorage({ database, home, piDir = getAgentDir() }) 
   // 下次 init 自动重新导入（与 README「坏文件保留并警告，修复后可再次导入」一致），
   // 每次重试只多读一个小文件，代价可忽略。JSON 解析错误不携带 error.message
   //（V8 SyntaxError 可能附带文件原文片段，有密钥泄露风险）。
-  const importOnce = async (source, apply) => {
+  const importOnce = async (source, apply, { markMissing = false } = {}) => {
     if (database.get(MIGRATED_NAMESPACE, source) !== undefined) return;
     let raw;
     try {
       raw = await readFile(source, "utf8");
     } catch (error) {
-      if (error.code === "ENOENT") return; // 无旧配置：零导入，不打标记（用户日后建文件可再导）
+      if (error.code === "ENOENT") {
+        // 无旧配置：零导入。仍打标记关闭迁移窗口——日后才出现的旧文件不再补导
+        //（页面配置后不跟随，权威清空后也不复活）。收藏来源不受此影响。
+        if (markMissing) database.set(MIGRATED_NAMESPACE, source, true);
+        return;
+      }
       recordImportError(source, "无法读取旧配置文件，已跳过导入");
       return;
     }
@@ -268,8 +274,19 @@ export function createPiModelStorage({ database, home, piDir = getAgentDir() }) 
   // 启动装配：幂等导入 → 全量重建派生兼容文件（幂等：任意时刻删掉 compat 文件重启即恢复）。
   // 必须在 createPiFactory 之前 await 完成，SDK 首次读模型目录时兼容文件已就绪。
   const init = async () => {
-    await importOnce(sources.models, importModels);
-    await importOnce(sources.auth, importAuth);
+    // 导入门闩：模型权威一经存在（页面配置或既往导入），pi 旧文件永久退出导入来源——
+    // 不再读文件补新 provider/凭据，补打标记（此后即便清空权威也不复活）并清除陈旧告警。
+    // 尚未配置时才尝试导入（坏文件修复后仍可重试，README 承诺保留）；收藏导入不走此门闩。
+    if (database.get(NAMESPACE, CONFIG_KEY) === undefined) {
+      await importOnce(sources.models, importModels, { markMissing: true });
+      await importOnce(sources.auth, importAuth, { markMissing: true });
+    } else {
+      for (const source of [sources.models, sources.auth]) {
+        if (database.get(MIGRATED_NAMESPACE, source) === undefined)
+          database.set(MIGRATED_NAMESPACE, source, true);
+        clearImportErrors(source);
+      }
+    }
     await importOnce(sources.favorites, importFavorites);
     await syncCompatFile(readConfig());
   };

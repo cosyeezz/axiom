@@ -1,5 +1,17 @@
 # 开发记录
 
+## 2026-09-13 统一模型配置与历史会话恢复：集成验证
+- 内容与原因：供应商不再分内置只读/自定义；模型字段覆盖保留未编辑定义，七级思考勾选与高级映射同步。配置页直接桥接 SDK 登录/登出，凭据仅落 SQLite，连接隔离、取消/超时与错误脱敏。首次导入门闩关闭后不跟随 Pi 文件，不双写。
+- 会话修复：历史恢复使用完整定义验证暂未鉴权模型，保留原模型；新建仍校验可用目录，真正未知模型仍拒绝。前端保留当前不可选模型占位，并丢弃跨会话迟到配置回执；修正模型初始虚假脏状态与思考勾选视觉同步。
+- 涉及：src/{pi,sessions,model-config,model-auth,pi-model-storage,protocol,server}.js；public/{app,model-manager,model-auth}.js、model-manager.css；相关 tests；README、协议文档、codebase-map 索引/知识库。
+- 验证：全量 npm test 371 项，369 通过、2 平台跳过、0 失败。Playwright 静态模拟授权：1280px/390px 各四状态，8 张截图、0 横向溢出、0 脚本错误；未进行真实 OAuth 或真实 API 请求。git diff --check 与 JS 语法检查通过。
+
+## 2026-09-13 文档同步：模型统一编辑/登录/隐藏协议与导入门闩落稿（尚待验证）
+- 原因：worktree 代码新增 models.model.override（统一定义编辑）、models.auth.*（网页登录）、models.config.get 回传 authProviders/hidden/applied 与全量模型目录 catalog、thinking 七级勾选写 thinkingLevelMap、SQLite 不双写与一次导入门闩（markMissing），但三份文档未同步。
+- 修改：仅 README.md、docs/model-config-protocol.md、devlog.md 三个文件。协议文档：新增思考等级统一口径小节、models.model.override/models.hidden.set/models.auth.* 三节，models.config.get 响应补 applied/applyError/authProviders/hidden 与 catalog 字段说明，数据模型节补不双写与导入门闩语义，收藏 thinking key 注明七级与末位冒号切分。README：订阅登录改为可在设置页完成；「模型与供应商」bullet 改为统一编辑口径（内置模型逐字段覆盖、勾选思考等级、隐藏而非删除、默认新会话模型位置不变）；SQLite 节补一次导入门闩与不双写。devlog：本条。
+- 未改：src/ 与 public/ 全部代码、tests、其他文档。
+- 验证：尚待验证。未运行任何测试或构建；文档与代码的一致性仅经人工阅读比对（protocol.js/model-auth.js/model-config.js/pi-model-storage.js/pi.js/model-manager.js/model-auth.js），待后续轮次跑全量 npm test 与页面手测后再合并。
+
 ## 2026-09-13 全部 worktree 集成与清理
 - 决策：按用户要求集成所有附加工作区；先备份未提交内容，处理已有合并冲突，验证后推送 master 并清理附加 worktree。
 - 保留：主仓库 AGENTS.md 的本地规则整理转入功能分支提交；临时安装目录和 NUL 不纳入源码。

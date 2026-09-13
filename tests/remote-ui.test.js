@@ -14,10 +14,10 @@ async function page(extra = "") {
   const picker = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
   const contrast = (await readFile(new URL("../public/text-contrast.js", import.meta.url), "utf8")).replace(/^export /gm, "");
 // master 模型模块脚手架（同 tests/app.test.js）：app.js 顶层调用 initModelManager，缺它会 ReferenceError
-const modelSources = await Promise.all(["model-picker", "model-manager"].map(async (name) => {
+const modelSources = await Promise.all(["model-picker", "model-auth", "model-manager"].map(async (name) => {
   const source = await readFile(new URL(`../public/${name}.js`, import.meta.url), "utf8");
   const exports = [...source.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
-  return `Object.assign(window, (() => { ${source.replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`;
+  return `Object.assign(window, (() => { ${source.replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`;
 })).then((parts) => parts.join("\n"));
   const dom = new JSDOM(html, { url: "http://localhost", runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window;

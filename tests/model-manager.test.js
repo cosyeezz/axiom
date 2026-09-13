@@ -2,9 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
+import { modelOverrideIn } from "../src/protocol.js";
 
-// 被测模块与 file-picker.test.js 同一装载方式：剥掉 export 后在 JSDOM 窗口内求值。
-const source = (await readFile(new URL("../public/model-manager.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+// 被测模块与 file-picker.test.js 同一装载方式：model-manager 现已 import model-auth（登录 UI），
+// 装载顺序为先剥 export 求值 model-auth.js，再去掉 import 行并剥 export 求值 model-manager.js，
+// 两个模块在同一 eval 作用域内共享符号。
+const authSource = (await readFile(new URL("../public/model-auth.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+const source = (await readFile(new URL("../public/model-manager.js", import.meta.url), "utf8"))
+  .replace(/^import .*$/gm, "")
+  .replace(/^export /gm, "");
 const tick = () => new Promise(setImmediate);
 // 组件在窗口 realm 内构造对象，跨 realm 的 deepStrictEqual 会因原型不同而失败，先转成本 realm。
 const j = (value) => JSON.parse(JSON.stringify(value));
@@ -23,7 +29,7 @@ function harness() {
       call.reject = reject;
     });
   };
-  window.eval(`${source}\nwindow.init = initModelManager; window.templates = PROVIDER_TEMPLATES;`);
+  window.eval(`${authSource}\n${source}\nwindow.init = initModelManager; window.templates = PROVIDER_TEMPLATES;`);
   const saved = [];
   const manager = window.init({
     root: window.document.getElementById("root"),
@@ -100,7 +106,7 @@ test("供应商协议清除后回读、再次保存和刷新仍保持不设置�
   h.window.close();
 });
 
-test("加载后导航分组展示自定义与内置目录，详情默认显示模型名称+实际ID+能力", async () => {
+test("加载后导航合并展示自定义与内置目录，默认选中目录模型且能力可展开编辑", async () => {
   const h = harness();
   const loaded = h.manager.load();
   await h.settle();
@@ -114,23 +120,26 @@ test("加载后导航分组展示自定义与内置目录，详情默认显示�
   });
   await h.settle();
   await loaded;
-  const rootText = h.root().textContent;
-  assert.match(rootText, /内置与扩展/);
+  // 自定义与内置目录合并进同一个「供应商」分组（不再有只读的「内置与扩展」分组）。
+  const groups = [...h.root().querySelectorAll(".mm-nav-group")].map((node) => node.textContent);
+  assert.deepEqual(groups, ["供应商"]);
   assert.ok(h.navItem("anthropic"), "目录供应商进入导航");
   assert.ok(h.navItem("openai"));
-  // 无自定义供应商时自动选中第一个目录项：模型名称 + 实际 id + 推理/图片徽标。
+  // 无自定义供应商时自动选中第一个目录项：模型名称 + 实际 id + 图片徽标。
   const detail = h.detail();
   assert.match(detail.textContent, /Claude Sonnet 4\.5/);
   assert.match(detail.textContent, /claude-sonnet-4-5/);
-  assert.match(detail.textContent, /内置 \/ 扩展/);
   const badges = [...detail.querySelectorAll(".mm-badge")].map((node) => node.textContent);
-  assert.equal(badges.filter((text) => text === "推理").length, 1);
   assert.equal(badges.filter((text) => text === "图片").length, 1);
+  // 推理能力在目录条目上以思考等级（levels）呈现：勾选状态落在展开行的等级列表里。
+  const levels = [...detail.querySelectorAll(".mm-thinking-levels input:checked")]
+    .map((box) => box.parentElement.textContent).sort();
+  assert.deepEqual(levels, ["high", "off"], "目录 levels 渲染为思考等级勾选");
   assert.equal(h.saved.length, 0, "初次加载不触发 onSaved");
   h.window.close();
 });
 
-test("自定义供应商进编辑器，目录项只读且掩码密钥不泄露、不注入", async () => {
+test("自定义供应商进编辑器，掩码密钥不泄露、不注入；目录供应商同页可编辑", async () => {
   const h = harness();
   const loaded = h.manager.load();
   h.flushGet({
@@ -149,9 +158,9 @@ test("自定义供应商进编辑器，目录项只读且掩码密钥不泄露�
   });
   await h.settle();
   await loaded;
-  // my-proxy 已自定义 → 出现在「自定义与覆盖」且不再出现在内置分组。
+  // my-proxy 已自定义 → 出现在「供应商」分组；内置目录与自定义并列展示，不再拆只读分组。
   assert.ok(h.navItem("my-proxy"));
-  assert.ok(!h.navItem("anthropic") || h.root().textContent.includes("内置与扩展"));
+  assert.ok(h.navItem("anthropic"));
 
   await h.selectProvider("my-proxy");
   const form = h.detail();
@@ -177,13 +186,15 @@ test("自定义供应商进编辑器，目录项只读且掩码密钥不泄露�
   assert.equal(keyInput.value, "", "回显后密钥仍为空，不会把已存密钥泄露到界面");
   assert.equal(h.root().textContent.includes("masked"), false, "掩码对象不出现在界面文本中");
 
-  // 内置 anthropic 是只读目录页：模型清单 + 覆盖入口，无编辑字段。
+  // 内置 anthropic 目录页：模型行同页可编辑（覆盖语义），连接表单收敛到「编辑连接」入口。
   await h.selectProvider("anthropic");
   const catalog = h.detail();
-  assert.match(catalog.textContent, /内置 \/ 扩展/);
   assert.match(catalog.textContent, /claude-sonnet-4-5/);
-  assert.match(catalog.textContent, /添加同名覆盖「anthropic」/);
-  assert.equal(catalog.querySelector(".mm-form"), null, "目录页没有连接表单");
+  assert.match(catalog.textContent, /展开模型可配置名称、上下文和思考等级/);
+  assert.ok(catalog.querySelector(".mm-model"), "目录模型行可直接展开编辑");
+  assert.ok([...catalog.querySelectorAll("button")].some((b) => b.textContent === "编辑连接 / 添加模型"));
+  assert.ok([...catalog.querySelectorAll("button")].some((b) => b.textContent === "隐藏此供应商"));
+  assert.equal(catalog.querySelector(".mm-form"), null, "连接表单仍收敛在草稿/编辑器里");
   h.window.close();
 });
 
@@ -734,8 +745,8 @@ test("parseError 时提示且目录可浏览；加载失败不抛出并提供重
   let root = h.root();
   assert.match(root.textContent, /旧模型配置导入失败/);
   assert.ok(h.navItem("openai"), "目录照常进入导航");
-  assert.match(h.detail().textContent, /gpt-5\.1/, "只读详情照常展示");
-  assert.match(root.textContent, /只读/, "parseError 下目录页保持只读");
+  assert.match(h.detail().textContent, /gpt-5\.1/, "目录详情照常展示");
+  assert.ok(h.detail().querySelector(".mm-model"), "parseError 下目录模型仍可编辑");
   assert.doesNotMatch(root.textContent, /保存失败/);
 
   const failed = h.manager.load();
@@ -1043,5 +1054,149 @@ test("过期发现响应被丢弃：并发拉取后者胜出，跨供应商响�
   assert.ok(discoverRows(h).some((row) => row.textContent.includes("p1-model")));
   await h.selectProvider("p2");
   assert.ok(discoverRows(h).some((row) => row.textContent.includes("p2-model")), "p2 面板保留自己的结果");
+  h.window.close();
+});
+
+// ── 内置目录覆盖（models.model.override）与隐藏（models.hidden.set）─────────
+const sonnetCatalog = {
+  provider: "anthropic", id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5",
+  key: "anthropic/claude-sonnet-4-5", levels: ["off", "high"], input: ["text", "image"],
+};
+// 加载后无自定义供应商 → 自动选中首个目录项，返回该模型行。
+const openSonnet = async (h) => {
+  const loaded = h.manager.load();
+  h.flushGet({ catalog: [sonnetCatalog] });
+  await h.settle();
+  await loaded;
+  return h.detail().querySelector(".mm-model");
+};
+const checkLevel = (h, row, level, checked) => {
+  const box = [...row.querySelectorAll(".mm-thinking-levels input")]
+    .find((input) => input.parentElement.textContent === level);
+  box.checked = checked;
+  box.dispatchEvent(new h.window.Event("change", { bubbles: true }));
+};
+
+test("目录模型 thinking 覆盖：等级勾选写入 thinkingLevelMap 并同步高级 JSON，载荷符合严格 schema", async () => {
+  const h = harness();
+  const row = await openSonnet(h);
+  const checked = () => [...row.querySelectorAll(".mm-thinking-levels input:checked")]
+    .map((box) => box.parentElement.textContent).sort();
+  assert.deepEqual(checked(), ["high", "off"], "目录 levels 渲染为等级勾选");
+  const extras = row.querySelector(".mm-extras");
+  assert.match(extras.value, /"key": "anthropic\/claude-sonnet-4-5"/, "目录原文 key/levels/provider 进高级 JSON");
+
+  // 勾选 low：thinkingLevelMap.low = "low" 同步进高级 textarea；非 off 等级连带标记支持推理。
+  checkLevel(h, row, "low", true);
+  assert.match(extras.value, /"low": "low"/);
+  const saveButton = row.querySelector(".mm-model-actions button");
+  assert.equal(saveButton.disabled, false);
+  saveButton.click();
+  await h.settle();
+  const override = h.lastPending("models.model.override");
+  assert.ok(override, "目录模型保存走 models.model.override");
+  assert.deepEqual(j(override.args), {
+    providerId: "anthropic",
+    modelId: "claude-sonnet-4-5",
+    baseFingerprint: "fp-1",
+    override: { thinkingLevelMap: { low: "low" }, reasoning: true },
+  }, "只发改动字段；目录原文 key/provider/levels 被剔除，不触严格 schema");
+  const parsed = modelOverrideIn.safeParse(j(override.args.override));
+  assert.equal(parsed.success, true, `载荷必须通过服务端严格 schema：${JSON.stringify(parsed.error?.issues ?? [])}`);
+  override.settled = true;
+  override.resolve({ fingerprint: "fp-2" });
+  await h.settle();
+  h.flushGet({ fingerprint: "fp-2" });
+  await h.settle();
+  assert.match(h.root().textContent, /已保存模型「claude-sonnet-4-5」/);
+  h.window.close();
+});
+
+test("目录模型覆盖空值语义：取消等级写 null、清空名称转 null 恢复目录默认", async () => {
+  const h = harness();
+  const row = await openSonnet(h);
+  checkLevel(h, row, "high", false);
+  const nameInput = [...row.querySelectorAll(".mm-model-grid input[type='text']")]
+    .find((input) => input.value === "Claude Sonnet 4.5");
+  h.setInput(nameInput, "");
+  row.querySelector(".mm-model-actions button").click();
+  await h.settle();
+  const override = h.lastPending("models.model.override");
+  assert.deepEqual(j(override.args.override), {
+    name: null,
+    thinkingLevelMap: { high: null },
+    reasoning: false,
+  }, "null=恢复目录默认/禁用该等级；reasoning 显式 false 覆盖目录推导");
+  override.settled = true;
+  override.resolve({ fingerprint: "fp-2" });
+  await h.settle();
+  h.window.close();
+});
+
+test("隐藏内置供应商与单个模型：hidden.set 请求、导航收敛、「已隐藏」页可恢复", async () => {
+  const h = harness();
+  const loaded = h.manager.load();
+  h.flushGet({
+    catalog: [
+      sonnetCatalog,
+      { provider: "openai", id: "gpt-5.1", name: "GPT-5.1", key: "openai/gpt-5.1", levels: [], input: ["text"] },
+    ],
+  });
+  await h.settle();
+  await loaded;
+  const dialog = () => h.window.document.querySelector(".mm-dialog");
+  const confirmDialog = (label) => [...dialog().querySelectorAll(".dialog-actions button")]
+    .find((b) => b.textContent === label).click();
+
+  // 单个模型：目录详情行内删除图标 → 确认弹窗 → hidden.set(key = "openai/gpt-5.1")。
+  await h.selectProvider("openai");
+  h.detail().querySelector(".mm-model-row-actions .mm-icon-delete").click();
+  await h.settle();
+  assert.match(dialog().textContent, /隐藏模型「openai\/gpt-5\.1」/);
+  confirmDialog("隐藏");
+  await h.settle();
+  let hiddenCall = h.lastPending("models.hidden.set");
+  assert.deepEqual(j(hiddenCall.args), { key: "openai/gpt-5.1", hidden: true });
+  hiddenCall.settled = true;
+  hiddenCall.resolve({});
+  await h.settle();
+  h.flushGet({ fingerprint: "fp-2", hidden: ["openai/gpt-5.1"] });
+  await h.settle();
+  assert.match(h.root().textContent, /已隐藏「openai\/gpt-5\.1」/);
+  assert.ok(!h.navItem("openai"), "模型全隐藏后供应商从导航消失");
+  assert.match(h.root().textContent, /已隐藏（1）/, "「已隐藏」分组出现");
+  assert.equal(h.saved.length, 1, "隐藏写入后通知主入口刷新");
+
+  // 恢复：「已隐藏」页 → 恢复按钮 → hidden.set(hidden: false)。
+  h.navItem("已隐藏").click();
+  await h.settle();
+  [...h.detail().querySelectorAll("button")].find((b) => b.textContent === "恢复").click();
+  await h.settle();
+  hiddenCall = h.lastPending("models.hidden.set");
+  assert.deepEqual(j(hiddenCall.args), { key: "openai/gpt-5.1", hidden: false });
+  hiddenCall.settled = true;
+  hiddenCall.resolve({});
+  await h.settle();
+  h.flushGet({ fingerprint: "fp-3", hidden: [] });
+  await h.settle();
+  assert.ok(h.navItem("openai"), "恢复后重新可选");
+
+  // 整个供应商：导航行内删除图标 → hidden.set(key = "anthropic")。
+  h.navItem("anthropic").parentElement.querySelector(".mm-icon-delete").click();
+  await h.settle();
+  assert.match(dialog().textContent, /隐藏供应商「anthropic」及其 1 个模型/);
+  confirmDialog("隐藏");
+  await h.settle();
+  hiddenCall = h.lastPending("models.hidden.set");
+  assert.deepEqual(j(hiddenCall.args), { key: "anthropic", hidden: true });
+  hiddenCall.settled = true;
+  hiddenCall.resolve({});
+  await h.settle();
+  h.flushGet({ fingerprint: "fp-4", hidden: ["anthropic"] });
+  await h.settle();
+  assert.ok(!h.navItem("anthropic"), "整供应商隐藏后从导航消失");
+  h.navItem("已隐藏").click();
+  await h.settle();
+  assert.match(h.detail().textContent, /整个供应商 · 1 个模型/, "供应商级条目标注整体隐藏");
   h.window.close();
 });

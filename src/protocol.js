@@ -163,6 +163,7 @@ export const modelConfigIn = z
     compat: z.record(z.string(), z.unknown()).optional().nullable(),
   })
   .passthrough();
+export const modelOverrideIn = modelConfigIn.omit({ id: true, api: true, baseUrl: true }).strict();
 const fingerprintIn = z.string().min(1).max(128);
 export const command = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("service.status") }).strict(),
@@ -251,6 +252,13 @@ export const command = z.discriminatedUnion("type", [
   // 只读：从供应商在线拉取模型列表（models.provider.discover）；不写盘、不自动启用。
   z.object({ id, type: z.literal("models.provider.discover"), providerId: providerKey }).strict(),
   z.object({ id, type: z.literal("models.favorites.get") }).strict(),
+  z.object({ id, type: z.literal("models.model.override"), providerId: providerKey, modelId: modelKey, override: modelOverrideIn, baseFingerprint: fingerprintIn }).strict(),
+  z.object({ id, type: z.literal("models.auth.list") }).strict(),
+  z.object({ id, type: z.literal("models.auth.start"), providerId: providerKey, authType: z.enum(["api_key", "oauth"]) }).strict(),
+  z.object({ id, type: z.literal("models.auth.status"), flowId: id }).strict(),
+  z.object({ id, type: z.literal("models.auth.respond"), flowId: id, promptId: id, value: z.string().min(1).max(8192) }).strict(),
+  z.object({ id, type: z.literal("models.auth.cancel"), flowId: id }).strict(),
+  z.object({ id, type: z.literal("models.auth.logout"), providerId: providerKey }).strict(),
   // 内置目录可见性（Axiom 侧隐藏/恢复，不改 Pi 运行时目录）：key = 供应商 id 或 `provider/id`。
   z
     .object({

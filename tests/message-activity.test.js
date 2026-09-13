@@ -27,10 +27,10 @@ async function page() {
   w.renderMarkdown = new Function("marked", "DOMPurify", `${markdown}; return renderMarkdown;`)(marked, createPurify(w));
   w.createStreamRenderer = (render, after) => createStreamRenderer(render, after, w.requestAnimationFrame, w.cancelAnimationFrame);
   w.WebSocket = class { static OPEN = 1; readyState = 1; send() {} };
-  for (const name of ["model-picker", "model-manager"]) {
+  for (const name of ["model-picker", "model-auth", "model-manager"]) {
     const module = await readFile(new URL(`../public/${name}.js`, import.meta.url), "utf8");
     const exports = [...module.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
-    w.eval(`Object.assign(window, (() => { ${module.replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`);
+    w.eval(`Object.assign(window, (() => { ${module.replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`);
   }
   w.eval(`${contrast}\n${picker}\n${source}\nconnected = true;`);
   const state = { sessionId: "activity", title: "Activity", cwd: "C:/work", status: "idle", config: { model: "test/model", thinking: "off", levels: ["off"], skills: [] }, messages: [], tasks: [], live: {}, tools: {} };

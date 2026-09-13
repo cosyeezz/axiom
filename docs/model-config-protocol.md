@@ -6,7 +6,13 @@
 
 ## 数据模型
 
-权威存储：Axiom SQLite 的 models/config；旧 Pi models.json 只用于首次导入，models.compat.json 是供 SDK 使用的派生镜像。
+权威存储：Axiom SQLite 的 models/config（凭据 auth/<providerId>、收藏 models/favorites、隐藏清单 models/hidden）。**不双写**：SQLite 是唯一权威，models.compat.json 只是每次写库后全量重写的派生镜像（可随时删除重建，重启自动恢复）；旧 Pi models.json / auth.json 只读导入、绝不回写。
+
+**一次导入门闩**：仅当模型权威为空时才尝试导入 models.json / auth.json；无论文件存在与否，成功导入或确认无文件后都打迁移标记（`markMissing`），关闭迁移窗口——此后旧文件不再被读取，权威清空也不会复活导入；权威已存在时启动直接补打标记并清除陈旧导入告警。坏文件/坏结构只记录去重告警、不打标记，用户修复原文件后下次启动自动重试。收藏导入不走此门闩（仍按「权威为空才导入」幂等执行）。
+
+### 思考等级（全协议统一口径）
+
+七级：`off | minimal | low | medium | high | xhigh | max`（selection.thinking、thinkingLevelMap 键、收藏 thinking 组 key 后缀同用此表，前端勾选框同序）。模型上的 `thinkingLevelMap` 把等级映射为 API 取值（string）；值为 `null` 表示对该模型禁用该等级。
 
 ### 密钥脱敏（GET 永不回传明文）
 
@@ -47,7 +53,14 @@
 {
   "fingerprint": "…",          // sha256 hex
   "path": "…/models.compat.json",
-  "parseError": "…",           // 可选：旧配置导入告警或库内结构无效
+  "applied": true,             // false = 已保存但派生/刷新未完成，见 applyError
+  "applyError": "…",           // 可选：挂起应用状态的失败原因（GET 读取路径会顺带重试）
+  "parseError": "…",           // 可选：旧配置导入告警（仅权威为空时）或库内结构无效
+  "authProviders": [           // 支持网页登录的供应商及登录方式
+    { "id": "anthropic", "name": "Anthropic", "configured": true,
+      "methods": [ { "type": "oauth", "name": "…" }, { "type": "api_key", "name": "…" } ] }
+  ],
+  "hidden": [ "openai", "anthropic/claude-…" ],  // 内置目录隐藏清单（见 models.hidden.set）
   "providers": [               // SQLite 中的自定义/覆盖供应商，保持配置顺序；未知字段原样返回
     {
       "id": "my-provider",
@@ -61,12 +74,13 @@
       "…未知字段原样"
     }
   ],
-  "catalog": [ /* 与 models.list 完全同构：已配置认证可用的模型（provider/id/name/key/levels/input） */ ]
+  "catalog": [ /* 全部模型定义（含未登录、已隐藏条目）：provider/id/name/key/levels/input/
+                   api/reasoning/contextWindow/maxTokens/thinkingLevelMap/cost；绝不返回 headers/apiKey */ ]
 }
 ```
 
-配置页可编辑范围 = `providers`（SQLite）。内置供应商出现在 `catalog` 供参照，
-不直接编辑（覆盖内置供应商 = 在 providers 里新建同名 id）。
+配置页可编辑范围 = `providers`（SQLite）+ 内置模型的逐字段覆盖（models.model.override）。
+`catalog` 供本页展示与编辑内置定义；`models.list` 才是按登录状态与隐藏清单过滤后的可选目录。
 
 ### models.provider.save `{ providerId, provider, baseFingerprint }` → `{ fingerprint }`
 
@@ -101,6 +115,19 @@
   未知字段原样保存
 - 返回新 `fingerprint`；触发 `models.config.changed`
 
+### models.model.override `{ providerId, modelId, override, baseFingerprint }` → `{ fingerprint }`
+
+统一编辑内置/扩展目录里的单个模型定义（自定义模型请用 models.model.save 整条管理）。
+
+- `modelId` 必须命中当前目录中的 `provider/id`（未知模型拒绝）
+- `override`：`models.model.save` 的 schema 去掉 `id` / `api` / `baseUrl` 后 strict
+  （协议与归属由供应商定义，覆盖不可改）；已知字段见 model.save
+- 合并语义（写入 `providers[providerId].modelOverrides[modelId]`）：`null` 删除该覆盖字段；
+  `headers` 沿用掩码 keep；`thinkingLevelMap` / `cost` / `compat` / `samplingParams` 按键级深合并；
+  其余字段直接覆盖；所有覆盖字段清空 → 整条覆盖删除（恢复内置定义）
+- 只保存修改的字段，未覆盖能力保持内置定义不变（与旧「同名整条覆盖会丢成本/上下文」不同）
+- 返回新 `fingerprint`；触发 `models.config.changed`
+
 ### models.model.delete `{ providerId, modelId, baseFingerprint }` → `{ fingerprint }`
 
 按 id 删除；provider 或模型不存在 → 报错。
@@ -129,6 +156,33 @@
   **未知 reasoning/上下文一律省略，不从名称猜测**
 - 错误脱敏：固定中文文案 + HTTP 状态码；**绝不包含请求头、密钥、上游响应体**（网络错误/超时/重定向/非 JSON/结构无法识别/响应体过大各有独立文案）
 
+### models.hidden.set `{ key, hidden }` → `{ hidden: [ … ] }`
+
+内置目录可见性（Axiom 侧隐藏/恢复）：`key` 为供应商 id（整条）或 `provider/id`（单个模型），
+必须存在于当前目录（不写永久失效的垃圾条目）；清单存 SQLite `models/hidden`，上限 500。
+
+- 无 `baseFingerprint`（隐藏清单独立于 models.json，不做乐观锁）
+- 只影响 Axiom 的选取入口：`models.list`（模型选择器）与本页目录；Pi 运行时目录不动，
+  既有会话不受影响。存在同名自定义条目时供应商级隐藏不生效（用户已用覆盖接管该 id）
+- 返回全量清单；触发 `models.config.changed`
+
+### 模型登录（models.auth.*，网页内完成订阅/凭据登录）
+
+登录流程由 SDK 驱动（授权 URL / 设备码 / 交互提问），凭据由 SDK 直接落 SQLite
+（auth/<providerId>）；桥接层不保存、不回传任何凭据。一个 WS 连接同一时刻一个流程，
+同供应商全局互斥（运行中不接受第二个登录，也不允许另一窗口登出）。
+
+- `models.auth.list {}` → `{ providers }`（同 config.get 的 authProviders：id/name/methods/configured）
+- `models.auth.start { providerId, authType }` → `{ flowId, providerId, status, events, prompt? }`；
+  `authType` ∈ `api_key | oauth`，须是该供应商声明的方式；流程 10 分钟超时自动取消
+- `models.auth.status { flowId }` → 同上视图（前端 800ms 轮询）
+- `models.auth.respond { flowId, promptId, value }` → 同上；回答当前交互提问（select 选项校验，
+  文本 ≤8192）；prompt 已更新或流程非 running → 报错
+- `models.auth.cancel { flowId }` → 同上（中止流程）
+- `models.auth.logout { providerId }` → `{ ok: true }`（删除凭据并刷新目录；该供应商登录进行中 → 拒绝）
+- 事件视图：`auth_url` / `device_code` / `info`；URL 只回传 https 或本机地址，文本截断到 2000 字
+- 登录成功或登出后服务端 `refreshModels` 并广播 `models.config.changed`
+
 ### 写命令副作用（成功后依次）
 
 1. 用 SDK 真实 schema 校验候选配置；校验器不可用或校验失败时拒绝写入，错误不包含凭据。
@@ -147,7 +201,7 @@
 - `provider`：供应商 id，如 `"anthropic"`
 - `model`：模型完整 key，如 `"anthropic/claude-…"`；允许模型 ID 中的冒号，如 `"ollama/llama3.1:8b"`
 - `thinking`：模型+思考等级，key 形如 `"anthropic/claude-…:high"`
-  （最后一个 `:` 后为等级：`off|minimal|low|medium|high|xhigh|max`）
+  （最后一个 `:` 后为等级，七级见「思考等级」小节；模型 id 允许含冒号，只按最后一个切分）
 
 存储：Axiom SQLite 的 models/favorites；旧 models-favorites.json 仅用于导入：
 
