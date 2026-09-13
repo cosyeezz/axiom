@@ -971,3 +971,4 @@
 - 涉及：public/app.js、tests/message-activity.test.js、README.md、.pi/skills/codebase-map/knowledge.md、INDEX.md。
 - 验证：定向10项及 app/session-flow/session-persistence 20项通过；全量验证见后续记录。
 - 最终验证：node --test --test-concurrency=1 全量357项，355通过、2跳过；默认并行两次在未改动 app.test.js 异步断言失败（排序/导入跳转），定向与串行通过。追加实时子消息之后重试也固定归位检查，定向10项再次通过。
+- 集成复验：合并最新 origin/master 后，定向30项通过；全量串行再次355通过、2跳过。
