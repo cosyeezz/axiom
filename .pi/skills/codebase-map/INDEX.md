@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/12 20:25:30）
+# Axiom 多级代码索引（生成于 2026/9/12 22:17:55）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -12,7 +12,7 @@
 | public/markdown.js | 247 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, textLanguages, isText |
 | public/memory-tags.js | 87 | 主子代理共享简单标签提取与流式显示过滤 | TAGS, NAMES, TAG, OPEN |
 | public/model-manager.css | 279 | 模型配置页：供应商列表、编辑表单与响应式布局 | - |
-| public/model-manager.js | 628 | Pi 模型管理：供应商模板、模型编辑与安全保存反馈 | API_TYPES, PROVIDER_TEMPLATES, PROVIDER_ID, MASK_KINDS |
+| public/model-manager.js | 635 | Pi 模型管理：供应商模板、模型编辑与安全保存反馈 | API_TYPES, PROVIDER_TEMPLATES, PROVIDER_ID, MASK_KINDS |
 | public/model-picker.css | 88 | 共享收藏下拉：暗色浮层、星标、触屏与焦点样式 | - |
 | public/model-picker.js | 300 | 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互 | GAP, EDGE, TYPEAHEAD_MS, el |
 | public/service-settings.js | 278 | 设置页服务维护：真实进度、结果、更新确认与独立维护通道 | MAINT_URL_RE, POLL_MS, initServiceSettings |
@@ -26,35 +26,36 @@
 | scripts/dev.mjs | 12 | 开发入口：DEV 标识、4320 端口与独立数据目录 | - |
 | scripts/install.mjs | 101 | 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器 | root, parseArgs, nodeOk, openCommand |
 | scripts/maint-server.mjs | 86 | loopback维护HTTP：来源校验、随机凭证、状态与离线恢复 | MAX_BODY, hash, json, startMaintServer |
-| scripts/maint-state.mjs | 105 | 守护维护状态：持久化阶段、最近结果与有界脱敏证据 | NAMESPACE, LOG_LIMIT, sanitize, createMaintState |
+| scripts/maint-state.mjs | 116 | 守护维护状态：持久化阶段、最近结果与有界脱敏证据 | NAMESPACE, LOG_LIMIT, sanitize, createMaintState |
 | scripts/service.mjs | 503 | 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道 | root, output, run, npmRun |
 | scripts/uninstall.mjs | 18 | 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据 | uninstall |
 | src/capabilities.js | 139 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/compaction.js | 390 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
-| src/database.js | 57 | 共享 SQLite 存储、WAL 与迁移标记 | Database |
+| src/database.js | 93 | 共享 SQLite 连接、小配置 KV、WAL 与一致性备份 | Database |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
 | src/main.js | 114 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, home, database |
 | src/memory-policy.js | 39 | 主子代理摘要规则与配置页参数校验 | SUMMARY_SYSTEM_PROMPT, SUMMARY_REMINDER, SUMMARY_DELEGATE, MEMORY_SUMMARY_LIMITS |
-| src/model-config.js | 316 | Pi models.json 无损配置读写与共享收藏持久化 | sdkModelConfig, digest, LEVELS, FAVORITE_GROUPS |
-| src/pi-model-storage.js | 230 | 模型与凭据 SQLite 权威存储、Pi 派生兼容文件 | sdkResolveConfigValue, sdkIsCommandConfigValue, NAMESPACE, AUTH_NAMESPACE |
+| src/model-config.js | 347 | Pi models.json 无损配置读写与共享收藏持久化 | sdkModelConfig, digest, LEVELS, FAVORITE_GROUPS |
+| src/pi-model-storage.js | 259 | 模型与凭据 SQLite 权威存储、Pi 派生兼容文件 | sdkResolveConfigValue, sdkIsCommandConfigValue, NAMESPACE, AUTH_NAMESPACE |
 | src/pi.js | 357 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, queueStateOf, hasModelOutput, withdrawQueue |
 | src/protocol.js | 324 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
-| src/remote.js | 536 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
+| src/remote.js | 547 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
 | src/retry.js | 161 | 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_DELAY_MS, MAX_RETRIES, delayFor |
-| src/server.js | 457 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | assets, createServerApp |
-| src/session-memory.js | 94 | 标题与增量摘要登记、触发复盘、委派背景与被动进度 | textOf, escape, memoryHooks, parentSummaryContext |
-| src/sessions.js | 1155 | Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化 | BROWSE_PAGE, SEARCH_LIMIT, SEARCH_DIR_LIMIT, IGNORED_ENTRIES |
-| src/tasks.js | 112 | Tasks：子任务（委托）生命周期 | Tasks |
+| src/server.js | 459 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | assets, createServerApp |
+| src/session-memory.js | 117 | 标题与增量摘要登记、触发复盘、委派背景与被动进度 | textOf, escape, memoryHooks, parentSummaryContext |
+| src/session-store.js | 528 | 会话四表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, SessionStore |
+| src/sessions.js | 1288 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | BROWSE_PAGE, SEARCH_LIMIT, SEARCH_DIR_LIMIT, IGNORED_ENTRIES |
+| src/tasks.js | 122 | Tasks：子任务（委托）生命周期 | Tasks |
 | src/tools.js | 97 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
 | tests/activity-groups-ui.py | 201 | node --test 测试（npm test） | activityHistory, sessions |
 | tests/app.test.js | 1636 | node --test 测试（npm test） | pickerSource, contrastSource, modelSources, serviceSource |
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
-| tests/capabilities.test.js | 207 | node --test 测试（npm test） | - |
+| tests/capabilities.test.js | 208 | node --test 测试（npm test） | - |
 | tests/cli-help.test.js | 23 | node --test 测试（npm test） | - |
 | tests/codebase-index.test.js | 20 | node --test 测试（npm test） | ROOT, SKILL |
-| tests/compaction-config.test.js | 107 | node --test 测试（npm test） | - |
+| tests/compaction-config.test.js | 109 | node --test 测试（npm test） | - |
 | tests/compaction-ui.py | 57 | node --test 测试（npm test） | - |
 | tests/compaction-ui.test.js | 126 | node --test 测试（npm test） | page |
 | tests/compaction.test.js | 802 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
@@ -62,7 +63,7 @@
 | tests/context-menu-ui.py | 66 | node --test 测试（npm test） | - |
 | tests/conversation-preview.mjs | 123 | node --test 测试（npm test） | markdown, message, thinking, state |
 | tests/conversation-ui.py | 262 | node --test 测试（npm test） | - |
-| tests/database.test.js | 76 | node --test 测试（npm test） | - |
+| tests/database.test.js | 149 | node --test 测试（npm test） | - |
 | tests/defaults.test.js | 37 | node --test 测试（npm test） | - |
 | tests/file-picker.test.js | 67 | node --test 测试（npm test） | source, tick |
 | tests/image-input.test.js | 169 | node --test 测试（npm test） | pngBase64, jpegBase64, image, parsePrompt |
@@ -75,8 +76,8 @@
 | tests/memory-ui.test.js | 183 | node --test 测试（npm test） | page, record |
 | tests/message-activity.test.js | 407 | node --test 测试（npm test） | page, assistant, thought, call |
 | tests/mobile-reading-ui.py | 103 | node --test 测试（npm test） | - |
-| tests/model-config.test.js | 483 | node --test 测试（npm test） | sha, EMPTY, tempDir, openDatabases |
-| tests/model-manager.test.js | 430 | node --test 测试（npm test） | source, tick, j, masked |
+| tests/model-config.test.js | 601 | node --test 测试（npm test） | sha, EMPTY, tempDir, openDatabases |
+| tests/model-manager.test.js | 461 | node --test 测试（npm test） | source, tick, j, masked |
 | tests/model-onboarding-ui.test.js | 154 | node --test 测试（npm test） | stripImports, modelSources, contrastSource, pickerSource |
 | tests/model-onboarding.test.js | 55 | node --test 测试（npm test） | - |
 | tests/model-picker.test.js | 311 | node --test 测试（npm test） | source, tick, nap, OPTS |
@@ -84,31 +85,32 @@
 | tests/model-selection-ui.py | 60 | node --test 测试（npm test） | - |
 | tests/model-thinking-favorites.test.js | 122 | node --test 测试（npm test） | appSource, pickerSource, contrastSource, modelSources |
 | tests/pi-memory.test.js | 240 | node --test 测试（npm test） | - |
-| tests/pi-model-storage.test.js | 228 | node --test 测试（npm test） | tempDir, makeStorage, seedPiModels, seedPiAuth |
+| tests/pi-model-storage.test.js | 334 | node --test 测试（npm test） | tempDir, makeStorage, seedPiModels, seedPiAuth |
 | tests/presets.test.js | 112 | node --test 测试（npm test） | makeFactory |
 | tests/project-skills.test.js | 59 | node --test 测试（npm test） | - |
-| tests/recall.test.js | 146 | node --test 测试（npm test） | user, assistant, thinking, fixture |
+| tests/recall.test.js | 150 | node --test 测试（npm test） | user, assistant, thinking, fixture |
 | tests/remote-ui.py | 51 | node --test 测试（npm test） | - |
 | tests/remote-ui.test.js | 225 | node --test 测试（npm test） | page, modelSources, flush, stubRequest |
-| tests/remote.test.js | 682 | node --test 测试（npm test） | EMAIL, mockTailscale, fakeChild, fakeDatabase |
+| tests/remote.test.js | 721 | node --test 测试（npm test） | EMAIL, mockTailscale, fakeChild, fakeDatabase |
 | tests/retry.test.js | 369 | node --test 测试（npm test） | RATE_LIMIT, QUOTA, ABORTED, fakeSession |
 | tests/server.test.js | 125 | node --test 测试（npm test） | - |
-| tests/service-api.test.js | 76 | node --test 测试（npm test） | - |
+| tests/service-api.test.js | 106 | node --test 测试（npm test） | - |
 | tests/service-settings-api.test.js | 71 | node --test 测试（npm test） | - |
 | tests/service-settings-ui.py | 60 | node --test 测试（npm test） | - |
-| tests/service-settings.test.js | 317 | node --test 测试（npm test） | source, html, setup |
-| tests/service.test.js | 485 | node --test 测试（npm test） | until, readMaybe, killTree, buildWorkspace |
+| tests/service-settings.test.js | 377 | node --test 测试（npm test） | source, html, setup |
+| tests/service.test.js | 488 | node --test 测试（npm test） | until, readMaybe, killTree, buildWorkspace |
 | tests/session-created-at.test.js | 44 | node --test 测试（npm test） | factory |
-| tests/session-flow.test.js | 381 | node --test 测试（npm test） | flowFactory, jsonlFactory |
-| tests/session-memory.test.js | 189 | node --test 测试（npm test） | reply |
-| tests/session-migration.test.js | 219 | node --test 测试（npm test） | factory, workspaceHash |
-| tests/session-persistence.test.js | 104 | node --test 测试（npm test） | factory |
+| tests/session-flow.test.js | 385 | node --test 测试（npm test） | flowFactory, jsonlFactory |
+| tests/session-memory.test.js | 230 | node --test 测试（npm test） | reply |
+| tests/session-migration.test.js | 264 | node --test 测试（npm test） | factory, workspaceHash |
+| tests/session-persistence.test.js | 188 | node --test 测试（npm test） | factory |
 | tests/session-sidebar-ui.py | 104 | node --test 测试（npm test） | - |
+| tests/session-store.test.js | 500 | node --test 测试（npm test） | withStore, fullSaved |
 | tests/smoke.js | 67 | node --test 测试（npm test） | TIMEOUT, sessions |
 | tests/stream-renderer.test.js | 99 | node --test 测试（npm test） | - |
-| tests/task-notifications.test.js | 165 | node --test 测试（npm test） | factoryFixture, tick, until |
+| tests/task-notifications.test.js | 197 | node --test 测试（npm test） | factoryFixture, tick, until |
 | tests/task-timer.test.js | 55 | node --test 测试（npm test） | factory, state, settle |
-| tests/tasks.test.js | 96 | node --test 测试（npm test） | fixture |
+| tests/tasks.test.js | 111 | node --test 测试（npm test） | fixture |
 | tests/text-contrast.test.js | 162 | node --test 测试（npm test） | source, css, fakeStorage, throwingStorage |
 | tests/text-diagram-ui.py | 36 | node --test 测试（npm test） | - |
 | tests/tooltip.test.js | 282 | node --test 测试（npm test） | source, boot, fire, tip |
@@ -414,7 +416,7 @@
 | extractMemoryTags | function | 27 |
 | stripMemoryTags | function | 45 |
 
-### public/model-manager.js（628 行） — Pi 模型管理：供应商模板、模型编辑与安全保存反馈
+### public/model-manager.js（635 行） — Pi 模型管理：供应商模板、模型编辑与安全保存反馈
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -567,7 +569,7 @@
 | allow | method | 10 |
 | startMaintServer | function | 15 |
 
-### scripts/maint-state.mjs（105 行） — 守护维护状态：持久化阶段、最近结果与有界脱敏证据
+### scripts/maint-state.mjs（116 行） — 守护维护状态：持久化阶段、最近结果与有界脱敏证据
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -575,7 +577,7 @@
 | LOG_LIMIT | const | 9 |
 | sanitize | function | 12 |
 | createMaintState | function | 21 |
-| persist | method | 68 |
+| persist | method | 80 |
 
 ### scripts/service.mjs（503 行） — 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道
 
@@ -645,16 +647,18 @@
 | throwIfAborted | method | 131 |
 | createBackgroundCompaction | function | 204 |
 
-### src/database.js（57 行） — 共享 SQLite 存储、WAL 与迁移标记
+### src/database.js（93 行） — 共享 SQLite 连接、小配置 KV、WAL 与一致性备份
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| Database | class | 10 |
+| Database | class | 9 |
 | constructor | method | 13 |
-| get | method | 30 |
-| set | method | 35 |
-| list | method | 48 |
-| close | method | 53 |
+| get | method | 43 |
+| set | method | 53 |
+| list | method | 68 |
+| prepare | method | 81 |
+| exec | method | 85 |
+| close | method | 89 |
 
 ### src/inline-images.js（32 行） — 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列
 
@@ -694,7 +698,7 @@
 | within | const | 18 |
 | memoryPolicy | function | 24 |
 
-### src/model-config.js（316 行） — Pi models.json 无损配置读写与共享收藏持久化
+### src/model-config.js（347 行） — Pi models.json 无损配置读写与共享收藏持久化
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -718,23 +722,23 @@
 | normalizeFavorites | function | 156 |
 | createModelsService | function | 165 |
 
-### src/pi-model-storage.js（230 行） — 模型与凭据 SQLite 权威存储、Pi 派生兼容文件
+### src/pi-model-storage.js（259 行） — 模型与凭据 SQLite 权威存储、Pi 派生兼容文件
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| sdkResolveConfigValue | const | 9 |
-| sdkIsCommandConfigValue | const | 10 |
-| NAMESPACE | const | 24 |
-| AUTH_NAMESPACE | const | 25 |
-| MIGRATED_NAMESPACE | const | 26 |
-| CONFIG_KEY | const | 27 |
-| FAVORITES_KEY | const | 28 |
-| IMPORT_ERROR_KEY | const | 29 |
-| canonicalModelsJson | function | 32 |
-| isPlainObject | const | 36 |
-| isCredential | const | 38 |
-| isPlainObject | method | 39 |
-| createPiModelStorage | function | 47 |
+| sdkResolveConfigValue | const | 10 |
+| sdkIsCommandConfigValue | const | 11 |
+| NAMESPACE | const | 25 |
+| AUTH_NAMESPACE | const | 26 |
+| MIGRATED_NAMESPACE | const | 27 |
+| CONFIG_KEY | const | 28 |
+| FAVORITES_KEY | const | 29 |
+| IMPORT_ERROR_KEY | const | 30 |
+| canonicalModelsJson | function | 33 |
+| isPlainObject | const | 37 |
+| isCredential | const | 39 |
+| isPlainObject | method | 40 |
+| createPiModelStorage | function | 48 |
 
 ### src/pi.js（357 行） — createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）
 
@@ -782,7 +786,7 @@
 | fingerprintIn | const | 167 |
 | command | const | 168 |
 
-### src/remote.js（536 行） — Tailscale 登录身份、远程监听、同账号授权与本机配置持久化
+### src/remote.js（547 行） — Tailscale 登录身份、远程监听、同账号授权与本机配置持久化
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -816,96 +820,129 @@
 | classify | class | 51 |
 | createAutoRetry | function | 84 |
 
-### src/server.js（457 行） — createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发
+### src/server.js（459 行） — createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | assets | const | 7 |
 | createServerApp | function | 45 |
 
-### src/session-memory.js（94 行） — 标题与增量摘要登记、触发复盘、委派背景与被动进度
+### src/session-memory.js（117 行） — 标题与增量摘要登记、触发复盘、委派背景与被动进度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | textOf | const | 5 |
 | escape | const | 6 |
-| memoryHooks | function | 11 |
-| parentSummaryContext | function | 90 |
+| memoryHooks | function | 19 |
+| parentSummaryContext | function | 113 |
 
-### src/sessions.js（1155 行） — Sessions：会话生命周期、队列、配置快照、~/.axiom 按工作空间持久化
+### src/session-store.js（528 行） — 会话四表、实体增量更新、逐会话事务与旧数据迁移
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| BROWSE_PAGE | const | 17 |
-| SEARCH_LIMIT | const | 19 |
-| SEARCH_DIR_LIMIT | const | 20 |
-| IGNORED_ENTRIES | const | 22 |
-| fuzzyHit | function | 25 |
-| matchRank | function | 36 |
-| searchEntries | function | 45 |
-| pointStatus | function | 73 |
-| trackElapsed | function | 80 |
-| resolveDir | function | 90 |
-| parentOf | function | 101 |
-| absoluteCrumbs | function | 110 |
-| importedTitle | function | 132 |
-| hostLocations | function | 154 |
-| Sessions | class | 169 |
-| constructor | method | 170 |
-| applyDefaults | method | 191 |
-| loadDefaults | method | 206 |
-| migrateDefaults | method | 216 |
-| migratePresets | method | 229 |
-| loadMemorySummary | method | 244 |
-| getMemorySummary | method | 255 |
-| configureMemorySummary | method | 260 |
-| getDefaults | method | 266 |
-| workspaceDefaults | method | 269 |
-| configureDefaults | method | 287 |
-| saveDefaults | method | 292 |
-| validateSelection | method | 331 |
-| validateCompaction | method | 352 |
-| listPresets | method | 367 |
-| mutatePresets | method | 377 |
-| savePreset | method | 390 |
-| deletePreset | method | 405 |
-| load | method | 414 |
-| migrateLegacySessions | method | 443 |
-| persist | method | 468 |
-| list | method | 489 |
-| rename | method | 506 |
-| importSession | method | 517 |
-| create | method | 544 |
-| scheduleTaskNotifications | method | 813 |
-| deliverTaskNotifications | method | 825 |
-| get | method | 847 |
-| revealWorkspace | method | 852 |
-| browse | method | 866 |
-| listFiles | method | 872 |
-| refreshSkills | method | 934 |
-| snapshot | method | 940 |
-| subscribe | method | 969 |
-| configure | method | 975 |
-| prompt | method | 1009 |
-| withdraw | method | 1063 |
-| cancel | method | 1107 |
-| remove | method | 1125 |
-| close | method | 1145 |
+| EVENT_TYPES | const | 13 |
+| SESSION_FIELDS | const | 16 |
+| SessionStore | class | 29 |
+| constructor | method | 33 |
+| change | method | 109 |
+| hasSession | method | 139 |
+| listSessions | method | 144 |
+| listPendingSessionIds | method | 165 |
+| getSession | method | 173 |
+| insertSession | method | 305 |
+| importLegacySession | method | 331 |
+| migrateLegacy | method | 348 |
+| updateSession | method | 370 |
+| deleteSession | method | 394 |
+| setTurn | method | 400 |
+| saveSummary | method | 408 |
+| listSummaries | method | 421 |
+| deleteSummaries | method | 433 |
+| saveEvent | method | 444 |
+| deleteEvents | method | 463 |
+| pruneEvents | method | 477 |
+| saveTask | method | 489 |
+| listTasks | method | 521 |
 
-### src/tasks.js（112 行） — Tasks：子任务（委托）生命周期
+### src/sessions.js（1288 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| BROWSE_PAGE | const | 18 |
+| SEARCH_LIMIT | const | 20 |
+| SEARCH_DIR_LIMIT | const | 21 |
+| IGNORED_ENTRIES | const | 23 |
+| fuzzyHit | function | 26 |
+| matchRank | function | 37 |
+| searchEntries | function | 46 |
+| pointStatus | function | 74 |
+| trackElapsed | function | 81 |
+| resolveDir | function | 91 |
+| parentOf | function | 102 |
+| absoluteCrumbs | function | 111 |
+| importedTitle | function | 133 |
+| hostLocations | function | 155 |
+| Sessions | class | 170 |
+| constructor | method | 171 |
+| applyDefaults | method | 193 |
+| loadDefaults | method | 208 |
+| migrateDefaults | method | 218 |
+| migratePresets | method | 231 |
+| loadMemorySummary | method | 246 |
+| getMemorySummary | method | 257 |
+| configureMemorySummary | method | 262 |
+| getDefaults | method | 268 |
+| workspaceDefaults | method | 271 |
+| configureDefaults | method | 289 |
+| saveDefaults | method | 294 |
+| validateSelection | method | 333 |
+| validateCompaction | method | 354 |
+| listPresets | method | 369 |
+| mutatePresets | method | 379 |
+| savePreset | method | 392 |
+| deletePreset | method | 407 |
+| load | method | 416 |
+| ensureLoaded | method | 435 |
+| migrateLegacySessions | method | 457 |
+| sessionData | method | 481 |
+| persist | method | 494 |
+| writeChange | method | 512 |
+| saveChange | method | 533 |
+| list | method | 538 |
+| rename | method | 555 |
+| importSession | method | 568 |
+| create | method | 595 |
+| scheduleTaskNotifications | method | 912 |
+| deliverTaskNotifications | method | 924 |
+| get | method | 948 |
+| revealWorkspace | method | 953 |
+| browse | method | 967 |
+| listFiles | method | 973 |
+| refreshSkills | method | 1035 |
+| snapshot | method | 1041 |
+| subscribe | method | 1071 |
+| configure | method | 1077 |
+| prompt | method | 1111 |
+| withdraw | method | 1165 |
+| cancel | method | 1217 |
+| remove | method | 1240 |
+| close | method | 1278 |
+
+### src/tasks.js（122 行） — Tasks：子任务（委托）生命周期
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | Tasks | class | 4 |
 | constructor | method | 5 |
 | start | method | 13 |
-| publish | method | 24 |
-| view | method | 27 |
-| snapshot | method | 30 |
-| run | method | 36 |
-| read | method | 81 |
-| append | method | 88 |
-| cancel | method | 98 |
+| snapshotJob | method | 26 |
+| publish | method | 34 |
+| view | method | 39 |
+| snapshot | method | 42 |
+| run | method | 46 |
+| read | method | 91 |
+| append | method | 98 |
+| cancel | method | 108 |
 
 ### src/tools.js（97 行） — delegationTools：委托/凭证读取/追加工具定义（zod 入参）
 
@@ -1072,7 +1109,7 @@
 | call | const | 46 |
 | entry | const | 47 |
 
-### tests/model-config.test.js（483 行） — node --test 测试（npm test）
+### tests/model-config.test.js（601 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1082,10 +1119,10 @@
 | openDatabases | const | 27 |
 | closeOpenDatabases | const | 28 |
 | makeService | function | 32 |
-| seed | const | 50 |
-| compat | const | 54 |
+| seed | const | 53 |
+| compat | const | 60 |
 
-### tests/model-manager.test.js（430 行） — node --test 测试（npm test）
+### tests/model-manager.test.js（461 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1156,7 +1193,7 @@
 | opts | const | 78 |
 | stars | const | 79 |
 
-### tests/pi-model-storage.test.js（228 行） — node --test 测试（npm test）
+### tests/pi-model-storage.test.js（334 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1171,7 +1208,7 @@
 |---|---|---|
 | makeFactory | const | 10 |
 
-### tests/recall.test.js（146 行） — node --test 测试（npm test）
+### tests/recall.test.js（150 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1190,17 +1227,17 @@
 | stubRequest | function | 42 |
 | submit | const | 52 |
 
-### tests/remote.test.js（682 行） — node --test 测试（npm test）
+### tests/remote.test.js（721 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | EMAIL | const | 21 |
 | mockTailscale | const | 23 |
 | fakeChild | const | 76 |
-| fakeDatabase | const | 93 |
-| setup | const | 111 |
-| wsRequest | const | 152 |
-| setTimeout | method | 508 |
+| fakeDatabase | const | 94 |
+| setup | const | 113 |
+| wsRequest | const | 154 |
+| setTimeout | method | 547 |
 
 ### tests/retry.test.js（369 行） — node --test 测试（npm test）
 
@@ -1214,7 +1251,7 @@
 | recordedSleep | const | 63 |
 | lastAssistant | const | 73 |
 
-### tests/service-settings.test.js（317 行） — node --test 测试（npm test）
+### tests/service-settings.test.js（377 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1222,7 +1259,7 @@
 | html | const | 12 |
 | setup | function | 14 |
 
-### tests/service.test.js（485 行） — node --test 测试（npm test）
+### tests/service.test.js（488 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1232,32 +1269,32 @@
 | buildWorkspace | const | 32 |
 | WORKER | const | 47 |
 | fs | const | 48 |
-| ready | const | 65 |
-| ready | method | 73 |
-| ready | method | 76 |
-| startDaemon | const | 80 |
-| spawn | method | 81 |
-| startTest | const | 86 |
-| maintEnv | const | 95 |
-| getStatus | const | 96 |
-| stateOf | const | 102 |
-| teardown | const | 109 |
-| NPM_FAKE | const | 116 |
-| say | const | 120 |
-| sdkStub | const | 121 |
-| mkdirSync | method | 122 |
-| writeFileSync | method | 123 |
+| ready | const | 66 |
+| ready | method | 74 |
+| ready | method | 77 |
+| startDaemon | const | 81 |
+| spawn | method | 82 |
+| startTest | const | 87 |
+| maintEnv | const | 96 |
+| getStatus | const | 97 |
+| stateOf | const | 103 |
+| teardown | const | 110 |
+| NPM_FAKE | const | 117 |
+| say | const | 121 |
+| sdkStub | const | 122 |
+| mkdirSync | method | 123 |
 | writeFileSync | method | 124 |
-| rmSync | method | 132 |
-| sdkStub | method | 134 |
-| writeFileSync | method | 135 |
+| writeFileSync | method | 125 |
+| rmSync | method | 133 |
+| sdkStub | method | 135 |
 | writeFileSync | method | 136 |
 | writeFileSync | method | 137 |
-| rmSync | method | 145 |
-| sdkStub | method | 146 |
-| writeFileSync | method | 147 |
-| installNpmShim | const | 153 |
-| A40 | const | 166 |
+| writeFileSync | method | 138 |
+| rmSync | method | 146 |
+| sdkStub | method | 147 |
+| writeFileSync | method | 148 |
+| installNpmShim | const | 154 |
+| A40 | const | 167 |
 
 ### tests/session-created-at.test.js（44 行） — node --test 测试（npm test）
 
@@ -1265,31 +1302,56 @@
 |---|---|---|
 | factory | const | 8 |
 
-### tests/session-flow.test.js（381 行） — node --test 测试（npm test）
+### tests/session-flow.test.js（385 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| flowFactory | const | 90 |
-| jsonlFactory | const | 100 |
+| flowFactory | const | 92 |
+| jsonlFactory | const | 102 |
 
-### tests/session-memory.test.js（189 行） — node --test 测试（npm test）
+### tests/session-memory.test.js（230 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | reply | const | 10 |
 
-### tests/session-migration.test.js（219 行） — node --test 测试（npm test）
+### tests/session-migration.test.js（264 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | factory | const | 10 |
 | workspaceHash | const | 20 |
 
-### tests/session-persistence.test.js（104 行） — node --test 测试（npm test）
+### tests/session-persistence.test.js（188 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | factory | const | 9 |
+
+### tests/session-store.test.js（500 行） — node --test 测试（npm test）
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| withStore | function | 11 |
+| fullSaved | function | 24 |
+| withStore | method | 56 |
+| withStore | method | 68 |
+| withStore | method | 80 |
+| withStore | method | 96 |
+| withStore | method | 108 |
+| withStore | method | 134 |
+| withStore | method | 162 |
+| withStore | method | 187 |
+| withStore | method | 219 |
+| withStore | method | 239 |
+| withStore | method | 267 |
+| withStore | method | 285 |
+| withStore | method | 314 |
+| withStore | method | 376 |
+| withStore | method | 401 |
+| withStore | method | 415 |
+| withStore | method | 440 |
+| withStore | method | 453 |
 
 ### tests/smoke.js（67 行） — node --test 测试（npm test）
 
@@ -1303,13 +1365,13 @@
 | assert | method | 56 |
 | assert | method | 57 |
 
-### tests/task-notifications.test.js（165 行） — node --test 测试（npm test）
+### tests/task-notifications.test.js（197 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| factoryFixture | function | 9 |
-| tick | const | 27 |
-| until | function | 28 |
+| factoryFixture | function | 10 |
+| tick | const | 28 |
+| until | function | 29 |
 
 ### tests/task-timer.test.js（55 行） — node --test 测试（npm test）
 
@@ -1319,13 +1381,13 @@
 | state | const | 19 |
 | settle | const | 20 |
 
-### tests/tasks.test.js（96 行） — node --test 测试（npm test）
+### tests/tasks.test.js（111 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | fixture | function | 7 |
 | assert | method | 53 |
-| release | method | 69 |
+| release | method | 84 |
 
 ### tests/text-contrast.test.js（162 行） — node --test 测试（npm test）
 

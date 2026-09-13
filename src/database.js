@@ -1,10 +1,10 @@
 import { DatabaseSync } from "node:sqlite";
-import { chmodSync, mkdirSync } from "node:fs";
+import { chmodSync, closeSync, mkdirSync, openSync } from "node:fs";
 import { dirname } from "node:path";
 // Axiom 共享 SQLite 存储：namespace + key 两级 KV，值以 JSON 文本存单表。
 // 单写者进程 + WAL + busy_timeout；set 是单条 UPSERT 语句，由 SQLite 语句级事务保证原子，
 // 进程崩溃只会「整条旧值或整条新值」，绝不出现半截数据。
-// namespace 约定（扩展新管理数据时沿用）：sessions=会话管理数据、defaults=默认会话配置、
+// namespace 约定：sessions 仅保留旧迁移源（动态会话已拆表）、defaults=默认会话配置、
 // presets=具名预设、settings=全局设置（如 memorySummary）、migrated=旧 JSON 迁移标记。
 export class Database {
   #db;
@@ -13,6 +13,12 @@ export class Database {
   constructor(path) {
     // 父目录不存在则逐级创建（与旧 storagePath/defaultsPath 行为一致）。
     mkdirSync(dirname(path), { recursive: true });
+    // WAL/SHM 继承主库权限：必须先收紧主库，再打开连接创建 sidecar；不修改共享父目录。
+    closeSync(openSync(path, "a", 0o600));
+    for (const file of [path, `${path}-wal`, `${path}-shm`]) {
+      try { chmodSync(file, 0o600); }
+      catch (error) { if (process.platform !== "win32" && error.code !== "ENOENT") throw error; }
+    }
     this.#db = new DatabaseSync(path);
     this.#path = path;
     // busy_timeout 必须先于 journal_mode：切 WAL 需要短暂独占锁，先设兜底才不会撞锁即抛。
@@ -24,13 +30,9 @@ export class Database {
     this.#db.exec(
       "CREATE TABLE IF NOT EXISTS store (namespace TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (namespace, key))",
     );
-    // 基本权限保护：仅属主可读写；Windows 无 POSIX 权限模型，失败忽略。
-    try {
-      chmodSync(path, 0o600);
-    } catch {}
   }
 
-  // 主库文件绝对路径（供迁移前 VACUUM INTO 一致性备份等使用）。
+  // 主库文件路径（供迁移前 VACUUM INTO 一致性备份等使用）。
   get path() {
     return this.#path;
   }

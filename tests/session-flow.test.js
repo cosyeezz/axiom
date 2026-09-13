@@ -36,8 +36,9 @@ test("sessions persist across shutdown, queue by type, switch models while runni
     };
   };
   factory.catalog = () => [{ key: "test/one" }, { key: "test/two" }];
+  let first, restored;
   try {
-    const first = new Sessions(factory, undefined, storage);
+    first = new Sessions(factory, undefined, storage);
     const id = await first.create(root);
     await mkdir(join(root, "src"));
     await mkdir(join(root, ".git"));
@@ -67,8 +68,9 @@ test("sessions persist across shutdown, queue by type, switch models while runni
     assert.equal(finished.history[0].error, "network");
     await first.rename(id, "saved name");
     await first.close();
-    const restored = new Sessions(factory, undefined, storage);
+    restored = new Sessions(factory, undefined, storage);
     await restored.load();
+    await restored.ensureLoaded(id);
     const state = restored.snapshot(id);
     assert.equal(state.title, "saved name");
     assert.equal(state.config.model, "test/two");
@@ -84,7 +86,7 @@ test("sessions persist across shutdown, queue by type, switch models while runni
     await restored.close();
     const [workspace] = await readdir(storage);
     assert.deepEqual(await readdir(join(storage, workspace)), []);
-  } finally { await rm(root, { recursive: true, force: true }); }
+  } finally { await restored?.close(); await first?.close(); await rm(root, { recursive: true, force: true }); }
 });
 
 const flowFactory = async (_, selection = {}) => ({
@@ -220,6 +222,7 @@ test("legacy retry boundaries migrate once and survive repeated service restarts
     for (let restart = 0; restart < 2; restart++) {
       sessions = new Sessions(restoreFactory, undefined, storage);
       await sessions.load();
+      await sessions.ensureLoaded(id);
       const [old, fixed, child, missing, ambiguous] = sessions.snapshot(id).retries;
       assert.deepEqual([old.messageCount, fixed.messageCount, child.messageCount, missing.messageCount, ambiguous.messageCount],
         [3, 1, 3, undefined, undefined]);
@@ -342,7 +345,7 @@ test("session.import copies a pi jsonl session, rebuilds history and protects th
   };
   factory.catalog = () => [{ key: "test/one" }];
   factory.cwd = target;
-  let sessions;
+  let sessions, restored;
   try {
     sessions = new Sessions(factory, undefined, storage);
     const original = await readFile(source, "utf8");
@@ -358,8 +361,9 @@ test("session.import copies a pi jsonl session, rebuilds history and protects th
     assert.equal(JSON.parse(header).id, id);
     assert.deepEqual(history, original.split("\n").slice(1), "历史条目原样保留");
     await sessions.rename(id, "独立副本");
-    const restored = new Sessions(factory, undefined, storage);
+    restored = new Sessions(factory, undefined, storage);
     await restored.load();
+    await restored.ensureLoaded(id);
     assert.equal(restored.snapshot(id).cwd, target);
     assert.equal(restored.snapshot(id).title, "独立副本");
     assert.deepEqual(restored.snapshot(id).messages, state.messages);
@@ -376,5 +380,5 @@ test("session.import copies a pi jsonl session, rebuilds history and protects th
     await writeFile(bogus, '{"type":"message","id":"x"}\n');
     await assert.rejects(sessions.importSession(bogus), /缺少 session 头/);
     await restored.close();
-  } finally { await sessions?.close(); await rm(root, { recursive: true, force: true }); }
+  } finally { await restored?.close(); await sessions?.close(); await rm(root, { recursive: true, force: true }); }
 });

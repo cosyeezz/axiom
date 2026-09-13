@@ -50,7 +50,7 @@ export function createServerApp(sessions, service = {}) {
   const pending = new Set();
   const remoteClients = new Set();
   const hasActiveWork = () => sessions.list().some((item) => item.status !== "idle") ||
-    [...(sessions.items?.values() || [])].some((item) => item.configuring ||
+    [...(sessions.items?.values() || [])].some((item) => item.configuring || item.loading ||
       [...item.tasks.jobs.values()].some((task) => ["starting", "running"].includes(task.status)));
   const handleRequest = (req, res, isLocal) => {
     if (req.url === "/service/stop") {
@@ -193,7 +193,7 @@ export function createServerApp(sessions, service = {}) {
     for (const ws of remoteClients) ws.terminate();
   };
   wss.on("connection", (ws, source) => {
-    let unsubscribe;
+    let unsubscribe, attachSequence = 0;
     // 远程连接：每条消息与每 30s 重验身份（whois/status 按 IP 短 TTL 缓存，代价有界），
     // 撤权后的旧连接最多存活一个 TTL。
     const reauth = async () => {
@@ -232,10 +232,14 @@ export function createServerApp(sessions, service = {}) {
       }
       ws.send(JSON.stringify(message));
     };
-    const attach = (id) => {
-      sessions.get(id);
-      unsubscribe?.();
-      unsubscribe = sessions.subscribe(id, send);
+    const attach = async (id) => {
+      const sequence = ++attachSequence;
+      await sessions.ensureLoaded(id);
+      if (ws.readyState !== WebSocket.OPEN) return;
+      if (sequence === attachSequence) {
+        unsubscribe?.();
+        unsubscribe = sessions.subscribe(id, send);
+      }
       return sessions.snapshot(id);
     };
     ws.on("error", () => {});
@@ -343,7 +347,7 @@ export function createServerApp(sessions, service = {}) {
                 await sessions.remove(id);
                 return;
               }
-              data = attach(id);
+              data = await attach(id);
               break;
             }
             case "session.import": {
@@ -352,11 +356,11 @@ export function createServerApp(sessions, service = {}) {
                 await sessions.remove(id);
                 return;
               }
-              data = attach(id);
+              data = await attach(id);
               break;
             }
             case "session.attach":
-              data = attach(request.sessionId);
+              data = await attach(request.sessionId);
               break;
             case "session.skills.refresh":
               data = { skills: await sessions.refreshSkills(request.sessionId) };
@@ -379,9 +383,7 @@ export function createServerApp(sessions, service = {}) {
               await sessions.cancel(request.sessionId);
               break;
             case "tasks.read":
-              data = await sessions
-                .get(request.sessionId)
-                .tasks.read(request.taskId, request.resultId);
+              data = (await sessions.ensureLoaded(request.sessionId)).tasks.read(request.taskId, request.resultId);
               break;
             case "remote.get":
               data = {

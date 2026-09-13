@@ -36,7 +36,7 @@ function makeService(dir, catalog = []) {
   const factory = {
     catalog: () => catalog,
     refreshModels: async () => {
-      if (state.failRefresh) throw new Error("refresh exploded");
+      if (state.failRefresh) throw new Error("refresh exploded: fake-secret-must-not-leak");
       refreshes += 1;
       return catalog;
     },
@@ -356,7 +356,7 @@ test("部分成功回执：compat 重建失败 → applied:false + applyError，
     const realSync = storage.syncCompatFile;
     // 故障注入：库写入后的派生文件重建失败（磁盘/权限类 IO 错误）
     storage.syncCompatFile = async () => {
-      throw new Error("EACCES: permission denied, unlink 'C:\\data\\models.compat.json'");
+      throw Object.assign(new Error("EACCES: fake-secret-must-not-leak"), { code: "EACCES" });
     };
     let receipt;
     try {
@@ -401,7 +401,8 @@ test("部分成功回执：目录刷新失败 → applied:false，库与派生�
       baseFingerprint: EMPTY,
     });
     assert.equal(receipt.applied, false);
-    assert.match(receipt.applyError, /refresh exploded/);
+    assert.match(receipt.applyError, /应用失败/);
+    assert.doesNotMatch(receipt.applyError, /refresh exploded|fake-secret/);
     assert.equal(refreshes(), 0);
     // 库与派生文件已一致，仅 SDK 目录未刷新；同指纹重试修复后只补目录刷新
     assert.deepEqual(JSON.parse(await compat(dir)), database.get("models", "config"));
@@ -426,12 +427,9 @@ test("GET 自愈：读取路径顺带重试挂起应用，成功后 applyError �
     const { models, storage, database, refreshes } = svc;
     const realSync = storage.syncCompatFile;
     storage.syncCompatFile = async () => {
-      throw new Error("EBUSY: resource busy");
+      throw Object.assign(new Error("EBUSY: fake-secret-must-not-leak"), { code: "EBUSY" });
     };
     let receipt;
-    storage.syncCompatFile = async () => {
-      throw new Error("EBUSY: resource busy");
-    };
     receipt = await models.saveProvider({
       providerId: "p",
       provider: { name: "P", baseUrl: "https://p.example.com/v1", api: "openai-completions" },
@@ -441,10 +439,13 @@ test("GET 自愈：读取路径顺带重试挂起应用，成功后 applyError �
     // 挂起未修复：GET 返回 applyError（已保存未应用），UI 可展示并引导刷新重试
     let view = await models.handle({ type: "models.config.get" });
     assert.match(view.applyError, /EBUSY/);
+    assert.equal(view.applied, false);
+    assert.doesNotMatch(JSON.stringify(view), /fake-secret/);
     // 修复后：任意 GET 顺带重试成功，applyError 消失，派生文件与库一致
     storage.syncCompatFile = realSync;
     view = await models.handle({ type: "models.config.get" });
     assert.equal(view.applyError, undefined);
+    assert.equal(view.applied, true);
     assert.equal(refreshes(), 1, "GET 自愈重刷目录一次");
     assert.deepEqual(JSON.parse(await compat(dir)), database.get("models", "config"));
     // 挂起已清除：再次 GET 不额外刷新

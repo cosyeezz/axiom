@@ -175,8 +175,8 @@ export function createModelsService({ factory, storage }) {
   };
   // 权威配置的指纹：对规范序列化做摘要；权威为空与旧「文件缺失」同语义（空配置）。
   const fingerprintOf = (config) => digest(canonicalModelsJson(config));
-  // 错误消息只含路径/系统调用信息，不含文件内容（密钥不外泄）；截断防刷屏。
-  const sanitizeApplyError = (error) => String(error?.message ?? error).slice(0, 300);
+  // SDK/扩展异常可能夹带配置原文；仅暴露固定提示和已知系统错误码，截断不等于脱敏。
+  const sanitizeApplyError = (error) => `应用失败，请重试${["EACCES", "EPERM", "EBUSY", "ENOSPC", "ENOENT", "EIO"].includes(error?.code) ? `（${error.code}）` : ""}`;
   // 挂起应用状态：库已落库但派生/刷新未完成。GET 读取路径顺带重试（GET 幂等、不重放任何
   // mutation，是比客户端重发写命令更安全的自愈入口）；重试成功即清除，无挂起时 GET 不额外刷新。
   let pendingApply = null;
@@ -196,6 +196,7 @@ export function createModelsService({ factory, storage }) {
     const config = storage.readConfig();
     const result = {
       fingerprint: fingerprintOf(config),
+      applied: !pendingApply,
       path: storage.compatPath,
       providers: [],
       catalog: factory.catalog(),

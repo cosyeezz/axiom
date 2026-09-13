@@ -1,12 +1,12 @@
-import { createHash } from "node:crypto";
-import { chmodSync, existsSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, renameSync, rmSync, writeFileSync } from "node:fs";
 
 // 会话实体存储：sessions / summaries / session_events / tasks 四表替代「单会话整 JSON」。
 // 读写同步、prepared 语句复用、多语句操作走 SAVEPOINT（事务外等价 BEGIN/COMMIT，事务内自动
 // 嵌套，同名保存点释放最近一层）；单实体方法都是单条语句，可被外层 change() 原子包裹。
 // 子表外键 ON DELETE CASCADE，删会话即级联；父行只用普通 INSERT（绝不 REPLACE，避免级联误删）。
 // record 列一律存调用方原形 JSON（camelCase 原字段），本层不改写字段、不造时间：旧记录缺的
-// 字段恢复时就缺着，列里存 NULL。唯一例外：无 id 的旧摘要按原形哈希稳定生成 id，原形仍原样
+// 字段恢复时就缺着，列里存 NULL。无 id 的旧摘要/事件按原序号补稳定 id，原形仍原样
 // 保存，读出时回填生成 id 供撤回引用。
 // tasks 的 memoryTurn / notified / progressDelivered / progress 是独立列：子代理进度与通知
 // 高频更新只动列，绝不读回重写含 runtime/result 的大 record（record 存任务内容，投影时回填）。
@@ -313,10 +313,15 @@ export class SessionStore {
   #ensureMigrationBackup() {
     const target = `${this.#database.path}.pre-store-migration.db`;
     if (existsSync(target)) return;
-    this.#database.exec(`VACUUM INTO '${target.replaceAll("'", "''")}'`);
+    const temporary = `${target}.${randomUUID()}.tmp`;
+    // 先限制临时文件权限；只有 VACUUM 完整成功才发布备份，失败残片不能成为下次的成功标志。
+    writeFileSync(temporary, "", { flag: "wx", mode: 0o600 });
     try {
-      chmodSync(target, 0o600); // 与主库一致的属主权限；Windows 无 POSIX 权限模型，失败忽略
-    } catch {}
+      this.#database.exec(`VACUUM INTO '${temporary.replaceAll("'", "''")}'`);
+      renameSync(temporary, target);
+    } finally {
+      rmSync(temporary, { force: true });
+    }
   }
 
   // 迁移专用（同步单保存点）：四表导入 + 写精确标记，全有或全无。
@@ -342,19 +347,18 @@ export class SessionStore {
   // store.sessions 旧整 JSON 逐行迁移：坏行告警保留源不阻断好行；成功标记精确到会话，重跑不覆盖新表。
   migrateLegacy() {
     let migrated = 0;
-    const rows = this.#database.prepare("SELECT key, value FROM store WHERE namespace = 'sessions'").all();
-    for (const { key: id, value } of rows) {
-      let saved;
+    // 先取待迁移键（不持有读取游标跨 VACUUM/事务），每次只解析一条；重启不再读已迁移大 JSON。
+    const keys = this.#database.prepare(`SELECT source.key FROM store AS source
+      WHERE source.namespace = 'sessions' AND NOT EXISTS (
+        SELECT 1 FROM store AS marker WHERE marker.namespace = 'migrated'
+        AND marker.key = 'session-store/' || source.key AND marker.value = 'true'
+      )`).all();
+    for (const { key: id } of keys) {
       try {
-        saved = JSON.parse(value);
-      } catch {
-        console.warn(`旧会话记录不是合法 JSON，保留源数据跳过迁移：${id}`);
-        continue;
-      }
-      try {
+        const saved = this.#database.get("sessions", id);
         if (this.importLegacySession(saved, `session-store/${id}`)) migrated++;
-      } catch (error) {
-        console.warn(`旧会话迁移失败，保留源数据：${id}（${error.message}）`);
+      } catch {
+        console.warn(`旧会话迁移失败，保留源数据：${id}（请检查记录格式、备份目录及数据库读写权限）`);
       }
     }
     return migrated;

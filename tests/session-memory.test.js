@@ -195,12 +195,13 @@ test("first prompt title only, manual title wins, records persist across restart
     assert.equal(agents[0].calls[1].options, undefined);
     assert.equal(sessions.get(id).title, "手动命名");
     // 管理数据在共享 SQLite 库（不再写磁盘 JSON 快照）。
-    const disk = sessions.database.get("sessions", id);
+    const disk = sessions.store.getSession(id);
     assert.equal(disk.summaries.length, 2);
     assert.equal(disk.titleManual, true);
     await sessions.close();
     restored = new Sessions(factory, undefined, join(root, "storage"));
     await restored.load();
+    await restored.ensureLoaded(id);
     assert.equal(restored.snapshot(id).summaries.length, 2);
     assert.equal(restored.get(id).title, "手动命名");
   } finally {

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { chmod, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "../src/database.js";
@@ -96,6 +96,29 @@ test("database 暴露 prepare/exec；PRAGMA 生效：busy_timeout 先于 journal
     assert.equal(db.prepare("SELECT count(*) AS n FROM t").get().n, 2);
   } finally {
     db.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("POSIX 主库/WAL/SHM 在首次写入前即600，重开收紧旧sidecar且不改父目录", { skip: process.platform === "win32" }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "axiom-mode-"));
+  const path = join(dir, "axiom.db");
+  let db, second;
+  try {
+    const parentMode = (await stat(dir)).mode & 0o777;
+    db = new Database(path);
+    db.set("auth", "synthetic", { key: "test-only" });
+    for (const file of [path, `${path}-wal`, `${path}-shm`]) {
+      assert.equal((await stat(file)).mode & 0o777, 0o600);
+      await chmod(file, 0o644);
+    }
+    second = new Database(path);
+    for (const file of [path, `${path}-wal`, `${path}-shm`])
+      assert.equal((await stat(file)).mode & 0o777, 0o600);
+    assert.equal((await stat(dir)).mode & 0o777, parentMode);
+  } finally {
+    second?.close();
+    db?.close();
     await rm(dir, { recursive: true, force: true });
   }
 });

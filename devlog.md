@@ -6,6 +6,14 @@
 - 涉及：src/remote.js、scripts/maint-state.mjs、tests/remote.test.js（fakeDatabase 对齐真实 Database 同步 JSON 语义；新增旧 string 迁移与坏 object fail closed 用例）、tests/service-settings.test.js（新增 persist 假错误/重启/phases 有界用例）、README.md（修正 remote.json/service-state JSON 的过时存储描述）、本日志。
 - 验证：remote 12/12、service-settings 9/9；全量 `npm test` 283 项 282 通过、0 失败、1 跳过（service.test.js「rebuild cancels swap」为既有时序抖动，master 未含本改动时 6 跑 4 挂，单独复跑通过）。检查两个测试文件无真实密钥：仅 user@example.com、hunter2、tokensecret 等显式虚构值，端点均为本地 mock/临时目录。
 - 边界：未改 database/main/server/service.mjs；依赖经 junction 指向 F:/Axiom/node_modules，未安装、未修改共享依赖。
+
+## 2026-09-13 04:45 UTC SQLite 拆表主接线（实施中，尚未全量验收）
+- 决策：按用户要求直接实施五表，不加双写、旧版兼容、反向迁移或专用 Worker；一致性备份、逐会话事务、幂等标记与字段对账仍是数据安全底线。
+- 主接线：`src/sessions.js` 改按实体增量保存，失败增量留待下一次写入/关闭重试，多实体变更使用同步 SAVEPOINT；启动仅读元数据、待通知会话串行恢复，首次打开以 Promise 去重。改标题/删除未打开会话不创建 SDK；缺 JSONL 记录仍可见但拒绝空历史覆盖。撤回同步清理摘要与事件；消息匹配改为 ID Map 与单调游标。
+- 并发与页面：`src/server.js` 等待恢复再 attach，慢旧请求不覆盖新订阅，加载中阻止维护；`public/model-manager.js` 区分已保存与已应用，重试当前配置不重放写操作，复用现有 Linear 提示组件，不改样式 token。
+- 涉及：上述源文件、会话/通知/迁移/模型页面/服务测试，`README.md`、`docs/sqlite-refactor-plan.md`。事件生产包 `521b5dc` 已集成；数据库/模型/配置子包仍待交付。
+- 已运行：模型页面12项、服务API3项、任务模块4项通过，语法检查与 `git diff --check` 通过。会话集成测试仍因存储包缺 `src/session-store.js` 阻塞；不能把新增未运行用例当作验收。未启动正式数据迁移或重启正式服务。
+
 ## 2026-09-12 19:37 UTC 文件/文件夹搜索与 @ 补全：名称模糊匹配 + 工作空间递归
 - 原因：输入框上沿「＋」与 `@` 补全都只能在当前目录里按子串过滤名称，工作空间根目录只有 `public/` 这类目录名，输入 `@app` 或 `@apjs` 根本匹配不到 `public/app.js`，用户反馈「艾特的时候输入无法匹配」。
 - 实现：`src/sessions.js` 新增 `fuzzyHit()`（忽略大小写、字符按顺序出现即命中）与 `matchRank()`（完全相等 → 前缀 → 子串越靠前越好 → 子序列），`listFiles()` 在 `query` 非空时改走 BFS 递归搜索 `searchEntries()`：只匹配名称、不回读文件、跳过 `.git`/`node_modules`/符号链接，按匹配质量排序后一次返回（`nextOffset: null`），递归目录数封顶 400、单目录不可读只跳过；无搜索词时保持原目录优先排序 + 分页（每页 200）。`browse()`/`workspace.browse` 增加 `query` 参数（`protocol.js` 同步为 `query: z.string().max(200).default("")`），`app.js` 的 `@` 补全把最后一段作为 `query` 发给服务端，技能搜索（＋ 菜单与 `/` 补全）同样改为名称模糊、说明仍按子串。`file-picker.js` 搜索命中行右侧显示所在相对目录，避免深浅目录同名文件无法区分。
@@ -756,3 +764,12 @@
 - 内容：get() 解析失败抛脱敏错误（只报 namespace/key）；list() 告警去 error.message 只报键位；Database 暴露只读 path；importLegacySession 在每次真正导入前（已标记跳过/新表同 id 跳过不触发）自动 VACUUM INTO 到 <主库>.pre-store-migration.db，快照已存在则保留首次快照不覆盖，备份失败即抛错中止迁移。
 - 验证：node --test tests/database.test.js tests/session-store.test.js 22/22 通过（新增 get 脱敏断言、备份生成/快照可读/不覆盖/跳过路径不备份等用例）。
 - 涉及：src/database.js、src/session-store.js、tests/database.test.js、tests/session-store.test.js。
+
+## 2026-09-13 05:20 UTC SQLite 集成：增量写、懒加载与安全收口
+- 内容：集成 A/B/C/D 提交，sessions 接 SessionStore 增量描述，失败增量保留重试、SAVEPOINT 全有全无；新建落库/历史装配失败释放 SDK 与导入副本。启动仅取元数据，首次打开去重恢复，未加载改名和关闭重试失败队列；server attach 序号防迟到订阅，加载中停止拒绝。默认配置与预设迁移独立，恢复历史 ID 用 Map 与单向游标。任务终态只存一次，通知前重检主轮状态，通知确认只改单任务列。
+- 模型：页面保留已保存未应用状态和新指纹，重读即可重试应用，不重放 mutation；错误只暴露固定提示及已知 errno，不把截断当脱敏。迁移坏 JSON 日志同样不携带解析原文。
+- 迁移：A 采用嵌套 SAVEPOINT 后撤回事务回归转绿；主审追加唯一临时备份+成功更名，失败残片清理，避免下次 exists 误判成功；SQL 排除已迁移旧源，只取待迁移键再单条解析，避免重启读全部大 JSON。不做双写、反向迁移或回滚框架，保留旧源与一致性备份。
+- 权限复现：WSL Ubuntu 22.04 / Node 22.23.1 / Linux 临时目录中，原实现主库600、WAL/SHM644；根因 chmod 在 WAL 建表后。现打开连接前创建/收紧主库与已有 sidecar（不改共享目录），新 sidecar 继承600；POSIX 权限失败显式拒绝。Windows Node24 临时目录 icacls 实测为继承ACL（含本机用户、系统、管理员及额外继承SID），不宣称 chmod 能隔离 ACL，不触碰用户目录权限。
+- 验证：权限改动前全量321项：320通过、0失败、1原有跳过；存储/迁移/持久化38/38。权限改动后 Linux 数据库+存储25/25（包括新旧 sidecar600、备份失败再试、重复迁移不读源）；Windows同组24通过、1平台跳过。全量最终复跑与独立复核/性能报告继续收口。
+- 涉及：src/{sessions,server,session-store,database,model-config}.js、public/model-manager.js、tests/{capabilities,compaction-config,model-config,model-manager,recall,service-api,session-flow,session-memory,session-migration,session-persistence,task-notifications,database,session-store,service}.test.js、README.md、docs/sqlite-refactor-plan.md、codebase-map三层索引/知识。
+- 全量复跑曾复现既有 `rebuild cancels swap` 时序失败（workers 1≠2）：service.mjs 先 state.fail 落盘才 fork 恢复进程，测试误把 status failed 当恢复完成。tests/service.test.js 复用 until 等真实 ready 且 workers=2，再保留原严格断言；不加固定 sleep、不降低判定、不改守护产品逻辑。定向复跑另外暴露测试桩直接覆写 maint-env 被读到半截 JSON，改为完整临时文件后 rename；随后全量322项：320通过、0失败、2跳过（原有平台用例及Windows跳过POSIX权限测试，后者已在Linux实跑）。

@@ -428,3 +428,23 @@
 - 根因：`workspace.browse` 与 `files.browse` 的 `query` 只在当前层用 `entry.name.includes()` 子串过滤，既不递归也不模糊；`app.js` 在 `public/` 里，根层永远匹配不到。
 - 修复：src/sessions.js 抽出 `fuzzyHit()`/`matchRank()` 与 BFS `searchEntries()`，`query` 非空时递归搜索当前 `path` 子树（跳过 `.git`/`node_modules`/符号链接）、只匹配名称、按匹配质量排序后一次返回（不分页，上限 60 条、目录上限 400）；`workspace.browse` 增加 `query`，前端把 `@` 后最后一段当 `query` 发出。
 - 防再犯：tests/session-flow.test.js、tests/workspace-picker.test.js 断言递归与模糊（`appjs` → `src/deep/nested-app.js`）；tests/app.test.js 的 workspace.browse 桩件按 `req.query` 返回根目录没有的 `src/app.js`，保证「根层没有也能命中」这条回归；改搜索前先直连 `Sessions.browse()` 在真实工作空间量耗时，别凭感觉加索引/防抖。
+
+### 2026-09-13 SQLite 拆表后的事务与失败重试
+- 根因：实体删除内部 BEGIN 与会话批量保存嵌套会抛事务错误；增量失败不能靠下一次全量快照补救；懒加载替换元数据对象会漏掉失败改名队列。
+- 修复：session-store/sessions 统一同步 SAVEPOINT；pendingWrites 按序重试；ensureLoaded 与关闭先提交元数据失败队列；任务终态不在通知入口重复保存大结果。
+- 防再犯：tests/session-persistence.test.js 注入 query_only 与后半段 SQL 失败；recall.test.js 检查撤回与同 ID 子代理事件隔离；task-notifications.test.js 断言终态仅存一次、通知更新只改单任务字段。Windows finally 必须先关闭数据库再删除临时目录。
+
+### 2026-09-13 一致性备份残片与重复迁移读取
+- 根因：VACUUM INTO 固定目标失败可能留下残片，existsSync 下次把它当成功备份；先读全部旧 JSON 再检查标记使重启依然随全部旧历史膨胀。
+- 修复：session-store.js 临时目标600权限，VACUUM 成功后更名，异常清理；SQL 排除已迁移键，再逐条取旧值，不跨迁移事务持有迭代游标。
+- 防再犯：session-store.test.js 注入失败残片、恢复后必须重做备份；重复迁移禁止读取 sessions 源。坏 JSON 错误只报键位，不透传含原文的 SyntaxError。
+
+### 2026-09-13 主库600不代表WAL/SHM已受保护
+- 已复现：Linux Node22.23.1，旧 Database 主库600而WAL/SHM644；chmod 晚于连接初始化与建表。
+- 修复：database.js 打开连接前用600创建/收紧主库与已有sidecar，保留父目录；新WAL/SHM继承主库600。Windows依赖目录ACL，不能把POSIX测试当Windows隔离证明。
+- 防再犯：database.test.js 在POSIX测试首次写入及第二连接收紧旧sidecar，同时检查父目录未变；Windows icacls 检查实际继承主体，不自动改共享目录权限。
+
+### 2026-09-13 维护失败不等于恢复进程已启动
+- 症状：service.test.js 偶发 workers 1≠2；rebuild 停止错误已报告但恢复 worker 尚未启动。
+- 根因：runOp 先 await state.fail，再 fork/spawnWorker；测试只等 status failed 便读取启动次数。
+- 修复：复用 until 等 ready 且 workers=2，再检查严格次数与原依赖未动，不改产品流程或用固定sleep掩盖竞态。测试桩 maint-env 需完整写临时文件后 rename，避免状态读取撞上直接覆写的空/半截 JSON。

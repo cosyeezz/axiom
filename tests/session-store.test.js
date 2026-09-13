@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync, readdirSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -409,6 +409,44 @@ test("迁移跳过路径（重跑已标记 / 新表已有同 id）不产生备�
     assert.equal(store.importLegacySession(saved, "sessions/dup.json"), false);
     store.deleteSession("j2"); // 删掉已导会话后重跑 marker：已标记直接 false，不重导入也不备份
     assert.equal(store.importLegacySession({ id: "j2", cwd: "F:/x" }, "sessions/dup2.json"), false);
+  }));
+
+test("备份失败残片不算成功；解除错误后重新备份，再导入并标记", () =>
+  withStore((store, db) => {
+    const exec = db.exec.bind(db);
+    const target = `${db.path}.pre-store-migration.db`;
+    let attempts = 0;
+    db.exec = sql => {
+      if (sql.startsWith("VACUUM INTO")) {
+        attempts++;
+        const temporary = sql.slice("VACUUM INTO '".length, -1).replaceAll("''", "'");
+        writeFileSync(temporary, "partial-backup");
+        throw new Error("injected backup failure");
+      }
+      exec(sql);
+    };
+    assert.throws(() => store.importLegacySession({ id: "s1", cwd: "test" }, "old/s1"), /backup failure/);
+    assert.equal(existsSync(target), false);
+    assert.equal(store.hasSession("s1"), false);
+    assert.equal(db.get("migrated", "old/s1"), undefined);
+    assert.equal(readdirSync(join(db.path, "..")).some(name => name.endsWith(".tmp")), false);
+    db.exec = sql => { if (sql.startsWith("VACUUM INTO")) attempts++; exec(sql); };
+    assert.equal(store.importLegacySession({ id: "s1", cwd: "test" }, "old/s1"), true);
+    assert.equal(attempts, 2);
+    assert.equal(existsSync(target), true);
+  }));
+
+test("重复迁移在SQL层跳过已标记旧JSON，不读取或解析大历史", () =>
+  withStore((store, db) => {
+    db.set("sessions", "s1", { id: "s1", cwd: "test" });
+    assert.equal(store.migrateLegacy(), 1);
+    const get = db.get.bind(db);
+    db.get = (namespace, key) => {
+      assert.notEqual(namespace, "sessions", "已迁移源不应再读取");
+      return get(namespace, key);
+    };
+    assert.equal(store.migrateLegacy(), 0);
+    assert.equal(store.getSession("s1").cwd, "test");
   }));
 
 test("旧数据缺 id：summary/trigger/compaction/retry 按原序号稳定 id，同内容两条都保留；读出带 id 供重写幂等", () =>

@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { realpath, stat, readFile, mkdir, writeFile, rm, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { Database } from "./database.js";
+import { SessionStore } from "./session-store.js";
 import { basename, dirname, join, relative, isAbsolute, resolve, sep, parse } from "node:path";
 
 import { selection as selectionSchema, presetStore, memorySummary as memorySummarySchema, compaction as compactionSchema, compactionDefaults, assertPromptImages } from "./protocol.js";
@@ -176,6 +177,7 @@ export class Sessions {
       : storagePath ? join(dirname(storagePath), "axiom.db") : null;
     this.ownsDatabase = !database && !!sidecar;
     this.database = database || (sidecar ? new Database(sidecar) : null);
+    this.store = this.database ? new SessionStore(this.database) : null;
     this.memorySummary = structuredClone(memorySummaryDefaults);
     this.loadMemorySummary();
     this.savingDefaults = Promise.resolve();
@@ -206,8 +208,8 @@ export class Sessions {
   async loadDefaults() {
     if (!this.database) return;
     const stored = this.database.get("defaults", "defaults");
-    if (stored !== undefined) return this.applyDefaults(stored);
-    await this.migrateDefaults();
+    if (stored !== undefined) this.applyDefaults(stored);
+    else await this.migrateDefaults();
     this.migratePresets();
   }
 
@@ -221,7 +223,7 @@ export class Sessions {
       this.database.set("defaults", "defaults", data);
       this.database.set("migrated", this.defaultsPath, true);
     } catch (error) {
-      if (error.code !== "ENOENT") console.warn(`旧默认配置迁移失败，保留原文件 ${this.defaultsPath}：${error.message}`);
+      if (error.code !== "ENOENT") console.warn(`旧默认配置迁移失败，保留原文件 ${this.defaultsPath}：请检查数据格式及数据库读写权限`);
     }
   }
 
@@ -234,7 +236,7 @@ export class Sessions {
       if (this.database.get("presets", "store") === undefined) this.database.set("presets", "store", store);
       this.database.set("migrated", path, true);
     } catch (error) {
-      if (error.code !== "ENOENT") console.warn(`旧会话预设迁移失败，保留原文件 ${path}：${error.message}`);
+      if (error.code !== "ENOENT") console.warn(`旧会话预设迁移失败，保留原文件 ${path}：请检查数据格式及数据库读写权限`);
     }
   }
 
@@ -243,9 +245,9 @@ export class Sessions {
   // 坏记录只警告并回退默认值，不阻断启动。
   loadMemorySummary() {
     if (!this.database) return;
-    const saved = this.database.get("settings", "memorySummary");
-    if (saved === undefined) return;
     try {
+      const saved = this.database.get("settings", "memorySummary");
+      if (saved === undefined) return;
       this.memorySummary = memorySummarySchema.parse({ ...memorySummaryDefaults, ...saved });
     } catch (error) {
       console.warn(`摘要设置读取失败，使用默认值：${error.message}`);
@@ -412,33 +414,45 @@ export class Sessions {
   }
 
   async load() {
-    if (!this.storagePath) return;
-    await mkdir(this.storagePath, { recursive: true });
-    await this.migrateLegacySessions();
-    // 库是恢复权威：逐条重建；压缩配置重置为最新默认，其余保持原样。
-    for (const { key, value: saved } of this.database?.list("sessions") ?? []) {
-      try {
-        // 历史文件缺失时绝不恢复：SDK 会静默在该路径开新会话（空历史），随后的 persist
-        // 还会把空状态写回库记录。这里跳过并保留库记录原状，文件找回（如备份还原）后
-        // 下次启动照常恢复。
-        if (saved.sessionFile && !existsSync(saved.sessionFile)) {
-          console.warn(`会话 ${key} 的历史文件缺失，本次跳过恢复并保留库记录：${saved.sessionFile}`);
-          continue;
-        }
-        saved.selection ??= {};
-        saved.selection.compaction = structuredClone(this.defaultSelection.compaction);
-        await this.create(saved.cwd, saved.selection, saved);
-      } catch (error) {
-        // 单条损坏不拖垮其他会话；记录保留在库中，便于诊断。
-        console.warn(`会话恢复失败 ${key}：${error.message}`);
-      }
+    if (!this.store) return;
+    this.store.migrateLegacy();
+    if (this.storagePath) {
+      await mkdir(this.storagePath, { recursive: true });
+      await this.migrateLegacySessions();
     }
+    // 启动只读元数据；历史和 SDK 留到首次打开。缺失 JSONL 也保留可见记录。
+    for (const saved of this.store?.listSessions() ?? []) {
+      this.items.set(saved.id, { ...saved, loaded: false, status: "idle", runningSince: null,
+        tasks: { jobs: new Map() }, listeners: new Set() });
+    }
+    // 只有待通知会话需要主动恢复，串行启动避免历史任务同时唤醒大量 SDK。
+    for (const id of this.store?.listPendingSessionIds() ?? []) {
+      try { await this.ensureLoaded(id); }
+      catch (error) { console.warn(`会话恢复失败 ${id}：${error.message}`); }
+    }
+  }
+
+  async ensureLoaded(id) {
+    const item = this.get(id);
+    if (item.closing) throw new Error("Session is closing");
+    if (item.loaded) return item;
+    if (!item.loading) item.loading = (async () => {
+      // 元数据会话也可能有改名失败；换成 SDK 实例前先清空旧对象的失败队列。
+      if (item.pendingWrites?.length) await this.persist(item, {});
+      const saved = this.store.getSession(id);
+      if (saved.sessionFile && !existsSync(saved.sessionFile))
+        throw new Error(`会话历史文件缺失，已保留数据库记录：${saved.sessionFile}`);
+      saved.selection ??= {};
+      saved.selection.compaction = structuredClone(this.defaultSelection.compaction);
+      await this.create(saved.cwd, saved.selection, saved);
+      return this.get(id);
+    })().finally(() => { item.loading = null; });
+    return item.loading;
   }
 
   // 旧版磁盘会话（workspaces/<hash>/<id>.json）一次性迁入库：解析验证成功才写库+标记，
   // 源文件保留（迁移永不破坏原始数据）。标记精确到文件：单文件失败只跳过它自己，修复后
-  // 下次启动重试，不牵连同目录其他文件。顺序为先落库再标记（各自单条 UPSERT 原子），
-  // 两步之间崩溃会重扫同一文件，但「库同 id 以库为准」保证幂等不重复导入。库中已有同 id
+  // 下次启动重试，不牵连同目录其他文件。四表导入与标记经存储层单事务提交。库中已有同 id
   // 记录时以库为准不覆盖；删除会话时旧 JSON 一并清理，即使清理中断，文件标记仍在，绝不复活。
   async migrateLegacySessions() {
     for (const workspace of await readdir(this.storagePath, { withFileTypes: true })) {
@@ -457,33 +471,68 @@ export class Sessions {
             throw new Error("无效的会话配置");
           // 完整模型消息不再入库：历史权威是 Pi JSONL，恢复时重建。
           delete saved.messages;
-          if (this.database?.get("sessions", saved.id) === undefined) this.database?.set("sessions", saved.id, saved);
-          this.database?.set("migrated", marker, true);
+          this.store?.importLegacySession(saved, marker);
         } catch (error) {
-          console.warn(`旧会话迁移失败，保留原文件 ${path}：${error.message}`);
+          console.warn(`旧会话迁移失败，保留原文件 ${path}：请检查数据格式及数据库读写权限`);
         }
       }
     }
   }
-  persist(item) {
-    if (!this.database) return Promise.resolve();
-    const data = { id: item.id, cwd: item.cwd, title: item.title,
+  sessionData(item) {
+    return { id: item.id, cwd: item.cwd, title: item.title,
       titleManual: item.titleManual, titleRequested: item.titleRequested,
-      summaries: item.summaries, memoryTurns: item.memoryTurns, progressDeliveries: item.progressDeliveries, summaryTriggers: item.summaryTriggers,
-      createdAt: item.createdAt, updatedAt: item.updatedAt, compactions: item.compactions, retries: item.retries, tasks: item.tasks.snapshot(),
+      createdAt: item.createdAt, updatedAt: item.updatedAt,
       elapsedMs: item.elapsedMs, runningSince: item.runningSince,
-      sessionFile: item.agent.sessionFile?.(),
-      selection: { ...item.agent.config?.(), capabilities: item.capabilities,
+      sessionFile: item.agent?.sessionFile?.() ?? item.sessionFile ?? null,
+      selection: item.agent ? { ...item.agent.config?.(), capabilities: item.capabilities,
         subagentCapabilities: item.subagentCapabilities, subagentModel: item.subagentModel,
         subagentThinking: item.subagentThinking, queueType: item.queueType,
-        trustProject: item.trustProject, useDefaults: false } };
-    // 立即序列化快照（保存的是调用那一刻的数据，不等前一个保存完成）。
-    const payload = JSON.stringify(data);
-    const work = (item.saving || Promise.resolve()).catch(() => {}).then(() => {
-      this.database.set("sessions", item.id, JSON.parse(payload));
-    });
-    item.saving = work;
-    return work;
+        trustProject: item.trustProject, useDefaults: false } : item.selection };
+  }
+
+  // 同步 SQL 在返回 Promise 前完成；调用方仍可 await/捕获，不排队复制整份历史。
+  async persist(item, change = { session: this.sessionData(item) }) {
+    if (!this.store) return;
+    // 失败的增量留待下次写入/关闭重试，不能指望全量快照偶然补救。
+    item.pendingWrites ||= [];
+    item.pendingWrites.push(change);
+    while (item.pendingWrites.length) {
+      this.database.exec("SAVEPOINT session_change");
+      try {
+        this.writeChange(item, item.pendingWrites[0]);
+        this.database.exec("RELEASE session_change");
+      } catch (error) {
+        this.database.exec("ROLLBACK TO session_change; RELEASE session_change");
+        throw error;
+      }
+      item.pendingWrites.shift();
+    }
+  }
+
+  writeChange(item, change) {
+    if (change.session) {
+      const { id, ...patch } = change.session;
+      this.store.updateSession(item.id, patch);
+    }
+    if (change.title) this.store.updateSession(item.id, { title: item.title });
+    if (change.summary) this.store.saveSummary(item.id, change.summary);
+    if (change.event) this.store.saveEvent(item.id, change.event.type, change.event.record);
+    if (change.task) this.store.saveTask(item.id, change.task);
+    if (change.turn) this.store.setTurn(item.id, change.turn.agentId, change.turn.turn);
+    if (change.progress) this.store.saveTask(item.id, { id: change.progress.taskId, progress: change.progress.record });
+    if (change.deletedSummaries) this.store.deleteSummaries(item.id, change.deletedSummaries);
+    if (change.deletedEvents) this.store.deleteEvents(item.id, change.deletedEvents.type, change.deletedEvents.records);
+    if (change.delivery) {
+      this.store.saveEvent(item.id, "progress_delivery", change.delivery);
+      this.store.pruneEvents(item.id, "progress_delivery", 50);
+      for (const { taskId, progressId } of change.delivered)
+        this.store.saveTask(item.id, { id: taskId, progressDelivered: progressId });
+    }
+  }
+
+  saveChange(item, change) {
+    void this.persist(item, change).catch((error) =>
+      item.emit({ type: "error", data: { message: `会话保存失败：${error.message}` } }));
   }
 
   list() {
@@ -499,17 +548,19 @@ export class Sessions {
         elapsedMs: item.elapsedMs,
         runningSince: item.runningSince,
         // 会话的 .jsonl 源文件路径，供侧栏菜单「复制 JSONL 路径」用；尚未落盘时为 null。
-        sessionFile: item.agent?.sessionFile?.() ?? null,
+        sessionFile: item.agent?.sessionFile?.() ?? item.sessionFile ?? null,
       }))
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }
   async rename(id, title) {
+    if (this.get(id).loading) await this.get(id).loading;
     const item = this.get(id);
+    if (item.closing) throw new Error("Session is closing");
     item.title = title;
     item.titleManual = true;
     item.titlePending = false;
     item.updatedAt = Date.now();
-    await this.persist(item);
+    await this.persist(item, { session: { title, titleManual: true, updatedAt: item.updatedAt } });
     return { sessionId: id, title };
   }
 
@@ -555,6 +606,8 @@ export class Sessions {
       id,
       cwd,
       storageDir,
+      loaded: true,
+      sessionFile: saved?.sessionFile ?? importedFile,
       queueType: selection.queueType || "steer",
       title: saved?.title || "新会话",
       titleManual: saved?.titleManual ?? !!saved,
@@ -635,17 +688,29 @@ export class Sessions {
       if (event.type === "agent.message.end") {
         if (event.data.message.role === "assistant" && event.data.entryId) {
           const record = item.summaries.findLast((entry) => entry.agentId === agentId && !entry.entryId && entry.messageTimestamp != null && entry.messageTimestamp === event.data.message.timestamp);
-          if (record) record.entryId = event.data.entryId;
+          if (record) {
+            record.entryId = event.data.entryId;
+            this.saveChange(item, { summary: record });
+          }
           const trigger = item.summaryTriggers.findLast((entry) => entry.agentId === agentId && entry.messageTimestamp != null && entry.messageTimestamp === event.data.message.timestamp);
-          if (trigger) trigger.entryId = event.data.entryId;
+          if (trigger) {
+            trigger.entryId = event.data.entryId;
+            this.saveChange(item, { event: { type: "summary_trigger", record: trigger } });
+          }
         }
         item.messages.push({ agentId, message: event.data.message, ...(event.data.entryId ? { entryId: event.data.entryId } : {}) });
         delete item.live[agentId];
-        void this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `会话保存失败：${error.message}` } }));
+        if (agentId === "main") {
+          const sessionFile = item.agent?.sessionFile?.();
+          if (sessionFile && sessionFile !== item.sessionFile) {
+            item.sessionFile = sessionFile;
+            this.saveChange(item, { session: { sessionFile } });
+          }
+        }
       }
       if (event.type === "agent.compaction" && agentId === "main") {
         if (!item.compactions.some((entry) => entry.id === event.data.id)) item.compactions.push(event.data);
-        void this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `会话保存失败：${error.message}` } }));
+        this.saveChange(item, { event: { type: "compaction", record: event.data } });
       }
       const envelope = { ...event, sessionId: id, seq: ++item.seq };
       if (event.type === "session.state" || event.type === "task.state") {
@@ -654,7 +719,7 @@ export class Sessions {
         trackElapsed(item, pointStatus(item));
         envelope.data = { ...event.data, elapsedMs: item.elapsedMs, runningSince: item.runningSince };
         if (wasRunning !== item.runningSince)
-          void this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `会话保存失败：${error.message}` } }));
+          this.saveChange(item, { session: { elapsedMs: item.elapsedMs, runningSince: item.runningSince } });
       }
       if (event.type === "agent.retry") {
         let record = item.retries.find((entry) => entry.agentId === agentId && entry.id === event.data.id);
@@ -673,18 +738,19 @@ export class Sessions {
           delete record.nextRetryAt;
           if (record.status === "succeeded") delete record.error;
         }
-        void this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `重试记录保存失败：${error.message}` } }));
+        this.saveChange(item, { event: { type: "retry", record } });
       }
       if (event.type === "tool.state")
         item.tools[`${agentId}:${event.data.toolCallId}`] = {
           agentId,
           ...event.data,
         };
-      if (event.type === "task.state")
-        void this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `会话保存失败：${error.message}` } }));
+      if (event.type === "task.state") this.saveChange(item, { task: event.saved ?? event.data });
+      // 持久化专用字段不进入 WebSocket 广播。
+      delete envelope.saved;
       for (const listener of item.listeners) listener(envelope);
     };
-    const saveMemory = () => void this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `摘要保存失败：${error.message}` } }));
+    const saveMemory = (change) => this.saveChange(item, change);
     item.tasks = new Tasks(
       (job) =>
         this.createAgent([], {
@@ -699,7 +765,8 @@ export class Sessions {
         }),
       item.emit,
       async () => {
-        await this.persist(item);
+        // task.state 已同步提交终态；只重试失败队列，不再重写同一大结果。
+        await this.persist(item, {});
         this.scheduleTaskNotifications(item);
       },
       () => parentSummaryContext(item),
@@ -730,10 +797,6 @@ export class Sessions {
         sessionFile: saved?.sessionFile ?? importedFile,
         memory: memoryHooks(item, saveMemory),
       });
-    } catch (error) {
-      if (importedFile) await rm(importedFile, { force: true });
-      throw error;
-    }
     // 导入与库恢复的会话都没有完整消息快照（模型消息不再入库）：主代理历史从 Pi JSONL
     // 当前分支重建（撤回/压缩后的分支即真实历史），entryId 保留用于压缩折叠与撤回定位；
     // 子代理消息不落 JSONL，恢复后不再逐条回放（任务卡仍带最终结果）。
@@ -743,12 +806,27 @@ export class Sessions {
     // before a crash could persist the web snapshot. Match in order, never by timestamp alone.
     const history = item.agent.historyEntries?.() || [];
     let historyIndex = 0;
+    const historyIds = new Map(history.map((entry, index) => [entry.id, index]));
+    // 已有关联 ID 直接定位；旧无 ID 记录仅序列化一次并按原顺序匹配。
+    const legacyMatches = new Map();
+    if (item.messages.some((record) => record.agentId === "main" && !record.entryId)) {
+      history.forEach((entry, index) => {
+        const key = JSON.stringify(entry.message);
+        if (!legacyMatches.has(key)) legacyMatches.set(key, { indices: [], cursor: 0 });
+        legacyMatches.get(key).indices.push(index);
+      });
+    }
     for (const record of item.messages) {
       if (record.agentId !== "main") continue;
-      const serialized = JSON.stringify(record.message);
-      const index = history.findIndex((entry, i) => i >= historyIndex &&
-        (record.entryId ? entry.id === record.entryId : JSON.stringify(entry.message) === serialized));
-      if (index >= 0) {
+      let index = historyIds.get(record.entryId);
+      if (!record.entryId) {
+        const match = legacyMatches.get(JSON.stringify(record.message));
+        if (match) {
+          while (match.indices[match.cursor] < historyIndex) match.cursor++;
+          index = match.indices[match.cursor];
+        }
+      }
+      if (index !== undefined && index >= historyIndex) {
         record.entryId = history[index].id;
         historyIndex = index + 1;
       }
@@ -773,8 +851,12 @@ export class Sessions {
         const sameAgent = item.messages.map((entry, index) => ({ index, entry }))
           .filter(({ entry }) => entry.agentId === agent);
         let boundary = null;
-        const hasQueuedInput = sameAgent.some(({ entry }, index) => entry.message?.role === "user"
-          && sameAgent.slice(0, index).some(({ entry: previous }) => previous.message?.role === "assistant"));
+        let sawAssistant = false;
+        const hasQueuedInput = sameAgent.some(({ entry }) => {
+          if (entry.message?.role === "user" && sawAssistant) return true;
+          if (entry.message?.role === "assistant") sawAssistant = true;
+          return false;
+        });
         if ((agent === "main" && consumedAt.size || !hasQueuedInput) && sameAgent.length && Number.isFinite(first?.nextRetryAt) && Number.isFinite(first?.delayMs) && first.delayMs >= 0) {
           const startedAt = first.nextRetryAt - first.delayMs;
           const timeline = sameAgent.map(({ entry, index }) => ({ index,
@@ -804,8 +886,25 @@ export class Sessions {
     item.unsubscribe = item.agent.subscribe((event) =>
       item.emit({ ...event, agentId: "main", runId: item.runId }),
     );
+      if (this.store && !this.store.hasSession(id)) {
+        this.store.insertSession({ ...this.sessionData(item), summaries: item.summaries,
+          memoryTurns: item.memoryTurns, progressDeliveries: item.progressDeliveries,
+          summaryTriggers: item.summaryTriggers, compactions: item.compactions,
+          retries: item.retries, tasks: item.tasks.snapshot() });
+      } else if (this.store) {
+        // 恢复时的中断状态与 JSONL 对账只写一次，不进入日常保存热路径。
+        await this.persist(item);
+        for (const task of item.tasks.snapshot()) this.store.saveTask(id, task);
+        for (const record of item.summaryTriggers) this.store.saveEvent(id, "summary_trigger", record);
+        for (const record of item.retries) this.store.saveEvent(id, "retry", record);
+        for (const record of item.compactions) this.store.saveEvent(id, "compaction", record);
+      }
+    } catch (error) {
+      try { item.unsubscribe?.(); await item.agent?.dispose(); }
+      finally { if (importedFile) await rm(importedFile, { force: true }); }
+      throw error;
+    }
     this.items.set(id, item);
-    await this.persist(item);
     this.scheduleTaskNotifications(item);
     return id;
   }
@@ -829,15 +928,17 @@ export class Sessions {
     item.notifying = true;
     try {
       // 结果先落盘再触达；通知不放入可撤回的用户 steer/followUp 队列。
-      await this.persist(item);
+      await this.persist(item, {});
       if (item.closing || item.notificationsPaused || item.configuring || item.status !== "idle") return;
       const text = "[Axiom 子任务完成通知] 以下任务已结束。使用各自的 taskId 和 resultId 调用 read_result 获取结果；不要轮询。\n" +
         JSON.stringify(jobs.map((job) => ({ taskId: job.id, resultId: job.resultId, status: job.status })));
       await this.prompt(item.id, text);
       await item.work;
       if (item.notificationsPaused || item.closing) return;
-      for (const job of jobs) job.notified = true;
-      await this.persist(item);
+      for (const job of jobs) {
+        await this.persist(item, { task: { id: job.id, notified: true } });
+        job.notified = true;
+      }
     } finally {
       item.notifying = false;
     }
@@ -932,13 +1033,14 @@ export class Sessions {
 
   // 运行中刷新会话可见技能（composer 下拉数据源）；旧 factory 无此能力时降级为当前列表。
   async refreshSkills(id) {
-    const item = this.get(id);
+    const item = await this.ensureLoaded(id);
     if (!item.agent.refreshSkills) return item.agent.config?.()?.skills ?? [];
     return item.agent.refreshSkills();
   }
 
   snapshot(id) {
     const item = this.get(id);
+    if (!item.loaded) throw new Error("会话尚未加载，请先打开会话");
     return structuredClone({
       sessionId: id,
       cwd: item.cwd,
@@ -973,7 +1075,7 @@ export class Sessions {
   }
 
   async configure(id, selection) {
-    const item = this.get(id);
+    const item = await this.ensureLoaded(id);
     if (!["idle", "running"].includes(item.status) || item.configuring) throw new Error("Session is busy");
     const { subagentModel = item.subagentModel, model, thinking } = selection;
     if (
@@ -1008,7 +1110,7 @@ export class Sessions {
 
   async prompt(id, text, queueType, images) {
     if (!text.trim() && !images?.length) throw new Error("请求内容不能为空：请输入文本或附加图片");
-    const item = this.get(id);
+    const item = this.get(id).loaded ? this.get(id) : await this.ensureLoaded(id);
     if (images?.length) {
       // 必须在回执前拒绝：一旦入队或启动，SDK 会静默丢弃不支持模型的图片。
       assertPromptImages(images);
@@ -1061,7 +1163,7 @@ export class Sessions {
   // 撤回：recall 时把这一轮已进入上下文的输入退回输入框（先停稳、无模型输出才允许）；
   // 队列撤回放在 recall 之后，recall 被拒绝时队列原样保留，不会丢消息。
   async withdraw(id, recall = false) {
-    const item = this.get(id);
+    const item = await this.ensureLoaded(id);
     if (!recall) return item.agent.withdraw();
     if (item.status !== "idle" || item.cancelling) await this.cancel(id);
     const recalled = await item.agent.recall();
@@ -1071,7 +1173,12 @@ export class Sessions {
       if (cut >= 0) {
         const previousMessages = item.messages;
         const removedIds = new Set(previousMessages.slice(cut).filter((entry) => entry.agentId === "main").map((entry) => entry.entryId).filter(Boolean));
-        item.summaries = item.summaries.filter((entry) => entry.agentId !== "main" || !removedIds.has(entry.entryId));
+        const removedSummaries = item.summaries.filter((entry) => entry.agentId === "main" && removedIds.has(entry.entryId));
+        item.summaries = item.summaries.filter((entry) => !removedSummaries.includes(entry));
+        await this.persist(item, { deletedSummaries: removedSummaries.map((entry) => entry.id) });
+        const removedTriggers = item.summaryTriggers.filter((entry) => entry.agentId === "main" && removedIds.has(entry.entryId));
+        item.summaryTriggers = item.summaryTriggers.filter((entry) => !removedTriggers.includes(entry));
+        await this.persist(item, { deletedEvents: { type: "summary_trigger", records: removedTriggers } });
         // 撤回只回退主代理，独立子任务已经发生的输出必须保留。
         const keptBefore = [0];
         item.messages = previousMessages.filter((record, index) => {
@@ -1084,6 +1191,7 @@ export class Sessions {
         const surviving = new Map();
         for (const record of item.messages)
           if (record.entryId) surviving.set(record.agentId, (surviving.get(record.agentId) ?? new Set()).add(record.entryId));
+        const previousRetries = item.retries;
         item.retries = item.retries.filter((retry) => {
           const agent = retry.agentId || "main";
           if (agent !== "main") return true;
@@ -1096,7 +1204,9 @@ export class Sessions {
           else delete retry.messageCount;
           const anchors = surviving.get(retry.agentId || "main");
           if (retry.anchorEntryId && !anchors?.has(retry.anchorEntryId)) delete retry.anchorEntryId;
+          await this.persist(item, { event: { type: "retry", record: retry } });
         }
+        await this.persist(item, { deletedEvents: { type: "retry", records: previousRetries.filter((entry) => !item.retries.includes(entry)) } });
       }
       delete item.live.main;
       await this.persist(item);
@@ -1106,6 +1216,11 @@ export class Sessions {
 
   async cancel(id) {
     const item = this.get(id);
+    if (item.loading) {
+      await item.loading;
+      return this.cancel(id);
+    }
+    if (!item.loaded) return;
     if (item.cancelling) return item.cancelling;
     item.notificationsPaused = true;
     item.status = "cancelling";
@@ -1123,8 +1238,26 @@ export class Sessions {
     return item.cancelling;
   }
   async remove(id, deleting = true) {
-    const item = this.get(id);
+    let item = this.get(id);
+    if (item.loading) {
+      await item.loading.catch(() => {});
+      item = this.get(id);
+    }
     item.closing = true;
+    if (!item.loaded) {
+      if (!deleting && item.pendingWrites?.length) await this.persist(item, {});
+      if (deleting) {
+        this.store?.deleteSession(id);
+        const storageDir = this.storagePath && join(this.storagePath, createHash("sha256").update(process.platform === "win32" ? item.cwd.toLowerCase() : item.cwd).digest("hex"));
+        if (storageDir) {
+          if (item.sessionFile) await rm(item.sessionFile, { force: true });
+          await rm(join(storageDir, `${id}.json`), { force: true });
+        }
+      }
+      item.listeners.clear();
+      this.items.delete(id);
+      return;
+    }
     await this.cancel(id);
     await item.notificationWork;
     item.unsubscribe();
@@ -1132,7 +1265,7 @@ export class Sessions {
     await this.persist(item);
     if (deleting) {
       // 删除顺序：先删库记录再清理文件；若中途崩溃，标记过的旧 JSON 不会复活会话。
-      this.database?.delete("sessions", id);
+      this.store?.deleteSession(id);
       if (item.storageDir) {
         if (item.agent.sessionFile?.()) await rm(item.agent.sessionFile(), { force: true });
         // 旧版磁盘快照兜底清理（已迁移标记的目录不会再被扫描）。

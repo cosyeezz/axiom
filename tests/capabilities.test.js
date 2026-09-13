@@ -114,6 +114,7 @@ test("missing saved skills do not block another workspace or startup; broken his
     await restored.load();
     assert.equal(restored.list().length, 2);
     assert.equal(restored.get(id).title, "history survives");
+    await restored.ensureLoaded(id);
     assert.deepEqual(restored.get(id).capabilities, { skills: [], plugins: [], mcp: [] });
     const tasks = restored.get(id).tasks;
     await Promise.all(tasks.start(["child"]).map((taskId) => tasks.jobs.get(taskId).done));
