@@ -189,7 +189,8 @@ export const command = z.discriminatedUnion("type", [
     })
     .strict(),
   z.object({ id, type: z.literal("workspace.reveal"), sessionId: id }).strict(),
-  z.object({ id, type: z.literal("workspace.browse"), sessionId: id, path: z.string().max(4096).default("") }).strict(),
+  // query 非空时按名称模糊递归搜索整个工作空间（@ 补全用）。
+  z.object({ id, type: z.literal("workspace.browse"), sessionId: id, path: z.string().max(4096).default(""), query: z.string().max(200).default("") }).strict(),
   // 统一文件浏览：sessionId 存在则限定工作空间（相对路径），否则浏览主机绝对目录（工作空间选择器）。
   z
     .object({

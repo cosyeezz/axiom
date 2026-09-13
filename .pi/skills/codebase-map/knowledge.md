@@ -1,5 +1,10 @@
 # 坑与 bug 知识库（自成长：只追加，不删改历史）
 
+### 2026-09-12 手机输入区与吸顶信息挤占正文
+- 根因：桌面 textarea 三行/96px 下限、模型和多行状态常驻；嵌套 sticky 与绝对定位跳转叠在正文上。空 textarea 的长 placeholder 也会增加 scrollHeight。
+- 修复：public/app.js 手机空输入固定44px，style.css 仅≤700px折叠辅助区、限制底栏与输入高度、取消详情吸顶和跳转悬浮；index.html 提供统一展开入口，双百分比保留读屏名称。
+- 防再犯：tests/mobile-reading-ui.py 用真实布局检查小屏/横屏/长草稿和展开；桌面对比旧CSS计算样式与坐标。预览静态资源启动缓存，修改后换独立端口；不把短视口当真实软键盘。
+
 ### 2026-09-12 维护恢复不能绕过安全门禁
 - 症状：HTTP 停止返回 409 后回落控制管道，仍可能停止活动任务；启动超时后回滚时旧进程仍活着，产生双 worker；更新依赖被写入错误的全局共享层。
 - 根因：将业务拒绝当网络故障、将超时当退出，且测试桩把错误依赖布局写成预期。
@@ -407,3 +412,19 @@
 ### 2026-09-12 SQLite 替代临时 JSON 保存修复
 - 最终决策：前述 atomic-write 临时方案已移除，会话管理改用 database.js SQLite，Pi JSONL 保留历史。迁移必须逐文件标记，坏文件修复后可重试；JSONL 缺失跳过恢复，禁止静默创建空会话覆盖记录。
 - 防再犯：Node 22.5–22.12 无标志不能加载 node:sqlite，安装要求22.13+（22.x）或24+；Windows 测试清理前须关闭数据库。数据库/迁移/凭据/守护回归及全量275项验证通过（1跳过）。
+
+### 2026-09-12 子任务卡片分隔的旧执行段仍 Working
+- 根因：paintCallGroup 只看代理 running 与正文边界，子任务卡片将执行段拆开后，旧段无真实活动也继续转圈。
+- 修复：public/app.js 按输出区反向标记后续可见执行段，旧段须有 pending 记录才运行；最新段保留工具间隙等待，折叠策略不变。
+- 防再犯：tests/message-activity.test.js 覆盖 delegate 完成、卡片分隔、后续 read、旧工具确实未结束、idle 与快照，不混淆子任务状态和主代理工具完成。
+
+### 2026-09-12 子代理详情吸顶条叠层遮字
+- 根因：主会话全局 sticky 规则进入 task-dialog 的有界滚动区，Working 使用 canvas 黑底、thinking 再次吸顶，叠层覆盖正文。
+- 修复：public/style.css 在 task-dialog 内取消详情标题吸顶并使 Working 背景透明，主会话不变。
+- 防再犯：tests/ui-sticky-check.mjs 真实 Chromium 验证背景、主/子样式隔离、滚动坐标；最小 DOM 不等于完整 app 会话端到端验收。
+
+### 2026-09-12 @ 补全和工作空间搜索匹配不到嵌套文件
+- 症状：在输入框输入 `@app` / `@apjs` 无匹配，工作空间根目录只列出 `public/` 这类目录名。
+- 根因：`workspace.browse` 与 `files.browse` 的 `query` 只在当前层用 `entry.name.includes()` 子串过滤，既不递归也不模糊；`app.js` 在 `public/` 里，根层永远匹配不到。
+- 修复：src/sessions.js 抽出 `fuzzyHit()`/`matchRank()` 与 BFS `searchEntries()`，`query` 非空时递归搜索当前 `path` 子树（跳过 `.git`/`node_modules`/符号链接）、只匹配名称、按匹配质量排序后一次返回（不分页，上限 60 条、目录上限 400）；`workspace.browse` 增加 `query`，前端把 `@` 后最后一段当 `query` 发出。
+- 防再犯：tests/session-flow.test.js、tests/workspace-picker.test.js 断言递归与模糊（`appjs` → `src/deep/nested-app.js`）；tests/app.test.js 的 workspace.browse 桩件按 `req.query` 返回根目录没有的 `src/app.js`，保证「根层没有也能命中」这条回归；改搜索前先直连 `Sessions.browse()` 在真实工作空间量耗时，别凭感觉加索引/防抖。

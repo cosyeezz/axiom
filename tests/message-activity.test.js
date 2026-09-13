@@ -220,6 +220,43 @@ test("activity history hides empty shells and retains tool summaries without raw
   } finally { dom.window.close(); }
 });
 
+test("task-separated completed groups stop Working while the latest segment and pending tools remain active", async () => {
+  const { dom, w, emit, restore, paint, output } = await page();
+  const labels = () => [...output.querySelectorAll(':scope > .call-group:not([hidden]) > summary .activity-label')].map(node => node.textContent);
+  const delegated = assistant([call('delegate', 'delegate', { tasks: [{ task: 'work' }] })]);
+  const result = { role: 'toolResult', toolCallId: 'delegate', toolName: 'delegate', content: [{ type: 'text', text: '{"taskIds":["child"]}' }] };
+  const task = { id: 'child', task: 'work', status: 'running' };
+  try {
+    emit('session.state', { status: 'running' });
+    emit('agent.message.end', { message: delegated, entryId: 'delegated' });
+    w.event({ sessionId: 'activity', type: 'task.state', taskId: task.id, data: task });
+    emit('agent.message.end', { message: result, entryId: 'result' });
+    emit('tool.state', { phase: 'end', toolCallId: 'delegate', toolName: 'delegate', result });
+    emit('agent.message.end', { message: assistant([call('read')]), entryId: 'read' });
+    paint(); paint();
+    assert.deepEqual(labels(), ['Completed', 'Working']);
+    const previous = output.querySelector('.call-group');
+    assert.equal(previous.open, true, 'status does not force disclosure closed');
+    emit('tool.state', { phase: 'start', toolCallId: 'delegate', toolName: 'delegate' });
+    paint();
+    assert.deepEqual(labels(), ['Working', 'Working'], 'a genuinely pending earlier tool stays active');
+    emit('tool.state', { phase: 'end', toolCallId: 'delegate', toolName: 'delegate', result });
+    emit('tool.state', { phase: 'end', toolCallId: 'read', toolName: 'read', result: { content: 'ok' } });
+    paint();
+    assert.deepEqual(labels(), ['Completed', 'Working'], 'latest tool gap still belongs to the active turn');
+    emit('session.state', { status: 'idle' });
+    paint();
+    assert.deepEqual(labels(), ['Completed', 'Completed']);
+    assert.equal(output.querySelector('.task-card').dataset.status, 'running', 'child state is independent');
+    restore({ status: 'running', tasks: [task], messages: [entry(delegated, 'delegated'), entry(result, 'result'), entry(assistant([call('read')]), 'read')], tools: { read: { agentId: 'main', phase: 'start', toolCallId: 'read', toolName: 'read' } } });
+    paint(); paint();
+    assert.deepEqual(labels(), ['Working'], 'snapshot merges adjacent calls and keeps only the latest wait');
+    emit('session.state', { status: 'idle' });
+    paint();
+    assert.deepEqual(labels(), ['Stopped'], 'unfinished snapshot tools stop without fabricating success');
+  } finally { dom.window.close(); }
+});
+
 test("activity groups stop after interruption and idle restore without a final answer", async () => {
   const { dom, emit, restore, paint, output } = await page();
   const label = () => output.querySelector('.call-preview .activity-label')?.textContent;

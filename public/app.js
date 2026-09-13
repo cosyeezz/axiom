@@ -31,8 +31,16 @@ const compactionDefaults = { enabled: false, tokenThreshold: 100000, percentThre
 const memorySummaryDefaults = { mainTurns: 3, subagentTurns: 6, maxChars: 30 };
 const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 let modelFavorites = { provider: [], model: [], thinking: [] };
+// 思考收藏键带模型上下文，符合后端 provider/model:level 契约（model id 含冒号时后端按最后一个冒号切分）；
+// 无模型上下文（“默认主代理模型”“跟随主代理”等空值）返回空串，菜单不提供星标。
+function favoriteKey(kind, value, select) {
+  if (kind !== "thinking") return value;
+  const model = select.closest(".selectors")?.querySelector('select[data-model-kind="model"]')?.value;
+  return model ? `${model}:${value}` : "";
+}
 const modelPicker = createModelPicker({
   getFavorites: () => modelFavorites,
+  favKey: favoriteKey,
   onToggle: async (kind, key, favorite) => {
     modelFavorites = await request("models.favorites.set", { kind, key, favorite });
     modelPicker.syncAll();
@@ -104,8 +112,10 @@ function saveView() {
     });
 }
 function resizePrompt() {
+  const phone = matchMedia("(max-width: 700px)").matches;
+  $("prompt").rows = phone ? 1 : 3;
   $("prompt").style.height = "auto";
-  $("prompt").style.height = Math.min($("prompt").scrollHeight, 240) + "px";
+  $("prompt").style.height = (phone && !$("prompt").value ? 44 : Math.min($("prompt").scrollHeight, 240)) + "px";
 }
 let scrollFrame, locatedScroll;
 function scrollLatest() {
@@ -156,8 +166,16 @@ function sidebar(open) {
 $("toggle-sidebar").onclick = () =>
   sidebar($("toggle-sidebar").getAttribute("aria-expanded") !== "true");
 $("sidebar-backdrop").onclick = () => sidebar(false);
-mobile.onchange = () => sidebar(!mobile.matches);
+mobile.onchange = () => {
+  sidebar(!mobile.matches);
+  resizePrompt();
+};
 sidebar(!mobile.matches);
+$("mobile-expand").onclick = () => {
+  const expanded = document.querySelector(".shell").classList.toggle("mobile-expanded");
+  $("mobile-expand").setAttribute("aria-expanded", String(expanded));
+  $("mobile-expand").textContent = expanded ? "收起" : "展开";
+};
 const pending = new Map(),
   live = new Map(),
   tasks = new Map();
@@ -296,6 +314,14 @@ function runtimeSummary(value = {}) {
   return [`缓存命中 ${cache}`, `上下文 ${contextText}`, `${identity} · ${thinking || "未知"}`];
 }
 function renderRuntime(node, value) {
+  if (node.id === "session-runtime") {
+    const { usage, context } = value || {};
+    const input = (usage?.input ?? 0) + (usage?.cacheRead ?? 0) + (usage?.cacheWrite ?? 0);
+    const cache = input > 0 && Number.isFinite(usage?.cacheRead) ? `${(usage.cacheRead / input * 100).toFixed(1)}%` : "—";
+    const percent = Number.isFinite(context?.percent) ? `${context.percent.toFixed(1)}%` : "—";
+    $("mobile-runtime").textContent = `${cache} / ${percent}`;
+    $("mobile-runtime").setAttribute("aria-label", `缓存命中率 ${cache}，上下文占比 ${percent}`);
+  }
   node.replaceChildren(...runtimeSummary(value).map((text) => {
     const span = document.createElement("span");
     span.textContent = text;
@@ -615,7 +641,9 @@ function paintCallGroup(group) {
   if (!rows.length) return;
   // Message boundaries fold segments; agent state ends activity even without a final answer.
   const output = group.closest('#output') || [...tasks.values()].find(task => task.output.contains(group))?.output;
-  const running = group.dataset.messageFolded !== 'true' && output?.dataset.activityState === 'running';
+  const pending = rows.some(row => ['running', 'waiting', 'thinking'].includes(row.dataset.state));
+  const running = group.dataset.messageFolded !== 'true' && output?.dataset.activityState === 'running'
+    && (pending || group.dataset.hasFollowingActivity !== 'true');
   const stopped = rows.some(row => ['stopped', 'failed'].includes(row.dataset.state));
   const label = running ? 'Working' : stopped ? 'Stopped' : 'Completed';
   const icon = running ? 'waiting' : label === 'Stopped' ? 'circle-stopped' : 'circle-done';
@@ -711,6 +739,13 @@ function refreshCallGroups(output) {
   for (const node of [...output.children]) if (node.classList.contains('call-group')) {
     if (!node.lastElementChild.childElementCount) node.remove();
     else paintCallGroup(node);
+  }
+  // Only the latest segment owns the between-tools wait; older segments need actual pending work.
+  let hasFollowingActivity = false;
+  for (const segment of [...output.querySelectorAll('.call-group')].reverse()) {
+    segment.dataset.hasFollowingActivity = String(hasFollowingActivity);
+    paintCallGroup(segment);
+    if (!segment.hidden) hasFollowingActivity = true;
   }
   let hasFollowingMessage = false;
   for (const node of [...output.children].reverse()) {
@@ -1534,6 +1569,7 @@ function event(message) {
     } else updateTaskRuntime(tasks.get(agentId), data);
   }
   if (type === "session.state") {
+    applyElapsed(data);
     void refreshSessions().catch(error);
     busy = data.status !== "idle";
     if (data.status === "running") waiting("main");
@@ -1587,6 +1623,7 @@ function event(message) {
     foldCompaction(data);
   }
   if (type === "task.state") {
+    applyElapsed(data);
     if (!tasks.has(message.taskId)) {
       const fragment = $("task-template").content.cloneNode(true);
       const trigger = fragment.querySelector(".task-card");
@@ -2271,13 +2308,47 @@ function refreshSessions() {
 setInterval(() => {
   if (connected && !sessionMissing && !changing && !document.querySelector(".session-options[open]") && !document.hidden) void refreshSessions().catch(error);
 }, 5000);
+// 运行中每秒重算显示；停止后不再重绘。减少动态效果只停动画，不停计时。
+setInterval(() => {
+  if (allSessions.find((s) => s.id === sessionId)?.runningSince) renderTaskTimer();
+}, 1000);
+// 任务计时：绿点（会话执行中）累计时长，运行中每秒增长，停止后定格为累计值。
+function timerText(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const pad = (value) => String(value).padStart(2, "0");
+  if (total < 60) return `${total}s`;
+  if (total < 3600) return `${Math.floor(total / 60)}m ${pad(total % 60)}s`;
+  return `${Math.floor(total / 3600)}h ${pad(Math.floor((total % 3600) / 60))}m ${pad(total % 60)}s`;
+}
+function renderTaskTimer(sessions = allSessions) {
+  const node = $("task-timer");
+  const session = sessions.find((s) => s.id === sessionId);
+  const running = Boolean(session?.runningSince);
+  const elapsed = (session?.elapsedMs || 0) + (running ? Date.now() - session.runningSince : 0);
+  node.hidden = !running && !elapsed;
+  node.dataset.running = String(running);
+  const text = timerText(elapsed);
+  const label = `${running ? "任务进行中" : "任务已停止"}，累计运行 ${text}`;
+  $("task-timer-value").textContent = text;
+  node.title = label;
+  node.setAttribute("aria-label", label);
+}
+function applyElapsed(data) {
+  if (data?.elapsedMs == null) return;
+  const current = allSessions.find((s) => s.id === sessionId);
+  if (!current) return;
+  current.elapsedMs = data.elapsedMs;
+  current.runningSince = data.runningSince ?? null;
+  renderTaskTimer();
+}
 function updatePageTitle() {
   const workspace = currentCwd.replaceAll("\\", "/").replace(/\/$/, "").split("/").pop() || currentCwd;
   document.title = `${$("session-title").textContent} · ${workspace} — Axiom`;
 }
 async function updateSessions() {
   const sessions = await request("sessions.list");
-  const listState = (items) => JSON.stringify(items.map(({ id, title, cwd, status, sessionFile, createdAt, updatedAt }) => ({ id, title, cwd, status, sessionFile, createdAt: createdAt ?? updatedAt })));
+  renderTaskTimer(sessions);
+  const listState = (items) => JSON.stringify(items.map(({ id, title, cwd, status, sessionFile, createdAt, updatedAt, elapsedMs, runningSince }) => ({ id, title, cwd, status, sessionFile, createdAt: createdAt ?? updatedAt, elapsedMs, runningSince })));
   const active = sessions.find((s) => s.id === sessionId);
   if (!active && sessionId && connected && !changing) {
     allSessions = sessions;
@@ -2615,9 +2686,17 @@ function renderContextChips() {
     return chip;
   }));
 }
+// 名称模糊匹配：忽略大小写，needle 字符按顺序出现即命中（"apjs" 命中 "app.js"）；空 needle 全部命中。
+function fuzzyHit(text, needle) {
+  const lower = text.toLocaleLowerCase();
+  if (lower.includes(needle)) return true;
+  let i = 0;
+  for (const char of lower) if (char === needle[i] && ++i === needle.length) return true;
+  return false;
+}
 function renderContextResults() {
   const query = $("context-search").value.toLocaleLowerCase();
-  const shown = (config?.skills || []).filter((entry) => `${entry.name} ${entry.description || ""}`.toLocaleLowerCase().includes(query));
+  const shown = (config?.skills || []).filter((entry) => fuzzyHit(entry.name, query) || (entry.description || "").toLocaleLowerCase().includes(query));
   $("context-results").replaceChildren(...shown.map((entry) => {
     const button = document.createElement("button"); button.type = "button";
     const text = document.createElement("span");
@@ -2765,10 +2844,13 @@ async function updateCompletion() {
   input.setAttribute("aria-expanded", "true");
   try {
     const slash = query.lastIndexOf("/");
-    const entries = skill ? (config?.skills || []) : (await request("workspace.browse", { sessionId: target, path: slash < 0 ? "" : query.slice(0, slash) })).entries;
-    if (version !== completionVersion || target !== sessionId) return;
     const filter = (skill ? query : query.slice(slash + 1)).toLocaleLowerCase();
-    completionEntries = entries.filter((entry) => `${entry.name} ${skill ? entry.description || "" : ""}`.toLocaleLowerCase().includes(filter));
+    const entries = skill
+      ? (config?.skills || [])
+      : (await request("workspace.browse", { sessionId: target, path: slash < 0 ? "" : query.slice(0, slash), query: filter })).entries;
+    if (version !== completionVersion || target !== sessionId) return;
+    // 服务端已按名称模糊递归搜索；这里再兜一次，旧服务端（只按子串过滤）也能用。
+    completionEntries = entries.filter((entry) => fuzzyHit(`${entry.name} ${skill ? entry.description || "" : ""}`, filter));
     completionIndex = 0;
     $("prompt-completion").replaceChildren(...completionEntries.map((entry, index) => {
       const option = document.createElement("div");

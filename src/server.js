@@ -286,7 +286,7 @@ export function createServerApp(sessions, service = {}) {
               data = await sessions.revealWorkspace(request.sessionId);
               break;
             case "workspace.browse":
-              data = await sessions.browse(request.sessionId, request.path);
+              data = await sessions.browse(request.sessionId, request.path, request.query);
               break;
             case "models.list":
               data = sessions.createAgent.catalog();

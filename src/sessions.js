@@ -13,8 +13,79 @@ import { delegationTools } from "./tools.js";
 import { resolveCapabilities } from "./capabilities.js";
 import { memoryHooks, parentSummaryContext } from "./session-memory.js";
 
-// 统一目录浏览：目录优先排序后按服务端过滤结果分页；不递归、不逐项 stat、跳过符号链接。
+// 统一目录浏览：目录优先排序后按服务端过滤结果分页；无搜索词时不递归、不逐项 stat、跳过符号链接。
 const BROWSE_PAGE = 200;
+// 搜索（query 非空）改为递归 + 名称模糊匹配：限制返回条数并给递归目录数封顶，避免超大目录卡住请求。
+const SEARCH_LIMIT = 60;
+const SEARCH_DIR_LIMIT = 400;
+// 搜索与常规浏览都跳过的目录：版本库与依赖目录噪声大、数量多。
+const IGNORED_ENTRIES = new Set([".git", "node_modules"]);
+
+// 名称模糊匹配：忽略大小写，needle 的字符按顺序出现即命中（"apjs" 命中 "app.js"）。
+function fuzzyHit(text, needle) {
+  const lower = text.toLocaleLowerCase();
+  if (lower.includes(needle)) return true;
+  let i = 0;
+  for (const char of lower) {
+    if (char === needle[i] && ++i === needle.length) return true;
+  }
+  return false;
+}
+
+// 匹配质量：完全相等 < 前缀 < 子串（越靠前越好） < 子序列；用于搜索排序。
+function matchRank(name, needle) {
+  const lower = name.toLocaleLowerCase();
+  if (lower === needle) return 0;
+  if (lower.startsWith(needle)) return 1;
+  const at = lower.indexOf(needle);
+  return at >= 0 ? 2 + at / 1000 : 3;
+}
+
+// 递归搜索：BFS 逐层扫描（先浅后深），只匹配名称、不回读文件，命中按质量排序后截断。
+async function searchEntries(root, base, { needle, directoriesOnly, limit }) {
+  const hits = [];
+  const queue = [[root, base]];
+  let visited = 0;
+  while (queue.length && visited < SEARCH_DIR_LIMIT && hits.length < limit * 4) {
+    const [dir, prefix] = queue.shift();
+    visited++;
+    let dirents;
+    try {
+      dirents = await readdir(dir, { withFileTypes: true });
+    } catch {
+      continue; // 单个子目录不可读不该让整次搜索失败
+    }
+    for (const entry of dirents) {
+      if (entry.isSymbolicLink() || (!entry.isDirectory() && !entry.isFile())) continue;
+      if (IGNORED_ENTRIES.has(entry.name)) continue;
+      const path = join(prefix, entry.name).split(sep).join("/");
+      if (entry.isDirectory()) queue.push([join(dir, entry.name), path]);
+      if (directoriesOnly && !entry.isDirectory()) continue;
+      if (!fuzzyHit(entry.name, needle)) continue;
+      hits.push({ name: entry.name, directory: entry.isDirectory(), path, rank: matchRank(entry.name, needle), depth: path.split("/").length });
+    }
+  }
+  hits.sort((a, b) => a.rank - b.rank || a.depth - b.depth || Number(b.directory) - Number(a.directory) || a.name.localeCompare(b.name));
+  return hits.slice(0, limit).map(({ name, directory, path }) => ({ name, directory, path }));
+}
+
+// 侧栏绿点口径：主运行中，或主代理空闲但仍有子任务在跑。
+function pointStatus(item) {
+  if (item.status !== "idle") return item.status;
+  return [...item.tasks.jobs.values()].some((job) => ["starting", "running"].includes(job.status)) ? "running" : "idle";
+}
+
+// 任务用时即会话执行中的累计时长：进入 running 开始计，离开 running 结算，再次 running 继续累加。
+// 用 running 而不是「非 idle」：取消/关闭空闲会话也会发 cancelling，那不应开一段计时。
+function trackElapsed(item, status) {
+  if (status === "running") {
+    item.runningSince ??= Date.now();
+    return;
+  }
+  if (!item.runningSince) return;
+  item.elapsedMs += Date.now() - item.runningSince;
+  item.runningSince = null;
+}
 
 async function resolveDir(target) {
   try {
@@ -400,6 +471,7 @@ export class Sessions {
       titleManual: item.titleManual, titleRequested: item.titleRequested,
       summaries: item.summaries, memoryTurns: item.memoryTurns, progressDeliveries: item.progressDeliveries, summaryTriggers: item.summaryTriggers,
       createdAt: item.createdAt, updatedAt: item.updatedAt, compactions: item.compactions, retries: item.retries, tasks: item.tasks.snapshot(),
+      elapsedMs: item.elapsedMs, runningSince: item.runningSince,
       sessionFile: item.agent.sessionFile?.(),
       selection: { ...item.agent.config?.(), capabilities: item.capabilities,
         subagentCapabilities: item.subagentCapabilities, subagentModel: item.subagentModel,
@@ -421,10 +493,11 @@ export class Sessions {
         title: item.title,
         cwd: item.cwd,
         // 列表展示整场执行状态；主代理的输入/队列状态仍由 item.status 控制。
-        status: item.status === "idle" && [...item.tasks.jobs.values()].some((job) =>
-          ["starting", "running"].includes(job.status)) ? "running" : item.status,
+        status: pointStatus(item),
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
+        elapsedMs: item.elapsedMs,
+        runningSince: item.runningSince,
         // 会话的 .jsonl 源文件路径，供侧栏菜单「复制 JSONL 路径」用；尚未落盘时为 null。
         sessionFile: item.agent?.sessionFile?.() ?? null,
       }))
@@ -497,6 +570,9 @@ export class Sessions {
       // 老记录无 createdAt，回退 updatedAt 兜底（历史文件未存创建时间，无法还原真实值）。
       createdAt: saved?.createdAt || saved?.updatedAt || Date.now(),
       updatedAt: saved?.updatedAt || Date.now(),
+      // 重启即中断：上次未结算的运行段不补算，只保留已结算的累计用时。
+      elapsedMs: saved?.elapsedMs || 0,
+      runningSince: null,
       seq: 0,
       status: "idle",
       listeners: new Set(),
@@ -572,6 +648,14 @@ export class Sessions {
         void this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `会话保存失败：${error.message}` } }));
       }
       const envelope = { ...event, sessionId: id, seq: ++item.seq };
+      if (event.type === "session.state" || event.type === "task.state") {
+        // 绿点开始/结束才需要落盘：累计值变了，重启恢复才算得准。
+        const wasRunning = item.runningSince;
+        trackElapsed(item, pointStatus(item));
+        envelope.data = { ...event.data, elapsedMs: item.elapsedMs, runningSince: item.runningSince };
+        if (wasRunning !== item.runningSince)
+          void this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `会话保存失败：${error.message}` } }));
+      }
       if (event.type === "agent.retry") {
         let record = item.retries.find((entry) => entry.agentId === agentId && entry.id === event.data.id);
         if (!record) {
@@ -778,15 +862,15 @@ export class Sessions {
     return { opened: true };
   }
 
-  // 旧补全接口：保留 {path, entries} 形状，共享统一浏览实现（不分页）。
-  async browse(id, path = "") {
-    const { path: current, entries } = await this.listFiles({ sessionId: id, path, pageSize: Infinity });
+  // 旧补全接口：保留 {path, entries} 形状，共享统一浏览实现（query 非空时递归全工作空间搜索，不分页）。
+  async browse(id, path = "", query = "") {
+    const { path: current, entries } = await this.listFiles({ sessionId: id, path, pageSize: Infinity, query });
     return { path: current, entries };
   }
 
   // 统一文件浏览：带 sessionId 限定工作空间并返回相对路径，否则浏览主机绝对目录。
   async listFiles({ sessionId, path = "", directoriesOnly = false, offset = 0, query = "", pageSize = BROWSE_PAGE } = {}) {
-    const needle = query.toLocaleLowerCase();
+    const needle = query.trim().toLocaleLowerCase();
     const readEntries = async (target, session, base) => {
       let dirents;
       try {
@@ -800,9 +884,8 @@ export class Sessions {
       const entries = [];
       for (const entry of dirents) {
         if (entry.isSymbolicLink() || (!entry.isDirectory() && !entry.isFile())) continue;
-        if (session && [".git", "node_modules"].includes(entry.name)) continue;
+        if (session && IGNORED_ENTRIES.has(entry.name)) continue;
         if (directoriesOnly && !entry.isDirectory()) continue;
-        if (needle && !entry.name.toLocaleLowerCase().includes(needle)) continue;
         entries.push({ name: entry.name, directory: entry.isDirectory(), path: join(base, entry.name).split(sep).join("/") });
       }
       // ponytail: 单层排序仍占 O(n) 内存；超大目录成为瓶颈时改用流式目录游标。
@@ -812,6 +895,10 @@ export class Sessions {
         nextOffset: offset + pageSize < entries.length ? offset + pageSize : null,
       };
     };
+    // 搜索一次返回全工作空间命中（已按质量排序），不再分页。
+    const entriesFor = async (target, session, base) => needle
+      ? { entries: await searchEntries(target, base, { needle, directoriesOnly, limit: Math.min(pageSize, SEARCH_LIMIT) }), nextOffset: null }
+      : await readEntries(target, session, base);
     if (sessionId) {
       const root = await resolveDir(this.get(sessionId).cwd);
       const target = await resolveDir(resolve(root, path));
@@ -823,7 +910,7 @@ export class Sessions {
       return {
         path: slashRel,
         parent: slashRel === "" ? null : slashRel.includes("/") ? slashRel.slice(0, slashRel.lastIndexOf("/")) : "",
-        ...(await readEntries(target, true, rel)),
+        ...(await entriesFor(target, true, rel)),
         breadcrumbs: [{ name: rootLabel, path: "" }, ...slashRel.split("/").filter(Boolean)
           .map((segment, index, segments) => ({ name: segment, path: segments.slice(0, index + 1).join("/") }))],
         locations: [{ name: rootLabel, path: "" }],
@@ -837,7 +924,7 @@ export class Sessions {
     return {
       path: slashPath,
       parent: parentOf(slashPath),
-      ...(await readEntries(target, false, target)),
+      ...(await entriesFor(target, false, target)),
       breadcrumbs: absoluteCrumbs(slashPath),
       locations: await hostLocations(),
     };

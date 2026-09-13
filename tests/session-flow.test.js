@@ -247,7 +247,7 @@ test("legacy retry boundaries migrate once and survive repeated service restarts
   } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
 });
 
-// 会话模式 files.browse：相对路径、工作空间边界、保留原有过滤、分页与导航字段。
+// 会话模式 files.browse：相对路径、工作空间边界、递归模糊搜索、分页与导航字段。
 test("files.browse session mode stays inside the workspace and pages filtered entries", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-files-"));
   const storage = join(root, "sessions");
@@ -281,16 +281,22 @@ test("files.browse session mode stays inside the workspace and pages filtered en
     ]);
     assert.equal(src.entries.some((entry) => entry.name === "linked"), false, "符号链接应跳过");
 
-    // 分页：每页 200，nextOffset 续页；大小写不敏感过滤后再分页。
+    // 分页：每页 200，nextOffset 续页。
     assert.equal(src.entries.length, 200);
     assert.equal(src.nextOffset, 200);
     const page2 = await sessions.listFiles({ sessionId: id, path: "src", offset: 200 });
     assert.equal(page2.entries.length, 5);
     assert.equal(page2.nextOffset, null);
     assert.deepEqual(page2.entries.at(-1).path, "src/file-204.txt");
-    const filtered = await sessions.listFiles({ sessionId: id, path: "src", query: "FILE-01", offset: 5 });
-    assert.equal(filtered.entries.length, 5);
+
+    // 搜索：递归子目录、名称模糊匹配、大小写不敏感，一次返回全部命中（不分页）。
+    await mkdir(join(root, "src", "deep"));
+    await writeFile(join(root, "src", "deep", "nested-app.js"), "x");
+    const filtered = await sessions.listFiles({ sessionId: id, path: "src", query: "file-200" });
+    assert.deepEqual(filtered.entries.map((entry) => entry.path), ["src/file-200.txt"]);
     assert.equal(filtered.nextOffset, null);
+    assert.deepEqual((await sessions.listFiles({ sessionId: id, query: "appjs" })).entries.map((entry) => entry.path), ["src/deep/nested-app.js"]);
+    assert.deepEqual((await sessions.listFiles({ sessionId: id, query: "nested", directoriesOnly: true })).entries, []);
 
     // directoriesOnly 只返回目录（storage 目录也是工作空间成员）。
     const dirs = await sessions.listFiles({ sessionId: id, directoriesOnly: true });
