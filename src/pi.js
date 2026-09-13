@@ -7,7 +7,7 @@ import { capabilityLoader, discoverCapabilities, refreshProjectSkills } from "./
 import { stripMemoryTags } from "../public/memory-tags.js";
 import { createBackgroundCompaction, entryIdFor, normalizeCompaction, summarizedEntryIds } from "./compaction.js";
 import { SUMMARY_DELEGATE, SUMMARY_REMINDER } from "./memory-policy.js";
-import { createAutoRetry } from "./retry.js";
+import { canResume, createAutoRetry, dropFailedAssistant } from "./retry.js";
 import { createJiti } from "jiti";
 const { getSupportedThinkingLevels } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai/compat");
 
@@ -302,6 +302,18 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         // 背景由 context 钩子按请求实时取；这里只挂 titleRequest 的标题指令，消费一次即失效。
         if (memoryState) memoryState.pending = options?.titleRequest ? TITLE_INSTRUCTION : null;
         await retry.run(() => session.prompt(text, options?.images ? { images: options.images } : undefined));
+      },
+      // 手动重试：不带新输入续跑上一次被中断/失败的运行（删掉末尾失败的 assistant 后 continue()，
+      // 不重发用户输入，已完成工具结果留在上下文）；若续跑再失败，仍由同一 retry 层接管自动退避。
+      // 不跑 compaction：maybeApply 会重写消息数组，与 continue() 靠末尾接续的前提冲突。
+      resumable: () => canResume(session),
+      resume: async () => {
+        if (!canResume(session)) throw new Error("没有可重试的请求：上一次运行已正常结束");
+        lastResult = undefined;
+        await retry.run(() => {
+          dropFailedAssistant(session);
+          return session.agent.continue();
+        });
       },
       async abort() {
         retry.cancel(); // 先中断等待中的自动重试，避免 abort 后又发起 continue
