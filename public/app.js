@@ -1,6 +1,7 @@
 import { renderMarkdown } from "./markdown.js";
 import { stripMemoryTags } from "./memory-tags.js";
 import { createStreamRenderer } from "./stream-renderer.js";
+import { splitAnswer } from "./answer-tags.js";
 import { createFilePicker, fileIcon } from "./file-picker.js";
 import "./tooltip.js";
 import { createModelPicker } from "./model-picker.js";
@@ -724,6 +725,19 @@ function paintCallGroup(group) {
   const label = running ? 'Working' : stopped ? 'Stopped' : 'Completed';
   const icon = running ? 'waiting' : label === 'Stopped' ? 'circle-stopped' : 'circle-done';
   const preview = group.firstElementChild.firstElementChild;
+  // 过程标签专用 call-group：保留 "过程" 标题，只同步运行图标。
+  if (group.dataset.processMarker === "true") {
+    const line = preview.firstElementChild;
+    if (line?.classList.contains("activity-line")) {
+      const state = running ? "running" : stopped ? "stopped" : "done";
+      if (line.dataset.state !== state) {
+        line.dataset.state = state;
+        setActivityIcon(line.firstChild, icon);
+      }
+    }
+    group.dataset.active = String(running);
+    return;
+  }
   const signature = `${label}:${icon}`;
   if (preview.dataset.signature !== signature) {
     preview.dataset.signature = signature;
@@ -737,13 +751,23 @@ function paintCallGroup(group) {
 }
 function refreshCallGroups(output) {
   // Keep the actual records (and their open state); only move their containers.
-  const nodes = [...output.children].flatMap(node => node.classList.contains('call-group')
+  const nodes = [...output.children].flatMap(node => node.classList.contains('call-group') && node.dataset.processMarker !== 'true'
     ? [...node.lastElementChild.children] : [node]);
-  let group;
+  // 只有同一用户轮出现明确回答后，才把此前的普通说明归为过程。
+  const progress = new Set();
+  let pending = [];
   for (const node of nodes) {
     const item = messageItems.get(node);
+    if (item?.heading.textContent === '你' && !node.hidden) pending = [];
+    else if (item?.hasAnswer) { for (const previous of pending) progress.add(previous); pending = []; }
+    else if (item && !item.task && !item.node.querySelector('[data-state="failed"]')) pending.push(item);
+  }
+  let group;
+  for (const node of nodes) {
+    if (node.dataset.processMarker === 'true') continue;
+    const item = messageItems.get(node);
     const precedingGroup = group || (node.previousElementSibling?.classList.contains('call-group') ? node.previousElementSibling : null);
-    const isCall = item ? item.heading.textContent !== '你' && !item.buffer.trim()
+    const isCall = item ? item.heading.textContent !== '你' && (!item.buffer.trim() || progress.has(item))
       : node.matches('.tool-record, .thinking-record, .activity-line, .message-tools');
     // Consecutive tool-only messages belong to one group, not one group per message.
     if (isCall && item?.callGroup) {
@@ -808,6 +832,27 @@ function refreshCallGroups(output) {
         item.text.after(item.tools);
         item.callGroup.remove();
         item.callGroup = undefined;
+      }
+      // 同条消息内标签外的说明放在回答前，复用现有折叠组件；
+      // 旧历史无标签不创建 processGroup，唯一答复不隐藏。
+      if (!isCall && item.processBuffer && item.heading.textContent !== '你') {
+        item.processText.hidden = false;
+        if (!item.processGroup) {
+          item.processGroup = createCallGroup();
+          const marker = activityLine("过程", "done");
+          marker.removeAttribute("role");
+          item.processGroup.dataset.processMarker = "true";
+          item.node.before(item.processGroup);
+          item.processGroup.open = false;
+          item.processGroup.firstElementChild.firstElementChild.replaceChildren(marker);
+          item.processGroup.lastElementChild.append(item.processText);
+        }
+        paintCallGroup(item.processGroup);
+        item.processGroup.hidden = item.node.hidden;
+      } else if (item.processGroup) {
+        item.text.after(item.processText);
+        item.processGroup.remove();
+        item.processGroup = undefined;
       }
     }
   }
@@ -1112,6 +1157,9 @@ function card(title, task) {
   thinking.hidden = true;
   const text = document.createElement("div");
   text.className = "markdown";
+  const processText = document.createElement("div");
+  processText.className = "markdown message-process";
+  processText.hidden = true;
   const modelInfo = document.createElement("small");
   modelInfo.className = "message-model";
   const activity = activityLine("connecting...");
@@ -1119,7 +1167,7 @@ function card(title, task) {
   if (activity.hidden) setActivity(activity, "", "");
   const tools = document.createElement("div");
   tools.className = "message-tools";
-  node.append(heading, activity, thinking, text, tools, modelInfo);
+  node.append(heading, activity, thinking, text, processText, tools, modelInfo);
   if (task && !task.trigger.isConnected) $("output").append(task.trigger);
   (task?.output || $("output")).append(node);
   if (!task || task.node.open) scrollLatest();
@@ -1133,9 +1181,13 @@ function card(title, task) {
     thinkingLine,
     thought,
     text,
+    processText,
     buffer: "",
+    processBuffer: "",
     reasoning: "",
     paintedText: "",
+    paintedProcess: "",
+    processGroup: undefined,
   };
   messageItems.set(node, item);
   task?.messages.push(item);
@@ -1190,6 +1242,19 @@ function renderMessage(item, message) {
     .join("\n");
   // 记忆标签只属于助手自报内容；用户手写同名标签原样保留。
   item.buffer = message.role === "assistant" ? stripMemoryTags(raw) : raw;
+  // 主会话解析 axiom_answer；未闭合回答仍展示，子任务透传。
+  // 异常走原文回退，保证错误/中断始终可见。
+  item.processBuffer = "";
+  if (message.role === "assistant" && !item.task) {
+    let split;
+    try { split = splitAnswer(item.buffer, { streaming: false }); }
+    catch { split = { found: false, answer: item.buffer, process: "", incomplete: false, malformed: false }; }
+    if (split) {
+      item.buffer = split.answer;
+      item.hasAnswer = split.found;
+      item.processBuffer = split.process || "";
+    }
+  }
   item.reasoning = content
     .filter((c) => c?.type === "thinking")
     .map((c) => c.thinking)
@@ -1341,6 +1406,8 @@ function foldCompaction(data) {
   (first.skillBlocks?.isConnected ? first.skillBlocks : first.node).before(compactionCard(data));
   for (const { item } of items) {
     item.node.hidden = true;
+    if (item.processGroup) item.processGroup.remove();
+    item.processGroup = undefined;
     if (item.skillBlocks) item.skillBlocks.hidden = true;
   }
   placeCompactedTasks();
@@ -1738,6 +1805,18 @@ function event(message) {
       item.raw = (item.raw || "") + data.delta;
       // 流式剥离从未完成的原始累计文本重算，避免残缺标签闪现。
       item.buffer = stripMemoryTags(item.raw, { streaming: true });
+      // 累计解析：开标签到达即展示回答，半截标签暂存。
+      item.processBuffer = "";
+      if (!item.task) {
+        let split;
+        try { split = splitAnswer(item.buffer, { streaming: true }); }
+        catch { split = null; }
+        if (split) {
+          item.buffer = split.answer;
+          item.hasAnswer = split.found;
+          item.processBuffer = split.process || "";
+        }
+      }
     }
     else if (data.type === "thinking_delta") item.reasoning += data.delta;
     else if (data.type === "thinking_start") { setActivity(item.activity, "thinking...", "thinking"); return; }

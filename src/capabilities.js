@@ -1,3 +1,4 @@
+import { USER_COMMUNICATION, DELEGATION_PROMPT, SUBAGENT_PROMPT } from "./prompts.js";
 import { realpath } from "node:fs/promises";
 import { inlineImagesExtension } from "./inline-images.js";
 import { basename, dirname, join, resolve, relative, isAbsolute, sep } from "node:path";
@@ -130,9 +131,7 @@ export function capabilityLoader(resources, selection, customTools, extraFactori
         // 子代理轮次预算的开工告知，原文固定，来自 task-budget；
         // 动态 [轮次预算] 收尾提示由代码按累计 turn 注入，不让模型计数。
         ...(budgetPrompt ? [budgetPrompt] : []),
-        customTools.length
-          ? "Delegate independent work with delegate. Each task must be one concrete, independently verifiable goal a subagent can finish in a handful of turns; split larger work into several tasks instead of sending one broad task. Put shared background in context, not in every task. Wait for the proactive completion notification that reports each finished task's taskId and resultId, then read that result once with read_result; do not poll. Use append to add instructions to a running subtask. Avoid concurrent edits to the same files. Report task failures honestly."
-          : "Complete the delegated task. Return concise findings and changes with evidence."],
+        ...(customTools.length ? [USER_COMMUNICATION, DELEGATION_PROMPT] : [SUBAGENT_PROMPT])],
     }),
   };
 }

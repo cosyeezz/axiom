@@ -6,6 +6,23 @@ import { marked } from "marked";
 import createPurify from "dompurify";
 import { createStreamRenderer } from "../public/stream-renderer.js";
 
+test("user input stays plain text with newlines; process uses Markdown", () => {
+  const dom = new JSDOM('<article class="user"><div></div></article>');
+  const document = dom.window.document;
+  const item = {
+    node: document.querySelector('article'), text: document.querySelector('div'),
+    thinking: document.createElement('details'), thought: document.createElement('div'),
+    processText: document.createElement('div'), processBuffer: '**进度**',
+    buffer: '第一行\n\n  第二行 <img src=x onerror=alert(1)>', reasoning: '',
+  };
+  const renderer = createStreamRenderer((el, text) => { el.textContent = text; }, () => {}, () => 1, () => {});
+  renderer.flush(item);
+  assert.equal(item.text.textContent, item.buffer);
+  assert.equal(item.text.childElementCount, 0);
+  assert.equal(item.processText.textContent, '**进度**');
+  dom.window.close();
+});
+
 test("one frame, shared Markdown for lazy thinking, final flush and switch cancellation", async () => {
   const dom = new JSDOM("");
   const source = (await readFile(new URL("../public/markdown.js", import.meta.url), "utf8"))

@@ -10,8 +10,13 @@ export function createStreamRenderer(
   function paint(item) {
     if (item.task && !item.task.node.open) return;
     if (item.paintedText !== item.buffer) {
-      renderMarkdown(item.text, item.buffer);
+      if (item.node?.classList.contains("user")) item.text.textContent = item.buffer;
+      else renderMarkdown(item.text, item.buffer);
       item.paintedText = item.buffer;
+    }
+    if (item.processText && item.paintedProcess !== item.processBuffer) {
+      renderMarkdown(item.processText, item.processBuffer || "");
+      item.paintedProcess = item.processBuffer;
     }
     item.thinking.hidden = !item.reasoning;
     if (item.thinking.open && item.paintedReasoning !== item.reasoning) {
