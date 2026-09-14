@@ -14,6 +14,11 @@
 - 边界：文档只写设计意图与安全边界，明确不做「绝对无漏洞」承诺，验收证据是可核对材料而非正确性证明；普通会话路径不变。
 - 未做/状态：本次只改 README.md 与 devlog.md，不碰实现文件；`src/goal.js`、`public/goal.*` 及前端按钮由并行的 runtime/UI 任务实现，尚无端到端验收，README 描述目标行为，不代表已实现或已测试通过。
 - 涉及：README.md、devlog.md。
+## 2026-09-14 默认会话配置的后台自动压缩改为默认开启
+- 原因：新会话一律要手动去默认配置里勾选才能用上后台压缩，默认值偏保守。
+- src/protocol.js compactionDefaults 改为 enabled: true、percentThreshold: 50、keepRecentTokens: 5000（token 阈值仍 100000）；public/app.js 的同名前端默认值保持同源同步。
+- tests/compaction.test.js、tests/app.test.js 的默认值断言同步；预设编辑器断言改为校验它取会话配置而非被编辑的默认值。README「后台自动压缩」一节同步描述。
+- npm test：402项，400通过、0失败。
 
 ## 2026-09-14 提问卡紧凑布局与切题稳定
 - 原因：各题高度不同让底部输入区上下移动；原卡片留白和独立滚动过多。

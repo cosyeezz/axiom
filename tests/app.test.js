@@ -749,7 +749,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("create-main-mode").value, "custom");
     assert.equal(window.document.querySelectorAll('.capability-agent:first-child input[data-kind="skills"]:checked').length, 2);
     assert.match($("create-agents").textContent, /当前目录不可用 · missing-skill/, "unavailable defaults are not silently removed");
-    assert.equal(window.document.querySelectorAll('.capability-agent:last-child input:checked').length, 0);
+    assert.equal(window.document.querySelectorAll('.capability-agent:last-child input[data-kind]:checked').length, 0);
     assert.equal($("create-trust-row").hidden, true);
     assert.equal($("create-submit").disabled, false, "defaults may save trusted global capabilities");
     needsTrust = false;
@@ -810,7 +810,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(Object.hasOwn(lastPresetSave, "cwd"), false, "cwd is only stored for fixed-directory presets");
     assert.deepEqual(lastPresetSave.selection.capabilities.skills, ["skill-a"]);
     assert.equal(lastPresetSave.selection.subagentModel, "other/child");
-    assert.equal(lastPresetSave.selection.compaction.enabled, false);
+    assert.equal(lastPresetSave.selection.compaction.enabled, true, "preset editor inherits the default compaction config");
     assert.deepEqual(presetNames(), ["审查预设", "沙盒预设", "失效预设", "评审工作台"]);
     // 直接启动：信任目录直接创建，不带 trustProject。
     lastCreation = undefined;
@@ -1434,7 +1434,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
   window.renderMarkdown = new Function("marked", "DOMPurify", `${markdownSource}; return renderMarkdown;`)(marked, createPurify(window));
   window.createStreamRenderer = (render, after) =>
     createStreamRenderer(render, after, window.requestAnimationFrame, window.cancelAnimationFrame);
-  const compactionDefaults = { enabled: false, tokenThreshold: 100000, percentThreshold: 70, model: null, thinking: "off", keepRecentTokens: 20000 };
+  const compactionDefaults = { enabled: true, tokenThreshold: 100000, percentThreshold: 50, model: null, thinking: "off", keepRecentTokens: 5000 };
   const baseConfig = { model: "test/model", thinking: "off", levels: ["off"], skills: [] };
   const state = {
     sessionId: "a",
@@ -1683,7 +1683,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     probeFields()[2].value = "2.5"; fireProbe();
     assert.match(probe.error(), /保留最近 tokens 需为大于 0 的整数/);
     probeFields()[2].value = ""; fireProbe();
-    assert.deepEqual(probe.read().keepRecentTokens, 20000, "empty keep falls back to the default");
+    assert.deepEqual(probe.read().keepRecentTokens, 5000, "empty keep falls back to the default");
     probeFields()[0].value = ""; probeFields()[1].value = ""; fireProbe();
     assert.match(probe.error(), /至少设置一个触发阈值/, "only two empty thresholds invalidate enabled");
 
@@ -1716,7 +1716,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
 
     // 默认配置：编辑后自动保存；无效组合不覆盖旧值。
     const defaultsEditor = $("create-compaction");
-    assert.equal(defaultsEditor.querySelector("input[type=checkbox]").checked, false);
+    assert.equal(defaultsEditor.querySelector("input[type=checkbox]").checked, true);
     defaultsEditor.querySelector("input[type=checkbox]").checked = true;
     defaultsEditor.querySelectorAll("input[type=number]")[0].value = "60000";
     for (const field of defaultsEditor.querySelectorAll("input, select"))
@@ -1729,7 +1729,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     await settle();
     assert.match($("create-feedback").textContent, /至少设置一个触发阈值/);
     assert.equal(lastDefaults.compaction.tokenThreshold, 60000, "invalid defaults are not saved");
-    assert.match($("defaults-preview").textContent, /自动压缩 · 未设阈值 触发 · 保留最近 20,000 tokens/);
+    assert.match($("defaults-preview").textContent, /自动压缩 · 未设阈值 触发 · 保留最近 5,000 tokens/);
 
     // 自动重试词表：chip 增删是脚本改状态，必须自己冒泡 change 才能触发默认配置自动保存。
     // 先恢复合法压缩阈值，否则提交在压缩校验处就返回，测不到重试词表。
@@ -1781,7 +1781,8 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     assert.equal($("create-session").open, true);
     assert.equal($("create-submit").textContent, "保存预设");
     const customEditor = $("create-compaction");
-    assert.equal(customEditor.querySelector("input[type=checkbox]").checked, false, "defaults edits do not change the running session");
+    assert.equal(customEditor.querySelector("input[type=checkbox]").checked, true, "预设编辑器使用会话配置（或应用默认值），不受默认配置编辑影响");
+    assert.equal(customEditor.querySelectorAll("input[type=number]")[0].value, "100000", "defaults edits do not change the running session");
     customEditor.querySelector("input[type=checkbox]").checked = true;
     customEditor.querySelectorAll("input[type=number]")[0].value = "70000";
     customEditor.querySelectorAll("input[type=number]")[0].dispatchEvent(new window.Event("change", { bubbles: true }));

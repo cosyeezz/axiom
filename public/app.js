@@ -47,7 +47,7 @@ const goalUI = typeof createGoalUI === "function"
       focusPrompt: () => $("prompt").focus(),
     })
   : { show() {}, setConnected() {}, anchors() {} };
-const compactionDefaults = { enabled: false, tokenThreshold: 100000, percentThreshold: 70, model: null, thinking: "off", keepRecentTokens: 20000 };
+const compactionDefaults = { enabled: true, tokenThreshold: 100000, percentThreshold: 50, model: null, thinking: "off", keepRecentTokens: 5000 };
 // 子代理轮次预算默认值，与 src/task-budget.js 的 taskBudgetDefaults 保持一致。
 const taskBudgetDefaults = { maxTurns: 20, wrapUpWindow: 2 };
 const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];

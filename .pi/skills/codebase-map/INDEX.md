@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/14 09:57:33）
+# Axiom 多级代码索引（生成于 2026/9/14 09:58:03）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -59,7 +59,7 @@
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
 | tests/activity-groups-ui.py | 201 | node --test 测试（npm test） | activityHistory, sessions |
 | tests/answer-tags.test.js | 29 | node --test 测试（npm test） | open |
-| tests/app.test.js | 1822 | node --test 测试（npm test） | pickerSource, modelSources, serviceSource |
+| tests/app.test.js | 1823 | node --test 测试（npm test） | pickerSource, modelSources, serviceSource |
 | tests/autoscroll-ui.py | 99 | node --test 测试（npm test） | - |
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
@@ -1214,7 +1214,7 @@
 |---|---|---|
 | open | const | 5 |
 
-### tests/app.test.js（1822 行） — node --test 测试（npm test）
+### tests/app.test.js（1823 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
