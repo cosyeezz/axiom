@@ -378,9 +378,17 @@ h1 {
   letter-spacing: 0.12em;
 }
 .message.user {
-  background: color-mix(in srgb, var(--info) 5%, var(--surface));
+  /* 浅色底 5% 蓝几乎看不出来，压到 8%（再深 --highlight 粗体对比度就跌破 4.5:1）；深色底保持 5%。
+     light-dark() 只接受颜色，所以两支各写一份 color-mix。 */
+  background: light-dark(
+    color-mix(in srgb, var(--info) 8%, var(--surface)),
+    color-mix(in srgb, var(--info) 5%, var(--surface))
+  );
   padding: 12px 16px;
-  border: 1px solid color-mix(in srgb, var(--info) 20%, var(--line));
+  border: 1px solid light-dark(
+    color-mix(in srgb, var(--info) 28%, var(--line)),
+    color-mix(in srgb, var(--info) 20%, var(--line))
+  );
   border-radius: 12px;
   margin-left: 48px;
 }
