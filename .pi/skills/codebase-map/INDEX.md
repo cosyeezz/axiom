@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/14 10:38:52）
+# Axiom 多级代码索引（生成于 2026/9/14 10:58:26）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -9,9 +9,9 @@
 | public/app.js | 3569 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | questionUI, filePicker, $, ws |
 | public/file-picker.css | 276 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 355 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
-| public/goal.css | 233 | Goal 目标面板、轮次与控制样式 | - |
-| public/goal.js | 599 | Goal 专属状态、操作与复用消息轮次分组 | createGoalUI |
-| public/index.html | 354 | 页面骨架与元素 id（见 L3） | - |
+| public/goal.css | 239 | Goal 目标面板、轮次与控制样式 | - |
+| public/goal.js | 642 | Goal 专属状态、操作与复用消息轮次分组 | createGoalUI |
+| public/index.html | 356 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown.js | 317 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, textLanguages, isText |
 | public/memory-tags.js | 111 | 主子代理共享简单标签提取与流式显示过滤 | TAGS, NAMES, TAG, OPEN |
 | public/model-auth.js | 97 | 网页登录：授权提示、设备码、凭据输入与取消 | createModelAuth |
@@ -23,7 +23,7 @@
 | public/question.js | 237 | 主代理提问选项卡、键盘交互与回答提交 | createQuestionUI |
 | public/service-settings.js | 278 | 设置页服务维护：真实进度、结果、更新确认与独立维护通道 | MAINT_URL_RE, POLL_MS, initServiceSettings |
 | public/stream-renderer.js | 51 | 流式增量渲染状态机 | createStreamRenderer |
-| public/style.css | 1419 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1426 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | public/theme.js | 11 | 首帧前阻塞应用明/暗主题（localStorage axiom.theme，默认深色） | - |
 | public/tooltip.css | 50 | 共享悬停说明样式（浅色主题下反色） | - |
 | public/tooltip.js | 225 | 共享悬停说明：动态 title、键盘、定位与无障碍 | SHOW_DELAY, HIDE_DELAY, GAP, EDGE |
@@ -37,13 +37,13 @@
 | src/capabilities.js | 138 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/compaction.js | 375 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
 | src/database.js | 103 | 共享 SQLite 连接、小配置 KV、WAL 与一致性备份 | nodeOk, Database |
-| src/goal.js | 1010 | Goal：会话级目标状态、轮次计划、验收门与持久化 | GOAL_PHASES, GOAL_ACTIONS, ROUND_STATUSES, GOAL_MAX_SEGMENTS |
+| src/goal.js | 1024 | Goal：会话级目标状态、轮次计划、验收门与持久化 | GOAL_PHASES, GOAL_ACTIONS, ROUND_STATUSES, GOAL_MAX_SEGMENTS |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
 | src/main.js | 114 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, home, database |
 | src/model-auth.js | 89 | SDK 登录桥：连接隔离、超时取消与安全事件投影 | safeUrl, text, eventView, createModelAuthService |
 | src/model-config.js | 601 | Pi models.json 无损配置读写与共享收藏持久化 | sdkModelConfig, sdkResolveConfigValue, digest, LEVELS |
 | src/pi-model-storage.js | 321 | 模型与凭据 SQLite 权威存储、Pi 派生兼容文件 | sdkResolveConfigValue, sdkIsCommandConfigValue, NAMESPACE, AUTH_NAMESPACE |
-| src/pi.js | 507 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, queueStateOf, hasModelOutput, withdrawQueue |
+| src/pi.js | 509 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, queueStateOf, hasModelOutput, withdrawQueue |
 | src/prompts.js | 35 | Axiom 自有提示词按 main/subagent/compaction 角色集中维护 | USER_COMMUNICATION, DELEGATION_PROMPT, TITLE_INSTRUCTION, SUBAGENT_PROMPT |
 | src/protocol.js | 361 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/questions.js | 86 | 主代理 question 工具、参数校验与可取消的回答等待 | text, option, input, questionAnswers |
@@ -52,11 +52,12 @@
 | src/server.js | 507 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | dev, digest, load, freshen |
 | src/session-memory.js | 29 | 标题提取登记、轮次预算挂钩与委派背景 | textOf, memoryHooks |
 | src/session-store.js | 458 | 会话三表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, TABLES, INDEXES |
-| src/sessions.js | 1487 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | BROWSE_PAGE, SEARCH_LIMIT, SEARCH_DIR_LIMIT, IGNORED_ENTRIES |
+| src/sessions.js | 1517 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | GOAL_TOOL_NAMES, hasRunningTasks, BROWSE_PAGE, SEARCH_LIMIT |
 | src/task-budget.js | 35 | 主子代理轮次预算规则、收尾提示词与配置页参数校验 | TASK_BUDGET_LIMITS, taskBudgetDefaults, within, taskBudgetPolicy |
 | src/tasks.js | 209 | Tasks：子任务（委托）生命周期 | ACTIVE, historyResult, Tasks |
 | src/tools.js | 110 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
+| tests/__pycache__/goal-ui.cpython-312.pyc | 165 | node --test 测试（npm test） | - |
 | tests/activity-groups-ui.py | 201 | node --test 测试（npm test） | activityHistory, sessions |
 | tests/answer-tags.test.js | 29 | node --test 测试（npm test） | open |
 | tests/app.test.js | 1823 | node --test 测试（npm test） | pickerSource, modelSources, serviceSource |
@@ -78,14 +79,14 @@
 | tests/defaults.test.js | 86 | node --test 测试（npm test） | - |
 | tests/dev-assets.test.js | 46 | node --test 测试（npm test） | - |
 | tests/file-picker.test.js | 67 | node --test 测试（npm test） | source, tick |
-| tests/goal-command-ui.test.js | 112 | node --test 测试（npm test） | page, $, settle, input |
+| tests/goal-command-ui.test.js | 140 | node --test 测试（npm test） | page, $, settle, input |
 | tests/goal-pi.test.js | 288 | node --test 测试（npm test） | PREAMBLE, FOOTER, run |
-| tests/goal-preview.mjs | 145 | node --test 测试（npm test） | cwd, seq, text, makeState |
+| tests/goal-preview.mjs | 148 | node --test 测试（npm test） | cwd, seq, text, makeState |
 | tests/goal-protocol.test.js | 15 | node --test 测试（npm test） | - |
-| tests/goal-sessions.test.js | 425 | node --test 测试（npm test） | PLAN, factoryFixture, tick, until |
-| tests/goal-ui.py | 259 | node --test 测试（npm test） | - |
-| tests/goal-ui.test.js | 325 | node --test 测试（npm test） | page, $, labels, messages |
-| tests/goal.test.js | 700 | node --test 测试（npm test） | ROUND, GOAL, PLAN, PLAN2 |
+| tests/goal-sessions.test.js | 623 | node --test 测试（npm test） | PLAN, factoryFixture, tick, until |
+| tests/goal-ui.py | 488 | node --test 测试（npm test） | - |
+| tests/goal-ui.test.js | 429 | node --test 测试（npm test） | page, $, labels, messages |
+| tests/goal.test.js | 761 | node --test 测试（npm test） | ROUND, GOAL, PLAN, PLAN2 |
 | tests/helpers/model-concurrency-child.mjs | 82 | node --test 测试（npm test） | barrier, runOpponent |
 | tests/image-input.test.js | 169 | node --test 测试（npm test） | pngBase64, jpegBase64, image, parsePrompt |
 | tests/inline-images.test.js | 42 | node --test 测试（npm test） | text, a, b, user |
@@ -463,7 +464,7 @@
 | createFilePicker | function | 115 |
 | baseName | function | 352 |
 
-### public/goal.js（599 行） — Goal 专属状态、操作与复用消息轮次分组
+### public/goal.js（642 行） — Goal 专属状态、操作与复用消息轮次分组
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -777,67 +778,68 @@
 | exec | method | 95 |
 | close | method | 99 |
 
-### src/goal.js（1010 行） — Goal：会话级目标状态、轮次计划、验收门与持久化
+### src/goal.js（1024 行） — Goal：会话级目标状态、轮次计划、验收门与持久化
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| GOAL_PHASES | const | 35 |
-| GOAL_ACTIONS | const | 38 |
-| ROUND_STATUSES | const | 40 |
-| GOAL_MAX_SEGMENTS | const | 42 |
-| ROUND_MARKER | const | 44 |
-| GOAL_MARKER | const | 45 |
-| MARKERS | const | 46 |
-| FENCE | const | 47 |
-| SUMMARY_MAX | const | 48 |
-| NON_EVIDENCE_TOOLS | const | 50 |
-| ACTIVE_TASKS | const | 51 |
-| outsideFences | function | 54 |
-| parseGoalMarkers | function | 71 |
-| stripGoalMarkers | function | 83 |
-| messageText | const | 98 |
-| normCriterion | const | 102 |
-| firstLine | const | 103 |
-| normalizeToolResult | const | 105 |
-| TABLE | const | 118 |
-| createGoalStore | function | 124 |
-| GoalStore | class | 128 |
-| constructor | method | 133 |
-| load | method | 144 |
-| save | method | 155 |
-| remove | method | 165 |
-| list | method | 174 |
-| planText | const | 189 |
-| planRound | const | 190 |
-| planSchema | const | 195 |
-| evidenceItem | const | 202 |
-| evidenceSchema | const | 208 |
-| field | const | 213 |
-| list | const | 214 |
-| result | const | 215 |
-| bullets | const | 216 |
-| Goal | class | 220 |
-| constructor | method | 229 |
-| snapshot | method | 245 |
-| evidence | method | 271 |
-| failure | method | 276 |
-| context | method | 281 |
-| submitPlan | method | 345 |
-| planTool | method | 378 |
-| blockTool | method | 417 |
-| progressTool | method | 428 |
-| verificationTool | method | 441 |
-| submitEvidence | method | 482 |
-| noteToolResult | method | 543 |
-| action | method | 551 |
-| onReply | method | 568 |
-| pauseAtSafePoint | method | 611 |
-| fail | method | 623 |
-| settle | method | 631 |
-| whenSettled | method | 637 |
-| freeze | method | 643 |
-| remove | method | 652 |
-| supplyObjective | method | 692 |
+| GOAL_PHASES | const | 38 |
+| GOAL_ACTIONS | const | 41 |
+| ROUND_STATUSES | const | 43 |
+| GOAL_MAX_SEGMENTS | const | 45 |
+| ROUND_MARKER | const | 47 |
+| GOAL_MARKER | const | 48 |
+| MARKERS | const | 49 |
+| FENCE | const | 50 |
+| SUMMARY_MAX | const | 51 |
+| NON_EVIDENCE_TOOLS | const | 53 |
+| ACTIVE_TASKS | const | 54 |
+| outsideFences | function | 57 |
+| parseGoalMarkers | function | 74 |
+| stripGoalMarkers | function | 86 |
+| messageText | const | 101 |
+| normCriterion | const | 105 |
+| firstLine | const | 106 |
+| normalizeToolResult | const | 108 |
+| TABLE | const | 121 |
+| createGoalStore | function | 127 |
+| GoalStore | class | 131 |
+| constructor | method | 136 |
+| load | method | 147 |
+| save | method | 158 |
+| remove | method | 168 |
+| list | method | 177 |
+| planText | const | 192 |
+| planRound | const | 193 |
+| planSchema | const | 198 |
+| evidenceItem | const | 205 |
+| evidenceSchema | const | 211 |
+| field | const | 216 |
+| list | const | 217 |
+| result | const | 218 |
+| bullets | const | 219 |
+| Goal | class | 223 |
+| constructor | method | 232 |
+| snapshot | method | 248 |
+| evidence | method | 274 |
+| failure | method | 279 |
+| context | method | 284 |
+| submitPlan | method | 348 |
+| planTool | method | 381 |
+| blockTool | method | 420 |
+| progressTool | method | 431 |
+| verificationTool | method | 444 |
+| submitEvidence | method | 485 |
+| noteToolResult | method | 546 |
+| action | method | 554 |
+| onReply | method | 572 |
+| pauseAtSafePoint | method | 615 |
+| fail | method | 627 |
+| settle | method | 635 |
+| whenSettled | method | 641 |
+| freeze | method | 647 |
+| exit | method | 657 |
+| remove | method | 666 |
+| supplyObjective | method | 706 |
 
 ### src/inline-images.js（32 行） — 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列
 
@@ -926,7 +928,7 @@
 | isPlainObject | method | 43 |
 | createPiModelStorage | function | 51 |
 
-### src/pi.js（507 行） — createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）
+### src/pi.js（509 行） — createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1081,78 +1083,80 @@
 | saveTask | method | 429 |
 | listTasks | method | 452 |
 
-### src/sessions.js（1487 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
+### src/sessions.js（1517 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| BROWSE_PAGE | const | 21 |
-| SEARCH_LIMIT | const | 23 |
-| SEARCH_DIR_LIMIT | const | 24 |
-| IGNORED_ENTRIES | const | 26 |
-| fuzzyHit | function | 29 |
-| matchRank | function | 40 |
-| searchEntries | function | 49 |
-| pointStatus | function | 77 |
-| trackElapsed | function | 84 |
-| resolveDir | function | 94 |
-| parentOf | function | 105 |
-| absoluteCrumbs | function | 114 |
-| importedTitle | function | 136 |
-| hostLocations | function | 158 |
-| landedSessionFile | function | 177 |
-| Sessions | class | 182 |
-| constructor | method | 183 |
-| applyDefaults | method | 206 |
-| loadDefaults | method | 221 |
-| migrateDefaults | method | 231 |
-| migratePresets | method | 244 |
-| loadTaskBudget | method | 259 |
-| getTaskBudget | method | 270 |
-| configureTaskBudget | method | 275 |
-| getDefaults | method | 281 |
-| workspaceDefaults | method | 284 |
-| configureDefaults | method | 302 |
-| saveDefaults | method | 307 |
-| validateSelection | method | 357 |
-| validateCompaction | method | 388 |
-| listPresets | method | 406 |
-| mutatePresets | method | 416 |
-| savePreset | method | 429 |
-| deletePreset | method | 444 |
-| load | method | 453 |
-| ensureLoaded | method | 472 |
-| migrateLegacySessions | method | 494 |
-| sessionData | method | 518 |
-| persist | method | 531 |
-| writeChange | method | 549 |
-| saveChange | method | 564 |
-| list | method | 569 |
-| rename | method | 586 |
-| importSession | method | 599 |
-| create | method | 626 |
-| goalAction | method | 973 |
-| scheduleGoal | method | 997 |
-| advanceGoal | method | 1009 |
-| goalNotificationsBlocked | method | 1047 |
-| scheduleTaskNotifications | method | 1052 |
-| deliverTaskNotifications | method | 1064 |
-| get | method | 1092 |
-| revealWorkspace | method | 1097 |
-| browse | method | 1111 |
-| listFiles | method | 1117 |
-| refreshSkills | method | 1179 |
-| snapshot | method | 1185 |
-| subscribe | method | 1217 |
-| configure | method | 1223 |
-| startRun | method | 1259 |
-| retry | method | 1298 |
-| prompt | method | 1307 |
-| withdraw | method | 1340 |
-| replyQuestion | method | 1389 |
-| cancel | method | 1395 |
-| retryTask | method | 1421 |
-| remove | method | 1428 |
-| close | method | 1477 |
+| GOAL_TOOL_NAMES | const | 21 |
+| hasRunningTasks | const | 23 |
+| BROWSE_PAGE | const | 26 |
+| SEARCH_LIMIT | const | 28 |
+| SEARCH_DIR_LIMIT | const | 29 |
+| IGNORED_ENTRIES | const | 31 |
+| fuzzyHit | function | 34 |
+| matchRank | function | 45 |
+| searchEntries | function | 54 |
+| pointStatus | function | 82 |
+| trackElapsed | function | 89 |
+| resolveDir | function | 99 |
+| parentOf | function | 110 |
+| absoluteCrumbs | function | 119 |
+| importedTitle | function | 141 |
+| hostLocations | function | 163 |
+| landedSessionFile | function | 182 |
+| Sessions | class | 187 |
+| constructor | method | 188 |
+| applyDefaults | method | 211 |
+| loadDefaults | method | 226 |
+| migrateDefaults | method | 236 |
+| migratePresets | method | 249 |
+| loadTaskBudget | method | 264 |
+| getTaskBudget | method | 275 |
+| configureTaskBudget | method | 280 |
+| getDefaults | method | 286 |
+| workspaceDefaults | method | 289 |
+| configureDefaults | method | 307 |
+| saveDefaults | method | 312 |
+| validateSelection | method | 362 |
+| validateCompaction | method | 393 |
+| listPresets | method | 411 |
+| mutatePresets | method | 421 |
+| savePreset | method | 434 |
+| deletePreset | method | 449 |
+| load | method | 458 |
+| ensureLoaded | method | 477 |
+| migrateLegacySessions | method | 499 |
+| sessionData | method | 523 |
+| persist | method | 536 |
+| writeChange | method | 554 |
+| saveChange | method | 569 |
+| list | method | 574 |
+| rename | method | 591 |
+| importSession | method | 604 |
+| create | method | 631 |
+| goalAction | method | 978 |
+| scheduleGoal | method | 1022 |
+| advanceGoal | method | 1034 |
+| goalNotificationsBlocked | method | 1072 |
+| scheduleTaskNotifications | method | 1079 |
+| deliverTaskNotifications | method | 1091 |
+| get | method | 1119 |
+| revealWorkspace | method | 1124 |
+| browse | method | 1138 |
+| listFiles | method | 1144 |
+| refreshSkills | method | 1206 |
+| snapshot | method | 1212 |
+| subscribe | method | 1244 |
+| configure | method | 1250 |
+| startRun | method | 1286 |
+| retry | method | 1325 |
+| prompt | method | 1334 |
+| withdraw | method | 1369 |
+| replyQuestion | method | 1418 |
+| cancel | method | 1424 |
+| retryTask | method | 1450 |
+| remove | method | 1458 |
+| close | method | 1507 |
 
 ### src/task-budget.js（35 行） — 主子代理轮次预算规则、收尾提示词与配置页参数校验
 
@@ -1315,7 +1319,7 @@
 | source | const | 6 |
 | tick | const | 7 |
 
-### tests/goal-command-ui.test.js（112 行） — node --test 测试（npm test）
+### tests/goal-command-ui.test.js（140 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1334,7 +1338,7 @@
 | FOOTER | const | 74 |
 | run | const | 79 |
 
-### tests/goal-preview.mjs（145 行） — node --test 测试（npm test）
+### tests/goal-preview.mjs（148 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1357,28 +1361,29 @@
 | ready | const | 96 |
 | readyGoal | const | 98 |
 | chat | const | 105 |
-| states | const | 109 |
-| goals | const | 110 |
-| sessions | const | 111 |
-| app | const | 127 |
-| preferred | const | 129 |
-| listen | method | 143 |
+| fresh | const | 110 |
+| states | const | 112 |
+| goals | const | 113 |
+| sessions | const | 114 |
+| app | const | 130 |
+| preferred | const | 132 |
+| listen | method | 146 |
 
-### tests/goal-sessions.test.js（425 行） — node --test 测试（npm test）
+### tests/goal-sessions.test.js（623 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | PLAN | const | 11 |
 | factoryFixture | function | 22 |
-| tick | const | 48 |
-| until | function | 49 |
-| ordinary | function | 55 |
-| enterGoal | function | 64 |
-| injectToolResult | function | 270 |
-| reply | function | 278 |
-| evidenceBody | const | 290 |
+| tick | const | 52 |
+| until | function | 53 |
+| ordinary | function | 59 |
+| enterGoal | function | 68 |
+| injectToolResult | function | 274 |
+| reply | function | 282 |
+| evidenceBody | const | 294 |
 
-### tests/goal-ui.test.js（325 行） — node --test 测试（npm test）
+### tests/goal-ui.test.js（429 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1388,7 +1393,7 @@
 | labels | const | 52 |
 | messages | const | 53 |
 
-### tests/goal.test.js（700 行） — node --test 测试（npm test）
+### tests/goal.test.js（761 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|

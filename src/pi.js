@@ -209,7 +209,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       finally { session.dispose(); }
       throw error;
     }
-    // 工具注册与激活分离：插件/自定义工具全部注册进 SDK（enableTools 随时可启用），
+    // 工具注册与激活分离：插件/自定义工具全部注册进 SDK（enableTools/disableTools 随时增减激活集），
     // 建会话时只按 inactiveTools 决定初始激活集；系统提示词与请求 schema 只含激活工具。
     const inactiveTools = new Set(selection.inactiveTools ?? []);
     if (inactiveTools.size)
@@ -361,6 +361,8 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       },
       // 激活已注册工具（如进入 Goal 模式启用 goal_*）：与当前激活集合并，未知名称由 SDK 忽略。
       enableTools: (names) => session.setActiveToolsByName([...new Set([...session.getActiveToolNames(), ...names])]),
+      // 停用已激活工具（如退出 Goal 模式禁用 goal_*）：与当前激活集求差，未知名称无副作用。
+      disableTools: (names) => session.setActiveToolsByName(session.getActiveToolNames().filter((name) => !names.includes(name))),
       config: () => ({
         model: `${session.model.provider}/${session.model.id}`,
         thinking: session.thinkingLevel,

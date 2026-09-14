@@ -477,6 +477,67 @@ test("goal_progress：缺字段、多余字段、超长内容都被拒绝且不�
   assert.equal(goal.snapshot().phase, "running");
 });
 
+test("exit：空闲阶段（澄清/待确认/已暂停）直接退出，清掉记录并广播 goal:null", () => {
+  const { goal, store, events } = make();
+  goal.action("enter");
+  assert.equal(goal.snapshot().phase, "clarifying");
+  assert.equal(goal.exit(), null);
+  assert.equal(goal.active, false);
+  assert.equal(goal.snapshot(), null);
+  assert.equal(goal.context(), null);
+  assert.equal(store.load("s1"), null);
+  assert.deepEqual(events.at(-1), { type: "goal", goal: null });
+  // 退出后回到普通会话语义：目标工具被拒绝，但可以重新进入目标模式
+  assert.throws(() => goal.action("pause"), /普通会话未启用目标模式/);
+  goal.action("enter", "新目标");
+  assert.equal(goal.snapshot().objective, "新目标");
+
+  // 待确认阶段：计划已提交但无在飞工作，同样可以退出
+  const ready = make();
+  ready.goal.action("enter");
+  ready.goal.submitPlan(PLAN);
+  assert.equal(ready.goal.snapshot().phase, "ready");
+  assert.equal(ready.goal.action("exit"), null);
+  assert.equal(ready.store.load("s1"), null);
+
+  // 已暂停：空闲且无排队动作，允许退出
+  const paused = make();
+  paused.goal.action("enter");
+  paused.goal.action("pause");
+  assert.equal(paused.goal.snapshot().phase, "paused");
+  assert.equal(paused.goal.action("exit"), null);
+  assert.equal(paused.goal.active, false);
+});
+
+test("exit：在飞阶段（running/verifying/pausing/adjusting）拒绝，暂停落定后才放行", () => {
+  const running = runningGoal().goal;
+  assert.throws(() => running.action("exit"), /请先暂停并在安全点落定后再退出/);
+  assert.equal(running.snapshot().phase, "running", "被拒绝的退出不得改变状态");
+
+  const verifying = verifyingGoal().goal;
+  assert.throws(() => verifying.exit(), /请先暂停并在安全点落定后再退出/);
+
+  const adjusting = runningGoal().goal;
+  adjusting.action("adjust", "改成离线优先");
+  assert.equal(adjusting.snapshot().phase, "adjusting");
+  assert.equal(adjusting.snapshot().pendingAction.type, "adjust");
+  assert.throws(() => adjusting.exit(), /请先暂停并在安全点落定后再退出/);
+  // 调整落定回到澄清（无在飞工作）后可退出
+  assert.equal(adjusting.settle({ tasks: [] }).phase, "clarifying");
+  assert.equal(adjusting.exit(), null);
+
+  const pausing = runningGoal().goal;
+  pausing.action("pause");
+  assert.equal(pausing.snapshot().phase, "pausing");
+  assert.throws(() => pausing.exit(), /请先暂停并在安全点落定后再退出/);
+  // 子任务还在飞：安全点未到，退出继续被拒
+  assert.equal(pausing.settle({ tasks: [{ status: "running" }] }).phase, "pausing");
+  assert.throws(() => pausing.exit(), /请先暂停并在安全点落定后再退出/);
+  assert.equal(pausing.settle({ tasks: [] }).phase, "paused");
+  assert.equal(pausing.exit(), null);
+  assert.equal(pausing.snapshot(), null);
+});
+
 test("remove：清理记录并广播 goal:null", () => {
   const { goal, events } = runningGoal();
   goal.remove();

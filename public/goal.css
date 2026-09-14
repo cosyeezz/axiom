@@ -57,17 +57,20 @@
 .goal-plan-open { min-height: 30px; padding: 4px 10px; font-size: 12px; }
 
 /* —— 底部专用控制 —— */
+/* 桌面一行：状态 + 提示靠左，操作靠右；padding/gap 收紧，不占三层高度。 */
 .goal-dock {
-  display: grid;
-  gap: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 8px;
-  padding: 10px 12px;
+  padding: 6px 10px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
   color: var(--ink);
 }
 .goal-dock[hidden] { display: none; }
+.goal-dock-info { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
 .goal-dock-main { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .goal-dock-mark { flex: 0 0 auto; width: 16px; height: 16px; color: var(--accent-ink); }
 .goal-dock svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
@@ -77,9 +80,9 @@
 .goal-dock-hint[title] { cursor: help; }
 .goal-dock-round { font-family: var(--mono); font-size: 11px; color: var(--body-ink); font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .goal-dock-title { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.goal-dock-hint { margin: 0; font-size: 11px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+.goal-dock-hint { flex: 1 1 160px; min-width: 0; margin: 0; font-size: 11px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
 .goal-dock-hint[data-alert="true"] { color: var(--highlight); }
-.goal-dock-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.goal-dock-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; flex-shrink: 0; }
 .goal-action { min-height: 32px; font-size: 12px; }
 .goal-dock .goal-action { display: inline-flex; align-items: center; gap: 6px; }
 .goal-dock .goal-action svg { width: 14px; height: 14px; }
@@ -225,6 +228,9 @@
   .goal-objective { font-size: 13px; }
   .goal-bar { width: 64px; }
   .goal-percent { min-width: 38px; font-size: 13px; }
+  /* 手机：信息一行、操作另起一行（两行封顶），按钮保持 44px 触摸目标。 */
+  .goal-dock { flex-wrap: wrap; row-gap: 8px; }
+  .goal-dock-info { flex-basis: 100%; }
   .goal-dock-actions { justify-content: stretch; }
   .goal-action, .goal-action-primary { flex: 1 1 auto; min-height: 44px; }
   .goal-plan-body { grid-template-columns: minmax(0, 1fr); }

@@ -24,7 +24,11 @@ function factoryFixture() {
   const factory = async (tools, options = {}) => {
     let finish;
     const agent = {
-      calls: [], tools, options, checkpoints: [], aborts: 0, resultText: "done",
+      calls: [], tools, options,
+      checkpoints: [], aborts: 0, resultText: "done", pauseRequested: false,
+      activeTools: new Set(tools.map((tool) => tool.name).filter((name) => !(options.inactiveTools ?? []).includes(name))),
+      enableTools(names) { for (const name of names) agent.activeTools.add(name); },
+      disableTools(names) { for (const name of names) agent.activeTools.delete(name); },
       config: () => ({ model: "test/model" }),
       subscribe: () => () => {},
       prompt(text) { this.calls.push(text); return new Promise((resolve) => { finish = resolve; }); },
@@ -420,5 +424,199 @@ test("重启后持久暂停优先：pausing 落盘为 paused 并阻止续跑", a
     await tick();
     assert.equal(item.goal.snapshot().phase, "ready");
     assert.equal(agent.calls.length, 1, "确认前不自动执行");
+  } finally { await sessions.close(); }
+});
+
+// —— 退出目标模式（exit）——
+
+test("exit：空闲时退出目标模式，停用 goal_* 工具、清记录且保留会话历史", async () => {
+  const { factory, mains } = factoryFixture();
+  const sessions = new Sessions(factory);
+  try {
+    const id = await sessions.create();
+    const item = sessions.get(id);
+    await ordinary(sessions, id, "先普通聊一句");
+    const agent = mains[0];
+    await enterGoal(sessions, id, agent);
+    assert.equal(item.goal.snapshot().phase, "ready");
+    const goalTools = ["goal_plan", "goal_evidence", "goal_block", "goal_progress"];
+    for (const name of goalTools) assert.ok(agent.activeTools.has(name), `Goal 进行中应激活 ${name}`);
+    const historyLength = item.messages.length;
+
+    const outcome = await sessions.goalAction(id, "exit");
+    assert.equal(outcome.goal, null);
+    assert.equal(item.goal.active, false);
+    assert.equal(item.goal.snapshot(), null);
+    assert.equal(sessions.snapshot(id).goal, null, "退出后会话快照不再带目标");
+    assert.equal(sessions.goalStore.load(id), null, "退出必须清掉持久化目标记录");
+    assert.equal(item.messages.length, historyLength, "退出不得改动会话历史");
+    for (const name of goalTools) assert.ok(!agent.activeTools.has(name), `退出后应停用 ${name}`);
+    assert.equal(item.goalExited, true);
+    assert.equal(item.notificationsPaused, true, "退出后通知冻结到用户下次输入");
+
+    // 退出后不得自动续跑
+    const callsBefore = agent.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.equal(agent.calls.length, callsBefore, "退出后不得自动续跑");
+
+    // 用户显式输入恢复普通会话：无目标上下文、不自动循环
+    await ordinary(sessions, id, "退出后的普通输入");
+    assert.equal(item.goalExited, false);
+    assert.equal(agent.options.executionContext(), null, "退出后不得注入目标上下文");
+    assert.equal(agent.calls.at(-1), "退出后的普通输入");
+  } finally { await sessions.close(); }
+});
+
+test("exit：Goal 执行中被拒绝，先暂停到安全点才能退出，且不 abort 在飞工具", async () => {
+  const { factory, mains } = factoryFixture();
+  const sessions = new Sessions(factory);
+  try {
+    const id = await sessions.create();
+    const item = sessions.get(id);
+    await ordinary(sessions, id, "先普通聊一句");
+    const agent = mains[0];
+    await enterGoal(sessions, id, agent);
+    await sessions.goalAction(id, "confirm");
+    assert.equal(item.goal.snapshot().phase, "running");
+
+    await assert.rejects(sessions.goalAction(id, "exit"), /请先暂停并在安全点落定后再退出/);
+    assert.equal(item.goal.snapshot().phase, "running", "被拒绝的退出不得改变目标状态");
+    assert.equal(item.goalExited, false, "被拒绝的退出不得标记已退出");
+    assert.ok(agent.activeTools.has("goal_plan"), "被拒绝的退出不得停用 Goal 工具");
+
+    // UI 的「先暂停」路径：暂停请求 → 主代理收尾 → 安全点落定 → 才能退出
+    await sessions.goalAction(id, "pause");
+    assert.equal(item.goal.snapshot().phase, "pausing");
+    agent.finish();
+    await item.work;
+    await item.goal.whenSettled();
+    await until(() => item.goal.snapshot()?.phase === "paused", "paused");
+
+    await sessions.goalAction(id, "exit");
+    assert.equal(item.goal.active, false);
+    assert.equal(item.goalExited, true);
+    assert.equal(agent.aborts, 0, "退出路径不得 abort 在飞工具");
+  } finally { await sessions.close(); }
+});
+
+test("exit：子任务仍在飞时拒绝；退出时未投递的结果按已通知落盘且结果保留", async () => {
+  const { factory, mains, children } = factoryFixture();
+  const sessions = new Sessions(factory);
+  try {
+    const id = await sessions.create();
+    const item = sessions.get(id);
+    await ordinary(sessions, id, "先普通聊一句");
+    await enterGoal(sessions, id, mains[0]);
+    const [taskId] = item.tasks.start(["child"]);
+    await tick();
+
+    await assert.rejects(sessions.goalAction(id, "exit"), /请先暂停并在安全点落定后再退出/);
+    assert.equal(item.goal.snapshot().phase, "ready", "被拒绝的退出不得改变目标状态");
+
+    children[0].finish();
+    await item.tasks.jobs.get(taskId).done;
+    await tick();
+    const job = item.tasks.jobs.get(taskId);
+    assert.ok(job.resultId && !job.notified, "子任务完成后应是待通知状态");
+
+    await sessions.goalAction(id, "exit");
+    assert.equal(job.notified, true, "退出时未投递的通知必须按已通知落盘");
+    assert.ok(job.resultId, "退出不得删除任务结果");
+    assert.equal(item.goal.active, false);
+  } finally { await sessions.close(); }
+});
+
+test("exit 后重启不自动唤醒：待通知结果按已通知持久化，结果仍可查看", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-goal-exit-"));
+  const first = factoryFixture();
+  const sessions = new Sessions(first.factory, undefined, join(root, "storage"));
+  let restored;
+  try {
+    const id = await sessions.create(root);
+    const item = sessions.get(id);
+    await ordinary(sessions, id, "先普通聊一句");
+    await enterGoal(sessions, id, first.mains[0]);
+    const [taskId] = item.tasks.start(["child"]);
+    await tick();
+    first.children[0].finish();
+    await item.tasks.jobs.get(taskId).done;
+    await tick();
+    await sessions.goalAction(id, "exit");
+    assert.equal(sessions.goalStore.load(id), null, "退出清掉目标记录");
+    assert.deepEqual(sessions.store.listPendingSessionIds(), [], "退出后不得留下待通知会话");
+    await sessions.close();
+
+    // 重启：已退出的会话不得因未通知子任务被重新拉起并自动唤醒
+    restored = new Sessions(factoryFixture().factory, undefined, join(root, "storage"));
+    await restored.load();
+    assert.deepEqual(restored.store.listPendingSessionIds(), [], "重启后不得有被唤醒的待通知会话");
+    assert.equal(restored.get(id).loaded, false, "退出后的会话不应被待通知清单强制加载");
+    assert.equal(restored.goalStore.load(id), null, "重启后仍无目标记录");
+    const saved = restored.store.getSession(id).tasks.find((task) => task.id === taskId);
+    assert.equal(saved.notified, true);
+    assert.ok(saved.resultId, "结果与 resultId 必须保留，用户仍可查看");
+  } finally { await restored?.close(); await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("新会话默认普通模式：A 处于 running/paused Goal 时新建的会话不继承目标", async () => {
+  const { factory, mains } = factoryFixture();
+  const sessions = new Sessions(factory);
+  const GOAL_TOOL_NAMES = ["goal_plan", "goal_evidence", "goal_block", "goal_progress"];
+  const plainTurn = async (id, text) => {
+    const item = sessions.get(id);
+    await sessions.prompt(id, text);
+    await tick();
+    item.agent.finish();
+    await item.work;
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    return item;
+  };
+  const assertPlain = async (id, text) => {
+    const item = sessions.get(id);
+    assert.equal(item.goal.active, false, "新会话不得处于目标模式");
+    assert.equal(sessions.snapshot(id).goal, null, "新会话不得继承 A 的 Goal");
+    assert.equal(item.goal.context(), null);
+    assert.equal(item.goalExited, undefined, "新会话不处于「已退出」状态");
+    assert.ok(!item.notificationsPaused, "新会话不处于通知冻结状态");
+    for (const name of GOAL_TOOL_NAMES) {
+      assert.ok(item.agent.options.inactiveTools.includes(name), `新会话应默认停用 ${name}`);
+      assert.ok(!item.agent.activeTools.has(name), `新会话不得激活 ${name}`);
+    }
+    assert.equal(item.agent.options.executionContext(), null, "新会话不注入任何目标上下文");
+    // 普通会话只跑一轮：不自动续跑
+    await plainTurn(id, text);
+    assert.deepEqual(item.agent.calls, [text], "普通会话一条输入只跑一轮");
+  };
+  try {
+    const a = await sessions.create();
+    await sessions.prompt(a, "a 的普通输入");
+    await tick();
+    const agentA = sessions.get(a).agent;
+    agentA.finish();
+    await sessions.get(a).work;
+    // A 进入 running
+    await sessions.prompt(a, "/goal");
+    await tick();
+    await sessions.prompt(a, "把构建时间降到 10s 内");
+    await tick();
+    await agentA.tools.find((tool) => tool.name === "goal_plan").execute("plan-1", PLAN);
+    agentA.finish();
+    await sessions.get(a).work;
+    await tick();
+    await sessions.goalAction(a, "confirm");
+    assert.equal(sessions.get(a).goal.snapshot().phase, "running");
+
+    const b = await sessions.create();
+    await assertPlain(b, "b 只回答一次");
+
+    // A 暂停落定后再新建 C，同样不继承
+    await sessions.goalAction(a, "pause");
+    agentA.finish();
+    await sessions.get(a).work;
+    await sessions.get(a).goal.whenSettled();
+    await until(() => sessions.get(a).goal.snapshot()?.phase === "paused", "a paused");
+
+    const c = await sessions.create();
+    await assertPlain(c, "c 只回答一次");
   } finally { await sessions.close(); }
 });

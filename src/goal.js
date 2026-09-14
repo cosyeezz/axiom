@@ -14,10 +14,10 @@ import { z } from "zod";
 //     evidence() 返回「当前轮」真实 toolResult 记录数组（每项含 id/toolName/isError），服务端核验用；
 //     普通会话也注册工具，但调用即拒绝（未进入目标模式）。
 //   goal.onReply({ message, index })   仅由外层在「最终回复」时调用一次（不要每条 assistant 都调）
-//   goal.action(name, text?)           enter|confirm|adjust|pause|resume|restart
+//   goal.action(name, text?)           enter|confirm|adjust|pause|resume|restart|exit
 //   goal.pauseAtSafePoint({ tasks?, summary? })  无完成标记也能在安全点暂停并挂起动作
 //   goal.fail(reason)                  预算/失败：持久暂停并记录原因
-//   goal.whenSettled() / goal.freeze() / goal.remove()
+//   goal.exit() / goal.whenSettled() / goal.freeze() / goal.remove()
 //   parseGoalMarkers(text) / stripGoalMarkers(text)
 //
 // 完成标记（严格）：独占一行、无闭合标签、无内文，只有
@@ -29,13 +29,16 @@ import { z } from "zod";
 //   pause   —— 安全操作，在安全点（pauseAtSafePoint）落定；重启后持久暂停优先。
 //   adjust  —— 修改总体 Goal 后重新规划（phase -> clarifying），历史轮次保留为存档。
 //   restart —— 同样进入 clarifying 重新规划，历史轮次保留为存档。
+//   exit    —— 退出目标模式，清掉目标记录回到普通会话（历史与产物原样保留）。
+//              在飞阶段（running/verifying/pausing/adjusting 或有排队动作）一律拒绝：
+//              外层须先 pause 并在安全点落定再 exit，避免打断工具或丢轮次进度。
 //   本轮纠正（输入框）不走 goal，由外层当作普通指令处理。
 //   segments —— 自动执行段计数，超过 GOAL_MAX_SEGMENTS 直接 fail（外层也可自行计数后调 fail）。
 
 export const GOAL_PHASES = [
   "clarifying", "ready", "running", "pausing", "paused", "adjusting", "verifying", "completed",
 ];
-export const GOAL_ACTIONS = ["enter", "confirm", "adjust", "pause", "resume", "restart"];
+export const GOAL_ACTIONS = ["enter", "confirm", "adjust", "pause", "resume", "restart", "exit"];
 // pending=计划中未开始；running=进行中；done=已完成；skipped=被重启/调整取代（存档保留）。
 export const ROUND_STATUSES = ["pending", "running", "done", "skipped"];
 // 自动执行段上限：到顶即持久暂停（fail），由主控计数触发。
@@ -557,6 +560,7 @@ export class Goal {
       case "adjust": return this.#adjust(value);
       case "pause": return this.#pause();
       case "resume": return this.#resume();
+      case "exit": return this.exit();
       default: return this.#restart(value);
     }
   }
@@ -646,6 +650,16 @@ export class Goal {
     // 停机后不再有状态转换，未落定的等待者在此收尾，避免调用方死等。
     this.#settle();
     return this.snapshot();
+  }
+
+  // 退出目标模式：清掉目标记录回到普通会话，会话历史与产物原样保留。
+  // 在飞阶段（running/verifying/pausing/adjusting）或有排队动作时拒绝：先安全暂停落定再退。
+  exit() {
+    const s = this.#state;
+    if (!s) return null;
+    if (s.pendingAction || ["running", "verifying", "pausing", "adjusting"].includes(s.phase))
+      throw new Error("Goal 仍在执行：请先暂停并在安全点落定后再退出");
+    return this.remove();
   }
 
   // 会话删除时清理目标记录。

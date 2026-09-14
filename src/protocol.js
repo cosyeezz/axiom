@@ -168,7 +168,7 @@ export const modelOverrideIn = modelConfigIn.omit({ id: true, api: true, baseUrl
 const fingerprintIn = z.string().min(1).max(128);
 export const command = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("goal.action"), sessionId: id,
-    action: z.enum(["enter", "confirm", "adjust", "pause", "resume", "restart"]),
+    action: z.enum(["enter", "confirm", "adjust", "pause", "resume", "restart", "exit"]),
     text: z.string().max(30000).optional(),
   }).strict(),
   z.object({ id, type: z.literal("service.status") }).strict(),

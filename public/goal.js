@@ -34,6 +34,8 @@ export function createGoalUI({ root, request, onError, readPrompt, clearPrompt }
   let sessionId, goal, anchors = new Map(), connected = true, sending = false;
   const expanded = new Set(); // 用户手动展开过的轮次：优先于默认折叠
   const collapsed = new Set();
+  // 归一化后端给的 goal：null/缺字段都当“没有目标”，退出后必须能落到这条路径上。
+  const asGoal = (value) => (value && typeof value === "object" && value.phase ? value : undefined);
 
   const el = (tag, className, text) => {
     const node = document.createElement(tag);
@@ -58,7 +60,11 @@ export function createGoalUI({ root, request, onError, readPrompt, clearPrompt }
     "M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z",
     "M12 11.1a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z",
   ]);
-  const phase = () => PHASES[goal?.phase] || { label: goal?.phase || "目标", tone: "muted", hint: "" };
+  const phase = () => {
+    const info = PHASES[goal?.phase] || { label: goal?.phase || "目标", tone: "muted", hint: "" };
+    // 裸 /goal 等用户填目标时，阶段名直说「等待填写目标」，不叫「目标澄清」。
+    return awaitingObjective() ? { ...info, label: "等待填写目标" } : info;
+  };
   // 裸 /goal：后端只置 clarifying 且不调模型，等用户下一条消息当目标。
   // 此时不能沿用「模型正在澄清」的口径，否则用户会等一个根本没发出的请求。
   const awaitingObjective = () => goal?.phase === "clarifying" && !goal.objective;
@@ -247,8 +253,25 @@ export function createGoalUI({ root, request, onError, readPrompt, clearPrompt }
       hint.dataset.alert = "true";
       if (note.title) hint.title = note.title;
     }
-    dock.replaceChildren(main, hint, controlsRow());
+    // 桌面一行：状态 + 提示靠左，操作靠右；长提示在左侧换行，不把控制挤成第三层。
+    const side = el("div", "goal-dock-info");
+    side.append(main, hint);
+    dock.replaceChildren(side, controlsRow());
     dock.hidden = false;
+  }
+
+  // 退出目标模式：后端只在没有在飞工作的空闲点接受 exit。执行中/验收中先走暂停，
+  // 暂停落地后按钮才变回 exit，用户再点一次才真正退出，不在工具批次中途拦腰截断。
+  function exitButton() {
+    const running = goal.phase === "running" || goal.phase === "verifying";
+    const settling = goal.phase === "pausing" || goal.phase === "adjusting";
+    return actionButton(running ? "先暂停再退出" : "退出目标模式", running ? "pause" : "exit", {
+      paths: running ? "M9 5v14M15 5v14" : ["M9 4H5.5A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20H9", "M16 8l4 4-4 4", "M20 12H9"],
+      title: running
+        ? "先暂停再退出：等当前工具批次与子任务在安全收尾点停下，暂停后再点一次即可退出"
+        : "退出目标模式，回到普通会话；历史消息与轮次记录保留",
+      disabled: settling,
+    });
   }
 
   function controlsRow() {
@@ -261,7 +284,8 @@ export function createGoalUI({ root, request, onError, readPrompt, clearPrompt }
     });
     switch (goal.phase) {
       case "clarifying":
-        row.append(actionButton("重新开始", "restart", { paths: "M20 11a8 8 0 1 0-1.6 5.3M20 4.5V10h-5.5" }));
+        // 还没填目标时「重新开始」没有意义：只留退出入口。
+        if (!awaitingObjective()) row.append(actionButton("重新开始", "restart", { paths: "M20 11a8 8 0 1 0-1.6 5.3M20 4.5V10h-5.5" }));
         break;
       case "ready":
         row.append(
@@ -305,6 +329,7 @@ export function createGoalUI({ root, request, onError, readPrompt, clearPrompt }
       default:
         row.append(adjusting, actionButton("重启 Goal", "restart", { paths: "M20 11a8 8 0 1 0-1.6 5.3M20 4.5V10h-5.5" }));
     }
+    row.append(exitButton());
     return row;
   }
 
@@ -366,7 +391,19 @@ export function createGoalUI({ root, request, onError, readPrompt, clearPrompt }
     try {
       // 回执带最新 goal：先按回执落地，随后的 goal 事件同值，重复应用无副作用。
       const result = await call("goal.action", { sessionId: target, action, ...(text ? { text } : {}) });
-      if (result?.goal && sessionId === target) { goal = result.goal; render(); }
+      // 只看回执里“显式给出”的 goal：exit 成功回 {goal:null}，必须落地清空 UI；
+      // 缺字段的回执不动现有状态。会话已切走则整条回执作废，不污染别的会话。
+      if (sessionId === target && result && Object.prototype.hasOwnProperty.call(result, "goal")) {
+        goal = asGoal(result.goal);
+        if (!goal) {
+          anchors = new Map();
+          expanded.clear();
+          collapsed.clear();
+          plan?.close?.();
+          adjustDialog?.close?.();
+        }
+        render();
+      }
       return true;
     } catch (e) {
       onError?.(e);
@@ -577,9 +614,15 @@ export function createGoalUI({ root, request, onError, readPrompt, clearPrompt }
         plan?.close?.();
         adjustDialog?.close?.();
       }
-      goal = value && typeof value === "object" && value.phase ? value : undefined;
+      goal = asGoal(value);
       if (anchorMap) anchors = anchorMap;
       else if (!goal) anchors = new Map();
+      if (!goal) {
+        expanded.clear();
+        collapsed.clear();
+        plan?.close?.();
+        adjustDialog?.close?.();
+      }
       render();
     },
     setConnected(value) {
