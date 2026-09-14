@@ -12,6 +12,7 @@ import { taskBudgetDefaults } from "./task-budget.js";
 import { Tasks } from "./tasks.js";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { delegationTools } from "./tools.js";
+import { createQuestions } from "./questions.js";
 import { resolveCapabilities } from "./capabilities.js";
 import { memoryHooks } from "./session-memory.js";
 
@@ -764,6 +765,7 @@ export class Sessions {
       delete envelope.saved;
       for (const listener of item.listeners) listener(envelope);
     };
+    item.questions = createQuestions(item.emit);
     const saveMemory = (change) => this.saveChange(item, change);
     item.tasks = new Tasks(
       (job) => {
@@ -804,7 +806,7 @@ export class Sessions {
         lines[0] = JSON.stringify({ ...JSON.parse(lines[0]), id, cwd });
         await writeFile(importedFile, lines.join("\n"), { mode: 0o600 });
       }
-      item.agent = await this.createAgent(delegationTools(item.tasks), {
+      item.agent = await this.createAgent([...delegationTools(item.tasks), item.questions.tool], {
         ...this.recentConfig,
         ...(selection.model ? { model: selection.model } : {}),
         ...(selection.thinking ? { thinking: selection.thinking } : {}),
@@ -1108,6 +1110,7 @@ export class Sessions {
       retries: item.retries,
       live: item.live,
       tools: item.tools,
+      questions: item.questions.snapshot(),
       tasks: item.tasks.snapshot(),
     });
   }
@@ -1269,6 +1272,12 @@ export class Sessions {
     return { ...item.agent.withdraw(), recalled };
   }
 
+  replyQuestion(id, toolCallId, answers) {
+    const item = this.get(id);
+    if (!item.loaded || item.closing || item.cancelling) throw new Error("会话不可回答问题");
+    return item.questions.reply(toolCallId, answers);
+  }
+
   async cancel(id) {
     const item = this.get(id);
     if (item.loading) {
@@ -1282,7 +1291,9 @@ export class Sessions {
     item.emit({ type: "session.state", data: { status: "cancelling" } });
     item.cancelling = (async () => {
       try {
-        await Promise.all([item.agent.abort(), item.tasks.cancel()]);
+        const abort = item.agent.abort();
+        item.questions.cancel();
+        await Promise.all([abort, item.tasks.cancel()]);
         await item.work;
       } finally {
         item.status = "idle";
@@ -1323,7 +1334,9 @@ export class Sessions {
     if (deleting) await this.cancel(id);
     else {
       item.notificationsPaused = true;
-      await Promise.all([item.agent.abort(), item.tasks.interrupt()]);
+      const abort = item.agent.abort();
+      item.questions.cancel();
+      await Promise.all([abort, item.tasks.interrupt()]);
       await item.work;
     }
     await item.notificationWork;

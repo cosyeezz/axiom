@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { questionAnswers } from "./questions.js";
 import { TASK_BUDGET_LIMITS } from "./task-budget.js";
 
 const id = z.string().min(1);
@@ -337,6 +338,7 @@ export const command = z.discriminatedUnion("type", [
     })
     .strict(),
   z.object({ id, type: z.literal("cancel"), sessionId: id }).strict(),
+  z.object({ id, type: z.literal("question.reply"), sessionId: id, toolCallId: z.string().min(1).max(256), answers: questionAnswers }).strict(),
   // 手动重试：不带新输入，续跑上一次异常停止（Esc 停止/终态错误/重试用尽）的请求。
   z.object({ id, type: z.literal("session.retry"), sessionId: id }).strict(),
   z.object({ id, type: z.literal("task.retry"), sessionId: id, taskId: id }).strict(),

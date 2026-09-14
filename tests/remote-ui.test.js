@@ -10,7 +10,7 @@ import { createStreamRenderer } from "../public/stream-renderer.js";
 async function page(extra = "") {
   const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
   const memoryTags = (await readFile(new URL("../public/memory-tags.js", import.meta.url), "utf8")).replace(/^export /gm, "");
-  const source = memoryTags + "\n" + (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/app.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "");
+  const source = memoryTags + "\n" + (await readFile(new URL("../public/question.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/app.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "");
   const picker = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
 // master 模型模块脚手架（同 tests/app.test.js）：app.js 顶层调用 initModelManager，缺它会 ReferenceError
 const modelSources = await Promise.all(["model-picker", "model-auth", "model-manager"].map(async (name) => {
