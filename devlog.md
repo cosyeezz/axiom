@@ -1170,3 +1170,9 @@
 - 内容/原因：length 且无正文与工具调用时自动纠偏一次，避免思考耗尽额度后必须人工重试；恢复再失败即停，取消不续跑。提示仅临时加入系统上下文，不伪造用户消息、不重发工具。
 - 文件：src/retry.js、tests/retry.test.js、README.md、.pi/skills/codebase-map/INDEX.md、knowledge.md。
 - 验证：npm test，397 通过，2 跳过，无失败；无编译脚本。
+
+### 2026-09-14 提问卡视觉与多行输入修复
+- 原因：单行 textarea 不随内容增高，继承全局 240px 上限；新增图标缺少配套样式。
+- 修改 public/question.js/css：按 scrollHeight 自动增高，重绘恢复草稿尺寸，缓存题面最大高度，宽度变化保留焦点/选区；完成徽章、SVG 键帽和语义色。
+- 同步 README.md、codebase-map 索引与知识库；新增 tests/question-layout-ui.py。
+- 验证：Chromium 多行/长词/切题/375px/选区/删除缩回/会话恢复通过；npm test 399 通过、2 跳过。

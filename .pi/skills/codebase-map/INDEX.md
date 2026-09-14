@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/14 08:24:51）
+# Axiom 多级代码索引（生成于 2026/9/14 08:31:40）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -17,8 +17,8 @@
 | public/model-manager.js | 1278 | 统一模型管理：供应商、字段覆盖与思考等级编辑 | THINKING_LEVELS, API_TYPES, PROVIDER_TEMPLATES, PROVIDER_ID |
 | public/model-picker.css | 88 | 共享收藏下拉：浮层、星标、触屏与焦点样式 | - |
 | public/model-picker.js | 300 | 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互 | GAP, EDGE, TYPEAHEAD_MS, el |
-| public/question.css | 38 | 提问面板样式、焦点与窄屏布局 | - |
-| public/question.js | 190 | 主代理提问选项卡、键盘交互与回答提交 | createQuestionUI |
+| public/question.css | 49 | 提问面板样式、焦点与窄屏布局 | - |
+| public/question.js | 237 | 主代理提问选项卡、键盘交互与回答提交 | createQuestionUI |
 | public/service-settings.js | 278 | 设置页服务维护：真实进度、结果、更新确认与独立维护通道 | MAINT_URL_RE, POLL_MS, initServiceSettings |
 | public/stream-renderer.js | 51 | 流式增量渲染状态机 | createStreamRenderer |
 | public/style.css | 1419 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
@@ -102,6 +102,7 @@
 | tests/pi-question.test.js | 179 | node --test 测试（npm test） | - |
 | tests/presets.test.js | 112 | node --test 测试（npm test） | makeFactory |
 | tests/project-skills.test.js | 59 | node --test 测试（npm test） | - |
+| tests/question-layout-ui.py | 48 | node --test 测试（npm test） | - |
 | tests/question-preview.mjs | 36 | node --test 测试（npm test） | factory, sessions, app, port |
 | tests/question-ui.test.js | 98 | node --test 测试（npm test） | source |
 | tests/questions.test.js | 110 | node --test 测试（npm test） | params |
@@ -535,7 +536,7 @@
 | addEventListener | method | 290 |
 | addEventListener | method | 293 |
 
-### public/question.js（190 行） — 主代理提问选项卡、键盘交互与回答提交
+### public/question.js（237 行） — 主代理提问选项卡、键盘交互与回答提交
 
 | 符号 | 类型 | 行 |
 |---|---|---|
