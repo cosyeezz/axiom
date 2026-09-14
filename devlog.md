@@ -1301,3 +1301,14 @@
 - npm test 全量：516 项，514 通过，0 失败，2 跳过（`tests/database.test.js` 与 `tests/workspace-picker.test.js` 的 `skip: process.platform === "win32"` 平台条件跳过，master 上本来就有，非本轮新增）。
 - 连带回归：P1 的丢弃规则首版写成「只对本次调用者的增量给机会」，导致 tests/recall.test.js 的撤回清理重试失败（`Missing expected rejection`）。已改为「每条增量都有且只有一次确定性失败的机会」——可重试失败不消耗这次机会，撤回清理仍是短事务且能重放。
 - 临时验证脚本（probe.tmp.mjs、x5probe.tmp.mjs、wal.tmp.mjs）用完即删，无残留。
+
+## 2026-09-14T14:38 第 2 轮补修：X1 worker 环境变量与 X6 日志脱敏范围
+
+- 原因：第 2 轮 X1/X6 的首版修复只做了一半。复验守护进程组时发现两处仍不达标，按「先写会失败的测试 → 再改代码」补齐。这两条不是新问题，是同一条清单项没修到底，因此仍归第 2 轮。
+- X1 补修：`homeDir()` 已 resolve，但 `spawnWorker` 的 fork env 还在透传用户原样的 `AXIOM_HOME`。worker 以 `cwd: root` 启动，会把相对路径按 root 重新解析——只要守护进程的当前目录不是项目根，两端依旧各开一个库。首版测试只断言 `homeDir()` 返回绝对路径，抓不到这个分叉。现在 fork env 显式覆盖 `AXIOM_HOME: logDir`（已解析的绝对 home）。修复前失败输出：`AssertionError: worker 必须与 supervisor 打开同一个库目录 + actual '…\Temp\axiom-svc-p5axFP\relhome' - expected '…\Temp\relhome'`。
+- X6 口径反转：首版注释写的「只抹 token 不做整体脱敏——路径与栈不是秘密」站不住。同一批 `redactions` 白名单本来就把安装目录与用户目录换成 `<install>`/`<home>` 后才给 `/status`，同一份信息在 service.log 里原样落盘等于两套标准；日志又常被整份贴进 issue。现在 worker 输出写盘前一律过白名单。修复前失败输出：`AssertionError: 白名单路径必须替换为占位符，实际 "worker boot token=***\nworker home=C:\Users\dane\AppData\Local\Temp\axiom-svc-H2mHnp\home\n"`。
+- 首版顾虑的处理：`sanitize` 会按 16KB 尾截，直接用在追加日志上会吞正在写的内容。故拆成两个函数——`redact()` 只脱敏不截尾，给流式追加的 service.log；`sanitize()` = `redact()` + 16KB 尾截，有界语义只留给维护状态里的 `log` 字段。行为对既有调用方不变。
+- X2/X3 本次只复验，未再改代码：抢锁失败路径仍完整收摊（maint server + 数据库 + 控制管道），`.catch` 保持 `process.exitCode = 1` 而不加 `process.exit(1)`——句柄已释放，事件循环自然退出；显式 exit 反而可能在 stderr 未冲刷时截断报错文本，而该用例正断言 stderr 含「已有守护进程运行」。
+- X7 仍判不修，补一组实测数据：`page_size=4096`、`wal_autocheckpoint=1000` 页，写入约 12MB 期间 `-wal` 稳定在 4132392 字节（= 1000×4096）不再增长，长连接 close 后 `-wal` 消失。占用有硬上界且不丢数据，为「清爽」强制 TRUNCATE 需独占 checkpoint，会与 worker 抢锁。
+- 涉及文件：scripts/service.mjs（导入 redact、logLine 全白名单脱敏、fork env 覆盖 AXIOM_HOME）、scripts/maint-state.mjs（拆出 redact，sanitize 复用）、tests/service.test.js（新增「相对 AXIOM_HOME 两端同库」，加强 service.log 用例断言白名单路径落盘即脱敏）、README.md（AXIOM_HOME 相对路径解析语义、service.log 脱敏范围由「抹 token」改为「白名单」）、.pi/skills/codebase-map/INDEX.md。
+- 验证：修复前 `node --test tests/service.test.js` 为 22 项 20 通过 2 失败（正是上述两条）；修复后 22 项全通过。`npm test` 全量 518 项，516 通过，0 失败，2 跳过（`tests/database.test.js`、`tests/workspace-picker.test.js` 的 `skip: process.platform === "win32"` 平台条件跳过，master 上本来就有）。测试总数由 516 增至 518，增量为老库部分索引升级、相对 AXIOM_HOME 两条。
