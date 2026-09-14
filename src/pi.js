@@ -1,6 +1,7 @@
 import { TITLE_INSTRUCTION } from "./prompts.js";
 import {
   createAgentSession,
+  estimateTokens,
   ModelRuntime,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
@@ -92,31 +93,39 @@ export async function recallLastMessage(session) {
 // 标题指令只在 titleRequest 的当次首个请求随背景注入，不进系统提示词、不改用户原文。
 
 
+// 检查点边界：firstKeptEntryId 指向任何真实条目都会把该条之后的历史继续留在请求上下文里；
+// 用一个不可能存在的 id 让 buildContextEntries 保留零条旧消息（请求上下文只剩摘要）。
+// JSONL 与 getBranch() 全文照旧保留，只有 agent.state.messages 被替换。
+const CHECKPOINT_BOUNDARY = "__axiom_checkpoint__";
+
 // 会话记忆接入：context 钩子在每次 LLM 请求（含同一次 prompt 的工具后续轮）注入临时背景；
+// executionContext（goal 模式每请求重算）与 titleRequest 标题指令同走这里，均只改请求副本。
 // titleRequest 的标题指令只随当次首个请求注入一次。
 // 子代理累计 turn 到达 wrapUpAt（建会话时由 task-budget 按持久化配置定死，逐请求不重读）后，
 // 每次请求前附加一次 [轮次预算] 收尾指令（不额外发请求）。上限是软的、故意反复注入：
 // 没有硬停——abort 会让 result() 对 aborted 抛错，前面所有轮次的产出一起丢掉。
 // transformContext 仅改请求副本、不落盘，不动原始消息历史；
 // 助手 message_end（工具执行前）同步调 onReply 取标题，turn_end 只推进本地轮次计数。
-function memoryExtension(state, memory, policy) {
+function memoryExtension(state, memory, policy, executionContext) {
   return (pi) => {
     pi.on("context", ({ messages }) => {
       const parts = [];
-      if (policy && state.turn >= policy.wrapUpAt) parts.push(WRAP_UP_PROMPT);
-      if (state.pending) parts.push(state.pending);
-      state.pending = null;
+      const background = executionContext?.();
+      if (background) parts.push(background);
+      if (policy && state && state.turn >= policy.wrapUpAt) parts.push(WRAP_UP_PROMPT);
+      if (state?.pending) parts.push(state.pending);
+      if (state) state.pending = null;
       if (!parts.length) return undefined;
       return { messages: [...messages, {
         role: "custom", customType: "axiom-memory", content: parts.join("\n\n"), display: false, timestamp: Date.now(),
       }] };
     });
     pi.on("message_end", ({ message }) => {
-      if (message.role === "assistant") memory.onReply({ message });
+      if (message.role === "assistant") memory?.onReply({ message });
       return undefined;
     });
     pi.on("turn_end", () => {
-      state.turn += 1;
+      if (state) state.turn += 1;
       return undefined;
     });
   };
@@ -163,8 +172,11 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
     // 可能来自用户配置并叠加，这里一并清零（仅本会话内存态，不写盘）。
     settingsManager.setRetryEnabled(false);
     settingsManager.applyOverrides({ retry: { provider: { maxRetries: 0 } } });
+    // executionContext 与记忆共用 context 钩子；任一存在即装配（子代理也要注入执行上下文）。
+    const executionContext = selection.executionContext;
     const { loader, selected: capabilities } = capabilityLoader(resources, selection.capabilities, customTools,
-      memoryState ? [memoryExtension(memoryState, memory, policy)] : [],
+      memoryState || typeof executionContext === "function"
+        ? [memoryExtension(memoryState, memory, policy, executionContext)] : [],
       policy ? budgetSystemPrompt(policy) : null);
     await loader.reload();
     const diagnostics = loader.getExtensions().errors;
@@ -197,7 +209,35 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       finally { session.dispose(); }
       throw error;
     }
+    // 工具注册与激活分离：插件/自定义工具全部注册进 SDK（enableTools 随时可启用），
+    // 建会话时只按 inactiveTools 决定初始激活集；系统提示词与请求 schema 只含激活工具。
+    const inactiveTools = new Set(selection.inactiveTools ?? []);
+    if (inactiveTools.size)
+      session.setActiveToolsByName(session.getActiveToolNames().filter((name) => !inactiveTools.has(name)));
     let lastResult, reaskController;
+    // 安全暂停：在轮次/工具批次边界（工具全部执行完并落盘后、下一个请求发出前）结束本次运行，
+    // 不 abort、不丢已产出；队列中的 steering/follow-up 本轮不消费，留给下次 prompt/外层。
+    // 只有显式提供 shouldPause 的会话（goal 外层）才装；子代理不装，靠 executionContext 收尾提示自然结束。
+    let paused = false;
+    const shouldPause = selection.shouldPause;
+    if (typeof shouldPause === "function") {
+      session.agent.shouldStopAfterTurn = () => {
+        if (paused) return true; // requestPause() 已请求：边界即停，不依赖闭包后续取值
+        try {
+          if (!shouldPause()) return false;
+        } catch {
+          return false; // 契约：不得抛错打断底层循环；钩子出错按“不暂停”继续
+        }
+        paused = true;
+        return true;
+      };
+    }
+    // SDK 的 AgentSession 在内层循环停下后还会 `while (await _handlePostAgentRun()) await agent.continue()`
+    // 继续抽干 steering/follow-up 队列，判断尽头就是 agent.hasQueuedMessages()。
+    // shouldStopAfterTurn 只终止内层循环，挡不住这层抽水：暂停期间让它报告“无排队消息”，
+    // 队列实体与展示原样保留，待下次 prompt 复位 paused 后恢复正常报告；不 abort、不丢消息。
+    const agentHasQueued = session.agent.hasQueuedMessages.bind(session.agent);
+    session.agent.hasQueuedMessages = () => !paused && agentHasQueued();
     const cancelledQuestion = () => {
       let messages = session.agent.state.messages;
       const tail = messages.at(-1);
@@ -272,6 +312,26 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       compactions: compactionRecords,
       compactionStatus: () => compactionCtrl.getStatus(),
       queue: queueState,
+      // 上次 prompt 是否在 shouldPause 的安全点停下（非失败）：外层据此区分“已保存的暂停”与异常。
+      paused: () => paused,
+      // 检查点：用原生 compaction 条目把请求上下文清空为一条摘要；JSONL 全文与 UI 历史（getBranch）保留，队列不动。
+      // 只在完全空闲且无排队消息时允许：排队消息属于清空前的上下文，先清会丢来源。
+      async checkpoint(summary) {
+        const text = String(summary ?? "").trim();
+        if (!text) throw new Error("检查点摘要不能为空");
+        if (!session.isIdle || session.isRetrying || reaskController)
+          throw new Error("会话尚未空闲，无法写入检查点");
+        const queue = queueState();
+        if (queue.steering.length || queue.followUp.length)
+          throw new Error("队列中还有未处理消息，无法写入检查点");
+        const tokensBefore = session.getContextUsage()?.tokens
+          ?? session.messages.reduce((sum, message) => sum + estimateTokens(message), 0);
+        const id = session.sessionManager.appendCompaction(text, CHECKPOINT_BOUNDARY, tokensBefore, undefined, false);
+        session.agent.state.messages = session.sessionManager.buildSessionContext().messages;
+        const record = compactionRecords().at(-1);
+        if (record) emitAxiom({ type: "agent.compaction", data: { ...record, checkpoint: true } });
+        return { id, tokensBefore };
+      },
       withdraw: () => withdrawQueue(session),
       recall: () => recallLastMessage(session),
       enqueue: (text, type, images) => (type === "steer" ? session.steer(text, images) : session.followUp(text, images)),
@@ -299,6 +359,8 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         const fresh = await discoverCapabilities(workspace, { loadAdapter: false });
         return refreshProjectSkills(loader, capabilities, fresh.catalog, selection.capabilities == null);
       },
+      // 激活已注册工具（如进入 Goal 模式启用 goal_*）：与当前激活集合并，未知名称由 SDK 忽略。
+      enableTools: (names) => session.setActiveToolsByName([...new Set([...session.getActiveToolNames(), ...names])]),
       config: () => ({
         model: `${session.model.provider}/${session.model.id}`,
         thinking: session.thinkingLevel,
@@ -313,9 +375,15 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       prompt: async (text, options) => {
         if (await compactionCtrl.maybeApply()) emitAxiom({ type: "agent.runtime", data: agentRuntime(session) });
         lastResult = undefined;
+        paused = false;
         // 背景由 context 钩子按请求实时取；这里只挂 titleRequest 的标题指令，消费一次即失效。
         if (memoryState) memoryState.pending = options?.titleRequest ? TITLE_INSTRUCTION : null;
-        await retry.run(() => session.prompt(text, options?.images ? { images: options.images } : undefined));
+        try {
+          await retry.run(() => session.prompt(text, options?.images ? { images: options.images } : undefined));
+        } catch (error) {
+          // 暂停会把等待中的退避取消，retry.run 以取消收尾并抛错：语义是暂停，不是运行失败，交 result()/paused() 表达。
+          if (!paused) throw error;
+        }
       },
       // 手动重试：不带新输入续跑上一次被中断/失败的运行（删掉末尾失败的 assistant 后 continue()，
       // 不重发用户输入，已完成工具结果留在上下文）；若续跑再失败，仍由同一 retry 层接管自动退避。
@@ -333,6 +401,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
           emitAxiom({ type: 'agent.message.end', data: { message, entryId } });
         };
         lastResult = undefined;
+        paused = false;
         try {
           const assistant = { ...original.assistant, content: [call], stopReason: 'toolUse', timestamp: Date.now(),
             usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
@@ -351,10 +420,19 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       resume: async () => {
         if (!canResume(session)) throw new Error("没有可重试的请求：上一次运行已正常结束");
         lastResult = undefined;
+        paused = false;
         await retry.run(() => {
           dropFailedAssistant(session);
           return session.agent.continue();
         });
+      },
+      // 用户暂停（goal 的 pause/adjust/restart 等）：只在轮次/工具批次边界生效。
+      // 只取消等待中的自动重试退避，不 abort 会话：在飞的请求与正在跑的工具照常完成并落盘，
+      // 已入队消息不被消费；随后 shouldStopAfterTurn 在下一个安全边界结束本轮。
+      // 置 paused：result() 据此不把“暂停导致的取消/失败”当错误（见 paused()）。
+      requestPause() {
+        paused = true;
+        retry.cancel();
       },
       async abort() {
         reaskController?.abort();
@@ -374,7 +452,9 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       result() {
         const last = lastResult;
         if (!last) return "指令已处理，未产生模型回答。";
-        if (["error", "aborted", "length"].includes(last.stopReason))
+        // 用户主动暂停而收尾（退避被取消/边界停在 error·aborted·length 消息上）不算失败：
+        // 返回已有文本（可能为空），由 paused() 说明；未经暂停的真实失败照旧抛错并进一步暴露。
+        if (!paused && ["error", "aborted", "length"].includes(last.stopReason))
           throw new Error(
             last?.errorMessage || last?.stopReason || "No assistant result",
           );

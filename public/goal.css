@@ -1,0 +1,232 @@
+/* 目标模式（Goal）样式。颜色与排版全部走 style.css 的 token：
+   --accent #5e6ad2（唯一彩色强调）、--line #23252a 发丝边、--surface #0f1011 面板、
+   --ink #f7f8f8 / --body-ink #dee2e9 / --muted、--success、--danger；数字用 --mono + tabular-nums（仪表感）。 */
+
+/* —— 顶部目标进度 —— */
+.goal-track {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 5% 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, var(--surface)), var(--surface));
+}
+.goal-track[hidden] { display: none; }
+.goal-gauge { flex: 0 0 auto; width: 44px; height: 44px; overflow: visible; }
+.goal-gauge .goal-arc-track { fill: none; stroke: var(--line); stroke-width: 2.5; }
+.goal-gauge .goal-arc { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; transition: stroke-dashoffset .45s ease; }
+.goal-gauge .goal-tick { stroke: var(--line-strong); stroke-width: 1.5; stroke-linecap: round; }
+.goal-gauge .goal-tick-done { stroke: var(--success); }
+.goal-gauge .goal-tick-active { stroke: var(--accent); stroke-width: 2.5; }
+.goal-gauge .goal-tick-current { animation: goal-tick-pulse 2.2s ease-in-out infinite; }
+.goal-gauge .goal-tick-failed { stroke: var(--danger); }
+.goal-gauge .goal-needle { stroke: var(--ink); stroke-width: 1.5; stroke-linecap: round; }
+.goal-gauge .goal-pivot { fill: var(--accent); }
+.goal-gauge[data-state="completed"] .goal-arc { stroke: var(--success); }
+.goal-gauge[data-state="completed"] .goal-pivot { fill: var(--success); }
+.goal-gauge[data-state="paused"] .goal-arc, .goal-gauge[data-state="pausing"] .goal-arc { stroke: var(--dim-line); }
+.goal-gauge[data-state="running"] .goal-needle { animation: goal-needle-sway 3.2s ease-in-out infinite; transform-origin: 22px 22px; }
+@keyframes goal-tick-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+@keyframes goal-needle-sway { 0%, 100% { transform: rotate(-1.6deg); } 50% { transform: rotate(1.6deg); } }
+
+.goal-track-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.goal-eyebrow { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; font-weight: 500; letter-spacing: .4px; }
+.goal-phase { padding: 2px 8px; border: 1px solid var(--line-strong); border-radius: 999px; font-size: 11px; letter-spacing: .4px; color: var(--body-ink); }
+.goal-phase[data-tone="accent"] { border-color: color-mix(in srgb, var(--accent) 55%, transparent); color: var(--accent-ink); }
+.goal-phase[data-tone="success"] { border-color: color-mix(in srgb, var(--success) 55%, transparent); color: var(--success); }
+/* 暂停原因是真实信号（预算/阻塞/重启恢复）：用 --highlight 告警色，不用 --danger（不是失败）。 */
+.goal-phase[data-tone="warn"], .goal-dock-phase[data-tone="warn"] { border-color: color-mix(in srgb, var(--highlight) 55%, transparent); color: var(--highlight); }
+.goal-round-count { font-family: var(--mono); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.goal-objective { margin: 0; font-size: 14px; line-height: 1.4; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.goal-facts { margin: 0; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.goal-track-side { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; }
+.goal-percent { font-family: var(--mono); font-size: 15px; color: var(--ink); font-variant-numeric: tabular-nums; min-width: 44px; text-align: right; }
+.goal-bar { display: flex; gap: 3px; width: clamp(80px, 16vw, 190px); height: 6px; }
+.goal-bar-seg { flex: 1 1 0; min-width: 4px; border-radius: 999px; background: var(--line); position: relative; overflow: hidden; }
+.goal-bar-seg[data-state="done"] { background: var(--success); }
+.goal-bar-seg[data-state="failed"] { background: var(--danger); }
+.goal-bar-seg[data-state="paused"] { background: var(--dim-line); }
+.goal-bar-seg[data-state="active"] { background: linear-gradient(90deg, var(--accent), var(--accent-hover)); }
+.goal-bar-seg[data-current="true"]::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, #ffffff59, transparent); animation: goal-bar-scan 1.8s linear infinite; }
+.goal-bar-whole { background: linear-gradient(90deg, var(--accent) var(--goal-fill, 0%), var(--line) var(--goal-fill, 0%)); }
+.goal-bar[data-state="completed"] .goal-bar-whole { background: linear-gradient(90deg, var(--success) var(--goal-fill, 100%), var(--line) var(--goal-fill, 100%)); }
+@keyframes goal-bar-scan { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+.goal-plan-open { min-height: 30px; padding: 4px 10px; font-size: 12px; }
+
+/* —— 底部专用控制 —— */
+.goal-dock {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+}
+.goal-dock[hidden] { display: none; }
+.goal-dock-main { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.goal-dock-mark { flex: 0 0 auto; width: 16px; height: 16px; color: var(--accent-ink); }
+.goal-dock svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.goal-dock-phase { font-size: 12px; font-weight: 500; color: var(--accent-ink); letter-spacing: .4px; flex-shrink: 0; }
+.goal-dock-phase[data-tone="success"] { color: var(--success); }
+.goal-dock-phase[data-tone="muted"] { color: var(--muted); }
+.goal-dock-hint[title] { cursor: help; }
+.goal-dock-round { font-family: var(--mono); font-size: 11px; color: var(--body-ink); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.goal-dock-title { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.goal-dock-hint { margin: 0; font-size: 11px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+.goal-dock-hint[data-alert="true"] { color: var(--highlight); }
+.goal-dock-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.goal-action { min-height: 32px; font-size: 12px; }
+.goal-dock .goal-action { display: inline-flex; align-items: center; gap: 6px; }
+.goal-dock .goal-action svg { width: 14px; height: 14px; }
+.goal-action-primary { border: 0; background: var(--accent); color: var(--on-accent); padding: 6px 12px; border-radius: 8px; font: inherit; font-size: 12px; font-weight: 500; }
+.goal-action-primary:hover:not(:disabled) { background: var(--accent-hover); }
+.goal-dock button:disabled { opacity: .5; cursor: not-allowed; }
+.goal-dock :focus-visible, .goal-track :focus-visible, #goal-plan :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 入口按钮：普通会话里只多一个图标，不改变任何既有布局。 */
+#goal-enter { color: var(--muted); }
+#goal-enter:not(:disabled):hover { color: var(--accent-ink); }
+
+/* —— 轮次分隔头（插在 #output 内部，节点仍归 app.js 所有）—— */
+.goal-round-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 22px 0 8px;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: .4px;
+}
+.goal-round-index {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 1px 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  color: var(--body-ink);
+  font-variant-numeric: tabular-nums;
+}
+.goal-round-head[data-state="active"] .goal-round-index { border-color: color-mix(in srgb, var(--accent) 60%, transparent); color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.goal-round-head[data-state="done"] .goal-round-index { border-color: color-mix(in srgb, var(--success) 50%, transparent); color: var(--success); }
+.goal-round-head[data-state="failed"] .goal-round-index { border-color: color-mix(in srgb, var(--danger) 50%, transparent); color: var(--danger); }
+.goal-round-title { color: var(--body-ink); font-size: 12px; max-width: 52ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.goal-round-rule { flex: 1 1 auto; height: 1px; background: var(--line); }
+.goal-round-status { flex-shrink: 0; font-size: 11px; }
+.goal-round-head[data-state="done"] .goal-round-status { color: var(--success); }
+.goal-round-head[data-state="failed"] .goal-round-status { color: var(--danger); }
+.goal-round-head[data-state="active"] .goal-round-status { color: var(--accent-ink); }
+.goal-round-toggle { flex-shrink: 0; min-height: 26px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); font: inherit; font-size: 11px; }
+.goal-round-toggle:hover { color: var(--ink); border-color: var(--line-strong); background: var(--hover); }
+.goal-folded { display: none !important; }
+
+/* —— 计划确认卡 —— */
+#goal-plan {
+  width: min(720px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 24px 80px light-dark(#00000029, #0008);
+}
+#goal-plan::backdrop { background: light-dark(#1c1d2199, #0009); }
+#goal-plan[open] { display: flex; flex-direction: column; }
+.goal-plan-head { flex-shrink: 0; display: flex; align-items: flex-start; gap: 12px; padding: 20px 20px 12px; border-bottom: 1px solid var(--line); }
+.goal-plan-head > div { flex: 1; min-width: 0; }
+.goal-plan-eyebrow { margin: 0 0 4px; font-size: 11px; letter-spacing: .4px; color: var(--accent-ink); }
+#goal-plan-title { margin: 0; font-size: 18px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.goal-plan-meta { margin: 0; padding: 10px 20px 0; font-family: var(--mono); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.goal-plan-body { flex: 1; min-height: 0; overflow: auto; padding: 12px 20px 0; display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.goal-plan-section { min-width: 0; }
+#goal-plan-rounds-section { grid-column: 1 / -1; }
+.goal-plan-section h3 { margin: 0 0 6px; font-size: 12px; letter-spacing: .4px; color: var(--muted); font-weight: 500; }
+.goal-plan-section ul, #goal-plan-rounds { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.goal-plan-section li { position: relative; padding-left: 16px; font-size: 13px; line-height: 1.55; color: var(--body-ink); overflow-wrap: anywhere; }
+.goal-plan-section li::before { content: ""; position: absolute; left: 2px; top: 7px; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.goal-plan-section li.goal-plan-empty { padding-left: 0; color: var(--muted); }
+.goal-plan-section li.goal-plan-empty::before { content: none; }
+.goal-plan-round { display: grid; gap: 2px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--ink) 2%, transparent); }
+.goal-plan-round::before { content: none; }
+.goal-plan-round[data-state="active"] { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.goal-plan-round[data-state="done"] { border-color: color-mix(in srgb, var(--success) 35%, transparent); }
+.goal-plan-round-head { display: flex; align-items: center; gap: 8px; }
+.goal-plan-round-index { font-family: var(--mono); font-size: 11px; color: var(--accent-ink); font-variant-numeric: tabular-nums; }
+.goal-plan-round-title { font-size: 13px; color: var(--ink); }
+.goal-plan-round-status { font-size: 11px; color: var(--muted); }
+.goal-plan-round[data-state="done"] .goal-plan-round-status { color: var(--success); }
+.goal-plan-round-objective, .goal-plan-round-acceptance, .goal-plan-round-summary { margin: 0; font-size: 12px; line-height: 1.55; color: var(--muted); overflow-wrap: anywhere; }
+.goal-plan-round-objective { color: var(--body-ink); }
+.goal-plan-note { flex-shrink: 0; margin: 0; padding: 12px 20px 0; font-size: 11px; line-height: 1.6; color: var(--muted); }
+#goal-plan .dialog-actions { flex-shrink: 0; padding: 12px 20px 20px; }
+
+/* —— 调整 Goal 对话框（原生 <dialog>，与普通输入框及草稿完全隔离）—— */
+#goal-adjust {
+  width: min(560px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 24px 80px light-dark(#00000029, #0008);
+}
+#goal-adjust::backdrop { background: light-dark(#1c1d2199, #0009); }
+#goal-adjust[open] { display: flex; flex-direction: column; }
+.goal-adjust-form { display: grid; gap: 10px; padding: 20px; }
+.goal-adjust-head { display: flex; align-items: flex-start; gap: 12px; }
+.goal-adjust-head > div { flex: 1; min-width: 0; }
+.goal-adjust-eyebrow { margin: 0 0 4px; font-size: 11px; letter-spacing: .4px; color: var(--accent-ink); }
+.goal-adjust-title { margin: 0; font-size: 18px; font-weight: 600; line-height: 1.35; }
+.goal-adjust-hint { margin: 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
+.goal-adjust-label { font-size: 12px; font-weight: 500; color: var(--body-ink); }
+/* 全局 textarea 规则是给输入框用的（无边框、20px 内边距、禁止拉伸），这里全部压回去。 */
+.goal-adjust-text {
+  display: block;
+  width: 100%;
+  min-height: 104px;
+  padding: 10px 12px;
+  resize: vertical;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+}
+.goal-adjust-text::placeholder { color: var(--dim-line); }
+.goal-adjust-text:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.goal-adjust-alert { margin: 0; font-size: 12px; line-height: 1.5; color: var(--highlight); }
+.goal-adjust-alert[hidden] { display: none; }
+.goal-adjust-submit { border: 0; background: var(--accent); color: var(--on-accent); padding: 8px 14px; border-radius: 8px; font: inherit; font-size: 14px; font-weight: 500; }
+.goal-adjust-submit:hover:not(:disabled) { background: var(--accent-hover); }
+.goal-adjust-submit:disabled { opacity: .5; cursor: not-allowed; }
+#goal-adjust .dialog-actions { margin-top: 4px; }
+#goal-adjust :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#goal-plan-confirm { border: 0; background: var(--accent); color: var(--on-accent); padding: 8px 14px; border-radius: 8px; font: inherit; font-size: 14px; font-weight: 500; }
+#goal-plan-confirm:hover:not(:disabled) { background: var(--accent-hover); }
+#goal-plan-confirm:disabled, #goal-plan-confirm[hidden] { opacity: .5; }
+
+@media (prefers-reduced-motion: reduce) {
+  .goal-gauge .goal-tick-current, .goal-gauge[data-state="running"] .goal-needle, .goal-bar-seg[data-current="true"]::after { animation: none; }
+}
+@media (max-width: 700px) {
+  /* 移动端折叠态只留输入框；目标控制仍要可达，和答题卡同一策略。 */
+  .shell:not(.mobile-expanded) .composer-wrap > #goal-dock:not([hidden]) { display: grid; }
+  .goal-track { margin: 8px 12px 0; padding: 8px 10px; gap: 8px; }
+  .goal-gauge { width: 36px; height: 36px; }
+  .goal-facts { display: none; }
+  .goal-objective { font-size: 13px; }
+  .goal-bar { width: 64px; }
+  .goal-percent { min-width: 38px; font-size: 13px; }
+  .goal-dock-actions { justify-content: stretch; }
+  .goal-action, .goal-action-primary { flex: 1 1 auto; min-height: 44px; }
+  .goal-plan-body { grid-template-columns: minmax(0, 1fr); }
+  .goal-round-head { margin: 16px 0 6px; }
+}

@@ -8,6 +8,7 @@ import { createModelPicker } from "./model-picker.js";
 import { initModelManager } from "./model-manager.js";
 import { initServiceSettings } from "./service-settings.js";
 import { createQuestionUI } from "./question.js";
+import { createGoalUI } from "./goal.js";
 const questionUI = createQuestionUI({ root: document.getElementById("question-dock"), reply: (data) => request("question.reply", data), focusPrompt: () => document.getElementById("prompt").focus() });
 
 const filePicker = createFilePicker(request);
@@ -27,6 +28,25 @@ let onboarding = false;
 let allSessions = [],
   follow = true;
 const views = new Map();
+// 目标模式：只消费 snapshot.goal 与 goal 事件，消息仍由本文件渲染；
+// 回执/事件里的 goal 由后端给出，前端对字段缺失完整容错。
+// （去掉 import 行单独跑 app.js 的测试环境里没有该模块，降级为空实现。）
+const goalUI = typeof createGoalUI === "function"
+  ? createGoalUI({
+      root: {
+        track: $("goal-track"),
+        dock: $("goal-dock"),
+        enter: $("goal-enter"),
+        plan: $("goal-plan"),
+        output: $("output"),
+      },
+      request,
+      onError: error,
+      readPrompt: () => $("prompt").value,
+      clearPrompt: (text) => clearGoalPrompt(text),
+      focusPrompt: () => $("prompt").focus(),
+    })
+  : { show() {}, setConnected() {}, anchors() {} };
 const compactionDefaults = { enabled: false, tokenThreshold: 100000, percentThreshold: 70, model: null, thinking: "off", keepRecentTokens: 20000 };
 // 子代理轮次预算默认值，与 src/task-budget.js 的 taskBudgetDefaults 保持一致。
 const taskBudgetDefaults = { maxTurns: 20, wrapUpWindow: 2 };
@@ -56,6 +76,22 @@ for (const id of ["provider", "model", "thinking", "subagent-provider", "subagen
 const modelManager = initModelManager({ root: $("models-panel"), request, onSaved: refreshModelCatalog });
 const serviceUi = initServiceSettings({ request, isReady: () => connected });
 let compactions = [], mainItems = [];
+// 消息锚点：键既可以是 state.messages 的下标，也可以是 entryId（startMessage/endMessage 两种语义都可用）。
+let goalAnchors = new Map(), goalAnchorCount = 0;
+function anchorGoal(key, item, entryId) {
+  if (!item?.node) return;
+  goalAnchors.set(key, item.node);
+  if (entryId) goalAnchors.set(entryId, item.node);
+}
+// 「调整本轮」用输入框内容当纠正说明；只有内容未被改动时才清空，避免吃掉用户新输入。
+function clearGoalPrompt(text) {
+  if ($("prompt").value !== text) return;
+  $("prompt").value = "";
+  const view = views.get(sessionId);
+  if (view?.draft === text) view.draft = "";
+  resizePrompt();
+  controls();
+}
 // 手动重试靠主代理末尾消息判定：与服务端 canResume 同一条规则，避免两边判断不一致。
 let lastMainMessage = null, interrupted = false, canReask = false;
 const compactionNodes = new Map(), taskEntries = new Map();
@@ -263,6 +299,7 @@ function request(type, data = {}) {
 }
 function controls() {
   questionUI.setConnected(connected && !changing && !sessionMissing);
+  goalUI.setConnected(connected && !changing && !sessionMissing);
   const unavailable = !connected || changing;
   for (const id of ["provider", "model", "thinking", "subagent-provider", "subagent-model"])
     $(id).disabled = unavailable;
@@ -1752,11 +1789,17 @@ function event(message) {
   const { type, agentId = "main", data } = message;
   if (type === "question.asked") questionUI.asked(message.sessionId, data);
   if (type === "question.closed") questionUI.closed(message.sessionId, data.toolCallId);
+  if (type === "goal") {
+    goalUI.show(sessionId, data?.goal ?? message.goal, goalAnchors);
+    return;
+  }
   if (type === "agent.compaction.status" && agentId === "main") renderCompactionStatus(data);
   if (type === "agent.message.end" && agentId === "main") {
     lastMainMessage = data.message;
     trackTaskEntries(data.message, data.entryId);
     placeCompactedTasks();
+    // 每条主代理消息（含工具结果）占一个 state.messages 槽位，计数与下标保持同构。
+    goalAnchorCount++;
   }
   if (type === "agent.retry") {
     stopActivity(agentId, data.status === "waiting" ? "等待重试" : "已停止");
@@ -1779,7 +1822,11 @@ function event(message) {
     clearWaiting(agentId);
     const item = card("你", tasks.get(agentId));
     renderMessage(item, data.message);
-    if (agentId === "main") mainItems.push({ item, entryId: data.entryId });
+    if (agentId === "main") {
+      mainItems.push({ item, entryId: data.entryId });
+      anchorGoal(goalAnchorCount - 1, item, data.entryId);
+      goalUI.anchors(goalAnchors);
+    }
     if (busy) waiting(agentId);
   }
   if (type === "agent.runtime") {
@@ -1854,7 +1901,11 @@ function event(message) {
     renderMessage(item, data.message);
     mergeThoughts(item.node.parentElement);
     live.delete(agentId);
-    if (agentId === "main") mainItems.push({ item, entryId: data.entryId });
+    if (agentId === "main") {
+      mainItems.push({ item, entryId: data.entryId });
+      anchorGoal(goalAnchorCount - 1, item, data.entryId);
+      goalUI.anchors(goalAnchors);
+    }
   }
   if (type === "agent.compaction" && agentId === "main" && !compactions.some((c) => c.id === data.id)) {
     compactions.push(data);
@@ -1991,6 +2042,8 @@ function snapshot(state) {
   for (const { agentId, message, entryId } of state.messages)
     if (agentId === "main") trackTaskEntries(message, entryId);
   mainItems = [];
+  goalAnchors = new Map();
+  goalAnchorCount = 0;
   for (const task of state.tasks) {
     event({ type: "task.state", sessionId, taskId: task.id, data: task });
     tasks.get(task.id).trigger.remove();
@@ -2046,9 +2099,13 @@ function snapshot(state) {
         if (call.type === "toolCall") toolState(agentId, { phase: "history", toolCallId: call.id, toolName: call.name, args: call.arguments });
       live.delete(agentId);
       renderMessage(item, message);
-      if (agentId === "main") mainItems.push({ item, entryId });
+      if (agentId === "main") {
+        mainItems.push({ item, entryId });
+        anchorGoal(index, item, entryId);
+      }
     }
   }
+  goalAnchorCount = state.messages.length;
   restoreRetries(state.messages.length);
   for (const [agentId, message] of Object.entries(state.live))
     if (message.role === "assistant") {
@@ -2110,6 +2167,7 @@ function snapshot(state) {
   applyConfig(state.config);
   config.compaction = state.config.compaction || compactionDefaults;
   controls();
+  goalUI.show(sessionId, state.goal, goalAnchors);
 }
 let reconnectTimer, connecting = false, reconnectDelay = 1000;
 $("login").onsubmit = async (e) => {

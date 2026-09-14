@@ -1,5 +1,20 @@
 # 开发记录
 
+## 2026-09-14 Goal 目标模式：实现与验证
+
+- 内容：新增 src/goal.js、public/goal.js/css；在 sessions/protocol/server/app/index 接入会话级目标计划、真实工具证据门、工具批次安全暂停、SQLite 恢复、跨轮 checkpoint 与自动续跑预算。src/pi.js 仅补通用上下文、工具激活、暂停与 checkpoint 入口；普通聊天不注入目标、不暴露目标工具、不自动续跑。
+- 决策：暂停优先于通知/重试/重启；完成信号不能绕过真实 toolResult 引用校验；goal_progress 保存六类交接信息。证据仅为可核对材料，不证明产物必然正确。README 已按实际语义纠正文档草案。
+- 验证：npm test：469 项，467 通过，2 跳过，0 失败；python tests/goal-ui.py：真实 Chromium 桌面 1440px 与手机 390px 通过，涵盖普通聊天、确认计划、执行折叠、暂停操作、无横向溢出及浏览器错误。浏览器使用 mock 会话数据，不等同真实模型长任务验收。
+- 涉及文件：上述实现、tests/goal*.test.js、tests/goal-preview.mjs、tests/goal-ui.py、config/compaction-config 测试工厂投影，以及 codebase-map 索引。未新增运行时依赖。
+
+## 2026-09-14 Goal 目标模式：外层包装 + 共享会话引擎（文档先行）
+
+- 原因：多轮「计划—确认—执行—验收」不能把执行链路再抄一份，也不能让普通会话为此多付代价；需要先把目标行为、安全边界和架构写清。
+- 内容：README 新增「Goal 目标模式」一节，并在「模块边界」补上 `goal.js`。约定：`/goal` 原地进入目标模式，模型先出计划、用户确认后才执行；每轮以独占行 `axiom_round_finished` 结算并落 SQLite，整体以独占行 `axiom_goal_finished` + 验收证据收尾，缺证据不算完成；暂停只在轮次边界生效，不 abort 正在执行的工具；`src/goal.js` 是外层包装，发送/工具/子代理/队列/压缩复用 `sessions.js` 同一套引擎，前端 `public/goal.js`、`goal.css` 只加状态条与按钮；协议新增 `goal.action`（enter/confirm/adjust/pause/resume/restart）。
+- 边界：文档只写设计意图与安全边界，明确不做「绝对无漏洞」承诺，验收证据是可核对材料而非正确性证明；普通会话路径不变。
+- 未做/状态：本次只改 README.md 与 devlog.md，不碰实现文件；`src/goal.js`、`public/goal.*` 及前端按钮由并行的 runtime/UI 任务实现，尚无端到端验收，README 描述目标行为，不代表已实现或已测试通过。
+- 涉及：README.md、devlog.md。
+
 ## 2026-09-14 提问卡紧凑布局与切题稳定
 - 原因：各题高度不同让底部输入区上下移动；原卡片留白和独立滚动过多。
 - public/question.js 按当前宽度测量同组最高题面并保持高度，宽度变化重测；选项聚焦使用 preventScroll 避免浏览器自动滚动。public/question.css 改紧凑题签/无框选项行/行内说明，主题使用现有变量；卡片取消独立滚动，超长题由输入区滚动；手机收起态仍显示待答卡。
