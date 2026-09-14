@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/14 07:48:42）
+# Axiom 多级代码索引（生成于 2026/9/14 08:03:32）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -45,7 +45,7 @@
 | src/protocol.js | 356 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/questions.js | 86 | 主代理 question 工具、参数校验与可取消的回答等待 | text, option, input, questionAnswers |
 | src/remote.js | 547 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
-| src/retry.js | 173 | 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_DELAY_MS, MAX_RETRIES, delayFor |
+| src/retry.js | 196 | 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_DELAY_MS, MAX_RETRIES, RECOVERY_PROMPT |
 | src/server.js | 502 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | dev, digest, load, freshen |
 | src/session-memory.js | 29 | 标题提取登记、轮次预算挂钩与委派背景 | textOf, memoryHooks |
 | src/session-store.js | 458 | 会话三表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, TABLES, INDEXES |
@@ -110,7 +110,7 @@
 | tests/remote-ui.test.js | 224 | node --test 测试（npm test） | page, modelSources, flush, stubRequest |
 | tests/remote.test.js | 721 | node --test 测试（npm test） | EMAIL, mockTailscale, fakeChild, fakeDatabase |
 | tests/retry-settings-ui.py | 30 | node --test 测试（npm test） | - |
-| tests/retry.test.js | 369 | node --test 测试（npm test） | RATE_LIMIT, QUOTA, ABORTED, fakeSession |
+| tests/retry.test.js | 407 | node --test 测试（npm test） | RATE_LIMIT, QUOTA, ABORTED, fakeSession |
 | tests/server.test.js | 138 | node --test 测试（npm test） | - |
 | tests/service-api.test.js | 106 | node --test 测试（npm test） | - |
 | tests/service-settings-api.test.js | 71 | node --test 测试（npm test） | - |
@@ -927,21 +927,22 @@
 | LOGIN_OUTPUT_CAP | const | 138 |
 | createRemoteAccess | function | 140 |
 
-### src/retry.js（173 行） — 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续
+### src/retry.js（196 行） — 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | RETRY_DELAYS_MS | const | 5 |
 | MAX_DELAY_MS | const | 6 |
 | MAX_RETRIES | const | 7 |
-| delayFor | const | 8 |
-| MAX_TIMEOUT_MS | const | 14 |
-| abortableSleep | const | 15 |
-| classify | class | 51 |
-| dropFailedAssistant | function | 75 |
-| RESUMABLE_STOP_REASONS | const | 84 |
-| canResume | function | 85 |
-| createAutoRetry | function | 101 |
+| RECOVERY_PROMPT | const | 8 |
+| delayFor | const | 9 |
+| MAX_TIMEOUT_MS | const | 15 |
+| abortableSleep | const | 16 |
+| classify | class | 52 |
+| dropFailedAssistant | function | 76 |
+| RESUMABLE_STOP_REASONS | const | 85 |
+| canResume | function | 86 |
+| createAutoRetry | function | 102 |
 
 ### src/server.js（502 行） — createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发
 
@@ -1508,7 +1509,7 @@
 | wsRequest | const | 154 |
 | setTimeout | method | 547 |
 
-### tests/retry.test.js（369 行） — node --test 测试（npm test）
+### tests/retry.test.js（407 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|

@@ -556,3 +556,9 @@
 - 用户消息不应走 Markdown/HTML 解析：textContent + pre-wrap 保留输入并避免标签被当成元素。
 - axiom_answer 只改展示，不改历史；代码中的同名标签不解析，未闭合回答保留正文，旧历史无标签不隐藏唯一答复。
 - 回归：tests/answer-tags.test.js、memory-ui.test.js、stream-renderer.test.js。
+
+
+### 2026-09-14T08:03 思考耗尽额度后空白终止
+- 根因：length 满额默认终止，空白正文缺少有限纠偏路径。
+- 修复：src/retry.js 对末尾无正文、无工具调用的 length 自动恢复一次，保留工具结果、临时短提示，恢复再失败停止。
+- 防再犯：tests/retry.test.js 覆盖成功、重复截断、网络错误/抛异常、取消和提示恢复，不将工具参数错误猜成系统故障。

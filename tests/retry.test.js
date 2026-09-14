@@ -19,7 +19,7 @@ function fakeSession(steps, { maxTokens = 100, initial = [], onContinue } = {}) 
     prompted: 0,
     continueSnapshots: [],
     agent: {
-      state: { messages: [...initial] },
+      state: { messages: [...initial], systemPrompt: "original" },
       continue: async () => {
         session.continueSnapshots.push(structuredClone(session.agent.state.messages));
         onContinue?.();
@@ -293,7 +293,7 @@ test("自定义词表：黑名单优先，命中内建可重试错误也立即�
 });
 
 test("length 未完成：可恢复（产出低于上限）重试，满额不重试", async () => {
-  const truncated = fakeSession([{ stopReason: "length", usage: { output: 50 } }, { stopReason: "stop", text: "done" }]);
+  const truncated = fakeSession([{ stopReason: "length", text: "partial", usage: { output: 50 } }, { stopReason: "stop", text: "done" }]);
   const { emit, data } = recorder();
   const truncatedRetry = createAutoRetry({ session: truncated, emit, sleep: recordedSleep() });
   await truncatedRetry.run((text) => truncated.prompt(text || "hi"));
@@ -301,12 +301,50 @@ test("length 未完成：可恢复（产出低于上限）重试，满额不重�
   assert.deepEqual(data().map((event) => event.status), ["waiting", "running", "succeeded"]);
   assert.match(data()[0].error, /length/);
 
-  const full = fakeSession([{ stopReason: "length", usage: { output: 100 } }, { stopReason: "stop", text: "done" }]);
+  const full = fakeSession([{ stopReason: "length", text: "partial", usage: { output: 100 } }, { stopReason: "stop", text: "done" }]);
   const fullRecorder = recorder();
   const fullRetry = createAutoRetry({ session: full, emit: fullRecorder.emit, sleep: recordedSleep() });
   await fullRetry.run((text) => full.prompt(text || "hi"));
   assert.deepEqual(full.log, ["prompt"], "产出已满输出上限不重试");
   assert.deepEqual(fullRecorder.data(), []);
+});
+
+test("空正文截断只纠偏一次，提示临时生效，工具结果保留", async () => {
+  const empty = { stopReason: "length", usage: { output: 100 }, content: [{ type: "thinking", thinking: "loop" }, { type: "text", text: " \n" }] };
+  const tool = { role: "toolResult", toolCallId: "done", content: [] };
+  for (const next of [{ stopReason: "stop", text: "done" }, empty, RATE_LIMIT, { throws: new Error("socket hang up") }]) {
+    const session = fakeSession([{ ...empty, messages: [tool] }, next], {
+      onContinue: () => assert.match(session.agent.state.systemPrompt, /上一轮输出被截断/),
+    });
+    const { emit, data } = recorder();
+    const retry = createAutoRetry({ session, emit, sleep: recordedSleep() });
+    if (next.throws) await assert.rejects(retry.run(() => session.prompt("hi")), /socket/);
+    else await retry.run(() => session.prompt("hi"));
+    assert.deepEqual(session.log, ["prompt", "continue"]);
+    assert.deepEqual(session.continueSnapshots[0].at(-1), tool);
+    assert.equal(session.continueSnapshots[0].filter((m) => m.role === "user").length, 1);
+    assert.equal(session.agent.state.systemPrompt, "original");
+    assert.equal(data().at(-1).status, next.stopReason === "stop" ? "succeeded" : "failed");
+  }
+});
+
+test("低用量空截断也仅恢复一次；含工具调用不触发纠偏", async () => {
+  for (const content of [[], [{ type: "toolCall", id: "pending", name: "write", arguments: {} }]]) {
+    const hasTool = content.length > 0;
+    const step = { stopReason: "length", content, usage: { output: hasTool ? 100 : 1 } };
+    const session = fakeSession([step, step]);
+    const retry = createAutoRetry({ session, emit() {}, sleep: recordedSleep() });
+    await retry.run(() => session.prompt("hi"));
+    assert.equal(session.log.length, hasTool ? 1 : 2);
+  }
+});
+
+test("空正文恢复等待期取消，不发起续跑", async () => {
+  const session = fakeSession([{ stopReason: "length", usage: { output: 100 } }]);
+  const retry = createAutoRetry({ session, emit() {}, sleep: async () => retry.cancel() });
+  await assert.rejects(retry.run(() => session.prompt("hi")), /取消/);
+  assert.deepEqual(session.log, ["prompt"]);
+  assert.equal(session.agent.state.systemPrompt, "original");
 });
 
 test("继续安全：移除末尾失败消息后续跑，用户输入不重发、已完成工具保留", async () => {

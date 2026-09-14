@@ -1158,3 +1158,9 @@
 - 新增 src/prompts.js 按角色集中 Axiom 自有提示词；main 使用 axiom_answer，子代理和压缩不继承。原注入时机和摘要请求保持不变。
 - public/answer-tags.js 负责独占行标签、代码保护、流式和异常回退；app.js 按明确答复折叠此前过程；stream-renderer.js/style.css 将用户输入按纯文本保留换行。server.js 注册新静态模块。
 - README、索引、标签/页面/渲染测试同步。npm test：390 项，388 通过，2 跳过；Chromium 核验用户 pre-wrap 和新模块 HTTP 200。未新增 Mermaid 或改变压缩策略。
+
+
+### 2026-09-14T08:03 空正文截断自动恢复
+- 内容/原因：length 且无正文与工具调用时自动纠偏一次，避免思考耗尽额度后必须人工重试；恢复再失败即停，取消不续跑。提示仅临时加入系统上下文，不伪造用户消息、不重发工具。
+- 文件：src/retry.js、tests/retry.test.js、README.md、.pi/skills/codebase-map/INDEX.md、knowledge.md。
+- 验证：npm test，397 通过，2 跳过，无失败；无编译脚本。
