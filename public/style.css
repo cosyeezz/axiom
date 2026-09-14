@@ -138,6 +138,14 @@ input {
   padding: 8px 12px;
   min-height: 40px;
 }
+/* 复选框/单选框不吃上面的输入框尺寸：原生控件只画 13px 见方，被撑到 40px 高的盒子里
+   会顶在盒子上沿，同行文字按基线落到盒子下沿，看起来就是勾选框和说明文字错行。 */
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  min-height: 0;
+  padding: 0;
+}
 select {
   padding: 8px;
   max-width: 100%;
@@ -240,7 +248,6 @@ summary {
 .preset-edit { flex: 0 0 auto; font-size: 12px; }
 #preset-fields { display: grid; gap: 10px; }
 #preset-fields[hidden] { display: none; }
-#preset-fixed-cwd { width: auto; }
 .sidebar-footer {
   flex-shrink: 0;
   color: var(--muted);

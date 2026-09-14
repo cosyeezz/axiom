@@ -1,5 +1,16 @@
 # 开发记录
 
+## 2026-09-14 复选框不再被全局输入框撑错行；思考等级勾选与会话选择器对齐
+
+- 症状一：「预设会话配置」弹窗里「固定使用此工作目录」的复选框单占一行，说明文字掉到下一行并下坠。根因是 `public/style.css` 的全局 `input { width: 100%; padding: 8px 12px; min-height: 40px }` 也命中了 checkbox：布局盒被撑到 40px 高，WebKit/Blink 把 13px 的原生控件画在盒顶、同行文字按基线落到盒底，于是看起来就是错行。以前只在出事的地方零星打补丁（`.capability-options input`、`.trust-row input`、`.mm input[type="checkbox"]`），漏一个就错一个。
+- 修法一：在全局 `input` 规则旁补 `input[type="checkbox"], input[type="radio"] { width: auto; min-height: 0; padding: 0 }`（属性选择器特异性胜出，与声明顺序无关），一处就兑平所有复选框/单选框；同时删掉因此冗余的 `#preset-fixed-cwd { width: auto }`。不动已有的局部补丁（那些还带 `accent-color` 等其它样式），也没顺手改 label 布局。
+- 症状二：模型设置里 kiro/claude-opus-5 只勾了两个思考等级，但会话里的等级下拉框全部可选。根因是两边算法不同：下拉框用目录的 `levels`（`src/pi.js` 由 SDK `getSupportedThinkingLevels` 算出——reasoning 模型里未显式映射的等级默认**可用**，只有 xhigh/max 需显式映射、写 null 才禁用）；而 `public/model-manager.js` 的 `thinkingFields` 拿 `model.levels` 做勾选基线，自定义供应商的模型行来自配置原文、根本没有 `levels` 字段，回退成空数组 → 实际可用的等级被画成未勾选。
+- 修法二：`thinkingFields` 添 `providerId` 入参，`model.levels` 缺失时回退到 `state.catalog` 里同 provider+id 条目的 `levels`。只修显示基线，不在前端复刻 SDK 规则（避免两处语义分叉），也不往保存载荷里塞 `levels`（那会把目录字段写进用户配置）。勾选行为本身是对的：取消勾选写 null 确实会禁用该等级。
+- 遗留：未保存的新模型行在目录里查不到，思考等级仍全空（保存后就正常）；「支持推理」开关切换时不联动刷新勾选，两项都超本次范围。
+- 测试：`tests/app.test.js` 在现有 CSS 用例里断言 `#preset-fixed-cwd` 的 min-height/padding/width 与 `#preset-name` 仍为 40px；`tests/model-manager.test.js` 新增用例：自定义供应商行只带两个映射、目录给六个等级时，勾选必须是六个。**反向验证**：分别拿掉两个修复后对应用例各自失败，确认能守住。另用 Playwright 渲染弹窗对照：修前 checkbox 盒 13×40 / label 高 49.39，修后 13×13 / 21。
+- 验证：全量 `npm test` 371 项：369 通过 / 0 失败 / 2 跳过（23.8s）。
+- 涉及：public/style.css、public/model-manager.js、tests/app.test.js、tests/model-manager.test.js、devlog.md。
+
 ## 2026-09-14 前端启动链不再被单条坏会话卡死
 
 - 症状：用户报「这个会话无法加载不能阻塞程序连接啊」。库里一条坏会话（历史文件缺失）就让整页连不上：红字 +「连接已断开，正在自动重连」无限循环、退避到 15s，其他会话也进不去；清掉那条记录后立刻恢复。

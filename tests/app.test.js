@@ -42,6 +42,11 @@ test("header path icons do not inherit the global button minimum height", async 
     assert.equal(computed(".task-run-text").textOverflow, "ellipsis", "run rows truncate long task text");
     assert.equal(computed(".task-run-text").whiteSpace, "nowrap");
     assert.equal(computed(".task-run-spin").animationName, "task-run-spin", "spinner is a CSS animation, no inline style");
+    // 复选框不能吃到全局 input 的 40px 高度：否则控件顶在盒子上沿、同行文字落到下沿，看起来错行。
+    assert.equal(computed("#preset-fixed-cwd").minHeight, "0px", "复选框不继承输入框的 min-height");
+    assert.equal(computed("#preset-fixed-cwd").padding, "0px", "复选框不继承输入框的 padding");
+    assert.equal(computed("#preset-fixed-cwd").width, "auto");
+    assert.equal(computed("#preset-name").minHeight, "40px", "普通输入框尺寸不变");
   } finally { dom.window.close(); }
 });
 

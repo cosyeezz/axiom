@@ -467,6 +467,32 @@ test("模型编辑为整条替换 upsert：未知字段保留、脏检查阻止�
   h.window.close();
 });
 
+test("自定义供应商模型的思考等级勾选回退到目录 levels，与会话选择器一致", async () => {
+  const h = harness();
+  const loaded = h.manager.load();
+  // 配置原文没有 levels 字段（只有 thinkingLevelMap）；目录条目才带服务端算出的真实可用等级。
+  h.flushGet({
+    providers: [{
+      id: "kiro",
+      api: "openai-completions",
+      models: [{ id: "claude-opus-5", reasoning: true, thinkingLevelMap: { high: "high", xhigh: "xhigh" } }],
+    }],
+    catalog: [{
+      provider: "kiro", id: "claude-opus-5", key: "kiro/claude-opus-5",
+      levels: ["off", "minimal", "low", "medium", "high", "xhigh"], input: ["text"],
+    }],
+  });
+  await h.settle();
+  await loaded;
+  await h.selectProvider("kiro");
+  const row = h.detail().querySelector(".mm-models .mm-model");
+  const checked = [...row.querySelectorAll(".mm-thinking-levels input:checked")]
+    .map((box) => box.parentElement.textContent);
+  assert.deepEqual(checked, ["off", "minimal", "low", "medium", "high", "xhigh"],
+    "未显式映射的等级仍可用，勾选状态必须照目录 levels 显示，不能只勾映射里那两个");
+  h.window.close();
+});
+
 test("添加模型走 upsert，只发改动字段", async () => {
   const h = harness();
   const loaded = h.manager.load();

@@ -787,12 +787,18 @@ export function initModelManager({ root, request, onSaved }) {
       } });
   }
 
-  function thinkingFields(form, model, sync) {
+  function thinkingFields(form, model, sync, providerId) {
     const extra = parseJsonText(form.extrasText);
     const map = extra.value?.thinkingLevelMap ?? model.thinkingLevelMap ?? {};
+    // 自定义供应商的 models 条目是配置原文，没有 levels（只有目录条目才有）；
+    // 回退到目录里同一模型的真实可用等级，否则未显式映射的等级会被画成未勾选，
+    // 但它们在会话选择器里依旧可选（两边对不上）。
+    const levels = model.levels
+      ?? state.catalog.find((entry) => entry.provider === providerId && entry.id === model.id)?.levels
+      ?? [];
     return el("fieldset", { class: "mm-thinking-levels" }, el("legend", {}, "支持的思考等级"),
       ...THINKING_LEVELS.map((level) => el("label", { class: "mm-check" },
-        el("input", { type: "checkbox", checked: Object.hasOwn(map, level) ? map[level] !== null : (model.levels || []).includes(level),
+        el("input", { type: "checkbox", checked: Object.hasOwn(map, level) ? map[level] !== null : levels.includes(level),
           onchange: (event) => {
             const current = parseJsonText(form.extrasText);
             if (current.error) { event.target.checked = !event.target.checked; showAlert("error", current.error); return; }
@@ -1262,7 +1268,7 @@ export function initModelManager({ root, request, onSaved }) {
             : iconButton("delete", `删除模型「${displayId}」`, () => override
               ? confirmHide({ key: row.snap.key, kind: "model", id: providerId, models: [row.snap] })
               : confirmDeleteModel(providerId, String(row.snap.id ?? ""))))),
-      grid, thinkingFields(form, row.snap, sync), advanced,
+      grid, thinkingFields(form, row.snap, sync, providerId), advanced,
       el("div", { class: "mm-model-actions" }, saveButton));
   }
 
