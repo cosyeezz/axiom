@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/14 13:12:21）
+# Axiom 多级代码索引（生成于 2026/9/14 14:36:54）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -31,8 +31,8 @@
 | scripts/dev.mjs | 12 | 开发入口：DEV 标识、4320 端口与独立数据目录 | - |
 | scripts/install.mjs | 72 | 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器 | root, parseArgs, ensurePi, viaShell |
 | scripts/maint-server.mjs | 86 | loopback维护HTTP：来源校验、随机凭证、状态与离线恢复 | MAX_BODY, hash, json, startMaintServer |
-| scripts/maint-state.mjs | 132 | 守护维护状态：持久化阶段、最近结果与有界脱敏证据 | NAMESPACE, LOG_LIMIT, sanitize, createMaintState |
-| scripts/service.mjs | 618 | 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道 | root, output, run, npmRun |
+| scripts/maint-state.mjs | 138 | 守护维护状态：持久化阶段、最近结果与有界脱敏证据 | NAMESPACE, LOG_LIMIT, redact, sanitize |
+| scripts/service.mjs | 619 | 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道 | root, output, run, npmRun |
 | scripts/uninstall.mjs | 18 | 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据 | uninstall |
 | src/capabilities.js | 138 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/compaction.js | 375 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
@@ -129,7 +129,7 @@
 | tests/service-settings-api.test.js | 71 | node --test 测试（npm test） | - |
 | tests/service-settings-ui.py | 60 | node --test 测试（npm test） | - |
 | tests/service-settings.test.js | 377 | node --test 测试（npm test） | source, html, setup |
-| tests/service.test.js | 642 | node --test 测试（npm test） | until, readMaybe, killTree, buildWorkspace |
+| tests/service.test.js | 684 | node --test 测试（npm test） | until, readMaybe, killTree, buildWorkspace |
 | tests/session-created-at.test.js | 44 | node --test 测试（npm test） | factory |
 | tests/session-flow.test.js | 451 | node --test 测试（npm test） | flowFactory, jsonlFactory |
 | tests/session-memory.test.js | 110 | node --test 测试（npm test） | reply |
@@ -673,17 +673,18 @@
 | allow | method | 10 |
 | startMaintServer | function | 15 |
 
-### scripts/maint-state.mjs（132 行） — 守护维护状态：持久化阶段、最近结果与有界脱敏证据
+### scripts/maint-state.mjs（138 行） — 守护维护状态：持久化阶段、最近结果与有界脱敏证据
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | NAMESPACE | const | 8 |
 | LOG_LIMIT | const | 9 |
-| sanitize | function | 12 |
-| createMaintState | function | 21 |
-| persist | method | 96 |
+| redact | function | 13 |
+| sanitize | function | 21 |
+| createMaintState | function | 27 |
+| persist | method | 102 |
 
-### scripts/service.mjs（618 行） — 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道
+### scripts/service.mjs（619 行） — 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -720,12 +721,12 @@
 | startCli | function | 250 |
 | supervise | function | 257 |
 | mkdirSync | method | 266 |
-| spawnWorker | method | 550 |
-| invoked | const | 554 |
-| stopService | function | 555 |
-| HELP | const | 591 |
-| FORE | const | 603 |
-| COMMANDS | const | 604 |
+| spawnWorker | method | 551 |
+| invoked | const | 555 |
+| stopService | function | 556 |
+| HELP | const | 592 |
+| FORE | const | 604 |
+| COMMANDS | const | 605 |
 
 ### scripts/uninstall.mjs（18 行） — 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据
 
@@ -1722,7 +1723,7 @@
 | html | const | 12 |
 | setup | function | 14 |
 
-### tests/service.test.js（642 行） — node --test 测试（npm test）
+### tests/service.test.js（684 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1759,7 +1760,9 @@
 | writeFileSync | method | 158 |
 | installNpmShim | const | 164 |
 | A40 | const | 177 |
-| fs | const | 618 |
+| fs | const | 567 |
+| home | const | 569 |
+| fs | const | 654 |
 
 ### tests/session-created-at.test.js（44 行） — node --test 测试（npm test）
 
