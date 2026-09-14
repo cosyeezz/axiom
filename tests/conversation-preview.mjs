@@ -114,6 +114,7 @@ const sessions = {
   createAgent: { catalog: () => [{ provider: "preview", id: "axiom", key: "preview/axiom", name: "Axiom Preview", levels: ["off", "high"] }] },
   list: () => states.map((s) => ({ id: s.sessionId, cwd: s.cwd, title: s.title, status: s.status, updatedAt: Date.now() })),
   get: (id) => states.find((s) => s.sessionId === id) || state,
+  ensureLoaded: async (id) => sessions.get(id),
   snapshot: (id) => sessions.get(id),
   subscribe: () => () => {},
 };

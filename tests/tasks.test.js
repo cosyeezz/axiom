@@ -60,7 +60,8 @@ test("publish separates safe view data from the full saved snapshot", async () =
   const [id] = tasks.start(["a"]);
   await tasks.cancel();
   const { data, saved } = events.filter((event) => event.type === "task.state").at(-1);
-  assert.deepEqual(Object.keys(data).sort(), ["error", "id", "runtime", "status", "task", "text"], "broadcast data stays a safe view");
+  assert.deepEqual(Object.keys(data).sort(), ["canRetry", "error", "id", "runtime", "status", "task", "text"], "broadcast data stays a safe view");
+  assert.equal(data.canRetry, false, "cancelled job without session evidence offers no retry");
   assert.equal(data.status, "cancelled");
   assert.equal("saved" in data, false);
   assert.equal(saved.parentContext, "");

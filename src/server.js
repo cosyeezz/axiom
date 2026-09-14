@@ -401,6 +401,9 @@ export function createServerApp(sessions, service = {}) {
             case "session.retry":
               data = { runId: await sessions.retry(request.sessionId) };
               break;
+            case "task.retry":
+              data = await sessions.retryTask(request.sessionId, request.taskId);
+              break;
             case "tasks.read":
               data = (await sessions.ensureLoaded(request.sessionId)).tasks.read(request.taskId, request.resultId);
               break;

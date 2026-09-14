@@ -270,10 +270,10 @@ test("task-separated completed groups stop Working while the latest segment and 
     assert.equal(output.querySelector('.task-card').dataset.status, 'running', 'child state is independent');
     restore({ status: 'running', tasks: [task], messages: [entry(delegated, 'delegated'), entry(result, 'result'), entry(assistant([call('read')]), 'read')], tools: { read: { agentId: 'main', phase: 'start', toolCallId: 'read', toolName: 'read' } } });
     paint(); paint();
-    assert.deepEqual(labels(), ['Working'], 'snapshot merges adjacent calls and keeps only the latest wait');
+    assert.deepEqual(labels(), ['Completed', 'Working'], 'snapshot preserves the delegate card boundary and latest wait');
     emit('session.state', { status: 'idle' });
     paint();
-    assert.deepEqual(labels(), ['Stopped'], 'unfinished snapshot tools stop without fabricating success');
+    assert.deepEqual(labels(), ['Completed', 'Stopped'], 'unfinished snapshot tools stop without fabricating success');
   } finally { dom.window.close(); }
 });
 

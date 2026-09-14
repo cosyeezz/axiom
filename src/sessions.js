@@ -10,6 +10,7 @@ import { basename, dirname, join, relative, isAbsolute, resolve, sep, parse } fr
 import { selection as selectionSchema, presetStore, taskBudget as taskBudgetSchema, compaction as compactionSchema, compactionDefaults, assertPromptImages } from "./protocol.js";
 import { taskBudgetDefaults } from "./task-budget.js";
 import { Tasks } from "./tasks.js";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { delegationTools } from "./tools.js";
 import { resolveCapabilities } from "./capabilities.js";
 import { memoryHooks } from "./session-memory.js";
@@ -754,8 +755,10 @@ export class Sessions {
     };
     const saveMemory = (change) => this.saveChange(item, change);
     item.tasks = new Tasks(
-      (job) =>
-        this.createAgent([], {
+      (job) => {
+        if (job.historySaved && (!job.sessionFile || !existsSync(job.sessionFile)))
+          throw new Error("子任务历史文件缺失，已保留记录，拒绝重新执行原任务");
+        return this.createAgent([], {
           ...item.agent.config?.(),
           ...(item.retry ? { retry: item.retry } : {}),
           ...(item.subagentModel ? { model: item.subagentModel } : {}),
@@ -764,7 +767,10 @@ export class Sessions {
           capabilities: item.subagentCapabilities === "inherit" ? item.agent.config?.().capabilities ?? item.capabilities : item.subagentCapabilities,
           trustProject: item.trustProject,
           memory: memoryHooks(item, saveMemory, job),
-        }),
+          sessionDir: storageDir ? join(storageDir, `${id}-tasks`) : undefined,
+          sessionFile: job.sessionFile,
+        });
+      },
       item.emit,
       async () => {
         // task.state 已同步提交终态；只重试失败队列，不再重写同一大结果。
@@ -774,10 +780,11 @@ export class Sessions {
     );
     for (const task of saved?.tasks || []) {
       const interrupted = ["starting", "running"].includes(task.status);
+      const resumable = interrupted && (!!task.sessionFile || task.persistenceVersion === 1);
       item.tasks.jobs.set(task.id, { ...task,
-        status: interrupted ? "cancelled" : task.status,
-        error: interrupted ? "服务已重启，子任务已停止" : task.error,
-        resultId: task.resultId || randomUUID(), notified: task.notified ?? false });
+        status: resumable ? "starting" : interrupted ? "cancelled" : task.status,
+        error: interrupted && !resumable ? "旧子任务没有持久化历史，无法恢复" : task.error,
+        resultId: resumable ? undefined : task.resultId || randomUUID(), notified: resumable ? false : task.notified ?? false });
     }
     try {
       if (importedFile) {
@@ -801,9 +808,19 @@ export class Sessions {
       });
     // 导入与库恢复的会话都没有完整消息快照（模型消息不再入库）：主代理历史从 Pi JSONL
     // 当前分支重建（撤回/压缩后的分支即真实历史），entryId 保留用于压缩折叠与撤回定位；
-    // 子代理消息不落 JSONL，恢复后不再逐条回放（任务卡仍带最终结果）。
+    // 子代理使用独立 JSONL，按 task ID 恢复到各自详情，不混入主上下文。
     if (importedFile || (saved && !item.messages.length))
       item.messages = (item.agent.historyEntries?.() || []).map((entry) => ({ agentId: "main", message: entry.message, entryId: entry.id }));
+    for (const job of item.tasks.jobs.values()) {
+      if (!job.sessionFile || !existsSync(job.sessionFile)) continue;
+      try {
+        const entries = SessionManager.open(job.sessionFile).getBranch().filter(entry => entry.type === "message");
+        item.messages.push(...entries.map(entry => ({ agentId: job.id, entryId: entry.id, message: entry.message })));
+      } catch (error) {
+        job.status = "failed";
+        job.error = `子任务历史读取失败：${error.message}`;
+      }
+    }
     // Upgrade legacy web history IDs and recover compaction commits saved in Pi JSONL
     // before a crash could persist the web snapshot. Match in order, never by timestamp alone.
     const history = item.agent.historyEntries?.() || [];
@@ -916,6 +933,8 @@ export class Sessions {
       throw error;
     }
     this.items.set(id, item);
+    for (const job of item.tasks.jobs.values())
+      if (job.status === "starting" && (job.sessionFile || job.persistenceVersion === 1)) job.done = item.tasks.run(job, true);
     this.scheduleTaskNotifications(item);
     return id;
   }
@@ -934,7 +953,8 @@ export class Sessions {
 
   async deliverTaskNotifications(item) {
     if (item.notifying || item.closing || item.notificationsPaused || item.configuring || item.status !== "idle") return;
-    const jobs = [...item.tasks.jobs.values()].filter((job) => job.resultId && !job.notified);
+    const jobs = [...item.tasks.jobs.values()].filter((job) => job.resultId && !job.notified)
+      .map(({ id, resultId, status }) => ({ id, resultId, status }));
     if (!jobs.length) return;
     item.notifying = true;
     try {
@@ -947,8 +967,10 @@ export class Sessions {
       await item.work;
       if (item.notificationsPaused || item.closing) return;
       for (const job of jobs) {
+        const current = item.tasks.jobs.get(job.id);
+        if (current?.resultId !== job.resultId) continue;
         await this.persist(item, { task: { id: job.id, notified: true } });
-        job.notified = true;
+        if (current.resultId === job.resultId) current.notified = true;
       }
     } finally {
       item.notifying = false;
@@ -1259,6 +1281,12 @@ export class Sessions {
     })();
     return item.cancelling;
   }
+  async retryTask(id, taskId) {
+    const item = await this.ensureLoaded(id);
+    if (item.closing || item.cancelling) throw new Error("会话正在停止，暂时无法重试子任务");
+    item.notificationsPaused = false;
+    return item.tasks.retry(taskId);
+  }
   async remove(id, deleting = true) {
     let item = this.get(id);
     if (item.loading) {
@@ -1273,6 +1301,7 @@ export class Sessions {
         const storageDir = this.storagePath && join(this.storagePath, createHash("sha256").update(process.platform === "win32" ? item.cwd.toLowerCase() : item.cwd).digest("hex"));
         if (storageDir) {
           if (item.sessionFile) await rm(item.sessionFile, { force: true });
+          await rm(join(storageDir, `${id}-tasks`), { recursive: true, force: true });
           await rm(join(storageDir, `${id}.json`), { force: true });
         }
       }
@@ -1280,7 +1309,12 @@ export class Sessions {
       this.items.delete(id);
       return;
     }
-    await this.cancel(id);
+    if (deleting) await this.cancel(id);
+    else {
+      item.notificationsPaused = true;
+      await Promise.all([item.agent.abort(), item.tasks.interrupt()]);
+      await item.work;
+    }
     await item.notificationWork;
     item.unsubscribe();
     await item.agent.dispose();
@@ -1290,6 +1324,7 @@ export class Sessions {
       this.store?.deleteSession(id);
       if (item.storageDir) {
         if (item.agent.sessionFile?.()) await rm(item.agent.sessionFile(), { force: true });
+        await rm(join(item.storageDir, `${id}-tasks`), { recursive: true, force: true });
         // 旧版磁盘快照兜底清理（已迁移标记的目录不会再被扫描）。
         await rm(join(item.storageDir, `${id}.json`), { force: true });
       }

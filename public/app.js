@@ -275,6 +275,7 @@ function controls() {
   $("stop").hidden = !busy;
   $("send").hidden = busy;
   syncRetryPrompt();
+  for (const task of tasks.values()) task.retryButton.disabled = unavailable || sessionMissing || task.retrying;
   for (const id of ["new", "custom-new"]) $(id).disabled = unavailable || !models.length;
   for (const button of document.querySelectorAll(".session-actions button")) button.disabled = !button.closest(".session-copy-menu") && !button.matches(".session-copy, .session-hide") && unavailable;
   $("status").dataset.connected = String(connected);
@@ -672,6 +673,7 @@ function scheduleCallGroups() {
     for (const output of [$('output'), ...[...tasks.values()].map(task => task.output)]) {
       if (output?.isConnected) refreshCallGroups(output);
     }
+    placeCompactedTasks();
   });
 }
 function createCallGroup() {
@@ -1242,24 +1244,44 @@ function renderCompactionStatus(data) {
   node.append(label);
 }
 function trackTaskEntries(message, entryId) {
-  if (!entryId || message.isError || message.role !== "toolResult" || message.toolName?.replace(/^functions\./, "") !== "delegate") return;
+  if (message.isError || message.role !== "toolResult" || message.toolName?.replace(/^functions\./, "") !== "delegate") return;
   for (const block of Array.isArray(message.content) ? message.content : []) {
     if (block.type !== "text") continue;
     try {
       const ids = JSON.parse(block.text).taskIds;
       if (Array.isArray(ids)) for (const id of ids)
-        if (typeof id === "string" && !taskEntries.has(id)) taskEntries.set(id, entryId);
+        if (typeof id === "string" && !taskEntries.has(id)) taskEntries.set(id, { entryId, toolCallId: message.toolCallId });
     } catch {}
   }
 }
 function placeCompactedTasks() {
   placeCompactedRetries();
-  for (const [id, task] of tasks) {
-    const entryId = taskEntries.get(id);
-    if (!entryId) continue;
-    const record = compactions.find((record) => record.compactedMessageIds?.includes(entryId));
+  const tails = new Map();
+  for (const [id, binding] of taskEntries) {
+    const task = tasks.get(id);
+    if (!task) continue;
+    const record = compactions.find((record) => record.compactedMessageIds?.includes(binding.entryId));
     const container = compactionNodes.get(record?.id)?.querySelector(".compaction-tasks");
-    if (container && task.trigger.parentElement !== container) container.append(task.trigger);
+    if (container) {
+      if (task.trigger.parentElement !== container) container.append(task.trigger);
+      continue;
+    }
+    // 工具 ID 定位委派所在执行段，入口留在折叠区外；同批任务沿返回顺序排列。
+    let anchor = toolItems.get(`main:${binding.toolCallId}`)?.container;
+    while (anchor?.parentElement && anchor.parentElement !== $("output")) {
+      if (anchor.parentElement.classList.contains("call-list") && anchor.nextElementSibling) {
+        const group = anchor.parentElement.parentElement;
+        const tail = createCallGroup();
+        while (anchor.nextElementSibling) tail.lastElementChild.append(anchor.nextElementSibling);
+        group.after(tail);
+        scheduleCallGroups();
+      }
+      anchor = anchor.parentElement;
+    }
+    if (anchor?.parentElement !== $("output")) continue;
+    const tail = tails.get(anchor) || anchor;
+    if (tail.nextElementSibling !== task.trigger) tail.after(task.trigger);
+    tails.set(anchor, task.trigger);
   }
 }
 function compactionCard(data) {
@@ -1505,7 +1527,7 @@ function renderQueue(queue = {}) {
   $("message-queue").hidden = !$("message-queue").children.length;
 }
 // 异常停止（Esc 停止、终态错误、重试用尽）后在会话流末尾给一个手动重试入口。
-// 只对主代理，子代理由主代理续跑带动；判定与 src/retry.js canResume 同步（只认异常的正面证据）。
+// 主代理判定与 src/retry.js canResume 同步；子代理由 task.state.canRetry 控制独立入口。
 const canResumeMessage = (message) =>
   !!message && (message.role !== "assistant" || ["error", "aborted", "length", "toolUse"].includes(message.stopReason));
 let retryPrompt;
@@ -1741,6 +1763,25 @@ function event(message) {
         systemPrompt: node.querySelector(".task-system-prompt pre"),
         failure: node.querySelector(".task-error"),
       };
+      const retryButton = document.createElement("button");
+      retryButton.type = "button";
+      retryButton.className = "secondary";
+      retryButton.textContent = "↻ 重试";
+      retryButton.title = "接着上次中断的地方继续，不重新委派任务";
+      retryButton.hidden = true;
+      task.retryButton = retryButton;
+      const taskSessionId = sessionId;
+      retryButton.onclick = async () => {
+        if (task.retrying || !connected || changing || sessionMissing) return;
+        task.retrying = retryButton.disabled = true;
+        try { await request("task.retry", { sessionId: taskSessionId, taskId: message.taskId }); }
+        catch (e) { if (sessionId === taskSessionId) error(e); }
+        finally {
+          task.retrying = false;
+          retryButton.disabled = !connected || changing || sessionMissing;
+        }
+      };
+      task.failure.after(retryButton);
       trigger.onclick = () => {
         activeTask = task;
         node.showModal();
@@ -1777,6 +1818,8 @@ function event(message) {
     item.description.textContent = data.task;
     item.failure.textContent = data.error || "";
     item.failure.hidden = !data.error;
+    item.retryButton.hidden = !data.canRetry;
+    item.retryButton.disabled = !connected || changing || sessionMissing || !!item.retrying;
     updateTaskRuntime(item, data.runtime);
     placeCompactedTasks();
     renderTaskRuns();
@@ -1854,6 +1897,7 @@ function snapshot(state) {
     restoreRetries(index);
     if (message.role === "toolResult") {
       if (toolItems.has(`${agentId}:${message.toolCallId}`)) toolState(agentId, { ...message, phase: "end" });
+      if (agentId === "main") placeCompactedTasks();
     }
     if (["assistant", "user"].includes(message.role)) {
       if (agentId === "main" && entryId && folded.has(entryId)) {

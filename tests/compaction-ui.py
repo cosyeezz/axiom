@@ -16,12 +16,12 @@ with sync_playwright() as p:
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     for width in [1440, 390, 320]:
         page.set_viewport_size({"width": width, "height": 1000 if width == 1440 else 844})
-        page.goto("http://127.0.0.1:4321")
+        page.goto("http://127.0.0.1:4321/#session=ui-compaction")
         page.wait_for_selector("#workspace:not([hidden])")
         page.wait_for_timeout(150)
-        page.evaluate('localStorage.setItem("axiom.session", "ui-compaction")')
-        page.reload()
         expect(page.locator("#session-title")).to_have_text("压缩验收 · 摘要分层与后台进度")
+        if width < 768 and page.locator("#mobile-expand").get_attribute("aria-expanded") != "true":
+            page.locator("#mobile-expand").click()
         progress = page.locator("#compaction-progress")
         expect(progress).to_be_visible()
         assert progress.get_attribute("role") == "status"

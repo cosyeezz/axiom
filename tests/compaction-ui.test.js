@@ -31,7 +31,7 @@ async function page() {
     const exports = [...module.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
     w.eval(`Object.assign(window, (() => { ${module.replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`);
   }
-  w.eval(`${picker}\n${source}\nconnected = true;`);
+  w.eval(`${picker}\n${source}\nconnected = true; window.disconnectForTest = () => { connected = false; controls(); };`);
   const state = { sessionId: "activity", title: "Activity", cwd: "C:/work", status: "idle", config: { model: "test/model", thinking: "off", levels: ["off"], skills: [] }, messages: [], tasks: [], live: {}, tools: {} };
   const restore = (changes = {}) => w.snapshot({ ...state, ...changes });
   const emit = (type, data, agentId = "main") => w.event({ sessionId: state.sessionId, type, data, agentId });
@@ -122,3 +122,65 @@ test("压缩卡片序号与 progress 标题描述，旧数据回退现文案", a
   } finally { dom.window.close(); }
 });
 
+
+test("委派入口在原位置恢复，同批顺序、迟到状态及重复分组不漂移", async () => {
+  const { dom, w, emit, restore, paint, output } = await page();
+  const messages = [
+    { agentId: "main", entryId: "u", message: { role: "user", content: "开始" } },
+    { agentId: "main", entryId: "d", message: { role: "assistant", content: [{ type: "text", text: "现在委派" }, { type: "toolCall", id: "delegate-call", name: "functions.delegate", arguments: {} }] } },
+    { agentId: "main", entryId: "r", message: { role: "toolResult", toolName: "functions.delegate", toolCallId: "delegate-call", content: [{ type: "text", text: '{"taskIds":["a","b"]}' }] } },
+    { agentId: "main", entryId: "answer", message: { role: "assistant", content: [{ type: "text", text: "最终回答" }] } },
+  ];
+  const tasks = ["b", "a"].map(id => ({ id, task: id, status: "completed" }));
+  const check = () => {
+    paint(); paint(); paint();
+    const cards = [...output.querySelectorAll(":scope > .task-card")];
+    assert.deepEqual(cards.map(node => node.getAttribute("aria-controls")), ["task-a", "task-b"]);
+    const answer = [...output.querySelectorAll(".message")].find(node => node.textContent.includes("最终回答"));
+    assert(cards[1].compareDocumentPosition(answer) & 4, "卡片在最终回答前");
+    assert(cards[0].previousElementSibling.classList.contains("call-group"), "入口在委派执行段外，折叠仍可见");
+    assert.equal(cards[0].nextElementSibling, cards[1]);
+  };
+  try {
+    for (let i = 0; i < 2; i++) { restore({ messages, tasks }); check(); }
+    const read = { agentId: "main", entryId: "read", message: { role: "assistant", content: [{ type: "toolCall", id: "later-read", name: "read", arguments: { path: "later.txt" } }] } };
+    restore({ messages: [...messages.slice(0, 3), read, messages[3]] });
+    paint(); paint();
+    for (const task of tasks) w.event({ sessionId: "activity", type: "task.state", taskId: task.id, data: task });
+    check();
+    const laterRead = [...output.querySelectorAll(".tool-record")].find(node => node.textContent.includes("later.txt"));
+    assert(output.querySelector('[aria-controls="task-b"]').compareDocumentPosition(laterRead) & 4, "迟到任务也应在后续工具之前");
+    restore();
+    for (const entry of messages) {
+      emit("agent.message.end", { message: entry.message, entryId: entry.entryId });
+      if (entry.entryId === "d") for (const task of tasks)
+        w.event({ sessionId: "activity", type: "task.state", taskId: task.id, data: task });
+      paint();
+    }
+    check();
+  } finally { dom.window.close(); }
+});
+
+test("子任务手动重试绑定原会话和任务，禁止重复点击并随状态收起", async () => {
+  const { dom, w, restore } = await page();
+  try {
+    const task = { id: "child", task: "继续检查", status: "failed", canRetry: true };
+    restore({ tasks: [task] });
+    const button = w.document.querySelector("#task-child .task-error + button");
+    assert.equal(button.hidden, false);
+    w.eval('window.sent = []; request = (type, data) => { window.sent.push({ type, ...data }); return new Promise(resolve => { window.finishRetry = resolve; }); };');
+    button.click(); button.click();
+    assert.equal(w.sent.length, 1);
+    assert.equal(w.sent[0].type, "task.retry");
+    assert.equal(w.sent[0].sessionId, "activity");
+    assert.equal(w.sent[0].taskId, "child");
+    assert.equal(button.disabled, true);
+    w.event({ sessionId: "activity", type: "task.state", taskId: task.id, data: { ...task, status: "running", canRetry: false } });
+    assert.equal(button.hidden, true);
+    w.finishRetry({ accepted: true });
+    await Promise.resolve();
+    w.event({ sessionId: "activity", type: "task.state", taskId: task.id, data: task });
+    w.disconnectForTest();
+    assert.equal(button.disabled, true);
+  } finally { dom.window.close(); }
+});

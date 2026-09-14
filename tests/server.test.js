@@ -4,6 +4,7 @@ import { once } from "node:events";
 import { WebSocket } from "ws";
 import { Sessions } from "../src/sessions.js";
 import { createServerApp } from "../src/server.js";
+import { command } from "../src/protocol.js";
 
 test("local connection without token, foreign origin rejection, recovery and shutdown", async () => {
   let finish,
@@ -94,6 +95,18 @@ test("local connection without token, foreign origin rejection, recovery and shu
     assert.equal(created.ok, true);
     assert.deepEqual(created.data.config.capabilitySelection, empty);
     const sessionId = created.data.sessionId;
+    const retryTask = sessions.retryTask;
+    sessions.retryTask = async (id, taskId) => {
+      assert.equal(id, sessionId);
+      assert.equal(taskId, "child");
+      return { taskId, accepted: true };
+    };
+    try {
+      assert.throws(() => command.parse({ id: "task-retry-invalid", type: "task.retry", sessionId }));
+      const retried = await request(ws, { id: "task-retry", type: "task.retry", sessionId, taskId: "child" });
+      assert.equal(retried.ok, true);
+      assert.deepEqual(retried.data, { taskId: "child", accepted: true });
+    } finally { sessions.retryTask = retryTask; }
     assert.equal(
       (await request(ws, { id: "2", type: "prompt", sessionId, text: "go" }))
         .ok,

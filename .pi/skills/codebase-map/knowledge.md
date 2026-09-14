@@ -530,6 +530,12 @@
 - 修复：新增 `landedSessionFile(item)`（文件真实存在才返回路径，否则 null），落库与 `list()` 共用；前端本就按 null 渲染「发送首条消息后生成」，口径一致。
 - 防再犯：①**不要**放宽 `ensureLoaded()` 的严格语义去自动创建空 JSONL——`tests/session-migration.test.js` 的 ghost 用例要求「不创建空 JSONL、逐字节保留库记录」，这是为同步盘/外置盘临时不可用时能等文件回来；②判断“能否入库”只看文件在不在磁盘上，不要用“有无任务/摘要”之类启发式去猜会话是否为空，猜错等于静默丢数据；③修复前已写坏的库记录没有安全判据可自动清理，只能让用户删该会话。
 
+### 2026-09-14 子代理入口与恢复必须各有稳定关联
+- 症状：任务入口堆在最终回答后；重启只有最终结果，没有子代理过程且不能续跑。
+- 根因：入口未按 delegate 的 toolCallId 归位，snapshot 兜底追加到末尾；子代理未传 sessionDir 使用 inMemory；正常停机与用户取消共用 cancel。
+- 修复：public/app.js 严格按委派工具归位并拆分折叠区；sessions.js 为子任务配置独立 JSONL 目录并按 task ID 重建消息；tasks.js 区分 interrupt/cancel，重试沿用原 ID 与上下文。
+- 防再犯：惰性 sessionFile 路径与 historySaved 分开保存，已落盘文件缺失时不重新执行；完成通知保存 resultId 快照，重试后不能将新结果标成旧通知已送达；没有委派锚点不猜上一条主消息。
+
 ### 2026-09-14 前端启动链的单点失败会放大成整页断连
 - 症状：一条坏会话（历史文件缺失/目录被删）让页面永远「连接已断开，正在自动重连」，其余会话也进不去；删掉那条库记录后立刻恢复。
 - 根因：`public/app.js` 启动时（URL 无 sessionId）只 attach `sessions.list()` 的第一条且没有 try/catch；`session.attach` 抛错冒到外层 catch → `error()` + `ws.close()` + `scheduleReconnect()`，重连再走同一段，形成死循环（退避至 15s）。`sessionId` 分支与 `switchSession()` 有降级，唯独这条漏了。
