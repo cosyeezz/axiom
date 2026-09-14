@@ -162,7 +162,25 @@ test("question: model blocks until reply, reply becomes next-turn tool result, a
           assert.deepEqual(questions2.snapshot(), []);
           assert.equal(requests.length, 1, 'abort does not produce a follow-up request');
 
-          // 再来一发：能正常 retry；这里只确认 dispose 不挂。
+          assert.equal(agent2.canReask(), true);
+          const again = agent2.reask();
+          await assert.rejects(agent2.reask());
+          assert.equal(requests.length, 1, 'reask opens original questions without a model request');
+          assert.equal(questions2.snapshot().length, 1);
+          await agent2.abort(); await again;
+          assert.equal(agent2.canReask(), true, 'repeated cancellation remains recoverable');
+          script.push({ text: '已收到：' });
+          const finalAsk = agent2.reask();
+          const reopened = questions2.snapshot()[0];
+          assert.deepEqual(reopened.questions, questionArgs.questions);
+          assert.notEqual(reopened.toolCallId, 'call_q1');
+          questions2.reply(reopened.toolCallId, [['A'], ['广']]);
+          await finalAsk;
+          assert.equal(requests.length, 2, 'only the answer triggers a model request');
+          assert.equal(agent2.canReask(), false);
+          const history = requests[1];
+          const answer = history.find(m => m.role === 'tool' && m.tool_call_id === reopened.toolCallId);
+          assert.deepEqual(JSON.parse(textOf(answer)).answers, [['A'], ['广']]);
         } finally {
           await agent2.dispose();
         }

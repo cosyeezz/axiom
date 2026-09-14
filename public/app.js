@@ -57,7 +57,7 @@ const modelManager = initModelManager({ root: $("models-panel"), request, onSave
 const serviceUi = initServiceSettings({ request, isReady: () => connected });
 let compactions = [], mainItems = [];
 // 手动重试靠主代理末尾消息判定：与服务端 canResume 同一条规则，避免两边判断不一致。
-let lastMainMessage = null, interrupted = false;
+let lastMainMessage = null, interrupted = false, canReask = false;
 const compactionNodes = new Map(), taskEntries = new Map();
 let images = [], imageLoading = false;
 let completionVersion = 0, completionToken, completionEntries = [], completionIndex = 0;
@@ -1643,7 +1643,11 @@ function syncRetryPrompt() {
     };
     retryPrompt.append(hint, button);
     retryPrompt.button = button;
+    retryPrompt.hint = hint;
   }
+  retryPrompt.hint.textContent = canReask ? "提问已取消，可以重新打开原问题。" : "上一次请求未正常结束。";
+  retryPrompt.button.textContent = canReask ? "↻ 重新提问" : "↻ 重试";
+  retryPrompt.button.title = canReask ? "直接重新调用提问工具，回答后继续原任务" : "接着上次中断的地方继续，不重发你的输入";
   retryPrompt.button.disabled = false;
   if ($("output").lastElementChild === retryPrompt) return;
   $("output").querySelector(".empty")?.remove();
@@ -1782,13 +1786,14 @@ function event(message) {
     applyElapsed(data);
     void refreshSessions().catch(error);
     busy = data.status !== "idle";
+    canReask = !!data.canReask;
     if (data.status === "running") waiting("main");
     else stopActivity("main", data.status === "cancelling" ? "正在停止…" : "已结束");
     // 正在看的会话跑完就算已读；否则切走后会被错标成「待查看」。
     if (data.status === "idle") markSessionSeen(sessionId);
     // 停稳了才判断能不能续：message.end 总先于 idle 到达，此时 lastMainMessage 已是本轮结果。
     if (data.status === "running") interrupted = false;
-    else if (data.status === "idle") interrupted = canResumeMessage(lastMainMessage);
+    else if (data.status === "idle") interrupted = canReask || canResumeMessage(lastMainMessage);
     controls();
   }
   if (type === "agent.message.start" && data.message.role === "assistant") {
@@ -1963,7 +1968,8 @@ function snapshot(state) {
   updatePageTitle();
   busy = state.status !== "idle";
   lastMainMessage = state.messages.findLast((entry) => entry.agentId === "main")?.message || null;
-  interrupted = !busy && canResumeMessage(lastMainMessage);
+  canReask = !!state.canReask;
+  interrupted = !busy && (canReask || canResumeMessage(lastMainMessage));
   $("output").replaceChildren();
   live.clear();
   toolItems.clear();

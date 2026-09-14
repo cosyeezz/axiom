@@ -152,6 +152,17 @@ test("retry prompt sits at the end of the stream only when an interrupted main t
     assert.equal(request.sessionId, "retry");
     assert.equal(Object.keys(request).sort().join(), "id,sessionId,type");
 
+    // 取消提问使用同一受保护的恢复命令，但文案和服务端行为区别于普通重试。
+    emit("session.state", { status: "idle", canReask: true });
+    assert.equal(prompt(output).querySelector("button").textContent, "↻ 重新提问");
+    assert.match(prompt(output).textContent, /提问已取消/);
+    restore({ canReask: true });
+    assert.equal(prompt(output).querySelector("button").textContent, "↻ 重新提问", "刷新恢复入口");
+    prompt(output).querySelector("button").click();
+    assert.equal(sent.at(-1).type, "session.retry");
+    restore({ messages: [{ message: message("assistant", "aborted"), agentId: "main" }] });
+    assert.equal(prompt(output).querySelector("button").textContent, "↻ 重试", "普通中断不冒用重新提问");
+
     // 服务端转 running → 卡片收走；再正常收尾 → 不回来。
     emit("session.state", { status: "running", runId: "r2" });
     paint();

@@ -1111,6 +1111,7 @@ export class Sessions {
       live: item.live,
       tools: item.tools,
       questions: item.questions.snapshot(),
+      canReask: item.status === 'idle' && !!item.agent.canReask?.(),
       tasks: item.tasks.snapshot(),
     });
   }
@@ -1180,7 +1181,7 @@ export class Sessions {
           item.status = "idle";
           item.emit({
             type: "session.state",
-            data: { status: "idle", runId: item.runId },
+            data: { status: "idle", runId: item.runId, canReask: !!item.agent.canReask?.() },
           });
           this.scheduleTaskNotifications(item);
         }
@@ -1194,6 +1195,7 @@ export class Sessions {
   async retry(id) {
     const item = this.get(id).loaded ? this.get(id) : await this.ensureLoaded(id);
     if (item.status !== "idle" || item.configuring || item.closing) throw new Error("Session is busy");
+    if (item.agent.canReask?.()) return this.startRun(item, () => item.agent.reask());
     if (!item.agent.resumable()) throw new Error("没有可重试的请求：上一次运行已正常结束");
     return this.startRun(item, () => item.agent.resume());
   }
@@ -1298,7 +1300,7 @@ export class Sessions {
       } finally {
         item.status = "idle";
         item.cancelling = undefined;
-        item.emit({ type: "session.state", data: { status: "idle" } });
+        item.emit({ type: "session.state", data: { status: "idle", canReask: !!item.agent.canReask?.() } });
       }
     })();
     return item.cancelling;
