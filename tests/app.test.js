@@ -243,7 +243,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
               heldConfig = req;
               return;
             }
-            data = { ...config, subagentModel: req.subagentModel };
+            data = { ...states.find((s) => s.sessionId === req.sessionId).config,
+              ...Object.fromEntries(["model", "thinking", "subagentModel", "subagentThinking"].filter((key) => key in req).map((key) => [key, req[key]])) };
             states.find((s) => s.sessionId === req.sessionId).config = data;
             break;
           case "sessions.list":
@@ -632,6 +633,33 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("subagent-model").disabled, true);
     assert.equal($("composer").contains($("subagent-model")), false);
     assert.equal($("new").textContent.trim(), "＋ 新会话");
+    const mainThinking = $("thinking").value;
+    $("agent-role").value = "subagent";
+    $("agent-role").dispatchEvent(new window.Event("change"));
+    assert.equal($("model").value, "");
+    assert.equal($("model").disabled, true);
+    $("provider").value = "other";
+    $("provider").dispatchEvent(new window.Event("change"));
+    await settle();
+    assert.equal(states[0].config.subagentModel, "other/child");
+    assert.equal(states[0].config.model, "test/model");
+    $("thinking").value = "off";
+    $("thinking").dispatchEvent(new window.Event("change"));
+    await settle();
+    assert.equal(states[0].config.subagentThinking, "off");
+    assert.equal(states[0].config.thinking, mainThinking);
+    $("thinking").value = "";
+    $("thinking").dispatchEvent(new window.Event("change"));
+    await settle();
+    assert.equal(states[0].config.subagentThinking, null);
+    $("provider").value = "";
+    $("provider").dispatchEvent(new window.Event("change"));
+    await settle();
+    assert.equal(states[0].config.subagentModel, null);
+    $("agent-role").value = "main";
+    $("agent-role").dispatchEvent(new window.Event("change"));
+    assert.equal($("model").value, "test/model");
+    assert.equal($("thinking").value, mainThinking);
     for (const [id, name] of [
       ["C:\\Users\\user\\skills\\ponytail\\SKILL.md", "ponytail"],
       ["/home/user/node_modules/pi-web-access/index.ts", "pi-web-access"],

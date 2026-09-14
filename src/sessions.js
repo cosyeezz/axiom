@@ -1124,7 +1124,7 @@ export class Sessions {
   async configure(id, selection) {
     const item = await this.ensureLoaded(id);
     if (!["idle", "running"].includes(item.status) || item.configuring) throw new Error("Session is busy");
-    const { subagentModel = item.subagentModel, model, thinking } = selection;
+    const { subagentModel = item.subagentModel, subagentThinking = item.subagentThinking, model, thinking } = selection;
     if (
       subagentModel !== null &&
       !this.createAgent.catalog().some((m) => m.key === subagentModel)
@@ -1138,6 +1138,7 @@ export class Sessions {
       if (config.model !== previous?.model || config.thinking !== previous?.thinking)
         this.recentConfig = { model: config.model, thinking: config.thinking };
       item.subagentModel = subagentModel;
+      item.subagentThinking = subagentThinking;
       item.queueType = selection.queueType || item.queueType;
       await this.persist(item);
       return {

@@ -305,6 +305,7 @@ export const command = z.discriminatedUnion("type", [
       sessionId: id,
       model: id,
       subagentModel: id.nullable().optional(),
+      subagentThinking: thinking.unwrap().nullable().optional(),
       thinking,
       compaction: compaction.optional(),
       queueType: queueType.optional(),

@@ -266,6 +266,8 @@ function controls() {
   const unavailable = !connected || changing;
   for (const id of ["provider", "model", "thinking", "subagent-provider", "subagent-model"])
     $(id).disabled = unavailable;
+  $("agent-role").disabled = unavailable || !config;
+  $("model").disabled ||= $("agent-role").value === "subagent" && !$("provider").value;
   $("subagent-model").disabled ||= !$("subagent-provider").value;
   $("settings-feedback").textContent = unavailable
     ? (changing ? "正在保存或切换配置…" : "连接断开，暂时无法修改配置")
@@ -344,11 +346,21 @@ async function refreshModelCatalog() {
   }
 }
 function fillModels() {
-  options(
-    $("model"),
-    modelEntries($("provider").value),
-    config?.model,
-  );
+  const child = $("agent-role").value === "subagent";
+  options($("model"), child && !$("provider").value ? [["", "跟随主代理模型"]] : modelEntries($("provider").value),
+    child ? config?.subagentModel || "" : config?.model);
+}
+function renderAgentConfig() {
+  const child = $("agent-role").value === "subagent";
+  const key = child ? config.subagentModel : config.model;
+  const current = models.find((m) => m.key === key);
+  options($("provider"), [...(child ? [["", "跟随主代理"]] : []), ...providerEntries()], current?.provider || "");
+  fillModels();
+  if (key && !current) $("model").add(new Option(`${key}（当前不可选）`, key, true, true));
+  const levels = child ? (current?.levels || config.levels) : config.levels;
+  options($("thinking"), [...(child ? [["", "跟随主代理思考等级"]] : []), ...(levels || []).map((v) => [v, v])],
+    child ? config.subagentThinking || "" : config.thinking);
+  modelPicker.syncAll();
 }
 function fillSubagentModels() {
   const provider = $("subagent-provider").value;
@@ -420,23 +432,19 @@ function applyConfig(value) {
     models.find((m) => m.key === value.subagentModel)?.provider || "",
   );
   fillSubagentModels();
-  const currentModel = models.find((m) => m.key === value.model);
-  $("provider").value = currentModel?.provider || "";
-  fillModels();
-  if (value.model && !currentModel) {
-    // 不让缺失/隐藏的历史模型静默落到第一个选项，后续改队列也必须保留原选择。
-    $("model").add(new Option(`${value.model}（当前不可选）`, value.model, true, true));
-  }
-  options(
-    $("thinking"),
-    value.levels.map((v) => [v, v]),
-    value.thinking,
-  );
+  renderAgentConfig();
 }
 // 配置请求携带发起时的会话身份与序号；切换会话或重连后，迟到的回执（成功或失败）一律丢弃，不污染当前会话。
 let configureSeq = 0;
-async function configure(thinking) {
+async function configure(thinking, source = "composer") {
   const target = sessionId, seq = ++configureSeq;
+  const child = $("agent-role").value === "subagent";
+  const selection = source === "composer"
+    ? child
+      ? { model: config.model, subagentModel: $("model").value || null,
+          subagentThinking: thinking !== undefined ? thinking || null : config.subagentThinking ?? null }
+      : { model: $("model").value, ...(thinking ? { thinking } : {}) }
+    : { model: config.model, ...(source === "subagent" ? { subagentModel: $("subagent-model").value || null } : {}) };
   let failure;
   changing = true;
   controls();
@@ -444,10 +452,8 @@ async function configure(thinking) {
   try {
     const value = await request("session.configure", {
       sessionId: target,
-      model: $("model").value,
+      ...selection,
       queueType: $("queue-type").value,
-      subagentModel: $("subagent-model").value || null,
-      ...(thinking ? { thinking } : {}),
     });
     if (sessionId !== target || seq !== configureSeq) return;
     applyConfig(value);
@@ -2244,6 +2250,7 @@ function scheduleReconnect() {
 let importDir = "";
 controls();
 $("login").requestSubmit();
+$("agent-role").onchange = () => { if (config) renderAgentConfig(); controls(); };
 $("provider").onchange = () => {
   fillModels();
   void configure();
@@ -2253,12 +2260,12 @@ $("model").onchange = () => {
 };
 $("subagent-provider").onchange = () => {
   fillSubagentModels();
-  void configure();
+  void configure(undefined, "subagent");
 };
 $("subagent-model").onchange = () => {
-  void configure();
+  void configure(undefined, "subagent");
 };
-$("queue-type").onchange = () => { void configure(); };
+$("queue-type").onchange = () => { void configure(undefined, "queue"); };
 $("thinking").onchange = () => {
   void configure($("thinking").value);
 };

@@ -1181,3 +1181,9 @@
 - public/app.js 使用后端 canReask 区分重新提问/重试；src/pi.js 只识别末尾取消的 question，保留旧历史并追加新编号的同题调用，直接执行工具，回答后 continue。src/sessions.js 复用 session.retry 路由及忙碌保护。
 - 不回退历史、不重跑其它工具、不要求模型重生成。兼容 SDK 取消后追加空 error assistant。
 - tests/pi-question.test.js 真实 SDK 覆盖无模型请求重开、重复点击、反复取消、答案续传；tests/manual-retry.test.js 覆盖入口及快照。README/索引同步。npm test 399通过、2跳过。
+
+## 2026-09-14 当前会话代理角色选择
+
+- 原因：保留讨论上下文时也能调整后续子代理模型和思考等级。
+- 内容：输入区增加角色下拉并复用现有选择器；session.configure 支持 nullable subagentThinking；保持默认配置及已启动任务不变。沿用现有暗色表面、细边框、圆角与键盘交互，不引入样式或依赖。
+- 涉及：public/app.js、public/index.html、src/protocol.js、src/sessions.js、tests/app.test.js、tests/config.test.js、README.md、devlog.md、代码索引。
