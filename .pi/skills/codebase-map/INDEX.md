@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/14 13:07:42）
+# Axiom 多级代码索引（生成于 2026/9/14 13:12:21）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -137,7 +137,7 @@
 | tests/session-model-restore.test.js | 61 | node --test 测试（npm test） | stubFactory, cleanup |
 | tests/session-persistence.test.js | 318 | node --test 测试（npm test） | factory |
 | tests/session-sidebar-ui.py | 112 | node --test 测试（npm test） | - |
-| tests/session-store.test.js | 543 | node --test 测试（npm test） | withStore, fullSaved, LEGACY_DDL |
+| tests/session-store.test.js | 584 | node --test 测试（npm test） | withStore, fullSaved, LEGACY_DDL |
 | tests/smoke.js | 67 | node --test 测试（npm test） | TIMEOUT, sessions |
 | tests/sqlite-benchmark.mjs | 914 | node --test 测试（npm test） | parseArgs, args, scriptPath, repoDir |
 | tests/stream-renderer.test.js | 116 | node --test 测试（npm test） | - |
@@ -1800,7 +1800,7 @@
 |---|---|---|
 | factory | const | 10 |
 
-### tests/session-store.test.js（543 行） — node --test 测试（npm test）
+### tests/session-store.test.js（584 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
