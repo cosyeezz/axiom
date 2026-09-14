@@ -37,3 +37,61 @@ test('question UI keyboard, custom answers, reconnect, session isolation and sub
     assert.equal(root.hidden, true); assert.equal(d.activeElement.id, 'prompt');
   } finally { w.close(); }
 });
+test('question UI: arrow keys switch tabs after a session round-trip', async () => {
+  const dom = new JSDOM('<button id="prompt">输入</button><section id="dock"></section>', { runScripts: 'outside-only' });
+  const w = dom.window, d = w.document;
+  w.eval(source + '\nwindow.makeQuestion = createQuestionUI;');
+  const root = d.querySelector('#dock');
+  const ui = w.makeQuestion({ root, reply: async () => {}, focusPrompt: () => d.querySelector('#prompt').focus() });
+  const request = { toolCallId: 'q', questions: [
+    { header: '方式', question: '选哪个？', options: [{ label: 'A' }, { label: 'B' }] },
+    { header: '功能', question: '需要什么？', options: [{ label: 'C' }], multiple: true },
+  ] };
+  const key = (k) => d.activeElement.dispatchEvent(new w.KeyboardEvent('keydown', { key: k, bubbles: true }));
+  try {
+    ui.show('s', []); ui.asked('s', request);
+    assert.match(d.activeElement.textContent, /^A/);
+    ui.show('other', []);
+    assert.equal(root.hidden, true);
+    ui.show('s', [request]);
+    assert.equal(root.hidden, false);
+    root.querySelectorAll('.question-tab')[1].click();
+    assert.equal(root.querySelector('h3').textContent, '需要什么？');
+    assert.match(d.activeElement.textContent, /^C/);
+    key('ArrowLeft');
+    assert.equal(root.querySelector('h3').textContent, '选哪个？');
+    assert.match(d.activeElement.textContent, /^A/);
+    key('ArrowRight');
+    assert.equal(root.querySelector('h3').textContent, '需要什么？');
+    assert.match(d.activeElement.textContent, /^C/);
+  } finally { w.close(); }
+});
+test('question UI: arrow keys switch tabs after setConnected round-trip', async () => {
+  const dom = new JSDOM('<button id="prompt">输入</button><section id="dock"></section>', { runScripts: 'outside-only' });
+  const w = dom.window, d = w.document;
+  w.eval(source + '\nwindow.makeQuestion = createQuestionUI;');
+  const root = d.querySelector('#dock');
+  const ui = w.makeQuestion({ root, reply: async () => {}, focusPrompt: () => d.querySelector('#prompt').focus() });
+  const request = { toolCallId: 'q', questions: [
+    { header: '方式', question: '选哪个？', options: [{ label: 'A' }, { label: 'B' }] },
+    { header: '功能', question: '需要什么？', options: [{ label: 'C' }], multiple: true },
+  ] };
+  const key = (k) => d.activeElement.dispatchEvent(new w.KeyboardEvent('keydown', { key: k, bubbles: true }));
+  try {
+    ui.show('s', []); ui.asked('s', request);
+    assert.equal(root.querySelector('.question-submit').disabled, true);
+    ui.setConnected(false);
+    assert.equal(root.querySelector('.question-submit').disabled, true);
+    ui.setConnected(true);
+    assert.equal(root.querySelector('.question-submit').disabled, true);
+    root.querySelectorAll('.question-tab')[0].click();
+    assert.equal(root.querySelector('h3').textContent, '选哪个？');
+    assert.match(d.activeElement.textContent, /^A/);
+    key('ArrowRight');
+    assert.equal(root.querySelector('h3').textContent, '需要什么？');
+    assert.match(d.activeElement.textContent, /^C/);
+    key('ArrowLeft');
+    assert.equal(root.querySelector('h3').textContent, '选哪个？');
+    assert.match(d.activeElement.textContent, /^A/);
+  } finally { w.close(); }
+});
