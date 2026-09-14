@@ -1463,6 +1463,7 @@ function retryChipList(labelText, initial) {
   // 只打字没回车就离开（失焦、关面板）时浏览器发的 change 先到 input 再冒到 form：
   // 这里补提交，form 读到的状态已含这条关键词，不静默丢字。派发出去的合成 change 回到这里是空操作。
   input.onchange = () => { commit(); };
+  render();
   wrap.append(label, chips, input);
   return { node: wrap, values: () => [...state] };
 }

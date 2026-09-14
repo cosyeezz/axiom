@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-14 重试词表重新打开为空的二次排查
+
+- 用户在 macOS/Windows 继续反馈回车消失、关闭配置再打开为空。上次只验证事件与保存请求，没有验证重新加载后的标签，结论不完整。
+- 根因：`retryChipList` 从 initial 恢复 state，却漏调首次 render；已保存词不可见，再输入同词被去重并清空输入，视觉上像再次丢失。最小修复是在返回组件前调用 render，增删与后端语义不变。
+- 实机证据：只读请求 Windows 4319 的 /app.js，仍返回 add() 旧实现、没有 commit/notify；运行中静态资源与磁盘代码不同，不能用 git HEAD 代表服务已部署。未擅自重启正式服务。
+- 验证：tests/app.test.js 补关闭重开和重复输入可见性；撤掉这行修复后断言实际 []、期望 [stream error]，恢复后通过。tests/retry-settings-ui.py 在隔离 Chromium + 真实 HTTP/WS/Sessions 预览验证 Enter、保存回执、重开、重复、整页刷新和删除，无模型请求、不碰用户配置。
+- 涉及文件：public/app.js、tests/app.test.js、tests/retry-settings-ui.py、README.md、devlog.md、codebase-map 索引与知识库。
+
 ## 2026-09-14 自动重试词表配置不保存
 
 - 现象：「设置 → 默认新会话设置」里的自动重试白/黑名单，输入关键词回车后看着加上了，但关面板再打开就空了，配置也不生效。

@@ -1721,6 +1721,15 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     await settle();
     assert.deepEqual(lastDefaults.retry, { retryable: ["stream error"], nonRetryable: [] });
 
+    // 保存回执不等于重新打开可见：加载已有词表必须首屏渲染，重复回车也不能让它隐形。
+    $("settings").close();
+    $("open-settings").click();
+    await settle();
+    assert.deepEqual([...$("create-retry").querySelectorAll(".retry-chip > span")].map((node) => node.textContent), ["stream error"]);
+    typeKeyword($("create-retry").querySelector("input"), "STREAM ERROR");
+    await settle();
+    assert.deepEqual([...$("create-retry").querySelectorAll(".retry-chip > span")].map((node) => node.textContent), ["stream error"], "重复输入已有词后标签仍可见");
+
     // 预设保存：压缩配置随 selection 保存，保存预设不再直接创建会话。
     $("settings").close();
     $("custom-new").click();
