@@ -1,30 +1,37 @@
-.question-dock { margin-bottom: 12px; padding: 16px; border: 1px solid #34343a; border-radius: 8px; background: #0f1011; color: #f7f8f8; max-height: min(65vh, 600px); overflow: auto; }
-.question-dock[hidden] { display: none; }
-.question-heading { font-size: 12px; color: #8a8f98; margin-bottom: 10px; }
-.question-tabs { display: flex; gap: 4px; overflow-x: auto; margin-bottom: 14px; }
-.question-tabs[hidden] { display: none; }
-.question-tab { flex: 0 0 auto; padding: 6px 10px; background: transparent; border: 1px solid transparent; color: #8a8f98; border-radius: 4px; font: inherit; font-size: 12px; }
-.question-tab[aria-selected="true"] { background: #141516; border-color: #5e6ad2; color: #f7f8f8; }
-.question-panel h3 { margin: 0 0 6px; font-size: 15px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
-.question-description { color: #8a8f98; font-size: 13px; line-height: 1.6; margin: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.question-options { display: grid; gap: 6px; }
-.question-choice { display: flex; width: 100%; align-items: flex-start; gap: 10px; text-align: left; padding: 10px 12px; background: #141516; color: #f7f8f8; border: 1px solid #34343a; border-radius: 6px; font: inherit; }
-.question-choice:hover { background: #18191a; }
-.question-choice[aria-checked="true"] { border-color: #5e6ad2; background: #18191a; }
-.question-mark { flex: 0 0 16px; height: 16px; border: 1px solid #62666d; border-radius: 3px; margin-top: 2px; text-align: center; font-size: 12px; line-height: 14px; }
+.question-dock { margin-bottom: 8px; padding: 12px; border: 1px solid var(--line, #34343a); border-radius: 8px; background: var(--surface, #0f1011); color: var(--ink, #f7f8f8); }
+.question-dock[hidden], .question-tabs[hidden] { display: none; }
+.question-heading { font-size: 12px; color: var(--muted, #8a8f98); margin-bottom: 8px; }
+.question-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--line, #34343a); }
+.question-tab { flex: 0 1 auto; min-height: 32px; padding: 4px 8px; background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--muted, #8a8f98); border-radius: 0; font: inherit; font-size: 12px; }
+.question-tab[aria-selected="true"] { border-bottom-color: #5e6ad2; color: var(--ink, #f7f8f8); }
+.question-panel { box-sizing: border-box; }
+.question-panel h3 { margin: 0 0 4px; font-size: 14px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.question-description { color: var(--muted, #8a8f98); font-size: 12px; line-height: 1.5; margin: 0 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.question-options { display: grid; gap: 2px; }
+.question-choice { display: flex; width: 100%; min-height: 32px; align-items: flex-start; gap: 8px; text-align: left; padding: 6px 8px; background: transparent; color: var(--ink, #f7f8f8); border: 1px solid transparent; border-radius: 4px; font: inherit; }
+.question-choice:hover { background: var(--hover, #18191a); }
+.question-choice[aria-checked="true"] { background: var(--raised, #18191a); }
+.question-mark { flex: 0 0 14px; height: 14px; border: 1px solid var(--muted, #62666d); border-radius: 3px; margin-top: 2px; text-align: center; font-size: 11px; line-height: 12px; }
 .question-choice[role="radio"] .question-mark { border-radius: 50%; }
-.question-choice[aria-checked="true"] .question-mark { background: #5e6ad2; border-color: #5e6ad2; }
-.question-copy { display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
+.question-choice[aria-checked="true"] .question-mark { background: #5e6ad2; border-color: #5e6ad2; color: white; }
+.question-copy { min-width: 0; overflow-wrap: anywhere; line-height: 1.5; }
 .question-label { font-size: 13px; }
-.question-option-description { color: #8a8f98; font-size: 12px; line-height: 1.5; }
-.question-custom { box-sizing: border-box; width: 100%; margin-top: 8px; padding: 8px 10px; resize: vertical; background: #0f1011; border: 1px solid #34343a; border-radius: 6px; color: #f7f8f8; font: inherit; font-size: 13px; }
-.question-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
-.question-progress, .question-help { font-size: 11px; color: #8a8f98; }
-.question-help { margin-top: 8px; }
+.question-option-description { color: var(--muted, #8a8f98); font-size: 12px; margin-left: 8px; }
+.question-custom { box-sizing: border-box; width: 100%; min-height: 32px; margin-top: 6px; padding: 6px 8px; resize: vertical; background: transparent; border: 1px solid var(--line, #34343a); border-radius: 4px; color: var(--ink, #f7f8f8); font: inherit; font-size: 12px; }
+.question-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; }
+.question-progress, .question-help { font-size: 11px; color: var(--muted, #8a8f98); }
+.question-help { margin-top: 4px; }
+.question-submit { min-height: 32px; border: 0; background: #5e6ad2; color: white; padding: 6px 12px; border-radius: 6px; font: inherit; font-size: 12px; flex-shrink: 0; }
 .question-submit:hover:not(:disabled) { background: #828fff; }
-.question-tab { min-height: 36px; }
-.question-submit { min-height: 40px; border: 1px solid #5e6ad2; background: #5e6ad2; color: white; padding: 8px 12px; border-radius: 6px; font: inherit; font-size: 12px; flex-shrink: 0; }
 .question-dock button:disabled, .question-custom:disabled { opacity: .5; cursor: not-allowed; }
-.question-dock :focus-visible { outline: 2px solid #5e6ad2; outline-offset: 2px; }
-.question-error { color: #ef8b8b; font-size: 12px; margin: 8px 0 0; }
-@media (max-width: 600px) { .question-dock { padding: 12px; max-height: 55dvh; } .question-help { display: none; } .question-tab, .question-choice, .question-submit { min-height: 44px; } }
+.question-dock :focus-visible { outline: 2px solid #5e6ad2; outline-offset: -2px; }
+.question-error { color: var(--danger, #ef8b8b); font-size: 12px; margin: 8px 0 0; }
+/* 长题只使用输入区这一层滚动，不在答题卡中再套滚动条。 */
+.composer-wrap:has(.question-dock:not([hidden])) { max-height: 75dvh; overflow-y: auto; scrollbar-width: none; }
+.composer-wrap:has(.question-dock:not([hidden]))::-webkit-scrollbar { display: none; }
+@media (max-width: 700px) {
+  .shell:not(.mobile-expanded) .composer-wrap > #question-dock:not([hidden]) { display: block; }
+  .question-dock { padding: 8px; }
+  .question-help { display: none; }
+  .question-tab, .question-choice, .question-submit { min-height: 44px; }
+}
