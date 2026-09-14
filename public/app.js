@@ -1412,6 +1412,8 @@ function compactionEditor(initial, mainModel) {
 }
 // 重试错误词编辑器：两组 chip 列表（白名单/黑名单），字符串子串匹配、大小写不敏感。
 // 回车提交、重复（不区分大小写）拒收、Backspace 空输入时删除末尾、每条 chip × 可删。
+// 默认配置面板靠 form 的 change 冒泡自动保存：chip 增删是脚本改状态，浏览器不会自己发 change
+// （Enter 上 preventDefault 连隐式提交也没有，且清空 input 会重置脏值标记），故每次改动手动派发。
 function retryChipList(labelText, initial) {
   const state = [...initial];
   const wrap = document.createElement("div");
@@ -1433,31 +1435,34 @@ function retryChipList(labelText, initial) {
       remove.type = "button";
       remove.textContent = "×";
       remove.setAttribute("aria-label", `删除 ${value}`);
-      remove.onclick = () => { state.splice(index, 1); render(); input.focus(); };
+      remove.onclick = () => { state.splice(index, 1); render(); input.focus(); notify(); };
       chip.append(text, remove);
       return chip;
     }));
   };
-  const add = () => {
+  const notify = () => input.dispatchEvent(new Event("change", { bubbles: true }));
+  // 提交输入框里待定的关键词，返回是否真的改了状态（空值与重复只清输入框）。
+  const commit = () => {
     const value = input.value.trim();
-    if (!value) return;
-    if (state.some((existing) => existing.toLowerCase() === value.toLowerCase())) {
-      input.value = "";
-      return;
-    }
-    state.push(value);
     input.value = "";
+    if (!value || state.some((existing) => existing.toLowerCase() === value.toLowerCase())) return false;
+    state.push(value);
     render();
+    return true;
   };
   input.onkeydown = (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
-      add();
+      if (commit()) notify();
     } else if (event.key === "Backspace" && !input.value && state.length) {
       state.pop();
       render();
+      notify();
     }
   };
+  // 只打字没回车就离开（失焦、关面板）时浏览器发的 change 先到 input 再冒到 form：
+  // 这里补提交，form 读到的状态已含这条关键词，不静默丢字。派发出去的合成 change 回到这里是空操作。
+  input.onchange = () => { commit(); };
   wrap.append(label, chips, input);
   return { node: wrap, values: () => [...state] };
 }

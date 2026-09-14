@@ -1408,7 +1408,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     tasks: [],
     compactions: [],
   };
-  let defaults = { compaction: { ...compactionDefaults, tokenThreshold: 50000 }, model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
+  let defaults = { compaction: { ...compactionDefaults, tokenThreshold: 50000 }, retry: null, model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
   let lastDefaults, lastCreation, lastPresetSave;
   const requests = [];
   const sockets = [];
@@ -1686,6 +1686,40 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     assert.match($("create-feedback").textContent, /至少设置一个触发阈值/);
     assert.equal(lastDefaults.compaction.tokenThreshold, 60000, "invalid defaults are not saved");
     assert.match($("defaults-preview").textContent, /自动压缩 · 未设阈值 触发 · 保留最近 20,000 tokens/);
+
+    // 自动重试词表：chip 增删是脚本改状态，必须自己冒泡 change 才能触发默认配置自动保存。
+    // 先恢复合法压缩阈值，否则提交在压缩校验处就返回，测不到重试词表。
+    defaultsEditor.querySelectorAll("input[type=number]")[0].value = "60000";
+    defaultsEditor.querySelectorAll("input[type=number]")[0].dispatchEvent(new window.Event("change", { bubbles: true }));
+    await settle();
+    const retryInputs = $("create-retry").querySelectorAll("input[type=text]");
+    const typeKeyword = (input, value, key = "Enter") => {
+      input.value = value;
+      input.dispatchEvent(new window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+    };
+    typeKeyword(retryInputs[0], "overloaded");
+    await settle();
+    assert.deepEqual(lastDefaults.retry, { retryable: ["overloaded"], nonRetryable: [] }, "回车添加关键词即保存");
+    assert.equal(retryInputs[0].value, "", "添加后清空输入框");
+    typeKeyword(retryInputs[1], "insufficient_quota");
+    await settle();
+    assert.deepEqual(lastDefaults.retry.nonRetryable, ["insufficient_quota"]);
+    assert.match($("defaults-preview").textContent, /自动重试 · 强制重试 1 条 · 强制不重试 1 条/);
+    typeKeyword(retryInputs[0], "OVERLOADED");
+    await settle();
+    assert.deepEqual(lastDefaults.retry.retryable, ["overloaded"], "重复词（不区分大小写）不入表");
+    // 只打字没回车就失焦：浏览器的 change 先到 input，补提交后 form 读到的已含这条词。
+    retryInputs[0].value = "stream error";
+    retryInputs[0].dispatchEvent(new window.Event("change", { bubbles: true }));
+    await settle();
+    assert.deepEqual(lastDefaults.retry.retryable, ["overloaded", "stream error"], "失焦不静默丢字");
+    // 删除：× 按钮与空输入 Backspace 同样触发保存。
+    $("create-retry").querySelector(".retry-chip button").click();
+    await settle();
+    assert.deepEqual(lastDefaults.retry.retryable, ["stream error"]);
+    typeKeyword(retryInputs[1], "", "Backspace");
+    await settle();
+    assert.deepEqual(lastDefaults.retry, { retryable: ["stream error"], nonRetryable: [] });
 
     // 预设保存：压缩配置随 selection 保存，保存预设不再直接创建会话。
     $("settings").close();

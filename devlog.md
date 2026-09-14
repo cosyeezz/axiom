@@ -1,5 +1,14 @@
 # 开发记录
 
+## 2026-09-14 自动重试词表配置不保存
+
+- 现象：「设置 → 默认新会话设置」里的自动重试白/黑名单，输入关键词回车后看着加上了，但关面板再打开就空了，配置也不生效。
+- 根因：默认配置面板没有保存按钮，唯一保存路径是 `create-form` 的 `change` 冒泡触发 `requestSubmit()`。而 chip 的增删全是脚本改状态：Enter 上 `preventDefault()` 连隐式提交都没有，浏览器不会为脚本改动发 `change`；`add()` 里把 `input.value` 清空还顺手重置了输入框的脏值标记，导致后续失焦也不再发 `change`。Playwright 实测三种路径均无事件。压缩配置用的是原生 select/checkbox，自己会发 `change`，所以只有重试词表中招。
+- 内容：`public/app.js` 的 `retryChipList` 把 `add()` 拆成 `commit()`（提交待定词，返回是否真的改了状态）与 `notify()`（派发 `bubbles: true` 的 `change`）；Enter、Backspace 删末尾、× 删除三条路径改完状态后都派发一次。另加 `input.onchange = () => { commit(); }`：只打字没回车就失焦/关面板时，浏览器的 `change` 先到 input 再冒到 form，这里补提交，form 读到的状态已含该词，不静默丢字；自己派发的合成 `change` 回到这里时输入框已空，是空操作。
+- 后端未改：`selection.retry` → `workspaceDefaults` → `create` → `createAgent` → `createAutoRetry({ patterns })` 全链路本来是通的，词表只在建会话时绑定，「仅对新建会话生效」是设计如此。
+- 测试：`tests/app.test.js` 压缩设置用例里补一段，覆盖回车添加即保存、重复词（不区分大小写）不入表、失焦补记、× 与 Backspace 删除同样触发保存。写用例时踩到一个坑：前一段刚把压缩阈值清空成无效值，提交会在压缩校验处 `return`，测不到重试词表，故先恢复合法阈值。回滚 `app.js` 验证过该用例确实失败。
+- 涉及文件：`public/app.js`、`tests/app.test.js`、`README.md`、`devlog.md`。
+
 ## 2026-09-14 空格对齐的纯文本表格转成网页表格
 
 - 诉求：会话里一张呼叫报表（日期/方向/呼叫量/接通率…）以纯文本块展示，问能不能优化。旧逻辑只认 `+---+` 边框表格，这类靠空格对齐的表只能走字符网格对齐，看上去仍是一堆等宽文本。
