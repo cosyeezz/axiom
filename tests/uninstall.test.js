@@ -34,7 +34,7 @@ test("uninstall verifies target, stops, disables autostart, then removes only Ax
 // 真实 CLI 入口；无效 npm 保证不触碰全局安装、自启或用户数据。
 test("uninstall CLI reaches npm instead of deadlocking module evaluation", () => {
   const result = spawnSync(process.execPath, ["scripts/service.mjs", "uninstall"], {
-    cwd: new URL("..", import.meta.url), encoding: "utf8", timeout: 10000,
+    cwd: new URL("..", import.meta.url), encoding: "utf8", timeout: 60000,
     env: { ...process.env, AXIOM_NPM: "axiom-test-npm-does-not-exist" },
   });
   assert.equal(result.error, undefined);

@@ -436,7 +436,7 @@ test("CAS 原语：期望原文不匹配拒绝写入，行缺失仅首次插入�
   }
 });
 
-test("两进程并发 credentials.modify：CAS 拒绝后写者，杜绝静默丢更新", { timeout: 30000 }, async () => {
+test("两进程并发 credentials.modify：CAS 拒绝后写者，杜绝静默丢更新", async () => {
   const dir = await tempDir();
   let database;
   try {

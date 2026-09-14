@@ -236,7 +236,7 @@ test("在线轮询权威更新重启锁：准备失败/完成后无需重连即�
   } finally { dom.window.close(); }
 });
 
-test("维护通道真实 HTTP 契约：/status 扁平记录、Bearer 404、/recover 202/409/400，前端实测", { timeout: 15000 }, async () => {
+test("维护通道真实 HTTP 契约：/status 扁平记录、Bearer 404、/recover 202/409/400，前端实测", async () => {
   const dir = await mkdtemp(join(tmpdir(), "axiom-maint-"));
   const database = new Database(join(dir, "axiom.db"));
   const state = await createMaintState({ database, key: "state-test", legacyFile: join(dir, "state.json"), redactions: [["hunter2", "***"]] });

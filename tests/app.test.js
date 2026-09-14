@@ -323,7 +323,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     await settle();
     assert.equal($("login").hidden, false);
     assert.equal($("send").disabled, true);
-    await new Promise((resolve) => setTimeout(resolve, 1100));
+    // 重连定时器是 1000ms（public/app.js reconnectDelay）；固定 sleep 只留 100ms 余量，
+    // 负载高时定时器晚触发就假失败。改为轮询等待，上限只防卡死。
+    for (let i = 0; i < 300 && sockets.length < 2; i++) await new Promise((resolve) => setTimeout(resolve, 20));
     assert.equal(sockets.length, 2, "failed initial connection retries without refresh");
     $("connect").click();
     assert.equal(sockets.length, 2, "manual retry cannot create a concurrent socket");

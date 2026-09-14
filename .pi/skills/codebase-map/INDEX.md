@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/13 11:58:16）
+# Axiom 多级代码索引（生成于 2026/9/13 19:10:20）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -50,7 +50,7 @@
 | src/tools.js | 110 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
 | tests/activity-groups-ui.py | 201 | node --test 测试（npm test） | activityHistory, sessions |
-| tests/app.test.js | 1703 | node --test 测试（npm test） | pickerSource, modelSources, serviceSource |
+| tests/app.test.js | 1705 | node --test 测试（npm test） | pickerSource, modelSources, serviceSource |
 | tests/autoscroll-ui.py | 99 | node --test 测试（npm test） | - |
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
@@ -104,7 +104,7 @@
 | tests/service-settings-api.test.js | 71 | node --test 测试（npm test） | - |
 | tests/service-settings-ui.py | 60 | node --test 测试（npm test） | - |
 | tests/service-settings.test.js | 377 | node --test 测试（npm test） | source, html, setup |
-| tests/service.test.js | 527 | node --test 测试（npm test） | until, readMaybe, killTree, buildWorkspace |
+| tests/service.test.js | 538 | node --test 测试（npm test） | until, readMaybe, killTree, buildWorkspace |
 | tests/session-created-at.test.js | 44 | node --test 测试（npm test） | factory |
 | tests/session-flow.test.js | 417 | node --test 测试（npm test） | flowFactory, jsonlFactory |
 | tests/session-memory.test.js | 110 | node --test 测试（npm test） | reply |
@@ -1029,7 +1029,7 @@
 | activityHistory | const | 16 |
 | sessions | const | 27 |
 
-### tests/app.test.js（1703 行） — node --test 测试（npm test）
+### tests/app.test.js（1705 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1402,42 +1402,43 @@
 | html | const | 12 |
 | setup | function | 14 |
 
-### tests/service.test.js（527 行） — node --test 测试（npm test）
+### tests/service.test.js（538 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| until | const | 15 |
-| readMaybe | const | 24 |
-| killTree | const | 25 |
-| buildWorkspace | const | 32 |
-| WORKER | const | 47 |
-| fs | const | 48 |
-| ready | const | 66 |
-| ready | method | 74 |
-| ready | method | 77 |
-| startDaemon | const | 81 |
-| spawn | method | 82 |
-| startTest | const | 87 |
-| maintEnv | const | 96 |
-| getStatus | const | 97 |
-| stateOf | const | 103 |
-| teardown | const | 110 |
-| NPM_FAKE | const | 117 |
-| say | const | 121 |
-| sdkStub | const | 122 |
-| mkdirSync | method | 123 |
-| writeFileSync | method | 124 |
-| writeFileSync | method | 125 |
-| rmSync | method | 133 |
-| sdkStub | method | 135 |
-| writeFileSync | method | 136 |
-| writeFileSync | method | 137 |
-| writeFileSync | method | 138 |
-| rmSync | method | 146 |
-| sdkStub | method | 147 |
-| writeFileSync | method | 148 |
-| installNpmShim | const | 154 |
-| A40 | const | 167 |
+| until | const | 17 |
+| readMaybe | const | 26 |
+| killTree | const | 27 |
+| buildWorkspace | const | 34 |
+| WORKER | const | 49 |
+| fs | const | 50 |
+| retry | const | 55 |
+| ready | const | 74 |
+| ready | method | 82 |
+| ready | method | 85 |
+| startDaemon | const | 89 |
+| spawn | method | 90 |
+| startTest | const | 95 |
+| maintEnv | const | 104 |
+| getStatus | const | 105 |
+| stateOf | const | 111 |
+| teardown | const | 118 |
+| NPM_FAKE | const | 126 |
+| say | const | 130 |
+| sdkStub | const | 131 |
+| mkdirSync | method | 132 |
+| writeFileSync | method | 133 |
+| writeFileSync | method | 134 |
+| rmSync | method | 142 |
+| sdkStub | method | 144 |
+| writeFileSync | method | 145 |
+| writeFileSync | method | 146 |
+| writeFileSync | method | 147 |
+| rmSync | method | 155 |
+| sdkStub | method | 156 |
+| writeFileSync | method | 157 |
+| installNpmShim | const | 163 |
+| A40 | const | 176 |
 
 ### tests/session-created-at.test.js（44 行） — node --test 测试（npm test）
 

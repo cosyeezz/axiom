@@ -12,7 +12,9 @@ import { startMaintServer } from "../scripts/maint-server.mjs";
 import { Database } from "../src/database.js";
 import { installTag } from "../scripts/service.mjs";
 
-const until = async (check, timeout = 12000, step = 80) => {
+// 轮询上限只为了“卡死时报错而不是永久 hang”，不是性能断言：空机器上这些检查 1~2s 就过，
+// 负载高时（多文件并行 + 外部进程）同一流程可能慢 10 倍以上，故给到 60s 避免假失败。
+const until = async (check, timeout = 60000, step = 80) => {
   const deadline = Date.now() + timeout;
   for (;;) {
     const result = await check();
@@ -46,11 +48,17 @@ const buildWorkspace = async (npm = false) => {
 // service.stop 按 stop-exit 退出码退出；crash/recover-flag 文件驱动崩溃终态与恢复分支。
 const WORKER = `
 const fs = require('node:fs');
-fs.writeFileSync('workers', String((parseInt(fs.existsSync('workers') ? fs.readFileSync('workers', 'utf8') : '0', 10) || 0) + 1));
-fs.writeFileSync('maint-env.tmp', JSON.stringify({ url: process.env.AXIOM_MAINTENANCE_URL || '', token: process.env.AXIOM_MAINTENANCE_TOKEN || '', instanceId: process.env.AXIOM_INSTANCE_ID || '' }));
-fs.renameSync('maint-env.tmp', 'maint-env');
-fs.writeFileSync('workerPid', String(process.pid));
 process.on('uncaughtException', (e) => { fs.writeFileSync('worker-error', String((e && e.stack) || e)); process.exit(1); });
+// Windows 杀软/并发读取会让写入与 rename 瞬时 EPERM/EBUSY（与 src/pi-model-storage.js 同一风险）：
+// 启动期文件操作有限次退避重试。不重试就会在此抛出 → worker 以 code 1 退出 → 守护进程按崩溃重启，
+// 多出一个实例，让"恢复后 worker 数"这类断言随机失败。
+const retry = (op) => { for (let i = 0; ; i++) { try { return op(); } catch (e) {
+  if (i >= 5 || !['EPERM', 'EBUSY', 'EACCES'].includes(e.code)) throw e;
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50 * (i + 1)); } } };
+retry(() => fs.writeFileSync('workers', String((parseInt(fs.existsSync('workers') ? fs.readFileSync('workers', 'utf8') : '0', 10) || 0) + 1)));
+retry(() => fs.writeFileSync('maint-env.tmp', JSON.stringify({ url: process.env.AXIOM_MAINTENANCE_URL || '', token: process.env.AXIOM_MAINTENANCE_TOKEN || '', instanceId: process.env.AXIOM_INSTANCE_ID || '' })));
+retry(() => fs.renameSync('maint-env.tmp', 'maint-env'));
+retry(() => fs.writeFileSync('workerPid', String(process.pid)));
 process.on('message', (m) => {
   if (m.type === 'service.stop') { const code = fs.existsSync('stop-exit') ? fs.readFileSync('stop-exit', 'utf8').trim() : '0'; fs.writeFileSync('stopped', code); process.exit(parseInt(code, 10)); }
   if (m.type === 'service.resume') fs.writeFileSync('resumed', 'yes');
@@ -111,7 +119,8 @@ const teardown = async (base, child) => {
   const workerPid = parseInt(await readMaybe(join(base, "workerPid")) ?? "0", 10);
   await killTree(workerPid || child?.pid);
   await killTree(child?.pid);
-  await rm(base, { recursive: true, force: true });
+  // taskkill 返回不等于子进程已释放句柄：Windows 下 axiom.db-shm 仍可能被占着（EBUSY），用 rm 自带重试等到释放。
+  await rm(base, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 };
 // 假 npm：install → 在 stage 组装带 _resolved/package-lock/SDK 桩的完整包；ci → stage 依赖+SDK 桩；run build → 标记。
 const NPM_FAKE = `
@@ -267,7 +276,7 @@ test("staged update: verify-commit, swap after clean stop, commit only after rea
   });
   try {
     await until(async () => (await readMaybe(join(root, "accepted-u1"))) !== null);
-    await until(async () => (await readMaybe(join(base, "served-during-install"))) !== null, 8000);
+    await until(async () => (await readMaybe(join(base, "served-during-install"))) !== null);
     await until(async () => (await readMaybe(join(root, ".axiom-commit")))?.trim() === B40);
     await until(async () => (await getStatus(root)).status === "succeeded");
     assert.equal(JSON.parse(await readFile(join(root, "package.json"), "utf8"))._resolved, `github:cosyeezz/axiom#${B40}`);
@@ -383,7 +392,7 @@ test("rebuild happy path: stage, swap after stop, build once, commit after ready
   } finally { await teardown(base, child); }
 });
 
-for (const failure of ['build', 'timeout']) test(`rebuild ${failure} failure restores old dependencies before recovery`, { timeout: 15000 }, async () => {
+for (const failure of ['build', 'timeout']) test(`rebuild ${failure} failure restores old dependencies before recovery`, async () => {
   const { base, root } = await buildWorkspace();
   const npm = await installNpmShim(base);
   await mkdir(join(root, 'node_modules'));
@@ -414,7 +423,9 @@ test("maintenance HTTP: auth trio, preflight, strict body, recover guard", async
     assert.equal((await get({})).status, 404);
     assert.equal((await get({ token, origin: "http://evil.example" })).status, 404);
     const hostile = await new Promise((done) => {
-      const req = request(url, { headers: { Host: "evil:9", Authorization: `Bearer ${token}` }, timeout: 3000 }, (res) => { res.resume(); res.on("end", () => done(res.statusCode)); });
+      const req = request(url, { headers: { Host: "evil:9", Authorization: `Bearer ${token}` }, timeout: 30000 }, (res) => { res.resume(); res.on("end", () => done(res.statusCode)); });
+      // “timeout” 不自带 error：不主动 destroy 就会挂在这里等到整个用例超时。
+      req.on("timeout", () => req.destroy());
       req.on("error", () => done(0)); req.end();
     });
     assert.equal(hostile, 404, "Host 不精确 → 404");

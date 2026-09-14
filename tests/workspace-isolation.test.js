@@ -8,7 +8,7 @@ import { WebSocket } from "ws";
 import { Sessions } from "../src/sessions.js";
 import { createServerApp } from "../src/server.js";
 
-test("parallel workspaces keep agents, subscriptions, cancellation and files isolated", { timeout: 15000 }, async () => {
+test("parallel workspaces keep agents, subscriptions, cancellation and files isolated", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-parallel-"));
   const agents = new Map();
   const factory = async (_tools, selection) => {

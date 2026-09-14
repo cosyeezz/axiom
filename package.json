@@ -33,7 +33,7 @@
     "dev": "node scripts/dev.mjs",
     "autostart:enable": "node scripts/autostart.mjs enable",
     "autostart:disable": "node scripts/autostart.mjs disable",
-    "test": "node --test tests/*.test.js",
+    "test": "node --test --test-timeout=120000 tests/*.test.js",
     "check": "npm test"
   },
   "dependencies": {

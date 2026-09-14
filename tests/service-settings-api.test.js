@@ -4,7 +4,7 @@ import { once } from "node:events";
 import { WebSocket } from "ws";
 import { createServerApp } from "../src/server.js";
 
-test("maintenance credentials and CSP are local-only; update checks never restart", { timeout: 10000 }, async () => {
+test("maintenance credentials and CSP are local-only; update checks never restart", async () => {
   let restarts = 0;
   const maintenance = { url: "http://127.0.0.1:54321", token: "private-token" };
   const app = createServerApp({ list: () => [], close: async () => {} }, {

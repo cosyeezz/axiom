@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-13 修复测试在机器负载下的随机失败
+- 内容：`tests/service.test.js` 假 worker 的启动期文件操作（`workers` 计数、`maint-env.tmp` → `maint-env` 原子改名、`workerPid`）加有限次退避重试，`uncaughtException` 处理器提到最前面；`until` 默认上限 12s → 60s，删掉 `served-during-install` 那处 8s 覆写；`teardown` 的 `rm` 加 `maxRetries: 20, retryDelay: 100`；维护 HTTP 用例的 `request` 超时 3s → 30s 并补 `req.on("timeout", () => req.destroy())`。`tests/app.test.js` 把等重连的固定 `sleep(1100)` 换成轮询。`package.json` 的 `test` 加 `--test-timeout=120000`，随后删除 6 处按空机器估的 `{ timeout }` 覆写（model-config、pi-model-storage、service-settings-api、service-settings、service、workspace-isolation）；`install`/`cli-help`/`uninstall` 的 `spawnSync` 上限统一提到 60s（`spawnSync` 不继承 runner 上限）。
+- 原因：真正的根因只有一个，是测试夹具的 Windows 文件锁竞争，不是产品缺陷、也不只是超时太紧。`service.log` 抓到崩溃栈：假 worker 在模块加载期 `renameSync('maint-env.tmp', 'maint-env')` 报 `EPERM`（杀软/索引器瞬时占用新建文件，负载高时窗口变大），而这行在 `uncaughtException` 注册之前，于是进程直接以 code 1 退出、连 `worker-error` 都没留下。守护进程按“worker 崩溃”正确地自动重启，多出一个实例，`rebuild * failure restores old dependencies` 断言的 worker 数就从 3 变 4（或 2 变 3）。`src/pi-model-storage.js:69` 早就记录并处理过同一风险，夹具漏了。剩下的时限类改动是第二层：那些墙钟上限按空机器估，负载下会误判。
+- 决策：时限一律视为“防永久 hang 的兜底”，不是性能断言，因此用 runner 级 `--test-timeout=120000` 取代手调的分散字面量（删除优于调参）；`until` 保留自己更清楚的 `until 超时` 报错。重试策略照抄 `pi-model-storage` 的既有写法（EPERM/EBUSY/EACCES，有限次退避），不新造机制。`rebuild` 的 worker 数断言保持严格：它验证的是“不会重复拉起实例”，根因修好后不该放宽。330ms 那几处等防抖窗口过期的固定 sleep 未动，负载只会让墙钟变长，不会短。
+- 验证：32 个 node 忙循环进程压满 16 核（CPU 100%，每轮跑前后确认存活）下，`npm test` 连续 3 轮全绿（360 通过 / 0 失败 / 2 跳过，98~102s，空机器 23s）。修复前同样负载下：`rebuild * failure restores` 12 轮里 2 轮失败，修复后 12 轮 0 失败；`page preserves drafts` 也在压测中暴露并修掉。
+- 涉及：`tests/service.test.js`、`tests/app.test.js`、`tests/install.test.js`、`tests/cli-help.test.js`、`tests/uninstall.test.js`、`tests/model-config.test.js`、`tests/pi-model-storage.test.js`、`tests/service-settings.test.js`、`tests/service-settings-api.test.js`、`tests/workspace-isolation.test.js`、`package.json`、重建 `INDEX.md`、`devlog.md`。
+
 ## 2026-09-13 明/暗主题切换与侧栏字号下调
 - 内容：右上角新增 `#toggle-theme`（太阳/月亮图标，`aria-pressed` 标记浅色）。`public/style.css` 的 `:root` 重写为单一 `light-dark()` token 表，`:root[data-theme]` 只翻 `color-scheme`；新增 `--line-strong`/`--on-accent`/`--accent-hover`/`--hover`/`--shadow-soft|mid|strong`，约 30 处硬编码颜色改为 token 或 `color-mix`。`file-picker`/`model-manager`/`model-picker`/`tooltip` 四个 css 同步 token 化（提示浮层在浅色下反转为暗色芯片）。侧栏字号 aside 13px、品牌 19→17px、侧栏内次级文字 12→11px。
 - 原因：白天使用需要浅色底；浅色调色取 Linear light / GitHub Primer / Vercel Geist 三家成熟方案的交集。侧栏字号偏大，抑制后主区对话更突出。

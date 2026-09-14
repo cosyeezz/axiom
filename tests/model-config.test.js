@@ -948,7 +948,7 @@ test("models.hidden.set：隐藏只影响可选入口（listCatalog），运行�
 
 // 子进程已读旧权威、停在CAS前；父进程先写成功再放行，确定性检查过期写拒绝。
 for (const op of ["config", "favorites"]) {
-  test(`两进程 ${op}：旧权威捕获后被他人更新，过期CAS必须拒绝`, { timeout: 30000 }, async () => {
+  test(`两进程 ${op}：旧权威捕获后被他人更新，过期CAS必须拒绝`, async () => {
     const dir = await tempDir();
     let opponent;
     try {

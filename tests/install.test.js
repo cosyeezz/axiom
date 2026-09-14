@@ -32,7 +32,7 @@ test("旧 Node 在安装、服务和直接启动入口加载 SQLite 前收到升
           return load.call(this, id, ...args);
         };
         await import(${JSON.stringify(url)});
-      `], { encoding: "utf8", timeout: 15000 });
+      `], { encoding: "utf8", timeout: 60000 });
       assert.ifError(result.error);
       assert.notEqual(result.status, 0);
       assert.match(result.stderr, /需要 Node.js 22\.13\+/);
