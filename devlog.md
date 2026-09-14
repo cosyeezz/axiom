@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-13 修复导入会话用例的 hash 竞争
+- 内容：`tests/app.test.js` 导入会话那段（点 `#file-picker-confirm` 之后）不再靠一次 `settle()` 就断言 `location.hash`，改为轮询等 `session=imported` 出现（上限 300×20ms，只防卡死）。
+- 原因：上一条修复合入后，全套跑偶发挂在 `assert.match(window.location.hash, /session=imported/)`（收到 `'#session=a'`）。按钮处理器是 `await switchSession(...)` 的即发即忘调用：`session.import` 请求确实发出了（`lastImport` 断言在前面已通过），但 hash 要等响应回来走完 `snapshot(state)` 才改，一个 `setImmediate` 不保证这条异步链跑完。属既有的「按固定 tick 数往下走」写法，与上一条改动无关——把 `sleep(1100)` 那处改回原样后同样跑不出差异（空机器各 8 轮全绿）。
+- 验证：单跑该用例通过（3.2s）；空机器全套 4 轮全绿（360 过 / 0 失败 / 2 跳过）；32 个忙循环进程压着再跑 2 轮全绿（100.2s / 101.5s，跑完确认 hog 仍是 32）。reindex 124 文件 0 未登记，`tests/codebase-index.test.js` 通过。
+- 涉及：tests/app.test.js、devlog.md、.pi/skills/codebase-map/INDEX.md。
+
 ## 2026-09-13 修复测试在机器负载下的随机失败
 - 内容：`tests/service.test.js` 假 worker 的启动期文件操作（`workers` 计数、`maint-env.tmp` → `maint-env` 原子改名、`workerPid`）加有限次退避重试，`uncaughtException` 处理器提到最前面；`until` 默认上限 12s → 60s，删掉 `served-during-install` 那处 8s 覆写；`teardown` 的 `rm` 加 `maxRetries: 20, retryDelay: 100`；维护 HTTP 用例的 `request` 超时 3s → 30s 并补 `req.on("timeout", () => req.destroy())`。`tests/app.test.js` 把等重连的固定 `sleep(1100)` 换成轮询。`package.json` 的 `test` 加 `--test-timeout=120000`，随后删除 6 处按空机器估的 `{ timeout }` 覆写（model-config、pi-model-storage、service-settings-api、service-settings、service、workspace-isolation）；`install`/`cli-help`/`uninstall` 的 `spawnSync` 上限统一提到 60s（`spawnSync` 不继承 runner 上限）。
 - 原因：真正的根因只有一个，是测试夹具的 Windows 文件锁竞争，不是产品缺陷、也不只是超时太紧。`service.log` 抓到崩溃栈：假 worker 在模块加载期 `renameSync('maint-env.tmp', 'maint-env')` 报 `EPERM`（杀软/索引器瞬时占用新建文件，负载高时窗口变大），而这行在 `uncaughtException` 注册之前，于是进程直接以 code 1 退出、连 `worker-error` 都没留下。守护进程按“worker 崩溃”正确地自动重启，多出一个实例，`rebuild * failure restores old dependencies` 断言的 worker 数就从 3 变 4（或 2 变 3）。`src/pi-model-storage.js:69` 早就记录并处理过同一风险，夹具漏了。剩下的时限类改动是第二层：那些墙钟上限按空机器估，负载下会误判。

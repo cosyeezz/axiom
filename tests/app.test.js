@@ -1316,6 +1316,10 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(lastImport.type, "session.import");
     assert.equal(lastImport.path, "C:\\pi\\sessions\\pi.jsonl");
     assert.equal(lastImport.cwd, "C:\\work");
+    // 确认按钮只发起导入；hash 要等 switchSession 拿到响应后的 snapshot 才会改，
+    // 一个 setImmediate 不保证走完这条异步链（既往在此随机失败），改为轮询等待。
+    for (let i = 0; i < 300 && !/session=imported/.test(window.location.hash); i++)
+      await new Promise((resolve) => setTimeout(resolve, 20));
     assert.notEqual(opened?.[0], "/#session=imported", "导入不另开原工作空间");
     assert.match(window.location.hash, /session=imported/);
     assert.equal($("workspace-label").textContent, "C:\\work", "导入副本留在当前工作空间");
