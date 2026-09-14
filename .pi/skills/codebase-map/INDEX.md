@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/13 20:29:11）
+# Axiom 多级代码索引（生成于 2026/9/13 20:49:13）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -13,12 +13,12 @@
 | public/memory-tags.js | 111 | 主子代理共享简单标签提取与流式显示过滤 | TAGS, NAMES, TAG, OPEN |
 | public/model-auth.js | 97 | 网页登录：授权提示、设备码、凭据输入与取消 | createModelAuth |
 | public/model-manager.css | 520 | 模型配置页：供应商列表、编辑表单与响应式布局 | - |
-| public/model-manager.js | 1272 | 统一模型管理：供应商、字段覆盖与思考等级编辑 | THINKING_LEVELS, API_TYPES, PROVIDER_TEMPLATES, PROVIDER_ID |
+| public/model-manager.js | 1278 | 统一模型管理：供应商、字段覆盖与思考等级编辑 | THINKING_LEVELS, API_TYPES, PROVIDER_TEMPLATES, PROVIDER_ID |
 | public/model-picker.css | 88 | 共享收藏下拉：浮层、星标、触屏与焦点样式 | - |
 | public/model-picker.js | 300 | 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互 | GAP, EDGE, TYPEAHEAD_MS, el |
 | public/service-settings.js | 278 | 设置页服务维护：真实进度、结果、更新确认与独立维护通道 | MAINT_URL_RE, POLL_MS, initServiceSettings |
 | public/stream-renderer.js | 46 | 流式增量渲染状态机 | createStreamRenderer |
-| public/style.css | 1390 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1397 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | public/theme.js | 11 | 首帧前阻塞应用明/暗主题（localStorage axiom.theme，默认深色） | - |
 | public/tooltip.css | 50 | 共享悬停说明样式（浅色主题下反色） | - |
 | public/tooltip.js | 225 | 共享悬停说明：动态 title、键盘、定位与无障碍 | SHOW_DELAY, HIDE_DELAY, GAP, EDGE |
@@ -50,7 +50,7 @@
 | src/tools.js | 110 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
 | tests/activity-groups-ui.py | 201 | node --test 测试（npm test） | activityHistory, sessions |
-| tests/app.test.js | 1730 | node --test 测试（npm test） | pickerSource, modelSources, serviceSource |
+| tests/app.test.js | 1735 | node --test 测试（npm test） | pickerSource, modelSources, serviceSource |
 | tests/autoscroll-ui.py | 99 | node --test 测试（npm test） | - |
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
@@ -81,7 +81,7 @@
 | tests/mobile-reading-ui.py | 130 | node --test 测试（npm test） | - |
 | tests/model-auth.test.js | 133 | node --test 测试（npm test） | SECRET, fakeAuth, waitFor, noLeak |
 | tests/model-config.test.js | 1035 | node --test 测试（npm test） | sha, EMPTY, tempDir, openDatabases |
-| tests/model-manager.test.js | 1203 | node --test 测试（npm test） | authSource, source, tick, j |
+| tests/model-manager.test.js | 1229 | node --test 测试（npm test） | authSource, source, tick, j |
 | tests/model-onboarding-ui.test.js | 153 | node --test 测试（npm test） | stripImports, modelSources, pickerSource, memoryTagsSource |
 | tests/model-onboarding.test.js | 55 | node --test 测试（npm test） | - |
 | tests/model-picker.test.js | 311 | node --test 测试（npm test） | source, tick, nap, OPTS |
@@ -456,7 +456,7 @@
 |---|---|---|
 | createModelAuth | function | 2 |
 
-### public/model-manager.js（1272 行） — 统一模型管理：供应商、字段覆盖与思考等级编辑
+### public/model-manager.js（1278 行） — 统一模型管理：供应商、字段覆盖与思考等级编辑
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -487,7 +487,7 @@
 | openDialog | function | 171 |
 | openModal | method | 189 |
 | initModelManager | function | 194 |
-| renderProviders | method | 1269 |
+| renderProviders | method | 1275 |
 
 ### public/model-picker.js（300 行） — 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互
 
@@ -1045,7 +1045,7 @@
 | activityHistory | const | 16 |
 | sessions | const | 27 |
 
-### tests/app.test.js（1730 行） — node --test 测试（npm test）
+### tests/app.test.js（1735 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1251,7 +1251,7 @@
 | jsonResponse | const | 672 |
 | test | method | 951 |
 
-### tests/model-manager.test.js（1203 行） — node --test 测试（npm test）
+### tests/model-manager.test.js（1229 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1272,39 +1272,39 @@
 | dialogButton | method | 366 |
 | confirm | method | 399 |
 | confirm | method | 406 |
-| row | method | 510 |
-| row | method | 521 |
-| discoverPanelEl | const | 821 |
-| discoverRows | const | 822 |
-| rowBox | const | 823 |
-| addSelectedButton | const | 824 |
-| fetchButton | const | 825 |
-| checkRow | const | 826 |
-| rowBox | method | 827 |
-| rowBox | method | 828 |
-| fetchButton | method | 838 |
-| checkRow | method | 859 |
-| fetchButton | method | 871 |
-| checkRow | method | 883 |
-| checkRow | method | 884 |
-| addSelectedButton | method | 885 |
-| fetchButton | method | 919 |
-| addSelectedButton | method | 926 |
-| addSelectedButton | method | 945 |
-| fetchButton | method | 967 |
-| fetchButton | method | 975 |
-| fetchButton | method | 998 |
-| fetchButton | method | 1017 |
-| fetchButton | method | 1020 |
-| fetchButton | method | 1037 |
+| row | method | 536 |
+| row | method | 547 |
+| discoverPanelEl | const | 847 |
+| discoverRows | const | 848 |
+| rowBox | const | 849 |
+| addSelectedButton | const | 850 |
+| fetchButton | const | 851 |
+| checkRow | const | 852 |
+| rowBox | method | 853 |
+| rowBox | method | 854 |
+| fetchButton | method | 864 |
+| checkRow | method | 885 |
+| fetchButton | method | 897 |
+| checkRow | method | 909 |
+| checkRow | method | 910 |
+| addSelectedButton | method | 911 |
+| fetchButton | method | 945 |
+| addSelectedButton | method | 952 |
+| addSelectedButton | method | 971 |
+| fetchButton | method | 993 |
+| fetchButton | method | 1001 |
+| fetchButton | method | 1024 |
 | fetchButton | method | 1043 |
-| sonnetCatalog | const | 1061 |
-| openSonnet | const | 1066 |
-| checkLevel | const | 1073 |
-| checkLevel | method | 1090 |
-| checkLevel | method | 1118 |
-| confirmDialog | method | 1156 |
-| confirmDialog | method | 1188 |
+| fetchButton | method | 1046 |
+| fetchButton | method | 1063 |
+| fetchButton | method | 1069 |
+| sonnetCatalog | const | 1087 |
+| openSonnet | const | 1092 |
+| checkLevel | const | 1099 |
+| checkLevel | method | 1116 |
+| checkLevel | method | 1144 |
+| confirmDialog | method | 1182 |
+| confirmDialog | method | 1214 |
 
 ### tests/model-onboarding-ui.test.js（153 行） — node --test 测试（npm test）
 
