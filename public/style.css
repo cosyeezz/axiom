@@ -233,12 +233,19 @@ summary {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.session-running-dot {
+.session-running-dot,
+.session-attention-dot {
   flex-shrink: 0;
   width: 8px;
   height: 8px;
   border-radius: 50%;
+}
+.session-running-dot {
   background: var(--success);
+}
+/* 跑完待查看：用 --accent-ink 而不是 --accent，8px 小点在近黑底上才够显眼。 */
+.session-attention-dot {
+  background: var(--accent-ink);
 }
 .preset-group { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; flex-shrink: 0; }
 .preset-group #custom-new { width: 100%; margin: 0; border: 0; border-radius: 0; }

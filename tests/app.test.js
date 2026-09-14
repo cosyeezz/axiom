@@ -308,7 +308,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     };
     window.sidebarConnected = (value) => { connected = value; controls(); };
     window.sessionState = () => ({ connected, sessionId, error: document.getElementById("error").textContent });
-    window.openPageAs = (value) => { sessionId = value; };`);
+    window.openPageAs = (value) => { sessionId = value; };
+    // seenSessions 是模块作用域的 let，后续 window.eval 访问不到，必须由同一段代码暴露写入口。
+    window.setSeenSessions = (value) => { seenSessions = value; renderSessions(); };`);
     const copySelection = window.eval("copySelection");
     $("prompt").value = "copy selected text";
     $("prompt").setSelectionRange(5, 13);
@@ -387,11 +389,20 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.deepEqual(JSON.parse(window.localStorage.getItem("axiom.hiddenSessions")), []);
     assert.equal(requests.length, beforeHide, "completion markers never delete or cancel sessions");
     const rowTitles = () => [...$("sessions").querySelectorAll(".session-row .session-item span")].map((n) => n.textContent);
-    assert.deepEqual(rowTitles(), ["a", "b", "c"], "in-progress sessions share creation-time order");
+    assert.deepEqual(rowTitles(), ["c", "a", "b"], "running session pins to the top, the rest keep last-activity order");
     assert.equal(row("a").draggable, false);
     window.localStorage.setItem("axiom.sessionOrder", '["b","a","c"]');
     window.eval("renderSessions()");
-    assert.deepEqual(rowTitles(), ["a", "b", "c"], "legacy custom order is ignored");
+    assert.deepEqual(rowTitles(), ["c", "a", "b"], "legacy custom order is ignored");
+    // 跑完待查看：seen 记在打开之前 → 标主题色点；打开会话即写回时间戳并落盘。
+    window.setSeenSessions({ a: 1, b: 1 });
+    const attention = row("b").querySelector(".session-attention-dot");
+    assert.equal(attention.hidden, false, "finished-but-unopened session shows the attention dot");
+    assert.equal(attention.getAttribute("aria-label"), "有待查看的结果");
+    assert.equal(row("c").querySelector(".session-running-dot").hidden, false, "running session keeps the green dot");
+    window.eval('markSessionSeen("b")');
+    assert.ok(JSON.parse(window.localStorage.getItem("axiom.sessionSeen")).b > 0, "opening a session records its seen timestamp");
+    window.setSeenSessions({});
     row("b").querySelector(".session-rename").click();
     assert.equal($("session-name").value, "b");
     $("session-name").value = "Renamed other session";
@@ -604,6 +615,11 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(requests.findLast((req) => req.type === "prompt").text, "/skill:codebase-map 检查代码");
     assert.equal($("composer-skill").value, "");
     sockets[1].receive({ type: "session.status", sessionId: "a", data: { status: "idle" } });
+    // 正在看的会话跑完即算已读：idle 事件要写回 seen，否则切走后会被错标成待查看。
+    const onScreen = window.sessionState().sessionId;
+    window.localStorage.removeItem("axiom.sessionSeen");
+    sockets[1].receive({ type: "session.state", sessionId: onScreen, data: { status: "idle" } });
+    assert.ok(JSON.parse(window.localStorage.getItem("axiom.sessionSeen"))[onScreen] > 0, "the session on screen is marked seen when it finishes");
     input("");
     assert.match($("session-runtime").textContent, /缓存命中 暂无数据.*上下文 暂无数据.*test · model · off/);
     assert.equal($("thinking").selectedOptions[0].textContent, "off");

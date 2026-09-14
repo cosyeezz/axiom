@@ -8,23 +8,26 @@ with sync_playwright() as p:
     page = browser.new_page(viewport={"width": 1440, "height": 960})
     def expose(route):
         response = route.fetch()
-        route.fulfill(response=response, body=response.text() + '\nwindow.sidebarFixture = (fn) => { allSessions = fn(allSessions); hiddenSessions = new Set(["done", "run", ...Array.from({length: 40}, (_, i) => `done-${i}`)]); renderSessions(); };')
+        route.fulfill(response=response, body=response.text() + '\nwindow.sidebarFixture = (fn) => { allSessions = fn(allSessions); hiddenSessions = new Set(["done", "run", ...Array.from({length: 40}, (_, i) => `done-${i}`)]); seenSessions = { attention: 1, old: new Date(2027, 1, 1).getTime(), new: new Date(2027, 1, 1).getTime(), done: new Date(2027, 1, 1).getTime() }; renderSessions(); };')
     page.route('**/app.js', expose)
     page.goto(os.environ.get("AXIOM_PREVIEW_URL", "http://127.0.0.1:4321"))
     page.wait_for_selector(".session-row")
     page.evaluate("""() => window.sidebarFixture((sessions) => {
       const base = sessions[0];
+      // updatedAt 同时决定排序和日期分线；attention 的 seen 记在 updatedAt 之前 → 待查看。
+      const at = (day) => new Date(2026, 8, day, 12).getTime();
       return [
-        {...base, id:'new', title:'新会话', status:'idle', createdAt:new Date(2026,8,11,12).getTime()},
-        {...base, id:'old', title:'旧会话', status:'idle', createdAt:new Date(2026,8,10,12).getTime(), updatedAt:Date.now()},
-        {...base, id:'done', title:'已完成会话', status:'idle', createdAt:new Date(2026,8,9,12).getTime()},
-        {...base, id:'run', title:'运行会话', status:'running', createdAt:new Date(2026,8,8,12).getTime()},
-        {...base, id:'foreign', title:'其他工作空间', cwd:'/other', status:'running'}
+        {...base, id:'run', title:'运行会话', status:'running', updatedAt:at(11)},
+        {...base, id:'attention', title:'待查看会话', status:'idle', updatedAt:at(10)},
+        {...base, id:'old', title:'旧会话', status:'idle', updatedAt:at(9)},
+        {...base, id:'new', title:'新会话', status:'idle', updatedAt:at(8)},
+        {...base, id:'done', title:'已完成会话', status:'idle', updatedAt:at(7)},
+        {...base, id:'foreign', title:'其他工作空间', cwd:'/other', status:'running', updatedAt:at(12)}
       ];
     })""")
     assert page.locator('.session-group').all_text_contents() == ['进行中', '已完成']
-    assert page.locator('.session-item span').all_text_contents() == ['新会话', '旧会话', '运行会话', '已完成会话']
-    assert page.locator('.session-day').all_text_contents() == ['2026-09-11', '2026-09-10', '2026-09-08', '2026-09-09']
+    assert page.locator('.session-item span').all_text_contents() == ['运行会话', '待查看会话', '旧会话', '新会话', '已完成会话']
+    assert page.locator('.session-day').all_text_contents() == ['2026-09-11', '2026-09-10', '2026-09-09', '2026-09-08', '2026-09-07']
     assert not page.locator('.session-completed').evaluate('(el) => el.open')
     assert not page.locator('[data-session-id="done"]').is_visible()
     completed = page.locator('.session-completed').bounding_box()
@@ -39,7 +42,12 @@ with sync_playwright() as p:
     dot = page.locator('[data-session-id="run"] .session-running-dot')
     assert dot.is_visible()
     assert dot.evaluate('(el) => getComputedStyle(el).backgroundColor') == 'rgb(39, 166, 68)'
-    assert not page.locator('[data-session-id="new"] .session-running-dot').is_visible()
+    seen = page.locator('[data-session-id="attention"] .session-attention-dot')
+    assert seen.is_visible()
+    assert seen.get_attribute('aria-label') == '有待查看的结果'
+    assert seen.evaluate('(el) => getComputedStyle(el).backgroundColor') == 'rgb(130, 143, 255)'
+    assert not page.locator('[data-session-id="old"] .session-running-dot').is_visible()
+    assert not page.locator('[data-session-id="old"] .session-attention-dot').is_visible()
     for width in [1440, 320]:
         page.set_viewport_size({"width": width, "height": 960})
         page.wait_for_timeout(150)
@@ -100,4 +108,4 @@ with sync_playwright() as p:
     }''')
     page.screenshot(path=os.environ.get('AXIOM_SIDEBAR_SCREENSHOT', os.path.join(tempfile.gettempdir(), 'axiom-session-sidebar.png')))
     browser.close()
-print('PASS: workspace filter, fixed groups/dates/order, desktop/mobile action disclosure and keyboard dismissal')
+print('PASS: workspace filter, running/attention/idle order, dots, dates, desktop/mobile action disclosure and keyboard dismissal')

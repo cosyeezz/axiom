@@ -67,6 +67,20 @@ try {
   const saved = JSON.parse(localStorage.getItem("axiom.hiddenSessions") || "[]");
   if (Array.isArray(saved)) hiddenSessions = new Set(saved.filter((id) => typeof id === "string"));
 } catch {}
+// 已读时间戳：AI 跑完、用户还没打开过的会话在侧栏标主题色点。没有记录的一律视为已读，
+// 否则首次加载会把全部历史会话标成未读。
+let seenSessions = {};
+try {
+  const saved = JSON.parse(localStorage.getItem("axiom.sessionSeen") || "{}");
+  if (saved && typeof saved === "object") seenSessions = saved;
+} catch {}
+function markSessionSeen(id) {
+  if (!id) return;
+  seenSessions[id] = Date.now();
+  try {
+    localStorage.setItem("axiom.sessionSeen", JSON.stringify(seenSessions));
+  } catch {}
+}
 function readSessionPreference(key) {
   const saved = JSON.parse(localStorage.getItem(key) || "[]");
   return Array.isArray(saved) ? saved.filter((id) => typeof id === "string") : [];
@@ -94,9 +108,11 @@ function setSessionHidden(id, hidden) {
   }).then(() => [...document.querySelectorAll(".session-row")].find((row) => row.dataset.sessionId === id)?.querySelector(".session-more").focus());
 }
 window.addEventListener("storage", (event) => {
-  if (event.key !== null && event.key !== "axiom.hiddenSessions") return;
+  if (event.key !== null && !["axiom.hiddenSessions", "axiom.sessionSeen"].includes(event.key)) return;
   try {
     hiddenSessions = new Set(readSessionPreference("axiom.hiddenSessions"));
+    const saved = JSON.parse(localStorage.getItem("axiom.sessionSeen") || "{}");
+    seenSessions = saved && typeof saved === "object" ? saved : {};
     renderSessions();
   } catch { error("会话列表设置同步失败"); }
 });
@@ -1696,6 +1712,8 @@ function event(message) {
     busy = data.status !== "idle";
     if (data.status === "running") waiting("main");
     else stopActivity("main", data.status === "cancelling" ? "正在停止…" : "已结束");
+    // 正在看的会话跑完就算已读；否则切走后会被错标成「待查看」。
+    if (data.status === "idle") markSessionSeen(sessionId);
     // 停稳了才判断能不能续：message.end 总先于 idle 到达，此时 lastMainMessage 已是本轮结果。
     if (data.status === "running") interrupted = false;
     else if (data.status === "idle") interrupted = canResumeMessage(lastMainMessage);
@@ -1853,6 +1871,7 @@ function snapshot(state) {
     sessionStorage.setItem("axiom.session", sessionId);
   } catch {}
   history.replaceState(null, "", `#${new URLSearchParams({ session: sessionId })}`);
+  markSessionSeen(sessionId);
   $("session-title").textContent = state.title || "新会话";
   currentCwd = state.cwd;
   $("workspace-label").textContent = state.cwd;
@@ -2510,7 +2529,8 @@ function updatePageTitle() {
 async function updateSessions() {
   const sessions = await request("sessions.list");
   renderTaskTimer(sessions);
-  const listState = (items) => JSON.stringify(items.map(({ id, title, cwd, status, sessionFile, createdAt, updatedAt, elapsedMs, runningSince }) => ({ id, title, cwd, status, sessionFile, createdAt: createdAt ?? updatedAt, elapsedMs, runningSince })));
+  // updatedAt 决定排序与未读判定，必须进比较键，否则「跑完」这类只动 updatedAt 的变化不会重渲染列表。
+  const listState = (items) => JSON.stringify(items.map(({ id, title, cwd, status, sessionFile, createdAt, updatedAt, elapsedMs, runningSince }) => ({ id, title, cwd, status, sessionFile, createdAt, updatedAt, elapsedMs, runningSince })));
   const active = sessions.find((s) => s.id === sessionId);
   if (!active && sessionId && connected && !changing) {
     allSessions = sessions;
@@ -2606,10 +2626,13 @@ function renderSessions() {
   const completedOpen = $("sessions").querySelector(".session-completed")?.open ?? false;
   const fragment = document.createDocumentFragment();
   const query = $("search").value.trim().toLowerCase();
-  const createdAt = (s) => s.createdAt ?? s.updatedAt;
-  const matched = allSessions.filter((s) => s.cwd === currentCwd && s.title.toLowerCase().includes(query))
-    .sort((a, b) => createdAt(b) - createdAt(a) || a.id.localeCompare(b.id));
   const running = (s) => s.status !== "idle";
+  // 未读 = 打开过它之后又跑完了一轮（updatedAt 是这一轮的开始时刻）。
+  const unread = (s) => !hiddenSessions.has(s.id) && s.status === "idle" && s.id !== sessionId && seenSessions[s.id] != null && s.updatedAt > seenSessions[s.id];
+  // 运行中永远置顶，其次是跑完待看的，最后是看过闲着的；段内都按最后活动时间倒序。
+  const rank = (s) => (running(s) ? 0 : unread(s) ? 1 : 2);
+  const matched = allSessions.filter((s) => s.cwd === currentCwd && s.title.toLowerCase().includes(query))
+    .sort((a, b) => rank(a) - rank(b) || b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
   const groups = [
     ["进行中", matched.filter((s) => running(s) || !hiddenSessions.has(s.id))],
     ["已完成", matched.filter((s) => !running(s) && hiddenSessions.has(s.id))],
@@ -2622,10 +2645,11 @@ function renderSessions() {
     const title = document.createElement("span");
     title.textContent = s.title;
     button.title = s.title;
+    const attention = unread(s);
     const status = document.createElement("small");
-    status.className = "session-running-dot";
-    status.hidden = s.status === "idle";
-    status.setAttribute("aria-label", "执行中");
+    status.className = running(s) ? "session-running-dot" : "session-attention-dot";
+    status.hidden = !running(s) && !attention;
+    status.setAttribute("aria-label", running(s) ? "执行中" : "有待查看的结果");
     button.append(status, title);
     button.onclick = () =>
       switchSession(() => request("session.attach", { sessionId: s.id }));
@@ -2732,7 +2756,7 @@ function renderSessions() {
     section.append(heading, content);
     let day;
     for (const s of sessions) {
-      const date = new Date(createdAt(s));
+      const date = new Date(s.updatedAt);
       const label = Number.isNaN(+date) ? "日期未知" : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
       if (day !== label) {
         day = label;

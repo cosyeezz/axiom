@@ -1,5 +1,21 @@
 # 开发记录
 
+## 2026-09-14 侧栏「待查看」：跑完的会话不用再逐个点开
+
+- 诉求：并行多个会话时 AI 跑完、绿点熄灭后就和其他会话长得一样，只能反复点开找哪个刚出结果。
+- 结论（讨论了四个方案）：不做系统通知/标题计数；不给每组上色（设计规范只允许一个彩色强调色）；不加粗、不降字色、不加分组标题、不加横线（侧栏已有日期分线，再加一层横线等于一个视觉手段背两种语义）；最终只用「顺序 + 圆点颜色」。
+- 内容：
+  - public/app.js：新增 `localStorage` 的 `axiom.sessionSeen`（会话 id → 打开时刻）与 `markSessionSeen()`；未读判定 `状态 idle && seen 有记录 && updatedAt > seen`，无记录一律算已读，避免首次加载把全部历史会话标成未读。
+  - 排序改为 `rank`（运行中 0 / 待查看 1 / 已读 2）优先、再按 `updatedAt` 倒序（原来是 `createdAt`），与后端 `sessions.list()` 的口径一致；日期分隔线随之改用「最后活动时间」。
+  - `session.state` 转 idle 时给当前会话补记 seen：只看渲染时的 `s.id !== sessionId` 排除不够，否则正在看的会话跑完、切走后会被错标成待查看。storage 事件同步 `axiom.sessionSeen` 到其他标签页。
+  - `updateSessions` 的比较键补上 `updatedAt`：原来只比 `createdAt ?? updatedAt`，只动 `updatedAt` 的「跑完」不会触发列表重绘。
+  - public/style.css：`.session-attention-dot` 复用 8px 实心圆形状，颜色用 `--accent-ink`（暗色 #828fff；`--accent` 在近黑底上偏暗）。分组名、绿点、手动「已完成」归档均未改动。
+  - tests/app.test.js：排序断言改为「运行中置顶、其余按最后活动倒序」；新增待查看点的可见性、`aria-label`、`markSessionSeen` 落盘与 idle 事件补记断言（`seenSessions` 是模块作用域的 `let`，测试需通过同一段 eval 暴露的 `window.setSeenSessions` 写入）。
+  - tests/session-sidebar-ui.py：fixture 改为显式 `updatedAt`，补主题色点颜色（rgb(130, 143, 255)）、`aria-label` 与日期分线断言。
+- 验证：`npm test` 384 项、382 通过、0 失败、2 跳过（既有 SKIP）。Playwright 真实截图确认顺序为运行中 → 待查看 → 已读、两点颜色与日期线正确。session-sidebar-ui.py 新增断言全过，末尾移动端 `#toggle-sidebar` 点击 30s 超时在 master 上同样复现，属本环境既有问题，非本次引入。
+- 未做：不改后端、不建表、不加未读计数/通知；`updatedAt` 也会被重命名刷新，重命名后可能多标一条待查看（已知小瑕疵，需要时在重命名回执里补记 seen）。
+- 涉及：public/app.js、public/style.css、tests/app.test.js、tests/session-sidebar-ui.py、README.md、devlog.md。
+
 ## 2026-09-14 配置热更新：开发期静态资源免重启 + 默认压缩配置直推已加载会话
 
 - 诉求：“改了设置每次都要重启”。先拆清“重启”到底是为了什么：改前端代码要重启（静态资源启动时一次性读入内存）、改默认压缩配置要重启（已加载会话不采用新值）两个原因各自独立，本轮分别消除；源码全局热重载、运行中会话热换技能/插件/MCP 不在本轮范围。
