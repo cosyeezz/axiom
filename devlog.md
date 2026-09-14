@@ -1230,3 +1230,74 @@
 - 原因：保留讨论上下文时也能调整后续子代理模型和思考等级。
 - 内容：输入区增加角色下拉并复用现有选择器；session.configure 支持 nullable subagentThinking；保持默认配置及已启动任务不变。沿用现有暗色表面、细边框、圆角与键盘交互，不引入样式或依赖。
 - 涉及：public/app.js、public/index.html、src/protocol.js、src/sessions.js、tests/app.test.js、tests/config.test.js、README.md、devlog.md、代码索引。
+
+## 2026-09-14T13:06 SQLite 持久化排查清单逐条修复（第 2 轮 / 共 6 轮）
+
+- 原因：第 1 轮只读排查产出 33 条问题清单（跨类 P1-P2、会话 S1-S5、任务 T1-T3、事件 E1-E4、模型存储与配置 M1-M12、守护进程与维护状态 X1-X7）。本轮按「数据丢失/不一致 > 安全 > 性能 > 整洁」逐条修复，每点先写会失败的回归测试并记录失败输出，再改代码使其通过。
+- 结论：29 条已修复，4 条明确不修并给出技术理由（S5/E2/E3/X7）。表结构与字段一个未动，只新增一条幂等部分索引。
+
+### 已修复（29 条，均附修复前失败输出）
+
+跨三类基础设施
+- P1 落库队列队头阻塞（src/sessions.js persist）：按 SQLite 主结果码分类——环境性失败（忙/锁/只读/IO/磁盘满，errcode&0xff ∈ {5,6,7,8,10,13,14,15}）保留队头与增量顺序原样上抛，由下次写入或关闭重放；确定性失败（未知字段/缺 id/库内坏 JSON）每条增量给且只给一次机会，再撞见同一条即丢弃并 emit 上报，绝不让一条坏增量把该会话此后全部落盘永久堵死。修复前失败：`Error: updateSession：未知会话字段 taskBudgetTypo`，连 close() 的收尾落盘一起带崩。
+- P2 persist 裸写 SAVEPOINT：改为复用 SessionStore.change()（回滚自身异常在那里被吞，不掩盖原始错误）。
+
+会话（sessions 表）
+- S1 会话级 taskBudget 不落库：sessionData().selection 补 taskBudget。修复前 selection.taskBudget 为 undefined，重开旧会话被热更成当前全局值。不改表结构（selection 是 JSON 列）。
+- S2 JSONL 被外部删除后 session_file 被写回 NULL：改 `landedSessionFile(item) ?? item.sessionFile ?? null`，「从未生成」与「生成后丢失」不再混为一谈，历史缺失守卫继续生效。修复前 actual undefined。
+- S3 先删 goal 后删 session：新增 Sessions.deleteRecords()，会话行与 goal 记录同一 store.change 事务（goals 表无指向 sessions 的外键，两步分开做崩在中间会「会话还在、目标没了」）。修复前 `删库失败时目标记录必须仍在` actual null。
+- S4 标题落库不带 titleRequested：change.title 分支一并写。修复前 `false !== true`，重启会重复索要一次标题。
+
+任务（tasks 表）
+- T1 notified 先改内存后落库：换序为先落库成功再改内存。修复前 `true !== false`。
+- T2 listPendingSessionIds 全表扫描：新增部分索引 `tasks_pending ON tasks(session_id) WHERE COALESCE(notified,0)=0`（幂等 DDL，只加索引不动表结构；实测现有查询直接命中，无需改 SQL）。修复前 `SCAN tasks USING INDEX sqlite_autoindex_tasks_1`。
+- T3 Goal 阻塞态会话每次启动白拉 SDK：load() 先读 goalStore 持久化 phase，非 running/verifying 直接跳过，notified 原样保留等用户恢复 Goal 再投。修复前 `1 !== 0`。
+
+事件（session_events 表）
+- E1 无 id 事件纯追加致重放膨胀：saveEvent 对无 id 记录按 (session_id,type,agent_id,record) 内容判重，同代理同内容视为同一条，内容不同仍各自成行。修复前同一条写 3 次得 3 行。
+- E4 恢复对账逐条独立事务：整段合并成一次 persist 数组增量（同一 SAVEPOINT），写放大从 1+N 次事务压到 1 次。修复前 `actual 'cancelled' expected 'running'`（半截归一化）。
+
+模型存储与配置（src/pi-model-storage.js、src/model-config.js、src/protocol.js）
+- M1 auth 迁移窗口被 models/config 存在性提前关闭：改为每个来源只看自己的 migrated 标记，仍有告警的来源保持窗口开着。修复前 `config 存在不得推断 auth 已迁移完成`——models.json 合法 + auth.json 有坏条目时，坏条目修好也永不导入且告警被清空。
+- M2 importFavorites 结构非法不告警：与 importModels/importAuth 同口径 recordImportError。
+- M3 hidden 无 CAS：新增 hiddenState()/casHidden()，与 config/favorites/凭据同口径。修复前 Missing expected rejection（跨进程丢更新）。
+- M4 多语句写入未包 SAVEPOINT：新增本模块 change()（同 SessionStore #change 风格），包住 importAuth 循环、recordImportError/clearImportErrors 的读-改-写、importOnce 的 apply+打标记。修复前 `半截导入必须整体回滚` actual `{type:'api_key',key:'sk-a'}`。
+- M5 单行坏 JSON 阻断启动：新增 readRow() 容错读，所有 database.get 改走它；readState 返回 invalid 标志。读路径按未配置处理并在配置页给告警（启动与页面都打得开，用户有自愈入口），写路径明确拒绝。修复前 `store：命名空间 models 键 config 的值不是合法 JSON，读取中止` 直接抛出 init。
+- M6 credentials.modify 落库前不校形状：加 isCredential 校验，杜绝 read/list 看不见却占位阻断导入的幽灵行。
+- M7 favorites 三条写入口径 version 不一致：统一 `{...store, version:1}`（version 放 spread 之后，调用方不能覆盖字面量）。
+- M8 收藏超限静默截断后以截断值做 CAS 基线：normalizeFavorites 不再 slice，上限只拦新增。修复前库内 250 条读回 200、取消一条后只剩 199。
+- M9 saveProvider 放行内联 id：合并后强制 `entry.id = providerId`（与 renameProvider 同口径），原本无 id 的条目不凭空添加。修复前 `'other-id' !== 'key-a'`。
+- M10 顶层非对象配置不报错且指纹等于空配置：configState 返回 invalid，get() 报 parseError、mutate() 拒绝写入。修复前 parseError 为空且可静默覆盖原值。
+- M11 zod invalid_literal 回显原值：oauth 改 `z.string().refine(...)`，issue 不再带 received。修复前错误信息含 `"received": "leak-me-please"`（server.js 会把整条 message 原样回传客户端）。
+- M12 写路径每次重新 prepare：本模块按 SQL 文本缓存 prepared 语句（外部连接仍走各自 prepare）。修复前 5 次写入新 prepare 10 次。
+
+守护进程与维护状态（scripts/service.mjs、scripts/maint-state.mjs、src/main.js）
+- X1 homeDir 未 resolve：统一 resolve（与 src/main.js 同口径）。修复前 `homeDir 必须是绝对路径，实际 ./relhome`——相对 AXIOM_HOME 下 supervisor 与 worker 会写进两个库文件，且 sanitize 白名单失配导致 /status 泄漏本机路径。
+- X2 第二个守护进程启动失败后僵死：抢锁段包 try/catch，抛错前关 maint server、数据库与控制管道。修复前该进程 20s 未退出（actual 'HANG'），一直占着库连接与随机端口。
+- X3 维护状态坏行阻断启动：database.get 包 try/catch 按全新状态重建（与 Database.list 跳坏行、Sessions.loadTaskBudget 有 catch 同口径），restore 对非对象快照（JSON null/标量/数组）同样兜底。修复前 `Error: store：命名空间 maint 键 state-bad 的值不是合法 JSON，读取中止`。
+- X4 全局 taskBudget 读写口径不对称：读侧先按已知键挑取再 strict 校验（未知键不再连合法值一起丢），configureTaskBudget 无库时明确报错。修复前脏键让整条回落默认 {20,2}。
+- X5 main.js initRemote 未 await：记录 remoteReady 并在 stop() 里先等它落定，listen 回调加 `if (closing) return`。实测证据：spawn 真实 main.js + IPC service.stop，修复前 5/5 全部 remote/config 未落库，修复后 5/5 落库。
+- X6 service.log 权限未收紧且写入含 token：openSync 带 0o600 + chmodSync（Windows 按平台容错），worker 输出写盘前抹掉维护 token（只抹 token 不做整体脱敏——路径与栈不是秘密，且 sanitize 会按 16KB 截尾，用在追加日志上会吞内容）。修复前 service.log 含 token 明文。
+
+### 明确不修（4 条，附技术理由）
+
+- S5 改标题不刷新 updatedAt：不是缺陷。手工重命名走 rename() 本来就写 updatedAt；模型自报标题发生在 run 内，startRun 进入时已刷 updatedAt、收尾 persist 写全量快照。列表排序不受影响。
+- E2 子代理 compaction 不落库：public/app.js:1796 与 1910 两处 compaction 处理都硬编码 `agentId === "main"`，前端从未渲染子代理压缩卡片（运行期也不渲染，不只是重启后）；且 create() 恢复子任务历史时只取 message 条目。此刻落库等于写无人读的行。这是「子代理压缩折叠」这个功能缺失，不是持久化缺陷，已在代码注释里写明这是有意边界。
+- E3 compaction 记录不带 agentId：与 E2 同源。当前只有主代理记录会落库，saveEvent 的 `?? "main"` 兜底恒等于真实身份，不存在身份键撞车。E2 若实现，此条必须一起改。
+- X7 WAL 不 truncate：supervisor 全生命周期持连接，尾次 checkpoint 不发生是 SQLite 的正常语义（只要还有连接打开，WAL 就必须保留）。实测 `wal_autocheckpoint = 1000`（页）已给磁盘占用封顶，且不丢数据。为「清爽」而在 supervisor 空闲时强制 TRUNCATE 会与 worker 的写入抢锁，收益不抵风险。
+
+### 表结构影响
+
+未增删改任何表或字段。唯一 DDL 是新增部分索引 `tasks_pending`（CREATE INDEX IF NOT EXISTS，幂等，重复启动不重复执行），老库无需数据迁移，投影口径不变。
+
+### 涉及文件
+
+- 产品代码：src/sessions.js、src/session-store.js、src/main.js、src/model-config.js、src/pi-model-storage.js、src/protocol.js、scripts/service.mjs、scripts/maint-state.mjs
+- 测试：tests/session-persistence.test.js、tests/task-budget.test.js、tests/goal-sessions.test.js、tests/session-store.test.js、tests/model-config.test.js、tests/pi-model-storage.test.js、tests/remote.test.js、tests/service.test.js
+- 文档：README.md（会话级预算固定、service.log 权限与 token 脱敏、启动跳过 Goal 阻塞态会话、已落盘路径只增不抹、hidden 走 CAS、坏行读容错写拒绝、按来源独立的导入门闩、收藏上限只拦新增）、devlog.md、.pi/skills/codebase-map/INDEX.md
+
+### 验证
+
+- npm test 全量：516 项，514 通过，0 失败，2 跳过（`tests/database.test.js` 与 `tests/workspace-picker.test.js` 的 `skip: process.platform === "win32"` 平台条件跳过，master 上本来就有，非本轮新增）。
+- 连带回归：P1 的丢弃规则首版写成「只对本次调用者的增量给机会」，导致 tests/recall.test.js 的撤回清理重试失败（`Missing expected rejection`）。已改为「每条增量都有且只有一次确定性失败的机会」——可重试失败不消耗这次机会，撤回清理仍是短事务且能重放。
+- 临时验证脚本（probe.tmp.mjs、x5probe.tmp.mjs、wal.tmp.mjs）用完即删，无残留。

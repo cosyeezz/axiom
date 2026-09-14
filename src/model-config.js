@@ -243,13 +243,15 @@ function parseDiscoverBody(api, body) {
   return { models, truncated: false };
 }
 
-// 收藏存 SQLite（models/favorites）；读取时归一化：过滤非法、去重、截断到上限，
+// 收藏存 SQLite（models/favorites）；读取时归一化：过滤非法、去重，
 // 与旧文件语义一致；库内值只可能由本模块写入，结构异常一律回退空表。
+// 读取不截断：旧收藏文件单组可能超过上限（导入路径不裁剪），读时静默截断会让写路径以
+// 截断值做 CAS 基线，把用户从未见过的条目永久删掉。上限只在「新增」时作为写侧闸门生效。
 function normalizeFavorites(parsed) {
   return Object.fromEntries(
     FAVORITE_GROUPS.map((group) => {
       const list = Array.isArray(parsed?.[group]) ? parsed[group] : [];
-      return [group, [...new Set(list.filter((key) => typeof key === "string"))].slice(0, FAVORITE_CAP)];
+      return [group, [...new Set(list.filter((key) => typeof key === "string"))]];
     }),
   );
 }
@@ -292,7 +294,7 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
           pendingApply.applyError = sanitizeApplyError(error);
         }
       });
-    const config = storage.readConfig();
+    const { config, invalid } = storage.configState();
     const result = {
       fingerprint: fingerprintOf(config),
       applied: !pendingApply,
@@ -303,6 +305,12 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
       hidden: normalizeHidden(storage.getHidden()),
     };
     if (pendingApply) result.applyError = pendingApply.applyError;
+    // 行存在但读不出可用配置（坏 JSON 或顶层非对象）：必须报错，绝不按空配置展示——
+    // 空配置指纹与它相同，用户随手一存就把原值静默覆盖掉。
+    if (invalid) {
+      result.parseError = "模型配置结构无效：数据库中的配置不是对象，已拒绝按空配置展示";
+      return result;
+    }
     // 导入期告警只在权威配置为空时展示：一旦用户开始配置，旧文件的问题不再 relevant。
     const imported = storage.importErrors();
     if (!Object.keys(config.providers ?? {}).length && imported.length)
@@ -328,7 +336,8 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
   // 重试保存，乐观锁照常通过，apply 幂等重算同一配置。
   async function mutate(baseFingerprint, apply) {
     // 起点捕获库内权威原文：异步校验窗口结束后用它做单语句 CAS 比较，跨进程不丢更新。
-    const { raw: expectedRaw, config } = storage.configState();
+    const { raw: expectedRaw, config, invalid } = storage.configState();
+    if (invalid) throw new Error("模型配置结构无效（数据库中的配置不是对象），已拒绝写入以避免覆盖");
     if (fingerprintOf(config) !== baseFingerprint) throw new Error("模型配置已被外部修改，请刷新配置页后重试");
     const providers = config.providers === undefined ? {} : config.providers;
     if (providers === null || typeof providers !== "object" || Array.isArray(providers))
@@ -386,15 +395,18 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
     const store = normalizeFavorites(value);
     const list = store[kind];
     const index = list.indexOf(key);
-    if (favorite && index < 0) list.push(key);
+    // 上限只拦「新增」：已超限的旧数据仍要能被用户一条条减下来，不能连删除也一起拒。
+    if (favorite && index < 0) {
+      if (list.length >= FAVORITE_CAP) throw new Error(`${kind} 收藏最多 ${FAVORITE_CAP} 条`);
+      list.push(key);
+    }
     if (!favorite && index >= 0) list.splice(index, 1);
-    for (const group of FAVORITE_GROUPS)
-      if (store[group].length > FAVORITE_CAP) throw new Error(`${group} 收藏最多 ${FAVORITE_CAP} 条`);
     if (!storage.casFavorites(raw, store)) throw new Error("收藏已被其他窗口修改，请刷新后重试");
     return store;
   }
 
   // 隐藏/恢复：key 必须存在于当前目录（供应商 id 或 `provider/id`），不写会永久失效的垃圾条目。
+  // 与 config/favorites/凭据同口径走 CAS：同 HOME 多进程盲写会让先写者的隐藏项复活。
   function writeHidden({ key, hidden }) {
     const known = new Set();
     for (const model of factory.modelCatalog?.() ?? factory.catalog()) {
@@ -402,10 +414,11 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
       known.add(model.key);
     }
     if (!known.has(key)) throw new Error(`未知的内置供应商或模型：${key}`);
-    const list = normalizeHidden(storage.getHidden());
+    const { raw, value } = storage.hiddenState();
+    const list = normalizeHidden(value);
     const next = hidden ? [...new Set([...list, key])] : list.filter((entry) => entry !== key);
     if (next.length > HIDDEN_CAP) throw new Error(`隐藏清单最多 ${HIDDEN_CAP} 条`);
-    storage.setHidden(next);
+    if (!storage.casHidden(raw, next)) throw new Error("隐藏清单已被其他窗口修改，请刷新后重试");
     return { hidden: next };
   }
 
@@ -488,7 +501,12 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
       const input = providerConfigIn.parse(provider);
       return enqueue(() =>
         mutate(baseFingerprint, (providers) => {
-          providers[providerId] = mergeProvider(asProvider(providers[providerId]), input);
+          const entry = mergeProvider(asProvider(providers[providerId]), input);
+          // 内联 id 必须与配置键一致（与 renameProvider 同口径）：前端把整条 provider 原样回传
+          // 很常见，id 当普通未知字段写进去就会形成「库内键 ≠ 内联 id」，而 GET 回显用键覆盖 id，
+          // 用户看不到差异。原本无内联 id 的条目不凭空加上（合并语义：不造字段）。
+          if ("id" in entry) entry.id = providerId;
+          providers[providerId] = entry;
         }),
       );
     },

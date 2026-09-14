@@ -59,11 +59,15 @@ const TABLES = {
 };
 
 // 事件身份 = (会话, 类型, 代理, 记录 id)：retry 在 main 与子代理可能同 id，缺 agent_id 会误并。
-// 无 id 的事件不进部分唯一索引，天然只追加。
+// 无 id 的事件不进部分唯一索引，改按内容判重（见 saveEvent）：老库遗留的 NULL key 行每次
+// 恢复对账都会被逐条回写，只追加就会随打开次数线性膨胀。
+// 待通知任务的部分索引：启动恢复每次都要扫 listPendingSessionIds，绝大多数行最终是
+// notified=1（不进索引），索引常驻很小；条件写法与查询的 COALESCE 一致才能命中。
 const INDEXES = `
   CREATE UNIQUE INDEX IF NOT EXISTS session_events_identity
     ON session_events(session_id, type, agent_id, key) WHERE key IS NOT NULL;
   CREATE INDEX IF NOT EXISTS session_events_scan ON session_events(session_id, type);
+  CREATE INDEX IF NOT EXISTS tasks_pending ON tasks(session_id) WHERE COALESCE(notified, 0) = 0;
 `;
 
 // 摘要与子代理进度机制删除后的历史残留（旧库才有）：summaries 表、sessions.main_turn、
@@ -392,12 +396,19 @@ export class SessionStore {
   saveEvent(sessionId, type, record) {
     if (!EVENT_TYPES.has(type)) throw new Error(`未知事件类型：${type}（允许：${[...EVENT_TYPES].join("、")}）`);
     if (record?.id == null) {
-      // 无 id：纯追加，身份由 rowid 决定。
+      // 无 id：拿不到稳定身份，只能按内容判重。老库的 NULL key 行会被每次恢复对账逐条回写，
+      // 纯追加等于「打开一次多一份」；同代理同内容视为同一条，内容不同仍各自成行。
+      const agentId = record?.agentId ?? "main";
+      const text = JSON.stringify(record ?? null);
+      const existing = this.#sql(
+        "SELECT 1 FROM session_events WHERE session_id = ? AND type = ? AND agent_id = ? AND key IS NULL AND record = ?",
+      ).get(sessionId, type, agentId, text);
+      if (existing) return;
       this.#sql("INSERT INTO session_events (session_id, type, agent_id, key, record) VALUES (?, ?, ?, NULL, ?)").run(
         sessionId,
         type,
-        record?.agentId ?? "main",
-        JSON.stringify(record ?? null),
+        agentId,
+        text,
       );
       return;
     }

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Sessions } from "../src/sessions.js";
@@ -224,5 +225,93 @@ test("重启只读元数据；列表改名不建SDK，并发打开只恢复一�
     assert.equal(sessions.store.getSession(id).title, "加载中改名不丢");
     await sessions.remove(untouched);
     assert.equal(created, 1, "删除未打开会话不创建SDK");
+  } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("确定性坏增量只重试一次即丢弃并上报，不阻塞此后所有落盘", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-persist-poison-"));
+  const sessions = new Sessions(factory, undefined, join(root, "storage"));
+  try {
+    const id = await sessions.create(root);
+    const item = sessions.get(id);
+    const errors = [];
+    item.listeners.add((event) => { if (event.type === "error") errors.push(event.data.message); });
+    // 未知会话字段是确定性失败：重试多少次都不可能成功。
+    await assert.rejects(sessions.persist(item, { session: { taskBudgetTypo: 1 } }), /未知会话字段/);
+    // 关键：坏增量不得永久占住队头，此后的正常写入必须照常落盘。
+    await sessions.rename(id, "坏增量之后仍能落盘");
+    assert.equal(sessions.store.getSession(id).title, "坏增量之后仍能落盘");
+    assert.equal(item.pendingWrites.length, 0, "队列必须清空，不留永久堵塞项");
+    assert.ok(errors.some((message) => /未知会话字段/.test(message)), "丢弃必须上报，不能静默吞掉");
+  } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("JSONL 被外部删除后不把 session_file 写回 NULL，历史缺失守卫仍生效", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-persist-file-"));
+  const storage = join(root, "storage");
+  const file = join(root, "landed.jsonl");
+  const landing = async () => ({ ...(await factory()), sessionFile: () => file, historyEntries: () => [] });
+  landing.catalog = factory.catalog;
+  let sessions = new Sessions(landing, undefined, storage), restored;
+  try {
+    const id = await sessions.create(root);
+    assert.equal(sessions.store.getSession(id).sessionFile ?? null, null, "前提：文件未落盘时不写路径");
+    await writeFile(file, "");
+    sessions.get(id).emit({ type: "agent.message.end", data: { message: { role: "assistant", content: [] } } });
+    await new Promise(setImmediate);
+    assert.equal(sessions.store.getSession(id).sessionFile, file, "前提：落盘后路径入库");
+    // 外部清理脚本/同步工具删掉历史文件：库里的路径是「历史丢失」的唯一证据，绝不能被抹平成 NULL。
+    await rm(file, { force: true });
+    assert.equal(existsSync(file), false);
+    await sessions.persist(sessions.get(id));
+    assert.equal(sessions.store.getSession(id).sessionFile, file, "全量落盘不得把已落盘路径写回 NULL");
+    await sessions.close();
+    restored = new Sessions(landing, undefined, storage);
+    await restored.load();
+    await assert.rejects(restored.ensureLoaded(id), /会话历史文件缺失/, "守卫必须仍然拒绝加载，而不是当新会话静默重建");
+  } finally { await restored?.close(); await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("自报标题与 titleRequested 同一笔落盘，重启不再重复索要标题", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-persist-title-"));
+  const sessions = new Sessions(factory, undefined, join(root, "storage"));
+  try {
+    const id = await sessions.create(root);
+    const item = sessions.get(id);
+    // 复现 prompt 注入标题请求后模型自报成功的时刻：内存两个字段都变了，落盘只描述 title。
+    item.titleRequested = true;
+    item.title = "模型自报标题";
+    await sessions.persist(item, { title: true });
+    const saved = sessions.store.getSession(id);
+    assert.equal(saved.title, "模型自报标题");
+    assert.equal(saved.titleRequested, true, "标题写库成功后崩溃，重启不该再要一次标题");
+  } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("恢复对账整段单事务：事件写失败时任务归一化一起回滚", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-persist-reconcile-"));
+  let sessions = new Sessions(factory, undefined, join(root, "storage"));
+  try {
+    const id = await sessions.create(root);
+    const item = sessions.get(id);
+    // 中断态任务（无 sessionFile → 恢复时归一化为 cancelled）+ 一条 retry：恢复对账会同时写两类。
+    // notified 置 true 只为让启动恢复不把它当待通知会话提前加载，测试要的是显式 ensureLoaded 那一次对账。
+    await sessions.persist(item, [
+      { task: { id: "t1", task: "做事", status: "running", notified: true } },
+      { event: { type: "retry", record: { id: "r1", agentId: "main", status: "waiting" } } },
+    ]);
+    await sessions.close();
+
+    sessions = new Sessions(factory, undefined, join(root, "storage"));
+    await sessions.load();
+    assert.equal(sessions.get(id).loaded, false, "前提：启动恢复没有提前加载这条会话");
+    const saveEvent = sessions.store.saveEvent.bind(sessions.store);
+    sessions.store.saveEvent = () => { throw new Error("injected reconcile failure"); };
+    await assert.rejects(sessions.ensureLoaded(id), /injected reconcile failure/);
+    // 逐条独立成事务时，任务已被写成 cancelled 而事件没写 → 留下半截归一化结果。
+    const task = sessions.store.listTasks(id).find((entry) => entry.id === "t1");
+    assert.equal(task.status, "running", "对账中途失败必须整段回滚，不留半截归一化");
+    assert.equal(sessions.store.getSession(id).retries[0].status, "waiting");
+    sessions.store.saveEvent = saveEvent;
   } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
 });

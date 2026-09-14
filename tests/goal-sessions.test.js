@@ -620,3 +620,91 @@ test("新会话默认普通模式：A 处于 running/paused Goal 时新建的会
     await assertPlain(c, "c 只回答一次");
   } finally { await sessions.close(); }
 });
+
+test("删除会话：goal 记录与会话行同一事务，删库失败不得先丢掉目标", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-goal-delete-"));
+  const { factory, mains } = factoryFixture();
+  const sessions = new Sessions(factory, undefined, join(root, "storage"));
+  try {
+    const id = await sessions.create(root);
+    await ordinary(sessions, id, "先普通聊一句");
+    await enterGoal(sessions, id, mains[0]);
+    assert.ok(sessions.goalStore.load(id), "前提：目标已持久化");
+
+    const deleteSession = sessions.store.deleteSession.bind(sessions.store);
+    sessions.store.deleteSession = () => { throw new Error("injected delete failure"); };
+    await assert.rejects(sessions.remove(id), /injected delete failure/);
+    // goals 表没有指向 sessions 的外键，两步分开做就会「会话还在、目标没了」。
+    assert.ok(sessions.goalStore.load(id), "删库失败时目标记录必须仍在");
+    assert.equal(sessions.store.hasSession(id), true);
+
+    sessions.store.deleteSession = deleteSession;
+    await sessions.remove(id);
+    assert.equal(sessions.goalStore.load(id), null);
+    assert.equal(sessions.store.hasSession(id), false);
+  } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("exit 消费通知：落库失败时内存不得先标记已通知", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-goal-exit-order-"));
+  const { factory, mains, children } = factoryFixture();
+  const sessions = new Sessions(factory, undefined, join(root, "storage"));
+  try {
+    const id = await sessions.create(root);
+    const item = sessions.get(id);
+    await ordinary(sessions, id, "先普通聊一句");
+    await enterGoal(sessions, id, mains[0]);
+    const [taskId] = item.tasks.start(["child"]);
+    await tick();
+    children[0].finish();
+    await item.tasks.jobs.get(taskId).done;
+    await tick();
+    const job = item.tasks.jobs.get(taskId);
+    assert.ok(job.resultId && !job.notified, "前提：子任务处于待通知状态");
+
+    sessions.database.exec("PRAGMA query_only = ON");
+    await assert.rejects(sessions.goalAction(id, "exit"), /readonly/i);
+    // 内存说「已通知」而库里还是 0：重启会再通知一遍，属于重复打扰。
+    assert.equal(job.notified, false, "落库失败时内存不得抢先标记已通知");
+    assert.equal(sessions.store.listTasks(id).find((task) => task.id === taskId).notified, false);
+  } finally {
+    sessions.database.exec("PRAGMA query_only = OFF");
+    await sessions.close(); await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("启动恢复跳过 Goal 阻塞态会话：不白拉 SDK，通知仍留到恢复后", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-goal-blocked-boot-"));
+  const storage = join(root, "storage");
+  const first = factoryFixture();
+  const sessions = new Sessions(first.factory, undefined, storage);
+  let restored;
+  try {
+    const id = await sessions.create(root);
+    const item = sessions.get(id);
+    await ordinary(sessions, id, "先普通聊一句");
+    await enterGoal(sessions, id, first.mains[0]);
+    await sessions.goalAction(id, "confirm");
+    const [taskId] = item.tasks.start(["child"]);
+    await tick();
+    first.children[0].finish();
+    await item.tasks.jobs.get(taskId).done;
+    await tick();
+    await sessions.goalAction(id, "pause");
+    first.mains[0].finish();
+    await item.work;
+    await item.goal.whenSettled();
+    await until(() => item.goal.snapshot()?.phase === "paused", "paused");
+    assert.equal(item.tasks.jobs.get(taskId).notified, false, "前提：暂停态下通知投不出去");
+    await sessions.close();
+
+    const second = factoryFixture();
+    restored = new Sessions(second.factory, undefined, storage);
+    assert.deepEqual(restored.store.listPendingSessionIds(), [id], "前提：库里仍是待通知会话");
+    await restored.load();
+    // 暂停/等待确认的 Goal 会话投递必被拒（goalNotificationsBlocked），拉起 SDK 纯属白费。
+    assert.equal(second.mains.length, 0, "Goal 阻塞态会话不该在启动时被拉起");
+    assert.equal(restored.get(id).loaded, false);
+    assert.equal(restored.goalStore.load(id).phase, "paused", "目标记录原样保留，恢复后仍可投递");
+  } finally { await restored?.close(); await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});

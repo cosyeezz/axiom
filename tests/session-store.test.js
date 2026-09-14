@@ -511,3 +511,32 @@ test("#normalizeSchema：旧库幂等清理死表死列死事件行，业务数�
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("无 id 事件按内容去重：老库 NULL key 行反复对账不再线性膨胀", () =>
+  withStore((store, db) => {
+    store.insertSession({ id: "s1", cwd: "F:/x" });
+    const legacy = { agentId: "main", status: "waiting", attempt: 1 };
+    // 运行期路径都带 id；真正的触发面是老库里已有的无 id 历史行——create() 的恢复对账
+    // 会把 getSession 读出的记录逐条 saveEvent 回写，每打开一次就再追加一份。
+    store.saveEvent("s1", "retry", legacy);
+    store.saveEvent("s1", "retry", { ...legacy });
+    store.saveEvent("s1", "retry", { ...legacy });
+    assert.equal(db.prepare("SELECT count(*) AS n FROM session_events WHERE session_id = 's1'").get().n, 1);
+    assert.deepEqual(store.getSession("s1").retries, [legacy]);
+    // 内容不同仍各自成行（同一轮里的两条不同事件不能被并成一条）。
+    store.saveEvent("s1", "retry", { ...legacy, attempt: 2 });
+    assert.equal(db.prepare("SELECT count(*) AS n FROM session_events WHERE session_id = 's1'").get().n, 2);
+    // 同代理同内容才算同一条：agentId 不同的兄弟不得被误并。
+    store.saveEvent("s1", "retry", { ...legacy, agentId: "task-1" });
+    assert.equal(db.prepare("SELECT count(*) AS n FROM session_events WHERE session_id = 's1'").get().n, 3);
+  }));
+
+test("待通知任务查询走部分索引，不全表扫描", () =>
+  withStore((store, db) => {
+    store.insertSession({ id: "s1", cwd: "F:/x" });
+    store.saveTask("s1", { id: "t1", task: "做事", status: "completed", resultId: "r1", notified: false });
+    const plan = db.prepare("EXPLAIN QUERY PLAN SELECT DISTINCT session_id FROM tasks WHERE COALESCE(notified, 0) = 0").all()
+      .map((row) => row.detail).join(" ");
+    assert.match(plan, /USING (COVERING )?INDEX tasks_pending/, `启动恢复每次都跑这条查询，不该全表扫描：${plan}`);
+    assert.deepEqual(store.listPendingSessionIds(), ["s1"]);
+  }));

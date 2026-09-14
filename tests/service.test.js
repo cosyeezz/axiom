@@ -1,16 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, chmod } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, chmod, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, isAbsolute, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { request } from "node:http";
 import { createMaintState, sanitize } from "../scripts/maint-state.mjs";
 import { startMaintServer } from "../scripts/maint-server.mjs";
 import { Database } from "../src/database.js";
-import { installTag } from "../scripts/service.mjs";
+import { installTag, homeDir } from "../scripts/service.mjs";
 
 // 轮询上限只为了“卡死时报错而不是永久 hang”，不是性能断言：空机器上这些检查 1~2s 就过，
 // 负载高时（多文件并行 + 外部进程）同一流程可能慢 10 倍以上，故给到 60s 避免假失败。
@@ -535,4 +535,107 @@ test("maint-server: strict object body and recover failures map to 400/409/500",
     await server.close();
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("homeDir 解析为绝对路径：相对 AXIOM_HOME 下 supervisor 与 worker 不得操作不同库文件", () => {
+  const saved = process.env.AXIOM_HOME;
+  const cwd = process.cwd();
+  try {
+    process.env.AXIOM_HOME = "./relhome";
+    // supervisor 按自己的 cwd 打开 axiom.db，worker 以 cwd:root fork 后按 root 打开——
+    // 相对路径会让两个进程写进两个库（维护状态与会话/设置分叉），且 sanitize 白名单用相对
+    // 路径匹配不到日志里的绝对路径，/status 会泄漏本机路径。
+    assert.equal(isAbsolute(homeDir()), true, `homeDir 必须是绝对路径，实际 ${homeDir()}`);
+    assert.equal(homeDir(), resolve(cwd, "relhome"));
+    process.env.AXIOM_HOME = resolve(cwd, "abshome");
+    assert.equal(homeDir(), resolve(cwd, "abshome"), "绝对路径保持不变");
+  } finally {
+    if (saved === undefined) delete process.env.AXIOM_HOME;
+    else process.env.AXIOM_HOME = saved;
+  }
+});
+
+test("维护状态坏行不阻断启动：损坏值与 JSON null 都按全新状态重建并告警", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "axiom-state-bad-"));
+  const database = new Database(join(dir, "axiom.db"));
+  try {
+    const errorSpy = t.mock.method(console, "error", () => {});
+    const fresh = await createMaintState({ database, key: "state-fresh", legacyFile: join(dir, "none.json") });
+    // 坏 JSON：单行损坏不该让守护进程永久起不来（需人工清库才能恢复）。
+    database.prepare("INSERT INTO store (namespace, key, value) VALUES ('maint', 'state-bad', 'secret-must-not-leak{')").run();
+    const broken = await createMaintState({ database, key: "state-bad", legacyFile: join(dir, "none.json") });
+    assert.equal(broken.data.status, "idle", "坏行按全新状态重建");
+    assert.deepEqual(broken.data.phases, fresh.data.phases, "与全新状态完全同形");
+    assert.equal(broken.data.phase, fresh.data.phase);
+    assert.ok(errorSpy.mock.calls.some((call) => /维护状态/.test(String(call.arguments[0]))), "坏行必须有可见告警");
+    for (const call of errorSpy.mock.calls)
+      assert.equal(String(call.arguments[0]).includes("secret-must-not-leak"), false, "告警不得携带原文片段");
+    // JSON null / 非对象：restore 直接展开会抛 TypeError。
+    database.set("maint", "state-null", null);
+    const nulled = await createMaintState({ database, key: "state-null", legacyFile: join(dir, "none.json") });
+    assert.equal(nulled.data.status, "idle");
+    database.set("maint", "state-scalar", 42);
+    const scalar = await createMaintState({ database, key: "state-scalar", legacyFile: join(dir, "none.json") });
+    assert.equal(scalar.data.status, "idle");
+    // 覆盖后自愈：坏行已被本次会话的合法快照取代。
+    assert.ok(database.get("maint", "state-bad"), "坏行落库自愈");
+    errorSpy.mock.restore();
+  } finally {
+    database.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("第二个守护进程启动失败必须退出：不留僵死进程占着库连接与随机端口", async () => {
+  const { base, root } = await buildWorkspace();
+  let first;
+  try {
+    first = await startTest(root);
+    // 同一安装再起一个：控制套接字已被占用 → 抛「已有守护进程运行」。抛错前若不关掉 maint
+    // server 与数据库连接，已 listen 的 HTTP 句柄会一直持有事件循环，进程永不退出。
+    const second = startDaemon(root);
+    let out = "";
+    second.stderr.on("data", (chunk) => { out += chunk; });
+    second.stdout.on("data", (chunk) => { out += chunk; });
+    const exited = await Promise.race([
+      once(second, "exit").then(([code]) => code ?? "signal"),
+      new Promise((resolve) => setTimeout(() => resolve("HANG"), 20000)),
+    ]);
+    if (exited === "HANG") await killTree(second.pid);
+    assert.notEqual(exited, "HANG", `第二个守护进程必须退出，实际仍在运行；输出：${out.slice(-500)}`);
+    assert.notEqual(exited, 0, "启动失败必须非零退出码");
+    assert.match(out, /已有守护进程运行|EADDRINUSE/i);
+  } finally { await teardown(base, first); }
+});
+
+test("service.log 不泄漏维护 token；POSIX 下权限收紧到 0600", async () => {
+  const { base, root, home } = await buildWorkspace();
+  let child;
+  try {
+    // 假 worker 把 token 原样打到 stdout：守护进程把 worker 输出写进共享 service.log，
+    // 不脱敏就等于把维护凭证明文落盘（数据库文件是 0600，日志却是 0644，口径不一致）。
+    await writeFile(join(root, "src", "main.js"), `
+const fs = require('node:fs');
+fs.writeFileSync('maint-env.tmp', JSON.stringify({ url: process.env.AXIOM_MAINTENANCE_URL || '', token: process.env.AXIOM_MAINTENANCE_TOKEN || '', instanceId: process.env.AXIOM_INSTANCE_ID || '' }));
+fs.renameSync('maint-env.tmp', 'maint-env');
+fs.writeFileSync('workerPid', String(process.pid));
+console.log('worker boot token=' + process.env.AXIOM_MAINTENANCE_TOKEN);
+process.on('message', (m) => { if (m.type === 'service.stop') process.exit(0); });
+process.send({ type: 'service.ready', instanceId: process.env.AXIOM_INSTANCE_ID, version: 'test' });
+setInterval(() => {}, 1000);
+`);
+    child = startDaemon(root);
+    child.stderr.on("data", (d) => console.error("[daemon]", String(d).trim()));
+    await until(async () => (await readMaybe(join(root, "maint-env"))) !== null);
+    const { token } = await maintEnv(root);
+    assert.ok(token, "前提：worker 已拿到 token");
+    const logPath = join(home, "service.log");
+    await until(async () => (await readMaybe(logPath))?.includes("worker boot"));
+    const log = await readMaybe(logPath);
+    assert.equal(log.includes(token), false, "service.log 不得包含维护 token 明文");
+    if (process.platform !== "win32") {
+      const { mode } = await stat(logPath);
+      assert.equal(mode & 0o777, 0o600, `service.log 权限应为 0600，实际 ${(mode & 0o777).toString(8)}`);
+    }
+  } finally { await teardown(base, child); }
 });
