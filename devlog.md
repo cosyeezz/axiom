@@ -1,5 +1,16 @@
 # 开发记录
 
+## 2026-09-14 配置热更新：开发期静态资源免重启 + 默认压缩配置直推已加载会话
+
+- 诉求：“改了设置每次都要重启”。先拆清“重启”到底是为了什么：改前端代码要重启（静态资源启动时一次性读入内存）、改默认压缩配置要重启（已加载会话不采用新值）两个原因各自独立，本轮分别消除；源码全局热重载、运行中会话热换技能/插件/MCP 不在本轮范围。
+- 改动一（`src/server.js`）：抽出 `load()` 统一读取资源并记录 mtime，`freshen()` 在请求时比对 mtime，变了就重读并重算 ETag。`dev` 标志在模块加载期读一次 `AXIOM_DEV === "1"`，生产路径首行就 return，零额外 IO、行为不变。`statSync` 在编辑器保存瞬间可能读到临时缺失，故 try/catch 后沿用旧字节，不把一次竞争变成 500。新增文件仍需重启（路由表启动期构建）。
+- 改动二（`src/sessions.js` 的 `saveDefaults()`）：保存带 compaction 的默认值后，遍历 `this.items` 把新压缩配置推给已加载会话。依据是压缩本来就是全局口径：`ensureLoaded` 恢复会话时总以默认值覆盖 `saved.selection.compaction`，且前端从不向已有会话单独下发 compaction（`session.configure` 只带 model/queueType/subagentModel/thinking），所以不存在被覆盖的“用户自设会话值”，直推只是把重启后的既定结果提前。调 `configure` 必须带会话原 `model`（从 `item.agent.config().model` 取），否则 SDK 会招“模型当前不可用”；跳过 `configuring` 中的会话避免抢锁；单会话失败（如模型不支持该思考等级）吃掉，继续保持 `saveDefaults` 原有的“不抛”契约。
+- 不做 `retry` 词表直推：retry 是会话级配置（`item.retry` 单独存盘、不被默认值覆盖），强推会覆写用户在单会话上的意图，语义与压缩不同。
+- 不采用 `--watch`：沙箱实测过（`fork` + `execArgv:["--watch"]`）技术上可行，IPC 在文件变更重启后仍存续，子进程能再次完成 `service.ready` 握手，守护进程的 `onMessage` 也会忽略 Node 自发的 `watch:import` 消息。但代价是每次存盘杀掉进程内所有活动会话与运行中任务，且会与 `service.mjs` 的崩溃退避计数相互干扰（主动重启被计作崩溃），收益不抵风险，暂不接入。
+- 验证：`npm test` 384 个用例，382 通过、2 个既有跳过、0 失败。新增 `tests/dev-assets.test.js`（必须先设 `AXIOM_DEV` 再动态 import server.js，因为标志在模块加载期读；改 `public/style.css` 后断言 ETag 变化、旧 ETag 不再命中 304，finally 还原原字节）。`tests/defaults.test.js` 补一例：注入 live/broken/cold 三个假 item，断言只推 live、broken 报错不影响保存、cold 不被碰，且不带 compaction 的保存不骚扰任何会话。`tests/compaction-config.test.js` 重启前的断言从“会话保留自己的压缩配置”改为“保存即推”，重启后的断言不变。
+- 另做真实端到端冒烟（隔离端口，不碰用户开发服务）：dev 下改 `public/app.js` 后同一进程内二次请求即返回新 ETag 与新正文；生产下同样改动被忽略（ETag 不变、不含探针），确认未改动生产行为。两个冒烟脚本用完删除，文件字节已校验还原。
+- 涉及文件：`src/server.js`、`src/sessions.js`、`tests/dev-assets.test.js`（新增）、`tests/defaults.test.js`、`tests/compaction-config.test.js`、`README.md`、`devlog.md`、codebase-map 索引。
+
 ## 2026-09-14 重试词表重新打开为空的二次排查
 
 - 用户在 macOS/Windows 继续反馈回车消失、关闭配置再打开为空。上次只验证事件与保存请求，没有验证重新加载后的标签，结论不完整。

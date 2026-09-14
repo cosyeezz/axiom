@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/14 03:58:04）
+# Axiom 多级代码索引（生成于 2026/9/14 05:49:33）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -41,10 +41,10 @@
 | src/protocol.js | 354 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/remote.js | 547 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
 | src/retry.js | 173 | 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_DELAY_MS, MAX_RETRIES, delayFor |
-| src/server.js | 481 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | assets, createServerApp |
+| src/server.js | 496 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | dev, digest, load, freshen |
 | src/session-memory.js | 29 | 标题提取登记、轮次预算挂钩与委派背景 | textOf, memoryHooks |
 | src/session-store.js | 458 | 会话三表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, TABLES, INDEXES |
-| src/sessions.js | 1345 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | BROWSE_PAGE, SEARCH_LIMIT, SEARCH_DIR_LIMIT, IGNORED_ENTRIES |
+| src/sessions.js | 1356 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | BROWSE_PAGE, SEARCH_LIMIT, SEARCH_DIR_LIMIT, IGNORED_ENTRIES |
 | src/task-budget.js | 36 | 主子代理轮次预算规则、收尾提示词与配置页参数校验 | WRAP_UP_PROMPT, TASK_BUDGET_LIMITS, taskBudgetDefaults, within |
 | src/tasks.js | 209 | Tasks：子任务（委托）生命周期 | ACTIVE, historyResult, Tasks |
 | src/tools.js | 110 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
@@ -66,7 +66,8 @@
 | tests/conversation-preview.mjs | 124 | node --test 测试（npm test） | markdown, message, thinking, state |
 | tests/conversation-ui.py | 254 | node --test 测试（npm test） | - |
 | tests/database.test.js | 149 | node --test 测试（npm test） | - |
-| tests/defaults.test.js | 37 | node --test 测试（npm test） | - |
+| tests/defaults.test.js | 86 | node --test 测试（npm test） | - |
+| tests/dev-assets.test.js | 46 | node --test 测试（npm test） | - |
 | tests/file-picker.test.js | 67 | node --test 测试（npm test） | source, tick |
 | tests/helpers/model-concurrency-child.mjs | 82 | node --test 测试（npm test） | barrier, runOpponent |
 | tests/image-input.test.js | 169 | node --test 测试（npm test） | pngBase64, jpegBase64, image, parsePrompt |
@@ -893,12 +894,16 @@
 | canResume | function | 85 |
 | createAutoRetry | function | 101 |
 
-### src/server.js（481 行） — createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发
+### src/server.js（496 行） — createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| assets | const | 8 |
-| createServerApp | function | 46 |
+| dev | const | 10 |
+| digest | const | 11 |
+| load | const | 12 |
+| freshen | const | 17 |
+| assets | const | 27 |
+| createServerApp | function | 60 |
 
 ### src/session-memory.js（29 行） — 标题提取登记、轮次预算挂钩与委派背景
 
@@ -935,7 +940,7 @@
 | saveTask | method | 429 |
 | listTasks | method | 452 |
 
-### src/sessions.js（1345 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
+### src/sessions.js（1356 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -967,41 +972,41 @@
 | workspaceDefaults | method | 281 |
 | configureDefaults | method | 299 |
 | saveDefaults | method | 304 |
-| validateSelection | method | 343 |
-| validateCompaction | method | 374 |
-| listPresets | method | 392 |
-| mutatePresets | method | 402 |
-| savePreset | method | 415 |
-| deletePreset | method | 430 |
-| load | method | 439 |
-| ensureLoaded | method | 458 |
-| migrateLegacySessions | method | 480 |
-| sessionData | method | 504 |
-| persist | method | 517 |
-| writeChange | method | 535 |
-| saveChange | method | 550 |
-| list | method | 555 |
-| rename | method | 572 |
-| importSession | method | 585 |
-| create | method | 612 |
-| scheduleTaskNotifications | method | 942 |
-| deliverTaskNotifications | method | 954 |
-| get | method | 981 |
-| revealWorkspace | method | 986 |
-| browse | method | 1000 |
-| listFiles | method | 1006 |
-| refreshSkills | method | 1068 |
-| snapshot | method | 1074 |
-| subscribe | method | 1103 |
-| configure | method | 1109 |
-| startRun | method | 1144 |
-| retry | method | 1180 |
-| prompt | method | 1187 |
-| withdraw | method | 1212 |
-| cancel | method | 1261 |
-| retryTask | method | 1284 |
-| remove | method | 1290 |
-| close | method | 1335 |
+| validateSelection | method | 354 |
+| validateCompaction | method | 385 |
+| listPresets | method | 403 |
+| mutatePresets | method | 413 |
+| savePreset | method | 426 |
+| deletePreset | method | 441 |
+| load | method | 450 |
+| ensureLoaded | method | 469 |
+| migrateLegacySessions | method | 491 |
+| sessionData | method | 515 |
+| persist | method | 528 |
+| writeChange | method | 546 |
+| saveChange | method | 561 |
+| list | method | 566 |
+| rename | method | 583 |
+| importSession | method | 596 |
+| create | method | 623 |
+| scheduleTaskNotifications | method | 953 |
+| deliverTaskNotifications | method | 965 |
+| get | method | 992 |
+| revealWorkspace | method | 997 |
+| browse | method | 1011 |
+| listFiles | method | 1017 |
+| refreshSkills | method | 1079 |
+| snapshot | method | 1085 |
+| subscribe | method | 1114 |
+| configure | method | 1120 |
+| startRun | method | 1155 |
+| retry | method | 1191 |
+| prompt | method | 1198 |
+| withdraw | method | 1223 |
+| cancel | method | 1272 |
+| retryTask | method | 1295 |
+| remove | method | 1301 |
+| close | method | 1346 |
 
 ### src/task-budget.js（36 行） — 主子代理轮次预算规则、收尾提示词与配置页参数校验
 
