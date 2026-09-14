@@ -687,7 +687,7 @@ export class Sessions {
       titleRequested: saved?.titleRequested ?? !!saved,
       titlePending: false,
       // 轮次预算随会话创建定死：新会话取当前全局值（保存后新建即生效），运行中不热更；
-      // selection.taskBudget 仅供测试注入。
+      // 恢复的会话从 selection 读回创建时的预算，全局值后来改了也不追认。
       taskBudget: structuredClone(selection.taskBudget ?? this.taskBudget),
       // 老记录无 createdAt，回退 updatedAt 兜底（历史文件未存创建时间，无法还原真实值）。
       createdAt: saved?.createdAt || saved?.updatedAt || Date.now(),
@@ -775,8 +775,12 @@ export class Sessions {
         const wasRunning = item.runningSince;
         trackElapsed(item, pointStatus(item));
         envelope.data = { ...event.data, elapsedMs: item.elapsedMs, runningSince: item.runningSince };
+        // 顺路带上标题与 updatedAt：这两个字段在运行开始前就改好了（prompt 用首条输入推导标题、
+        // startRun 刷新时间），但原先要等整轮跑完的全量快照才落库。长任务跑到一半进程被杀，
+        // 重启后侧栏就是一排「新会话」加过期时间。搭已有的这一笔写，不多一次落盘。
         if (wasRunning !== item.runningSince)
-          this.saveChange(item, { session: { elapsedMs: item.elapsedMs, runningSince: item.runningSince } });
+          this.saveChange(item, { session: { title: item.title, updatedAt: item.updatedAt,
+            elapsedMs: item.elapsedMs, runningSince: item.runningSince } });
       }
       if (event.type === "agent.retry") {
         let record = item.retries.find((entry) => entry.agentId === agentId && entry.id === event.data.id);

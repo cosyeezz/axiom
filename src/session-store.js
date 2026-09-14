@@ -60,7 +60,8 @@ const TABLES = {
 
 // 事件身份 = (会话, 类型, 代理, 记录 id)：retry 在 main 与子代理可能同 id，缺 agent_id 会误并。
 // 无 id 的事件不进部分唯一索引，改按内容判重（见 saveEvent）：老库遗留的 NULL key 行每次
-// 恢复对账都会被逐条回写，只追加就会随打开次数线性膨胀。
+// 恢复对账都会被逐条回写，只追加就会随打开次数线性膨胀。判重只兜住「内容一字不差」的回写，
+// 真正的收口是开库时补身份（见 BACKFILL_EVENT_KEYS）。
 // 待通知任务的部分索引：启动恢复每次都要扫 listPendingSessionIds，绝大多数行最终是
 // notified=1（不进索引），索引常驻很小；条件写法与查询的 COALESCE 一致才能命中。
 const INDEXES = `
@@ -69,6 +70,13 @@ const INDEXES = `
   CREATE INDEX IF NOT EXISTS session_events_scan ON session_events(session_id, type);
   CREATE INDEX IF NOT EXISTS tasks_pending ON tasks(session_id) WHERE COALESCE(notified, 0) = 0;
 `;
+
+// 老库（key 可空、导入侧还没有 anon-<序号> 兜底那一版）留下的无身份事件行：读出没有 id，
+// 恢复对账把归一化后的记录写回时内容已变（如 messageCount 落在消息数之外被删），按内容判
+// 重认不出来 → 多一条永远删不掉的幽灵行；撤回删除又要求非空 id，会连带整笔增量被丢弃。
+// 开库时按 rowid 补一次稳定 key（与导入侧 anon-<序号> 同性质，前缀区分来源），三条链路口
+// 径就一致了。OR IGNORE：万一撞上同组已有的同名 key 就跳过该行，留给内容判重兜住。
+const BACKFILL_EVENT_KEYS = "UPDATE OR IGNORE session_events SET key = 'legacy-' || rowid WHERE key IS NULL";
 
 // 摘要与子代理进度机制删除后的历史残留（旧库才有）：summaries 表、sessions.main_turn、
 // tasks 的 memory_turn/progress/progress_delivered、session_events 里 summary_trigger 与
@@ -86,6 +94,8 @@ export class SessionStore {
     database.exec(Object.values(TABLES).join(";\n"));
     this.#normalizeSchema();
     database.exec(INDEXES);
+    // 补身份必须在建唯一索引之后：OR IGNORE 靠这条索引才跳得过冲突行。
+    database.exec(BACKFILL_EVENT_KEYS);
   }
 
   // 旧库归一化（幂等，按实际库结构自检，不需要迁移标记）：删死表死列、清死事件行、

@@ -288,6 +288,110 @@ test("自报标题与 titleRequested 同一笔落盘，重启不再重复索要�
   } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+test("运行一开始就落库标题与 updatedAt：跑到一半被杀，侧栏不退回「新会话」与旧时间", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-persist-live-"));
+  let release;
+  // 首轮请求一直挂着：复现「长任务跑到一半整个进程被杀」的时刻，此时全量快照还没轮到。
+  const hanging = async () => ({
+    config: () => ({ model: "test/one", thinking: "off" }),
+    subscribe: () => () => {}, result: () => "ok",
+    prompt: () => new Promise((resolve) => { release = resolve; }),
+    abort: async () => {}, dispose: async () => {},
+  });
+  hanging.catalog = () => [{ key: "test/one" }];
+  const sessions = new Sessions(hanging, undefined, join(root, "storage"));
+  try {
+    const id = await sessions.create(root);
+    const created = sessions.store.getSession(id);
+    assert.equal(created.title, "新会话");
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    await sessions.prompt(id, "查一下今天的天气");
+    await new Promise(setImmediate);
+    const saved = sessions.store.getSession(id);
+    assert.equal(saved.title, "查一下今天的天气", "首条输入推导的标题必须随运行开始落库，否则崩溃后每个会话都叫「新会话」");
+    assert.ok(saved.updatedAt > created.updatedAt,
+      `运行开始就要刷新 updatedAt，否则重启后侧栏把正在干活的会话排到最后：${saved.updatedAt} vs ${created.updatedAt}`);
+    // titleRequested 反过来不能提前写：模型还没自报标题，重启必须再索要一次。
+    assert.equal(saved.titleRequested, false);
+  } finally {
+    release?.();
+    await sessions.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("跨重启读回：会话元数据、任务、事件三类原样恢复，撤回的事件不复活", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-restart-"));
+  const storage = join(root, "storage");
+  const childFile = join(root, "child.jsonl");
+  // 只有 session 头的合法 JSONL：恢复对账会打开它读历史，读出空历史才不干扰重试归一化。
+  await writeFile(childFile, `${JSON.stringify({ type: "session", version: 3, id: "child-hist", timestamp: "2026-01-01T00:00:00.000Z", cwd: root })}\n`);
+  const child = { id: "child-1", task: "查资料", status: "completed", text: "done", canRetry: false,
+    runtime: { systemPrompt: "子代理系统提示", model: "test/one" },
+    parentContext: "[Goal 所属子任务] 总体目标：X",
+    historySaved: true, persistenceVersion: 1, sessionFile: childFile,
+    resultId: "result-1", notified: true, createdAt: 111, updatedAt: 222 };
+  let sessions = new Sessions(factory, undefined, storage);
+  try {
+    const id = await sessions.create(root, { taskBudget: { maxTurns: 30, wrapUpWindow: 3 } });
+    const auto = await sessions.create(root);
+    const item = sessions.get(id);
+    await sessions.rename(id, "手动改的标题");
+    item.titleRequested = true;
+    await sessions.persist(item, { title: true });
+    // 模拟「运行中崩溃」：未结算的运行段留在库里。
+    Object.assign(item, { elapsedMs: 4200, runningSince: 999 });
+    await sessions.persist(item, { session: { elapsedMs: 4200, runningSince: 999 } });
+    await sessions.persist(item, [
+      { task: child },
+      { event: { type: "retry", record: { id: "r1", agentId: "main", status: "failed", attempt: 2, error: "boom" } } },
+      { event: { type: "retry", record: { id: "r2", agentId: "main", status: "failed", attempt: 1 } } },
+      { event: { type: "retry", record: { id: "r2", agentId: "child-1", status: "succeeded", attempt: 1 } } },
+      { event: { type: "compaction", record: { id: "c1", summary: "摘要", title: "压缩标题" } } },
+    ]);
+    // 撤回只删 main/r2；同 id 的子代理兄弟必须留下（身份含 agentId）。
+    await sessions.persist(item, { deletedEvents: { type: "retry", records: [{ id: "r2", agentId: "main" }] } });
+    await sessions.close();
+
+    // 真正的重启：上面 close() 已关掉库文件，这里重新打开同一个文件。
+    sessions = new Sessions(factory, undefined, storage);
+    sessions.taskBudget = { maxTurns: 5, wrapUpWindow: 1 };
+    await sessions.load();
+    const restored = sessions.get(id);
+    assert.equal(restored.loaded, false, "前提：任务已通知，启动恢复不该提前加载");
+    assert.equal(restored.title, "手动改的标题");
+    assert.equal(restored.titleManual, true);
+    assert.equal(restored.titleRequested, true, "标题已索要过，重启不该再要一次");
+    assert.equal(restored.elapsedMs, 4200);
+    assert.equal(restored.runningSince, null, "重启即中断：未结算的运行段不补算");
+    assert.equal(sessions.get(auto).titleManual, false, "没改过名的会话不能被恢复成手动标题，否则自动命名永久失效");
+
+    const saved = sessions.store.getSession(id);
+    // 库里保留崩溃瞬间的起点：它是「上次异常退出时正在运行」的唯一证据，读回内存反而会重复累加。
+    assert.equal(saved.runningSince, 999);
+    assert.deepEqual(saved.selection.taskBudget, { maxTurns: 30, wrapUpWindow: 3 });
+    assert.deepEqual(sessions.store.listTasks(id), [child], "任务大字段（runtime/parentContext）跨重启原样读回");
+    assert.deepEqual(saved.retries, [
+      { id: "r1", agentId: "main", status: "failed", attempt: 2, error: "boom" },
+      { id: "r2", agentId: "child-1", status: "succeeded", attempt: 1 },
+    ]);
+    assert.deepEqual(saved.compactions, [{ id: "c1", summary: "摘要", title: "压缩标题" }]);
+
+    const opened = await sessions.ensureLoaded(id);
+    assert.deepEqual(opened.taskBudget, { maxTurns: 30, wrapUpWindow: 3 }, "全局预算已改成 5 轮，旧会话仍用创建时的预算");
+    assert.equal(opened.elapsedMs, 4200);
+    assert.deepEqual(opened.retries, saved.retries);
+    assert.deepEqual(opened.compactions, saved.compactions);
+    assert.deepEqual(opened.tasks.snapshot(), [{ ...child, error: undefined }], "任务快照逐字段还原");
+    assert.deepEqual(sessions.store.listTasks(id), [child], "恢复对账重写任务不得丢字段");
+    await sessions.close();
+
+    sessions = new Sessions(factory, undefined, storage);
+    await sessions.load();
+    assert.equal(sessions.store.getSession(id).retries.length, 2, "恢复对账重写事件不得让撤回的记录复活");
+  } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test("恢复对账整段单事务：事件写失败时任务归一化一起回滚", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-persist-reconcile-"));
   let sessions = new Sessions(factory, undefined, join(root, "storage"));
