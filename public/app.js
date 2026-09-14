@@ -7,6 +7,8 @@ import "./tooltip.js";
 import { createModelPicker } from "./model-picker.js";
 import { initModelManager } from "./model-manager.js";
 import { initServiceSettings } from "./service-settings.js";
+import { createQuestionUI } from "./question.js";
+const questionUI = createQuestionUI({ root: document.getElementById("question-dock"), reply: (data) => request("question.reply", data), focusPrompt: () => document.getElementById("prompt").focus() });
 
 const filePicker = createFilePicker(request);
 const $ = (id) => document.getElementById(id);
@@ -260,6 +262,7 @@ function request(type, data = {}) {
   });
 }
 function controls() {
+  questionUI.setConnected(connected && !changing && !sessionMissing);
   const unavailable = !connected || changing;
   for (const id of ["provider", "model", "thinking", "subagent-provider", "subagent-model"])
     $(id).disabled = unavailable;
@@ -1737,6 +1740,8 @@ function event(message) {
   }
   if (message.sessionId !== sessionId) return;
   const { type, agentId = "main", data } = message;
+  if (type === "question.asked") questionUI.asked(message.sessionId, data);
+  if (type === "question.closed") questionUI.closed(message.sessionId, data.toolCallId);
   if (type === "agent.compaction.status" && agentId === "main") renderCompactionStatus(data);
   if (type === "agent.message.end" && agentId === "main") {
     lastMainMessage = data.message;
@@ -1946,6 +1951,7 @@ function snapshot(state) {
   scrollFrame = undefined;
   sessionMissing = false;
   sessionId = state.sessionId;
+  questionUI.show(sessionId, state.questions);
   try {
     sessionStorage.setItem("axiom.session", sessionId);
   } catch {}

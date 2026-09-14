@@ -17,6 +17,13 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  * 未登记的文件会在 INDEX.md 里标 ⚠ 提醒补充。
  */
 const MODULE_INFO = {
+  "src/questions.js": "主代理 question 工具、参数校验与可取消的回答等待",
+  "tests/questions.test.js": "提问等待、校验、会话隔离、子代理不可用与取消回归",
+  "tests/pi-question.test.js": "真实Pi SDK提问等待、工具答案续轮与取消回归",
+  "tests/question-preview.mjs": "无模型提问UI验收服务：真实工具等待、网页回执与结果展示",
+  "tests/question-ui.test.js": "提问面板多题键盘、自由输入与提交竞态回归",
+  "public/question.js": "主代理提问选项卡、键盘交互与回答提交",
+  "public/question.css": "提问面板样式、焦点与窄屏布局",
   "src/session-memory.js": "标题提取登记、轮次预算挂钩与委派背景",
   "src/task-budget.js": "主子代理轮次预算规则、收尾提示词与配置页参数校验",
   "tests/task-budget.test.js": "轮次预算默认值、边界校验与系统提示词回归",

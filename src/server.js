@@ -31,6 +31,8 @@ const assets = new Map(
     ["/style.css", "public/style.css", "text/css"],
     ["/theme.js", "public/theme.js"],
     ["/app.js", "public/app.js"],
+    ["/question.js", "public/question.js"],
+    ["/question.css", "public/question.css", "text/css"],
     ["/service-settings.js", "public/service-settings.js"],
     ["/file-picker.js", "public/file-picker.js"],
     ["/tooltip.js", "public/tooltip.js"],
@@ -410,6 +412,9 @@ export function createServerApp(sessions, service = {}) {
               break;
             case "queue.withdraw":
               data = await sessions.withdraw(request.sessionId, request.recall);
+              break;
+            case "question.reply":
+              data = sessions.replyQuestion(request.sessionId, request.toolCallId, request.answers);
               break;
             case "cancel":
               await sessions.cancel(request.sessionId);

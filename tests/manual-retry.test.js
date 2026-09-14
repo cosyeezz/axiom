@@ -98,7 +98,7 @@ test("session.retry is a strict protocol command dispatched to sessions.retry", 
 async function page() {
   const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
   const memoryTags = (await readFile(new URL("../public/memory-tags.js", import.meta.url), "utf8")).replace(/^export /gm, "");
-  const source = memoryTags + "\n" + (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/app.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "");
+  const source = memoryTags + "\n" + (await readFile(new URL("../public/question.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/app.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "");
   const picker = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
   const dom = new JSDOM(html, { url: "http://localhost", runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window;
