@@ -1103,3 +1103,8 @@
 - src/protocol.js、src/server.js 新增 task.retry 协议与转发；tests/compaction-ui.test.js、message-activity.test.js、server.test.js 覆盖位置及按钮/API。README.md 已同步目标行为，后端落盘/续跑尚待实现验证。
 - 前端/API阶段 npm test：373项，371通过、2跳过。后续接入 src/sessions.js 的子代理独立目录、历史回放、自动续跑、retryTask 与停机 interrupt；完成通知绑定结果凭据，避免重试后的新结果被旧通知标成已送达。
 - 2026-09-14：修复 tests/conversation-preview.mjs 缺 ensureLoaded；tests/compaction-ui.py 改用会话 URL 并在手机展开输入区。真实 Chromium 的桌面/390/320px 摘要嵌套任务、详情、减少动态效果验收通过。后端首轮全量373项，371通过、2跳过。委派的集成测试模拟器存在挂起缺陷，主线程接管重写为两条真实 SessionManager/JSONL 回归，验证停机续跑、已完成/取消不自动执行、历史缺失拒绝重发、同 ID 手动重试与目录清理；另有7条任务单元回归。最终 npm test：382项，380通过、2跳过，git diff --check 通过；未调用真实模型。合并最新 origin/master 后再次跑全量及 Chromium 桌面/390/320px 验收，均通过；已提交功能分支并推送。
+
+## 2026-09-14T03:10 默认可选能力为空
+- 内容：新用户主/子代理默认不选择 Skills/MCP/插件；未选 MCP 时不导入适配器入口。保留已保存选择、null=全部语义及用户 Pi 配置。
+- 原因：可选插件不能成为基础使用的前提，避免无关 MCP 的缺失依赖阻断会话。
+- 文件：src/sessions.js、src/pi.js、tests/capabilities.test.js、tests/config.test.js、README.md、代码索引与知识库。

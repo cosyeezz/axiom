@@ -196,7 +196,7 @@ export class Sessions {
     this.createAgent = createAgent;
     this.items = new Map();
     this.recentConfig = {};
-    this.defaultSelection = { compaction: { ...compactionDefaults }, retry: null, queueType: "steer", model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
+    this.defaultSelection = { compaction: { ...compactionDefaults }, retry: null, queueType: "steer", model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: { skills: [], mcp: [], plugins: [] }, subagentCapabilities: { skills: [], mcp: [], plugins: [] } };
   }
 
   // 默认配置验证与装配：schema + projectSkills 结构；验证通过是写库与迁移标记的前提。

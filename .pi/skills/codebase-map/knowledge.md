@@ -541,3 +541,8 @@
 - 根因：`public/app.js` 启动时（URL 无 sessionId）只 attach `sessions.list()` 的第一条且没有 try/catch；`session.attach` 抛错冒到外层 catch → `error()` + `ws.close()` + `scheduleReconnect()`，重连再走同一段，形成死循环（退避至 15s）。`sessionId` 分支与 `switchSession()` 有降级，唯独这条漏了。
 - 修复：逐条尝试 attach、失败跳过；有可用会话时只 `console.warn`，全失败才 `error()`；末尾 `if (!state)` 新建兜底。服务端 `ensureLoaded()` 的严格报错保持不动。
 - 防再犯：①启动链里**任何** `request()` 的失败都必须在链内消化，绝不冒到最外层 catch（那里会关连接并安排重连，等于把单点故障升级成全页不可用）；②新增「按列表取第一条」这类代码前先问：这条坏了会怎样？③JSDOM harness 里跨 realm 的对象不能直接 `assert.deepEqual`（原型不同），先 `{...obj}` 摊平再比；④断言别放错 harness——`tests/app.test.js` 里有两套同风格的 harness，文件末尾那段的 `$`/`sockets` 属于第二个。
+
+### 2026-09-14T03:10 默认全部能力导致可选 MCP 阻断会话
+- 根因：初始 capabilities=null 表示全部，且 pi.js 在检查选中服务之前导入适配器入口。
+- 修复：初始主/子选择显式空集合；pi.js 按 MCP 选择控制 loadAdapter，不删除用户配置、不要求补装插件。
+- 防再犯：测试有坏插件时空选择仍可加载、默认为空、显式全部仍保持旧语义；基础内置工具保留。

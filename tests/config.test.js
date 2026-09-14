@@ -120,7 +120,7 @@ test("configuration applies to the main agent and is inherited by delegated chil
     assert.equal(sessions.snapshot(newest).config.thinking, "off");
     assert.equal(sessions.snapshot(newest).config.subagentModel, null);
 
-    const all = { compaction: { ...compactionDefaults }, retry: null, queueType: "steer", model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
+    const all = { compaction: { ...compactionDefaults }, retry: null, queueType: "steer", model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: { skills: [], mcp: [], plugins: [] }, subagentCapabilities: { skills: [], mcp: [], plugins: [] } };
     assert.deepEqual(sessions.getDefaults(), all);
     const defaults = {
       compaction: { ...compactionDefaults },
@@ -147,7 +147,7 @@ test("configuration applies to the main agent and is inherited by delegated chil
     assert.equal(selections.at(-1).model, "a/b");
     assert.equal(selections.at(-1).trustProject, false, "defaults never grant project trust");
     assert.equal(sessions.snapshot(newest).config.model, "a/b");
-    assert.equal(sessions.snapshot(newest).config.capabilitySelection, null);
+    assert.deepEqual(sessions.snapshot(newest).config.capabilitySelection, all.capabilities);
 
     await sessions.configure(newest, { model: "a/b", thinking: "high" });
     assert.deepEqual(sessions.getDefaults(), defaults, "current configuration does not overwrite explicit defaults");
@@ -192,7 +192,7 @@ test("configuration applies to the main agent and is inherited by delegated chil
     const reset = await sessions.create();
     assert.equal(sessions.snapshot(reset).config.model, "a/b");
     assert.equal(sessions.snapshot(reset).config.thinking, "high");
-    assert.equal(sessions.snapshot(reset).config.capabilitySelection, null);
+    assert.deepEqual(sessions.snapshot(reset).config.capabilitySelection, all.capabilities);
     assert.deepEqual(sessions.snapshot(normal).config, normalConfig, "changing defaults leaves existing sessions intact");
     assert.equal(command.safeParse({ id: "1", type: "session.defaults.get" }).success, true);
     assert.equal(command.safeParse({ id: "1", type: "session.defaults.configure", ...defaults }).success, true);

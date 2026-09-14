@@ -28,6 +28,20 @@ test("selected workspaces load project skills by default, filter plugins and lea
     // 旧会话保存的 false 也不能让工作空间退回仅全局能力。
     const restored = await discoverCapabilities(cwd, { agentDir, trustProject: false });
     assert.deepEqual(restored.catalog, resources.catalog);
+    const sessions = new Sessions(async () => {});
+    const defaults = sessions.getDefaults();
+    const empty = { skills: [], mcp: [], plugins: [] };
+    assert.deepEqual(defaults.capabilities, empty);
+    assert.deepEqual(defaults.subagentCapabilities, empty);
+    const clean = capabilityLoader({ ...resources, adapter: { path: "unused" }, createMcpAdapter: () => {
+      throw new Error("UNSELECTED_MCP_EXECUTED");
+    } }, defaults.capabilities, []).loader;
+    await clean.reload();
+    assert.deepEqual(clean.getExtensions().errors, []);
+    assert.deepEqual(clean.getSkills().skills, []);
+    assert.equal(clean.getExtensions().extensions.length, 1); // only built-in image handling
+    clean.getExtensions().runtime.invalidate();
+    await sessions.close();
     const selected = {
       skills: resources.catalog.skills.map((s) => s.id),
       plugins: resources.catalog.plugins.filter((p) => p.id.endsWith("good.js")).map((p) => p.id), mcp: [],

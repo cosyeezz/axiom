@@ -153,7 +153,9 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       return config;
     };
     const initialCompaction = validateCompaction(selection.compaction, selected);
-    const resources = await discoverCapabilities(workspace, { trustProject: selection.trustProject });
+    const resources = await discoverCapabilities(workspace, {
+      loadAdapter: selection.capabilities == null || Boolean(selection.capabilities.mcp?.length),
+    });
     const { settingsManager } = resources;
     // 退避计划由 axiom retry 层负责：禁用 SDK 内建自动重试（默认开启 3 次指数退避）避免双重重试。
     // setRetryEnabled 只关 session 层；provider 层（retry.provider.maxRetries，SDK 客户端默认 2 次）
