@@ -1312,3 +1312,121 @@
 - X7 仍判不修，补一组实测数据：`page_size=4096`、`wal_autocheckpoint=1000` 页，写入约 12MB 期间 `-wal` 稳定在 4132392 字节（= 1000×4096）不再增长，长连接 close 后 `-wal` 消失。占用有硬上界且不丢数据，为「清爽」强制 TRUNCATE 需独占 checkpoint，会与 worker 抢锁。
 - 涉及文件：scripts/service.mjs（导入 redact、logLine 全白名单脱敏、fork env 覆盖 AXIOM_HOME）、scripts/maint-state.mjs（拆出 redact，sanitize 复用）、tests/service.test.js（新增「相对 AXIOM_HOME 两端同库」，加强 service.log 用例断言白名单路径落盘即脱敏）、README.md（AXIOM_HOME 相对路径解析语义、service.log 脱敏范围由「抹 token」改为「白名单」）、.pi/skills/codebase-map/INDEX.md。
 - 验证：修复前 `node --test tests/service.test.js` 为 22 项 20 通过 2 失败（正是上述两条）；修复后 22 项全通过。`npm test` 全量 518 项，516 通过，0 失败，2 跳过（`tests/database.test.js`、`tests/workspace-picker.test.js` 的 `skip: process.platform === "win32"` 平台条件跳过，master 上本来就有）。测试总数由 516 增至 518，增量为老库部分索引升级、相对 AXIOM_HOME 两条。
+
+## 2026-09-14T15:45 SQLite 收口复查（第 3 轮 / 共 6 轮）
+
+- 原因：第 2 轮把 33 条清单改完了，但 X1/X6 暴露出一种模式——「首版只修一半 + 测试断言过弱恰好放行」（当时只断言 `homeDir()` 的返回值，没断言两端实际打开的库文件）。本轮对 33 条逐条回头复查，并对每条追问一句「这条的测试断言的是真实可观察结果，还是只断言了中间量」；同时补第 2 轮改动的连带影响（兄弟调用点、投影口径、老库升级幂等），补齐跨重启读回这块测试缺口。
+- 结论：33 条全部复查完毕，无「待确认」条目——29 条确认实际生效，4 条不修的理由复核后仍然成立。本轮新发现 2 条遗漏（E5 老库 NULL key 事件行、S6 标题与 updatedAt 落库时机），均已修复并配回归测试。表结构与字段仍一个未动。
+
+### 本轮新发现并修复（2 条）
+
+**E5 老库无身份事件行：写得进、读不出、删不掉（src/session-store.js）**
+
+`session_events.key` 一直是可空列（`b95d36e 2026-09-12` 引入），导入侧的 `anon-<序号>` 兜底是其后才加的（`11b21c0`、`98e8ec4`）。那之前导入的老库里，无 id 的 retry/compaction 行 `key IS NULL`，于是同一行在三条链路上身份不一致：
+
+- 写：`saveEvent` 靠第 1 轮修的内容判重兜住，但只认「内容一字不差」。
+- 读：`listEvents` 读出来 `record.id === undefined`。
+- 删：`deleteEvents` 要求非空 id，直接抛「目标必须是 {agentId, id} 或含 id 的事件 record，拒绝裸 id」。
+
+用真实库跑六步探针确认了这不是理论问题：A 初始 1 行 `key=null`；B 读回 `retries[0].id === undefined`；C 原样回写仍 1 行（内容判重有效）；D 归一化后回写（`messageCount` 落在消息数之外被删掉）→ **2 行幽灵重复行**；E 再回写一次仍 2 行（新行有内容判重护着，老行永远留着）；F 撤回删除抛错。
+
+产品链路完全可达，不需要构造：`src/sessions.js:703` 把 `saved.retries` 映射进 item，`:968-1010` 的恢复对账归一化之后整段 persist 带 `{event:{type:"retry",record}}` 增量 → 必然产生幽灵行；用户撤回时走 `:1433-1448`，`deleteEvents` 抛的是确定性失败，按第 2 轮 P1 的规则整批增量（含同批的会话快照）被丢弃 → 界面上没了、库里永久残留。运行期不会新产生这种行（`src/retry.js:115` 用 `randomUUID()`，compaction 记录带 `entry.id`），纯粹是老库历史包袱，而 Axiom 的老库导入路径本来就是要长期支持的。
+
+修复取向选「开库补身份」而不是「让 deleteEvents 兼容无 id」：一条幂等 UPDATE 让写/读/删三路口径一致，顺带修掉 `compactionById` 用同一个 `undefined` 键互相覆盖的潜在缺陷；若改成删除侧兼容，读出来仍然没身份，前端按 id 归位的逻辑还是错的。
+
+```js
+const BACKFILL_EVENT_KEYS = "UPDATE OR IGNORE session_events SET key = 'legacy-' || rowid WHERE key IS NULL";
+```
+
+三个细节：**放在 `database.exec(INDEXES)` 之后**——`OR IGNORE` 要靠 `session_events_identity` 这条唯一部分索引才跳得过冲突行，也避开 `#normalizeSchema` 重建表引起的 rowid 变化（重建语句 `INSERT INTO session_events_new SELECT session_id, type, agent_id, key, record FROM session_events` 保留了 key 列，重建先于建索引与补 key）。**前缀选 `legacy-<rowid>`**：与导入侧的 `anon-<序号>` 区分来源，rowid 在表内唯一；万一撞上同组已有同名 key，`OR IGNORE` 跳过该行留 NULL，仍由内容判重兜住。**不把 `key` 列改成 NOT NULL**——那要重建表，收益只是形式上的严格。
+
+回归测试 `tests/session-store.test.js:534`「老库 NULL key 事件行开库补稳定身份…」，修复前失败：`✖ (39.8055ms)`、`pass 1 / fail 1`、`AssertionError [ERR_ASSERTION]: 老库无 id 行必须在开库时补上稳定 key`、`actual: null`。同一用例 `:583` 断言幂等：`assert.equal(rows(last)[0].key, keyBefore, "已有身份的行重开不得被改写")`。
+
+**S6 标题与 updatedAt 要等整轮跑完才落库（src/sessions.js:772-782）**
+
+用 `SESSION_FIELDS`（11 个字段）逐字段机械核对「每个内存态字段是否都有落库出口」时发现的：`prompt()`（`:1400`）由首条输入推导的临时标题、`startRun()`（`:1329`）刷新的 `item.updatedAt`，都只改内存，要等 `:1349` finally 里整轮结束的全量快照才落盘。长任务跑到一半进程被杀（崩溃、断电、Windows 强杀），重启后侧栏就是一排「新会话」配过期时间，而且下次 `prompt` 会从第二条消息重新推导标题——首条输入推导的那个标题永久丢失。
+
+修复折进已有的运行状态变化那一笔写，不额外增加落盘次数：
+
+```js
+if (wasRunning !== item.runningSince)
+  this.saveChange(item, { session: { title: item.title, updatedAt: item.updatedAt,
+    elapsedMs: item.elapsedMs, runningSince: item.runningSince } });
+```
+
+`runningSince` 从空变成有值正好发生在运行开始那一刻，而标题与 `updatedAt` 在这之前就已确定，同一笔写顺路带上即可。**故意不同时写 `titleRequested`**：模型此时还没自报标题，重启后必须再索要一次；提前写 true 会让自报请求永久失效。
+
+回归测试 `tests/session-persistence.test.js:291`「运行一开始就落库标题与 updatedAt：跑到一半被杀，侧栏不退回「新会话」与旧时间」，用挂住的 factory（`prompt: () => new Promise((resolve) => { release = resolve; })`）模拟运行中被杀。修复前失败：`AssertionError [ERR_ASSERTION]: 首条输入推导的标题必须随运行开始落库，否则崩溃后每个会话都叫「新会话」`、`'新会话' !== '查一下今天的天气'`、`at tests/session-persistence.test.js:311:12`。
+
+### 三类数据「确实落库且可恢复」的可执行证据
+
+新增 `tests/session-persistence.test.js`「跨重启读回：会话元数据、任务、事件三类原样恢复，撤回的事件不复活」。它不是 mock 断言，而是 `new Sessions(factory, undefined, storage)` 真实关库重开（第二个 Sessions 实例拿同一个库文件），逐类核对：
+
+- **会话**：`title` / `titleManual` / `titleRequested` / `elapsedMs` 4200 / `runningSince` 恢复为 `null`、`selection.taskBudget` deepEqual `{maxTurns:30,wrapUpWindow:3}`；`ensureLoaded` 之后全局 5/1 也不覆盖会话自己的 30/3（S1 的实际生效证据）；`restored.loaded === false` 确认只加载了元数据。
+- **任务**：`listTasks` deepEqual 原任务（含 runtime / parentContext / notified / createdAt / updatedAt）。
+- **事件**：retries / compactions 一致；撤回 `{deletedEvents:{type:"retry",records:[{id:"r2",agentId:"main"}]}}` 后兄弟事件保留，再 close + 开库读回 `retries.length === 2` —— 删掉的没复活、没删的没丢。
+
+顺带把 `running_since` 的语义用断言钉住：内存里恒为 `null`（重启即中断，未结算的运行段不补算），但 store 里保留崩溃瞬间的原值 999（`saved.runningSince === 999`）。这是既定语义而非缺陷，所以不删列也不特判，改用测试把它固定下来。
+
+`node --test --test-name-pattern="跨重启读回"` → `✔ (77.3635ms)`、`pass 1 / fail 0`。
+
+### 33 条逐条复查结论
+
+**跨类基础设施**
+- P1（队头阻塞按结果码分类）实际生效：确定性失败的一次机会机制由 `head.tried` 承载，`tests/recall.test.js` 的撤回清理仍能重放。E5 的分析正是踩在这条规则上——`deleteEvents` 抛错属确定性失败，整批增量被丢弃，因此 E5 必须在写入侧解决。
+- P2（裸写 SAVEPOINT）无遗留兄弟点：`grep -E "SAVEPOINT|RELEASE|ROLLBACK TO" src/ scripts/` 全仓只剩两处，都是有意的事务包装器——`src/session-store.js:140`（`session_change`）与 `src/pi-model-storage.js:63`（`model_storage`）；`src/sessions.js:996` 只是注释。
+
+**会话**
+- S1 已由跨重启用例证明（`selection.taskBudget` 读回 30/3，且 `ensureLoaded` 不被全局值热更）。顺手还清了一处文档债：`create()` 里「selection.taskBudget 仅供测试注入」的注释与实际行为不符，改为「恢复的会话从 selection 读回创建时的预算，全局值后来改了也不追认」。
+- S2 兄弟点口径一致：`landedSessionFile` 定义 `:181-185`，三个出口 `sessionData()` `:547`、`list()` `:622`、新落盘 `:761-764` 都是同一口径，「从未生成」与「生成后丢失」没有在任何出口被合并。
+- S3 `deleteRecords()` 是删除路径的唯一入口，会话行与 goal 记录同一 `store.change` 事务。
+- S4 判定成立，但生效点不在我以为的地方：`grep "session: {"` 只找到 3 处，都不含 `titleRequested`；真正写它的是 `writeChange` `:596-598` 的投影 `if (change.title) this.store.updateSession(item.id, { title, titleRequested })` —— 只要变更里带 `title`，两个字段就一起写。`src/session-memory.js:19-25` 的模型自报走的正是 `save({title:true})`。
+- S5（改标题不刷 updatedAt）复核后仍判不修，理由不变。
+
+**任务**
+- T1 顺序正确且三处一致：`:485` 注释、任务恢复映射 `:851`（`notified: resumable ? false : task.notified ?? false`）、恢复循环 `~:1024-1033` 先落库后置位、`:1151`。
+- T2 部分索引在老库升级用例里已验证自动补建且三处投影一致；本轮新增的 `BACKFILL_EVENT_KEYS` 排在 `INDEXES` 之后，不影响它的幂等性。
+- T3 启动跳过 Goal 阻塞态会话，notified 原样保留。
+
+**事件**
+- E1 内容判重实际生效（E5 探针 C 步：原样回写仍 1 行），但只兜住「内容一字不差」的回写，真正的收口是 E5 的开库补身份，已在 `INDEXES` 上方的注释里指明这层关系。
+- E4 恢复对账整段单事务；跨重启用例覆盖了「归一化后写回 + 撤回删除」的组合。
+- E2/E3（子代理 compaction）复核后仍判不修，理由不变（前端两处硬编码 `agentId === "main"`，落库等于写无人读的行）。
+
+**模型存储与配置**
+- M1 门闩按来源独立：`src/pi-model-storage.js:351-357` 每个来源只看自己的 `migrated/<source>` 标记，`pending` 集合由 `importErrors()` 的 source 构成。
+- M4 多语句写入的原子边界：`change()` `:59-71` 包住 importAuth 循环、`recordImportError`/`clearImportErrors` 的读-改-写、`importOnce` 的 apply+打标记。
+- M5 判定成立（不是残留）：`:90-97` 的 `readRow` 是容错读的唯一点，裸 `database.get` 只出现在它的 try 内，配 `recordImportError` 给用户自愈入口。
+- M7 三条 favorites 写入口 version 一致（`writeFavoritesRaw` `:346`、`casFavorites` `:170` 都是 `{...store, version:1}`，字面量在 spread 之后，调用方覆盖不了）；M3 hidden 同口径（`:337`、`:342`）。
+- M8 上限只拦新增（`src/model-config.js:246-249` 注释与 `:398` 实现一致，读路径不 slice）。
+- M12 判定成立，且 `:139` 的裸 `db.prepare` 不是残留：它在 `readRaw(db, namespace, key)` 内，`db` 是服务跨进程 CAS 传入的**另一条连接**，`db === database ? sql(text) : db.prepare(text)` 是有意分流（语句缓存只属于权威连接，不能拿别人的连接往自己缓存里塞），`compareAndSet` `:143-153` 同样分流。
+- M2/M6/M9/M10/M11 复查代码与测试断言均落在真实可观察结果上（库内原始值、`importErrors()` 文案、`assert.rejects` 的错误正则），无中间量断言。
+
+**守护进程与维护状态**
+- X1/X6 已在第 2 轮补修中修到底（fork env 显式覆盖 `AXIOM_HOME`、worker 输出写盘前一律过白名单），本轮不再改动。
+- X2/X3/X4/X5 复查结论不变；X7 仍判不修（实测 `wal_autocheckpoint=1000` 页已封顶）。
+
+**测试断言强度抽检**：按 X1 的教训抽查第 2 轮新增测试，均断言真实可观察结果而非中间量——`pi-model-storage.test.js` 断言 `database.get("models","favorites") === undefined` 加 `importErrors()` 含 `/结构无效/`；`credentials.modify` 非法值同时断言 `assert.rejects(/凭据格式无效/)`、库内 `database.get("auth","p") === undefined`、`read/list` 为空、合法值照写、返回 `undefined` 视为放弃变更；X1 断言 worker 实际打开的库目录；T2 断言 `EXPLAIN QUERY PLAN` 的实际计划；X5 断言 spawn 出的真实进程退出码与落库结果。
+
+### 复查中判定为「不是缺陷」的几处
+
+- `trackElapsed`（定义 `src/sessions.js:87-96`）**只有一个调用点** `:776`，在 `item.emit` 的 `session.state`/`task.state` 分支内。优雅关闭会经状态变化结算 `elapsedMs` 并把 `runningSince` 置空；硬杀留下未结算段，与「重启即中断，不补算」的既定语义一致，已在跨重启用例里显式断言。
+- `canRetry` 冗余落库不修：它是每次 `snapshot()` 重算的派生量，读回不权威，只在测试断言方式上规避。
+- `:764` 直写 `sessionFile` 不改成 `landedSessionFile`：这里是「JSONL 首次落盘」的检测点，SDK 在 message.end 之前已写出 JSONL（`node_modules/@earendil-works/pi-coding-agent/dist/core/*.js` 里搜不到 `agent.message.end` 字面量，无法直接证明 appendMessage 先于 message.end，但 `event.data.entryId` 的存在与既有子代理持久化测试都支持这个时序），非缺陷，不做无谓 churn。
+
+### 表结构影响
+
+未增删改任何表或字段。本轮唯一新增 DDL 之外的开库语句是 `BACKFILL_EVENT_KEYS`（一条 `UPDATE OR IGNORE`）：只给 `key IS NULL` 的行补值，已有身份的行不动（有断言），新库零行匹配，重复开库空转。
+
+### 涉及文件
+
+- 产品代码：src/session-store.js（BACKFILL_EVENT_KEYS + 构造函数顺序 + E1/E5 关系注释）、src/sessions.js（S6 运行开始那一笔写带上 title/updatedAt；taskBudget 注释纠正）
+- 测试：tests/session-store.test.js（老库 NULL key 补身份 + 幂等断言）、tests/session-persistence.test.js（S6 运行开始落标题、跨重启三类读回）
+- 文档：README.md（运行开始即落库标题与 updatedAt 的可观察行为；老库开库补事件身份）、devlog.md、.pi/skills/codebase-map/INDEX.md
+
+### 验证
+
+- 基线（第 2 轮 HEAD 22fc1b0）：518 项，516 通过，0 失败，2 平台跳过。
+- 本轮：**npm test 全量 521 项，519 通过，0 失败，2 跳过**（`tests/database.test.js`、`tests/workspace-picker.test.js` 的 `skip: process.platform === "win32"`，master 上本来就有），`duration_ms` 约 48.3 秒。增量 3 条正是 E5 补身份、S6 运行开始落标题、跨重启三类读回。
+- 临时探针 probe.tmp.mjs（E5 六步验证）用完即删，无残留。
+- 方法学记录，留给第 6 轮复用：(a) 复查看真实可观察结果，不看中间量；(b) 遇到「路径/栈不是秘密」这类为简化找的理由，回头核对同一份信息在其他出口是否已按敏感处理；(c) node TAP 汇总行前缀是 `ℹ` 不是 `#`，别用 `^# ` grep 基线日志；(d) 遇到「可写但不可读不可删」这类结构性不对称，优先让三条链路身份一致，而不是让其中一条容忍残缺；(e) 用字段白名单（这里是 `SESSION_FIELDS` 的 11 个字段）逐字段机械核对「每个内存态字段是否都有落库出口」——S6 就是这么翻出来的。
