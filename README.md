@@ -451,6 +451,8 @@ ws.onopen = () => ws.send(JSON.stringify({id:'1', type:'session.create'}));
 
 ## 交互式提问
 
+答题卡使用紧凑题签和选项行；同组问题按当前宽度预留最高内容区，切题时题签位置稳定。卡片不设独立滚动条，超长内容通过输入区域滚动查看；手机收起输入框时待答问题仍可见。
+
 主代理内置 `question` 工具：需要用户澄清或决策时调用，等待网页答案后作为工具结果继续原任务；不另发聊天消息、不增加专用系统提示词。子代理不注册此工具。
 
 参数为 `questions: [{ header, question, description, options: [{ label, description? }], multiple? }]`。`header` 是选项卡短标题，问题 `description` 必填，用于说明背景和选择影响；选项说明可选，`multiple` 默认 false。每次 1–10 题，每题 1–20 个不重名选项，页面自动提供自定义回答。工具输出为 `{ answers: string[][] }`，按题序返回选中标签或自定义文字。

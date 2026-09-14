@@ -16,9 +16,9 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
   });
   function focusOption() {
     if (!current()) return;
-    root.querySelectorAll('.question-choice')[draft().focus[draft().tab]]?.focus();
+    root.querySelectorAll('.question-choice')[draft().focus[draft().tab]]?.focus({ preventScroll: true });
   }
-  function draw(focus = false) {
+  function draw(focus = false, measuring = false) {
     root.replaceChildren();
     const request = current();
     root.hidden = !request;
@@ -29,7 +29,20 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
       customOn: request.questions.map(() => false), focus: request.questions.map(() => 0), sending: false, error: "",
     });
     const state = draft(), question = request.questions[state.tab];
+    // 同组题按当前宽度一次测量最高内容，切题时不改变输入区高度。
+    const width = root.clientWidth;
+    if (!measuring && state.width !== width) {
+      state.width = width;
+      const selected = state.tab;
+      state.panelHeight = 0;
+      request.questions.forEach((_, i) => {
+        state.tab = i; draw(false, true);
+        state.panelHeight = Math.max(state.panelHeight, root.querySelector('.question-panel').getBoundingClientRect().height);
+      });
+      state.tab = selected;
+    }
     const disabled = !connected || state.sending;
+    root.replaceChildren();
     root.append(el('div', 'question-heading', '需要你确认'));
     const tabs = el('div', 'question-tabs');
     tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', '待确认问题');
@@ -45,6 +58,7 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
     });
     root.append(tabs);
     const panel = el('div', 'question-panel'); panel.id = 'question-panel';
+    if (!measuring) panel.style.minHeight = `${state.panelHeight || 0}px`;
     panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', `question-tab-${state.tab}`);
     const title = el('h3', '', question.question); title.id = 'question-title';
     const description = el('p', 'question-description', question.description); description.id = 'question-description';
@@ -77,7 +91,7 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
       state.focus[state.tab] = question.options.length;
     });
     panel.append(options);
-    const input = el('textarea', 'question-custom'); input.rows = 2; input.maxLength = 4000;
+    const input = el('textarea', 'question-custom'); input.rows = 1; input.maxLength = 4000;
     input.setAttribute('aria-label', '自定义回答'); input.placeholder = '输入你的答案'; input.value = state.custom[state.tab];
     input.disabled = disabled;
     input.oninput = () => {
@@ -101,6 +115,7 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
     updateFooter(); footer.append(progress, submit); root.append(footer);
     root.append(el('div', 'question-help', '←→ 切题 · ↑↓ 移动 · 空格选择 · Enter 下一题 / 提交'));
     if (state.error) { const error = el('p', 'question-error', state.error); error.setAttribute('role', 'alert'); root.append(error); }
+    if (measuring) return;
     activeKey = key;
     if (focus && !disabled) focusOption();
   }
@@ -128,6 +143,12 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
       if (sessionId === target && current()?.toolCallId === request.toolCallId) draw();
     }
   }
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => {
+    if (current() && draft().width !== root.clientWidth) {
+      const focused = root.contains(document.activeElement);
+      draw(focused);
+    }
+  }).observe(root);
   root.addEventListener('keydown', (event) => {
     if (!current() || !connected || draft().sending || event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
     if (event.target.matches('textarea, input')) return;
