@@ -338,6 +338,17 @@ export class Sessions {
     if (this.database) this.database.set("defaults", "defaults", { ...next, projectSkills });
     this.defaultSelection = next;
     this.projectSkills = projectSkills;
+    // 压缩配置是全局的（ensureLoaded 恢复会话时总以默认值覆盖），改完直推已加载会话，
+    // 不再等重启。模型不支持新思考等级的会话保留原配置，单会话失败不影响保存。
+    if (selection.compaction)
+      for (const item of this.items.values()) {
+        if (!item.loaded || item.configuring) continue;
+        const model = item.agent?.config?.()?.model;
+        if (!model) continue;
+        try {
+          await item.agent.configure({ model, compaction: next.compaction });
+        } catch {}
+      }
     return result;
   }
   async validateSelection(workspace = this.createAgent.cwd || process.cwd(), selection, inherited = []) {

@@ -89,13 +89,13 @@ test("restored sessions pick up the latest default compaction; other selection s
     await sessions.configureDefaults(dir, { compaction: old });
     const id = await sessions.create(dir, { model: "p/main", thinking: "off" });
     await sessions.configureDefaults(dir, { compaction: latest });
-    // 重启前：会话保留自己的压缩配置，不受默认值影响
-    assert.deepEqual(sessions.snapshot(id).config.compaction, old);
+    // 保存默认值即推给已加载会话：压缩配置是全局的，不再等重启才生效
+    assert.deepEqual(sessions.snapshot(id).config.compaction, latest);
     restored = new Sessions(factory, defaultsPath, storagePath);
     await restored.loadDefaults();
     await restored.load();
     await restored.ensureLoaded(id);
-    // 重启后：恢复会话改用最新默认压缩配置，其余配置不变
+    // 重启后：恢复会话同样用最新默认压缩配置，其余配置不变
     assert.deepEqual(restored.snapshot(id).config.compaction, latest);
     assert.equal(restored.snapshot(id).config.model, "p/main");
     assert.equal(restored.snapshot(id).config.thinking, "off");
