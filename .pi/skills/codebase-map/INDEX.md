@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/13 19:42:17）
+# Axiom 多级代码索引（生成于 2026/9/13 20:11:41）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -22,12 +22,12 @@
 | public/theme.js | 11 | 首帧前阻塞应用明/暗主题（localStorage axiom.theme，默认深色） | - |
 | public/tooltip.css | 50 | 共享悬停说明样式（浅色主题下反色） | - |
 | public/tooltip.js | 225 | 共享悬停说明：动态 title、键盘、定位与无障碍 | SHOW_DELAY, HIDE_DELAY, GAP, EDGE |
-| scripts/autostart.mjs | 133 | Windows/macOS/Linux 当前用户登录自动启动安装/卸载 | run, projectDir, serviceEntry, label |
+| scripts/autostart.mjs | 138 | Windows/macOS/Linux 当前用户登录自动启动安装/卸载 | run, projectDir, serviceEntry, label |
 | scripts/dev.mjs | 12 | 开发入口：DEV 标识、4320 端口与独立数据目录 | - |
-| scripts/install.mjs | 95 | 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器 | root, parseArgs, openCommand, ensurePi |
+| scripts/install.mjs | 72 | 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器 | root, parseArgs, ensurePi, viaShell |
 | scripts/maint-server.mjs | 86 | loopback维护HTTP：来源校验、随机凭证、状态与离线恢复 | MAX_BODY, hash, json, startMaintServer |
 | scripts/maint-state.mjs | 116 | 守护维护状态：持久化阶段、最近结果与有界脱敏证据 | NAMESPACE, LOG_LIMIT, sanitize, createMaintState |
-| scripts/service.mjs | 520 | 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道 | root, output, run, npmRun |
+| scripts/service.mjs | 597 | 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道 | root, output, run, npmRun |
 | scripts/uninstall.mjs | 18 | 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据 | uninstall |
 | src/capabilities.js | 139 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/compaction.js | 390 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
@@ -55,7 +55,7 @@
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
 | tests/capabilities.test.js | 208 | node --test 测试（npm test） | - |
-| tests/cli-help.test.js | 23 | node --test 测试（npm test） | - |
+| tests/cli-help.test.js | 46 | node --test 测试（npm test） | cli |
 | tests/codebase-index.test.js | 20 | node --test 测试（npm test） | ROOT, SKILL |
 | tests/compaction-config.test.js | 109 | node --test 测试（npm test） | - |
 | tests/compaction-ui.py | 57 | node --test 测试（npm test） | - |
@@ -71,7 +71,7 @@
 | tests/helpers/model-concurrency-child.mjs | 82 | node --test 测试（npm test） | barrier, runOpponent |
 | tests/image-input.test.js | 169 | node --test 测试（npm test） | pngBase64, jpegBase64, image, parsePrompt |
 | tests/inline-images.test.js | 42 | node --test 测试（npm test） | text, a, b, user |
-| tests/install.test.js | 79 | node --test 测试（npm test） | - |
+| tests/install.test.js | 150 | node --test 测试（npm test） | fakeService |
 | tests/manual-retry.test.js | 186 | node --test 测试（npm test） | session, assistant, page, message |
 | tests/markdown.test.js | 166 | node --test 测试（npm test） | - |
 | tests/memory-preview.mjs | 22 | node --test 测试（npm test） | state, sessions, app |
@@ -104,7 +104,7 @@
 | tests/service-settings-api.test.js | 71 | node --test 测试（npm test） | - |
 | tests/service-settings-ui.py | 60 | node --test 测试（npm test） | - |
 | tests/service-settings.test.js | 377 | node --test 测试（npm test） | source, html, setup |
-| tests/service.test.js | 538 | node --test 测试（npm test） | until, readMaybe, killTree, buildWorkspace |
+| tests/service.test.js | 539 | node --test 测试（npm test） | until, readMaybe, killTree, buildWorkspace |
 | tests/session-created-at.test.js | 44 | node --test 测试（npm test） | factory |
 | tests/session-flow.test.js | 417 | node --test 测试（npm test） | flowFactory, jsonlFactory |
 | tests/session-memory.test.js | 110 | node --test 测试（npm test） | reply |
@@ -550,7 +550,7 @@
 | hide | method | 196 |
 | showFor | method | 202 |
 
-### scripts/autostart.mjs（133 行） — Windows/macOS/Linux 当前用户登录自动启动安装/卸载
+### scripts/autostart.mjs（138 行） — Windows/macOS/Linux 当前用户登录自动启动安装/卸载
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -578,21 +578,21 @@
 | enableLinux | function | 94 |
 | disableLinux | function | 103 |
 | actions | const | 110 |
-| main | function | 116 |
+| isEnabled | const | 118 |
+| platform | method | 119 |
+| main | function | 121 |
 
-### scripts/install.mjs（95 行） — 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器
+### scripts/install.mjs（72 行） — 一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | root | const | 15 |
 | parseArgs | const | 17 |
-| openCommand | const | 26 |
-| ensurePi | const | 32 |
-| viaShell | const | 39 |
-| probe | const | 45 |
-| ask | const | 53 |
-| install | function | 55 |
-| invoked | const | 92 |
+| ensurePi | const | 29 |
+| viaShell | const | 36 |
+| ask | const | 41 |
+| install | function | 43 |
+| invoked | const | 69 |
 
 ### scripts/maint-server.mjs（86 行） — loopback维护HTTP：来源校验、随机凭证、状态与离线恢复
 
@@ -614,34 +614,49 @@
 | createMaintState | function | 21 |
 | persist | method | 80 |
 
-### scripts/service.mjs（520 行） — 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道
+### scripts/service.mjs（597 行） — 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| root | const | 16 |
-| output | const | 17 |
-| run | function | 18 |
-| npmRun | const | 31 |
-| installTag | function | 39 |
-| controlPath | function | 42 |
-| stagedSha | const | 48 |
-| verifySdkImport | function | 58 |
-| prepareUpdate | function | 67 |
-| swapUpdate | function | 85 |
-| commitUpdate | function | 115 |
-| rollbackUpdate | function | 121 |
-| update | function | 129 |
-| prepareRebuild | function | 137 |
-| swapRebuild | function | 150 |
-| commitRebuild | function | 161 |
-| rollbackRebuild | function | 165 |
-| rebuild | function | 171 |
-| READY_TIMEOUT_MS | const | 179 |
-| supervise | function | 181 |
-| mkdirSync | method | 190 |
-| spawnWorker | method | 457 |
-| invoked | const | 461 |
-| stopService | function | 462 |
+| root | const | 17 |
+| output | const | 18 |
+| run | function | 19 |
+| npmRun | const | 32 |
+| installTag | function | 40 |
+| controlPath | function | 43 |
+| stagedSha | const | 49 |
+| verifySdkImport | function | 59 |
+| prepareUpdate | function | 68 |
+| swapUpdate | function | 86 |
+| commitUpdate | function | 116 |
+| rollbackUpdate | function | 122 |
+| update | function | 130 |
+| prepareRebuild | function | 138 |
+| swapRebuild | function | 151 |
+| commitRebuild | function | 162 |
+| rollbackRebuild | function | 166 |
+| rebuild | function | 172 |
+| READY_TIMEOUT_MS | const | 180 |
+| localPort | function | 184 |
+| localAddress | const | 191 |
+| homeDir | const | 192 |
+| openCommand | const | 196 |
+| openPage | function | 201 |
+| spawn | method | 203 |
+| firstRunGuide | function | 208 |
+| serviceReady | const | 225 |
+| fetch | method | 226 |
+| startBackground | function | 233 |
+| spawn | method | 235 |
+| startCli | function | 246 |
+| supervise | function | 253 |
+| mkdirSync | method | 262 |
+| spawnWorker | method | 529 |
+| invoked | const | 533 |
+| stopService | function | 534 |
+| HELP | const | 570 |
+| FORE | const | 582 |
+| COMMANDS | const | 583 |
 
 ### scripts/uninstall.mjs（18 行） — 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据
 
@@ -1051,6 +1066,13 @@
 |---|---|---|
 | window | const | 9 |
 
+### tests/cli-help.test.js（46 行） — node --test 测试（npm test）
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| cli | const | 27 |
+| spawnSync | method | 28 |
+
 ### tests/codebase-index.test.js（20 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
@@ -1147,6 +1169,12 @@
 | b | const | 7 |
 | user | const | 8 |
 | inlineImagesExtension | method | 32 |
+
+### tests/install.test.js（150 行） — node --test 测试（npm test）
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| fakeService | const | 109 |
 
 ### tests/manual-retry.test.js（186 行） — node --test 测试（npm test）
 
@@ -1402,7 +1430,7 @@
 | html | const | 12 |
 | setup | function | 14 |
 
-### tests/service.test.js（538 行） — node --test 测试（npm test）
+### tests/service.test.js（539 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1417,28 +1445,28 @@
 | ready | method | 82 |
 | ready | method | 85 |
 | startDaemon | const | 89 |
-| spawn | method | 90 |
-| startTest | const | 95 |
-| maintEnv | const | 104 |
-| getStatus | const | 105 |
-| stateOf | const | 111 |
-| teardown | const | 118 |
-| NPM_FAKE | const | 126 |
-| say | const | 130 |
-| sdkStub | const | 131 |
-| mkdirSync | method | 132 |
-| writeFileSync | method | 133 |
+| spawn | method | 91 |
+| startTest | const | 96 |
+| maintEnv | const | 105 |
+| getStatus | const | 106 |
+| stateOf | const | 112 |
+| teardown | const | 119 |
+| NPM_FAKE | const | 127 |
+| say | const | 131 |
+| sdkStub | const | 132 |
+| mkdirSync | method | 133 |
 | writeFileSync | method | 134 |
-| rmSync | method | 142 |
-| sdkStub | method | 144 |
-| writeFileSync | method | 145 |
+| writeFileSync | method | 135 |
+| rmSync | method | 143 |
+| sdkStub | method | 145 |
 | writeFileSync | method | 146 |
 | writeFileSync | method | 147 |
-| rmSync | method | 155 |
-| sdkStub | method | 156 |
-| writeFileSync | method | 157 |
-| installNpmShim | const | 163 |
-| A40 | const | 176 |
+| writeFileSync | method | 148 |
+| rmSync | method | 156 |
+| sdkStub | method | 157 |
+| writeFileSync | method | 158 |
+| installNpmShim | const | 164 |
+| A40 | const | 177 |
 
 ### tests/session-created-at.test.js（44 行） — node --test 测试（npm test）
 

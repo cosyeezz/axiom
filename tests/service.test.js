@@ -87,7 +87,8 @@ if (!fs.existsSync('sent')) {
 setInterval(() => {}, 1000);
 `;
 const startDaemon = (root, extra = {}) =>
-  spawn(process.execPath, [join(root, "scripts", "service.mjs")], {
+  // --foreground：axiom 无参数现在是后台启动（脱离终端），测试要的是可直接观测的前台守护。
+  spawn(process.execPath, [join(root, "scripts", "service.mjs"), "--foreground"], {
     // cwd 放包目录之外：Windows 下进程 cwd 会锁住目录，update 的原子 rename 要求包目录可换名。
     cwd: join(root, ".."), stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, AXIOM_PORT: "0", AXIOM_HOME: join(root, "home"), ...extra },

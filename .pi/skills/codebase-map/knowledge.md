@@ -517,3 +517,9 @@
 - 根因：重启仅重建主代理 JSONL，子代理 messageCount 越界后显示未知；已持久化 agentId 实为 taskId。
 - 修复：public/app.js 共享归位函数按任务 ID 放到任务说明后，元数据迟到自动移出未知归档；复用既有 SQLite 关联，不恢复整段子消息。
 - 防再犯：tests/message-activity.test.js 覆盖无子历史、越界/缺失位置、多任务、多重试及迟到元数据；主代理消息/压缩定位保持原有回归。
+
+### 2026-09-14 后台化服务命令的三个陷阱：fork IPC、SIGHUP、CLI 无参数语义
+- 症状：用户报 `axiom` 前台常驻、关掉终端窗口页面就「连接已断开」；`axiom-setup` 跑完不返回终端；`AXIOM_PORT=abc` 只报一句 `Invalid URL`。
+- 根因：①CLI 无参数直接 `supervise()` 前台常驻，终端关闭时 SIGHUP 发给整个前台进程组，守护进程与 worker 一起死；②`fork()` 建立的 IPC channel 会让父进程不退出，`child.unref()` 只 unref child handle，管不到 IPC channel；③端口只 `Number()` 不校验，坏值一路走到 `fetch` 才抛。
+- 修复：`axiom` 默认 `spawn(process.execPath, [service.mjs, "--foreground"], {detached:true, stdio:"ignore"})` 后轮询 `/health` 再返回，前台保留为 `axiom --foreground`；子进程**必须显式带 `--foreground`**，否则无参分支会再调一次 `startBackground` 无限派生；`localPort()` 统一解析并对坏值早报错。
+- 防再犯：①`localPort()` **必须接受 0**——`tests/service.test.js` 一直用 `AXIOM_PORT=0` 当「不监听真实端口」的哨兵，且 `installTag("http://127.0.0.1:0", root)` 直接依赖该字面量；②改 CLI 默认分支前先 grep 测试怎么 spawn 这个入口，`service.test.js` 的 `startDaemon` 依赖前台管道，后台化后必须改传 `--foreground`；③日志与数据路径一律走 `homeDir()`，不要再硬编码 `join(homedir(), ".axiom")`，否则 `AXIOM_HOME` 场景下提示的路径是错的。

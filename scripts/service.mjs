@@ -7,6 +7,7 @@ import { homedir, tmpdir } from "node:os";
 import { createServer as createControlServer, createConnection } from "node:net";
 import { createHash, randomBytes } from "node:crypto";
 import { dirname, delimiter, join } from "node:path";
+import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { Database } from "../src/database.js";
 import { npmSpec, commitFile, validateCommit } from "../src/update.js";
@@ -178,15 +179,86 @@ export async function rebuild(cwd = root, execute = run) {
 
 const READY_TIMEOUT_MS = Number(process.env.AXIOM_READY_TIMEOUT_MS ?? 60000);
 
+// AXIOM_PORT 只在这一处解析：坏值在启动/停止前就报清楚，不会变成 fetch 的 Invalid URL。
+// 0 是合法値（service.test 用它当“不监听真实端口”的哨兵，与 src/main.js 同样的边界）；空值回退默认端口。
+export function localPort() {
+  const raw = process.env.AXIOM_PORT || 4319;
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 0 || port > 65535)
+    throw new Error(`AXIOM_PORT 无效：${JSON.stringify(process.env.AXIOM_PORT)}（需要 0-65535 的整数）`);
+  return port;
+}
+export const localAddress = () => `http://127.0.0.1:${localPort()}`;
+export const homeDir = () => process.env.AXIOM_HOME || join(homedir(), ".axiom");
+
+// 浏览器打开方式：macOS open / Linux xdg-open / Windows start；参数不来自 shell，只拼地址。
+// platform 参数仅为纯函数测试保留，运行时恒为当前平台。
+export const openCommand = (platform = process.platform) =>
+  platform === "win32"
+    ? { command: process.env.ComSpec || "cmd.exe", lead: ["/d", "/s", "/c", "start", ""] }
+    : { command: platform === "darwin" ? "open" : "xdg-open", lead: [] };
+
+export function openPage(address) {
+  const opener = openCommand();
+  spawn(opener.command, [...opener.lead, address], { stdio: "ignore", windowsHide: true }).unref();
+}
+
+// 首次引导只在交互终端且没做过时问一次，结果记在 AXIOM_HOME/.guided（删掉 ~/.axiom 会重新问）。
+// 先写标记再做动作：注册自启或开页失败不该让用户下次被重复打扰。
+export async function firstRunGuide(address, tty = Boolean(process.stdin.isTTY && process.stdout.isTTY)) {
+  const marker = join(homeDir(), ".guided");
+  if (!tty || existsSync(marker)) return;
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  let wantAutostart, wantBrowser;
+  try {
+    const ask = async (question) => (await rl.question(`${question} [Y/n] `)).trim().toLowerCase() !== "n";
+    wantAutostart = await ask("注册登录自动启动（下次登录自动拉起服务）？");
+    wantBrowser = await ask("在浏览器打开 Axiom？");
+  } finally { rl.close(); }
+  await mkdir(dirname(marker), { recursive: true });
+  await writeFile(marker, "");
+  if (wantAutostart) await (await import("./autostart.mjs")).main(["enable"]);
+  if (wantBrowser) openPage(address);
+}
+
+// 就绪探活集中一处：install.mjs 与 CLI 后台启动共用，避免两份 fork/轮询逻辑漂移。
+export const serviceReady = (address = localAddress()) =>
+  fetch(`${address}/health`, { signal: AbortSignal.timeout(1500) })
+    .then((res) => { void res.body?.cancel().catch(() => {}); return res.ok; })
+    .catch(() => false);
+
+// 后台启动：detached 脱离终端与 shell 进程组（关终端、断开 SSH 都不停服），stdio 丢弃（日志由守护进程自己写文件）。
+// 用 spawn 而非 fork：fork 的 IPC channel 会拖住父进程不退出（unref 不够）；子进程必须带 --foreground，
+// 否则它会再走一次本函数无限派生；已在运行时不重复启动。
+export async function startBackground(address = localAddress(), timeoutMs = Number(process.env.AXIOM_START_TIMEOUT_MS ?? 30000)) {
+  if (await serviceReady(address)) return "running";
+  spawn(process.execPath, [join(root, "scripts", "service.mjs"), "--foreground"], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+  const deadline = Date.now() + timeoutMs;
+  while (!(await serviceReady(address))) {
+    if (Date.now() >= deadline)
+      throw new Error(`端口 ${new URL(address).port} 无响应或被占用，请查看 ${join(homeDir(), "service.log")}`);
+    await new Promise((done) => setTimeout(done, 500));
+  }
+  return "started";
+}
+
+// axiom（无参数）= 后台启动 + 首次引导。
+async function startCli(address = localAddress()) {
+  const state = await startBackground(address);
+  console.log(state === "running" ? `服务已在运行：${address}` : `服务已在后台运行：${address}`);
+  console.log(`日志 ${join(homeDir(), "service.log")}；停止：axiom stop；前台看日志：axiom --foreground`);
+  await firstRunGuide(address);
+}
+
 export async function supervise() {
   if (existsSync(join(root, ".env.local"))) process.loadEnvFile(join(root, ".env.local"));
   process.env.PATH = `${dirname(process.execPath)}${delimiter}${process.env.PATH || ""}`;
-  const port = Number(process.env.AXIOM_PORT ?? 4319);
+  const port = localPort();
   const address = `http://127.0.0.1:${port}`;
   // 已有服务在跑就不起第二个守护进程（避免端口抢占与互相拉起）
   const alive = await fetch(`${address}/health`, { signal: AbortSignal.timeout(1500) }).then((r) => r.ok).catch(() => false);
   if (alive) { console.log(`服务已在运行：${address}`); return; }
-  const logDir = process.env.AXIOM_HOME || join(homedir(), ".axiom");
+  const logDir = homeDir();
   mkdirSync(logDir, { recursive: true });
   const logPath = join(logDir, "service.log");
   const log = openSync(logPath, "a");
@@ -459,7 +531,7 @@ export async function supervise() {
 }
 // npm 全局 bin 在类 Unix 系统是符号链接，argv[1] 需取 realpath 再比对
 const invoked = (() => { try { return realpathSync(process.argv[1] ?? ""); } catch { return ""; } })();
-export async function stopService(address = `http://127.0.0.1:${Number(process.env.AXIOM_PORT ?? 4319)}`) {
+export async function stopService(address = localAddress()) {
   let status = null;
   // HTTP 的拒绝是终态，绝不能回落管道绕过活动任务检查。仅网络不可达时探测无 worker 的守护。
   const response = await fetch(`${address}/service/stop`, { method: "POST", signal: AbortSignal.timeout(5000) }).catch(() => null);
@@ -495,24 +567,29 @@ export async function stopService(address = `http://127.0.0.1:${Number(process.e
   }
   console.log("服务与守护进程已退出；保存异常请查看 service.log。");
 }
+const HELP = `用法：axiom [help|stop|uninstall|--foreground]
+
+  axiom               后台启动服务（默认 http://127.0.0.1:4319），已在运行则只提示
+  axiom --foreground  前台运行，日志直接打到终端（Ctrl+C 停止；调试用）
+  axiom help          显示帮助（也支持 --help、-h）
+  axiom stop          安全停止服务及守护进程，不取消登录自启
+  axiom uninstall     停止服务、取消自启并卸载 Axiom
+
+后台启动的进程脱离终端，关闭终端或退出登录不会停服；开机自启用 axiom-setup 注册。
+停止时有运行任务会拒绝操作，超时不会强杀。
+卸载保留 Pi、~/.pi 配置和 ~/.axiom 会话数据。
+可通过 AXIOM_PORT 指定端口。`;
+const FORE = ["--foreground", "-f"];
+const COMMANDS = ["help", "--help", "-h", "stop", "uninstall", ...FORE];
 if (invoked && invoked === realpathSync(fileURLToPath(import.meta.url))) {
   const [command, ...extra] = process.argv.slice(2);
   if (!extra.length && ["help", "--help", "-h"].includes(command)) {
-    console.log(`用法：axiom [help|stop|uninstall]
-
-  axiom            启动后台服务（默认 http://127.0.0.1:4319）
-  axiom help       显示帮助（也支持 --help、-h）
-  axiom stop       安全停止服务及守护进程，不取消登录自启
-  axiom uninstall  停止服务、取消自启并卸载 Axiom
-
-停止时有运行任务会拒绝操作，超时不会强杀。
-卸载保留 Pi、~/.pi 配置和 ~/.axiom 会话数据。
-可通过 AXIOM_PORT 指定端口。`);
-  } else if (extra.length || (command && !["stop", "uninstall"].includes(command))) {
-    console.error("用法：axiom [help|stop|uninstall]（运行 axiom help 查看说明）"); process.exitCode = 1;
+    console.log(HELP);
+  } else if (extra.length || (command && !COMMANDS.includes(command))) {
+    console.error("用法：axiom [help|stop|uninstall|--foreground]（运行 axiom help 查看说明）"); process.exitCode = 1;
   } else {
     if (existsSync(join(root, ".env.local"))) process.loadEnvFile(join(root, ".env.local"));
-    await (command === "uninstall" ? import("./uninstall.mjs").then((m) => m.uninstall({ execute: run, stop: stopService, npm: npmRun })) : command === "stop" ? stopService() : supervise()).catch((error) => {
+    await (command === "uninstall" ? import("./uninstall.mjs").then((m) => m.uninstall({ execute: run, stop: stopService, npm: npmRun })) : command === "stop" ? stopService() : FORE.includes(command) ? supervise() : startCli()).catch((error) => {
       console.error(error.message); process.exitCode = 1;
     });
   }

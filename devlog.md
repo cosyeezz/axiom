@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-14 axiom 改为后台启动的服务命令
+- 内容：`scripts/service.mjs` 的 CLI 分派重写。`axiom`（无参数）不再前台常驻，改为 `startBackground()`：`spawn(process.execPath, [..., "--foreground"], { detached: true, stdio: "ignore" })` 后轮询 `/health` 至就绪，打印地址与日志路径即返回，已在运行则只提示不重复启动。新增 `axiom --foreground`（`-f`）保留原前台行为，供调试与直接看日志。新增 `localPort()`/`localAddress()`/`homeDir()`/`openPage()`/`firstRunGuide()` 并导出；`serviceReady()` 与 `startBackground()` 由 `install.mjs` 复用，删掉其重复的 fork + 探活循环。新增 `scripts/autostart.mjs` 的 `isEnabled()`。首次引导把「注册登录自启」「打开页面」两个问题只问一次，标记写在 `AXIOM_HOME/.guided`，`axiom-setup` 结束时也写同一标记。README 的安装与启动章节同步。
+- 原因：用户报告两件事：①`axiom` 在终端前台常驻，关掉终端窗口服务就没——macOS 关窗发 SIGHUP 给前台进程组，守护与 worker 一起死，页面表现为「连接已断开，正在自动重连」，这正是把「清理后重装仍不可用」串起来的一环；②`npm install -g` 之后没有任何引导，用户不知道要跑 `axiom-setup`，于是没注册自启、也没打开过页面。修的过程中又确定三个既有缺陷：`fork()` 的 IPC channel 会拖住父进程，`.unref()` 不够，`axiom-setup` 跑完不返回终端；日志路径硬编码 `join(homedir(), ".axiom")`，设了 `AXIOM_HOME` 时提示的路径是错的；`AXIOM_PORT` 没校验，坏值要走到 `fetch` 才报一句看不懂的 `Invalid URL`。
+- 决策：`axiom` 的职责就是服务生命周期（起/停/卸载），安装引导仍归 `axiom-setup`；`axiom` 只补问一次自启与开页，不每次启动都问（用 `AXIOM_HOME/.guided` 一次标记，删 `~/.axiom` 才重新问）。子进程用 `spawn` 而非 `fork`：后台启动不需要 IPC，而 `fork` 的 IPC channel 会拖住父进程。子进程必须显式带 `--foreground`，否则无参数分支会再走一次 `startBackground` 无限派生。`localPort()` 接受 `0`：`tests/service.test.js` 一直用 `AXIOM_PORT=0` 当“不监听真实端口”的哨兵，且 `installTag("http://127.0.0.1:0", root)` 直接依赖该字面量。空值按 `||` 回退 4319，与 `src/main.js` 一致（不是 `??`）。
+- 验证：`tests/service.test.js` 的 `startDaemon` 改 spawn `--foreground`（否则后台化后测试拿不到前台管道）；`tests/install.test.js` 新增 `localPort` 边界、`serviceReady`（真实 HTTP 服务，含非 2xx）、`startBackground` 已在运行不派生进程、`firstRunGuide` 非交互不写标记；`tests/cli-help.test.js` 新增 `--foreground` 参数校验与「`AXIOM_PORT` 非法即早退出、不等 stdin」。全量 `npm test` 369 项：367 通过 / 0 失败 / 2 跳过（24.6s）。本机实测：`axiom` 后台启动 1.6s 返回且关掉父 shell 后服务仍活（下次调用报「服务已在运行」），`axiom --foreground` 正常前台运行，`axiom stop` 正常退出。macOS/Linux 未实机运行，SIGHUP 隔离依赖 `detached` 的语义，未在真机验证。
+- 涉及：scripts/service.mjs、scripts/install.mjs、scripts/autostart.mjs、tests/service.test.js、tests/install.test.js、tests/cli-help.test.js、README.md、devlog.md。
+
 ## 2026-09-13 修复导入会话用例的 hash 竞争
 - 内容：`tests/app.test.js` 导入会话那段（点 `#file-picker-confirm` 之后）不再靠一次 `settle()` 就断言 `location.hash`，改为轮询等 `session=imported` 出现（上限 300×20ms，只防卡死）。
 - 原因：上一条修复合入后，全套跑偶发挂在 `assert.match(window.location.hash, /session=imported/)`（收到 `'#session=a'`）。按钮处理器是 `await switchSession(...)` 的即发即忘调用：`session.import` 请求确实发出了（`lastImport` 断言在前面已通过），但 hash 要等响应回来走完 `snapshot(state)` 才改，一个 `setImmediate` 不保证这条异步链跑完。属既有的「按固定 tick 数往下走」写法，与上一条改动无关——把 `sleep(1100)` 那处改回原样后同样跑不出差异（空机器各 8 轮全绿）。

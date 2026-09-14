@@ -113,6 +113,11 @@ const actions = {
   linux: [enableLinux, disableLinux],
 };
 
+// 注册文件是否还在：只用于「要不要再问一次注册自启」，不作为服务状态判断。
+// ponytail: Linux 用户若手工 systemctl disable 而未删 unit 会被判定为已注册（少问一次，无副作用）。
+export const isEnabled = () =>
+  platform() === "win32" ? existsSync(vbsPath()) : platform() === "darwin" ? existsSync(plistPath()) : existsSync(unitPath());
+
 export async function main(argv = process.argv.slice(2)) {
   const pair = actions[platform()];
   if (!pair) throw new Error(`不支持的平台：${platform()}`);

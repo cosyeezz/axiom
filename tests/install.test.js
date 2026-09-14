@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createServer } from "node:http";
+import { existsSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { parseArgs, nodeOk, openCommand, ensurePi } from "../scripts/install.mjs";
+import { firstRunGuide, localAddress, localPort, serviceReady, startBackground } from "../scripts/service.mjs";
 
 test("parseArgs 默认全开，参数可关闭，未知参数报错", () => {
   assert.deepEqual(parseArgs([]), { autostart: true, browser: true });
@@ -75,4 +81,69 @@ test("openCommand 按平台选择打开方式", () => {
   assert.deepEqual(openCommand("linux"), { command: "xdg-open", lead: [] });
   assert.equal(openCommand("win32").command, process.env.ComSpec || "cmd.exe");
   assert.deepEqual(openCommand("win32").lead, ["/d", "/s", "/c", "start", ""]);
+});
+
+test("localPort 拒绝非法 AXIOM_PORT，接受 0（测试用的“不监听真实端口”哨兵）", () => {
+  const saved = process.env.AXIOM_PORT;
+  try {
+    for (const bad of ["invalid", "-1", "70000", "1.5"]) {
+      process.env.AXIOM_PORT = bad;
+      assert.throws(localPort, /AXIOM_PORT 无效/, bad);
+    }
+    process.env.AXIOM_PORT = "4399";
+    assert.equal(localPort(), 4399);
+    assert.equal(localAddress(), "http://127.0.0.1:4399");
+    process.env.AXIOM_PORT = "0";
+    assert.equal(localPort(), 0);
+    delete process.env.AXIOM_PORT;
+    assert.equal(localPort(), 4319);
+    process.env.AXIOM_PORT = "";
+    assert.equal(localPort(), 4319, "空值等同未设置，与 src/main.js 一致");
+  } finally {
+    if (saved === undefined) delete process.env.AXIOM_PORT;
+    else process.env.AXIOM_PORT = saved;
+  }
+});
+
+// 用真实 HTTP 服务验证探活语义，不碰真守护进程。
+const fakeService = async (status = 200) => {
+  const server = createServer((req, res) => {
+    res.writeHead(req.url === "/health" ? status : 404);
+    res.end("{}");
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  return { address: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((done) => server.close(done)) };
+};
+
+test("serviceReady 只认 /health 的 2xx，服务消失后转为 false", async () => {
+  const service = await fakeService();
+  assert.equal(await serviceReady(service.address), true);
+  await service.close();
+  assert.equal(await serviceReady(service.address), false);
+});
+
+test("serviceReady 把非 2xx 响应视为未就绪（端口被别的程序占用）", async () => {
+  const service = await fakeService(503);
+  assert.equal(await serviceReady(service.address), false);
+  await service.close();
+});
+
+test("服务已在运行时 startBackground 返回 running 且不派生新进程", async () => {
+  const service = await fakeService();
+  assert.equal(await startBackground(service.address), "running");
+  await service.close();
+});
+
+test("firstRunGuide 在非交互终端直接返回，不创建引导标记", async () => {
+  const home = await mkdtemp(join(tmpdir(), "axiom-guide-"));
+  const saved = process.env.AXIOM_HOME;
+  process.env.AXIOM_HOME = home;
+  try {
+    await firstRunGuide("http://127.0.0.1:1", false);
+    assert.equal(existsSync(join(home, ".guided")), false);
+  } finally {
+    if (saved === undefined) delete process.env.AXIOM_HOME;
+    else process.env.AXIOM_HOME = saved;
+    await rm(home, { recursive: true, force: true });
+  }
 });
