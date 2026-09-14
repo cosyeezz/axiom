@@ -555,6 +555,42 @@ test("homeDir 解析为绝对路径：相对 AXIOM_HOME 下 supervisor 与 worke
   }
 });
 
+test("相对 AXIOM_HOME：worker 必须拿到解析后的绝对 home，两端打开同一个库文件", async () => {
+  const { base, root } = await buildWorkspace();
+  // 守护进程 cwd 是 root 的上一级（startDaemon 固定如此），worker 以 cwd:root fork——
+  // 只把 homeDir() 改成 resolve 还不够：worker 若沿用原样的相对 AXIOM_HOME，仍会按自己的
+  // cwd 解析出另一个目录，两个进程各开一个库（维护状态与会话/设置继续分叉）。
+  const supervisorHome = resolve(join(root, ".."), "relhome");
+  let child;
+  try {
+    await writeFile(join(root, "src", "main.js"), `
+const fs = require('node:fs');
+const { resolve } = require('node:path');
+const home = resolve(process.env.AXIOM_HOME || '');
+fs.writeFileSync('worker-home.tmp', home + '\\n');
+fs.renameSync('worker-home.tmp', 'worker-home');
+fs.writeFileSync('maint-env.tmp', JSON.stringify({ url: process.env.AXIOM_MAINTENANCE_URL || '', token: process.env.AXIOM_MAINTENANCE_TOKEN || '', instanceId: process.env.AXIOM_INSTANCE_ID || '' }));
+fs.renameSync('maint-env.tmp', 'maint-env');
+fs.writeFileSync('workerPid', String(process.pid));
+console.log('home=' + home);
+process.on('message', (m) => { if (m.type === 'service.stop') process.exit(0); });
+process.send({ type: 'service.ready', instanceId: process.env.AXIOM_INSTANCE_ID, version: 'test' });
+setInterval(() => {}, 1000);
+`);
+    child = startDaemon(root, { AXIOM_HOME: "./relhome" });
+    child.stderr.on("data", (d) => console.error("[daemon]", String(d).trim()));
+    await until(async () => (await readMaybe(join(root, "worker-home"))) !== null);
+    const workerHome = (await readMaybe(join(root, "worker-home"))).trim();
+    assert.equal(existsSync(join(supervisorHome, "axiom.db")), true, "supervisor 的库落在解析后的绝对 home 下");
+    assert.equal(workerHome, supervisorHome, "worker 必须与 supervisor 打开同一个库目录");
+    assert.equal(existsSync(join(root, "relhome")), false, "不得出现第二个库目录");
+    // 连带缺陷：白名单若是相对路径就匹配不到日志里的绝对路径，/status 会泄漏本机路径。
+    const state = await stateOf(root, supervisorHome);
+    assert.ok(state.log.includes("home=<home>"), `worker 输出里的本机路径必须脱敏，实际 ${JSON.stringify(state.log)}`);
+    assert.equal(state.log.includes(supervisorHome), false, "/status 不得泄漏本机路径");
+  } finally { await teardown(base, child); }
+});
+
 test("维护状态坏行不阻断启动：损坏值与 JSON null 都按全新状态重建并告警", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "axiom-state-bad-"));
   const database = new Database(join(dir, "axiom.db"));
@@ -620,6 +656,7 @@ fs.writeFileSync('maint-env.tmp', JSON.stringify({ url: process.env.AXIOM_MAINTE
 fs.renameSync('maint-env.tmp', 'maint-env');
 fs.writeFileSync('workerPid', String(process.pid));
 console.log('worker boot token=' + process.env.AXIOM_MAINTENANCE_TOKEN);
+console.log('worker home=' + process.env.AXIOM_HOME);
 process.on('message', (m) => { if (m.type === 'service.stop') process.exit(0); });
 process.send({ type: 'service.ready', instanceId: process.env.AXIOM_INSTANCE_ID, version: 'test' });
 setInterval(() => {}, 1000);
@@ -633,6 +670,11 @@ setInterval(() => {}, 1000);
     await until(async () => (await readMaybe(logPath))?.includes("worker boot"));
     const log = await readMaybe(logPath);
     assert.equal(log.includes(token), false, "service.log 不得包含维护 token 明文");
+    // 白名单路径同样要落盘即脱敏：日志常被贴进 issue，除凭证外也不该带安装目录/用户目录。
+    await until(async () => (await readMaybe(logPath))?.includes("worker home="));
+    const pathLog = await readMaybe(logPath);
+    assert.ok(pathLog.includes("worker home=<home>"), `白名单路径必须替换为占位符，实际 ${JSON.stringify(pathLog.slice(-200))}`);
+    assert.equal(pathLog.includes(home), false, "service.log 不得包含本机 home 绝对路径");
     if (process.platform !== "win32") {
       const { mode } = await stat(logPath);
       assert.equal(mode & 0o777, 0o600, `service.log 权限应为 0600，实际 ${(mode & 0o777).toString(8)}`);

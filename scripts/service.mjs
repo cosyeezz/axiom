@@ -11,7 +11,7 @@ import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { Database } from "../src/database.js";
 import { npmSpec, commitFile, validateCommit } from "../src/update.js";
-import { createMaintState, sanitize } from "./maint-state.mjs";
+import { createMaintState, redact, sanitize } from "./maint-state.mjs";
 import { startMaintServer } from "./maint-server.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -282,10 +282,9 @@ export async function supervise() {
   // 错误与环境变量一律先脱敏：AXIOM_SERVICE_ERROR 会经 service.status 原样到达页面，禁止暴露路径/源码位置。
   const redactions = [[token, "***"], [realpathSync(root), "<install>"], [logDir, "<home>"], [homedir(), "<home>"]];
   const state = await createMaintState({ database, key: `state-${installTag(address)}`, legacyFile: stateFile, redactions });
-  // 维护 token 绝不明文落盘：worker 输出原样进共享 service.log，token 一旦写进去就等于
-  // 把维护凭证留在磁盘上。只抹 token 不做整体脱敏——路径与栈不是秘密，且 sanitize 会按
-  // 16KB 截尾，用在追加日志上会吞掉内容。
-  const logLine = (text) => workerLog.write(String(text).split(token).join("***"));
+  // worker 输出写盘前一律过白名单脱敏（token/安装路径/用户目录）：日志常被贴进 issue，凭证与
+  // 本机路径都不该落盘。这里用不截尾的 redact——service.log 是流式追加，按 16KB 截尾会吞内容。
+  const logLine = (text) => workerLog.write(redact(String(text), redactions));
   // 连接生命周期：所有退出路径（信号/管道停止/worker 退出停止）先冲刷状态、关库、关控制管道再退。
   const exit = (code) => { try { database.close(); } catch {} control.close(() => process.exit(code)); };
   // 崩溃重试终态（同 systemd StartLimitBurst/PM2 max_restarts）：连续崩溃达上限后停止自动重启，
@@ -362,7 +361,9 @@ export async function supervise() {
     child = fork(join(root, "src/main.js"), [], {
       cwd: root,
       env: {
-        ...process.env, AXIOM_SERVICE_ERROR: error, AXIOM_INSTANCE_ID: instanceId,
+        // AXIOM_HOME 必须传解析后的绝对路径：worker 以 cwd:root fork，沿用用户给的相对路径会被
+        // 它按 root 重新解析，于是 supervisor 与 worker 各开一个库（维护状态与会话/设置分叉）。
+        ...process.env, AXIOM_HOME: logDir, AXIOM_SERVICE_ERROR: error, AXIOM_INSTANCE_ID: instanceId,
         AXIOM_MAINTENANCE_URL: maintenance.url, AXIOM_MAINTENANCE_TOKEN: token,
       },
       stdio: ["ignore", "pipe", "pipe", "ipc"], windowsHide: true,

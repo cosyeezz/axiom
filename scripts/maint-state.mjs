@@ -8,12 +8,18 @@ import { readFile } from "node:fs/promises";
 const NAMESPACE = "maint";
 const LOG_LIMIT = 16 * 1024, PHASE_LIMIT = 200;
 
-// 有界脱敏：redactions 为 [原文, 替换] 对（长前缀优先），另打码鉴权头；证据够排障，凭证与路径不外泄。
-export function sanitize(text, redactions = []) {
+// 脱敏本体（不截尾）：redactions 为 [原文, 替换] 对（长前缀优先），另打码鉴权头。
+// 流式追加入文件的场景用它——按尾截断会吞掉正在写的内容。
+export function redact(text, redactions = []) {
   let out = String(text ?? "");
   const pairs = [...redactions].sort((a, b) => String(b[0]).length - String(a[0]).length);
   for (const [secret, replacement] of pairs) if (secret) out = out.split(secret).join(replacement);
-  out = out.replace(/(authorization|bearer)\s*[:=]?\s*["']?[^\s"',;]{8,}/gi, "$1 ***");
+  return out.replace(/(authorization|bearer)\s*[:=]?\s*["']?[^\s"',;]{8,}/gi, "$1 ***");
+}
+
+// 有界脱敏：证据够排障，凭证与路径不外泄。
+export function sanitize(text, redactions = []) {
+  const out = redact(text, redactions);
   return out.length > LOG_LIMIT ? out.slice(-LOG_LIMIT) : out;
 }
 
