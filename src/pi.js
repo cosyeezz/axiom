@@ -197,7 +197,18 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       finally { session.dispose(); }
       throw error;
     }
-    let lastResult;
+    let lastResult, reaskController;
+    const cancelledQuestion = () => {
+      let messages = session.agent.state.messages;
+      const tail = messages.at(-1);
+      if (tail?.role === 'assistant' && ['error', 'aborted'].includes(tail.stopReason) && !tail.content.length) messages = messages.slice(0, -1);
+      const result = messages.at(-1);
+      if (result?.role !== 'toolResult' || result.toolName !== 'question' || !result.isError ||
+          !result.content.some((block) => block.type === 'text' && block.text === '提问已取消')) return;
+      const assistant = messages.findLast((message) => message.role === 'assistant');
+      const call = assistant?.content.find((block) => block.type === 'toolCall' && block.name === 'question' && block.id === result.toolCallId);
+      if (call && customTools.some((tool) => tool.name === 'question')) return { assistant, call };
+    };
     const queueState = () => queueStateOf(session.agent.steeringQueue, session.agent.followUpQueue);
     const messageEntries = () => session.sessionManager.getBranch().filter((entry) => entry.type === "message");
     const compactionRecords = () => session.sessionManager.getBranch().filter((entry) => entry.type === "compaction").map((entry) => {
@@ -309,6 +320,33 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       // 手动重试：不带新输入续跑上一次被中断/失败的运行（删掉末尾失败的 assistant 后 continue()，
       // 不重发用户输入，已完成工具结果留在上下文）；若续跑再失败，仍由同一 retry 层接管自动退避。
       // 不跑 compaction：maybeApply 会重写消息数组，与 continue() 靠末尾接续的前提冲突。
+      canReask: () => !!cancelledQuestion(),
+      reask: async () => {
+        const original = cancelledQuestion();
+        if (!original || reaskController) throw new Error('没有可重新提问的问题');
+        const controller = reaskController = new AbortController();
+        const call = { ...original.call, id: `question_${crypto.randomUUID()}` };
+        const append = (message) => {
+          const entryId = session.sessionManager.appendMessage(message);
+          session.agent.state.messages = [...session.agent.state.messages, message];
+          emitAxiom({ type: 'agent.message.start', data: { message } });
+          emitAxiom({ type: 'agent.message.end', data: { message, entryId } });
+        };
+        lastResult = undefined;
+        try {
+          const assistant = { ...original.assistant, content: [call], stopReason: 'toolUse', timestamp: Date.now(),
+            usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+          if (session.agent.state.messages.at(-1)?.role === 'assistant') dropFailedAssistant(session);
+          append(assistant);
+          emitAxiom({ type: 'tool.state', data: { phase: 'start', toolCallId: call.id, toolName: 'question', args: call.arguments } });
+          let result, isError = false;
+          try { result = await customTools.find((tool) => tool.name === 'question').execute(call.id, call.arguments, controller.signal); }
+          catch (error) { isError = true; result = { content: [{ type: 'text', text: error.message || String(error) }] }; }
+          append({ role: 'toolResult', toolCallId: call.id, toolName: 'question', ...result, isError, timestamp: Date.now() });
+          emitAxiom({ type: 'tool.state', data: { phase: 'end', toolCallId: call.id, toolName: 'question', result, isError } });
+          if (!controller.signal.aborted && !isError) await retry.run(() => session.agent.continue());
+        } finally { reaskController = undefined; }
+      },
       resumable: () => canResume(session),
       resume: async () => {
         if (!canResume(session)) throw new Error("没有可重试的请求：上一次运行已正常结束");
@@ -319,10 +357,12 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         });
       },
       async abort() {
+        reaskController?.abort();
         retry.cancel(); // 先中断等待中的自动重试，避免 abort 后又发起 continue
         await Promise.all([compactionCtrl.cancel?.(), session.abort()]);
       },
       async dispose() {
+        reaskController?.abort();
         retry.cancel();
         await compactionCtrl.dispose();
         try {

@@ -1176,3 +1176,8 @@
 - 修改 public/question.js/css：按 scrollHeight 自动增高，重绘恢复草稿尺寸，缓存题面最大高度，宽度变化保留焦点/选区；完成徽章、SVG 键帽和语义色。
 - 同步 README.md、codebase-map 索引与知识库；新增 tests/question-layout-ui.py。
 - 验证：Chromium 多行/长词/切题/375px/选区/删除缩回/会话恢复通过；npm test 399 通过、2 跳过。
+
+### 2026-09-14 取消后直接重新提问
+- public/app.js 使用后端 canReask 区分重新提问/重试；src/pi.js 只识别末尾取消的 question，保留旧历史并追加新编号的同题调用，直接执行工具，回答后 continue。src/sessions.js 复用 session.retry 路由及忙碌保护。
+- 不回退历史、不重跑其它工具、不要求模型重生成。兼容 SDK 取消后追加空 error assistant。
+- tests/pi-question.test.js 真实 SDK 覆盖无模型请求重开、重复点击、反复取消、答案续传；tests/manual-retry.test.js 覆盖入口及快照。README/索引同步。npm test 399通过、2跳过。

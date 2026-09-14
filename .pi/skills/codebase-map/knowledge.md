@@ -567,3 +567,8 @@
 - 根因：rows=1 未自动增高，且继承全局 textarea max-height:240px。
 - 修复：question.css 显式 line-height/max-height/overflow；question.js 挂载与输入时按 scrollHeight 加边框测高，缓存题面最大高度防切题跳动，宽度变化保留选区。
 - 防再犯：tests/question-layout-ui.py 真实 Chromium 检查超过240px、长词、切题、375px宽度、删除缩回和会话草稿恢复。
+
+### 2026-09-14 取消提问不能直接普通continue
+- 根因：取消已产生错误toolResult，continue不会直接重新执行question；SDK还可能在末尾附加空error assistant。
+- 修复：pi.js 识别尾部取消question，以新调用编号追加原题并直接执行，结果写入JSONL和内存并发出UI事件；Sessions.retry按canReask路由。
+- 防再犯：真实SDK测试确认重开不发模型请求、再次取消可恢复、回答才续跑；不得重复原toolCallId结果或回退丢其它工具记录。
