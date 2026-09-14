@@ -540,3 +540,44 @@ test("待通知任务查询走部分索引，不全表扫描", () =>
     assert.match(plan, /USING (COVERING )?INDEX tasks_pending/, `启动恢复每次都跑这条查询，不该全表扫描：${plan}`);
     assert.deepEqual(store.listPendingSessionIds(), ["s1"]);
   }));
+
+test("新增部分索引的老库升级：重开幂等建立，旧数据仍可读且投影口径不变", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "axiom-index-upgrade-"));
+  const path = join(dir, "axiom.db");
+  const connections = [];
+  const indexCount = (db) =>
+    db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type = 'index' AND name = 'tasks_pending'").get().n;
+  try {
+    // 先用当前实现建库写数据，再 DROP 掉索引 —— 等价于「本次改动之前建的老库」。
+    const first = new Database(path);
+    connections.push(first);
+    const store = new SessionStore(first);
+    store.insertSession(fullSaved());
+    const before = store.getSession("s1");
+    const pendingBefore = store.listPendingSessionIds();
+    first.exec("DROP INDEX tasks_pending");
+    assert.equal(indexCount(first), 0, "前提：老库没有这条索引");
+    first.close();
+
+    // 重开：索引自动补建，旧数据一条不少，投影字节级一致。
+    const upgraded = new Database(path);
+    connections.push(upgraded);
+    const store2 = new SessionStore(upgraded);
+    assert.equal(indexCount(upgraded), 1, "老库重开必须补建索引");
+    assert.deepEqual(store2.getSession("s1"), before, "旧数据与投影口径不得变化");
+    assert.deepEqual(store2.listPendingSessionIds(), pendingBefore);
+    assert.deepEqual(store2.listTasks("s1"), before.tasks);
+    upgraded.close();
+
+    // 再开一次：CREATE INDEX IF NOT EXISTS 空转，不重复执行也不报错（幂等）。
+    const again = new Database(path);
+    connections.push(again);
+    const store3 = new SessionStore(again);
+    assert.equal(indexCount(again), 1);
+    assert.deepEqual(store3.getSession("s1"), before);
+    again.close();
+  } finally {
+    for (const connection of connections) { try { connection.close(); } catch { /* 已关 */ } }
+    await rm(dir, { recursive: true, force: true });
+  }
+});
