@@ -59,6 +59,9 @@ export function createGoalUI({ root, request, onError, readPrompt, clearPrompt }
     "M12 11.1a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z",
   ]);
   const phase = () => PHASES[goal?.phase] || { label: goal?.phase || "目标", tone: "muted", hint: "" };
+  // 裸 /goal：后端只置 clarifying 且不调模型，等用户下一条消息当目标。
+  // 此时不能沿用「模型正在澄清」的口径，否则用户会等一个根本没发出的请求。
+  const awaitingObjective = () => goal?.phase === "clarifying" && !goal.objective;
   // 暂停原因（预算耗尽、被阻塞、服务重启恢复）：snapshot.failure = { reason, at } | null。
   // 没有原因就不编造，只显示阶段本身的说明。
   function failureNote() {
@@ -239,7 +242,7 @@ export function createGoalUI({ root, request, onError, readPrompt, clearPrompt }
     main.append(label);
     if (rounds.length) main.append(el("span", "goal-dock-round", `第 ${index + 1} / ${rounds.length} 轮`));
     if (rounds[index]?.title) main.append(el("span", "goal-dock-title", rounds[index].title));
-    const hint = el("p", "goal-dock-hint", [note?.text, info.hint].filter(Boolean).join("；"));
+    const hint = el("p", "goal-dock-hint", [note?.text, awaitingObjective() ? "任务模式已开启，请发送任务目标" : info.hint].filter(Boolean).join("；"));
     if (note) {
       hint.dataset.alert = "true";
       if (note.title) hint.title = note.title;

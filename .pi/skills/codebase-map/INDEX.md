@@ -1,16 +1,16 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/14 10:04:57）
+# Axiom 多级代码索引（生成于 2026/9/14 10:38:52）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
 | public/answer-tags.js | 48 | 主代理回答标签解析、代码保护与流式容错 | OPEN, CLOSE, splitAnswer |
-| public/app.js | 3559 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | questionUI, filePicker, $, ws |
+| public/app.js | 3569 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | questionUI, filePicker, $, ws |
 | public/file-picker.css | 276 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 355 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/goal.css | 233 | Goal 目标面板、轮次与控制样式 | - |
-| public/goal.js | 596 | Goal 专属状态、操作与复用消息轮次分组 | createGoalUI |
+| public/goal.js | 599 | Goal 专属状态、操作与复用消息轮次分组 | createGoalUI |
 | public/index.html | 354 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown.js | 317 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, textLanguages, isText |
 | public/memory-tags.js | 111 | 主子代理共享简单标签提取与流式显示过滤 | TAGS, NAMES, TAG, OPEN |
@@ -37,7 +37,7 @@
 | src/capabilities.js | 138 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/compaction.js | 375 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
 | src/database.js | 103 | 共享 SQLite 连接、小配置 KV、WAL 与一致性备份 | nodeOk, Database |
-| src/goal.js | 1002 | Goal：会话级目标状态、轮次计划、验收门与持久化 | GOAL_PHASES, GOAL_ACTIONS, ROUND_STATUSES, GOAL_MAX_SEGMENTS |
+| src/goal.js | 1010 | Goal：会话级目标状态、轮次计划、验收门与持久化 | GOAL_PHASES, GOAL_ACTIONS, ROUND_STATUSES, GOAL_MAX_SEGMENTS |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
 | src/main.js | 114 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, home, database |
 | src/model-auth.js | 89 | SDK 登录桥：连接隔离、超时取消与安全事件投影 | safeUrl, text, eventView, createModelAuthService |
@@ -52,7 +52,7 @@
 | src/server.js | 507 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | dev, digest, load, freshen |
 | src/session-memory.js | 29 | 标题提取登记、轮次预算挂钩与委派背景 | textOf, memoryHooks |
 | src/session-store.js | 458 | 会话三表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, TABLES, INDEXES |
-| src/sessions.js | 1484 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | BROWSE_PAGE, SEARCH_LIMIT, SEARCH_DIR_LIMIT, IGNORED_ENTRIES |
+| src/sessions.js | 1487 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | BROWSE_PAGE, SEARCH_LIMIT, SEARCH_DIR_LIMIT, IGNORED_ENTRIES |
 | src/task-budget.js | 35 | 主子代理轮次预算规则、收尾提示词与配置页参数校验 | TASK_BUDGET_LIMITS, taskBudgetDefaults, within, taskBudgetPolicy |
 | src/tasks.js | 209 | Tasks：子任务（委托）生命周期 | ACTIVE, historyResult, Tasks |
 | src/tools.js | 110 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
@@ -78,10 +78,11 @@
 | tests/defaults.test.js | 86 | node --test 测试（npm test） | - |
 | tests/dev-assets.test.js | 46 | node --test 测试（npm test） | - |
 | tests/file-picker.test.js | 67 | node --test 测试（npm test） | source, tick |
+| tests/goal-command-ui.test.js | 112 | node --test 测试（npm test） | page, $, settle, input |
 | tests/goal-pi.test.js | 288 | node --test 测试（npm test） | PREAMBLE, FOOTER, run |
 | tests/goal-preview.mjs | 145 | node --test 测试（npm test） | cwd, seq, text, makeState |
 | tests/goal-protocol.test.js | 15 | node --test 测试（npm test） | - |
-| tests/goal-sessions.test.js | 400 | node --test 测试（npm test） | PLAN, factoryFixture, tick, until |
+| tests/goal-sessions.test.js | 425 | node --test 测试（npm test） | PLAN, factoryFixture, tick, until |
 | tests/goal-ui.py | 259 | node --test 测试（npm test） | - |
 | tests/goal-ui.test.js | 325 | node --test 测试（npm test） | page, $, labels, messages |
 | tests/goal.test.js | 700 | node --test 测试（npm test） | ROUND, GOAL, PLAN, PLAN2 |
@@ -165,7 +166,7 @@
 | CLOSE | const | 3 |
 | splitAnswer | function | 5 |
 
-### public/app.js（3559 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
+### public/app.js（3569 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -415,28 +416,29 @@
 | showContextSkills | method | 3099 |
 | resizePrompt | method | 3108 |
 | controls | method | 3109 |
-| closeCompletion | function | 3112 |
-| highlightCompletion | function | 3120 |
-| chooseCompletion | function | 3129 |
-| closeCompletion | method | 3139 |
-| updateCompletion | function | 3142 |
-| closeCompletion | method | 3143 |
-| resizePrompt | method | 3199 |
-| controls | method | 3200 |
-| switchSession | method | 3240 |
-| creationLoad | const | 3251 |
-| refreshPresets | function | 3252 |
-| createAgentPicker | function | 3287 |
-| options | method | 3313 |
-| fill | method | 3321 |
-| fillThinking | method | 3329 |
-| options | method | 3331 |
-| loadCreation | function | 3378 |
-| openCreation | function | 3414 |
-| rememberCreation | const | 3435 |
-| updateDefaultsPreview | function | 3467 |
-| updateDefaultsPreview | method | 3491 |
-| controls | method | 3546 |
+| SLASH_COMMANDS | const | 3114 |
+| closeCompletion | function | 3117 |
+| highlightCompletion | function | 3125 |
+| chooseCompletion | function | 3134 |
+| closeCompletion | method | 3146 |
+| updateCompletion | function | 3149 |
+| closeCompletion | method | 3150 |
+| resizePrompt | method | 3209 |
+| controls | method | 3210 |
+| switchSession | method | 3250 |
+| creationLoad | const | 3261 |
+| refreshPresets | function | 3262 |
+| createAgentPicker | function | 3297 |
+| options | method | 3323 |
+| fill | method | 3331 |
+| fillThinking | method | 3339 |
+| options | method | 3341 |
+| loadCreation | function | 3388 |
+| openCreation | function | 3424 |
+| rememberCreation | const | 3445 |
+| updateDefaultsPreview | function | 3477 |
+| updateDefaultsPreview | method | 3501 |
+| controls | method | 3556 |
 
 ### public/file-picker.js（355 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 
@@ -461,7 +463,7 @@
 | createFilePicker | function | 115 |
 | baseName | function | 352 |
 
-### public/goal.js（596 行） — Goal 专属状态、操作与复用消息轮次分组
+### public/goal.js（599 行） — Goal 专属状态、操作与复用消息轮次分组
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -775,7 +777,7 @@
 | exec | method | 95 |
 | close | method | 99 |
 
-### src/goal.js（1002 行） — Goal：会话级目标状态、轮次计划、验收门与持久化
+### src/goal.js（1010 行） — Goal：会话级目标状态、轮次计划、验收门与持久化
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -835,6 +837,7 @@
 | whenSettled | method | 637 |
 | freeze | method | 643 |
 | remove | method | 652 |
+| supplyObjective | method | 692 |
 
 ### src/inline-images.js（32 行） — 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列
 
@@ -1078,7 +1081,7 @@
 | saveTask | method | 429 |
 | listTasks | method | 452 |
 
-### src/sessions.js（1484 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
+### src/sessions.js（1487 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1128,28 +1131,28 @@
 | importSession | method | 599 |
 | create | method | 626 |
 | goalAction | method | 973 |
-| scheduleGoal | method | 996 |
-| advanceGoal | method | 1008 |
-| goalNotificationsBlocked | method | 1046 |
-| scheduleTaskNotifications | method | 1051 |
-| deliverTaskNotifications | method | 1063 |
-| get | method | 1091 |
-| revealWorkspace | method | 1096 |
-| browse | method | 1110 |
-| listFiles | method | 1116 |
-| refreshSkills | method | 1178 |
-| snapshot | method | 1184 |
-| subscribe | method | 1216 |
-| configure | method | 1222 |
-| startRun | method | 1258 |
-| retry | method | 1297 |
-| prompt | method | 1306 |
-| withdraw | method | 1337 |
-| replyQuestion | method | 1386 |
-| cancel | method | 1392 |
-| retryTask | method | 1418 |
-| remove | method | 1425 |
-| close | method | 1474 |
+| scheduleGoal | method | 997 |
+| advanceGoal | method | 1009 |
+| goalNotificationsBlocked | method | 1047 |
+| scheduleTaskNotifications | method | 1052 |
+| deliverTaskNotifications | method | 1064 |
+| get | method | 1092 |
+| revealWorkspace | method | 1097 |
+| browse | method | 1111 |
+| listFiles | method | 1117 |
+| refreshSkills | method | 1179 |
+| snapshot | method | 1185 |
+| subscribe | method | 1217 |
+| configure | method | 1223 |
+| startRun | method | 1259 |
+| retry | method | 1298 |
+| prompt | method | 1307 |
+| withdraw | method | 1340 |
+| replyQuestion | method | 1389 |
+| cancel | method | 1395 |
+| retryTask | method | 1421 |
+| remove | method | 1428 |
+| close | method | 1477 |
 
 ### src/task-budget.js（35 行） — 主子代理轮次预算规则、收尾提示词与配置页参数校验
 
@@ -1312,6 +1315,17 @@
 | source | const | 6 |
 | tick | const | 7 |
 
+### tests/goal-command-ui.test.js（112 行） — node --test 测试（npm test）
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| page | function | 10 |
+| restore | method | 45 |
+| $ | const | 48 |
+| settle | const | 49 |
+| input | const | 50 |
+| key | const | 51 |
+
 ### tests/goal-pi.test.js（288 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
@@ -1350,7 +1364,7 @@
 | preferred | const | 129 |
 | listen | method | 143 |
 
-### tests/goal-sessions.test.js（400 行） — node --test 测试（npm test）
+### tests/goal-sessions.test.js（425 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|

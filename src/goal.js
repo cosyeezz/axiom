@@ -689,6 +689,14 @@ export class Goal {
     return this.snapshot();
   }
 
+  supplyObjective(text) {
+    const s = this.#require("填写目标");
+    if (s.phase !== "clarifying" || s.objective || s.rounds.length) throw new Error("当前不在等待填写目标");
+    s.objective = z.string().trim().min(1).max(30000).parse(text);
+    this.#commit();
+    return this.snapshot();
+  }
+
   #confirm(text) {
     const s = this.#require("确认计划");
     if (s.phase !== "ready") throw new Error("只有已提交计划的目标可以确认");

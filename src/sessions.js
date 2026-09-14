@@ -977,6 +977,7 @@ export class Sessions {
     item.goal.action(action, text);
     item.agent.enableTools?.(["goal_plan", "goal_evidence", "goal_block", "goal_progress"]);
     item.notificationsPaused = this.goalNotificationsBlocked(item) || false;
+    if (action === "enter" && !item.goal.snapshot().objective) return { goal: item.goal.snapshot(), runId: item.runId };
     if (["enter", "confirm", "resume"].includes(action)) {
       item.goalSegments = 0;
       for (const job of item.tasks.jobs.values())
@@ -1324,6 +1325,8 @@ export class Sessions {
       return item.runId;
     }
     if (item.status !== "idle" || item.configuring || item.closing) throw new Error("Session is busy");
+    const goal = item.goal.snapshot();
+    if (goal?.phase === "clarifying" && !goal.objective && !goal.rounds.length) item.goal.supplyObjective(text);
     if (item.title === "新会话" && !item.titleManual) item.title = (text.trim() || "[图片]").slice(0, 60);
     const titleRequest = !item.titleRequested && !item.titleManual;
     item.titleRequested = true;

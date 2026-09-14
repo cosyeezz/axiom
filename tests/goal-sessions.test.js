@@ -397,3 +397,28 @@ test("重启后持久暂停优先：pausing 落盘为 paused 并阻止续跑", a
     await until(() => restored.get(id).status === "idle");
   } finally { await restored?.close(); await sessions.close(); await rm(root, { recursive: true, force: true }); }
 });
+
+ test("单独 /goal 只开启任务状态，下一条消息保存目标并等待计划确认", async () => {
+  const { factory, mains } = factoryFixture();
+  const sessions = new Sessions(factory);
+  try {
+    const id = await sessions.create();
+    await sessions.prompt(id, "/goal");
+    const item = sessions.get(id), agent = mains[0];
+    assert.equal(item.status, "idle");
+    assert.equal(item.goal.snapshot().phase, "clarifying");
+    assert.equal(item.goal.snapshot().objective, "");
+    assert.equal(agent.calls.length, 0);
+    await sessions.prompt(id, "把构建时间降到 10s 内");
+    await tick();
+    assert.equal(item.goal.snapshot().objective, "把构建时间降到 10s 内");
+    assert.equal(agent.calls.length, 1);
+    assert.ok(agent.options.executionContext().includes("把构建时间降到 10s 内"));
+    await agent.tools.find((tool) => tool.name === "goal_plan").execute("plan-1", PLAN);
+    agent.finish();
+    await item.work;
+    await tick();
+    assert.equal(item.goal.snapshot().phase, "ready");
+    assert.equal(agent.calls.length, 1, "确认前不自动执行");
+  } finally { await sessions.close(); }
+});

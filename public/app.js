@@ -3109,6 +3109,11 @@ $("composer-skill").onchange = () => {
   controls();
   $("prompt").focus();
 };
+// 斜杠补全里的命令（不是 Skill）：选择后只把 "/goal " 补进输入框，光标留在末尾，
+// 用户既能接着写目标文本，也能不写直接发送裸命令。
+const SLASH_COMMANDS = [
+  { name: "goal", command: true, description: "目标模式：发送整体目标，确认计划后多轮执行并验收" },
+];
 function closeCompletion() {
   completionVersion++;
   completionToken = undefined;
@@ -3131,6 +3136,8 @@ function chooseCompletion(entry, browse = false) {
   if (!token || !connected || changing) return;
   if (browse) {
     input.setRangeText(`@"${entry.path}/`, token.start, token.end, "end");
+  } else if (entry.command) {
+    input.setRangeText(`/${entry.name} `, token.start, token.end, "end");
   } else {
     if (token.skill) selectedSkill = entry.name;
     else if (!contextFiles.some((file) => file.path === entry.path)) contextFiles.push(entry);
@@ -3158,7 +3165,10 @@ async function updateCompletion() {
     const slash = query.lastIndexOf("/");
     const filter = (skill ? query : query.slice(slash + 1)).toLocaleLowerCase();
     const entries = skill
-      ? (config?.skills || [])
+      ? [
+          ...(config?.skills || []),
+          ...(text.startsWith("/skill:") ? [] : SLASH_COMMANDS.filter((entry) => fuzzyHit(`${entry.name} ${entry.description}`, filter))),
+        ]
       : (await request("workspace.browse", { sessionId: target, path: slash < 0 ? "" : query.slice(0, slash), query: filter })).entries;
     if (version !== completionVersion || target !== sessionId) return;
     // 服务端已按名称模糊递归搜索；这里再兜一次，旧服务端（只按子串过滤）也能用。
