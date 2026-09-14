@@ -1,5 +1,14 @@
 # 开发记录
 
+## 2026-09-14 浅色主题的用户消息卡片加深
+
+- 诉求：白色主题下用户消息跟背景几乎分不开，要求加深一点。原来 `.message.user` 两个颇色都是单一值（底 `--info` 5% + 边框 20%），深色底看着刚好，浅色底因为 `--surface` 是纯白（5% 蓝 ≈ #f5f8fc）基本看不出来。
+- 内容：`public/style.css` 把背景与边框改成 `light-dark()` 包两份 `color-mix`，浅色底 8% / 边框 28%（#eef3f9 / #b2c4dd），深色底原值不动。`light-dark()` 只接受 `<color>`，百分比位置写不进去，所以是两支各写一份而不是抽变量（本文件的 `[data-theme]` 规则只管 `color-scheme`，不堆 token）。
+- 为何停在 8%：卡片内正文要对比度 ≥ 4.5:1，约束最紧的是 `--highlight`（#96650b，粗体 14px，不到大字可用 3:1 的档）。逐档算了一遍：8% 时 4.53，9% 就跌到 4.47、12% 只剩 4.29。其余正文 token（body-ink 9.23、code-ink 4.71、thought 5.41、success 4.56、danger 4.85、info 链接 4.76）在 8% 全部过线。
+- 遗留：要再深得先把浅色的 `--highlight` 压深（目前它在白底上本身就只有 4.72，余量很薄），超本次范围。
+- 验证：纯 CSS 变更，无 JS 涉及。临时用 Playwright 加载真 `style.css` 渲染卡片，读 computed style 确认两个主题取值（浅 srgb 0.934/0.954/0.978 = #eef3f9；深 0.086/0.098/0.111 与改前一致）并截图目检，验证脚本用完删除。
+- 涉及：public/style.css、devlog.md。
+
 ## 2026-09-14 复选框不再被全局输入框撑错行；思考等级勾选与会话选择器对齐
 
 - 症状一：「预设会话配置」弹窗里「固定使用此工作目录」的复选框单占一行，说明文字掉到下一行并下坠。根因是 `public/style.css` 的全局 `input { width: 100%; padding: 8px 12px; min-height: 40px }` 也命中了 checkbox：布局盒被撑到 40px 高，WebKit/Blink 把 13px 的原生控件画在盒顶、同行文字按基线落到盒底，于是看起来就是错行。以前只在出事的地方零星打补丁（`.capability-options input`、`.trust-row input`、`.mm input[type="checkbox"]`），漏一个就错一个。
