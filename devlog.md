@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-14 默认会话配置的后台自动压缩改为默认开启
+- 原因：新会话一律要手动去默认配置里勾选才能用上后台压缩，默认值偏保守。
+- src/protocol.js compactionDefaults 改为 enabled: true、percentThreshold: 50、keepRecentTokens: 5000（token 阈值仍 100000）；public/app.js 的同名前端默认值保持同源同步。
+- tests/compaction.test.js、tests/app.test.js 的默认值断言同步；预设编辑器断言改为校验它取会话配置而非被编辑的默认值。README「后台自动压缩」一节同步描述。
+- npm test：402项，400通过、0失败。
+
 ## 2026-09-14 提问卡紧凑布局与切题稳定
 - 原因：各题高度不同让底部输入区上下移动；原卡片留白和独立滚动过多。
 - public/question.js 按当前宽度测量同组最高题面并保持高度，宽度变化重测；选项聚焦使用 preventScroll 避免浏览器自动滚动。public/question.css 改紧凑题签/无框选项行/行内说明，主题使用现有变量；卡片取消独立滚动，超长题由输入区滚动；手机收起态仍显示待答卡。

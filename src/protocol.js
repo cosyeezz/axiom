@@ -43,8 +43,8 @@ export function assertPromptImages(images) {
   }
 }
 export const compactionDefaults = {
-  enabled: false, tokenThreshold: 100000, percentThreshold: 70,
-  model: null, thinking: "off", keepRecentTokens: 20000,
+  enabled: true, tokenThreshold: 100000, percentThreshold: 50,
+  model: null, thinking: "off", keepRecentTokens: 5000,
 };
 export const compaction = z.object({
   enabled: z.boolean(),

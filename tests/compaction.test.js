@@ -219,12 +219,12 @@ async function startFakeLlmServer({ hold } = {}) {
 test("normalizeCompaction: 缺省返回默认值，默认值与 protocol compactionDefaults 同源", () => {
   assert.deepEqual(normalizeCompaction(undefined), { ...DEFAULT_COMPACTION_CONFIG });
   assert.equal(DEFAULT_COMPACTION_CONFIG, compactionDefaults);
-  assert.equal(DEFAULT_COMPACTION_CONFIG.enabled, false);
+  assert.equal(DEFAULT_COMPACTION_CONFIG.enabled, true);
   assert.equal(DEFAULT_COMPACTION_CONFIG.tokenThreshold, 100000);
-  assert.equal(DEFAULT_COMPACTION_CONFIG.percentThreshold, 70);
+  assert.equal(DEFAULT_COMPACTION_CONFIG.percentThreshold, 50);
   assert.equal(DEFAULT_COMPACTION_CONFIG.model, null);
   assert.equal(DEFAULT_COMPACTION_CONFIG.thinking, "off");
-  assert.equal(DEFAULT_COMPACTION_CONFIG.keepRecentTokens, 20000);
+  assert.equal(DEFAULT_COMPACTION_CONFIG.keepRecentTokens, 5000);
 });
 
 test("normalizeCompaction: 合法配置原样通过（null 阈值透传），非法配置抛错不回退", () => {
