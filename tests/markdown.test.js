@@ -124,6 +124,54 @@ test("shared Markdown renderer formats blocks and removes unsafe content", async
     node.querySelector('button[aria-label="切换到优化展示"]').click();
     assert.equal(node.querySelector('.table-scroll').hidden, false);
     assert.equal(node.querySelector('pre').hidden, true);
+    const aligned = [
+      '日期           方向  中继号数  呼叫量  接通  接通率  禁止呼叫  限拨率  无法接通',
+      '2026-09-12 六  呼入        19    1026   673   65.6%         0       –       338',
+      '               呼出         9     228    64   28.1%        65   28.5%         6',
+      '2026-09-13 日  呼入        16     826   523   63.3%         0       –       294',
+      '               呼出         9     187    55   29.4%        39   20.9%         1',
+      '-------------------------------------------------------------------------------',
+      '合计           呼入        21    3011  1942   64.5%',
+      '               呼出        13     641   207   32.3%       146   22.8%',
+    ].join('\n');
+    render(node, fenced(aligned));
+    assert.equal(node.querySelector('.code-toolbar > span').textContent, '表格', 'space-aligned tables upgrade to a real table');
+    assert.equal(node.querySelectorAll('th').length, 9);
+    assert.equal(node.querySelectorAll('th')[0].textContent, '日期');
+    assert.equal(node.querySelectorAll('th')[8].textContent, '无法接通');
+    assert.equal(node.querySelectorAll('tbody tr').length, 6);
+    const firstRow = [...node.querySelectorAll('tbody tr')[0].cells].map((cell) => cell.textContent);
+    assert.deepEqual(firstRow, ['2026-09-12 六', '呼入', '19', '1026', '673', '65.6%', '0', '–', '338']);
+    const totals = [...node.querySelectorAll('tbody tr')[4].cells].map((cell) => cell.textContent);
+    assert.deepEqual(totals, ['合计', '呼入', '21', '3011', '1942', '64.5%', '', '', '']);
+    assert(node.querySelectorAll('tbody tr')[4].classList.contains('row-rule'), 'a rule line keeps its group divider');
+    assert.equal(node.querySelectorAll('tbody tr')[0].classList.contains('row-rule'), false);
+    const numberColumns = [...node.querySelectorAll('tbody tr')[0].cells].map((cell) => cell.classList.contains('cell-number'));
+    assert.deepEqual(numberColumns, [false, false, true, true, true, true, true, true, true]);
+    assert.equal(node.querySelector('pre').hidden, true);
+    window.navigator.clipboard.writeText = async (text) => { copied = text; };
+    await node.querySelector('button[aria-label="复制表格原文"]').onclick();
+    assert.equal(copied, aligned + '\n', 'copy keeps the aligned source verbatim');
+    node.querySelector('button[aria-label="切换到原文展示"]').click();
+    assert.equal(node.querySelector('.table-scroll').hidden, true);
+    assert.equal(node.querySelector('code').textContent, aligned + '\n');
+    for (const [text, lang] of [
+      [aligned, 'js'],
+      [aligned.replace('日期           方向', '日期          方向 '), 'text'],
+      ['名称  值\n甲    1\n乙    2', 'text'],
+      ['两列  对齐\n仅此  一行', 'text'],
+      ['这是一段说明文字。  它有双空格。\n第二行继续说明。', 'text'],
+      ['root\n|-- 中文\n`-- leaf', 'text'],
+    ]) {
+      render(node, fenced(text, lang));
+      assert.equal(node.querySelector('table'), null, `not a table: ${text.slice(0, 12)}`);
+    }
+    const listing = '-rw-r--r--  1 dane  staff   1024  Sep 12 10:22  README.md\n-rw-r--r--  1 dane  staff  20480  Sep 13 08:04  app.js\ndrwxr-xr-x  4 dane  staff    128  Sep 14 11:31  public';
+    render(node, fenced(listing));
+    assert.equal(node.querySelector('thead tr'), null, 'headerless output keeps every line as data');
+    assert.equal(node.querySelectorAll('tbody tr').length, 3);
+    assert.equal(node.querySelectorAll('tbody tr')[0].cells[3].textContent, '1024');
+    assert(node.querySelectorAll('tbody tr')[0].cells[3].classList.contains('cell-number'));
     const jsonText = '{"名称":"中文","html":"<img src=x onerror=alert(1)>","items":[1,2]}';
     for (const input of [fenced(jsonText, "json"), fenced(jsonText, ""), jsonText]) {
       render(node, input);

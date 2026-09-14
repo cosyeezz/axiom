@@ -477,6 +477,10 @@ h1 {
   white-space: nowrap;
 }
 .markdown tbody tr:nth-child(even) { background: var(--surface); }
+.markdown td.cell-number, .markdown th.cell-number { min-width: 4em; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Space-aligned sources hold one line per cell: size to content and scroll instead of wrapping mid-value. */
+.markdown table.table-aligned :is(td, th) { min-width: 0; white-space: nowrap; }
+.markdown tbody tr.row-rule > * { border-top: 2px solid color-mix(in srgb, var(--code-ink) 35%, var(--line)); }
 .markdown blockquote {
   border-left: 3px solid var(--code-ink);
   border-radius: 0 6px 6px 0;

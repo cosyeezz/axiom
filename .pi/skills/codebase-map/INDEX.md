@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/13 23:45:35）
+# Axiom 多级代码索引（生成于 2026/9/14 02:02:58）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -9,7 +9,7 @@
 | public/file-picker.css | 276 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 355 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/index.html | 321 | 页面骨架与元素 id（见 L3） | - |
-| public/markdown.js | 247 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, textLanguages, isText |
+| public/markdown.js | 317 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, textLanguages, isText |
 | public/memory-tags.js | 111 | 主子代理共享简单标签提取与流式显示过滤 | TAGS, NAMES, TAG, OPEN |
 | public/model-auth.js | 97 | 网页登录：授权提示、设备码、凭据输入与取消 | createModelAuth |
 | public/model-manager.css | 520 | 模型配置页：供应商列表、编辑表单与响应式布局 | - |
@@ -18,7 +18,7 @@
 | public/model-picker.js | 300 | 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互 | GAP, EDGE, TYPEAHEAD_MS, el |
 | public/service-settings.js | 278 | 设置页服务维护：真实进度、结果、更新确认与独立维护通道 | MAINT_URL_RE, POLL_MS, initServiceSettings |
 | public/stream-renderer.js | 46 | 流式增量渲染状态机 | createStreamRenderer |
-| public/style.css | 1405 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1411 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | public/theme.js | 11 | 首帧前阻塞应用明/暗主题（localStorage axiom.theme，默认深色） | - |
 | public/tooltip.css | 50 | 共享悬停说明样式（浅色主题下反色） | - |
 | public/tooltip.js | 225 | 共享悬停说明：动态 title、键盘、定位与无障碍 | SHOW_DELAY, HIDE_DELAY, GAP, EDGE |
@@ -73,7 +73,7 @@
 | tests/inline-images.test.js | 42 | node --test 测试（npm test） | text, a, b, user |
 | tests/install.test.js | 150 | node --test 测试（npm test） | fakeService |
 | tests/manual-retry.test.js | 186 | node --test 测试（npm test） | session, assistant, page, message |
-| tests/markdown.test.js | 166 | node --test 测试（npm test） | - |
+| tests/markdown.test.js | 214 | node --test 测试（npm test） | - |
 | tests/memory-preview.mjs | 22 | node --test 测试（npm test） | state, sessions, app |
 | tests/memory-tags.test.js | 83 | node --test 测试（npm test） | - |
 | tests/memory-ui.test.js | 97 | node --test 测试（npm test） | page |
@@ -416,7 +416,7 @@
 | createFilePicker | function | 115 |
 | baseName | function | 352 |
 
-### public/markdown.js（247 行） — marked + DOMPurify 渲染（XSS 边界）
+### public/markdown.js（317 行） — marked + DOMPurify 渲染（XSS 边界）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -424,13 +424,20 @@
 | policy | const | 5 |
 | textLanguages | const | 11 |
 | isText | const | 12 |
-| asciiTable | function | 15 |
-| looksLikeDiagram | function | 46 |
-| layoutDiagram | function | 53 |
-| isJson | function | 82 |
-| fixCjkBold | function | 89 |
-| jsonControls | function | 103 |
-| renderMarkdown | function | 142 |
+| wideCharacter | const | 13 |
+| graphemes | const | 14 |
+| numericCell | const | 15 |
+| placeholderCell | const | 16 |
+| ruleLine | const | 17 |
+| borderedRows | function | 20 |
+| alignedRows | function | 39 |
+| textTable | function | 80 |
+| looksLikeDiagram | function | 116 |
+| layoutDiagram | function | 123 |
+| isJson | function | 152 |
+| fixCjkBold | function | 159 |
+| jsonControls | function | 173 |
+| renderMarkdown | function | 212 |
 
 ### public/memory-tags.js（111 行） — 主子代理共享简单标签提取与流式显示过滤
 
