@@ -594,7 +594,10 @@ export class Goal {
       return this.snapshot();
     }
     // 无证据（或整体未齐）就停在验证阶段，等下一轮证据门。
-    if (roundFinished && !s.claimed && gate.roundMissing.length === 0 && s.currentRound < s.rounds.length - 1) {
+    // 是否可进下一轮只看「本轮回复」的整体声明：更早回复里提前发出的整体标记已被证伪，
+    // 不能永久堵死轮次推进（整体完成仍受 roundsSettled + 证据门约束，不会因此提前放行）。
+    if (roundFinished && !goalFinished && gate.roundMissing.length === 0 && s.currentRound < s.rounds.length - 1) {
+      s.claimed = false;
       if (this.#beginNextRound() === false) return this.snapshot();
       this.#commit();
       return this.snapshot();

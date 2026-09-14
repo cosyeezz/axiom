@@ -232,6 +232,36 @@ test("startMessage/endMessage 用 entryId 也能定位轮次", async () => {
   } finally { dom.window.close(); }
 });
 
+test("首屏折叠已完成轮：app 在 rAF 里重排出的 call-group 摘要不残留可见", async () => {
+  const { dom, w, restore, paint, output } = await page();
+  try {
+    restore({
+      messages: [
+        { agentId: "main", entryId: "t1", message: { role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "read", arguments: { path: "src/a.js" } }] } },
+        { agentId: "main", entryId: "t2", message: { role: "assistant", content: [{ type: "text", text: "本轮回答" }] } },
+      ],
+      goal: {
+        phase: "running", objective: "两轮走",
+        rounds: [
+          { title: "已完成轮", status: "done", startMessage: "t1", endMessage: "t1" },
+          { title: "当前轮", status: "active", startMessage: "t2", endMessage: "t2" },
+        ],
+        currentRound: 1, progress: 0.5,
+      },
+    });
+    // 触发点：首屏 renderRounds 之后，app.js 的 refreshCallGroups 才在 rAF 里把过程包进 call-group。
+    paint();
+    await Promise.resolve(); // MutationObserver 在重排落地后的微任务里对齐折叠
+    paint();
+    const group = output.querySelector(':scope > .call-group');
+    assert.ok(group, "过程消息被 app.js 重排进 call-group");
+    assert.equal(group.querySelector("[data-goal-round]")?.dataset.goalRound, "0");
+    assert.ok(group.classList.contains("goal-folded"), "已完成轮的分组摘要随轮次折叠，不残留可见");
+    assert.equal(output.querySelectorAll(':scope > .call-group:not(.goal-folded)').length, 0, "首屏不许有展开的分组残留");
+    assert.equal(output.querySelectorAll(".goal-round-head").length, 2, "轮次标记仍在");
+  } finally { dom.window.close(); }
+});
+
 test("新消息到达后锚点重算，轮次标记跟随增长", async () => {
   const { dom, w, emit, stub } = await page();
   try {

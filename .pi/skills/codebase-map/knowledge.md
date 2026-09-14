@@ -1,5 +1,11 @@
 # 坑与 bug 知识库（自成长：只追加，不删改历史）
 
+### 2026-09-14 Goal 安全暂停必须覆盖 SDK 外层队列续跑
+- 症状：工具批次已安全停止，但队列非空时仍发第二个模型请求。
+- 根因：SDK shouldStopAfterTurn 仅停止内层；AgentSession 的后处理仍根据 hasQueuedMessages 自动 continue。
+- 修复：src/pi.js 暂停期间禁止队列驱动自动续跑，真实队列和历史不动；下一次显式 prompt 复位。
+- 防再犯：tests/goal-pi.test.js 同时验证在飞工具完成、请求次数不增加、队列保留及显式恢复；升级 SDK 后重跑，不能只测空队列暂停。
+
 ### 2026-09-13 手机收起不等于只隐藏模型栏
 - 症状：真机收起后输入/进度/跳转仍占据屏幕下部，无法纯阅读。
 - 修复：手机折叠隐藏composer-wrap辅助子项与composer中非mobile-controls项，earliest同样隐藏；状态单行横滚显示百分比和模型，展开后重新测量输入高度。

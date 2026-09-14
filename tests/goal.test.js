@@ -259,6 +259,26 @@ test("证据门：同名验收标准的证据不能跨轮复用", async () => {
   assert.equal(goal.evidence()[0].round, 1);
 });
 
+test("提前的整体标记不永久堵死轮次推进：后续轮次标记 + 本轮证据齐仍能进下一轮", async () => {
+  const bash = { toolCallId: "call_1", toolName: "bash", isError: false };
+  const { goal } = runningGoal({ plan: PLAN_MULTI });
+  // 第 1 轮就提前声称整体完成（整体证据未齐、第 2 轮还没跑）-> 停在验证，不 completed
+  goal.onReply(asst(`第 1 轮做完了\n${GOAL}`, 3));
+  assert.equal(goal.snapshot().phase, "verifying");
+  // 补齐本轮证据后，后续回复里的轮次标记必须能推进到第 2 轮
+  const outcome = await call(evidenceTool(goal, [bash]), { criteria: [{ criterion: "启动不再崩溃", toolCallId: "call_1" }] });
+  assert.equal(outcome.ready, true);
+  goal.onReply(asst(`本轮完成\n${ROUND}`, 4));
+  const snapshot = goal.snapshot();
+  assert.equal(snapshot.phase, "running");
+  assert.equal(snapshot.currentRound, 1);
+  assert.equal(snapshot.rounds[0].status, "done");
+  assert.equal(snapshot.rounds[1].status, "running");
+  // 提前声明没有绕过整体门：第 2 轮没证据时整体标记仍停在验证
+  goal.onReply(asst(`整体完成\n${GOAL}`, 5));
+  assert.equal(goal.snapshot().phase, "verifying");
+});
+
 test("轮次标记：最后一轮的标记不造幻影轮次，停在验证等整体标记", async () => {
   const results = [{ toolCallId: "call_1", toolName: "bash", isError: false }];
   const { goal } = verifyingGoal();
@@ -411,6 +431,50 @@ test("契约对象键固定，事件形状为 {type:'goal', goal}", () => {
     assert.equal(event.type, "goal");
     assert.ok("goal" in event);
   }
+});
+
+test("goal_progress：六字段落盘进 snapshot/context，且不推进阶段", async () => {
+  const { goal } = runningGoal();
+  const before = goal.snapshot();
+  const outcome = await call(goal.progressTool(), {
+    completed: "修好了",
+    remaining: "补监控",
+    checks: "跑了单测",
+    blockers: "无",
+    next: "提交",
+    artifacts: "src/goal.js",
+  });
+  assert.deepEqual(outcome, { saved: true });
+  const after = goal.snapshot();
+  assert.equal(after.phase, before.phase);
+  assert.equal(after.phase, "running");
+  assert.equal(after.currentRound, before.currentRound);
+  assert.equal(after.rounds[0].status, "running");
+  const { at, round, ...fields } = after.execution;
+  assert.equal(typeof at, "number");
+  assert.equal(round, 0);
+  assert.deepEqual(fields, {
+    completed: "修好了",
+    remaining: "补监控",
+    checks: "跑了单测",
+    blockers: "无",
+    next: "提交",
+    artifacts: "src/goal.js",
+  });
+  assert.match(goal.context(), /补监控/);
+  assert.match(goal.context(), /src\/goal\.js/);
+});
+
+test("goal_progress：缺字段、多余字段、超长内容都被拒绝且不落盘", async () => {
+  const { goal } = runningGoal();
+  const tool = goal.progressTool();
+  const full = { completed: "", remaining: "", checks: "", blockers: "", next: "", artifacts: "" };
+  const { next, ...missing } = full;
+  await assert.rejects(call(tool, missing));
+  await assert.rejects(call(tool, { ...full, 多余: "x" }));
+  await assert.rejects(call(tool, { ...full, completed: "x".repeat(6001) }));
+  assert.equal(goal.snapshot().execution, null);
+  assert.equal(goal.snapshot().phase, "running");
 });
 
 test("remove：清理记录并广播 goal:null", () => {

@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/14 09:59:00）
+# Axiom 多级代码索引（生成于 2026/9/14 10:04:57）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -10,7 +10,7 @@
 | public/file-picker.css | 276 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 355 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/goal.css | 233 | Goal 目标面板、轮次与控制样式 | - |
-| public/goal.js | 589 | Goal 专属状态、操作与复用消息轮次分组 | createGoalUI |
+| public/goal.js | 596 | Goal 专属状态、操作与复用消息轮次分组 | createGoalUI |
 | public/index.html | 354 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown.js | 317 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, textLanguages, isText |
 | public/memory-tags.js | 111 | 主子代理共享简单标签提取与流式显示过滤 | TAGS, NAMES, TAG, OPEN |
@@ -37,7 +37,7 @@
 | src/capabilities.js | 138 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/compaction.js | 375 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
 | src/database.js | 103 | 共享 SQLite 连接、小配置 KV、WAL 与一致性备份 | nodeOk, Database |
-| src/goal.js | 999 | Goal：会话级目标状态、轮次计划、验收门与持久化 | GOAL_PHASES, GOAL_ACTIONS, ROUND_STATUSES, GOAL_MAX_SEGMENTS |
+| src/goal.js | 1002 | Goal：会话级目标状态、轮次计划、验收门与持久化 | GOAL_PHASES, GOAL_ACTIONS, ROUND_STATUSES, GOAL_MAX_SEGMENTS |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
 | src/main.js | 114 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, home, database |
 | src/model-auth.js | 89 | SDK 登录桥：连接隔离、超时取消与安全事件投影 | safeUrl, text, eventView, createModelAuthService |
@@ -83,8 +83,8 @@
 | tests/goal-protocol.test.js | 15 | node --test 测试（npm test） | - |
 | tests/goal-sessions.test.js | 400 | node --test 测试（npm test） | PLAN, factoryFixture, tick, until |
 | tests/goal-ui.py | 259 | node --test 测试（npm test） | - |
-| tests/goal-ui.test.js | 295 | node --test 测试（npm test） | page, $, labels, messages |
-| tests/goal.test.js | 636 | node --test 测试（npm test） | ROUND, GOAL, PLAN, PLAN2 |
+| tests/goal-ui.test.js | 325 | node --test 测试（npm test） | page, $, labels, messages |
+| tests/goal.test.js | 700 | node --test 测试（npm test） | ROUND, GOAL, PLAN, PLAN2 |
 | tests/helpers/model-concurrency-child.mjs | 82 | node --test 测试（npm test） | barrier, runOpponent |
 | tests/image-input.test.js | 169 | node --test 测试（npm test） | pngBase64, jpegBase64, image, parsePrompt |
 | tests/inline-images.test.js | 42 | node --test 测试（npm test） | text, a, b, user |
@@ -461,7 +461,7 @@
 | createFilePicker | function | 115 |
 | baseName | function | 352 |
 
-### public/goal.js（589 行） — Goal 专属状态、操作与复用消息轮次分组
+### public/goal.js（596 行） — Goal 专属状态、操作与复用消息轮次分组
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -775,7 +775,7 @@
 | exec | method | 95 |
 | close | method | 99 |
 
-### src/goal.js（999 行） — Goal：会话级目标状态、轮次计划、验收门与持久化
+### src/goal.js（1002 行） — Goal：会话级目标状态、轮次计划、验收门与持久化
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -829,12 +829,12 @@
 | noteToolResult | method | 543 |
 | action | method | 551 |
 | onReply | method | 568 |
-| pauseAtSafePoint | method | 608 |
-| fail | method | 620 |
-| settle | method | 628 |
-| whenSettled | method | 634 |
-| freeze | method | 640 |
-| remove | method | 649 |
+| pauseAtSafePoint | method | 611 |
+| fail | method | 623 |
+| settle | method | 631 |
+| whenSettled | method | 637 |
+| freeze | method | 643 |
+| remove | method | 652 |
 
 ### src/inline-images.js（32 行） — 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列
 
@@ -1364,7 +1364,7 @@
 | reply | function | 278 |
 | evidenceBody | const | 290 |
 
-### tests/goal-ui.test.js（295 行） — node --test 测试（npm test）
+### tests/goal-ui.test.js（325 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1374,7 +1374,7 @@
 | labels | const | 52 |
 | messages | const | 53 |
 
-### tests/goal.test.js（636 行） — node --test 测试（npm test）
+### tests/goal.test.js（700 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|

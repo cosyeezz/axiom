@@ -485,6 +485,13 @@ export function createGoalUI({ root, request, onError, readPrompt, clearPrompt }
       node.classList.toggle("goal-folded", owner !== null && collapsed.has(Number(owner)));
     }
   }
+  // app.js 会在渲染后的 rAF 里重排消息（把过程包进 details.call-group）；这些新容器没经历过
+  // applyCollapse，已完成轮的分组摘要就会露出来。只盯 output 的直接子节点增删，
+  // 重排一落地就在微任务里重新对齐折叠；本函数不增删 output 直接子节点，不会自触发。
+  const collapseObserver = typeof MutationObserver === "function"
+    ? new MutationObserver(() => { if (goal) applyCollapse(); })
+    : null;
+  collapseObserver?.observe(output, { childList: true });
   function roundHead(index, round) {
     const state = roundState(round);
     const head = el("div", "goal-round-head");
