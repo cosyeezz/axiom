@@ -16,6 +16,7 @@
     <link rel="stylesheet" href="/model-manager.css" />
     <script type="module" src="/app.js"></script>
     <link rel="stylesheet" href="/question.css" />
+    <link rel="stylesheet" href="/goal.css" />
 </head>
   <body>
     <div class="shell">
@@ -68,11 +69,13 @@
           <button id="connect" class="secondary">重新连接</button>
         </form>
         <section id="workspace" hidden>
+          <div id="goal-track" class="goal-track" aria-label="目标进度" hidden></div>
           <button id="earliest" class="secondary" type="button" aria-controls="transcript" hidden>回到最早消息 ↑</button>
           <div id="transcript" role="region" aria-label="对话记录" tabindex="0">
             <div id="output"></div>
           </div>
           <div class="composer-wrap">
+            <div id="goal-dock" class="goal-dock" aria-label="目标模式控制" hidden></div>
             <section id="question-dock" class="question-dock" aria-label="待回答的问题" hidden></section>
             <button id="latest" class="secondary" type="button" aria-controls="transcript" hidden>回到最新消息 ↓</button>
             <div id="message-queue" aria-label="待发送队列" aria-live="polite" hidden></div>
@@ -81,6 +84,7 @@
             <div class="context-bar">
               <button type="button" id="add-context" class="icon-button" popovertarget="context-menu" title="添加上下文" aria-label="添加 Skill、文件或文件夹"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
               <button type="button" id="add-image" class="icon-button" title="上传图片，也可在输入框粘贴截图" aria-label="上传图片"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h18v18H3ZM3 17l6-6 4 4 3-3 5 5M15 7h2"/></svg></button>
+              <button type="button" id="goal-enter" class="icon-button" title="进入目标模式：先澄清目标与验收标准，确认计划后多轮执行" aria-label="进入目标模式"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18ZM12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8ZM12 11.1a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z"/></svg></button>
               <input id="image-files" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
               <div id="context-chips" aria-label="待发送上下文"></div>
               <span id="task-timer" role="timer" aria-label="当前任务累计运行时间" hidden><span class="task-timer-dot" aria-hidden="true"></span><span id="task-timer-value">0s</span></span>
@@ -191,6 +195,32 @@
         </div>
       </dialog>
     </template>
+    <dialog id="goal-plan" aria-labelledby="goal-plan-title">
+      <div class="goal-plan-head">
+        <div>
+          <p class="goal-plan-eyebrow">目标计划 · 待确认</p>
+          <h2 id="goal-plan-title"></h2>
+        </div>
+        <form method="dialog"><button class="secondary" aria-label="关闭目标计划">✕</button></form>
+      </div>
+      <p id="goal-plan-meta" class="goal-plan-meta"></p>
+      <div class="goal-plan-body">
+        <section class="goal-plan-section" aria-labelledby="goal-plan-constraints-title">
+          <h3 id="goal-plan-constraints-title">约束</h3>
+          <ul id="goal-plan-constraints"></ul>
+        </section>
+        <section class="goal-plan-section" aria-labelledby="goal-plan-acceptance-title">
+          <h3 id="goal-plan-acceptance-title">验收标准</h3>
+          <ul id="goal-plan-acceptance"></ul>
+        </section>
+        <section class="goal-plan-section" id="goal-plan-rounds-section" aria-labelledby="goal-plan-rounds-title">
+          <h3 id="goal-plan-rounds-title">执行计划</h3>
+          <ul id="goal-plan-rounds"></ul>
+        </section>
+      </div>
+      <p class="goal-plan-note">有修改意见？直接在下方输入框描述并发送，模型会重新规划后再请你确认。</p>
+      <div class="dialog-actions"><button type="button" class="secondary" id="goal-plan-close">先不确认</button><button type="button" id="goal-plan-confirm">确认并开始执行</button></div>
+    </dialog>
     <dialog id="settings" aria-labelledby="settings-title">
       <header>
         <h2 id="settings-title">设置</h2>

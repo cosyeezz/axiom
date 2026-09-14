@@ -5,6 +5,7 @@ import { realpath, stat, readFile, mkdir, writeFile, rm, readdir } from "node:fs
 import { homedir } from "node:os";
 import { Database } from "./database.js";
 import { SessionStore } from "./session-store.js";
+import { Goal, createGoalStore } from "./goal.js";
 import { basename, dirname, join, relative, isAbsolute, resolve, sep, parse } from "node:path";
 
 import { selection as selectionSchema, presetStore, taskBudget as taskBudgetSchema, compaction as compactionSchema, compactionDefaults, assertPromptImages } from "./protocol.js";
@@ -189,6 +190,7 @@ export class Sessions {
     this.ownsDatabase = !database && !!sidecar;
     this.database = database || (sidecar ? new Database(sidecar) : null);
     this.store = this.database ? new SessionStore(this.database) : null;
+    this.goalStore = createGoalStore(this.database);
     this.taskBudget = structuredClone(taskBudgetDefaults);
     this.loadTaskBudget();
     this.savingDefaults = Promise.resolve();
@@ -765,6 +767,8 @@ export class Sessions {
       delete envelope.saved;
       for (const listener of item.listeners) listener(envelope);
     };
+    item.goal = new Goal({ sessionId: id, store: this.goalStore, emit: item.emit,
+      messageCount: () => item.messages.length });
     item.questions = createQuestions(item.emit);
     const saveMemory = (change) => this.saveChange(item, change);
     item.tasks = new Tasks(
@@ -780,6 +784,12 @@ export class Sessions {
           capabilities: item.subagentCapabilities === "inherit" ? item.agent.config?.().capabilities ?? item.capabilities : item.subagentCapabilities,
           trustProject: item.trustProject,
           memory: memoryHooks(item, saveMemory, job),
+          executionContext: () => {
+            const goal = item.goal.snapshot();
+            if (!goal) return null;
+            return `[Goal 所属子任务] 总体目标：${goal.objective}\n约束：${goal.constraints.join("；")}\n所属轮次：${goal.currentRound + 1}。只完成委派给你的具体任务，不负责推进总体目标。` +
+              (this.goalNotificationsBlocked(item) ? "\n用户已要求暂停：在当前工具完成后保存实际进度、未完成事项和产物位置，安全收尾，不启动新的工作。" : "");
+          },
           sessionDir: storageDir ? join(storageDir, `${id}-tasks`) : undefined,
           sessionFile: job.sessionFile,
         });
@@ -789,6 +799,7 @@ export class Sessions {
         // task.state 已同步提交终态；只重试失败队列，不再重写同一大结果。
         await this.persist(item, {});
         this.scheduleTaskNotifications(item);
+        this.scheduleGoal(item);
       },
     );
     for (const task of saved?.tasks || []) {
@@ -806,7 +817,11 @@ export class Sessions {
         lines[0] = JSON.stringify({ ...JSON.parse(lines[0]), id, cwd });
         await writeFile(importedFile, lines.join("\n"), { mode: 0o600 });
       }
-      item.agent = await this.createAgent([...delegationTools(item.tasks), item.questions.tool], {
+      item.agent = await this.createAgent([...delegationTools(item.tasks), item.questions.tool, item.goal.planTool(), item.goal.blockTool(), item.goal.progressTool(), item.goal.verificationTool({ evidence: () => {
+        const start = item.goal.snapshot()?.rounds[item.goal.snapshot()?.currentRound]?.startMessage ?? item.messages.length;
+        return item.messages.slice(start).filter((entry) => entry.agentId === "main" && entry.message?.role === "toolResult")
+          .map((entry) => entry.message);
+      } })], {
         ...this.recentConfig,
         ...(selection.model ? { model: selection.model } : {}),
         ...(selection.thinking ? { thinking: selection.thinking } : {}),
@@ -818,6 +833,9 @@ export class Sessions {
         sessionDir: storageDir,
         sessionFile: saved?.sessionFile ?? importedFile,
         memory: memoryHooks(item, saveMemory),
+        executionContext: () => item.goal.context(),
+        shouldPause: () => !!item.goal.snapshot()?.pendingAction || item.goal.snapshot()?.phase === "paused",
+        inactiveTools: item.goal.active ? [] : ["goal_plan", "goal_evidence", "goal_block", "goal_progress"],
       });
     // 导入与库恢复的会话都没有完整消息快照（模型消息不再入库）：主代理历史从 Pi JSONL
     // 当前分支重建（撤回/压缩后的分支即真实历史），entryId 保留用于压缩折叠与撤回定位；
@@ -947,14 +965,93 @@ export class Sessions {
     }
     this.items.set(id, item);
     for (const job of item.tasks.jobs.values())
-      if (job.status === "starting" && (job.sessionFile || job.persistenceVersion === 1)) job.done = item.tasks.run(job, true);
+      if (job.status === "starting" && !this.goalNotificationsBlocked(item) && (job.sessionFile || job.persistenceVersion === 1)) job.done = item.tasks.run(job, true);
     this.scheduleTaskNotifications(item);
     return id;
   }
 
+  async goalAction(id, action, text) {
+    const item = await this.ensureLoaded(id);
+    if (item.closing || item.configuring || item.cancelling) throw new Error("会话正在切换状态");
+    if (["enter", "confirm", "resume"].includes(action) && (item.status !== "idle" || [...item.tasks.jobs.values()].some((job) => ["starting", "running"].includes(job.status) && job.done))) throw new Error("请等待当前执行与子任务安全收尾");
+    item.goal.action(action, text);
+    item.agent.enableTools?.(["goal_plan", "goal_evidence", "goal_block", "goal_progress"]);
+    item.notificationsPaused = this.goalNotificationsBlocked(item) || false;
+    if (action === "enter" && !item.goal.snapshot().objective) return { goal: item.goal.snapshot(), runId: item.runId };
+    if (["enter", "confirm", "resume"].includes(action)) {
+      item.goalSegments = 0;
+      for (const job of item.tasks.jobs.values())
+        if (job.status === "starting" && !job.done) job.done = item.tasks.run(job, true);
+      this.startRun(item, () => item.agent.prompt(action === "enter"
+        ? "[Axiom Goal] 根据现有对话澄清目标并提交分轮计划，等待用户确认。"
+        : "[Axiom Goal] 按已确认目标继续。先核对实际产物和已保存进度，不盲目重放操作。"));
+    } else if (item.goal.snapshot()?.phase === "clarifying" && item.status === "idle") {
+      this.startRun(item, () => item.agent.prompt("[Axiom Goal 调整] 根据用户调整重新规划。先核对已保存产物，保留历史，提交计划等待确认。"));
+    } else {
+      item.agent.requestPause?.();
+      this.scheduleGoal(item);
+    }
+    return { goal: item.goal.snapshot(), runId: item.runId };
+  }
+
+  scheduleGoal(item) {
+    if (!item.goal?.active || item.goalScheduled || item.closing) return;
+    item.goalScheduled = true;
+    setImmediate(() => {
+      item.goalScheduled = false;
+      void this.advanceGoal(item).catch((error) => {
+        item.goal.fail(`Goal 调度失败：${error.message}`);
+        item.emit({ type: "error", data: { message: error.message } });
+      });
+    });
+  }
+
+  async advanceGoal(item) {
+    if (item.closing || item.cancelling || item.configuring || item.status !== "idle" || item.notifying) return;
+    if ([...item.tasks.jobs.values()].some((job) => ["starting", "running"].includes(job.status) && job.done)) return;
+    let goal = item.goal.snapshot();
+    if (!goal) return;
+    if (goal.pendingAction || goal.phase === "paused") {
+      item.goal.pauseAtSafePoint({ tasks: item.tasks.snapshot(), summary: item.goalResult?.text || "执行已到安全点；工具结果与子任务进度保留在会话历史。" });
+      item.goalResult = null;
+      item.notificationsPaused = true;
+      if (item.goal.snapshot()?.phase === "clarifying")
+        this.startRun(item, () => item.agent.prompt("[Axiom Goal 调整] 现有工作已安全保存。按用户调整重新规划，核对产物，保留历史，提交计划等待确认。"));
+      return;
+    }
+    if (!["running", "verifying"].includes(goal.phase)) return;
+    if ([...item.tasks.jobs.values()].some((job) => job.resultId && !job.notified)) {
+      this.scheduleTaskNotifications(item);
+      return;
+    }
+    const previousRound = goal.currentRound;
+    if (item.goalResult) {
+      const reply = item.goalResult;
+      item.goalResult = null;
+      const last = item.messages.findLastIndex((entry) => entry.agentId === "main" && entry.message?.role === "assistant");
+      item.goal.onReply({ message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: reply.text }] }, index: last >= 0 ? last : item.messages.length });
+    }
+    goal = item.goal.snapshot();
+    if (!["running", "verifying"].includes(goal.phase)) return;
+    if ((item.goalSegments = (item.goalSegments || 0) + 1) > 64) {
+      item.goal.fail("已达到本次自动执行的 64 段预算，进度已保存；请检查结果后手动恢复。");
+      return;
+    }
+    const queue = item.agent.queue?.();
+    if (goal.currentRound !== previousRound && item.agent.checkpoint && !queue?.steering?.length && !queue?.followUp?.length)
+      await item.agent.checkpoint(item.goal.context());
+    if (item.closing || item.status !== "idle" || this.goalNotificationsBlocked(item)) return;
+    this.startRun(item, () => item.agent.prompt("[Axiom Goal 自动续跑] 核对最新目标与本轮进度。未完成请继续修正；已完成请提交验收依据并在最终回复独立一行给出完成标记。"));
+  }
+
+  goalNotificationsBlocked(item) {
+    const phase = item.goal?.snapshot()?.phase;
+    return phase && !["running", "verifying"].includes(phase);
+  }
+
   scheduleTaskNotifications(item) {
     // ponytail: 通知等当前主运行结束再唤醒，不打断工具；需要轮次内低延迟时再接 SDK 自定义消息。
-    if (item.notificationScheduled || item.closing || item.notificationsPaused) return;
+    if (item.notificationScheduled || item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item)) return;
     item.notificationScheduled = true;
     setImmediate(() => {
       item.notificationScheduled = false;
@@ -965,7 +1062,7 @@ export class Sessions {
   }
 
   async deliverTaskNotifications(item) {
-    if (item.notifying || item.closing || item.notificationsPaused || item.configuring || item.status !== "idle") return;
+    if (item.notifying || item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item) || item.configuring || item.status !== "idle") return;
     const jobs = [...item.tasks.jobs.values()].filter((job) => job.resultId && !job.notified)
       .map(({ id, resultId, status }) => ({ id, resultId, status }));
     if (!jobs.length) return;
@@ -973,7 +1070,7 @@ export class Sessions {
     try {
       // 结果先落盘再触达；通知不放入可撤回的用户 steer/followUp 队列。
       await this.persist(item, {});
-      if (item.closing || item.notificationsPaused || item.configuring || item.status !== "idle") return;
+      if (item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item) || item.configuring || item.status !== "idle") return;
       const text = "[Axiom 子任务完成通知] 以下任务已结束。使用各自的 taskId 和 resultId 调用 read_result 获取结果；不要轮询。\n" +
         JSON.stringify(jobs.map((job) => ({ taskId: job.id, resultId: job.resultId, status: job.status })));
       await this.prompt(item.id, text);
@@ -989,6 +1086,7 @@ export class Sessions {
       item.notifying = false;
     }
     this.scheduleTaskNotifications(item);
+    this.scheduleGoal(item);
   }
 
   get(id) {
@@ -1113,6 +1211,7 @@ export class Sessions {
       questions: item.questions.snapshot(),
       canReask: item.status === 'idle' && !!item.agent.canReask?.(),
       tasks: item.tasks.snapshot(),
+      goal: item.goal?.snapshot() ?? null,
     });
   }
   subscribe(id, listener) {
@@ -1158,7 +1257,7 @@ export class Sessions {
 
   // 运行骨架（prompt 与手动重试共用）：runId/status 广播 → result() 取错 → 收尾持久化与 idle 复位。
   startRun(item, run) {
-    item.notificationsPaused = false;
+    item.notificationsPaused = this.goalNotificationsBlocked(item) || false;
     item.updatedAt = Date.now();
     item.runId = randomUUID();
     item.status = "running";
@@ -1169,8 +1268,10 @@ export class Sessions {
     item.work = (async () => {
       try {
         await run();
-        item.agent.result();
+        const text = item.agent.result();
+        if (item.goal.active) item.goalResult = { text, runId: item.runId };
       } catch (error) {
+        if (item.goal.active) item.goal.fail(String(error.message ?? error));
         item.emit({
           type: "error",
           data: { message: String(error.message ?? error) },
@@ -1185,6 +1286,7 @@ export class Sessions {
             data: { status: "idle", runId: item.runId, canReask: !!item.agent.canReask?.() },
           });
           this.scheduleTaskNotifications(item);
+          this.scheduleGoal(item);
         }
       }
     })();
@@ -1196,6 +1298,7 @@ export class Sessions {
   async retry(id) {
     const item = this.get(id).loaded ? this.get(id) : await this.ensureLoaded(id);
     if (item.status !== "idle" || item.configuring || item.closing) throw new Error("Session is busy");
+    if (item.goal.active && this.goalNotificationsBlocked(item)) throw new Error("Goal 已暂停或等待确认，请使用 Goal 恢复按钮");
     if (item.agent.canReask?.()) return this.startRun(item, () => item.agent.reask());
     if (!item.agent.resumable()) throw new Error("没有可重试的请求：上一次运行已正常结束");
     return this.startRun(item, () => item.agent.resume());
@@ -1204,6 +1307,12 @@ export class Sessions {
   async prompt(id, text, queueType, images) {
     if (!text.trim() && !images?.length) throw new Error("请求内容不能为空：请输入文本或附加图片");
     const item = this.get(id).loaded ? this.get(id) : await this.ensureLoaded(id);
+    if (/^\/goal(?:\s|$)/.test(text.trim())) {
+      const result = await this.goalAction(id, "enter", text.trim().replace(/^\/goal\s*/, ""));
+      return result.runId;
+    }
+    if (item.goal.active && ["paused", "pausing", "adjusting", "completed"].includes(item.goal.snapshot().phase))
+      throw new Error("Goal 已停止或正在安全收尾，请使用专用恢复、调整或重启按钮");
     if (images?.length) {
       // 必须在回执前拒绝：一旦入队或启动，SDK 会静默丢弃不支持模型的图片。
       assertPromptImages(images);
@@ -1216,6 +1325,8 @@ export class Sessions {
       return item.runId;
     }
     if (item.status !== "idle" || item.configuring || item.closing) throw new Error("Session is busy");
+    const goal = item.goal.snapshot();
+    if (goal?.phase === "clarifying" && !goal.objective && !goal.rounds.length) item.goal.supplyObjective(text);
     if (item.title === "新会话" && !item.titleManual) item.title = (text.trim() || "[图片]").slice(0, 60);
     const titleRequest = !item.titleRequested && !item.titleManual;
     item.titleRequested = true;
@@ -1288,6 +1399,7 @@ export class Sessions {
       return this.cancel(id);
     }
     if (!item.loaded) return;
+    if (item.goal?.active && !item.closing) return this.goalAction(id, "pause");
     if (item.cancelling) return item.cancelling;
     item.notificationsPaused = true;
     item.status = "cancelling";
@@ -1309,6 +1421,7 @@ export class Sessions {
   async retryTask(id, taskId) {
     const item = await this.ensureLoaded(id);
     if (item.closing || item.cancelling) throw new Error("会话正在停止，暂时无法重试子任务");
+    if (item.goal.active && this.goalNotificationsBlocked(item)) throw new Error("请先恢复 Goal，再重试子任务");
     item.notificationsPaused = false;
     return item.tasks.retry(taskId);
   }
@@ -1319,6 +1432,8 @@ export class Sessions {
       item = this.get(id);
     }
     item.closing = true;
+    if (deleting) this.goalStore.remove(id);
+    else item.goal?.freeze();
     if (!item.loaded) {
       if (!deleting && item.pendingWrites?.length) await this.persist(item, {});
       if (deleting) {

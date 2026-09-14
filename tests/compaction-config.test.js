@@ -24,6 +24,8 @@ test("compaction settings, message IDs and successful records survive restart; f
     selections.push(selection);
     let config = { model: "p/main", thinking: "off", compaction: { ...compactionDefaults }, ...selection };
     delete config.memory;
+    delete config.executionContext;
+    delete config.shouldPause;
     return {
       config: () => config, configure: async (value) => (config = { ...config, ...value }),
       historyEntries: () => [{ id: "m1", type: "message", message: { role: "user", content: "old" } }],
@@ -72,6 +74,8 @@ test("restored sessions pick up the latest default compaction; other selection s
     selections.push(selection);
     let config = { model: "p/main", thinking: "off", compaction: { ...compactionDefaults }, ...selection };
     delete config.memory;
+    delete config.executionContext;
+    delete config.shouldPause;
     return {
       config: () => config, configure: async (value) => (config = { ...config, ...value }),
       historyEntries: () => [], compactions: () => [],

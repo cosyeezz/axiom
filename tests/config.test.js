@@ -65,7 +65,7 @@ test("configuration applies to the main agent and is inherited by delegated chil
   const selections = [];
   const sessions = new Sessions(async (_tools, selected) => {
     selections.push(selected);
-    const { memory, ...configuration } = selected;
+    const { memory, executionContext, shouldPause, ...configuration } = selected;
     let config = { model: "a/b", thinking: "off", ...configuration, levels: ["off", "high"] };
     return {
       config: () => config,
@@ -227,7 +227,7 @@ test("session.configure persists subagentThinking: nullable optional, isolated f
   const selections = [];
   const sessions = new Sessions(async (_tools, selected) => {
     selections.push(selected);
-    const { memory, ...configuration } = selected;
+    const { memory, executionContext, shouldPause, ...configuration } = selected;
     let config = { model: "a/b", thinking: "off", ...configuration, levels: ["off", "high", "xhigh"] };
     return {
       config: () => config,

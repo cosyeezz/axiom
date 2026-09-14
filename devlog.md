@@ -1,5 +1,34 @@
 # 开发记录
 
+## 2026-09-14 /goal 命令提示与两步填写目标
+
+- 用户确认：支持命令提示；单独 /goal 开启任务状态，后续消息填写目标；也支持 /goal 直接带目标，保留计划确认。
+- 实现：复用 clarifying 空目标状态，不增加阶段；空命令不发模型请求，下一条输入通过 supplyObjective 校验并持久化后复用普通 prompt 路径。前端复用现有命令补全，等待状态明确提示填写目标。
+- 涉及文件：src/goal.js、src/sessions.js、public/app.js、public/goal.js、目标相关测试、README 与索引。
+- 验证：npm test 共 477 项，475 通过、2 跳过、0 失败；新增两步目标填写与命令补全、直接发送/追加目标、等待目标提示回归。
+
+## 2026-09-14 Goal 交付复核：迟到报告补漏
+
+- 原因：汇总子任务最终报告时发现原测试未覆盖提前整体声明造成卡轮、首次折叠与工具组异步生成的时序问题；原全绿结果不能证明这些边界正确。
+- 修复：过早的整体完成声明不再永久阻止后续合规轮次标记推进，整体验收门保持不变；观察消息容器增删，在异步工具组生成后重新应用折叠；新增 goal_progress 保存与输入校验测试。
+- 决策：补充状态机与 UI 回归后再更新功能分支；在 codebase-map/knowledge.md 记录 SDK 外层队列绕过暂停的根因，保留升级复核依据。
+- 涉及文件：src/goal.js、public/goal.js、tests/goal.test.js、tests/goal-ui.test.js、知识库与生成索引。
+- 验证：新增 4 项回归后全量 473 项，471 通过、2 跳过、0 失败；Chromium 1440/390 验收通过。一次全量运行出现既有维护通道 UI 测试 document 销毁时序失败，原样重跑通过，未改动该测试或掩盖失败。
+
+## 2026-09-14 Goal 目标模式：实现与验证
+
+- 内容：新增 src/goal.js、public/goal.js/css；在 sessions/protocol/server/app/index 接入会话级目标计划、真实工具证据门、工具批次安全暂停、SQLite 恢复、跨轮 checkpoint 与自动续跑预算。src/pi.js 仅补通用上下文、工具激活、暂停与 checkpoint 入口；普通聊天不注入目标、不暴露目标工具、不自动续跑。
+- 决策：暂停优先于通知/重试/重启；完成信号不能绕过真实 toolResult 引用校验；goal_progress 保存六类交接信息。证据仅为可核对材料，不证明产物必然正确。README 已按实际语义纠正文档草案。
+- 验证：npm test：469 项，467 通过，2 跳过，0 失败；python tests/goal-ui.py：真实 Chromium 桌面 1440px 与手机 390px 通过，涵盖普通聊天、确认计划、执行折叠、暂停操作、无横向溢出及浏览器错误。浏览器使用 mock 会话数据，不等同真实模型长任务验收。
+- 涉及文件：上述实现、tests/goal*.test.js、tests/goal-preview.mjs、tests/goal-ui.py、config/compaction-config 测试工厂投影，以及 codebase-map 索引。未新增运行时依赖。
+
+## 2026-09-14 Goal 目标模式：外层包装 + 共享会话引擎（文档先行）
+
+- 原因：多轮「计划—确认—执行—验收」不能把执行链路再抄一份，也不能让普通会话为此多付代价；需要先把目标行为、安全边界和架构写清。
+- 内容：README 新增「Goal 目标模式」一节，并在「模块边界」补上 `goal.js`。约定：`/goal` 原地进入目标模式，模型先出计划、用户确认后才执行；每轮以独占行 `axiom_round_finished` 结算并落 SQLite，整体以独占行 `axiom_goal_finished` + 验收证据收尾，缺证据不算完成；暂停只在轮次边界生效，不 abort 正在执行的工具；`src/goal.js` 是外层包装，发送/工具/子代理/队列/压缩复用 `sessions.js` 同一套引擎，前端 `public/goal.js`、`goal.css` 只加状态条与按钮；协议新增 `goal.action`（enter/confirm/adjust/pause/resume/restart）。
+- 边界：文档只写设计意图与安全边界，明确不做「绝对无漏洞」承诺，验收证据是可核对材料而非正确性证明；普通会话路径不变。
+- 未做/状态：本次只改 README.md 与 devlog.md，不碰实现文件；`src/goal.js`、`public/goal.*` 及前端按钮由并行的 runtime/UI 任务实现，尚无端到端验收，README 描述目标行为，不代表已实现或已测试通过。
+- 涉及：README.md、devlog.md。
 ## 2026-09-14 默认会话配置的后台自动压缩改为默认开启
 - 原因：新会话一律要手动去默认配置里勾选才能用上后台压缩，默认值偏保守。
 - src/protocol.js compactionDefaults 改为 enabled: true、percentThreshold: 50、keepRecentTokens: 5000（token 阈值仍 100000）；public/app.js 的同名前端默认值保持同源同步。

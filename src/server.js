@@ -31,6 +31,8 @@ const assets = new Map(
     ["/style.css", "public/style.css", "text/css"],
     ["/theme.js", "public/theme.js"],
     ["/app.js", "public/app.js"],
+    ["/goal.js", "public/goal.js"],
+    ["/goal.css", "public/goal.css", "text/css"],
     ["/question.js", "public/question.js"],
     ["/question.css", "public/question.css", "text/css"],
     ["/service-settings.js", "public/service-settings.js"],
@@ -404,6 +406,9 @@ export function createServerApp(sessions, service = {}) {
               for (const client of wss.clients)
                 if (client !== ws && client.readyState === WebSocket.OPEN)
                   client.send(JSON.stringify({ type: "session.deleted", sessionId: request.sessionId }));
+              break;
+            case "goal.action":
+              data = await sessions.goalAction(request.sessionId, request.action, request.text);
               break;
             case "prompt":
               data = {
