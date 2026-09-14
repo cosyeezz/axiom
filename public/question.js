@@ -8,6 +8,12 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
     if (text != null) node.textContent = text;
     return node;
   };
+  const icon = (path) => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true');
+    const line = document.createElementNS(svg.namespaceURI, 'path'); line.setAttribute('d', path);
+    svg.append(line); return svg;
+  };
   const current = () => requests[0];
   const draft = () => drafts.get(keyOf(current().toolCallId));
   const answersOf = (state) => state.answers.map((values, i) => {
@@ -43,13 +49,17 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
     }
     const disabled = !connected || state.sending;
     root.replaceChildren();
-    root.append(el('div', 'question-heading', '需要你确认'));
+    const heading = el('div', 'question-heading');
+    const emblem = el('span', 'question-emblem');
+    emblem.append(icon('M8 10h8M8 14h5M20 11a8 8 0 0 1-8 8H5l-3 3V11a9 9 0 0 1 18 0Z'));
+    heading.append(emblem, el('span', '', '需要你确认'), el('span', 'question-mode', question.multiple ? '可多选' : '单选'));
+    root.append(heading);
     const tabs = el('div', 'question-tabs');
     tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', '待确认问题');
     tabs.hidden = request.questions.length === 1;
-    const answers = answersOf(state);
     request.questions.forEach((q, i) => {
-      const tab = el('button', 'question-tab', `${i + 1} ${q.header}${answers[i].length ? ' ✓' : ''}`);
+      const tab = el('button', 'question-tab');
+      tab.append(el('span', 'question-step', String(i + 1)), el('span', '', q.header));
       tab.type = 'button'; tab.setAttribute('role', 'tab'); tab.id = `question-tab-${i}`;
       tab.setAttribute('aria-selected', String(i === state.tab)); tab.setAttribute('aria-controls', 'question-panel');
       tab.tabIndex = i === state.tab ? 0 : -1; tab.disabled = disabled;
@@ -101,19 +111,49 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
         const picked = i === question.options.length || state.answers[state.tab].includes(question.options[i]?.label);
         button.setAttribute('aria-checked', String(picked)); button.querySelector('.question-mark').textContent = picked ? '✓' : '';
       });
+      resizeInput();
       updateFooter();
     };
+    function resizeInput() {
+      input.style.height = 'auto';
+      input.style.height = `${input.scrollHeight + input.offsetHeight - input.clientHeight}px`;
+      input.scrollTop = 0;
+      if (!measuring) {
+        state.panelHeight = Math.max(state.panelHeight || 0, panel.getBoundingClientRect().height);
+        panel.style.minHeight = `${state.panelHeight}px`;
+      }
+    }
     panel.append(input); root.append(panel);
+    resizeInput();
     const footer = el('div', 'question-footer'), progress = el('span', 'question-progress');
     const submit = el('button', 'question-submit', state.sending ? '提交中…' : '提交全部答案'); submit.type = 'button'; submit.onclick = send;
     function updateFooter() {
       const count = answersOf(state).filter((answer) => answer.length).length;
       progress.textContent = connected ? `已回答 ${count} / ${request.questions.length}` : '连接已断开，重连后可提交';
       submit.disabled = disabled || count !== request.questions.length;
-      tabs.querySelectorAll('button').forEach((button, i) => button.textContent = `${i + 1} ${request.questions[i].header}${answersOf(state)[i].length ? ' ✓' : ''}`);
+      tabs.querySelectorAll('button').forEach((button, i) => {
+        const done = answersOf(state)[i].length > 0;
+        button.dataset.answered = String(done);
+        button.setAttribute('aria-label', `${request.questions[i].header}，${done ? '已回答' : '未回答'}`);
+        const step = button.querySelector('.question-step');
+        step.replaceChildren(done ? icon('m5 12 4 4L19 6') : document.createTextNode(String(i + 1)));
+      });
+      progress.dataset.complete = String(count === request.questions.length);
     }
     updateFooter(); footer.append(progress, submit); root.append(footer);
-    root.append(el('div', 'question-help', '←→ 切题 · ↑↓ 移动 · 空格选择 · Enter 下一题 / 提交'));
+    const help = el('div', 'question-help');
+    for (const [label, paths] of [
+      ['切题', ['m14 6-6 6 6 6', 'm10 6 6 6-6 6']],
+      ['移动', ['m6 14 6-6 6 6', 'm6 10 6 6 6-6']],
+      ['选择', ['M4 9v6h16V9']],
+      ['下一题 / 提交', ['M19 5v9H5m5-5-5 5 5 5']],
+    ]) {
+      const hint = el('span', 'question-hint');
+      paths.forEach((path) => { const keycap = el('kbd'); keycap.append(icon(path)); hint.append(keycap); });
+      hint.append(document.createTextNode(label)); help.append(hint);
+    }
+    help.setAttribute('aria-label', '左右方向键切题，上下方向键移动，空格选择，Enter 下一题或提交');
+    root.append(help);
     if (state.error) { const error = el('p', 'question-error', state.error); error.setAttribute('role', 'alert'); root.append(error); }
     if (measuring) return;
     activeKey = key;
@@ -145,8 +185,15 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
   }
   if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => {
     if (current() && draft().width !== root.clientWidth) {
+      const input = root.querySelector('.question-custom');
+      const editing = document.activeElement === input;
+      const selection = editing && [input.selectionStart, input.selectionEnd, input.selectionDirection];
       const focused = root.contains(document.activeElement);
-      draw(focused);
+      draw(focused && !editing);
+      if (editing) {
+        const restored = root.querySelector('.question-custom');
+        restored.focus({ preventScroll: true }); restored.setSelectionRange(...selection);
+      }
     }
   }).observe(root);
   root.addEventListener('keydown', (event) => {

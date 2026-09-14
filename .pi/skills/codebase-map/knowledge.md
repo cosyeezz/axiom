@@ -562,3 +562,8 @@
 - 根因：length 满额默认终止，空白正文缺少有限纠偏路径。
 - 修复：src/retry.js 对末尾无正文、无工具调用的 length 自动恢复一次，保留工具结果、临时短提示，恢复再失败停止。
 - 防再犯：tests/retry.test.js 覆盖成功、重复截断、网络错误/抛异常、取消和提示恢复，不将工具参数错误猜成系统故障。
+
+### 2026-09-14 提问自定义输入换行裁切
+- 根因：rows=1 未自动增高，且继承全局 textarea max-height:240px。
+- 修复：question.css 显式 line-height/max-height/overflow；question.js 挂载与输入时按 scrollHeight 加边框测高，缓存题面最大高度防切题跳动，宽度变化保留选区。
+- 防再犯：tests/question-layout-ui.py 真实 Chromium 检查超过240px、长词、切题、375px宽度、删除缩回和会话草稿恢复。
