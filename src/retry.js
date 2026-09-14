@@ -5,6 +5,7 @@ import { createJiti } from "jiti";
 export const RETRY_DELAYS_MS = [2000, 2000, 5000, 5000, 10000, 10000, 30000, 60000, 120000, 240000, 480000];
 export const MAX_DELAY_MS = 960_000; // 16 分钟
 export const MAX_RETRIES = 45;
+const RECOVERY_PROMPT = "[Axiom 自动恢复] 上一轮输出被截断。请依据现有用户请求和实际工具结果继续，不要重复已完成的操作；无法继续时简短说明原因。";
 const delayFor = (attempt) =>
   attempt <= RETRY_DELAYS_MS.length
     ? RETRY_DELAYS_MS[attempt - 1]
@@ -122,6 +123,8 @@ export function createAutoRetry({ session, emit, patterns, sleep = abortableSlee
         return undefined;
       };
       let attempt = 0;
+      let recovered = false;
+      let originalSystemPrompt;
       const announce = (status, extra = {}) =>
         emit({ type: "agent.retry", data: { id, status, attempt, maxRetries, ...extra } });
       try {
@@ -131,7 +134,7 @@ export function createAutoRetry({ session, emit, patterns, sleep = abortableSlee
           try {
             await start();
           } catch (error) {
-            if (signal.aborted) throw error; // 用户取消：外层统一发 cancelled
+            if (signal.aborted || recovered) throw error; // 用户取消或纠偏再失败：不继续重试
             // start() 抛出的网络等异常同样走重试分类，而不是直接失败。
             const message = error?.message ?? String(error);
             if (!isRetryableAssistantError({ stopReason: "error", errorMessage: message })) throw error;
@@ -141,6 +144,18 @@ export function createAutoRetry({ session, emit, patterns, sleep = abortableSlee
             fresh = freshAssistant();
             verdict = classify(fresh?.message, fresh?.later ?? [], session.model?.maxTokens ?? 0, custom);
           }
+          if (signal.aborted) {
+            if (attempt > 0) announce("cancelled", { error: "已取消自动重试" });
+            return fresh?.message;
+          }
+          const emptyLength = fresh?.message.stopReason === "length"
+            && session.agent.state.messages.at(-1) === fresh.message
+            && !fresh.message.content.some((block) => block.type === "toolCall"
+              || (block.type === "text" && block.text.trim()));
+          if (emptyLength && !recovered)
+            verdict = { retry: true, error: "输出截断且正文为空，自动恢复一次（length）" };
+          else if (verdict && recovered && !signal.aborted)
+            verdict = { terminal: true, error: verdict.error };
           if (!verdict) {
             if (attempt > 0) announce("succeeded");
             return fresh?.message;
@@ -151,13 +166,20 @@ export function createAutoRetry({ session, emit, patterns, sleep = abortableSlee
             if (attempt > 0) announce(cancelledByUser ? "cancelled" : "failed", { error: verdict.error });
             return fresh?.message;
           }
-          if (attempt >= maxRetries) throw new Error(`自动重试已达上限（${maxRetries} 次）：${verdict.error}`);
+          if (!emptyLength && attempt >= maxRetries) throw new Error(`自动重试已达上限（${maxRetries} 次）：${verdict.error}`);
           attempt++;
           const delayMs = delayFor(attempt);
           announce("waiting", { delayMs, nextRetryAt: now() + delayMs, error: verdict.error });
           await sleep(delayMs, signal);
           announce("running", { error: verdict.error });
+          if (signal.aborted) throw signal.reason;
           dropFailedAssistant(session);
+          if (emptyLength) {
+            recovered = true;
+            originalSystemPrompt = session.agent.state.systemPrompt;
+            // 临时内部提示：不伪造用户消息，不改 JSONL，结束后恢复。
+            session.agent.state.systemPrompt = `${originalSystemPrompt}\n\n${RECOVERY_PROMPT}`;
+          }
           start = () => session.agent.continue();
         }
       } catch (error) {
@@ -165,6 +187,7 @@ export function createAutoRetry({ session, emit, patterns, sleep = abortableSlee
         else announce("failed", { error: error?.message ?? String(error) });
         throw error; // 取消/上限用尽/不可恢复错误必须传播（sessions 层转 error 事件，result() 同样抛出）
       } finally {
+        if (recovered) session.agent.state.systemPrompt = originalSystemPrompt;
         if (controller?.signal === signal) controller = undefined;
       }
     },
