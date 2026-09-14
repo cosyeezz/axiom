@@ -20,6 +20,8 @@ const MODULE_INFO = {
   "src/session-memory.js": "标题提取登记、轮次预算挂钩与委派背景",
   "src/task-budget.js": "主子代理轮次预算规则、收尾提示词与配置页参数校验",
   "tests/task-budget.test.js": "轮次预算默认值、边界校验与系统提示词回归",
+  "public/answer-tags.js": "主代理回答标签解析、代码保护与流式容错",
+  "src/prompts.js": "Axiom 自有提示词按 main/subagent/compaction 角色集中维护",
   "public/memory-tags.js": "主子代理共享简单标签提取与流式显示过滤",
   "tests/session-memory.test.js": "摘要时序、被动进度、标题保护与JSON恢复回归",
   "tests/memory-tags.test.js": "标签边界、代码块、流式前缀与合法性回归",

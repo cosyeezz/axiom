@@ -1,3 +1,4 @@
+import { TITLE_INSTRUCTION } from "./prompts.js";
 import {
   createAgentSession,
   ModelRuntime,
@@ -89,7 +90,7 @@ export async function recallLastMessage(session) {
 }
 
 // 标题指令只在 titleRequest 的当次首个请求随背景注入，不进系统提示词、不改用户原文。
-const TITLE_INSTRUCTION = "另在本次回复开头单独一行输出<title>不超过10字的会话标题</title>。";
+
 
 // 会话记忆接入：context 钩子在每次 LLM 请求（含同一次 prompt 的工具后续轮）注入临时背景；
 // titleRequest 的标题指令只随当次首个请求注入一次。

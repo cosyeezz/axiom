@@ -401,6 +401,7 @@ h1 {
   border-radius: 12px;
   margin-left: 48px;
 }
+.message.user > .markdown { white-space: pre-wrap; overflow-wrap: anywhere; }
 .message details {
   margin-bottom: 8px;
 }

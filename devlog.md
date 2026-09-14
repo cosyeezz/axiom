@@ -1143,3 +1143,10 @@
 - 内容：新用户主/子代理默认不选择 Skills/MCP/插件；未选 MCP 时不导入适配器入口。保留已保存选择、null=全部语义及用户 Pi 配置。
 - 原因：可选插件不能成为基础使用的前提，避免无关 MCP 的缺失依赖阻断会话。
 - 文件：src/sessions.js、src/pi.js、tests/capabilities.test.js、tests/config.test.js、README.md、代码索引与知识库。
+
+
+## 2026-09-14 回答分区与角色提示词
+- 原因：过程与正式答复难区分，用户消息换行丢失。
+- 新增 src/prompts.js 按角色集中 Axiom 自有提示词；main 使用 axiom_answer，子代理和压缩不继承。原注入时机和摘要请求保持不变。
+- public/answer-tags.js 负责独占行标签、代码保护、流式和异常回退；app.js 按明确答复折叠此前过程；stream-renderer.js/style.css 将用户输入按纯文本保留换行。server.js 注册新静态模块。
+- README、索引、标签/页面/渲染测试同步。npm test：390 项，388 通过，2 跳过；Chromium 核验用户 pre-wrap 和新模块 HTTP 200。未新增 Mermaid 或改变压缩策略。

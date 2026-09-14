@@ -1,9 +1,10 @@
+export { WRAP_UP_PROMPT, budgetSystemPrompt } from "./prompts.js";
 // 子代理轮次预算：memoryHooks 装配（会话创建、早于任何模型请求）与 pi 记忆扩展共用。
 // 参数来自会话上的持久化配置（item.taskBudget，SQLite 侧负责读写），缺省回退默认值；
 // 非法配置直接报错（建会话即失败，早于任何模型请求）。
 // 上限是软的：到点注入收尾指令让子代理自己交付，不 abort——abort 会让 result() 抛错，
 // 前面所有轮次的产出一起丢掉（pi.js result() 对 aborted/error/length 直接 throw）。
-export const WRAP_UP_PROMPT = "[轮次预算] 本任务的轮次预算即将用尽。停止新的探索，用接下来的回复交付：已确认的事实、未查清的部分、建议的下一步拆分。任务比预期大就直说需要拆分，不要硬做完。";
+
 
 // 配置边界：协议 zod 校验与本处二次校验共用同一组常数，保证规则验证一致。
 export const TASK_BUDGET_LIMITS = { turns: [3, 200], window: [1, 10] };
@@ -31,5 +32,3 @@ export function taskBudgetPolicy(role = "main", budget = null) {
 }
 
 // 开工前告知预算，子代理才能按预算规划路线（否则会在第 1 轮定一个 50 轮的打法）。
-export const budgetSystemPrompt = ({ maxTurns }) =>
-  `本任务的轮次预算约 ${maxTurns} 轮。按这个规模规划，不要展开预算外的探索；预算将尽时会收到 [轮次预算] 提示，届时立即交付已有结论。`;

@@ -39,6 +39,7 @@ const assets = new Map(
     ["/markdown.js", "public/markdown.js"],
     ["/stream-renderer.js", "public/stream-renderer.js"],
     ["/memory-tags.js", "public/memory-tags.js"],
+    ["/answer-tags.js", "public/answer-tags.js"],
     ["/vendor/marked.js", "node_modules/marked/lib/marked.esm.js"],
     ["/vendor/purify.js", "node_modules/dompurify/dist/purify.es.mjs"],
   ].map(([route, file, type = "text/javascript"]) => [route, { type, ...load(file) }]),

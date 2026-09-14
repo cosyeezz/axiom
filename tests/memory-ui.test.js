@@ -5,6 +5,7 @@ import { JSDOM } from "jsdom";
 import { marked } from "marked";
 import createPurify from "dompurify";
 import { createStreamRenderer } from "../public/stream-renderer.js";
+import { splitAnswer } from "../public/answer-tags.js";
 
 // 标签提取/剥离的纯函数用例在 tests/memory-tags.test.js；本文件只覆盖页面集成行为。
 
@@ -16,6 +17,7 @@ async function page() {
   const picker = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
   const dom = new JSDOM(html, { url: "http://localhost", runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window;
+  w.splitAnswer = splitAnswer;
   w.matchMedia = () => ({ matches: false });
   w.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
   w.HTMLDialogElement.prototype.close = function () { this.open = false; };
@@ -57,9 +59,33 @@ test("助手文本流式与成稿都剥离记忆标签，用户手写标签不�
     assert.equal(output.querySelector(".message:not(.user) .markdown:not(.thinking-content)").textContent.trim(), "最终回复");
     emit("agent.message.end", { message: { role: "user", content: "<summary>手写标签</summary>用户问题" } });
     const user = output.querySelector(".message.user .markdown:not(.thinking-content)");
-    assert.ok(user.querySelector("summary"), "user-written tag survives as typed");
-    assert.equal(user.querySelector("summary").textContent, "手写标签");
+    assert.equal(user.querySelector("summary"), null, "user input is plain text, not HTML");
+    assert.equal(user.textContent, "<summary>手写标签</summary>用户问题");
     assert.match(user.textContent, /用户问题/);
+  } finally { dom.window.close(); }
+});
+
+test("正式回答与过程分离，流式和历史均可独立阅读", async () => {
+  const { dom, emit, restore, paint, output } = await page();
+  const answer = '<axiom_answer>\n完成修复\n</axiom_answer>';
+  try {
+    emit('agent.message.end', { message: { role: 'user', content: '第一行\n第二行' } });
+    emit('agent.message.end', { message: { role: 'assistant', content: '正在检查' } });
+    emit('agent.message.start', { message: { role: 'assistant' } });
+    emit('agent.delta', { type: 'text_delta', delta: '<axiom_ans' }); paint();
+    assert.ok(!output.textContent.includes('<axiom_ans'));
+    emit('agent.delta', { type: 'text_delta', delta: 'wer>\n完成修复' }); paint(); paint();
+    assert.match(output.textContent, /完成修复/);
+    emit('agent.message.end', { message: { role: 'assistant', content: answer } }); paint(); paint();
+    assert.equal(output.querySelector('.user > .markdown').textContent, '第一行\n第二行');
+    assert.ok([...output.querySelectorAll('.call-group')].some(g => !g.open && g.textContent.includes('正在检查')));
+    assert.ok(!output.textContent.includes('axiom_answer'));
+    restore({ messages: [
+      { agentId: 'main', message: { role: 'user', content: '问题' } },
+      { agentId: 'main', message: { role: 'assistant', content: '检查中\n' + answer } },
+    ] }); paint(); paint();
+    assert.match(output.textContent, /完成修复/);
+    assert.ok([...output.querySelectorAll('.call-group')].some(g => !g.open && g.textContent.includes('检查中')));
   } finally { dom.window.close(); }
 });
 

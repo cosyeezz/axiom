@@ -551,3 +551,8 @@
 - 根因：retryChipList 恢复 state 后未首次 render，重复词被去重清空输入，看似保存丢失。
 - 修复：public/app.js 返回组件前 render。
 - 防再犯：保存回执之外必须测关闭重开和整页刷新后的可见标签；实际 HTTP 静态资源不等于磁盘 HEAD。tests/retry-settings-ui.py 走真实浏览器和服务链路。
+
+### 2026-09-14 用户换行与回答分区
+- 用户消息不应走 Markdown/HTML 解析：textContent + pre-wrap 保留输入并避免标签被当成元素。
+- axiom_answer 只改展示，不改历史；代码中的同名标签不解析，未闭合回答保留正文，旧历史无标签不隐藏唯一答复。
+- 回归：tests/answer-tags.test.js、memory-ui.test.js、stream-renderer.test.js。
