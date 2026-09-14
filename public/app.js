@@ -2038,10 +2038,22 @@ $("login").onsubmit = async (e) => {
     }
     if (!state) {
       const existing = await request("sessions.list");
-      state = existing.length
-        ? await request("session.attach", { sessionId: existing[0].id })
-        : await request("session.create");
+      // 单条无法恢复的会话（历史文件缺失、目录被删）不能阻塞整条启动链：逐条尝试并跳过，
+      // 全部不可用才新建。此前只 attach 列表第一条，它坏掉时异常会冒到下面的 catch，那里
+      // 关掉连接并安排重连，重连后走同一段又抛，页面就卡死在「连接已断开，正在自动重连」。
+      const failed = [];
+      for (const item of existing) {
+        try { state = await request("session.attach", { sessionId: item.id }); break; }
+        catch (e) { failed.push(`${item.title || item.id}：${e.message}`); }
+      }
+      // 其余会话正常时只记控制台（页面整体是好的，别让人以为又出错了）；全不可用才占用错误区。
+      if (failed.length) {
+        const message = `跳过无法恢复的会话：${failed.join("；")}`;
+        if (state) console.warn(message);
+        else error(message);
+      }
     }
+    if (!state) state = await request("session.create");
     if (!$("workspace").hidden) saveView();
     snapshot(state);
     await refreshSessions();

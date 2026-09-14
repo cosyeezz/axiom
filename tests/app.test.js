@@ -130,6 +130,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
   let failDefaults = false, needsTrust = false;
   let withdrawnImages;
   let failList = false;
+  let attachError;
   let failConfig = false, holdConfig = false, heldConfig;
   let presets = [
     { id: "p1", name: "审查预设", selection: { model: "test/model", thinking: "high", capabilities: null, subagentModel: null, subagentThinking: null, subagentCapabilities: null, compaction: null } },
@@ -258,6 +259,10 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
             }));
             break;
           case "session.attach":
+            if (attachError && req.sessionId === "a") {
+              this.receive({ type: "response", id: req.id, ok: false, error: attachError });
+              return;
+            }
             data = states.find((s) => s.sessionId === req.sessionId);
             break;
           case "session.import":
@@ -296,7 +301,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       await updateSessions();
       return allSessions.find((s) => s.id === 'b').sessionFile;
     };
-    window.sidebarConnected = (value) => { connected = value; controls(); };`);
+    window.sidebarConnected = (value) => { connected = value; controls(); };
+    window.sessionState = () => ({ connected, sessionId, error: document.getElementById("error").textContent });
+    window.openPageAs = (value) => { sessionId = value; };`);
     const copySelection = window.eval("copySelection");
     $("prompt").value = "copy selected text";
     $("prompt").setSelectionRange(5, 13);
@@ -1323,6 +1330,20 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.notEqual(opened?.[0], "/#session=imported", "导入不另开原工作空间");
     assert.match(window.location.hash, /session=imported/);
     assert.equal($("workspace-label").textContent, "C:\\work", "导入副本留在当前工作空间");
+
+    // 启动链必须跳过无法恢复的会话：列表第一条坏掉时不能把整页拖进
+    // 「连接断开 → 重连 → 又抛」的死循环（旧写法只 attach 第一条，且异常冒到外层 catch）。
+    attachError = "会话历史文件缺失，已保留数据库记录：C:\\axiom\\a.jsonl";
+    window.openPageAs(undefined); // 等效新开页面：URL 无 session、storage 无记录
+    const socketsBefore = sockets.length;
+    sockets.at(-1).close();
+    await settle();
+    for (let i = 0; i < 300 && sockets.length < socketsBefore + 1; i++) await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(sockets.length, socketsBefore + 1, "断线后自动重连");
+    sockets.at(-1).open();
+    await settle();
+    assert.deepEqual({ ...window.sessionState() }, { connected: true, sessionId: "b", error: "" },
+      "跳过无法恢复的会话后照常连上，且不把单条会话的故障塞进错误区");
   } finally {
     dom.window.close();
   }

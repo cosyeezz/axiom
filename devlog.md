@@ -1,5 +1,14 @@
 # 开发记录
 
+## 2026-09-14 前端启动链不再被单条坏会话卡死
+
+- 症状：用户报「这个会话无法加载不能阻塞程序连接啊」。库里一条坏会话（历史文件缺失）就让整页连不上：红字 +「连接已断开，正在自动重连」无限循环、退避到 15s，其他会话也进不去；清掉那条记录后立刻恢复。
+- 根因：`public/app.js` 启动链里「URL 无 `sessionId`」的分支只 attach `sessions.list()` 的第一条（列表按 updatedAt 倒序，第一条正是最新那条坏会话），而且**没有** try/catch。`session.attach` → `src/server.js` 的 `sessions.ensureLoaded()` 抛「会话历史文件缺失」，异常冒到外层 `catch` → `error()` + `ws.close()` → `finally` 里 `scheduleReconnect()` → 重连后又走同一段 → 死循环。对比之下 `sessionId` 分支（原工作空间新建 + 保留草稿）和 `switchSession()` 都有降级，唯独这条路径漏了。
+- 内容：该分支改为遍历 `existing` 逐条 `session.attach`，失败跳过并记入 `failed`；有可用会话时只 `console.warn`（页面整体是好的，不占错误区），全部不可用（紧接着要新建）才 `error()`；循环后 `if (!state) state = await request("session.create")` 兜住空列表。服务端 `ensureLoaded()` 的严格语义**不动**——真数据丢失要让用户知道，但不该被放大成连接失败。
+- 测试：`tests/app.test.js` 第一个 harness 加 `attachError` 开关（`session.attach` 对 "a" 返错）与 `window.sessionState()` / `window.openPageAs()` 探针；末尾新增用例「无 session 启动 + 列表首条坏掉」，断言 `{connected: true, sessionId: "b", error: ""}`。**反向验证**：`git stash` 掉 app.js 修复后该用例失败并复现用户现场（`connected:false`、`sessionId:undefined`、红字正是「会话历史文件缺失…」），确认测试真能守住。
+- 涉及：public/app.js、tests/app.test.js、README.md、.pi/skills/codebase-map/knowledge.md。
+- 验证：定向 `node --test tests/app.test.js` 3 项全过；全量见下条记录。
+
 ## 2026-09-14 修复新建空会话被写成打不开的库记录
 - 内容：`src/sessions.js` 新增模块级 `landedSessionFile(item)`：只有 `item.agent.sessionFile()` 指向的文件真的存在才返回路径，否则返回 `null`；`sessionData()`（落库）与 `list()`（侧栏）改用同一个函数。新增 `tests/session-flow.test.js` 用例：新建会话后断言库与列表里都是空路径、重启后 `ensureLoaded` 按空会话打开、真实落盘后路径才进库。README 补一句说明。
 - 原因：Pi 的 `SessionManager` 是惰性落盘的——`create()` 返回时就确定了 `sessionFile` 路径，但文件要等第一条消息才写。旧代码在 `sessionData()` 里直接 `item.agent.sessionFile()` 入库，于是「新建会话 → 没发消息 → 重启」这条极普通的路径会永久造出一条坏记录：`ensureLoaded()` 查 `existsSync(saved.sessionFile)` 为假 → 报「会话历史文件缺失，已保留数据库记录」，而该文件永远不会被创建，这条会话就永久打不开了。用户 Mac 上的截图就是这个报错，且重装（包括换版本）治不好：库里的坏记录不会因重装而消失。

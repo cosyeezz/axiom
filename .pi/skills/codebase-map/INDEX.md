@@ -1,11 +1,11 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/13 20:17:16）
+# Axiom 多级代码索引（生成于 2026/9/13 20:29:11）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| public/app.js | 3317 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, sessionMissing |
+| public/app.js | 3329 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | filePicker, $, ws, sessionMissing |
 | public/file-picker.css | 276 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 355 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/index.html | 321 | 页面骨架与元素 id（见 L3） | - |
@@ -50,7 +50,7 @@
 | src/tools.js | 110 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
 | tests/activity-groups-ui.py | 201 | node --test 测试（npm test） | activityHistory, sessions |
-| tests/app.test.js | 1709 | node --test 测试（npm test） | pickerSource, modelSources, serviceSource |
+| tests/app.test.js | 1730 | node --test 测试（npm test） | pickerSource, modelSources, serviceSource |
 | tests/autoscroll-ui.py | 99 | node --test 测试（npm test） | - |
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
@@ -132,7 +132,7 @@
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
-### public/app.js（3317 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
+### public/app.js（3329 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -316,80 +316,80 @@
 | reconnectTimer | const | 1948 |
 | clearTimeout | method | 1952 |
 | controls | method | 1955 |
-| scheduleReconnect | function | 2067 |
-| clearTimeout | method | 2068 |
-| importDir | const | 2072 |
-| fillModels | method | 2076 |
-| fillSubagentModels | method | 2083 |
-| closeCompletion | method | 2100 |
-| controls | method | 2105 |
-| scrollLatest | method | 2110 |
-| enableImagePreview | function | 2142 |
-| renderImages | function | 2163 |
-| addImages | function | 2188 |
-| loadImages | function | 2209 |
-| renderImages | method | 2218 |
-| selectionCopy | const | 2241 |
-| copySelection | function | 2253 |
-| escapeTimer | const | 2316 |
-| withdrawQueue | function | 2317 |
-| refreshing | const | 2399 |
-| refreshSessions | function | 2400 |
-| timerText | function | 2416 |
-| renderTaskTimer | function | 2423 |
-| applyElapsed | function | 2436 |
-| renderTaskTimer | method | 2442 |
-| updatePageTitle | function | 2444 |
-| updateSessions | function | 2448 |
-| renderTaskTimer | method | 2450 |
-| updatePageTitle | method | 2461 |
-| renderSessions | method | 2462 |
-| recoverMissingSession | function | 2464 |
-| controls | method | 2466 |
-| saveView | method | 2473 |
-| controls | method | 2477 |
-| switchSession | function | 2493 |
-| saveView | method | 2495 |
-| controls | method | 2498 |
-| copySessionFile | function | 2524 |
-| positionSessionMenu | function | 2537 |
-| renderSessions | function | 2543 |
-| sessionAction | const | 2695 |
-| openSessionAction | function | 2697 |
-| contextIcon | function | 2738 |
-| renderContextChips | function | 2741 |
-| fuzzyHit | function | 2760 |
-| renderContextResults | function | 2767 |
-| showContextSkills | function | 2787 |
-| positionContextSkills | function | 2792 |
-| showContextSkills | method | 2804 |
-| controls | method | 2839 |
-| skillTrigger | const | 2841 |
-| showContextSkills | method | 2857 |
-| resizePrompt | method | 2866 |
-| controls | method | 2867 |
-| closeCompletion | function | 2870 |
-| highlightCompletion | function | 2878 |
-| chooseCompletion | function | 2887 |
-| closeCompletion | method | 2897 |
-| updateCompletion | function | 2900 |
-| closeCompletion | method | 2901 |
-| resizePrompt | method | 2957 |
-| controls | method | 2958 |
-| switchSession | method | 2998 |
-| creationLoad | const | 3009 |
-| refreshPresets | function | 3010 |
-| createAgentPicker | function | 3045 |
-| options | method | 3071 |
-| fill | method | 3079 |
-| fillThinking | method | 3087 |
-| options | method | 3089 |
-| loadCreation | function | 3136 |
-| openCreation | function | 3172 |
-| rememberCreation | const | 3193 |
-| updateDefaultsPreview | function | 3225 |
-| updateDefaultsPreview | method | 3249 |
-| controls | method | 3304 |
+| scheduleReconnect | function | 2079 |
+| clearTimeout | method | 2080 |
+| importDir | const | 2084 |
+| fillModels | method | 2088 |
+| fillSubagentModels | method | 2095 |
+| closeCompletion | method | 2112 |
+| controls | method | 2117 |
+| scrollLatest | method | 2122 |
+| enableImagePreview | function | 2154 |
+| renderImages | function | 2175 |
+| addImages | function | 2200 |
+| loadImages | function | 2221 |
+| renderImages | method | 2230 |
+| selectionCopy | const | 2253 |
+| copySelection | function | 2265 |
+| escapeTimer | const | 2328 |
+| withdrawQueue | function | 2329 |
+| refreshing | const | 2411 |
+| refreshSessions | function | 2412 |
+| timerText | function | 2428 |
+| renderTaskTimer | function | 2435 |
+| applyElapsed | function | 2448 |
+| renderTaskTimer | method | 2454 |
+| updatePageTitle | function | 2456 |
+| updateSessions | function | 2460 |
+| renderTaskTimer | method | 2462 |
+| updatePageTitle | method | 2473 |
+| renderSessions | method | 2474 |
+| recoverMissingSession | function | 2476 |
+| controls | method | 2478 |
+| saveView | method | 2485 |
+| controls | method | 2489 |
+| switchSession | function | 2505 |
+| saveView | method | 2507 |
+| controls | method | 2510 |
+| copySessionFile | function | 2536 |
+| positionSessionMenu | function | 2549 |
+| renderSessions | function | 2555 |
+| sessionAction | const | 2707 |
+| openSessionAction | function | 2709 |
+| contextIcon | function | 2750 |
+| renderContextChips | function | 2753 |
+| fuzzyHit | function | 2772 |
+| renderContextResults | function | 2779 |
+| showContextSkills | function | 2799 |
+| positionContextSkills | function | 2804 |
+| showContextSkills | method | 2816 |
+| controls | method | 2851 |
+| skillTrigger | const | 2853 |
+| showContextSkills | method | 2869 |
+| resizePrompt | method | 2878 |
+| controls | method | 2879 |
+| closeCompletion | function | 2882 |
+| highlightCompletion | function | 2890 |
+| chooseCompletion | function | 2899 |
+| closeCompletion | method | 2909 |
+| updateCompletion | function | 2912 |
+| closeCompletion | method | 2913 |
+| resizePrompt | method | 2969 |
+| controls | method | 2970 |
+| switchSession | method | 3010 |
+| creationLoad | const | 3021 |
+| refreshPresets | function | 3022 |
+| createAgentPicker | function | 3057 |
+| options | method | 3083 |
+| fill | method | 3091 |
+| fillThinking | method | 3099 |
+| options | method | 3101 |
+| loadCreation | function | 3148 |
+| openCreation | function | 3184 |
+| rememberCreation | const | 3205 |
+| updateDefaultsPreview | function | 3237 |
+| updateDefaultsPreview | method | 3261 |
+| controls | method | 3316 |
 
 ### public/file-picker.js（355 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 
@@ -1045,7 +1045,7 @@
 | activityHistory | const | 16 |
 | sessions | const | 27 |
 
-### tests/app.test.js（1709 行） — node --test 测试（npm test）
+### tests/app.test.js（1730 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|

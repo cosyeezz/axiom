@@ -529,3 +529,9 @@
 - 根因：Pi 的 `SessionManager` 惰性落盘——`create()` 就确定了 `sessionFile`，文件要等第一条消息才写。`sessionData()` 直接 `item.agent.sessionFile()` 入库，于是「新建→未发言→重启」就造出一条库里有路径、磁盘无文件的记录，`ensureLoaded()` 的 `existsSync` 检查从此永久拒绝加载它。
 - 修复：新增 `landedSessionFile(item)`（文件真实存在才返回路径，否则 null），落库与 `list()` 共用；前端本就按 null 渲染「发送首条消息后生成」，口径一致。
 - 防再犯：①**不要**放宽 `ensureLoaded()` 的严格语义去自动创建空 JSONL——`tests/session-migration.test.js` 的 ghost 用例要求「不创建空 JSONL、逐字节保留库记录」，这是为同步盘/外置盘临时不可用时能等文件回来；②判断“能否入库”只看文件在不在磁盘上，不要用“有无任务/摘要”之类启发式去猜会话是否为空，猜错等于静默丢数据；③修复前已写坏的库记录没有安全判据可自动清理，只能让用户删该会话。
+
+### 2026-09-14 前端启动链的单点失败会放大成整页断连
+- 症状：一条坏会话（历史文件缺失/目录被删）让页面永远「连接已断开，正在自动重连」，其余会话也进不去；删掉那条库记录后立刻恢复。
+- 根因：`public/app.js` 启动时（URL 无 sessionId）只 attach `sessions.list()` 的第一条且没有 try/catch；`session.attach` 抛错冒到外层 catch → `error()` + `ws.close()` + `scheduleReconnect()`，重连再走同一段，形成死循环（退避至 15s）。`sessionId` 分支与 `switchSession()` 有降级，唯独这条漏了。
+- 修复：逐条尝试 attach、失败跳过；有可用会话时只 `console.warn`，全失败才 `error()`；末尾 `if (!state)` 新建兜底。服务端 `ensureLoaded()` 的严格报错保持不动。
+- 防再犯：①启动链里**任何** `request()` 的失败都必须在链内消化，绝不冒到最外层 catch（那里会关连接并安排重连，等于把单点故障升级成全页不可用）；②新增「按列表取第一条」这类代码前先问：这条坏了会怎样？③JSDOM harness 里跨 realm 的对象不能直接 `assert.deepEqual`（原型不同），先 `{...obj}` 摊平再比；④断言别放错 harness——`tests/app.test.js` 里有两套同风格的 harness，文件末尾那段的 `$`/`sockets` 属于第二个。
