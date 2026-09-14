@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-14 修复新建空会话被写成打不开的库记录
+- 内容：`src/sessions.js` 新增模块级 `landedSessionFile(item)`：只有 `item.agent.sessionFile()` 指向的文件真的存在才返回路径，否则返回 `null`；`sessionData()`（落库）与 `list()`（侧栏）改用同一个函数。新增 `tests/session-flow.test.js` 用例：新建会话后断言库与列表里都是空路径、重启后 `ensureLoaded` 按空会话打开、真实落盘后路径才进库。README 补一句说明。
+- 原因：Pi 的 `SessionManager` 是惰性落盘的——`create()` 返回时就确定了 `sessionFile` 路径，但文件要等第一条消息才写。旧代码在 `sessionData()` 里直接 `item.agent.sessionFile()` 入库，于是「新建会话 → 没发消息 → 重启」这条极普通的路径会永久造出一条坏记录：`ensureLoaded()` 查 `existsSync(saved.sessionFile)` 为假 → 报「会话历史文件缺失，已保留数据库记录」，而该文件永远不会被创建，这条会话就永久打不开了。用户 Mac 上的截图就是这个报错，且重装（包括换版本）治不好：库里的坏记录不会因重装而消失。
+- 决策：不去改 `ensureLoaded()` 的严格语义。`tests/session-migration.test.js` 的 ghost 用例明确要求「只有打开时检查历史，不创建空 JSONL」且要逐字节保留库记录（临时不可用的历史文件——如同步盘未挂载——在文件回来后仍能恢复，不固化空历史）。真正的根因是**写入**了不曾存在的路径，所以只堵写入侧；判据用“文件是否真的在磁盘上”，不引入任何启发式猜测。`list()` 一并改用同一函数：前端本来就按 `sessionFile` 为 `null` 渲染「该会话还没有 JSONL 文件（发送首条消息后生成）」，两处口径因此一致。
+- 遗留：修复前已经写进库的假记录仍需手动处理（打开会继续报错，没有安全的自动判据能区分「空会话的假路径」和「真被删掉的历史」，猜错就是静默丢数据）；在侧栏删掉该会话记录即可。
+- 验证：`tests/session-flow.test.js`（9 项）与 `tests/session-migration.test.js`（7 项，含 ghost 语义回归）全绿；全量 `npm test` 370 项：368 通过 / 0 失败 / 2 跳过（24.6s）。
+- 涉及：src/sessions.js、tests/session-flow.test.js、README.md、devlog.md。
+
 ## 2026-09-14 axiom 改为后台启动的服务命令
 - 内容：`scripts/service.mjs` 的 CLI 分派重写。`axiom`（无参数）不再前台常驻，改为 `startBackground()`：`spawn(process.execPath, [..., "--foreground"], { detached: true, stdio: "ignore" })` 后轮询 `/health` 至就绪，打印地址与日志路径即返回，已在运行则只提示不重复启动。新增 `axiom --foreground`（`-f`）保留原前台行为，供调试与直接看日志。新增 `localPort()`/`localAddress()`/`homeDir()`/`openPage()`/`firstRunGuide()` 并导出；`serviceReady()` 与 `startBackground()` 由 `install.mjs` 复用，删掉其重复的 fork + 探活循环。新增 `scripts/autostart.mjs` 的 `isEnabled()`。首次引导把「注册登录自启」「打开页面」两个问题只问一次，标记写在 `AXIOM_HOME/.guided`，`axiom-setup` 结束时也写同一标记。README 的安装与启动章节同步。
 - 原因：用户报告两件事：①`axiom` 在终端前台常驻，关掉终端窗口服务就没——macOS 关窗发 SIGHUP 给前台进程组，守护与 worker 一起死，页面表现为「连接已断开，正在自动重连」，这正是把「清理后重装仍不可用」串起来的一环；②`npm install -g` 之后没有任何引导，用户不知道要跑 `axiom-setup`，于是没注册自启、也没打开过页面。修的过程中又确定三个既有缺陷：`fork()` 的 IPC channel 会拖住父进程，`.unref()` 不够，`axiom-setup` 跑完不返回终端；日志路径硬编码 `join(homedir(), ".axiom")`，设了 `AXIOM_HOME` 时提示的路径是错的；`AXIOM_PORT` 没校验，坏值要走到 `fetch` 才报一句看不懂的 `Invalid URL`。

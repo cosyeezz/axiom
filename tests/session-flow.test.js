@@ -414,3 +414,37 @@ test("session.import copies a pi jsonl session, rebuilds history and protects th
     await restored.close();
   } finally { await restored?.close(); await sessions?.close(); await rm(root, { recursive: true, force: true }); }
 });
+
+test("尚未落盘的 JSONL 路径不落库，空会话重启后仍能打开", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-empty-session-"));
+  const storage = join(root, "storage");
+  // 真实 SessionManager 懒创建 JSONL：路径创建时即确定，文件要等第一条消息才写出来。
+  let sessionFile = join(root, "pending.jsonl");
+  const factory = async () => ({
+    config: () => ({ model: "test/one", thinking: "off" }),
+    subscribe: () => () => {}, prompt: async () => {}, enqueue: async () => {},
+    queue: () => ({ steering: [], followUp: [] }), withdraw: () => ({}),
+    abort: async () => {}, result: () => "ok", dispose: async () => {},
+    sessionFile: () => sessionFile, historyEntries: () => [],
+  });
+  factory.catalog = () => [{ key: "test/one" }];
+  let sessions, restored;
+  try {
+    sessions = new Sessions(factory, undefined, storage);
+    const id = await sessions.create(root);
+    assert.equal(existsSync(join(root, "pending.jsonl")), false, "前提：此刻还没有 JSONL 文件");
+    // 落库的只能是真文件；否则重启后 ensureLoaded 会按「历史文件缺失」永久拒绝加载这条会话。
+    assert.equal(sessions.store.getSession(id).sessionFile ?? null, null);
+    assert.equal(sessions.list()[0].sessionFile, null, "列表同源，前端据此提示「发送首条消息后生成」");
+    await sessions.close();
+    restored = new Sessions(factory, undefined, storage);
+    await restored.load();
+    await restored.ensureLoaded(id);
+    assert.deepEqual(restored.snapshot(id).messages, [], "按空会话打开，而不是报历史缺失");
+    // 真落盘之后路径才进库。
+    sessionFile = join(root, "landed.jsonl");
+    await writeFile(sessionFile, "");
+    await restored.persist(restored.get(id));
+    assert.equal(restored.store.getSession(id).sessionFile, sessionFile);
+  } finally { await restored?.close(); await sessions?.close(); await rm(root, { recursive: true, force: true }); }
+});

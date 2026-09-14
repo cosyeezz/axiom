@@ -523,3 +523,9 @@
 - 根因：①CLI 无参数直接 `supervise()` 前台常驻，终端关闭时 SIGHUP 发给整个前台进程组，守护进程与 worker 一起死；②`fork()` 建立的 IPC channel 会让父进程不退出，`child.unref()` 只 unref child handle，管不到 IPC channel；③端口只 `Number()` 不校验，坏值一路走到 `fetch` 才抛。
 - 修复：`axiom` 默认 `spawn(process.execPath, [service.mjs, "--foreground"], {detached:true, stdio:"ignore"})` 后轮询 `/health` 再返回，前台保留为 `axiom --foreground`；子进程**必须显式带 `--foreground`**，否则无参分支会再调一次 `startBackground` 无限派生；`localPort()` 统一解析并对坏值早报错。
 - 防再犯：①`localPort()` **必须接受 0**——`tests/service.test.js` 一直用 `AXIOM_PORT=0` 当「不监听真实端口」的哨兵，且 `installTag("http://127.0.0.1:0", root)` 直接依赖该字面量；②改 CLI 默认分支前先 grep 测试怎么 spawn 这个入口，`service.test.js` 的 `startDaemon` 依赖前台管道，后台化后必须改传 `--foreground`；③日志与数据路径一律走 `homeDir()`，不要再硬编码 `join(homedir(), ".axiom")`，否则 `AXIOM_HOME` 场景下提示的路径是错的。
+
+### 2026-09-14 惰性落盘的路径不能入库
+- 症状：新建会话、没说一句话就重启，之后这条会话永久报「会话历史文件缺失，已保留数据库记录」，且该文件永远不会被创建；重装/换版本都不管用（坏记录已在 axiom.db 里）。
+- 根因：Pi 的 `SessionManager` 惰性落盘——`create()` 就确定了 `sessionFile`，文件要等第一条消息才写。`sessionData()` 直接 `item.agent.sessionFile()` 入库，于是「新建→未发言→重启」就造出一条库里有路径、磁盘无文件的记录，`ensureLoaded()` 的 `existsSync` 检查从此永久拒绝加载它。
+- 修复：新增 `landedSessionFile(item)`（文件真实存在才返回路径，否则 null），落库与 `list()` 共用；前端本就按 null 渲染「发送首条消息后生成」，口径一致。
+- 防再犯：①**不要**放宽 `ensureLoaded()` 的严格语义去自动创建空 JSONL——`tests/session-migration.test.js` 的 ghost 用例要求「不创建空 JSONL、逐字节保留库记录」，这是为同步盘/外置盘临时不可用时能等文件回来；②判断“能否入库”只看文件在不在磁盘上，不要用“有无任务/摘要”之类启发式去猜会话是否为空，猜错等于静默丢数据；③修复前已写坏的库记录没有安全判据可自动清理，只能让用户删该会话。

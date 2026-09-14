@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/13 20:11:41）
+# Axiom 多级代码索引（生成于 2026/9/13 20:17:16）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -44,7 +44,7 @@
 | src/server.js | 478 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | assets, createServerApp |
 | src/session-memory.js | 29 | 标题提取登记、轮次预算挂钩与委派背景 | textOf, memoryHooks |
 | src/session-store.js | 458 | 会话三表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, TABLES, INDEXES |
-| src/sessions.js | 1301 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | BROWSE_PAGE, SEARCH_LIMIT, SEARCH_DIR_LIMIT, IGNORED_ENTRIES |
+| src/sessions.js | 1310 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | BROWSE_PAGE, SEARCH_LIMIT, SEARCH_DIR_LIMIT, IGNORED_ENTRIES |
 | src/task-budget.js | 36 | 主子代理轮次预算规则、收尾提示词与配置页参数校验 | WRAP_UP_PROMPT, TASK_BUDGET_LIMITS, taskBudgetDefaults, within |
 | src/tasks.js | 121 | Tasks：子任务（委托）生命周期 | Tasks |
 | src/tools.js | 110 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
@@ -106,7 +106,7 @@
 | tests/service-settings.test.js | 377 | node --test 测试（npm test） | source, html, setup |
 | tests/service.test.js | 539 | node --test 测试（npm test） | until, readMaybe, killTree, buildWorkspace |
 | tests/session-created-at.test.js | 44 | node --test 测试（npm test） | factory |
-| tests/session-flow.test.js | 417 | node --test 测试（npm test） | flowFactory, jsonlFactory |
+| tests/session-flow.test.js | 451 | node --test 测试（npm test） | flowFactory, jsonlFactory |
 | tests/session-memory.test.js | 110 | node --test 测试（npm test） | reply |
 | tests/session-migration.test.js | 266 | node --test 测试（npm test） | factory, workspaceHash |
 | tests/session-model-restore.test.js | 61 | node --test 测试（npm test） | stubFactory, cleanup |
@@ -924,7 +924,7 @@
 | saveTask | method | 429 |
 | listTasks | method | 452 |
 
-### src/sessions.js（1301 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
+### src/sessions.js（1310 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -942,53 +942,54 @@
 | absoluteCrumbs | function | 111 |
 | importedTitle | function | 133 |
 | hostLocations | function | 155 |
-| Sessions | class | 170 |
-| constructor | method | 171 |
-| applyDefaults | method | 193 |
-| loadDefaults | method | 208 |
-| migrateDefaults | method | 218 |
-| migratePresets | method | 231 |
-| loadTaskBudget | method | 246 |
-| getTaskBudget | method | 257 |
-| configureTaskBudget | method | 262 |
-| getDefaults | method | 268 |
-| workspaceDefaults | method | 271 |
-| configureDefaults | method | 289 |
-| saveDefaults | method | 294 |
-| validateSelection | method | 333 |
-| validateCompaction | method | 364 |
-| listPresets | method | 382 |
-| mutatePresets | method | 392 |
-| savePreset | method | 405 |
-| deletePreset | method | 420 |
-| load | method | 429 |
-| ensureLoaded | method | 448 |
-| migrateLegacySessions | method | 470 |
-| sessionData | method | 494 |
-| persist | method | 507 |
-| writeChange | method | 525 |
-| saveChange | method | 540 |
-| list | method | 545 |
-| rename | method | 562 |
-| importSession | method | 575 |
-| create | method | 602 |
-| scheduleTaskNotifications | method | 914 |
-| deliverTaskNotifications | method | 926 |
-| get | method | 950 |
-| revealWorkspace | method | 955 |
-| browse | method | 969 |
-| listFiles | method | 975 |
-| refreshSkills | method | 1037 |
-| snapshot | method | 1043 |
-| subscribe | method | 1072 |
-| configure | method | 1078 |
-| startRun | method | 1113 |
-| retry | method | 1149 |
-| prompt | method | 1156 |
-| withdraw | method | 1181 |
-| cancel | method | 1230 |
-| remove | method | 1253 |
-| close | method | 1291 |
+| landedSessionFile | function | 174 |
+| Sessions | class | 179 |
+| constructor | method | 180 |
+| applyDefaults | method | 202 |
+| loadDefaults | method | 217 |
+| migrateDefaults | method | 227 |
+| migratePresets | method | 240 |
+| loadTaskBudget | method | 255 |
+| getTaskBudget | method | 266 |
+| configureTaskBudget | method | 271 |
+| getDefaults | method | 277 |
+| workspaceDefaults | method | 280 |
+| configureDefaults | method | 298 |
+| saveDefaults | method | 303 |
+| validateSelection | method | 342 |
+| validateCompaction | method | 373 |
+| listPresets | method | 391 |
+| mutatePresets | method | 401 |
+| savePreset | method | 414 |
+| deletePreset | method | 429 |
+| load | method | 438 |
+| ensureLoaded | method | 457 |
+| migrateLegacySessions | method | 479 |
+| sessionData | method | 503 |
+| persist | method | 516 |
+| writeChange | method | 534 |
+| saveChange | method | 549 |
+| list | method | 554 |
+| rename | method | 571 |
+| importSession | method | 584 |
+| create | method | 611 |
+| scheduleTaskNotifications | method | 923 |
+| deliverTaskNotifications | method | 935 |
+| get | method | 959 |
+| revealWorkspace | method | 964 |
+| browse | method | 978 |
+| listFiles | method | 984 |
+| refreshSkills | method | 1046 |
+| snapshot | method | 1052 |
+| subscribe | method | 1081 |
+| configure | method | 1087 |
+| startRun | method | 1122 |
+| retry | method | 1158 |
+| prompt | method | 1165 |
+| withdraw | method | 1190 |
+| cancel | method | 1239 |
+| remove | method | 1262 |
+| close | method | 1300 |
 
 ### src/task-budget.js（36 行） — 主子代理轮次预算规则、收尾提示词与配置页参数校验
 
@@ -1474,7 +1475,7 @@
 |---|---|---|
 | factory | const | 8 |
 
-### tests/session-flow.test.js（417 行） — node --test 测试（npm test）
+### tests/session-flow.test.js（451 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|

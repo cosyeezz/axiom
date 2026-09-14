@@ -167,6 +167,15 @@ async function hostLocations() {
   return locations;
 }
 
+// SDK 的 JSONL 是惰性创建的：新建会话此刻只有路径，文件要等第一条消息才写。
+// 把这种路径落库就会留下「库里有路径、磁盘没文件」的假记录——重启后该会话永久打不开
+// （ensureLoaded 按「历史文件缺失」拒绝加载，且文件永远不会被创建）。列表的「复制 JSONL
+// 路径」同源：前端已按 sessionFile 为 null 渲染「发送首条消息后生成」。
+function landedSessionFile(item) {
+  const file = item.agent?.sessionFile?.() ?? item.sessionFile ?? null;
+  return file && existsSync(file) ? file : null;
+}
+
 export class Sessions {
   constructor(createAgent, defaultsPath, storagePath, database) {
     this.storagePath = storagePath;
@@ -496,7 +505,7 @@ export class Sessions {
       titleManual: item.titleManual, titleRequested: item.titleRequested,
       createdAt: item.createdAt, updatedAt: item.updatedAt,
       elapsedMs: item.elapsedMs, runningSince: item.runningSince,
-      sessionFile: item.agent?.sessionFile?.() ?? item.sessionFile ?? null,
+      sessionFile: landedSessionFile(item),
       selection: item.agent ? { ...item.agent.config?.(), capabilities: item.capabilities,
         subagentCapabilities: item.subagentCapabilities, subagentModel: item.subagentModel,
         subagentThinking: item.subagentThinking, queueType: item.queueType, retry: item.retry,
@@ -555,7 +564,7 @@ export class Sessions {
         elapsedMs: item.elapsedMs,
         runningSince: item.runningSince,
         // 会话的 .jsonl 源文件路径，供侧栏菜单「复制 JSONL 路径」用；尚未落盘时为 null。
-        sessionFile: item.agent?.sessionFile?.() ?? item.sessionFile ?? null,
+        sessionFile: landedSessionFile(item),
       }))
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }
