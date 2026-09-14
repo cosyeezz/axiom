@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/14 14:36:54）
+# Axiom 多级代码索引（生成于 2026/9/14 15:43:36）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -51,8 +51,8 @@
 | src/retry.js | 196 | 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_DELAY_MS, MAX_RETRIES, RECOVERY_PROMPT |
 | src/server.js | 507 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | dev, digest, load, freshen |
 | src/session-memory.js | 29 | 标题提取登记、轮次预算挂钩与委派背景 | textOf, memoryHooks |
-| src/session-store.js | 469 | 会话三表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, TABLES, INDEXES |
-| src/sessions.js | 1571 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | GOAL_TOOL_NAMES, hasRunningTasks, BROWSE_PAGE, SEARCH_LIMIT |
+| src/session-store.js | 479 | 会话三表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, TABLES, INDEXES |
+| src/sessions.js | 1575 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | GOAL_TOOL_NAMES, hasRunningTasks, BROWSE_PAGE, SEARCH_LIMIT |
 | src/task-budget.js | 35 | 主子代理轮次预算规则、收尾提示词与配置页参数校验 | TASK_BUDGET_LIMITS, taskBudgetDefaults, within, taskBudgetPolicy |
 | src/tasks.js | 209 | Tasks：子任务（委托）生命周期 | ACTIVE, historyResult, Tasks |
 | src/tools.js | 110 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
@@ -135,9 +135,9 @@
 | tests/session-memory.test.js | 110 | node --test 测试（npm test） | reply |
 | tests/session-migration.test.js | 266 | node --test 测试（npm test） | factory, workspaceHash |
 | tests/session-model-restore.test.js | 61 | node --test 测试（npm test） | stubFactory, cleanup |
-| tests/session-persistence.test.js | 318 | node --test 测试（npm test） | factory |
+| tests/session-persistence.test.js | 422 | node --test 测试（npm test） | factory |
 | tests/session-sidebar-ui.py | 112 | node --test 测试（npm test） | - |
-| tests/session-store.test.js | 584 | node --test 测试（npm test） | withStore, fullSaved, LEGACY_DDL |
+| tests/session-store.test.js | 640 | node --test 测试（npm test） | withStore, fullSaved, LEGACY_DDL |
 | tests/smoke.js | 67 | node --test 测试（npm test） | TIMEOUT, sessions |
 | tests/sqlite-benchmark.mjs | 914 | node --test 测试（npm test） | parseArgs, args, scriptPath, repoDir |
 | tests/stream-renderer.test.js | 116 | node --test 测试（npm test） | - |
@@ -1056,35 +1056,36 @@
 | textOf | const | 4 |
 | memoryHooks | function | 11 |
 
-### src/session-store.js（469 行） — 会话三表、实体增量更新、逐会话事务与旧数据迁移
+### src/session-store.js（479 行） — 会话三表、实体增量更新、逐会话事务与旧数据迁移
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | EVENT_TYPES | const | 13 |
 | SESSION_FIELDS | const | 16 |
 | TABLES | const | 31 |
-| INDEXES | const | 66 |
-| DEAD_TABLES | const | 76 |
-| DEAD_COLUMNS | const | 77 |
-| DEAD_EVENT_TYPES | const | 78 |
-| SessionStore | class | 80 |
-| constructor | method | 84 |
-| change | method | 145 |
-| hasSession | method | 167 |
-| listSessions | method | 172 |
-| listPendingSessionIds | method | 193 |
-| getSession | method | 201 |
-| insertSession | method | 301 |
-| importLegacySession | method | 327 |
-| migrateLegacy | method | 344 |
-| updateSession | method | 366 |
-| deleteSession | method | 390 |
-| saveEvent | method | 396 |
-| deleteEvents | method | 422 |
-| saveTask | method | 440 |
-| listTasks | method | 463 |
+| INDEXES | const | 67 |
+| BACKFILL_EVENT_KEYS | const | 79 |
+| DEAD_TABLES | const | 84 |
+| DEAD_COLUMNS | const | 85 |
+| DEAD_EVENT_TYPES | const | 86 |
+| SessionStore | class | 88 |
+| constructor | method | 92 |
+| change | method | 155 |
+| hasSession | method | 177 |
+| listSessions | method | 182 |
+| listPendingSessionIds | method | 203 |
+| getSession | method | 211 |
+| insertSession | method | 311 |
+| importLegacySession | method | 337 |
+| migrateLegacy | method | 354 |
+| updateSession | method | 376 |
+| deleteSession | method | 400 |
+| saveEvent | method | 406 |
+| deleteEvents | method | 432 |
+| saveTask | method | 450 |
+| listTasks | method | 473 |
 
-### src/sessions.js（1571 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
+### src/sessions.js（1575 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1137,30 +1138,30 @@
 | rename | method | 626 |
 | importSession | method | 639 |
 | create | method | 666 |
-| goalAction | method | 1017 |
-| scheduleGoal | method | 1063 |
-| advanceGoal | method | 1075 |
-| goalNotificationsBlocked | method | 1113 |
-| scheduleTaskNotifications | method | 1120 |
-| deliverTaskNotifications | method | 1132 |
-| get | method | 1160 |
-| revealWorkspace | method | 1165 |
-| browse | method | 1179 |
-| listFiles | method | 1185 |
-| refreshSkills | method | 1247 |
-| snapshot | method | 1253 |
-| subscribe | method | 1285 |
-| configure | method | 1291 |
-| startRun | method | 1327 |
-| retry | method | 1366 |
-| prompt | method | 1375 |
-| withdraw | method | 1410 |
-| replyQuestion | method | 1459 |
-| cancel | method | 1465 |
-| retryTask | method | 1491 |
-| deleteRecords | method | 1502 |
-| remove | method | 1513 |
-| close | method | 1561 |
+| goalAction | method | 1021 |
+| scheduleGoal | method | 1067 |
+| advanceGoal | method | 1079 |
+| goalNotificationsBlocked | method | 1117 |
+| scheduleTaskNotifications | method | 1124 |
+| deliverTaskNotifications | method | 1136 |
+| get | method | 1164 |
+| revealWorkspace | method | 1169 |
+| browse | method | 1183 |
+| listFiles | method | 1189 |
+| refreshSkills | method | 1251 |
+| snapshot | method | 1257 |
+| subscribe | method | 1289 |
+| configure | method | 1295 |
+| startRun | method | 1331 |
+| retry | method | 1370 |
+| prompt | method | 1379 |
+| withdraw | method | 1414 |
+| replyQuestion | method | 1463 |
+| cancel | method | 1469 |
+| retryTask | method | 1495 |
+| deleteRecords | method | 1506 |
+| remove | method | 1517 |
+| close | method | 1565 |
 
 ### src/task-budget.js（35 行） — 主子代理轮次预算规则、收尾提示词与配置页参数校验
 
@@ -1797,13 +1798,13 @@
 | stubFactory | function | 9 |
 | cleanup | const | 17 |
 
-### tests/session-persistence.test.js（318 行） — node --test 测试（npm test）
+### tests/session-persistence.test.js（422 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | factory | const | 10 |
 
-### tests/session-store.test.js（584 行） — node --test 测试（npm test）
+### tests/session-store.test.js（640 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1828,7 +1829,7 @@
 | withStore | method | 393 |
 | LEGACY_DDL | const | 424 |
 | withStore | method | 516 |
-| withStore | method | 535 |
+| withStore | method | 591 |
 
 ### tests/smoke.js（67 行） — node --test 测试（npm test）
 
