@@ -1,9 +1,28 @@
 import { createServer } from "node:http";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import { command } from "./protocol.js";
 import { createModelAuthService } from "./model-auth.js";
+
+// 开发模式下前端资源按 mtime 惰性重读（改完刷新页面即可，不必重启服务）；
+// 生产沿用启动期预读，请求路径上零额外 IO。
+const dev = process.env.AXIOM_DEV === "1";
+const digest = (body) => `"${createHash("sha256").update(body).digest("base64url")}"`;
+const load = (file) => {
+  const url = new URL(`../${file}`, import.meta.url);
+  const body = readFileSync(url);
+  return { url, body, etag: digest(body), mtime: dev ? statSync(url).mtimeMs : 0 };
+};
+const freshen = (asset) => {
+  if (!dev) return;
+  try {
+    const mtime = statSync(asset.url).mtimeMs;
+    if (mtime === asset.mtime) return;
+    const body = readFileSync(asset.url);
+    Object.assign(asset, { body, etag: digest(body), mtime });
+  } catch {} // 编辑器保存瞬间可能读到临时缺失：保留上一版，下次请求再取
+};
 
 const assets = new Map(
   [
@@ -22,11 +41,7 @@ const assets = new Map(
     ["/memory-tags.js", "public/memory-tags.js"],
     ["/vendor/marked.js", "node_modules/marked/lib/marked.esm.js"],
     ["/vendor/purify.js", "node_modules/dompurify/dist/purify.es.mjs"],
-  ].map(([route, file, type = "text/javascript"]) => {
-    const body = readFileSync(new URL(`../${file}`, import.meta.url));
-    const etag = `"${createHash("sha256").update(body).digest("base64url")}"`;
-    return [route, { type, body, etag }];
-  }),
+  ].map(([route, file, type = "text/javascript"]) => [route, { type, ...load(file) }]),
 );
 
 // 模型管理器/选择器（前端可选资源）：落地后重启生效，缺失时安全跳过、请求 404。
@@ -38,8 +53,7 @@ for (const [route, file, type = "text/javascript"] of [
   ["/model-picker.css", "public/model-picker.css", "text/css"],
 ]) {
   try {
-    const body = readFileSync(new URL(`../${file}`, import.meta.url));
-    assets.set(route, { type, body, etag: `"${createHash("sha256").update(body).digest("base64url")}"` });
+    assets.set(route, { type, ...load(file) });
   } catch {} // 未落地：不注册路由
 }
 
@@ -82,6 +96,7 @@ export function createServerApp(sessions, service = {}) {
     }
     const asset = assets.get(req.url);
     if (asset) {
+      freshen(asset);
       const unchanged = req.headers["if-none-match"] === asset.etag;
       res.writeHead(unchanged ? 304 : 200, {
         "Content-Type": `${asset.type}; charset=utf-8`,
