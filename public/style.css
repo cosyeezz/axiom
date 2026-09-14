@@ -13,7 +13,7 @@
   /* 正文文字 token 固定为高对比度（深色原值 #d0d6e0 / #8a8f98 各混入 30% 白）；
      --muted 在下拉箭头与默认工具图标上非文字用途，那两处用 --dim-line 钉回原色。 */
   --body-ink: light-dark(#3c4149, #dee2e9);
-  --muted: light-dark(#62666d, #adb1b7);
+  --muted: light-dark(#5d6168, #adb1b7);
   --dim-line: #8a8f98;
   --accent: #5e6ad2;
   /* 强调色上的文字固定为白：#5e6ad2 与浅色 --ink 对比不足 4.5:1。 */
@@ -22,11 +22,12 @@
   --accent-hover: light-dark(#4b55b8, #828fff);
   --accent-ink: light-dark(#4d59c4, #828fff);
   /* Conversation semantics: lighter versions of the file picker's blue/teal/gold/violet families
-     深色底用亮调，浅色底压深到白底可读（≥4.5:1）。 */
-  --info: light-dark(#2d6cba, #9bc3f4);
+     深色底用亮调；浅色底压深到在用户消息卡片（#d7daf4）上仍 ≥ 4.5:1，
+     白底上因此有 ≈ 6.2 的余量；改卡片深度前先重算这几个值。 */
+  --info: light-dark(#2961a7, #9bc3f4);
   --code-ink: light-dark(#0f7a68, #83cebc);
-  --highlight: light-dark(#96650b, #e2b978);
-  --thought: light-dark(#6b4fbe, #baa8ec);
+  --highlight: light-dark(#83580a, #e2b978);
+  --thought: light-dark(#684db9, #baa8ec);
   --subagent: var(--thought);
   --success: light-dark(#1a7f37, #27a644);
   --danger: light-dark(#c0374a, #f2a6a6);
@@ -378,15 +379,16 @@ h1 {
   letter-spacing: 0.12em;
 }
 .message.user {
-  /* 浅色底 5% 蓝几乎看不出来，压到 8%（再深 --highlight 粗体对比度就跌破 4.5:1）；深色底保持 5%。
+  /* 用户消息用品牌紫，跟助手回复的中性底拉开色差。浅色底 25% / 边框 50%（#d7daf4 / #a2a8df）；
+     这个深度是上限：再深就得把浅色正文 token 继续压黑。深色底本来就够看，保持 info 蓝。
      light-dark() 只接受颜色，所以两支各写一份 color-mix。 */
   background: light-dark(
-    color-mix(in srgb, var(--info) 8%, var(--surface)),
+    color-mix(in srgb, var(--accent) 25%, var(--surface)),
     color-mix(in srgb, var(--info) 5%, var(--surface))
   );
   padding: 12px 16px;
   border: 1px solid light-dark(
-    color-mix(in srgb, var(--info) 28%, var(--line)),
+    color-mix(in srgb, var(--accent) 50%, var(--line)),
     color-mix(in srgb, var(--info) 20%, var(--line))
   );
   border-radius: 12px;
