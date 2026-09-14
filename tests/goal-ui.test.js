@@ -82,7 +82,7 @@ test("snapshot.goal 渲染顶部进度与各阶段底部控制", async () => {
     assert.match($(w, "goal-track").textContent, /第 2 \/ 2 轮/);
     assert.match($(w, "goal-track").textContent, /约束 1 · 验收 2/);
     assert.equal($(w, "goal-track").querySelectorAll(".goal-bar-seg").length, 2, "进度条按轮分格");
-    assert.deepEqual(labels(w), ["调整 Goal", "暂停", "重启 Goal"]);
+    assert.deepEqual(labels(w), ["调整 Goal", "暂停", "重启 Goal", "先暂停再退出"]);
     assert.equal($(w, "goal-enter").hidden, true, "进入目标模式后入口隐藏");
     assert.equal($(w, "goal-track").querySelector(".goal-gauge").dataset.state, "running");
   } finally { dom.window.close(); }
@@ -101,7 +101,7 @@ test("goal 事件兼容 data.goal 与顶层 goal，且忽略其它会话", async
     assert.equal($(w, "goal-track").querySelector(".goal-objective").textContent, "改完了");
     assert.equal($(w, "goal-track").querySelector(".goal-gauge").dataset.state, "completed");
     assert.match($(w, "goal-track").textContent, /100%/);
-    assert.deepEqual(labels(w), ["查看总结", "重新开始"]);
+    assert.deepEqual(labels(w), ["查看总结", "重新开始", "退出目标模式"]);
   } finally { dom.window.close(); }
 });
 
@@ -163,7 +163,7 @@ test("动作回执 {goal} 立即落地，随后同名 goal 事件幂等", async 
     $(w, "goal-enter").click();
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.match($(w, "goal-dock").textContent, /待确认/);
-    assert.deepEqual(labels(w), ["确认计划", "重新澄清"]);
+    assert.deepEqual(labels(w), ["确认计划", "重新澄清", "退出目标模式"]);
     assert.deepEqual(calls().map(([type, data]) => [type, data.action]), [["goal.action", "enter"]], "进入目标的请求已发出");
     [...$(w, "goal-dock").querySelectorAll("button")].find((b) => b.textContent.includes("确认计划")).click();
     assert.equal($(w, "goal-plan").open, true, "打开计划确认卡");
@@ -301,7 +301,7 @@ test("已暂停时展示真实暂停原因（预算/阻塞/重启恢复）", asy
     assert.equal(dock.querySelector(".goal-dock-hint").dataset.alert, "true", "按告警色提示");
     assert.match(dock.querySelector(".goal-dock-hint").title, /2026|2026\/|年/, "悬停能看到暂停时间");
     assert.equal(dock.querySelector(".goal-dock-phase").dataset.tone, "warn");
-    assert.deepEqual(labels(w), ["继续", "调整 Goal", "重启 Goal"]);
+    assert.deepEqual(labels(w), ["继续", "调整 Goal", "重启 Goal", "退出目标模式"]);
     $(w, "goal-track").querySelector(".goal-plan-open").click();
     assert.equal($(w, "goal-plan").open, true);
     assert.match($(w, "goal-plan-meta").textContent, /暂停原因：自动执行段数达到上限 12/);
@@ -320,5 +320,109 @@ test("当前会话被删除时目标控制不可点", async () => {
     emit("session.deleted", {});
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.ok([...$(w, "goal-dock").querySelectorAll("button")].every((button) => button.disabled));
+  } finally { dom.window.close(); }
+});
+
+test("每个阶段都有退出入口；执行中/验收中先暂停，暂停落地后才发 exit", async () => {
+  const { dom, w, restore, emit, stub } = await page();
+  try {
+    const calls = stub(() => ({}));
+    const exit = () => [...$(w, "goal-dock").querySelectorAll("button")].find((button) => button.textContent.includes("退出"));
+    // 空闲阶段直接 exit：后端只在没有在飞工作的空闲点接受退出。
+    for (const phase of ["clarifying", "ready", "completed"]) {
+      restore({ goal: { phase, objective: "整" } });
+      assert.ok(exit(), `${phase} 也有退出入口`);
+      exit().click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assert.deepEqual(calls().at(-1), ["goal.action", { sessionId: "goal-1", action: "exit" }], `${phase} 直接发 exit`);
+    }
+    // 有在飞工作的阶段：退出入口不可点。
+    for (const phase of ["pausing", "adjusting"]) {
+      restore({ goal: { phase, objective: "整" } });
+      assert.equal(exit().disabled, true, `${phase} 有在飞工作，退出不可点`);
+    }
+    // 执行中/验收中：先暂停，等 paused 落地后再点一次才退出。
+    for (const phase of ["running", "verifying"]) {
+      restore({ goal: { phase, objective: "整" } });
+      const button = exit();
+      assert.equal(button.textContent, "先暂停再退出", `${phase} 用「先暂停再退出」说清顺序`);
+      assert.match(button.title, /先暂停再退出/);
+      button.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assert.deepEqual(calls().at(-1), ["goal.action", { sessionId: "goal-1", action: "pause" }], `${phase} 不在运行中直接 exit`);
+      emit("goal", { goal: { phase: "paused", objective: "整" } });
+      assert.equal(exit().textContent, "退出目标模式", "暂停落地后按钮变回退出");
+      exit().click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assert.deepEqual(calls().at(-1), ["goal.action", { sessionId: "goal-1", action: "exit" }]);
+    }
+  } finally { dom.window.close(); }
+});
+
+test("退出回执按 hasOwn 处理：goal:null 清空 UI，缺字段不动，切走会话后回执作废", async () => {
+  const { dom, w, restore, stub, output } = await page();
+  try {
+    let release;
+    stub((type, data) => data.action === "exit" ? new Promise((resolve) => { release = resolve; }) : {});
+    const exit = () => [...$(w, "goal-dock").querySelectorAll("button")].find((button) => button.textContent.includes("退出"));
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+    restore({
+      messages: messages(["a", "b"]),
+      goal: { phase: "paused", objective: "整", rounds: [{ title: "一轮", status: "paused", startMessage: 0, endMessage: 1 }] },
+    });
+    // 回执缺 goal 字段：不动现有目标（不能把 undefined 当成“已退出”）。
+    exit().click();
+    await settle();
+    release({});
+    await settle();
+    assert.equal($(w, "goal-track").hidden, false, "缺字段的回执不误清目标");
+    assert.equal($(w, "goal-dock").hidden, false);
+    // 显式 goal:null：清空目标 UI，入口图标回来，轮次标记与折叠一起收走。
+    assert.equal(output.querySelectorAll(".goal-round-head").length, 1);
+    exit().click();
+    await settle();
+    release({ goal: null });
+    await settle();
+    assert.equal($(w, "goal-track").hidden, true);
+    assert.equal($(w, "goal-dock").hidden, true);
+    assert.equal($(w, "goal-enter").hidden, false);
+    assert.equal(output.querySelectorAll(".goal-round-head").length, 0);
+    assert.equal(output.querySelectorAll("[data-goal-round]").length, 0);
+    // 回执在途时会话切走：整条回执作废，不污染新会话。
+    restore({ goal: { phase: "paused", objective: "整" } });
+    exit().click();
+    await settle();
+    restore({ sessionId: "goal-2", goal: { phase: "running", objective: "别人的目标" } });
+    release({ goal: null });
+    await settle();
+    assert.equal($(w, "goal-track").querySelector(".goal-objective").textContent, "别人的目标", "旧的退出回执不落到另一个会话");
+    assert.equal($(w, "goal-dock").hidden, false);
+  } finally { dom.window.close(); }
+});
+
+test("切到没有目标的会话：snapshot.goal=null 清空面板，不继承上一个 Goal，也不自动进入", async () => {
+  const { dom, w, restore, stub, output } = await page();
+  try {
+    const calls = stub(() => ({}));
+    restore({
+      messages: messages(["a", "b"]),
+      goal: {
+        phase: "running", objective: "上一个会话的目标", rounds: [{ title: "一轮", status: "active", startMessage: 0, endMessage: 1 }], currentRound: 0,
+      },
+    });
+    assert.equal($(w, "goal-track").hidden, false);
+    assert.equal($(w, "goal-dock").hidden, false);
+    assert.equal($(w, "goal-enter").hidden, true, "有目标时入口隐藏");
+    assert.equal(output.querySelectorAll(".goal-round-head").length, 1);
+    // 新会话的 snapshot 顶层 goal 是 null：必须清空，默认停在普通模式。
+    restore({ sessionId: "goal-new", title: "新会话", messages: [], goal: null });
+    assert.equal($(w, "goal-track").hidden, true, "顶部目标条清空");
+    assert.equal($(w, "goal-dock").hidden, true, "底部目标控制清空");
+    assert.equal($(w, "goal-enter").hidden, false, "普通模式入口回来");
+    assert.equal($(w, "goal-enter").disabled, false, "入口可用，但不自动点");
+    assert.equal(output.querySelectorAll(".goal-round-head").length, 0, "上一会话的轮次标记不残留");
+    assert.equal(output.querySelectorAll("[data-goal-round]").length, 0);
+    assert.equal(w.document.querySelector(".goal-dock").textContent, "", "不残留上一会话的目标文案");
+    assert.ok(!calls().some(([type]) => type === "goal.action"), "切换会话不会自动进入目标模式");
   } finally { dom.window.close(); }
 });

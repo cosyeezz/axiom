@@ -17,6 +17,11 @@ import { createQuestions } from "./questions.js";
 import { resolveCapabilities } from "./capabilities.js";
 import { memoryHooks } from "./session-memory.js";
 
+// Goal 模式挂载的四个工具：普通会话初始即停用，退出 Goal 时统一停用。
+const GOAL_TOOL_NAMES = ["goal_plan", "goal_evidence", "goal_block", "goal_progress"];
+// 在飞子任务：状态在跑且真有运行 promise（恢复时被暂停的 starting 没有 done，不算在飞）。
+const hasRunningTasks = (item) => [...item.tasks.jobs.values()].some((job) => ["starting", "running"].includes(job.status) && job.done);
+
 // 统一目录浏览：目录优先排序后按服务端过滤结果分页；无搜索词时不递归、不逐项 stat、跳过符号链接。
 const BROWSE_PAGE = 200;
 // 搜索（query 非空）改为递归 + 名称模糊匹配：限制返回条数并给递归目录数封顶，避免超大目录卡住请求。
@@ -835,7 +840,7 @@ export class Sessions {
         memory: memoryHooks(item, saveMemory),
         executionContext: () => item.goal.context(),
         shouldPause: () => !!item.goal.snapshot()?.pendingAction || item.goal.snapshot()?.phase === "paused",
-        inactiveTools: item.goal.active ? [] : ["goal_plan", "goal_evidence", "goal_block", "goal_progress"],
+        inactiveTools: item.goal.active ? [] : GOAL_TOOL_NAMES,
       });
     // 导入与库恢复的会话都没有完整消息快照（模型消息不再入库）：主代理历史从 Pi JSONL
     // 当前分支重建（撤回/压缩后的分支即真实历史），entryId 保留用于压缩折叠与撤回定位；
@@ -973,9 +978,29 @@ export class Sessions {
   async goalAction(id, action, text) {
     const item = await this.ensureLoaded(id);
     if (item.closing || item.configuring || item.cancelling) throw new Error("会话正在切换状态");
-    if (["enter", "confirm", "resume"].includes(action) && (item.status !== "idle" || [...item.tasks.jobs.values()].some((job) => ["starting", "running"].includes(job.status) && job.done))) throw new Error("请等待当前执行与子任务安全收尾");
+    // 退出目标模式：只允许在没有在飞工作时发生（UI 需先暂停并等安全点落定）。
+    // 清掉目标记录回到普通会话，历史与产物原样保留；goal_* 工具停用，通知冻结到用户下次显式输入。
+    if (action === "exit") {
+      if (item.status !== "idle" || hasRunningTasks(item)) throw new Error("Goal 仍在执行：请先暂停并在安全点落定后再退出");
+      // 先按「已通知」落盘未投递的结果（notified 是唯一持久化的待通知信号）：
+      // 否则重启时 listPendingSessionIds 会把已退出的会话重新拉起并自动唤醒。
+      // 只消费通知不删结果：任务记录、resultId 与正文照旧保留，用户仍可查看或 read_result。
+      // 顺序先于删目标：中途崩溃时目标还在（暂停态），不会出现无目标 + 未通知的自动唤醒窗口。
+      for (const job of item.tasks.jobs.values()) {
+        if (!job.resultId || job.notified) continue;
+        job.notified = true;
+        await this.persist(item, { task: { id: job.id, notified: true } });
+      }
+      item.goal.exit();
+      item.agent.disableTools?.(GOAL_TOOL_NAMES);
+      item.goalExited = true;
+      item.notificationsPaused = true;
+      return { goal: null, runId: item.runId };
+    }
+    if (["enter", "confirm", "resume"].includes(action) && (item.status !== "idle" || hasRunningTasks(item))) throw new Error("请等待当前执行与子任务安全收尾");
+    item.goalExited = false;
     item.goal.action(action, text);
-    item.agent.enableTools?.(["goal_plan", "goal_evidence", "goal_block", "goal_progress"]);
+    item.agent.enableTools?.(GOAL_TOOL_NAMES);
     item.notificationsPaused = this.goalNotificationsBlocked(item) || false;
     if (action === "enter" && !item.goal.snapshot().objective) return { goal: item.goal.snapshot(), runId: item.runId };
     if (["enter", "confirm", "resume"].includes(action)) {
@@ -1008,7 +1033,7 @@ export class Sessions {
 
   async advanceGoal(item) {
     if (item.closing || item.cancelling || item.configuring || item.status !== "idle" || item.notifying) return;
-    if ([...item.tasks.jobs.values()].some((job) => ["starting", "running"].includes(job.status) && job.done)) return;
+    if (hasRunningTasks(item)) return;
     let goal = item.goal.snapshot();
     if (!goal) return;
     if (goal.pendingAction || goal.phase === "paused") {
@@ -1045,6 +1070,8 @@ export class Sessions {
   }
 
   goalNotificationsBlocked(item) {
+    // 退出目标模式后冻结自动唤醒：排队中的子任务通知与续跑不得自行重启，直到用户显式输入。
+    if (item.goalExited) return true;
     const phase = item.goal?.snapshot()?.phase;
     return phase && !["running", "verifying"].includes(phase);
   }
@@ -1325,6 +1352,8 @@ export class Sessions {
       return item.runId;
     }
     if (item.status !== "idle" || item.configuring || item.closing) throw new Error("Session is busy");
+    // 用户显式输入：退出目标模式后的通知/续跑冻结到此为止，恢复正常会话行为。
+    item.goalExited = false;
     const goal = item.goal.snapshot();
     if (goal?.phase === "clarifying" && !goal.objective && !goal.rounds.length) item.goal.supplyObjective(text);
     if (item.title === "新会话" && !item.titleManual) item.title = (text.trim() || "[图片]").slice(0, 60);
@@ -1422,6 +1451,7 @@ export class Sessions {
     const item = await this.ensureLoaded(id);
     if (item.closing || item.cancelling) throw new Error("会话正在停止，暂时无法重试子任务");
     if (item.goal.active && this.goalNotificationsBlocked(item)) throw new Error("请先恢复 Goal，再重试子任务");
+    item.goalExited = false; // 显式重试子任务：退出 Goal 后的通知冻结到此解除
     item.notificationsPaused = false;
     return item.tasks.retry(taskId);
   }

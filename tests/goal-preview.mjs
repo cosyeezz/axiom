@@ -106,7 +106,10 @@ const chat = makeState("chat-plain", "普通会话 · 无目标");
 add(chat, { role: "user", content: "解释一下这个函数做什么。" });
 add(chat, { role: "assistant", content: text("它读取会话快照并返回首条可用消息。\n\n```js\nconst first = messages[0];\n```") });
 
-const states = [chat, ready, running, paused];
+// —— 新会话：空历史，不应出现任何目标面板 ——
+const fresh = makeState("chat-new", "新会话");
+
+const states = [chat, fresh, ready, running, paused];
 const goals = { "goal-running": runningGoal, "goal-paused": pausedGoal, "goal-ready": readyGoal };
 const sessions = {
   createAgent: { catalog: () => [{ provider: "preview", id: "axiom", key: "preview/axiom", name: "Axiom Preview", levels: ["off", "high"] }] },
