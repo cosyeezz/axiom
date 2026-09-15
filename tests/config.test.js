@@ -134,7 +134,7 @@ test("configuration applies to the main agent and is inherited by delegated chil
     assert.deepEqual(saved, defaults);
     assert.equal(selections.length, callsBeforeSave, "saving defaults does not create an agent");
     saved.capabilities.skills.length = 0;
-    assert.deepEqual(sessions.getDefaults(), defaults, "returned defaults are isolated");
+    assert.deepEqual(await sessions.workspaceDefaults(process.cwd()), defaults, "returned defaults are isolated");
     const normal = await sessions.create();
     const normalConfig = sessions.snapshot(normal).config;
     assert.equal(normalConfig.model, "c/d");
@@ -150,7 +150,7 @@ test("configuration applies to the main agent and is inherited by delegated chil
     assert.deepEqual(sessions.snapshot(newest).config.capabilitySelection, all.capabilities);
 
     await sessions.configure(newest, { model: "a/b", thinking: "high" });
-    assert.deepEqual(sessions.getDefaults(), defaults, "current configuration does not overwrite explicit defaults");
+    assert.deepEqual(await sessions.workspaceDefaults(process.cwd()), defaults, "current configuration does not overwrite explicit defaults");
     const custom = await sessions.create(undefined, { useDefaults: false });
     assert.equal(sessions.snapshot(custom).config.model, "a/b", "custom sessions still use the recent model");
     assert.equal(sessions.snapshot(custom).config.subagentModel, null);
@@ -166,7 +166,7 @@ test("configuration applies to the main agent and is inherited by delegated chil
       { subagentCapabilities: { skills: [], mcp: ["missing"], plugins: [] } },
     ]) {
       await assert.rejects(sessions.configureDefaults(process.cwd(), patch), /Unknown|未知/);
-      assert.deepEqual(sessions.getDefaults(), defaults, "failed saves keep previous defaults");
+      assert.deepEqual(await sessions.workspaceDefaults(process.cwd()), defaults, "failed saves keep previous defaults");
     }
     const catalog = sessions.createAgent.capabilities;
     sessions.createAgent.capabilities = async () => ({ skills: [], mcp: [], plugins: [] });
@@ -174,10 +174,14 @@ test("configuration applies to the main agent and is inherited by delegated chil
     const empty = { skills: [], mcp: [], plugins: [] };
     assert.deepEqual(sessions.snapshot(withoutAvailable).config.capabilitySelection, empty);
     assert.deepEqual(sessions.snapshot(withoutAvailable).config.subagentCapabilities, empty);
-    assert.deepEqual(sessions.getDefaults(), defaults, "filtering one workspace must not rewrite global defaults");
+    assert.deepEqual(await sessions.workspaceDefaults(process.cwd()), defaults, "capability filtering must not rewrite this workspace's defaults");
     await assert.rejects(sessions.create(undefined, { capabilities: defaults.capabilities }), /未知/);
     sessions.createAgent.capabilities = catalog;
+    // 全局兜底：先删掉本目录的独立配置，再把整份配置写进全局（只写补丁的话模型会落到该目录的最近模型）。
+    await sessions.deleteDefaults(process.cwd());
+    await sessions.configureDefaults(undefined, defaults);
     await sessions.configureDefaults(undefined, { thinking: "high", subagentThinking: "off", subagentCapabilities: "inherit", subagentModel: null });
+    assert.equal(sessions.getDefaults().thinking, "high");
     const following = await sessions.create();
     assert.equal(sessions.snapshot(following).config.thinking, "high");
     assert.equal(sessions.snapshot(following).config.subagentCapabilities, "inherit");

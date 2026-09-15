@@ -23,10 +23,6 @@
         <div class="brand">A<span>XIOM</span></div>
         <button id="open-workspace" class="secondary workspace-open"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l3 3h9v4M3 7v13h16l3-9H7l-4 9"/></svg>打开工作空间</button>
         <button id="new" class="secondary" title="在当前工作空间新建会话，使用默认新会话配置">＋ 新会话</button>
-        <section class="preset-group" aria-label="预设会话">
-          <button id="custom-new" class="secondary" aria-haspopup="dialog" aria-controls="create-session">预设会话配置</button>
-          <div id="preset-list"></div>
-        </section>
         <button id="import-session" class="secondary" title="导入 pi 的 .jsonl 会话文件">导入 pi 会话…</button>
         <label class="sr-only" for="search">搜索当前工作空间会话</label
         ><input id="search" type="search" placeholder="搜索当前工作空间会话…" />
@@ -243,8 +239,24 @@
         <p id="settings-feedback" role="status" aria-live="polite"></p>
         <section aria-labelledby="defaults-title">
           <h3 id="defaults-title">默认新会话设置</h3>
-          <p>选择后自动保存到本机，用于之后的普通新会话；自动压缩配置也会在服务重启后应用到已有会话，其他配置不变。</p>
-          <div id="defaults-editor"></div>
+          <p>每个工作目录可以保存一套独立配置，未单独配置的目录使用「全局默认」。选择后自动保存到本机，用于之后的新会话；自动压缩按配置范围应用，已在运行的会话保持自己的设置。</p>
+          <div class="selectors settings-selectors">
+            <label for="defaults-workspace"><span>配置范围</span><select id="defaults-workspace" aria-describedby="defaults-workspace-help"></select></label>
+            <button type="button" id="defaults-directory" class="secondary">选择目录…</button>
+            <button type="button" id="defaults-delete" class="secondary" hidden>删除此目录配置</button>
+          </div>
+          <p id="defaults-workspace-help">下拉只切换要编辑的配置，不切换当前会话。选择目录会从全局默认复制一份独立配置；删除后该目录回落全局默认。已有会话不会被改写。</p>
+          <div id="defaults-editor">
+            <form id="create-form" class="settings-body">
+              <p id="create-defaults-help">自动保存成功后，符合此配置范围的新会话使用这些设置。默认主代理模型沿用最近成功调整的主模型；能力清单按对应工作目录读取；自定义技能按来源保存：全局技能跨项目共用，项目技能仅用于当前工作目录。修改默认配置只影响新会话，不会自动改为全部能力，也不覆写已有会话。</p>
+              <p>复用本机 Pi 已启用的能力；Skills 按需读取，MCP 按配置连接。未选能力不会自动加载，但这不是权限沙箱。</p>
+              <div id="create-agents"></div>
+              <div id="create-compaction"></div>
+              <div id="create-retry"></div>
+              <p>网页支持插件的工具与指令逻辑，不提供终端专用组件；需要交互审批的操作不会自动放行。</p>
+              <p id="create-feedback" role="status" aria-live="polite"></p>
+            </form>
+          </div>
         </section>
       </div>
       <div class="settings-body" id="remote-panel" hidden>
@@ -293,31 +305,6 @@
         </section>
       </div>
       </div>
-    </dialog>
-    <dialog id="create-session" aria-labelledby="create-title">
-      <header>
-        <h2 id="create-title">预设会话配置</h2>
-        <form method="dialog"><button class="secondary" aria-label="关闭会话配置" autofocus>✕</button></form>
-      </header>
-      <form id="create-form" class="settings-body">
-        <div id="preset-fields" hidden>
-          <label>预设名称<input id="preset-name" maxlength="80" placeholder="例如：Axiom 开发"></label>
-          <label><input id="preset-fixed-cwd" type="checkbox">固定使用此工作目录（不勾选则使用当前目录）</label>
-          <button id="preset-directory" type="button" class="secondary">选择工作目录</button>
-          <button id="preset-delete" type="button" class="secondary" hidden>删除此预设</button>
-          <p class="settings-scope">预设只保存配置，不保存目录信任，也不会自动执行启动命令。</p>
-        </div>
-        <p id="create-workspace" class="settings-scope"></p>
-        <p id="create-defaults-help" hidden>自动保存成功后「新会话」使用此配置；默认主代理模型沿用最近成功调整的主模型。能力清单按当前目录读取，选择工作空间即信任其中的 Skills、插件和 MCP；自定义技能按来源保存：全局技能跨项目共用，项目技能仅用于当前工作空间；预设仍使用明确选择的路径。修改默认配置仅影响新会话，不会自动改为全部能力。</p>
-        <p>复用本机 Pi 已启用的能力；Skills 按需读取，MCP 按配置连接。未选能力不会自动加载，但这不是权限沙箱。</p>
-        <div id="create-agents"></div>
-        <div id="create-compaction"></div>
-        <div id="create-retry"></div>
-        <label id="create-trust-row" class="trust-row" hidden><input id="create-trust" type="checkbox">我信任此目录的 Pi / MCP 配置，允许其插件和服务在本机执行（仅本会话）</label>
-        <p>网页支持插件的工具与指令逻辑，不提供终端专用组件；需要交互审批的操作不会自动放行。</p>
-        <p id="create-feedback" role="status" aria-live="polite"></p>
-        <button id="create-submit" disabled>创建会话</button>
-      </form>
     </dialog>
   </body>
 </html>

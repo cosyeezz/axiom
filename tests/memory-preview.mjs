@@ -13,7 +13,7 @@ const sessions = {
   createAgent: { cwd: process.cwd(), catalog: () => [{ key: "preview/model", provider: "preview", id: "model", name: "Preview", levels: ["off"] }] },
   list: () => [{ id: state.sessionId, title: state.title, cwd: state.cwd, status: "idle", updatedAt: Date.now() }],
   snapshot: () => structuredClone(state), subscribe: () => () => {},
-  get: () => state, getDefaults: () => ({}), workspaceDefaults: async () => ({}), listPresets: async () => ({ presets: [] }),
+  get: () => state, getDefaults: () => ({}), workspaceDefaults: async () => ({}), listDefaults: () => ({ workspaces: [] }),
   refreshSkills: async () => [], close: async () => {},
 };
 const app = createServerApp(sessions);
