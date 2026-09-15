@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-15 09:43 -0700 桌面重构：授权与生命周期首段
+
+- 决策：用户明确授权在 feat/desktop-runtime 新增精简 Electron 主进程替换 Pake；不再等待外部 Electron 仓库。此提交仅为阶段一的生命周期基础，不代表桌面交付完成。
+- 内容：随包独立 Node 路径、绝对数据路径、并发启动去重、令牌/实例/版本/PID/地址就绪核对；停止超时保留失败且不强杀。worker 支持等待任务完成后保存退出，服务器关闭新写请求入口但保留状态读取。
+- 文件：desktop/backend-lifecycle.mjs、src/main.js、src/server.js、tests/backend-lifecycle.test.js、README.md、devlog.md、索引。
+- 验证：假进程/可控时钟三项及现有 service-settings-api 测试通过，git diff --check 通过；完整 npm test：610 通过、2 跳过、0 失败。尚未接入 Electron，未实现数据根归属锁、崩溃重试、安装包、签名或更新，不把替身验证当成成品验收。
+
+
 ## 2026-09-15 08:12 -0700 按用户要求移除旧回答标签兼容
 
 - 原因与决策：用户明确不需要历史兼容；展示解析仅识别 axiom_display，删除新旧标签配对表，恢复单组标签判定。旧 axiom_answer 不再作为展示协议解析，原始历史不改写。

@@ -1,5 +1,8 @@
 # Axiom
 
+> 桌面重构进度（功能分支）：已确认以精简 Electron 替换 Pake；当前仅落地可独立测试的 `desktop/backend-lifecycle.mjs` 与 worker 就绪/等待退出契约，尚未接入 Electron 或产出自包含安装包。生命周期测试：`node --test tests/backend-lifecycle.test.js`。超时不强杀、不视为保存成功、不允许启动第二个未确认归属的 worker。签名、数据归属锁、安装更新、会话空闲释放和应用内标签仍待实施。
+
+
 ## 独立 SVG 动画
 
 直接用浏览器打开 [`pelican-bicycle.html`](./pelican-bicycle.html)：自行车骑在鹈鹕背上的抽象 2D 循环动画，纯内联 SVG + CSS，无外部依赖，支持暂停和系统减少动态效果设置。

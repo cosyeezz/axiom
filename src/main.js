@@ -13,6 +13,7 @@ import { createServerApp } from "./server.js";
 import { createRemoteAccess, createTailscale } from "./remote.js";
 import { checkUpdate, validateCommit } from "./update.js";
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 
 const port = Number(process.env.AXIOM_PORT || 4319);
 if (!Number.isInteger(port) || port < 1 || port > 65535)
@@ -85,7 +86,9 @@ const app = createServerApp(sessions, service);
 let remoteReady = Promise.resolve();
 app.server.listen(port, "127.0.0.1", () => {
   console.log(`Axiom listening on http://127.0.0.1:${port}; workspace: ${cwd}`);
-  process.send?.({ type: "service.ready", instanceId: process.env.AXIOM_INSTANCE_ID, version: service.version });
+  process.send?.({ type: "service.ready", instanceId: process.env.AXIOM_INSTANCE_ID, version: service.version,
+    ...(process.env.AXIOM_DESKTOP === "1" ? { protocol: 1, token: process.env.AXIOM_START_TOKEN,
+      pid: process.pid, bundleVersion: process.env.AXIOM_BUNDLE_VERSION, url: `http://127.0.0.1:${port}` } : {}) });
   // 已进入关闭流程就不再开远程访问：否则这笔初始化会排在关库之后。
   if (closing) return;
   remoteReady = initRemote().catch((error) => console.error("远程访问初始化失败：", error));
@@ -101,8 +104,12 @@ async function initRemote() {
     console.error(`Tailscale 远程访问未启动：${status.error || "原因未知"}`);
 }
 let closing;
-function stop() {
+function stop(mode = "cancel") {
+  app.prepareStop();
   closing ||= remoteReady
+    .then(async () => {
+      if (mode === "wait") while (app.hasActiveWork()) await delay(100);
+    })
     // 远程初始化的首次配置写入必须先落定，否则它会写到已关闭的库上（异常还会被吞）。
     .then(() => app.close())
     // 关库必须排在 app.close 完全之后：会话/任务的最后一笔保存发生在关闭路径内。
@@ -113,9 +120,9 @@ function stop() {
       process.exit(1);
     });
 }
-for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, stop);
+for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => stop());
 process.on("message", (message) => {
-  if (message?.type === "service.stop") stop();
+  if (message?.type === "service.stop") stop(message.mode === "wait" ? "wait" : "cancel");
   if (message?.type === "service.resume" && !closing) app.resume();
 });
 if (process.send) process.once("disconnect", stop);

@@ -79,7 +79,8 @@ export function createServerApp(sessions, service = {}) {
   const remoteClients = new Set();
   const hasActiveWork = () => sessions.list().some((item) => item.status !== "idle") ||
     [...(sessions.items?.values() || [])].some((item) => item.configuring || item.loading ||
-      [...item.tasks.jobs.values()].some((task) => ["starting", "running"].includes(task.status)));
+      item.notifying || item.goalScheduled || item.notificationScheduled || item.pendingWrites?.size ||
+      [...(item.tasks?.jobs.values() || [])].some((task) => ["starting", "running"].includes(task.status)));
   const handleRequest = (req, res, isLocal) => {
     if (req.url === "/service/stop") {
       if (!isLocal) {
@@ -477,6 +478,9 @@ export function createServerApp(sessions, service = {}) {
     createRemoteServer,
     dropRemote,
     resume() { stopping = false; },
+    // 先关闭新写请求入口，再等已接受请求及任务收尾；状态读取仍可用。
+    prepareStop() { stopping = true; },
+    hasActiveWork: () => pending.size > 0 || hasActiveWork(),
     async close() {
       closing = true;
       stopping = true;
