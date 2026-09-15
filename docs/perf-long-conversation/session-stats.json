@@ -1,0 +1,17 @@
+{
+ "sessionId": "55e7fce9-c23b-441a-b6e1-1042321ad701",
+ "jsonlBytes": 11553809,
+ "jsonlLines": 1877,
+ "messageLines": 1831,
+ "roles": {
+  "user": 18,
+  "assistant": 803,
+  "toolResult": 1010
+ },
+ "compactions": 38,
+ "textChars": 2193665,
+ "thinkingChars": 1390647,
+ "codeBlocks": 145,
+ "codeChars": 31737,
+ "toolCallArgsChars": 562130
+}

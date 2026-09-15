@@ -1237,3 +1237,13 @@
 - 原因：保留讨论上下文时也能调整后续子代理模型和思考等级。
 - 内容：输入区增加角色下拉并复用现有选择器；session.configure 支持 nullable subagentThinking；保持默认配置及已启动任务不变。沿用现有暗色表面、细边框、圆角与键盘交互，不引入样式或依赖。
 - 涉及：public/app.js、public/index.html、src/protocol.js、src/sessions.js、tests/app.test.js、tests/config.test.js、README.md、devlog.md、代码索引。
+
+## 2026-09-14 长对话性能调研第 2 轮：真实长会话实测基线
+
+- 原因：第 1 轮只有代码级热点，需真实 goal 长会话的可复现数值支撑（首屏/切换耗时、DOM 节点数、流式单帧耗时、内存占用）。
+- 样本：goal 模式最大真实会话 55e7fce9-c23b-441a-b6e1-1042321ad701（JSONL 11,553,809B / 1877 行 / 1831 消息行：user 18、assistant 803、toolResult 1010 / 38 次 compaction / 正文 2,193,665 字符 / thinking 1,390,647 字符 / 145 个代码块）。筛选口径为 goal + 最大体量，而非用户口头报告的 aff6e5c0（588KB，体量不足以暴露卡顿）。
+- 修正：业务库实为 `~/.axiom-dev/axiom.db`（9.8MB，sessions 89/goals 3），先前假设的 `~/.axiom/axiom.db` 仅 12KB 且只有守护状态。
+- 环境：`VACUUM INTO` 只读复制库 + JSONL 副本，独立端口 4410 启动，测量全程不写入原始数据、不外传会话原文（临时导出的原文样本已删除）。
+- 实测（Chromium 152 / Playwright）：首屏 firstOutput 1171ms、lastOutput 1626ms、最大长任务 955ms；切换触发 1345ms 长任务；**DOM 节点 39,947**（#output 97、tool-record 332、call-group 48）；流式文本尾部每帧 7–12ms（峰值 33ms）、头部 2–4ms、64000 字符全量冷渲染 502.6ms；长会话堆 50.6MB、切换后 53.3MB、短会话 3.4MB。滚动与静止基线均 ~31.3ms/帧（≈32fps），滚动掉帧未复现；3 轮切换内存 +0.7MB 并随 GC 回落，短周期未复现持续增长。折叠成本：单个 tool-record 3–10ms，332 个全开 4.1ms 且 DOM 数不变（惰性渲染生效）。
+- 涉及：新增 docs/perf-long-conversation/（README.md 测量口径、session-stats.json、first-screen.json、switch.json、memory.json、scroll-fold.json、stream-render.json、measure.mjs）。产品代码（public/、src/、scripts/）零改动。
+- 验证：`git diff --stat -- public src scripts` 为空；两处实例（4399/4410）结果交叉印证。

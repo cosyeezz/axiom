@@ -1,0 +1,19 @@
+{
+  "scene": "打开长会话首屏（新页面 goto #session=<long>）",
+  "instance": "http://127.0.0.1:4410（worktree 代码基线 c80fa6a 对应的渲染实现 + MyWorkbench 依赖）",
+  "repeats": 3,
+  "runs": [
+    {"firstOutputMs": 1196, "lastOutputMs": 1656, "longTasksMs": [955, 418], "nodes": 39947, "outputChildren": 97, "toolRecords": 332, "callGroups": 48, "heapMB": 50.8, "nav": {"responseEnd": 3, "dcl": 92, "load": 94}, "resources": 24, "wallMs": 2730},
+    {"firstOutputMs": 1164, "lastOutputMs": 1615, "longTasksMs": [947, 412], "nodes": 39947, "outputChildren": 97, "toolRecords": 332, "callGroups": 48, "heapMB": 50.5, "nav": {"responseEnd": 3, "dcl": 87, "load": 90}, "resources": 24, "wallMs": 2691},
+    {"firstOutputMs": 1153, "lastOutputMs": 1608, "longTasksMs": [938, 413], "nodes": 39947, "outputChildren": 97, "toolRecords": 332, "callGroups": 48, "heapMB": 50.4, "nav": {"responseEnd": 3, "dcl": 85, "load": 87}, "resources": 24, "wallMs": 2680}
+  ],
+  "summary": {"firstOutputMsAvg": 1171, "lastOutputMsAvg": 1626, "maxLongTaskMs": 955, "nodes": 39947, "heapMBAvg": 50.6},
+  "earlierInstanceCrossCheck": {
+    "instance": "http://127.0.0.1:4399（同一隔离环境、早前一轮采集）",
+    "runs": [
+      {"firstOutputMs": 1134.8, "lastOutputMs": 1659.2, "longTasksMs": [67, 896, 413], "nodes": 39947, "outputChildren": 97, "toolRecords": 332, "callGroups": 48, "heapMB": 52.4},
+      {"firstOutputMs": 1073.1, "lastOutputMs": 1611.3, "longTasksMs": [879, 413], "nodes": 39947, "heapMB": 52.2},
+      {"firstOutputMs": 1173.3, "lastOutputMs": 1716.3, "longTasksMs": [972, 417], "nodes": 39947, "heapMB": 52.4}
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "scene": "会话切换（先打开短会话 eb6bc50b，再点击侧栏切到长会话 55e7fce9）",
+  "instance": "http://127.0.0.1:4410",
+  "note": "firstOutput/lastOutput 由页面级 MutationObserver 记录，从页面加载起计时；切到长会话后 firstOutput 仍为短会话的首次输出时间，lastOutput 才是长会话渲染完成时刻。长会话侧的代价以 longTasks 中切换后出现的 1345ms 长任务与 wallMs 为准。",
+  "run": {
+    "before": {"nodes": 2774, "outputChildren": 2, "toolRecords": 0, "callGroups": 0, "heapMB": 3.4, "longTasksMs": [100]},
+    "after": {"nodes": 39946, "outputChildren": 97, "toolRecords": 332, "callGroups": 48, "heapMB": 53.3, "firstOutputMs": 270, "lastOutputMs": 3757, "longTasksMs": [100, 1345, 73]},
+    "clickToWallMs": 3108,
+    "switchMaxLongTaskMs": 1345
+  },
+  "earlierInstanceCrossCheck": {
+    "instance": "http://127.0.0.1:4399（早前一轮）",
+    "before": {"nodes": 2685, "heapMB": 2.6, "firstOutputMs": 165.9},
+    "after": {"firstOutputMs": 2747.9, "lastOutputMs": 3151.5, "longTasksMs": [2431, 174, 84], "maxTaskMs": 2431, "nodes": 39946, "outputChildren": 97, "heapMB": 50.9, "wallMs": 5366}
+  }
+}
