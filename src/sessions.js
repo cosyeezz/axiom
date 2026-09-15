@@ -190,10 +190,14 @@ const RETRYABLE_SQLITE = new Set([5, 6, 7, 8, 10, 13, 14, 15]);
 const retryableWrite = (error) => error?.code === "ERR_SQLITE_ERROR" && RETRYABLE_SQLITE.has(error.errcode & 0xff);
 
 // 会话默认配置的库内布局：namespace "defaults" 下 "global" 是全局兜底，
-// 其余键 "workspace/<归一化cwd>" 是工作目录独立配置（含该目录的 projectSkills）。
+// 其余键 "workspace/<归一化cwd>" 是工作目录独立配置。每套配置一行，选择集完整落库
+// （项目技能就在 selection 里），不再有 selection 之外的旁路字段。
 const DEFAULTS_NS = "defaults";
 const WORKSPACE_PREFIX = "workspace/";
 const workspaceKeyOf = (cwd) => (process.platform === "win32" ? cwd.toLowerCase() : cwd);
+const CAPABILITY_KINDS = ["skills", "plugins", "mcp"];
+// 项目资源只认 catalog 给的 scope，绝不从路径猜（全局目录也可能落在 .agents/skills 之类路径下）。
+const catalogProjectsOf = (catalog, kind) => new Set(catalog[kind].filter((entry) => entry.scope === "project").map((entry) => entry.id));
 
 // projectSkills 结构自检：外层 {cwd: {角色: [字符串 id]}}，单目录项与整体都过一遍，坏数据不进入内存。
 function validateProjectSkills(projectSkills) {
@@ -205,6 +209,16 @@ function validateProjectSkillEntry(entry) {
   for (const [role, ids] of Object.entries(entry)) {
     if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) throw new Error("无效的项目技能选择");
   }
+}
+// 旧记录把项目技能存在 selection 之外的 projectSkills（{角色: [技能 id]}）：读入时并回完整 selection，
+// 此后只写完整 selection，该字段自然消亡。
+function mergeLegacyProjectSkills(selection, entry = {}) {
+  for (const [role, ids] of Object.entries(entry)) {
+    const selected = selection[role];
+    if (!selected || selected === "inherit") continue;
+    selected.skills = [...new Set([...selected.skills, ...ids])];
+  }
+  return selection;
 }
 
 export class Sessions {
@@ -222,7 +236,6 @@ export class Sessions {
     this.taskBudget = structuredClone(taskBudgetDefaults);
     this.loadTaskBudget();
     this.savingDefaults = Promise.resolve();
-    this.projectSkills = {};
     // 工作目录独立默认配置：归一化 cwd → { cwd, selection }；读取时优先目录，无目录回落全局。
     this.workspaceSelections = new Map();
     this.createAgent = createAgent;
@@ -235,7 +248,6 @@ export class Sessions {
   // 默认配置验证与装配：schema 校验后并入全局内存值；验证通过是写库与迁移标记的前提。
   applyDefaults(data) {
     const parsed = selectionSchema.strict().parse(data ?? {});
-    this.projectSkills = {};
     Object.assign(this.defaultSelection, parsed);
   }
 
@@ -265,8 +277,8 @@ export class Sessions {
     }
   }
 
-  // 旧版一条 defaults 记录 = 一份全局配置 + projectSkills 表。拆成「全局兜底 + 各工作目录独立配置」：
-  // 目录配置 = 旧全局配置合并该目录自己的项目技能，能力不多不少。
+  // 旧版一条 defaults 记录 = 一份全局配置 + projectSkills 表。拆成「全局兜底 + 各工作目录独立配置」，
+  // 目录记录沿用旧形态（旁人审计在读侧统一兼容），下次用户保存时升级成完整 selection。
   migrateLegacyStore(data) {
     const { projectSkills = {}, ...saved } = data ?? {};
     // 旧记录只存了用户改过的键：与内置默认合并后才是完整配置（目录配置不再依赖全局兜底）。
@@ -299,8 +311,8 @@ export class Sessions {
       try {
         const selection = selectionSchema.strict().parse(value.selection);
         validateProjectSkillEntry(value.projectSkills ?? {});
-        this.workspaceSelections.set(scope, { cwd: value.cwd ?? scope, selection });
-        this.projectSkills[scope] = value.projectSkills ?? {};
+        this.workspaceSelections.set(scope, { cwd: value.cwd ?? scope,
+          selection: mergeLegacyProjectSkills(selection, value.projectSkills) });
       } catch (error) {
         console.warn(`工作目录默认配置读取失败，已跳过 ${value.cwd || scope}：${error.message}`);
       }
@@ -363,26 +375,27 @@ export class Sessions {
     const scope = workspaceKeyOf(cwd || resolve(workspace));
     this.database?.delete(DEFAULTS_NS, WORKSPACE_PREFIX + scope);
     this.workspaceSelections.delete(scope);
-    delete this.projectSkills[scope];
     // 目录配置已删 → 该目录已加载会话立即回落全局压缩配置，别的目录的会话不动。
     await this.pushCompaction((itemScope) => itemScope === scope, this.defaultSelection.compaction ?? compactionDefaults);
     return { deleted: true, cwd };
   }
   async workspaceDefaults(workspace = this.createAgent.cwd || process.cwd()) {
     const cwd = await realpath(workspace);
-    const key = workspaceKeyOf(cwd);
-    const next = structuredClone(this.defaultsFor(cwd));
+    const scope = workspaceKeyOf(cwd);
+    const record = this.workspaceSelections.get(scope);
+    const next = structuredClone(record?.selection ?? this.defaultSelection);
     if (!this.createAgent.capabilities) return next;
     const catalog = await this.createAgent.capabilities(cwd);
     for (const role of ["capabilities", "subagentCapabilities"]) {
       const selection = next[role];
       if (!selection || selection === "inherit") continue;
+      // 别名目录的绝对路径先归一，才能与 catalog 的 id 对上。
       selection.skills = await Promise.all(selection.skills.map((id) => realpath(id).catch(() => id)));
-      const current = catalog.skills.filter((s) => s.scope === "project").map((s) => s.id);
-      // 旧版全局配置里的项目路径仅在所属项目保留，绝不按同名技能替换。
-      const globals = selection.skills.filter((id) => !current.includes(id) &&
-        (!/[/\\](?:\.pi|\.agents)[/\\]skills[/\\]/.test(id) || catalog.skills.some((s) => s.id === id && s.scope !== "project")));
-      selection.skills = [...globals, ...(this.projectSkills[key]?.[role] ?? selection.skills.filter((id) => current.includes(id)))];
+      for (const kind of CAPABILITY_KINDS) {
+        const available = new Set(catalog[kind].map((entry) => entry.id));
+        // 只过滤返回副本，不改库内选择；资源重新出现后无需重启即可恢复。
+        selection[kind] = selection[kind].filter((id) => available.has(id));
+      }
     }
     return next;
   }
@@ -397,27 +410,28 @@ export class Sessions {
     const cwd = await realpath(workspace || this.createAgent.cwd || process.cwd());
     const scope = workspaceKeyOf(cwd);
     const next = scoped ? await this.workspaceDefaults(cwd) : structuredClone(this.defaultSelection);
-    for (const key of Object.keys(next))
-      if (selection[key] !== undefined) next[key] = structuredClone(selection[key]);
-    const { catalog } = await this.validateSelection(cwd, next);
+    // 只认 selection schema 里的键：调用方会把整个 WS 请求传进来，未知键不能进库；
+    // 也不能按 next 已有键遍历——旧记录只存过用户改过的键，那样补丁会被整段丢掉。
+    const explicit = Object.keys(selectionSchema.shape).filter((key) => selection[key] !== undefined);
+    for (const key of explicit) next[key] = structuredClone(selection[key]);
+    // 显式提交的键严格过关（不能选别的目录的资源）；继承自旧记录的键允许已不可用（跳过并剔除），
+    // 否则一个被删掉的项目技能文件会让用户连 thinking 都改不了。
+    const inherited = Object.keys(selectionSchema.shape).filter((key) => selection[key] === undefined);
+    const { catalog } = await this.validateSelection(cwd, next, inherited);
+    // 全局兜底跨工作目录共用：显式提交的项目资源一律拒绝，否则会把服务目录的项目能力
+    // 写进全局再泄漏给别的目录；显式 null（=全部）保留运行时语义，不落库也不展开。
+    if (!scoped && catalog) {
+      for (const role of explicit.filter((key) => ["capabilities", "subagentCapabilities"].includes(key) && next[key] != null && next[key] !== "inherit")) {
+        for (const kind of CAPABILITY_KINDS) {
+          const leaked = next[role][kind].filter((id) => catalogProjectsOf(catalog, kind).has(id));
+          if (leaked.length) throw new Error(`全局默认配置不能包含项目${kind}：${leaked.join("、")}`);
+        }
+      }
+    }
     const result = structuredClone(next);
     if (scoped) {
-      // 项目技能属于目录：落库前从 selection 里摘出，改目录时不会把别的项目的路径带过去。
-      let projectSkills = this.projectSkills[scope] ?? {};
-      if (catalog) {
-        const entry = {};
-        for (const role of ["capabilities", "subagentCapabilities"]) {
-          const selected = next[role];
-          if (!selected || selected === "inherit") continue;
-          const projectIds = catalog.skills.filter((s) => s.scope === "project").map((s) => s.id);
-          entry[role] = selected.skills.filter((id) => projectIds.includes(id));
-          selected.skills = selected.skills.filter((id) => !projectIds.includes(id));
-        }
-        projectSkills = entry;
-      }
-      // 先成功落库再改内存：写失败不能让它实际生效。
-      this.database?.set(DEFAULTS_NS, WORKSPACE_PREFIX + scope, { cwd, selection: next, projectSkills });
-      this.projectSkills[scope] = projectSkills;
+      // 项目技能就在这份完整 selection 里：先成功落库再改内存，写失败不能让它实际生效。
+      this.database?.set(DEFAULTS_NS, WORKSPACE_PREFIX + scope, { cwd, selection: next });
       this.workspaceSelections.set(scope, { cwd, selection: next });
     } else {
       this.database?.set(DEFAULTS_NS, "global", next);

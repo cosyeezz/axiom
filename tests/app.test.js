@@ -756,8 +756,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     await settle();
     assert.equal($("create-main-model").value, "other/child");
     assert.equal($("create-main-mode").value, "custom");
-    assert.equal(window.document.querySelectorAll('.capability-agent:first-child input[data-kind="skills"]:checked').length, 2);
-    assert.match($("create-agents").textContent, /当前目录不可用 · missing-skill/, "unavailable defaults are not silently removed");
+    assert.equal(window.document.querySelectorAll('.capability-agent:first-child input[data-kind="skills"]:checked').length, 1);
+    assert.doesNotMatch($("create-agents").textContent, /missing-skill/, "不能把当前目录清单之外的能力补成可选项");
     assert.equal(window.document.querySelectorAll('.capability-agent:last-child input[data-kind]:checked').length, 0);
     needsTrust = false;
     defaults.capabilities.skills.pop();

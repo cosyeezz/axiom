@@ -3354,9 +3354,7 @@ function createAgentPicker(role, title, catalog, initial) {
   const pickers = document.createElement("div");
   pickers.hidden = mode.value !== "custom";
   for (const [kind, labelText] of [["skills", "Skills"], ["mcp", "MCP 服务"], ["plugins", "Extensions 扩展"]]) {
-    const entries = [...catalog[kind], ...(initial.capabilities?.[kind] || [])
-      .filter((id) => !catalog[kind].some((entry) => entry.id === id))
-      .map((id) => ({ id, name: `当前目录不可用 · ${capabilityName(id)}` }))];
+    const entries = catalog[kind];
     const details = document.createElement("details");
     details.className = "capability-picker";
     const heading = document.createElement("summary");
@@ -3372,7 +3370,7 @@ function createAgentPicker(role, title, catalog, initial) {
       checkbox.value = entry.id;
       checkbox.dataset.kind = kind;
       checkbox.onchange = update;
-      label.append(checkbox, document.createTextNode(kind === "skills" && entry.scope
+      label.append(checkbox, document.createTextNode(entry.scope
         ? `${entry.scope === "project" ? "[当前项目]" : "[全局]"} ${entry.name}` : entry.name));
       list.append(label);
     }

@@ -584,6 +584,13 @@
 - 修复：pi.js 识别尾部取消question，以新调用编号追加原题并直接执行，结果写入JSONL和内存并发出UI事件；Sessions.retry按canReask路由。
 - 防再犯：真实SDK测试确认重开不发模型请求、再次取消可恢复、回答才续跑；不得重复原toolCallId结果或回退丢其它工具记录。
 
+## 2026-09-14：工作空间技能勾选后没有保存
+
+- 症状：旧目录记录只含部分字段，新能力选择被忽略。
+- 根因：保存遍历已存对象的键，而非允许的 selection schema；项目技能另存旁路增加读写不一致。
+- 修复：sessions.js 按 schema 接收补丁、旧 projectSkills 合并到完整目录 selection，落盘后更新内存；capabilities.js/server.js 按来源隔离全局与项目资源，app.js 不把目录外能力补成选项。
+- 防回归：project-skills.test.js 覆盖缺字段记录、新勾选、重载、目录别名与跨目录拒绝；capabilities.test.js 验证 MCP/插件来源与目录刷新；默认配置生效无需重启。
+
 ### 2026-09-14 前端公共模块漏注册导致永久连接中
 - 症状：health 正常，页面显示但一直连接中。
 - 根因：d99efdc 的 markdown-scan.js 被标签模块静态导入，server assets 未注册，404 阻断 app.js 执行；本地文件测试加载器绕过 HTTP 未发现。

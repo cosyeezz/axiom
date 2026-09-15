@@ -174,7 +174,8 @@ test("configuration applies to the main agent and is inherited by delegated chil
     const empty = { skills: [], mcp: [], plugins: [] };
     assert.deepEqual(sessions.snapshot(withoutAvailable).config.capabilitySelection, empty);
     assert.deepEqual(sessions.snapshot(withoutAvailable).config.subagentCapabilities, empty);
-    assert.deepEqual(await sessions.workspaceDefaults(process.cwd()), defaults, "capability filtering must not rewrite this workspace's defaults");
+    assert.deepEqual(await sessions.workspaceDefaults(process.cwd()), { ...defaults, capabilities: empty, subagentCapabilities: empty }, "编辑器只提供当前可用能力");
+    assert.deepEqual(sessions.defaultsFor(process.cwd()), defaults, "过滤返回副本不能改写已保存配置");
     await assert.rejects(sessions.create(undefined, { capabilities: defaults.capabilities }), /未知/);
     sessions.createAgent.capabilities = catalog;
     // 全局兜底：先删掉本目录的独立配置，再把整份配置写进全局（只写补丁的话模型会落到该目录的最近模型）。
