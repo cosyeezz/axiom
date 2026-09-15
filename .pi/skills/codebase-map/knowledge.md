@@ -596,3 +596,9 @@
 - 根因：d99efdc 的 markdown-scan.js 被标签模块静态导入，server assets 未注册，404 阻断 app.js 执行；本地文件测试加载器绕过 HTTP 未发现。
 - 修复：src/server.js 补路由，tests/server.test.js 验证标签模块和扫描模块 HTTP 200、JavaScript MIME 及缓存。
 - 防再犯：新增或抽取浏览器模块时检查传递依赖路由，不以磁盘 import 成功替代 HTTP 验证。
+
+
+### 2026-09-15 单个子任务卡住缺少定点取消入口
+- 症状：无超时工具迟迟不返回，append 只能排队，主代理无法只中断该任务。
+- 修复：src/tools.js 注册 cancel_task，src/tasks.js 定点 abort 并沿用终态/通知流程；不设置整会话 cancelling，不回滚已发生副作用。
+- 防再犯：任务测试覆盖启动竞态、兄弟隔离、重复取消与未知ID，Sessions 集成验证终态先落库、主轮结束后通知可读。取消回执不得作为 Goal 验收证据；无默认超时和 Goal 强停退化为暂停另行处理。
