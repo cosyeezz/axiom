@@ -2066,3 +2066,11 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 决策：不加依赖、不加第二条业务连接、不加应用优先级队列，不改协议 seq 含义。归并失败停止后续事件并受控重快照，不再吞错推进；32 MiB 单帧上限会限制超大历史快照，明确留给 05 分页恢复，不用无限重下载掩盖限制。自动恢复上限 5 次，维护超过窗口后手动恢复。
 - 复核修复：断线作废旧渲染尾部；等待旧初始化退出再建新连接；重连坏会话回落初始化；跨工作空间打开后恢复本页订阅；bfcache pagehide 不销毁通信层；1009 清空队列。
 - 测试：新增 tests/realtime-transport.test.js，迁移 public-source 夹具与 app/goal/model/remote/snapshot 集成用例；全量 npm test 验证，未运行真实业务服务或模型，未安装依赖（仅 junction 复用已有 node_modules）。同步 README 与 codebase-map 架构/模块索引。
+
+
+### 2026-09-15 历史页复核补修与再次验证
+- 原因：分页后附属记录不能继续按全量历史假设展示；工具结束事件通常不重复携带参数。
+- 内容：src/sessions.js 按字段合并工具状态；public/app.js 禁止旧页末尾重试、只追加未落位的活动子代理、压缩消息锚点绑定摘要卡片。未改模型上下文、协议排序或流式播放算法。
+- 回归：tests/history-reading.test.js 新增旧页/最新页重试、页外子代理、压缩锚点；tests/session-history.test.js 新增 start→end 参数及窗口快照保真。全量串行 640 项，638 通过、2 跳过、0 失败（143.2 秒），git diff --check 通过。
+- 实测：docs/perf-history-session/followup.json 独立采集 3 轮（不覆盖旧 after.json），1831 条首输出 148–163ms、节点 1930、GC 后堆 3.9MB；6 次切换节点稳定，翻页断言全部通过。图片/流式布局锚点与长时泄漏尚未验收。
+- 同步文件：README.md、docs/perf-history-session/README.md、.pi/skills/codebase-map/{INDEX.md,knowledge.md}。本次只提交/推送功能分支，不集成 master，不清理 worktree。

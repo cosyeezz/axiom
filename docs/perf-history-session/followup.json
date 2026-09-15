@@ -1,0 +1,668 @@
+{
+ "scene": "当前 worktree（含未提交改动） × 假源隔离夹具：短会话（20 条）/ 长会话（1831 条）首屏",
+ "generatedAt": "2026-09-15T16:26:09.626Z",
+ "completionCriterion": {
+  "rule": "#output 子树静默 700ms 无任何 DOM 变更 = 首屏完成；硬超时 60000ms 抛错",
+  "postCheck": "完成后追加 1500ms 静默，复核全量快照（节点数/子节点数/消息数/末次变更时刻）不漂移",
+  "probes": [
+   "PerformanceObserver longtask",
+   "MutationObserver #output(childList/subtree)",
+   "performance.memory.usedJSHeapSize（含 window.gc() 后采样）",
+   "navigation timing"
+  ]
+ },
+ "provenance": {
+  "repo": "F:\\worktrees\\Axiom-history-performance",
+  "mode": "current",
+  "head": "6bf76fef7cec7b2401be3d8b7afc3ae4d9600da5",
+  "codeFiles": 53,
+  "codeDigest": "7696444867898d58f28f3d5cda54f5db2e1fa1074951eb460369ccd396ad41ea",
+  "codeSha256": {
+   "appJs": "51150aab8174c3340be0e398ea4f4607059d24e0b56612f4784821c9ac561f47",
+   "sessionsJs": "f19c2c2fdfa24efb8fe5ed87a055064c337b7113d8989c382e8ad1e84258408f",
+   "sessionHistoryJs": "efe5eca2b511aa2bd018b982c3a69939860bb49c65bc30b0801674df4bb1b2f2"
+  },
+  "dirtyPaths": [
+   "public/app.js",
+   "src/sessions.js"
+  ],
+  "workingTreeUsed": true,
+  "fixture": {
+   "generator": "make-fake-home.mjs",
+   "home": "C:\\Users\\dane\\AppData\\Local\\Temp\\axiom-perf-history-Q2vqc9\\fake-home",
+   "longId": "fake1ong00000000000000000000000001",
+   "shortId": "fake5hort0000000000000000000000001",
+   "files": {
+    "fake1ong00000000000000000000000001": {
+     "bytes": 9978411,
+     "sha256": "160b9160da4bbceef20eb4c85afd9dbf9bcb490d9636ad9175c4605155d4bc23",
+     "sha256Normalized": "dc99297f4f663526f4e1087d512576157a550c4c217f17cfc4dd6986bc811533"
+    },
+    "fake5hort0000000000000000000000001": {
+     "bytes": 105822,
+     "sha256": "8ffb2cc0c29201484ea3545626d8c1ee51848840de58d07e375b34e401a8ab78",
+     "sha256Normalized": "438faa94673c55cdf50cd58d351300ee5705afdd8e03668c4ad88c4296b3fb28"
+    }
+   },
+   "hashNote": "原始 sha256 含临时 home 路径（session 头部 cwd），逐次运行必然不同；sha256Normalized 把 home 换成 <home> 后计算，用于跨次/跨基线确认夹具内容一致。"
+  },
+  "isolation": "独立 AXIOM_HOME/AXIOM_PORT/AXIOM_CWD/PI_CODING_AGENT_DIR 临时实例；不连网、不调用模型、不读写 ~/.axiom",
+  "playwright": "C:\\Users\\dane\\AppData\\Roaming\\npm\\node_modules\\@playwright\\mcp\\node_modules\\playwright\\index.js"
+ },
+ "runs": [
+  {
+   "sessionId": "fake5hort0000000000000000000000001",
+   "wallMs": 2500,
+   "externalRequests": [
+    "http://127.0.0.1:64671/status"
+   ],
+   "scene": "short-firstScreen#1",
+   "firstOutputMs": 139,
+   "lastOutputMs": 144,
+   "lastDomMutationMs": 222,
+   "settledAtMs": 934,
+   "mutations": 260,
+   "addedNodes": 17,
+   "nodes": 1014,
+   "outputChildren": 17,
+   "messages": 9,
+   "toolRecords": 12,
+   "callGroups": 9,
+   "heapMB": 3.6,
+   "heapMBSampled": 3.6,
+   "longTaskEntries": [],
+   "longTasks": [],
+   "phaseStartMs": 0,
+   "nav": {
+    "responseEnd": 3,
+    "dcl": 77,
+    "load": 80
+   },
+   "stableRecheck": {
+    "nodes": 1014,
+    "heapMB": 3.6,
+    "mutations": 260
+   }
+  },
+  {
+   "sessionId": "fake1ong00000000000000000000000001",
+   "wallMs": 2470,
+   "externalRequests": [
+    "http://127.0.0.1:64671/status"
+   ],
+   "scene": "long-firstScreen#1",
+   "firstOutputMs": 149,
+   "lastOutputMs": 198,
+   "lastDomMutationMs": 221,
+   "settledAtMs": 930,
+   "mutations": 806,
+   "addedNodes": 56,
+   "nodes": 1930,
+   "outputChildren": 55,
+   "messages": 27,
+   "toolRecords": 33,
+   "callGroups": 28,
+   "heapMB": 3.9,
+   "heapMBSampled": 3.9,
+   "longTaskEntries": [],
+   "longTasks": [],
+   "phaseStartMs": 0,
+   "nav": {
+    "responseEnd": 2,
+    "dcl": 77,
+    "load": 79
+   },
+   "stableRecheck": {
+    "nodes": 1930,
+    "heapMB": 3.9,
+    "mutations": 806
+   }
+  },
+  {
+   "sessionId": "fake5hort0000000000000000000000001",
+   "wallMs": 2438,
+   "externalRequests": [
+    "http://127.0.0.1:64671/status"
+   ],
+   "scene": "short-firstScreen#2",
+   "firstOutputMs": 137,
+   "lastOutputMs": 141,
+   "lastDomMutationMs": 185,
+   "settledAtMs": 887,
+   "mutations": 260,
+   "addedNodes": 17,
+   "nodes": 1014,
+   "outputChildren": 17,
+   "messages": 9,
+   "toolRecords": 12,
+   "callGroups": 9,
+   "heapMB": 3.6,
+   "heapMBSampled": 3.6,
+   "longTaskEntries": [],
+   "longTasks": [],
+   "phaseStartMs": 0,
+   "nav": {
+    "responseEnd": 2,
+    "dcl": 81,
+    "load": 83
+   },
+   "stableRecheck": {
+    "nodes": 1014,
+    "heapMB": 3.6,
+    "mutations": 260
+   }
+  },
+  {
+   "sessionId": "fake1ong00000000000000000000000001",
+   "wallMs": 2493,
+   "externalRequests": [
+    "http://127.0.0.1:64671/status"
+   ],
+   "scene": "long-firstScreen#2",
+   "firstOutputMs": 163,
+   "lastOutputMs": 212,
+   "lastDomMutationMs": 231,
+   "settledAtMs": 937,
+   "mutations": 806,
+   "addedNodes": 56,
+   "nodes": 1930,
+   "outputChildren": 55,
+   "messages": 27,
+   "toolRecords": 33,
+   "callGroups": 28,
+   "heapMB": 3.9,
+   "heapMBSampled": 3.9,
+   "longTaskEntries": [
+    {
+     "start": 109,
+     "dur": 54
+    }
+   ],
+   "longTasks": [
+    54
+   ],
+   "phaseStartMs": 0,
+   "nav": {
+    "responseEnd": 2,
+    "dcl": 82,
+    "load": 84
+   },
+   "stableRecheck": {
+    "nodes": 1930,
+    "heapMB": 3.9,
+    "mutations": 806
+   }
+  },
+  {
+   "sessionId": "fake5hort0000000000000000000000001",
+   "wallMs": 2434,
+   "externalRequests": [
+    "http://127.0.0.1:64671/status"
+   ],
+   "scene": "short-firstScreen#3",
+   "firstOutputMs": 132,
+   "lastOutputMs": 135,
+   "lastDomMutationMs": 182,
+   "settledAtMs": 883,
+   "mutations": 260,
+   "addedNodes": 17,
+   "nodes": 1014,
+   "outputChildren": 17,
+   "messages": 9,
+   "toolRecords": 12,
+   "callGroups": 9,
+   "heapMB": 3.6,
+   "heapMBSampled": 3.6,
+   "longTaskEntries": [],
+   "longTasks": [],
+   "phaseStartMs": 0,
+   "nav": {
+    "responseEnd": 2,
+    "dcl": 79,
+    "load": 81
+   },
+   "stableRecheck": {
+    "nodes": 1014,
+    "heapMB": 3.6,
+    "mutations": 260
+   }
+  },
+  {
+   "sessionId": "fake1ong00000000000000000000000001",
+   "wallMs": 2482,
+   "externalRequests": [
+    "http://127.0.0.1:64671/status"
+   ],
+   "scene": "long-firstScreen#3",
+   "firstOutputMs": 148,
+   "lastOutputMs": 198,
+   "lastDomMutationMs": 218,
+   "settledAtMs": 929,
+   "mutations": 806,
+   "addedNodes": 56,
+   "nodes": 1930,
+   "outputChildren": 55,
+   "messages": 27,
+   "toolRecords": 33,
+   "callGroups": 28,
+   "heapMB": 3.9,
+   "heapMBSampled": 3.9,
+   "longTaskEntries": [],
+   "longTasks": [],
+   "phaseStartMs": 0,
+   "nav": {
+    "responseEnd": 2,
+    "dcl": 78,
+    "load": 80
+   },
+   "stableRecheck": {
+    "nodes": 1930,
+    "heapMB": 3.9,
+    "mutations": 806
+   }
+  }
+ ],
+ "summary": {
+  "short": {
+   "runs": 3,
+   "firstOutputMs": [
+    139,
+    137,
+    132
+   ],
+   "firstOutputMsAvg": 136,
+   "lastOutputMsAvg": 140,
+   "settledAtMsAvg": 901,
+   "maxLongTaskMs": [
+    0,
+    0,
+    0
+   ],
+   "maxLongTaskRenderMs": [
+    0,
+    0,
+    0
+   ],
+   "longTasksOver50Ms": [
+    0,
+    0,
+    0
+   ],
+   "nodes": 1014,
+   "outputChildren": 17,
+   "messages": 9,
+   "toolRecords": 12,
+   "callGroups": 9,
+   "heapMB": [
+    3.6,
+    3.6,
+    3.6
+   ],
+   "heapMBAvg": 3.6,
+   "heapBeforeGcMB": [
+    3.6,
+    3.6,
+    3.6
+   ],
+   "wallMs": [
+    2500,
+    2438,
+    2434
+   ]
+  },
+  "long": {
+   "runs": 3,
+   "firstOutputMs": [
+    149,
+    163,
+    148
+   ],
+   "firstOutputMsAvg": 153,
+   "lastOutputMsAvg": 203,
+   "settledAtMsAvg": 932,
+   "maxLongTaskMs": [
+    0,
+    54,
+    0
+   ],
+   "maxLongTaskRenderMs": [
+    0,
+    54,
+    0
+   ],
+   "longTasksOver50Ms": [
+    0,
+    1,
+    0
+   ],
+   "nodes": 1930,
+   "outputChildren": 55,
+   "messages": 27,
+   "toolRecords": 33,
+   "callGroups": 28,
+   "heapMB": [
+    3.9,
+    3.9,
+    3.9
+   ],
+   "heapMBAvg": 3.9,
+   "heapBeforeGcMB": [
+    3.9,
+    3.9,
+    3.9
+   ],
+   "wallMs": [
+    2470,
+    2493,
+    2482
+   ]
+  }
+ },
+ "browser": {
+  "launch": "headless=true, executablePath=C:\\Users\\dane\\AppData\\Local\\ms-playwright\\chromium-1223\\chrome-win64\\chrome.exe",
+  "args": [
+   "--js-flags=--expose-gc"
+  ]
+ },
+ "env": {
+  "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.0.0 Safari/537.36",
+  "hw": 16,
+  "deviceMemory": 32,
+  "gcExposed": true,
+  "viewport": [
+   1280,
+   720
+  ]
+ },
+ "switchTrend": {
+  "cycles": 3,
+  "switches": 6,
+  "steps": [
+   {
+    "scene": "switch#1->short",
+    "sessionId": "fake5hort0000000000000000000000001",
+    "nodes": 1013,
+    "messages": 9,
+    "outputChildren": 17,
+    "toolRecords": 12,
+    "callGroups": 9,
+    "heapMB": 4.5,
+    "afterHeapMB": 4.4,
+    "mutationsInStep": 263,
+    "addedNodesInStep": 17,
+    "settleMs": 838,
+    "maxLongTaskInStepMs": 0
+   },
+   {
+    "scene": "switch#1->long",
+    "sessionId": "fake1ong00000000000000000000000001",
+    "nodes": 1929,
+    "messages": 27,
+    "outputChildren": 55,
+    "toolRecords": 33,
+    "callGroups": 28,
+    "heapMB": 4.8,
+    "afterHeapMB": 4.8,
+    "mutationsInStep": 803,
+    "addedNodesInStep": 56,
+    "settleMs": 861,
+    "maxLongTaskInStepMs": 0
+   },
+   {
+    "scene": "switch#2->short",
+    "sessionId": "fake5hort0000000000000000000000001",
+    "nodes": 1013,
+    "messages": 9,
+    "outputChildren": 17,
+    "toolRecords": 12,
+    "callGroups": 9,
+    "heapMB": 4.6,
+    "afterHeapMB": 4.6,
+    "mutationsInStep": 263,
+    "addedNodesInStep": 17,
+    "settleMs": 839,
+    "maxLongTaskInStepMs": 0
+   },
+   {
+    "scene": "switch#2->long",
+    "sessionId": "fake1ong00000000000000000000000001",
+    "nodes": 1929,
+    "messages": 27,
+    "outputChildren": 55,
+    "toolRecords": 33,
+    "callGroups": 28,
+    "heapMB": 4.9,
+    "afterHeapMB": 4.9,
+    "mutationsInStep": 803,
+    "addedNodesInStep": 56,
+    "settleMs": 855,
+    "maxLongTaskInStepMs": 0
+   },
+   {
+    "scene": "switch#3->short",
+    "sessionId": "fake5hort0000000000000000000000001",
+    "nodes": 1013,
+    "messages": 9,
+    "outputChildren": 17,
+    "toolRecords": 12,
+    "callGroups": 9,
+    "heapMB": 4.7,
+    "afterHeapMB": 4.7,
+    "mutationsInStep": 263,
+    "addedNodesInStep": 17,
+    "settleMs": 811,
+    "maxLongTaskInStepMs": 0
+   },
+   {
+    "scene": "switch#3->long",
+    "sessionId": "fake1ong00000000000000000000000001",
+    "nodes": 1929,
+    "messages": 27,
+    "outputChildren": 55,
+    "toolRecords": 33,
+    "callGroups": 28,
+    "heapMB": 4.9,
+    "afterHeapMB": 4.9,
+    "mutationsInStep": 803,
+    "addedNodesInStep": 56,
+    "settleMs": 875,
+    "maxLongTaskInStepMs": 0
+   }
+  ],
+  "longSessionNodes": [
+   1929,
+   1929,
+   1929
+  ],
+  "longSessionHeapMB": [
+   4.8,
+   4.9,
+   4.9
+  ],
+  "longSessionSettleMs": [
+   861,
+   855,
+   875
+  ],
+  "longSessionMaxLongTaskMs": [
+   0,
+   0,
+   0
+  ],
+  "checks": {
+   "domStableAcrossSwitches": true,
+   "nodeSpreadMaxMinusMin": 0,
+   "everySwitchSettled": true
+  }
+ },
+ "pagination": {
+  "rounds": 2,
+  "steps": [
+   {
+    "scene": "page-before#1",
+    "position": "1712–1771 / 1831 条",
+    "beforeDisabled": false,
+    "afterDisabled": false,
+    "scrollTop": 0,
+    "scrollHeight": 18353,
+    "clientHeight": 301,
+    "images": 0,
+    "idsFirst": "e01713",
+    "idsLast": "e01770",
+    "idCount": 27,
+    "nodes": 1952,
+    "messages": 27,
+    "outputChildren": 54,
+    "heapMB": 5,
+    "afterHeapMB": 5,
+    "mutationsInStep": 754,
+    "settleMs": 839,
+    "maxLongTaskInStepMs": 0
+   },
+   {
+    "scene": "page-after#1",
+    "position": "1772–1831 / 1831 条",
+    "beforeDisabled": false,
+    "afterDisabled": true,
+    "scrollTop": 0,
+    "scrollHeight": 18058,
+    "clientHeight": 301,
+    "images": 0,
+    "idsFirst": "e01773",
+    "idsLast": "e01830",
+    "idCount": 27,
+    "nodes": 1929,
+    "messages": 27,
+    "outputChildren": 55,
+    "heapMB": 5.3,
+    "afterHeapMB": 5.1,
+    "mutationsInStep": 752,
+    "settleMs": 840,
+    "maxLongTaskInStepMs": 0
+   },
+   {
+    "scene": "page-before#2",
+    "position": "1712–1771 / 1831 条",
+    "beforeDisabled": false,
+    "afterDisabled": false,
+    "scrollTop": 0,
+    "scrollHeight": 18353,
+    "clientHeight": 301,
+    "images": 0,
+    "idsFirst": "e01713",
+    "idsLast": "e01770",
+    "idCount": 27,
+    "nodes": 1952,
+    "messages": 27,
+    "outputChildren": 54,
+    "heapMB": 5.1,
+    "afterHeapMB": 5.1,
+    "mutationsInStep": 754,
+    "settleMs": 833,
+    "maxLongTaskInStepMs": 0
+   },
+   {
+    "scene": "page-after#2",
+    "position": "1772–1831 / 1831 条",
+    "beforeDisabled": false,
+    "afterDisabled": true,
+    "scrollTop": 0,
+    "scrollHeight": 18058,
+    "clientHeight": 301,
+    "images": 0,
+    "idsFirst": "e01773",
+    "idsLast": "e01830",
+    "idCount": 27,
+    "nodes": 1929,
+    "messages": 27,
+    "outputChildren": 55,
+    "heapMB": 5.1,
+    "afterHeapMB": 5.1,
+    "mutationsInStep": 752,
+    "settleMs": 823,
+    "maxLongTaskInStepMs": 0
+   },
+   {
+    "scene": "page-newest",
+    "position": "1772–1831 / 1831 条",
+    "beforeDisabled": false,
+    "afterDisabled": true,
+    "scrollTop": 17757,
+    "scrollHeight": 18058,
+    "clientHeight": 301,
+    "images": 0,
+    "idsFirst": "e01773",
+    "idsLast": "e01830",
+    "idCount": 27,
+    "nodes": 1929,
+    "messages": 27,
+    "outputChildren": 55,
+    "heapMB": 5.2,
+    "afterHeapMB": 5.2,
+    "mutationsInStep": 754,
+    "settleMs": 827,
+    "maxLongTaskInStepMs": 0
+   }
+  ],
+  "ranges": {
+   "older": {
+    "start": 1712,
+    "end": 1771,
+    "total": 1831
+   },
+   "newer": {
+    "start": 1772,
+    "end": 1831,
+    "total": 1831
+   },
+   "latest": {
+    "start": 1772,
+    "end": 1831,
+    "total": 1831
+   }
+  },
+  "imagesInFixture": 0,
+  "checks": {
+   "olderPageStartsAtTop": true,
+   "olderRangePrecedesNewer": true,
+   "rangesRepeatAcrossRounds": true,
+   "pageSetsDisjoint": true,
+   "pageOrderIncreasing": true,
+   "totalMatchesFixture": true,
+   "latestReachesLastEntry": true,
+   "latestFollowsBottom": true,
+   "domBoundedAcrossPages": true,
+   "nodeSpreadMaxMinusMin": 23
+  }
+ },
+ "groundTruth": {
+  "serverMessages": {
+   "long": {
+    "messages": 60,
+    "roles": {
+     "toolResult": 33,
+     "assistant": 26,
+     "user": 1
+    }
+   },
+   "short": {
+    "messages": 20,
+    "roles": {
+     "user": 1,
+     "assistant": 8,
+     "toolResult": 11
+    }
+   }
+  },
+  "semanticCountsPerSession": {
+   "fake5hort0000000000000000000000001": [
+    "[17,9,12,9]"
+   ],
+   "fake1ong00000000000000000000000001": [
+    "[55,27,33,28]"
+   ]
+  },
+  "semanticCountsStableAcrossRuns": true,
+  "expectedFixtureMessages": 1831
+ }
+}

@@ -107,3 +107,19 @@ node docs/perf-history-session/measure-baseline.mjs \
   --repo <worktree> --baseline-commit ab52936 --runs 3 \
   --out docs/perf-history-session/baseline.json
 ```
+
+
+## 7. 复核补修后的独立复测
+
+`followup.json` 保留补修版原始记录，不覆盖上面的 `after.json` 历史证据。
+采样 HEAD 为 `6bf76fe`，包含当时未提交的 `public/app.js` / `src/sessions.js` 补修；
+`codeDigest 76964448…`，`app.js 51150aab…`。夹具归一化 SHA256 与基线相同。
+同机同脚本串行采集 3 轮，无用户服务、用户数据或真实模型请求：
+
+- 1831 条首输出 149 / 163 / 148ms，静默完成 930 / 937 / 929ms，最大长任务 0 / 54 / 0ms。
+- 当前页文档节点均为 1930，GC 后堆均为 3.9MB。
+- 6 次切换中，回到长会话节点 1929 → 1929 → 1929，GC 后堆 4.8 → 4.9 → 4.9MB。
+- 两轮翻页的全部断言通过，页间节点波动 23；范围仍为 1712–1771 → 1772–1831。
+- 第 5 节未覆盖事项保持不变；本次没有补做图片/流式增高的真实布局验收。
+
+复现时用新的 `--out` 路径，避免覆盖已有证据。

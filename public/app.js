@@ -1868,7 +1868,7 @@ const canResumeMessage = (message) =>
   !!message && (message.role !== "assistant" || ["error", "aborted", "length", "toolUse"].includes(message.stopReason));
 let retryPrompt;
 function syncRetryPrompt() {
-  if (!(interrupted && !busy && connected && !changing && sessionId && !sessionMissing)) return void retryPrompt?.remove();
+  if (historyState?.history?.nextCursor || !(interrupted && !busy && connected && !changing && sessionId && !sessionMissing)) return void retryPrompt?.remove();
   if (!retryPrompt) {
     retryPrompt = document.createElement("div");
     retryPrompt.className = "retry-prompt";
@@ -2390,7 +2390,7 @@ function beginSnapshot(state, target) {
   stopAlert = false;
   lastMainMessage = state.messages.findLast((entry) => entry.agentId === "main")?.message || null;
   canReask = !!state.canReask;
-  interrupted = !busy && (canReask || canResumeMessage(lastMainMessage));
+  interrupted = !state.history?.nextCursor && !busy && (canReask || canResumeMessage(lastMainMessage));
   $("output").replaceChildren();
   live.clear();
   toolItems.clear();
@@ -2463,6 +2463,7 @@ function placeSnapshotMessage(ctx, index, { agentId, message, entryId }) {
         ctx.placed.add(record.id);
         $("output").append(compactionCard(record));
       }
+      rawEntries[index].item = { node: compactionNodes.get(record.id) };
       return;
     }
     const item = card(
@@ -2523,7 +2524,7 @@ function finishSnapshot(job, ctx) {
   if (state.status === "running") waiting("main");
   else stopActivity("main", "已结束");
   for (const task of tasks.values())
-    if (!task.trigger.isConnected) $("output").append(task.trigger);
+    if (["starting", "running"].includes(task.trigger.dataset.status) && !task.trigger.isConnected) $("output").append(task.trigger);
   for (const record of compactions)
     if (!compactionNodes.has(record.id)) $("output").prepend(compactionCard(record));
   // 摘要按记录顺序集中在历史顶部；原任务入口移动而非复制，弹窗与状态保持不变。

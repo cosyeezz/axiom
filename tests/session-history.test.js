@@ -251,6 +251,30 @@ test("分页只带本页引用到的已完成元数据（工具/任务/压缩/�
   } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+test("缺参的 tool.state end 不清掉 start 带上的 args，窗口快照仍带参数", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-history-tool-args-"));
+  const sessions = new Sessions(fakeSource(), undefined, join(root, "sessions"));
+  try {
+    const id = await sessions.create(root);
+    const records = build(3);
+    records[1] = { agentId: "main", entryId: "e1", message: { role: "assistant",
+      content: [{ type: "toolCall", id: "t-args", name: "read", arguments: { path: "README.md" } }] } };
+    append(sessions, id, records);
+    const item = sessions.get(id);
+
+    item.emit({ type: "tool.state", data: { phase: "start", toolCallId: "t-args", toolName: "read", args: { path: "README.md" } } });
+    // SDK 的 tool_execution_end 不带 args：按字段合并而非整条覆盖，否则参数在窗口快照里丢失。
+    item.emit({ type: "tool.state", data: { phase: "end", toolCallId: "t-args", toolName: "read", result: { content: "ok" }, isError: false } });
+
+    assert.equal(item.tools["main:t-args"].phase, "end");
+    assert.equal(item.tools["main:t-args"].agentId, "main");
+    assert.deepEqual(item.tools["main:t-args"].args, { path: "README.md" });
+    const page = await sessions.history(id, { edge: "last", limit: 60 }, "inst");
+    assert.equal(page.tools["main:t-args"].phase, "end");
+    assert.deepEqual(page.tools["main:t-args"].args, { path: "README.md" });
+  } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test("订阅先于加载：create 替换条目后 listener 仍然在册（事件一个不漏）", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-history-sub-"));
   const storage = join(root, "sessions");

@@ -911,10 +911,7 @@ export class Sessions {
         this.saveChange(item, { event: { type: "retry", record } });
       }
       if (event.type === "tool.state")
-        item.tools[`${agentId}:${event.data.toolCallId}`] = {
-          agentId,
-          ...event.data,
-        };
+        Object.assign(item.tools[`${agentId}:${event.data.toolCallId}`] ??= { agentId }, event.data);
       if (event.type === "task.state") this.saveChange(item, { task: event.saved ?? event.data });
       // 持久化专用字段不进入 WebSocket 广播。
       delete envelope.saved;

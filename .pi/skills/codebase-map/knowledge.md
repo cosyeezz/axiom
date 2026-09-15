@@ -616,3 +616,9 @@
 ### 2026-06-01：快照回执到渲染间的事件空窗
 - 症状：快照覆盖先到的实时正文；归并失败后水位提前推进。根因：旧 app.js 仅在渲染时建闸、先记 seq 后归并。
 - 修复：public/transport.js 在快照回执时建闸、成功归并后记水位；失败受控恢复；public/app.js 在断线时作废旧分片。tests/realtime-transport.test.js 与 snapshot-first-screen.test.js 防回归。
+
+
+### 2026-09-15 页窗口的附属记录必须保留身份和生命周期
+- 症状：工具结束覆盖调用参数、旧页冒出重试入口、页外旧子代理追加到尾部、压缩消息没有阅读锚点。
+- 修复：sessions.js 合并 tool.state；app.js 只在最新页给末尾重试入口，仅追加未落位的活动子代理，折叠消息绑定压缩卡片节点。
+- 防再犯：session-history 与 history-reading 回归覆盖跨页工具参数、旧页重试、子代理状态和压缩卡片锚点。
