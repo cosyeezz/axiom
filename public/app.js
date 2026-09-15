@@ -21,6 +21,9 @@ let ws,
   runtime,
   activeTask,
   busy = false,
+  // safeStopping: 已请求安全停止、还在等轮次边界；stopAlert: 停住了但用户还没回来看。
+  safeStopping = false,
+  stopAlert = false,
   changing = false,
   connected = false,
   creation;
@@ -330,8 +333,12 @@ function controls() {
   for (const id of ["send", "send-steer", "send-followup"])
     $(id).disabled = unavailable || !sessionId || sessionMissing || imageLoading || (!$("prompt").value.trim() && !selectedSkill && !images.length && !contextFiles.length);
   $("send-steer").hidden = $("send-followup").hidden = !busy;
-  $("stop").disabled = !busy || unavailable || sessionMissing;
-  $("stop").hidden = !busy;
+  $("stop").disabled = $("force-stop").disabled = !busy || unavailable || sessionMissing;
+  // 已经在等安全点了就只留强停：再点一次安全停止没任何效果，反而像没生效。
+  $("stop").hidden = !busy || safeStopping;
+  $("force-stop").hidden = !busy;
+  $("safe-stop-progress").hidden = !busy || !safeStopping;
+  $("session-alert").hidden = !stopAlert;
   $("send").hidden = busy;
   syncRetryPrompt();
   for (const task of tasks.values()) task.retryButton.disabled = unavailable || sessionMissing || task.retrying;
@@ -1841,10 +1848,15 @@ function event(message) {
     void refreshSessions().catch(error);
     busy = data.status !== "idle";
     canReask = !!data.canReask;
+    // 安全停止只在本次运行内有效：下一次 running 不带 safeStop 时就该恢复正常按钮。
+    safeStopping = busy && !!data.safeStop;
+    if (data.status === "running") stopAlert = false;
     if (data.status === "running") waiting("main");
     else stopActivity("main", data.status === "cancelling" ? "正在停止…" : "已结束");
     // 正在看的会话跑完就算已读；否则切走后会被错标成「待查看」。
-    if (data.status === "idle") markSessionSeen(sessionId);
+    // 例外：安全停止落地时不标已读 —— 用户可能早已去干别的事，靠红点提醒回来接着看。
+    if (data.status === "idle" && data.stopped === "safe") stopAlert = true;
+    else if (data.status === "idle") markSessionSeen(sessionId);
     // 停稳了才判断能不能续：message.end 总先于 idle 到达，此时 lastMainMessage 已是本轮结果。
     if (data.status === "running") interrupted = false;
     else if (data.status === "idle") interrupted = canReask || canResumeMessage(lastMainMessage);
@@ -2025,6 +2037,8 @@ function snapshot(state) {
   $("workspace-label").textContent = state.cwd;
   updatePageTitle();
   busy = state.status !== "idle";
+  safeStopping = busy && !!state.safeStop;
+  stopAlert = false;
   lastMainMessage = state.messages.findLast((entry) => entry.agentId === "main")?.message || null;
   canReask = !!state.canReask;
   interrupted = !busy && (canReask || canResumeMessage(lastMainMessage));
@@ -2615,7 +2629,8 @@ document.addEventListener("keydown", (e) => {
       clearTimeout(escapeTimer);
       escapeTimer = undefined;
       recallArmedUntil = Date.now() + 300;
-      if (busy) $("stop").click();
+      // 双按 Esc 只给安全停止：强停会丢产出，不能被一个快捷键误触。
+      if (busy) void stopSession("safe");
     } else {
       // 单按撤回队列；300ms 内连按三次（第二次起就在 300ms 窗口内）才连带撤回已进入上下文的输入。
       const recall = Date.now() < recallArmedUntil;
@@ -2624,15 +2639,33 @@ document.addEventListener("keydown", (e) => {
     }
   }
 });
-$("stop").onclick = async () => {
+$("session-alert").onclick = () => {
+  stopAlert = false;
+  markSessionSeen(sessionId); // 同一下点掉标题红点和侧栏「待查看」点，两处不至于分岔。
+  renderSessions();
+  controls();
+};
+$("stop").onclick = () => void stopSession("safe");
+$("force-stop").onclick = () => {
+  $("force-stop-dialog").showModal();
+  $("force-stop-cancel").focus(); // 默认落在取消上：回车不应该直接把本轮产出丢掉
+};
+$("force-stop-cancel").onclick = () => $("force-stop-dialog").close();
+$("force-stop-form").onsubmit = (e) => {
+  e.preventDefault();
+  $("force-stop-dialog").close();
+  void stopSession("force");
+};
+// 两种停止都先撤回队列：否则停下后排队的消息会在下一次运行开头被默默消化掉。
+async function stopSession(mode) {
   const target = sessionId;
   try {
     await withdrawQueue();
-    await request("cancel", { sessionId: target });
+    await request("cancel", { sessionId: target, mode });
   } catch (e) {
     error(e);
   }
-};
+}
 let refreshing;
 function refreshSessions() {
   if (refreshing) return refreshing;

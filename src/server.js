@@ -421,7 +421,8 @@ export function createServerApp(sessions, service = {}) {
               data = sessions.replyQuestion(request.sessionId, request.toolCallId, request.answers);
               break;
             case "cancel":
-              await sessions.cancel(request.sessionId);
+              if (request.mode === "safe") await sessions.safeStop(request.sessionId);
+              else await sessions.cancel(request.sessionId);
               break;
             case "session.retry":
               data = { runId: await sessions.retry(request.sessionId) };

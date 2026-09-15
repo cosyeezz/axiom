@@ -1284,6 +1284,8 @@ export class Sessions {
       title: item.title,
       seq: item.seq,
       status: item.status,
+      // 刷新/重连后也要能看到「等待安全点」提示，所以跟快照一起下发。
+      safeStop: item.status !== "idle" && !!item.safeStopping,
       runtime: item.agent.runtime?.(),
       queue: item.agent.queue?.(),
       config: {
@@ -1350,7 +1352,9 @@ export class Sessions {
 
   // 运行骨架（prompt 与手动重试共用）：runId/status 广播 → result() 取错 → 收尾持久化与 idle 复位。
   startRun(item, run) {
+    // 通知在下一次运行开始时恢复：goal 被暂停/退出时仍要冻结，安全停止期间也暂停，防止通知把刚停下的会话又拉起来。
     item.notificationsPaused = this.goalNotificationsBlocked(item) || false;
+    item.safeStopping = false;
     item.updatedAt = Date.now();
     item.runId = randomUUID();
     item.status = "running";
@@ -1374,9 +1378,12 @@ export class Sessions {
         await this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `会话保存失败：${error.message}` } }));
         if (item.status !== "cancelling") {
           item.status = "idle";
+          // stopped 让前端区分「跑完了」和「被安全停止」：后者要留红点提醒回来接着看。
+          const stopped = item.safeStopping ? "safe" : undefined;
+          item.safeStopping = false;
           item.emit({
             type: "session.state",
-            data: { status: "idle", runId: item.runId, canReask: !!item.agent.canReask?.() },
+            data: { status: "idle", runId: item.runId, canReask: !!item.agent.canReask?.(), stopped },
           });
           this.scheduleTaskNotifications(item);
           this.scheduleGoal(item);
@@ -1485,6 +1492,24 @@ export class Sessions {
     const item = this.get(id);
     if (!item.loaded || item.closing || item.cancelling) throw new Error("会话不可回答问题");
     return item.questions.reply(toolCallId, answers);
+  }
+
+  // 安全停止：不 abort、不杀工具，只请求 SDK 在下一个轮次边界收工，已完成的产出全部保留。
+  // 子任务不受影响（继续跑到自己结束）；期间暂停子任务完成通知，否则通知会立刻 prompt 把会话重新拉起来。
+  // goal 会话的“停”在 master 里已有专用路径（暂停并落定目标进度），复用同一入口，避免同一颗按钮两套语义。
+  async safeStop(id) {
+    const item = this.get(id);
+    if (item.loading) {
+      await item.loading.catch(() => {});
+      return this.safeStop(id);
+    }
+    if (item.goal?.active && !item.closing) return this.goalAction(id, "pause");
+    if (!item.loaded || item.cancelling || item.status === "idle") return;
+    item.notificationsPaused = true;
+    item.safeStopping = true;
+    item.agent.requestSafeStop?.();
+    // 状态仍是 running：不新增状态值，避免前端 busy 判定连带影响按钮与队列。
+    item.emit({ type: "session.state", data: { status: item.status, runId: item.runId, safeStop: true } });
   }
 
   async cancel(id) {

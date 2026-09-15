@@ -327,7 +327,8 @@ export const command = z.discriminatedUnion("type", [
       queueType: queueType.optional(),
     })
     .strict(),
-  z.object({ id, type: z.literal("cancel"), sessionId: id }).strict(),
+  // mode 缺省为 force：保持旧客户端语义（立即 abort）。safe 表示停在下一个轮次边界，不丢产出。
+  z.object({ id, type: z.literal("cancel"), sessionId: id, mode: z.enum(["force", "safe"]).default("force") }).strict(),
   z.object({ id, type: z.literal("question.reply"), sessionId: id, toolCallId: z.string().min(1).max(256), answers: questionAnswers }).strict(),
   // 手动重试：不带新输入，续跑上一次异常停止（Esc 停止/终态错误/重试用尽）的请求。
   z.object({ id, type: z.literal("session.retry"), sessionId: id }).strict(),

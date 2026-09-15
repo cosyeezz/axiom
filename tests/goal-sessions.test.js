@@ -38,6 +38,7 @@ function factoryFixture() {
       finish: () => finish?.(),
       abort: async () => { agent.aborts += 1; finish?.(); },
       requestPause() { agent.pauseRequested = true; },
+      requestSafeStop() { agent.safeStopRequested = true; },
       checkpoint: async (summary) => { agent.checkpoints.push(summary); },
       resumable: () => false,
       canReask: () => false,
@@ -170,6 +171,34 @@ test("pause 等待在飞主代理与子任务安全收尾，不 abort", async ()
     assert.equal(item.goal.snapshot().pendingAction, null);
     assert.equal(agent.aborts, 0, "安全暂停不得 abort");
     assert.equal(item.tasks.jobs.get(taskA).notified, false);
+  } finally { await sessions.close(); }
+});
+
+test("safeStop 在 goal 会话复用 Goal 安全暂停：不 abort、不冒 stopped:safe，同时只停普通会话的当前 run", async () => {
+  const { factory, mains } = factoryFixture();
+  const sessions = new Sessions(factory);
+  try {
+    const id = await sessions.create();
+    const item = sessions.get(id);
+    await ordinary(sessions, id, "先普通聊一句");
+    await enterGoal(sessions, id, mains[0]);
+    await sessions.goalAction(id, "confirm");
+    const agent = mains[0];
+    const events = [];
+    const emit = item.emit.bind(item);
+    item.emit = (event) => { events.push(event); return emit(event); };
+
+    // goal 执行中点“安全停止”：走 Goal 自己的暂停入口，目标进度会在安全点落定。
+    await sessions.safeStop(id);
+    assert.equal(agent.pauseRequested, true, "goal 会话的安全停止应转交 requestPause");
+    assert.equal(agent.safeStopRequested, undefined, "不应又走一遍普通会话的边界停止");
+    assert.equal(item.goal.snapshot().phase, "pausing");
+    assert.equal(agent.aborts, 0, "安全停止不得 abort 在飞工具");
+    assert.ok(!events.some((event) => event.data?.safeStop), "goal 暂停有自己的 UI 状态，不发 safeStop 标志");
+    agent.finish();
+    await item.work;
+    await until(() => item.goal.snapshot().phase === "paused", "goal paused");
+    assert.ok(!events.some((event) => event.data?.stopped === "safe"), "goal 暂停后的 idle 不带 stopped:safe");
   } finally { await sessions.close(); }
 });
 
