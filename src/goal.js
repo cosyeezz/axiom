@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { cutSpans, maskCode } from "../public/markdown-scan.js";
+import { stripMemoryTags } from "../public/memory-tags.js";
+import { splitAnswer } from "../public/answer-tags.js";
 
 // Goal 模式：在外层封装现有对话，普通会话零影响（无目标时 snapshot/context 为 null）。
 // 本文件自成一体，只依赖 Database 暴露的 prepare/exec（src/database.js）；无 DB（测试会话）退化为内存态。
@@ -46,35 +49,32 @@ export const GOAL_MAX_SEGMENTS = 64;
 
 export const ROUND_MARKER = "<axiom_round_finished>";
 export const GOAL_MARKER = "<axiom_goal_finished>";
-const MARKERS = new Set([ROUND_MARKER, GOAL_MARKER]);
-const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+// 展示层要清掉的标记原文：开启与闭合两种写法都算（模型常自作主张补上闭合标签）。大小写不敏感——
+// 大写变体不是有效信号，但同样是协议残留，不该漏进展示文本。
+const MARKER_TOKENS = new RegExp([ROUND_MARKER, GOAL_MARKER].map((mark) => `</?${mark.slice(1)}`).join("|"), "gi");
 const SUMMARY_MAX = 500;
 // 目标工具/提问工具的结果不能作为验收证据（否则模型用自报工具自证）。
 const NON_EVIDENCE_TOOLS = new Set(["goal_plan", "goal_evidence", "goal_block", "goal_progress", "question", "delegate", "append"]);
 const ACTIVE_TASKS = new Set(["starting", "running"]);
 
-// 只取非代码围栏行；围栏未闭合视为代码到结尾（与 memory-tags 一致）。
-function outsideFences(text) {
+// 协议标记只认「代码区外、缩进不超过 3 空格」的行：写在围栏、缩进代码块或行内代码里的标记是在
+// 举例，不是信号；4 空格/Tab 起头的缩进代码、引用与列表内容同样不算独立信号。代码区判定与
+// memory-tags、answer-tags 共用 public/markdown-scan.js（原先本文件另写一套围栏正则，三处口径各自漂移）。
+function signalLines(text) {
   const lines = [];
-  let fence = null;
-  for (const line of String(text).split("\n")) {
-    const match = line.match(FENCE)?.[1];
-    if (fence) {
-      if (match?.[0] === fence[0] && match.length >= fence.length && line.trim() === match) fence = null;
-      continue;
-    }
-    if (match) { fence = match; continue; }
-    // 四空格/Tab 缩进代码、引用和列表中的标记都不是独立信号。
-    if (!/^(?: {4}|\t)/.test(line)) lines.push(line);
+  let at = 0;
+  for (const line of maskCode(text).split("\n")) {
+    if (/^ {0,3}\S/.test(line)) lines.push({ line, start: at });
+    at += line.length + 1;
   }
   return lines;
 }
 
-// 严格解析完成标记：整行独占、精确小写、无闭合标签、无内文；代码围栏内不算。
+// 严格解析完成标记：整行独占、精确小写、无闭合标签、无内文；代码区内不算。
 export function parseGoalMarkers(text) {
   const found = { roundFinished: false, goalFinished: false };
   if (typeof text !== "string" || !text) return found;
-  for (const line of outsideFences(text)) {
+  for (const { line } of signalLines(text)) {
     const marker = line.trim();
     if (marker === ROUND_MARKER) found.roundFinished = true;
     else if (marker === GOAL_MARKER) found.goalFinished = true;
@@ -82,20 +82,15 @@ export function parseGoalMarkers(text) {
   return found;
 }
 
-// 展示用：删除整行的完成标记（代码围栏内保留），不修改其余内容。
+// 展示用：删掉代码区外的标记原文（含模型补的闭合标签、空标签对），删完整行只剩空白就丢掉该行。
+// 「不认作信号」与「要清掉原文」是两件事：空标签对不算完成信号（不放宽防伪造口径），但也不能
+// 让 <axiom_round_finished></axiom_round_finished> 这种残留漏进展示文本与轮次小结。
 export function stripGoalMarkers(text) {
   if (typeof text !== "string" || !text) return text;
-  const signals = new Set(outsideFences(text).filter((line) => MARKERS.has(line.trim())));
-  let fence = null;
-  return text.split("\n").filter((line) => {
-    const match = line.match(FENCE)?.[1];
-    if (fence) {
-      if (match?.[0] === fence[0] && match.length >= fence.length && line.trim() === match) fence = null;
-      return true;
-    }
-    if (match) { fence = match; return true; }
-    return !signals.has(line);
-  }).join("\n");
+  const spans = [];
+  for (const { line, start } of signalLines(text))
+    for (const hit of line.matchAll(MARKER_TOKENS)) spans.push([start + hit.index, start + hit.index + hit[0].length]);
+  return cutSpans(text, spans);
 }
 
 const messageText = (message) =>
@@ -103,7 +98,10 @@ const messageText = (message) =>
 
 // 验收标准按「折叠空白 + trim」比对，避免模型抄写时空格差异。
 const normCriterion = (text) => String(text ?? "").replace(/\s+/g, " ").trim();
-const firstLine = (text) => stripGoalMarkers(text).split("\n").map((line) => line.trim()).find(Boolean) ?? "";
+// 展示口径的正文：先去完成标记与记忆标签，再取 <axiom_answer> 里的正式答复（模型把答复写在标签里时，
+// 小结要取答复本身而不是过程说明或标签原文）。落库始终存模型原文，这里只用于生成轮次小结。
+const bodyText = (text) => splitAnswer(stripMemoryTags(stripGoalMarkers(String(text ?? "")))).answer;
+const firstLine = (text) => bodyText(text).split("\n").map((line) => line.trim()).find(Boolean) ?? "";
 
 const normalizeToolResult = (record) => {
   const id = record?.toolCallId ?? record?.id;
@@ -335,10 +333,13 @@ export class Goal {
       `本轮待补验收：\n${bullets(gate.roundMissing)}`,
     ];
     if (s.claimed || gate.goalMissing.length) lines.push(`整体待补验收：\n${bullets(gate.goalMissing)}`);
-    if (gate.roundMissing.length === 0 && gate.goalMissing.length === 0)
+    // 与 #gate() 同一口径：轮次没收尾就不能要求整体标记，否则模型照提示发标记却过不了证据门，白挨催促。
+    if (gate.settled)
       lines.push(`证据已齐：在回复最后单独一行输出 ${GOAL_MARKER} 完成整体目标。`);
+    else if (gate.roundMissing.length === 0 && s.currentRound < s.rounds.length - 1)
+      lines.push(`本轮证据已齐：在回复最后单独一行输出 ${ROUND_MARKER} 进入下一轮${gate.goalMissing.length ? "；整体还差上面缺失的标准" : ""}。`);
     else if (gate.roundMissing.length === 0)
-      lines.push(`本轮证据已齐：在回复最后单独一行输出 ${ROUND_MARKER} 进入下一轮；整体还差上面缺失的标准。`);
+      lines.push(`本轮证据已齐：整体还差上面缺失的标准，补齐后在回复最后单独一行输出 ${GOAL_MARKER} 完成整体目标。`);
     else
       lines.push(`补齐证据后，在回复最后单独一行输出 ${ROUND_MARKER}（进入下一轮）或 ${GOAL_MARKER}（整体完成）。两个标记都必须独立成行、无闭合标签、无内文；goal_evidence 只记录证据，不推进状态。`);
     return lines.join("\n");
@@ -532,7 +533,7 @@ export class Goal {
       ready,
       completable,
       claimed: s.claimed,
-      message: completable
+      message: gate.settled
         ? `证据门已全部通过：在最终回复最后单独一行输出 ${GOAL_MARKER} 完成整体目标。`
         : ready
           ? `本轮证据已齐：在最终回复最后单独一行输出 ${ROUND_MARKER} 进入下一轮。`
@@ -615,9 +616,10 @@ export class Goal {
   pauseAtSafePoint({ tasks, summary } = {}) {
     const s = this.#state;
     if (!s) return null;
-    if (typeof summary === "string" && summary.trim()) {
+    const body = typeof summary === "string" ? bodyText(summary).trim() : "";
+    if (body) {
       const round = s.rounds[s.currentRound];
-      if (round) round.summary = summary.trim().slice(0, SUMMARY_MAX);
+      if (round) round.summary = body.slice(0, SUMMARY_MAX);
     }
     if (!s.pendingAction && !["paused", "pausing"].includes(s.phase)) this.action("pause");
     return this.#settlePending(tasks);
@@ -960,16 +962,15 @@ export class Goal {
     const s = this.#state;
     const round = s.rounds[s.currentRound];
     const roundRequired = round?.acceptance?.length ? round.acceptance : s.acceptance;
-    const missing = (criteria) => criteria.filter((criterion) => !s.evidence[normCriterion(criterion)]);
-    const roundMissing = roundRequired.filter((criterion) => s.evidence[normCriterion(criterion)]?.round !== s.currentRound);
-    const goalMissing = missing(s.acceptance);
+    // 证据必须是「本轮的」：#lookupTool 只认本轮真实工具结果，陈旧轮次的证据同样不算整体已齐，
+    // 否则第 1 轮交过的整体证据能永久满足整体验收，后面几轮改了代码也不用复验。
+    const stale = (criteria) => criteria.filter((criterion) => s.evidence[normCriterion(criterion)]?.round !== s.currentRound);
+    const roundMissing = stale(roundRequired);
+    const goalMissing = stale(s.acceptance);
     const roundsSettled = s.rounds.length > 0 && s.rounds.every((item) => item.status === "done" || item.status === "skipped");
-    return {
-      roundMissing,
-      goalMissing,
-      roundsSettled,
-      complete: s.claimed && roundsSettled && roundMissing.length === 0 && goalMissing.length === 0,
-    };
+    // settled = 证据门本身已满足（与 claimed 无关）；complete 还要模型在最终回复里发出整体标记。
+    const settled = roundsSettled && roundMissing.length === 0 && goalMissing.length === 0;
+    return { roundMissing, goalMissing, roundsSettled, settled, complete: s.claimed && settled };
   }
 
   #lookupTool(toolCallId, evidenceProvider) {
