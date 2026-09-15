@@ -752,7 +752,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("create-main-mode").value, "custom");
     assert.equal(window.document.querySelectorAll('.capability-agent:first-child input[data-kind="skills"]:checked').length, 2);
     assert.match($("create-agents").textContent, /当前目录不可用 · missing-skill/, "unavailable defaults are not silently removed");
-    assert.equal(window.document.querySelectorAll('.capability-agent:last-child input:checked').length, 0);
+    assert.equal(window.document.querySelectorAll('.capability-agent:last-child input[data-kind]:checked').length, 0);
     needsTrust = false;
     defaults.capabilities.skills.pop();
     $("settings").close();
@@ -1358,7 +1358,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
   window.renderMarkdown = new Function("marked", "DOMPurify", `${markdownSource}; return renderMarkdown;`)(marked, createPurify(window));
   window.createStreamRenderer = (render, after) =>
     createStreamRenderer(render, after, window.requestAnimationFrame, window.cancelAnimationFrame);
-  const compactionDefaults = { enabled: false, tokenThreshold: 100000, percentThreshold: 70, model: null, thinking: "off", keepRecentTokens: 20000 };
+  const compactionDefaults = { enabled: true, tokenThreshold: 100000, percentThreshold: 50, model: null, thinking: "off", keepRecentTokens: 5000 };
   const baseConfig = { model: "test/model", thinking: "off", levels: ["off"], skills: [] };
   const state = {
     sessionId: "a",
@@ -1620,7 +1620,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     probeFields()[2].value = "2.5"; fireProbe();
     assert.match(probe.error(), /保留最近 tokens 需为大于 0 的整数/);
     probeFields()[2].value = ""; fireProbe();
-    assert.deepEqual(probe.read().keepRecentTokens, 20000, "empty keep falls back to the default");
+    assert.deepEqual(probe.read().keepRecentTokens, 5000, "empty keep falls back to the default");
     probeFields()[0].value = ""; probeFields()[1].value = ""; fireProbe();
     assert.match(probe.error(), /至少设置一个触发阈值/, "only two empty thresholds invalidate enabled");
 
@@ -1653,7 +1653,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
 
     // 默认配置：编辑后自动保存；无效组合不覆盖旧值。
     const defaultsEditor = $("create-compaction");
-    assert.equal(defaultsEditor.querySelector("input[type=checkbox]").checked, false);
+    assert.equal(defaultsEditor.querySelector("input[type=checkbox]").checked, true);
     defaultsEditor.querySelector("input[type=checkbox]").checked = true;
     defaultsEditor.querySelectorAll("input[type=number]")[0].value = "60000";
     for (const field of defaultsEditor.querySelectorAll("input, select"))
@@ -1666,7 +1666,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     await settle();
     assert.match($("create-feedback").textContent, /至少设置一个触发阈值/);
     assert.equal(lastDefaults.compaction.tokenThreshold, 60000, "invalid defaults are not saved");
-    assert.match($("defaults-preview").textContent, /自动压缩 · 未设阈值 触发 · 保留最近 20,000 tokens/);
+    assert.match($("defaults-preview").textContent, /自动压缩 · 未设阈值 触发 · 保留最近 5,000 tokens/);
 
     // 自动重试词表：chip 增删是脚本改状态，必须自己冒泡 change 才能触发默认配置自动保存。
     // 先恢复合法压缩阈值，否则提交在压缩校验处就返回，测不到重试词表。

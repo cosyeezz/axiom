@@ -117,7 +117,7 @@ test("目录模型配置互相隔离，删除目录配置后回落全局；落�
   await mkdir(a);
   await mkdir(b);
   const factory = async (_tools, selected) => {
-    const { memory, ...configuration } = selected;
+    const { memory, executionContext, shouldPause, ...configuration } = selected;
     let config = { thinking: "off", ...configuration };
     return {
       config: () => config,
