@@ -44,8 +44,7 @@ axiom 基线：`feat/long-conversation-perf-research` @ 本轮起点 `11c6bbd`�
 - GA：常量 `app.js:2303-2306`（`TW_SPEED=10` 字符 / `TW_INTERVAL=35ms` / 积压
   `TW_CATCHUP_THRESHOLD=480` 时 ×8 加速）；调度循环 `app.js:2421-2444`，每拍只推进
   10 个字符并重绘当前轮；单帧超 60ms 时按 `backlog/3` 追平（`app.js:2437-2442`）。
-- 原理：**把「重绘速率」与「token 到达速率」解耦**。无论模型吐多快，DOM 重写频率封顶
-  ≈28Hz、单拍新增文本封顶 10 字符，单帧成本与已累计文本长度基本脱钩。
+- 原理：**把「重绘速率」与「token 到达速率」解耦**。无论模型吐多快，常规 DOM 重写频率与单拍新增文本都受限制、积压时才 ×8 追平；10 字符是常规步长而非硬上限，且节流只降低重绘频次，并不限制每次仍对全文 lex 的单次成本（GA 侧未实测单帧耗时）。
 - axiom 等价：**部分已有，缺节流层**。`public/stream-renderer.js:27-37` 用 rAF 合并同帧多次
   `mark()`（这点比 GA 更好：同步突发被合并），但 `mark` → `paint`（`stream-renderer.js:9-25`）
   每个 rAF 都把**当前累计全文**重画一次，没有节流、没有步长：
@@ -54,7 +53,7 @@ axiom 基线：`feat/long-conversation-perf-research` @ 本轮起点 `11c6bbd`�
   Chromium 152 / Playwright，样本 `55e7fce9`）。按 60fps 计即 42%–72% 主线程占用，且随文本
   增长继续恶化。
 - 判定：**适用（高优先级）**。原因：axiom 已有 rAF 合并，只要补上「按时间/字符双重节流」这一层，
-  就能把单帧成本从「与全文长度成正比」压到有界；不需要引入打字机动画，只需限制重绘频率与步长。
+  就能降低单位时间重绘次数；但若每次重绘仍对全文 lex，单帧成本仍随文本长度增长，需与 M4 的「限制 re-lex 范围」配合才可能把单帧成本压下来。不需要引入打字机动画，只需限制重绘频率与步长。
 
 ### M4 只重绘当前轮，历史轮冻结
 - GA：`app.js:2425-2447` `ensureDraftFrozenThrough` 把已完成 turn 渲染成 `.turn-frozen`；
@@ -89,8 +88,7 @@ axiom 基线：`feat/long-conversation-perf-research` @ 本轮起点 `11c6bbd`�
 - axiom 等价：**已有，且覆盖更全**——`public/app.js:1160` 工具详情 `ontoggle` →
   `renderToolDetail`，`public/app.js:1048-1049` 未展开直接 return；`public/app.js:1239-1241`
   thinking 展开才 `renderer.mark`；`public/app.js:1329` 技能详情展开才 `renderMarkdown`。
-- 实测佐证：332 个 tool-record 全部展开仅 4.1ms 且 DOM 节点数不变（惰性渲染生效），
-  单个 3–10ms（`docs/perf-long-conversation/scroll-fold.json`）。
+- 实测佐证：332 个 tool-record 全部置 `open` 后同步强制布局 4.1ms 且 DOM 节点数不变。注意：改 `open` 属性会异步派发 `toggle`，该计时只覆盖属性设置 + 同步布局，不含异步入场处理，不能作为详情渲染完成的耗时；惰性渲染由源码早退（`public/app.js:1049`）与 `ontoggle`（`public/app.js:1160`）确认。单个 3–10ms（`docs/perf-long-conversation/scroll-fold.json`）。
 - 判定：**已具备，不要重复建议**。
 
 ### M7 用户交互期间暂停 DOM 重写
@@ -99,17 +97,18 @@ axiom 基线：`feat/long-conversation-perf-research` @ 本轮起点 `11c6bbd`�
   `.code-block pre`、`.fold-pre` 就 arm 冻结；`app.js:2434` 冻结期间 tick 直接 return。
 - 原理：用户正在展开折叠或滚动代码块时，**让出渲染**，避免流式重写把手势打断。
 - axiom 等价：**无**。`public/app.js:195-204` 的 `scrollLatest` 只在滚动跟随层面做 rAF 合并，
-  但 `public/stream-renderer.js:9-25` 的 `paint` 照常在每个 rAF 重写 `.md` 子树，没有任何
-  「交互期间让路」的判定。
+  但 `public/stream-renderer.js:10-25` 的 `paint` 只有文本变化守卫（`paintedText`/`paintedProcess`/
+  `paintedReasoning`，未变则跳过），**没有任何「交互期间让路」判定**；文本在变时下一个 rAF 仍会重写。
 - 判定：**适用（中优先级）**。这直接对应「交互发涩」：用户展开详情/滚动代码块时，
-  流式仍在重写同一子树，造成抖动与掉帧。
+  流式仍在重写同一子树，造成抖动与掉帧（机制确认，未单独量化交互延迟）。
 
 ### M8 后端历史截断/分页策略
 - GA：`desktop_bridge.py:1254-1266`（`after` + `limit`，200 默认）、`desktop_bridge.py:925-953`
   `snapshot` 可 `include_messages=False` 只取元信息。
 - axiom 等价：`src/sessions.js:1233-1263` attach 全量、无分页参数。
 - 判定：**不适用**。axiom 靠事件增量推送替代轮询分页，前端仍需全量历史才能往回翻；
-  分页只减少传输，不降低成本大头（首屏渲染，实测最大长任务 955ms）。
+  并且 GA 的增量游标分页首屏以 `limit=0` 拉全量，本身也不减传输。不过**真正的按需历史分页
+  （只取可视范围）可能降低初始构建量**，本判定不否认这一点，只是它要求改后端协议与前端存储模型。
 
 ### M9 滚动贴底判定与 rAF 合并
 - GA：`app.js:2294-2301` `isNearBottom(80px)` + rAF 内写 `scrollTop`。
@@ -137,10 +136,10 @@ axiom 基线：`feat/long-conversation-perf-research` @ 本轮起点 `11c6bbd`�
 **「axiom 已具备但实现不同」——不要再提**：M1、M2、M6、M9。
 **「axiom 确实缺失」——值得做**：
 1. M3 流式重绘节流与步长（高）：`public/app.js:1863-1889` → `public/stream-renderer.js:9-25`。
-   实测支撑：7–12ms/帧、峰值 33ms，且与文本长度正相关。
+   实测支撑：7–12ms/帧、峰值 33ms（微基准口径，与文本长度同向变化）。
 2. M4 中的「每帧全量 lexer」（高）：`public/markdown.js:219-220`。axiom 已有块级 DOM 缓存，
    缺的是把 lex 范围限定在变化块/变化尾部。
-3. M7 交互期间让出渲染（中）：axiom 无对应机制，`public/stream-renderer.js:9-25` 无条件重写。
+3. M7 交互期间让出渲染（中）：axiom 无对应机制，`public/stream-renderer.js:10-25` 有文本变化守卫但无交互让路。
 
 **「不适用 / 会重复」**：M5（轮折叠与 axiom 消息边界、compaction、call-group 重叠）、
 M8（分页不解决渲染成本）、M10。
