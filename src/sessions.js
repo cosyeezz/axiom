@@ -1093,6 +1093,8 @@ export class Sessions {
       title: item.title,
       seq: item.seq,
       status: item.status,
+      // 刷新/重连后也要能看到「等待安全点」提示，所以跟快照一起下发。
+      safeStop: item.status !== "idle" && !!item.safeStopping,
       runtime: item.agent.runtime?.(),
       queue: item.agent.queue?.(),
       config: {
@@ -1159,6 +1161,7 @@ export class Sessions {
   // 运行骨架（prompt 与手动重试共用）：runId/status 广播 → result() 取错 → 收尾持久化与 idle 复位。
   startRun(item, run) {
     item.notificationsPaused = false;
+    item.safeStopping = false;
     item.updatedAt = Date.now();
     item.runId = randomUUID();
     item.status = "running";
@@ -1180,9 +1183,12 @@ export class Sessions {
         await this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `会话保存失败：${error.message}` } }));
         if (item.status !== "cancelling") {
           item.status = "idle";
+          // stopped 让前端区分「跑完了」和「被安全停止」：后者要留红点提醒回来接着看。
+          const stopped = item.safeStopping ? "safe" : undefined;
+          item.safeStopping = false;
           item.emit({
             type: "session.state",
-            data: { status: "idle", runId: item.runId, canReask: !!item.agent.canReask?.() },
+            data: { status: "idle", runId: item.runId, canReask: !!item.agent.canReask?.(), stopped },
           });
           this.scheduleTaskNotifications(item);
         }
@@ -1279,6 +1285,22 @@ export class Sessions {
     const item = this.get(id);
     if (!item.loaded || item.closing || item.cancelling) throw new Error("会话不可回答问题");
     return item.questions.reply(toolCallId, answers);
+  }
+
+  // 安全停止：不 abort、不杀工具，只请求 SDK 在下一个轮次边界收工，已完成的产出全部保留。
+  // 子任务不受影响（继续跑到自己结束）；期间暂停子任务完成通知，否则通知会立刻 prompt 把会话重新拉起来。
+  async safeStop(id) {
+    const item = this.get(id);
+    if (item.loading) {
+      await item.loading.catch(() => {});
+      return this.safeStop(id);
+    }
+    if (!item.loaded || item.cancelling || item.status === "idle") return;
+    item.notificationsPaused = true;
+    item.safeStopping = true;
+    item.agent.requestSafeStop?.();
+    // 状态仍是 running：不新增状态值，避免前端 busy 判定连带影响按钮与队列。
+    item.emit({ type: "session.state", data: { status: item.status, runId: item.runId, safeStop: true } });
   }
 
   async cancel(id) {

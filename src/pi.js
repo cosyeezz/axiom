@@ -232,7 +232,31 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       config: initialCompaction,
       onEvent: emitAxiom,
     });
-    const retry = createAutoRetry({ session, emit: emitAxiom, patterns: selection.retry });
+    // 退避等待期没有「轮次结束」可言：安全停止若正卡在这段等待里，钩子永远不会被调用。
+    // 跟着 agent.retry 事件记等待态，安全停止时顺手取消这段等待（本轮以原错误收尾，不算新失败）。
+    let retryWaiting = false;
+    const retry = createAutoRetry({
+      session,
+      emit: (event) => {
+        if (event.type === "agent.retry") retryWaiting = event.data.status === "waiting";
+        emitAxiom(event);
+      },
+      patterns: selection.retry,
+    });
+    // 安全停止：只挂一次性标志，实际停在 SDK 的轮次边界（助手回答与本轮工具都正常跑完之后、
+    // 拉取 steer/followUp 队列与发起下一次请求之前）。因此不丢产出、不杀进程、不改 stopReason。
+    // 钩子必须在建会话时就装好：SDK 每次运行开始把它读进 loopConfig，运行中再赋值对本轮无效。
+    let safeStopPending = false;
+    session.agent.shouldStopAfterTurn = () => {
+      if (!safeStopPending) return false;
+      safeStopPending = false; // 一次性：只停这一次运行，不影响后续重试/新请求
+      return true;
+    };
+    // 每次运行开始都清一次：被 abort 的运行不会走到轮次边界，残留标志会误停下一次运行的第一轮。
+    const beginRun = () => {
+      safeStopPending = false;
+      lastResult = undefined;
+    };
     session.subscribe((event) => {
       if (event.type === "turn_end") void compactionCtrl.onTurnEnd();
       if (event.type === "compaction_end" && event.result && !event.aborted) {
@@ -310,9 +334,15 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         activeTools: session.getActiveToolNames(),
         compaction: compactionCtrl.getConfig(),
       }),
+      // 安全停止请求：幂等，只在运行中有意义（未运行时的残留标志由下一次 beginRun 清掉）。
+      requestSafeStop: () => {
+        safeStopPending = true;
+        if (retryWaiting) retry.cancel();
+      },
+      safeStopPending: () => safeStopPending,
       prompt: async (text, options) => {
         if (await compactionCtrl.maybeApply()) emitAxiom({ type: "agent.runtime", data: agentRuntime(session) });
-        lastResult = undefined;
+        beginRun();
         // 背景由 context 钩子按请求实时取；这里只挂 titleRequest 的标题指令，消费一次即失效。
         if (memoryState) memoryState.pending = options?.titleRequest ? TITLE_INSTRUCTION : null;
         await retry.run(() => session.prompt(text, options?.images ? { images: options.images } : undefined));
@@ -325,6 +355,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         const original = cancelledQuestion();
         if (!original || reaskController) throw new Error('没有可重新提问的问题');
         const controller = reaskController = new AbortController();
+        beginRun();
         const call = { ...original.call, id: `question_${crypto.randomUUID()}` };
         const append = (message) => {
           const entryId = session.sessionManager.appendMessage(message);
@@ -332,7 +363,6 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
           emitAxiom({ type: 'agent.message.start', data: { message } });
           emitAxiom({ type: 'agent.message.end', data: { message, entryId } });
         };
-        lastResult = undefined;
         try {
           const assistant = { ...original.assistant, content: [call], stopReason: 'toolUse', timestamp: Date.now(),
             usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
@@ -350,13 +380,14 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       resumable: () => canResume(session),
       resume: async () => {
         if (!canResume(session)) throw new Error("没有可重试的请求：上一次运行已正常结束");
-        lastResult = undefined;
+        beginRun();
         await retry.run(() => {
           dropFailedAssistant(session);
           return session.agent.continue();
         });
       },
       async abort() {
+        safeStopPending = false; // 强制停止后不该留个待停标志误停下一次运行
         reaskController?.abort();
         retry.cancel(); // 先中断等待中的自动重试，避免 abort 后又发起 continue
         await Promise.all([compactionCtrl.cancel?.(), session.abort()]);

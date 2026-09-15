@@ -1,5 +1,15 @@
 # 开发记录
 
+## 2026-09-14 安全点停止：两级停止 + 等待提示条 + 停下提醒点
+- 原因：只有硬停，一点就把本轮正在跑的工具和已写一半的回答丢了；需要一个「跑完这一步再停」的选项，同时把会丢产出的硬停降级为需要确认的强制停止。硬停保留为逃生门：安全点粒度是一个 turn，长命令可能等很久。
+- 后端：src/pi.js 在建会话时常驻安装 SDK 原生 `shouldStopAfterTurn` 钩子（loopConfig 在 run 开始就捕获该函数，运行中赋值对本轮无效），内部用一次性 pending 标志控制，新增 `requestSafeStop()` / `safeStopPending()`；prompt / reask / resume 开头与 `abort()` 开头都清标志，避免污染下一次运行。退避等待期没有 turn 边界，改用 `retryWaiting` + `retry.cancel()` 收尾。
+- src/sessions.js 新增 `safeStop(id)`：不 abort、不杀工具，只置 `safeStopping` 并发 `session.state { status:"running", safeStop:true }`；同时 `notificationsPaused = true`，否则子任务完成通知会在 idle 时调 prompt 把会话重新拉起来（与 cancel 同手法，下一次运行开始时恢复）。收尾 idle 带 `stopped:"safe"`，`snapshot()` 在 running 时带 `safeStop`，刷新/重连不丢状态；不新增状态值。
+- 协议：src/protocol.js 的 `cancel` 增加 `mode: "force" | "safe"`，缺省 `force` 保留旧客户端语义；src/server.js 按 mode 分发到 `safeStop` / `cancel`。
+- 前端：public/index.html 拆为 `#stop`（安全停止，文案仍 Stop ■）+ `#force-stop`（`button.danger`，Force ⚠，弹 `#force-stop-dialog` 确认，焦点默认在取消）；新增 `#safe-stop-progress` 绿色提示条（SVG 图标 + 跳动三点，纳入 prefers-reduced-motion）；标题前 `#session-alert` 复用 `.session-attention-dot`，点击清除并 `markSessionSeen`。双按 Esc 只走安全停止；两条停止路径都先 `withdrawQueue()`。样式只用现有 token（`--success` / `--danger` / `--accent-ink` / `--line` / `--surface`）。
+- 边界：主代理停下后子代理继续跑完自己（侧栏仍显示运行中）；暂停期内的子任务通知不补发；队列消息原样退回输入框；标题提醒点仅覆盖安全停止，不复用失败中断，且为页面内存态不跨标签页。
+- 验证：新增 tests/safe-stop.test.js 4 个用例（真实 Pi SDK + fake SSE 子进程：工具跑完、文本不丢、stopReason 仍可 resume、resume 后正常收尾；`sessions.safeStop` 不 abort / 暂停通知 / 快照标志 / idle 标记；idle 幂等与强停优先；cancel 缺省 mode）；tests/app.test.js 补两级停止 UI 回归。npm test：406 项，404 通过、2 跳过、0 失败。
+- 涉及文件：src/pi.js、src/sessions.js、src/server.js、src/protocol.js、public/index.html、public/style.css、public/app.js、tests/safe-stop.test.js、tests/app.test.js、README.md、devlog.md。
+
 ## 2026-09-14 默认会话配置的后台自动压缩改为默认开启
 - 原因：新会话一律要手动去默认配置里勾选才能用上后台压缩，默认值偏保守。
 - src/protocol.js compactionDefaults 改为 enabled: true、percentThreshold: 50、keepRecentTokens: 5000（token 阈值仍 100000）；public/app.js 的同名前端默认值保持同源同步。
