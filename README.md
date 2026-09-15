@@ -613,3 +613,22 @@ Axiom 使用数据目录中的 `axiom.db`（Node 内置 SQLite，WAL 模式）�
 ### 当前会话的代理配置
 
 输入框下方的「主代理 / 子代理」下拉用于切换要编辑的配置，后面的供应商、模型和思考等级复用同一组控件。切换角色不会改变消息发送对象。子代理模型和思考等级可选择跟随主代理；修改自动保存到当前会话，只影响之后启动的子任务，不修改默认新会话配置，也不影响已运行任务。
+
+### 前端区域更新边界
+
+页面继续使用原生 JavaScript 和现有 linear 视觉 token。`public/app.js` 保存唯一会话/连接/配置状态，`region()` 只隔离显示错误，不吞掉权威事件失败。
+
+| 区域 | DOM/入口 | 更新来源 |
+|---|---|---|
+| 连接状态 | status/login；updateConnection | 连接变化 |
+| 会话导航 | sessions/workspace；updateNavigation | 工作空间、会话元数据、连接/切换 |
+| 对话展示 | output/transcript；现有消息渲染 | 当前会话事件/快照 |
+| 输入操作 | prompt/images/send；updateComposer | 草稿、附件、运行/权限变化 |
+| 模型配置 | provider/model/thinking；updateModelAvailability | 目录、配置、收藏、可用性 |
+| 设置与详情 | settings/overlays；updateSettingsAvailability | 面板、运行详情、带代次的请求结果 |
+
+已删除 `controls()` 及它的全量菜单同步。`updateAvailability()` 仅用于连接/切换等确实影响多区的可用性变化；`syncAll()` 仅保留共享收藏初始化/变化，目录和选中值走单选择器同步。模型缺失显示“当前不可用”，不静默替换；无变化保留节点，目录变化按模型键恢复焦点/滚动。动态表单重建前释放选择器，组件 `dispose(select)` / `dispose()` 清理监听、Observer、定时器与定位规则。
+
+与任务03的订阅入口尚未接线：本分支仍复用已有事件分发；集成时迁移通知入口，不复制消息 reducer。05/06继续拥有历史窗口和流式绘制算法，本改动不替换它们。
+
+隔离验证：`node --test tests/frontend-regions.test.js tests/model-picker.test.js`；真实 Chromium：`python tests/frontend-regions-ui.py`（自动启动随机端口假数据服务，截图位于系统临时目录 `axiom-frontend-regions`）。浏览器输出增长测试直接增加正文 DOM；真实事件路径另由单测覆盖，不宣称已完成真实模型流式压测或 Electron 验收。

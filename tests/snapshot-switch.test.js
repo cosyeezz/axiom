@@ -65,7 +65,7 @@ function boot() {
     "window.__app = { snapshot, event, saveView, live, views, appliedSeq, renderer," +
     " snapshotQueue: () => snapshotQueue, snapshotJob: () => snapshotJob, session: () => sessionId," +
     " withdrawQueue, switchSession, request: (type, data) => request(type, data), setRequest: (fn) => { request = fn; }," +
-    " setConnected: (value) => { connected = value; controls(); } };",
+    " setConnected: (value) => { connected = value; updateAvailability(); } };",
   ].join("\n"));
   return {
     window,

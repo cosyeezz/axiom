@@ -607,3 +607,9 @@
 - 根因：部分推理模型 thinkingLevelMap.off=null，默认压缩 off 被严格模型校验拒绝；页面把 session.create 业务失败当断线循环。
 - 修复：protocol.resolveCompaction 统一保留合法偏好、不兼容取模型最低支持等级，pi/sessions 共用；页面保留连接、草稿与设置/更新入口。
 - 防再犯：model-onboarding.test.js 用真实 SDK 和隔离目录验证 reasoning-only 默认新建，不能只验证 /health；model-onboarding-ui.test.js 验证配置失败仍能进入和修复重试，真实网络断线仍重连。
+
+### 2026-09-15 正文滚动不应收起模型菜单
+- 症状：无关输入触发菜单重建，正文滚动关闭已打开菜单。
+- 根因：controls 全量同步和 model-picker 捕获所有外部 scroll。
+- 修复：app 按区更新；picker 比较目录/收藏签名，仅触发器滚动祖先滚动才关闭。
+- 防再犯：frontend-regions-ui.py 要求菜单一直打开且节点/焦点/scrollTop 不变，不允许关后重开替代；迟到设置预算及权威归并失败不推进 seq 另有可运行断言。

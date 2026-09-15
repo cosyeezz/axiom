@@ -31,7 +31,7 @@ async function page() {
     const exports = [...module.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
     w.eval(`Object.assign(window, (() => { ${module.replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`);
   }
-  w.eval(`${picker}\n${source}\nconnected = true; window.disconnectForTest = () => { connected = false; controls(); };`);
+  w.eval(`${picker}\n${source}\nconnected = true; window.disconnectForTest = () => { connected = false; updateAvailability(); };`);
   const state = { sessionId: "activity", title: "Activity", cwd: "C:/work", status: "idle", config: { model: "test/model", thinking: "off", levels: ["off"], skills: [] }, messages: [], tasks: [], live: {}, tools: {} };
   const restore = (changes = {}) => w.snapshot({ ...state, ...changes });
   const emit = (type, data, agentId = "main") => w.event({ sessionId: state.sessionId, type, data, agentId });

@@ -321,7 +321,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       await updateSessions();
       return allSessions.find((s) => s.id === 'b').sessionFile;
     };
-    window.sidebarConnected = (value) => { connected = value; controls(); };
+    window.sidebarConnected = (value) => { connected = value; updateAvailability(); };
     window.sessionState = () => ({ connected, sessionId, error: document.getElementById("error").textContent });
     window.openPageAs = (value) => { sessionId = value; };
     // seenSessions 是模块作用域的 let，后续 window.eval 访问不到，必须由同一段代码暴露写入口。

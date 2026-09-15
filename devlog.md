@@ -2036,3 +2036,10 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 决策：新增 cancel_task({taskId})，仅作用于当前会话指定任务，复用 agent.abort 与任务结果/通知流程；保留已有历史，不回滚外部副作用，不增加 UI 或默认超时。
 - 涉及：src/tasks.js、src/tools.js、src/prompts.js、src/goal.js、任务与目标相关测试、README.md 及代码索引/坑库。取消回执不作为 Goal 验收证据。
 - 验证：最终 npm test 共 547 项，545 通过、0 失败、2 项既有平台跳过；独立复核发现回执从 id 改为 taskId 后旧断言遗漏，已修正并补首个回执断言；集成测试验证工具注册、目标 abort、兄弟隔离、结果先落库后通知。node --check 与 git diff --check 通过。未新增依赖，未重启运行中的服务。
+
+## 2026-09-15 前端区域边界与稳定模型菜单
+- 文件：public/app.js、public/model-picker.js、tests/frontend-regions*、tests/model-picker.test.js 及引用旧 controls 的测试。
+- 原因：无关输入/输出触发全区同步重建菜单；正文滚动旧监听关闭模型菜单；设置迟到回执可能覆盖新面板。
+- 改动：拆 controls、去掉无关 syncAll；选项比较与缺失占位、稳定键焦点/滚动恢复、完整 picker dispose；请求代次守卫；权威归并成功才推进 seq。保留共享收藏 syncAll 和连接可用性扇出，不新建状态框架。
+- 验证：浏览器 41 项通过；专项 19 项通过。首轮全量604通过/1失败/2跳过，失败来自远程设置测试未真实打开 dialog，已修正测试场景并保留原断言，等待最终全量复跑。
+- 限制：03订阅接线、05/06算法及Electron成品不在本次实现；热加载单独接线/提交。两项追加委派因宿主插件加载失败，由主任务补测。
