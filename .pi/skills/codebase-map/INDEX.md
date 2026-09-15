@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/15 02:56:41）
+# Axiom 多级代码索引（生成于 2026/9/15 02:58:18）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -56,8 +56,8 @@
 | src/session-store.js | 479 | 会话三表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, TABLES, INDEXES |
 | src/sessions.js | 1635 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | GOAL_TOOL_NAMES, hasRunningTasks, BROWSE_PAGE, SEARCH_LIMIT |
 | src/task-budget.js | 35 | 主子代理轮次预算规则、收尾提示词与配置页参数校验 | TASK_BUDGET_LIMITS, taskBudgetDefaults, within, taskBudgetPolicy |
-| src/tasks.js | 210 | Tasks：子任务（委托）生命周期 | ACTIVE, historyResult, Tasks |
-| src/tools.js | 110 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
+| src/tasks.js | 234 | Tasks：子任务（委托）生命周期 | ACTIVE, historyResult, Tasks |
+| src/tools.js | 131 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
 | tests/__pycache__/goal-ui.cpython-312.pyc | 165 | node --test 测试（npm test） | - |
 | tests/activity-groups-ui.py | 201 | node --test 测试（npm test） | activityHistory, sessions |
@@ -89,7 +89,7 @@
 | tests/goal-sessions.test.js | 740 | node --test 测试（npm test） | PLAN, factoryFixture, tick, until |
 | tests/goal-ui.py | 488 | node --test 测试（npm test） | - |
 | tests/goal-ui.test.js | 430 | node --test 测试（npm test） | page, $, labels, messages |
-| tests/goal.test.js | 853 | node --test 测试（npm test） | ROUND, GOAL, PLAN, PLAN2 |
+| tests/goal.test.js | 856 | node --test 测试（npm test） | ROUND, GOAL, PLAN, PLAN2 |
 | tests/helpers/model-concurrency-child.mjs | 82 | node --test 测试（npm test） | barrier, runOpponent |
 | tests/helpers/public-source.js | 10 | node --test 测试（npm test） | publicSource |
 | tests/image-input.test.js | 169 | node --test 测试（npm test） | pngBase64, jpegBase64, image, parsePrompt |
@@ -147,10 +147,11 @@
 | tests/stream-renderer.test.js | 116 | node --test 测试（npm test） | - |
 | tests/subagent-persistence.test.js | 123 | node --test 测试（npm test） | factory |
 | tests/task-budget.test.js | 102 | node --test 测试（npm test） | factory |
+| tests/task-cancel-notifications.test.js | 61 | node --test 测试（npm test） | until |
 | tests/task-notifications.test.js | 197 | node --test 测试（npm test） | factoryFixture, tick, until |
 | tests/task-resume.test.js | 182 | node --test 测试（npm test） | fakeAgent, fixture, restored |
 | tests/task-timer.test.js | 55 | node --test 测试（npm test） | factory, state, settle |
-| tests/tasks.test.js | 132 | node --test 测试（npm test） | fixture |
+| tests/tasks.test.js | 249 | node --test 测试（npm test） | fixture |
 | tests/text-diagram-ui.py | 36 | node --test 测试（npm test） | - |
 | tests/tooltip.test.js | 282 | node --test 测试（npm test） | source, boot, fire, tip |
 | tests/ui-sticky-check.html | 63 | node --test 测试（npm test） | checks, lines, ok |
@@ -1222,7 +1223,7 @@
 | within | const | 15 |
 | taskBudgetPolicy | function | 22 |
 
-### src/tasks.js（210 行） — Tasks：子任务（委托）生命周期
+### src/tasks.js（234 行） — Tasks：子任务（委托）生命周期
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1237,13 +1238,15 @@
 | retryable | method | 64 |
 | snapshot | method | 69 |
 | run | method | 73 |
-| read | method | 150 |
-| retry | method | 158 |
-| append | method | 177 |
-| cancel | method | 187 |
-| interrupt | method | 203 |
+| finalize | method | 145 |
+| read | method | 153 |
+| retry | method | 161 |
+| append | method | 180 |
+| cancelTask | method | 192 |
+| cancel | method | 211 |
+| interrupt | method | 227 |
 
-### src/tools.js（110 行） — delegationTools：委托/凭证读取/追加工具定义（zod 入参）
+### src/tools.js（131 行） — delegationTools：委托/凭证读取/追加工具定义（zod 入参）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1251,7 +1254,8 @@
 | readInput | const | 11 |
 | appendInput | const | 14 |
 | result | const | 21 |
-| delegationTools | function | 25 |
+| cancelInput | const | 24 |
+| delegationTools | function | 28 |
 
 ### src/update.js（41 行） — 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装
 
@@ -1456,7 +1460,7 @@
 | labels | const | 53 |
 | messages | const | 54 |
 
-### tests/goal.test.js（853 行） — node --test 测试（npm test）
+### tests/goal.test.js（856 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1983,6 +1987,12 @@
 |---|---|---|
 | factory | const | 10 |
 
+### tests/task-cancel-notifications.test.js（61 行） — node --test 测试（npm test）
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| until | const | 8 |
+
 ### tests/task-notifications.test.js（197 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
@@ -2007,12 +2017,13 @@
 | state | const | 19 |
 | settle | const | 20 |
 
-### tests/tasks.test.js（132 行） — node --test 测试（npm test）
+### tests/tasks.test.js（249 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | fixture | function | 7 |
 | assert | method | 53 |
+| release | method | 181 |
 
 ### tests/tooltip.test.js（282 行） — node --test 测试（npm test）
 

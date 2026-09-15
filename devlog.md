@@ -1726,3 +1726,11 @@ expected: '完成<progress>已完成检查</progress>'                          
 - skills/MCP/插件按当前目录清单校验；全局编辑不列项目资源，前端不补外项目/不可用能力为可选项，补充来源标签。发现清单每次按目录刷新，默认选择热生效，不覆盖已有会话的能力配置。
 - 涉及 src/sessions.js、src/capabilities.js、src/server.js、public/app.js 及对应测试、README.md、代码索引与坑库。
 - 验证：npm test：536 项，534 通过、2 跳过、0 失败。
+
+
+## 2026-09-15 新增单子任务取消工具
+
+- 原因：子代理工具长时间不返回时，主代理缺少只中断该任务的工具，追加指令不能代替取消。
+- 决策：新增 cancel_task({taskId})，仅作用于当前会话指定任务，复用 agent.abort 与任务结果/通知流程；保留已有历史，不回滚外部副作用，不增加 UI 或默认超时。
+- 涉及：src/tasks.js、src/tools.js、src/prompts.js、src/goal.js、任务与目标相关测试、README.md 及代码索引/坑库。取消回执不作为 Goal 验收证据。
+- 验证：最终 npm test 共 547 项，545 通过、0 失败、2 项既有平台跳过；独立复核发现回执从 id 改为 taskId 后旧断言遗漏，已修正并补首个回执断言；集成测试验证工具注册、目标 abort、兄弟隔离、结果先落库后通知。node --check 与 git diff --check 通过。未新增依赖，未重启运行中的服务。

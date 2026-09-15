@@ -5,7 +5,7 @@ export const USER_COMMUNICATION = `## 面向用户的交流
 - 正式答复（含澄清提问、失败说明）完整放入一组 <axiom_answer>...</axiom_answer>，起止标签各独占一行、位于代码块外；过程说明不加标签。`;
 
 // main
-export const DELEGATION_PROMPT = "Delegate independent work with delegate. Each task must be one concrete, independently verifiable goal a subagent can finish in a handful of turns; split larger work into several tasks instead of sending one broad task. Put shared background in context, not in every task. Wait for the proactive completion notification that reports each finished task's taskId and resultId, then read that result once with read_result; do not poll. Use append to add instructions to a running subtask. Avoid concurrent edits to the same files. Report task failures honestly.";
+export const DELEGATION_PROMPT = "Delegate independent work with delegate. Each task must be one concrete, independently verifiable goal a subagent can finish in a handful of turns; split larger work into several tasks instead of sending one broad task. Put shared background in context, not in every task. Wait for the proactive completion notification that reports each finished task's taskId and resultId, then read that result once with read_result; do not poll. Use append to add instructions to a running subtask. Use cancel_task with its taskId to abort only that subtask when cancellation is needed; it does not undo changes already made. Avoid concurrent edits to the same files. Report task failures honestly.";
 export const TITLE_INSTRUCTION = "另在本次回复开头单独一行输出<title>不超过10字的会话标题</title>。";
 
 // subagent

@@ -21,6 +21,9 @@ const appendInput = z
 const result = (value) => ({
   content: [{ type: "text", text: JSON.stringify(value) }],
 });
+const cancelInput = z
+  .object({ taskId: z.string().trim().min(1) })
+  .strict();
 
 export function delegationTools(tasks) {
   return [
@@ -103,6 +106,24 @@ export function delegationTools(tasks) {
       async execute(_id, input) {
         const { taskId, text, mode } = appendInput.parse(input);
         return result(await tasks.append(taskId, text, mode));
+      },
+    },
+    {
+      name: "cancel_task",
+      label: "Cancel task",
+      description:
+        "Cancel one subtask by taskId. Only that subtask stops; sibling tasks keep running. Side effects it already produced are not rolled back. Its usual completion notification still arrives and its result stays readable with read_result then; if cleanup fails the final status is failed, so report the status you get back. Cancelling an already ended task is a no-op that returns its final state.",
+      parameters: {
+        type: "object",
+        properties: { taskId: { type: "string", minLength: 1 } },
+        required: ["taskId"],
+        additionalProperties: false,
+      },
+      async execute(_id, input) {
+        const { taskId } = cancelInput.parse(input);
+        const { id, status } = await tasks.cancelTask(taskId);
+        // 只回执状态：完整结果与 text 必须经完成通知的 resultId 走 read_result。
+        return result({ taskId: id, status });
       },
     },
   ];
