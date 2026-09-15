@@ -632,3 +632,19 @@ Axiom 使用数据目录中的 `axiom.db`（Node 内置 SQLite，WAL 模式）�
 与任务03的订阅入口尚未接线：本分支仍复用已有事件分发；集成时迁移通知入口，不复制消息 reducer。05/06继续拥有历史窗口和流式绘制算法，本改动不替换它们。
 
 隔离验证：`node --test tests/frontend-regions.test.js tests/model-picker.test.js`；真实 Chromium：`python tests/frontend-regions-ui.py`（自动启动随机端口假数据服务，截图位于系统临时目录 `axiom-frontend-regions`）。浏览器输出增长测试直接增加正文 DOM；真实事件路径另由单测覆盖，不宣称已完成真实模型流式压测或 Electron 验收。
+
+### 独立前端开发服务器（Vite）
+
+两个终端分别运行 `npm run dev`（隔离后端，4320）和 `npm run dev:web`（前端，**http://127.0.0.1:5173**）。前端脚本不启动、不停止、不重启后端；不要混用 localhost 与 127.0.0.1，代理严格校验开发页面 Host/Origin。Vite 固定为开发依赖 **8.3.0**，Node 要求与项目 engines 相容；`npm start` 和正式静态路径不依赖 Vite，不需要生产构建。
+
+```text
+浏览器 -> 5173 Vite -> /ws、/health、/service/stop -> 4320 隔离后端
+           |
+           +-> Vite 自带开发 WS（仅 CSS 热替换，不承载业务事件）
+```
+
+**当前交付是 CSS 热替换，不是无损 JS HMR。** CSS 保存后不刷新页面，草稿与阅读位置原地保留；普通 JS/HTML 的整页自动刷新统一暂停，终端会提示。手动刷新仍会丢失内存草稿/附件/阅读位置，请先复制或保存；尚未实现刷新持久化，因此没有启用自动刷新，不能把这一阶段称为完整热加载目标已完成。新增文件仍需登记生产 server.js 静态路由。后端源码修改走原有安全重启流程。
+
+安全边界：Vite 仅绑定 loopback，HTTP/业务 WS 在代理改写头之前拒绝非同源 Origin；生产鉴权/Host/Origin/CSP不变。仅开发维护服务允许固定5173 Origin（token仍必需）；开发CSP仅为CSS注入允许 inline style，并允许loopback维护端口，不允许 inline script/unsafe-eval。Vite仍是开发工具，不应向局域网或公网暴露。
+
+验证：`node --test tests/dev-vite.test.js tests/dev-assets.test.js`；`python tests/dev-vite-ui.py`（串行运行，会临时追加并 finally 恢复本 worktree 的 CSS/JS）。后者验证真实 CSS 更新、草稿与页面身份保留、JS刷新暂停、隔离后端健康身份不变。
