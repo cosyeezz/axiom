@@ -1247,3 +1247,14 @@
 - 实测（Chromium 152 / Playwright）：首屏 firstOutput 1171ms、lastOutput 1626ms、最大长任务 955ms；切换触发 1345ms 长任务；**DOM 节点 39,947**（#output 97、tool-record 332、call-group 48）；流式文本尾部每帧 7–12ms（峰值 33ms）、头部 2–4ms、64000 字符全量冷渲染 502.6ms；长会话堆 50.6MB、切换后 53.3MB、短会话 3.4MB。滚动与静止基线均 ~31.3ms/帧（≈32fps），滚动掉帧未复现；3 轮切换内存 +0.7MB 并随 GC 回落，短周期未复现持续增长。折叠成本：单个 tool-record 3–10ms，332 个全开 4.1ms 且 DOM 数不变（惰性渲染生效）。
 - 涉及：新增 docs/perf-long-conversation/（README.md 测量口径、session-stats.json、first-screen.json、switch.json、memory.json、scroll-fold.json、stream-render.json、measure.mjs）。产品代码（public/、src/、scripts/）零改动。
 - 验证：`git diff --stat -- public src scripts` 为空；两处实例（4399/4410）结果交叉印证。
+
+## 2026-09-14 长对话性能调研第 3 轮：genericagent 前端机制对照
+
+- 原因：需确认 genericagent 的 Web 聊天前端/后端流式处理里哪些机制值得移植，避免把 axiom 已有的能力当缺口重复建议。
+- 对象：本地只读克隆 `/f/tmp/GenericAgent-ro` @ f6e5657；限定 frontends/desktop/static/*、ga-web.js、desktop_bridge.py、conductor.html、chatapp_common.py，未做全仓库扫描。未运行 genericagent，未改产品代码。
+- 结论（11 条机制，每条含 GA 文件:行号 + axiom 等价物）：
+  - 已具备但实现不同（勿重复建议）：批量 hydrate 单次整表渲染（GA app.js:3047-3052/2247-2253 ↔ axiom public/app.js:2001-2125）、增量游标拉取（GA app.js:1585/2996-3004 ↔ axiom WS 增量 src/sessions.js:744）、展开才渲染的惰性（GA app.js:1291-1303 ↔ axiom public/app.js:1160、1048-1049、1239-1241、1329）、滚动 rAF 贴底（GA app.js:2294-2301 ↔ axiom public/app.js:195-204）。
+  - axiom 确实缺失（本轮 3 条适用结论）：① 流式重绘节流与逐字步长（GA app.js:2303-2306/2421-2444；axiom public/app.js:1863-1889 → public/stream-renderer.js:9-25 每帧全量重绘，实测 7–12ms/帧、峰值 33ms）；② 每帧对整条消息跑 marked.lexer（axiom public/markdown.js:219-220，块级 DOM 缓存已有但 lex 范围未限定）；③ 用户交互期间暂停 DOM 重写（GA app.js:2306-2337 DRAFT_INTERACT_MS=520；axiom 无对应机制）。
+  - 不适用：按轮折叠（axiom 一条 message 即一个 turn，与 compaction public/app.js:2050-2090、call-group public/app.js:731-748/905-921、goal 轮次 public/goal.js:518-540 重叠）、后端历史分页（axiom 用事件增量，分页不解决首屏渲染成本）、GA 刷新恢复对齐（axiom 无打字机）。
+- 反例记录：conductor.html:540-542 整体重画仅适用于小数据量；chatapp_common.py:60-77 split_text 是 IM 平台消息分片，与 Web 渲染无关。
+- 涉及：新增 docs/perf-long-conversation/genericagent-mechanisms.md。产品代码（public/、src/、scripts/）零改动。
