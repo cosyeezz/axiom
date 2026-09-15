@@ -9,7 +9,7 @@
 - 边界：主代理停下后子代理继续跑完自己（侧栏仍显示运行中）；暂停期内的子任务通知不补发；队列消息原样退回输入框；标题提醒点仅覆盖安全停止，不复用失败中断，且为页面内存态不跨标签页。goal 模式下两颗停止按钮都走 Goal 的安全暂停（保留目标进度、等子任务收尾），强停的「立即中断」语义仅对普通会话成立。
 - 验证：新增 tests/safe-stop.test.js 4 个用例（真实 Pi SDK + fake SSE 子进程：工具跑完、文本不丢、stopReason 仍可 resume、resume 后正常收尾、排队消息不被抽水循环消费；`sessions.safeStop` 不 abort / 暂停通知 / 快照标志 / idle 标记；idle 幂等与强停优先；cancel 缺省 mode）；tests/goal-sessions.test.js 补 goal 会话转交暂停的回归；tests/app.test.js 补两级停止 UI 回归。
 - 涉及文件：src/pi.js、src/sessions.js、src/server.js、src/protocol.js、public/index.html、public/style.css、public/app.js、tests/safe-stop.test.js、tests/goal-sessions.test.js、tests/app.test.js、README.md、devlog.md。
-- 合并：与 origin/master（2c8051b，含 Goal 模式）合并时，goal 的安全暂停与本功能共用同一个 `shouldStopAfterTurn`/`hasQueuedMessages` 钩子，需合为一个函数（否则后赋值的会覆盖 goal 的暂停）；冲突集中在 src/pi.js（三处 `beginRun()`）、src/sessions.js（startRun 通知复位）、devlog.md 与生成物 INDEX.md。
+- 合并：与 origin/master（2c8051b，含 Goal 模式）合并时，goal 的安全暂停与本功能共用同一个 `shouldStopAfterTurn`/`hasQueuedMessages` 钩子，需合为一个函数（否则后赋值的会覆盖 goal 的暂停）；冲突集中在 src/pi.js（三处 `beginRun()`）、src/sessions.js（startRun 通知复位）、devlog.md 与生成物 INDEX.md。随后又并入 b1cee83（SQLite 持久化排查修复、goal 完成标记展示层剥离、任务结果落库口径），唯一冲突同样是生成物 INDEX.md；重点复核了 `persist()/writeChange()` 改为支持增量数组后，本功能按单对象调用仍然有效。两次合并后 npm test：539 项，537 通过、2 跳过、0 失败。
 
 ## 2026-09-14 工作空间独立会话配置
 
