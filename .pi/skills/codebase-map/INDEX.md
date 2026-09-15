@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/14 19:42:57）
+# Axiom 多级代码索引（生成于 2026/9/14 19:46:33）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -54,7 +54,7 @@
 | src/server.js | 505 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | dev, digest, load, freshen |
 | src/session-memory.js | 29 | 标题提取登记、轮次预算挂钩与委派背景 | textOf, memoryHooks |
 | src/session-store.js | 479 | 会话三表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, TABLES, INDEXES |
-| src/sessions.js | 1597 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | GOAL_TOOL_NAMES, hasRunningTasks, BROWSE_PAGE, SEARCH_LIMIT |
+| src/sessions.js | 1596 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | GOAL_TOOL_NAMES, hasRunningTasks, BROWSE_PAGE, SEARCH_LIMIT |
 | src/task-budget.js | 35 | 主子代理轮次预算规则、收尾提示词与配置页参数校验 | TASK_BUDGET_LIMITS, taskBudgetDefaults, within, taskBudgetPolicy |
 | src/tasks.js | 210 | Tasks：子任务（委托）生命周期 | ACTIVE, historyResult, Tasks |
 | src/tools.js | 110 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
@@ -1115,7 +1115,7 @@
 | saveTask | method | 450 |
 | listTasks | method | 473 |
 
-### src/sessions.js（1597 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
+### src/sessions.js（1596 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1136,69 +1136,69 @@
 | importedTitle | function | 141 |
 | hostLocations | function | 163 |
 | landedSessionFile | function | 182 |
-| RETRYABLE_SQLITE | const | 190 |
-| retryableWrite | const | 191 |
-| DEFAULTS_NS | const | 195 |
-| WORKSPACE_PREFIX | const | 196 |
-| workspaceKeyOf | const | 197 |
-| validateProjectSkills | function | 200 |
-| validateProjectSkillEntry | function | 204 |
-| Sessions | class | 211 |
-| constructor | method | 212 |
-| applyDefaults | method | 237 |
-| loadDefaults | method | 244 |
-| migrateDefaults | method | 256 |
-| migrateLegacyStore | method | 271 |
-| loadWorkspaceDefaults | method | 295 |
-| loadTaskBudget | method | 314 |
-| getTaskBudget | method | 329 |
-| configureTaskBudget | method | 335 |
-| getDefaults | method | 342 |
-| defaultsFor | method | 346 |
-| listDefaults | method | 350 |
-| deleteDefaults | method | 356 |
-| removeDefaults | method | 361 |
-| workspaceDefaults | method | 372 |
-| configureDefaults | method | 390 |
-| saveDefaults | method | 396 |
-| pushCompaction | method | 434 |
-| validateSelection | method | 445 |
-| validateCompaction | method | 476 |
-| load | method | 491 |
-| ensureLoaded | method | 516 |
-| migrateLegacySessions | method | 538 |
-| sessionData | method | 562 |
-| persist | method | 581 |
-| writeChange | method | 610 |
-| saveChange | method | 626 |
-| list | method | 631 |
-| rename | method | 648 |
-| importSession | method | 661 |
-| create | method | 688 |
-| goalAction | method | 1043 |
-| scheduleGoal | method | 1089 |
-| advanceGoal | method | 1101 |
-| goalNotificationsBlocked | method | 1139 |
-| scheduleTaskNotifications | method | 1146 |
-| deliverTaskNotifications | method | 1158 |
-| get | method | 1186 |
-| revealWorkspace | method | 1191 |
-| browse | method | 1205 |
-| listFiles | method | 1211 |
-| refreshSkills | method | 1273 |
-| snapshot | method | 1279 |
-| subscribe | method | 1311 |
-| configure | method | 1317 |
-| startRun | method | 1353 |
-| retry | method | 1392 |
-| prompt | method | 1401 |
-| withdraw | method | 1436 |
-| replyQuestion | method | 1485 |
-| cancel | method | 1491 |
-| retryTask | method | 1517 |
-| deleteRecords | method | 1528 |
-| remove | method | 1539 |
-| close | method | 1587 |
+| RETRYABLE_SQLITE | const | 189 |
+| retryableWrite | const | 190 |
+| DEFAULTS_NS | const | 194 |
+| WORKSPACE_PREFIX | const | 195 |
+| workspaceKeyOf | const | 196 |
+| validateProjectSkills | function | 199 |
+| validateProjectSkillEntry | function | 203 |
+| Sessions | class | 210 |
+| constructor | method | 211 |
+| applyDefaults | method | 236 |
+| loadDefaults | method | 243 |
+| migrateDefaults | method | 255 |
+| migrateLegacyStore | method | 270 |
+| loadWorkspaceDefaults | method | 294 |
+| loadTaskBudget | method | 313 |
+| getTaskBudget | method | 328 |
+| configureTaskBudget | method | 334 |
+| getDefaults | method | 341 |
+| defaultsFor | method | 345 |
+| listDefaults | method | 349 |
+| deleteDefaults | method | 355 |
+| removeDefaults | method | 360 |
+| workspaceDefaults | method | 371 |
+| configureDefaults | method | 389 |
+| saveDefaults | method | 395 |
+| pushCompaction | method | 433 |
+| validateSelection | method | 444 |
+| validateCompaction | method | 475 |
+| load | method | 490 |
+| ensureLoaded | method | 515 |
+| migrateLegacySessions | method | 537 |
+| sessionData | method | 561 |
+| persist | method | 580 |
+| writeChange | method | 609 |
+| saveChange | method | 625 |
+| list | method | 630 |
+| rename | method | 647 |
+| importSession | method | 660 |
+| create | method | 687 |
+| goalAction | method | 1042 |
+| scheduleGoal | method | 1088 |
+| advanceGoal | method | 1100 |
+| goalNotificationsBlocked | method | 1138 |
+| scheduleTaskNotifications | method | 1145 |
+| deliverTaskNotifications | method | 1157 |
+| get | method | 1185 |
+| revealWorkspace | method | 1190 |
+| browse | method | 1204 |
+| listFiles | method | 1210 |
+| refreshSkills | method | 1272 |
+| snapshot | method | 1278 |
+| subscribe | method | 1310 |
+| configure | method | 1316 |
+| startRun | method | 1352 |
+| retry | method | 1391 |
+| prompt | method | 1400 |
+| withdraw | method | 1435 |
+| replyQuestion | method | 1484 |
+| cancel | method | 1490 |
+| retryTask | method | 1516 |
+| deleteRecords | method | 1527 |
+| remove | method | 1538 |
+| close | method | 1586 |
 
 ### src/task-budget.js（35 行） — 主子代理轮次预算规则、收尾提示词与配置页参数校验
 
