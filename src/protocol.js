@@ -129,7 +129,9 @@ export const providerConfigIn = z
     baseUrl: z.string().trim().min(1).max(2048).optional().nullable(),
     apiKey: secretValueIn.optional(),
     api: z.string().trim().min(1).max(64).optional().nullable(),
-    oauth: z.literal("radius").optional().nullable(),
+    // oauth 只允许 "radius"。不用 z.literal：它的 invalid_literal issue 会把收到的原值放进
+    // received 字段，而 server.js 把整条 message 原样回传客户端（错误信息不得携带原文片段）。
+    oauth: z.string().refine((value) => value === "radius", "oauth 只支持 radius").optional().nullable(),
     authHeader: z.boolean().optional().nullable(),
     headers: secretHeadersIn.optional().nullable(),
     compat: z.record(z.string(), z.unknown()).optional().nullable(),

@@ -1,36 +1,35 @@
 // 展示协议只识别独占行的标签；原始消息始终由调用方保存。
+// 代码区判定与 memory-tags、goal 共用 public/markdown-scan.js：写在围栏、缩进代码块或行内代码
+// 里的标记是在举例，不是协议（原先自带的行内反引号计数器跨行不重置，一个落单反引号就让整条消息失效）。
+import { maskCode, cutSpans } from "./markdown-scan.js";
+
 const OPEN = "<axiom_answer>";
 const CLOSE = "</axiom_answer>";
+// 标记必须独占一行、缩进不超过 3 空格：4 空格起是缩进代码块，属于举例。
+const isMark = (line) => /^ {0,3}\S/.test(line) && (line.trim() === OPEN || line.trim() === CLOSE);
 
 export function splitAnswer(text, { streaming = false } = {}) {
   text = String(text ?? "");
+  const lines = maskCode(text).split("\n");
   const marks = [];
-  let fence = null, inline = 0, offset = 0, pending = -1;
-  const lines = text.split("\n");
+  let offset = 0, pending = -1;
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const run = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
-    if (fence) {
-      if (run && run[1][0] === fence.char && run[1].length >= fence.size && !run[2].trim()) fence = null;
-    } else if (run && !inline) {
-      fence = { char: run[1][0], size: run[1].length };
-    } else {
-      const trimmed = line.trim();
-      if (!inline && (trimmed === OPEN || trimmed === CLOSE)) {
-        marks.push({ kind: trimmed, start: offset, end: offset + line.length });
-      } else if (!inline && streaming && i === lines.length - 1 && trimmed
-        && [OPEN, CLOSE].some(mark => mark.startsWith(trimmed))) {
-        pending = offset;
-      }
-      for (const match of line.matchAll(/`+/g)) {
-        if (!inline) inline = match[0].length;
-        else if (inline === match[0].length) inline = 0;
-      }
-    }
+    const line = lines[i], trimmed = line.trim();
+    if (isMark(line)) marks.push({ kind: trimmed, start: offset, end: offset + line.length });
+    // 流式：末行正在输入的标记前缀先藏起来，避免半截标签闪现。
+    else if (streaming && i === lines.length - 1 && trimmed && /^ {0,3}\S/.test(line)
+      && [OPEN, CLOSE].some((mark) => mark.startsWith(trimmed))) pending = offset;
     offset += line.length + 1;
   }
   const visible = pending < 0 ? text : text.slice(0, pending);
-  const fallback = (malformed = false) => ({ found: false, answer: visible, process: "", incomplete: false, malformed });
+  // 丢协议不丢正文：解析不出协议时照样删掉独占行的裸标记，不让 <axiom_answer> 漏进展示文本。
+  const fallback = (malformed = false) => ({
+    found: false,
+    answer: cutSpans(visible, marks.map((mark) => [mark.start, mark.end])),
+    process: "",
+    incomplete: false,
+    malformed,
+  });
   if (!marks.length) return fallback();
   if (marks[0].kind !== OPEN || marks.length > 2 || (marks[1] && marks[1].kind !== CLOSE)) return fallback(true);
   const [open, close] = marks;

@@ -511,3 +511,129 @@ test("#normalizeSchema：旧库幂等清理死表死列死事件行，业务数�
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("无 id 事件按内容去重：老库 NULL key 行反复对账不再线性膨胀", () =>
+  withStore((store, db) => {
+    store.insertSession({ id: "s1", cwd: "F:/x" });
+    const legacy = { agentId: "main", status: "waiting", attempt: 1 };
+    // 运行期路径都带 id；真正的触发面是老库里已有的无 id 历史行——create() 的恢复对账
+    // 会把 getSession 读出的记录逐条 saveEvent 回写，每打开一次就再追加一份。
+    store.saveEvent("s1", "retry", legacy);
+    store.saveEvent("s1", "retry", { ...legacy });
+    store.saveEvent("s1", "retry", { ...legacy });
+    assert.equal(db.prepare("SELECT count(*) AS n FROM session_events WHERE session_id = 's1'").get().n, 1);
+    assert.deepEqual(store.getSession("s1").retries, [legacy]);
+    // 内容不同仍各自成行（同一轮里的两条不同事件不能被并成一条）。
+    store.saveEvent("s1", "retry", { ...legacy, attempt: 2 });
+    assert.equal(db.prepare("SELECT count(*) AS n FROM session_events WHERE session_id = 's1'").get().n, 2);
+    // 同代理同内容才算同一条：agentId 不同的兄弟不得被误并。
+    store.saveEvent("s1", "retry", { ...legacy, agentId: "task-1" });
+    assert.equal(db.prepare("SELECT count(*) AS n FROM session_events WHERE session_id = 's1'").get().n, 3);
+  }));
+
+test("老库 NULL key 事件行开库补稳定身份：读回带 id，归一化重写走 upsert，撤回删得掉", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "axiom-nullkey-"));
+  const path = join(dir, "axiom.db");
+  const connections = [];
+  const rows = (db) => db.prepare("SELECT key, record FROM session_events WHERE session_id = 's1' ORDER BY rowid").all();
+  try {
+    const first = new Database(path);
+    connections.push(first);
+    const store = new SessionStore(first);
+    store.insertSession({ id: "s1", cwd: "F:/x" });
+    // 老版本（key 可空、导入侧还没有 anon-<序号> 兜底）留下的无 id 行：库里没有身份，
+    // 读回就没有 id，重写与删除都失去落点。只能在开库时补一次。
+    first.exec(
+      `INSERT INTO session_events (session_id, type, agent_id, key, record)
+       VALUES ('s1', 'retry', 'main', NULL, '{"agentId":"main","status":"failed","messageCount":3}')`,
+    );
+    first.close();
+
+    const upgraded = new Database(path);
+    connections.push(upgraded);
+    const store2 = new SessionStore(upgraded);
+    assert.equal(rows(upgraded).length, 1, "补身份不得增删行");
+    assert.notEqual(rows(upgraded)[0].key, null, "老库无 id 行必须在开库时补上稳定 key");
+    const restored = store2.getSession("s1").retries[0];
+    assert.ok(restored.id, "读回必须带 id，否则重写和删除都没有身份");
+
+    // 恢复对账先归一化再整段回写（messageCount 落在消息数之外就删掉）：内容变了，
+    // 有身份才 upsert 改同一行；没身份只能按内容判重，于是多出一条永远删不掉的幽灵行。
+    const normalized = { ...restored };
+    delete normalized.messageCount;
+    store2.saveEvent("s1", "retry", normalized);
+    assert.equal(rows(upgraded).length, 1, "归一化后回写必须改原行，不得追加幽灵行");
+    assert.deepEqual(store2.getSession("s1").retries, [normalized]);
+
+    // 撤回删除：无 id 记录会被 deleteEvents 拒绝，确定性失败会连带整笔增量（含会话快照）被丢弃，
+    // 结果是界面上没了、库里永远留着。
+    store2.deleteEvents("s1", "retry", [normalized]);
+    assert.equal(rows(upgraded).length, 0, "撤回必须真的删掉库里的行");
+    upgraded.close();
+
+    // 幂等：已有 key 的行重开不得被改写。
+    const again = new Database(path);
+    connections.push(again);
+    new SessionStore(again).saveEvent("s1", "retry", { id: "r1", agentId: "main", status: "waiting" });
+    const keyBefore = rows(again)[0].key;
+    again.close();
+    const last = new Database(path);
+    connections.push(last);
+    new SessionStore(last);
+    assert.equal(rows(last)[0].key, keyBefore, "已有身份的行重开不得被改写");
+  } finally {
+    for (const connection of connections) { try { connection.close(); } catch { /* 已关 */ } }
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("待通知任务查询走部分索引，不全表扫描", () =>
+  withStore((store, db) => {
+    store.insertSession({ id: "s1", cwd: "F:/x" });
+    store.saveTask("s1", { id: "t1", task: "做事", status: "completed", resultId: "r1", notified: false });
+    const plan = db.prepare("EXPLAIN QUERY PLAN SELECT DISTINCT session_id FROM tasks WHERE COALESCE(notified, 0) = 0").all()
+      .map((row) => row.detail).join(" ");
+    assert.match(plan, /USING (COVERING )?INDEX tasks_pending/, `启动恢复每次都跑这条查询，不该全表扫描：${plan}`);
+    assert.deepEqual(store.listPendingSessionIds(), ["s1"]);
+  }));
+
+test("新增部分索引的老库升级：重开幂等建立，旧数据仍可读且投影口径不变", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "axiom-index-upgrade-"));
+  const path = join(dir, "axiom.db");
+  const connections = [];
+  const indexCount = (db) =>
+    db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type = 'index' AND name = 'tasks_pending'").get().n;
+  try {
+    // 先用当前实现建库写数据，再 DROP 掉索引 —— 等价于「本次改动之前建的老库」。
+    const first = new Database(path);
+    connections.push(first);
+    const store = new SessionStore(first);
+    store.insertSession(fullSaved());
+    const before = store.getSession("s1");
+    const pendingBefore = store.listPendingSessionIds();
+    first.exec("DROP INDEX tasks_pending");
+    assert.equal(indexCount(first), 0, "前提：老库没有这条索引");
+    first.close();
+
+    // 重开：索引自动补建，旧数据一条不少，投影字节级一致。
+    const upgraded = new Database(path);
+    connections.push(upgraded);
+    const store2 = new SessionStore(upgraded);
+    assert.equal(indexCount(upgraded), 1, "老库重开必须补建索引");
+    assert.deepEqual(store2.getSession("s1"), before, "旧数据与投影口径不得变化");
+    assert.deepEqual(store2.listPendingSessionIds(), pendingBefore);
+    assert.deepEqual(store2.listTasks("s1"), before.tasks);
+    upgraded.close();
+
+    // 再开一次：CREATE INDEX IF NOT EXISTS 空转，不重复执行也不报错（幂等）。
+    const again = new Database(path);
+    connections.push(again);
+    const store3 = new SessionStore(again);
+    assert.equal(indexCount(again), 1);
+    assert.deepEqual(store3.getSession("s1"), before);
+    again.close();
+  } finally {
+    for (const connection of connections) { try { connection.close(); } catch { /* 已关 */ } }
+    await rm(dir, { recursive: true, force: true });
+  }
+});

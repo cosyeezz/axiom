@@ -1,110 +1,106 @@
-// 会话记忆标签：助手在回复中用 <title> 自报会话标题。
+// 会话记忆标签：助手在回复开头用 <title> 自报会话标题。
 // extractMemoryTags 供后端落库（src/session-memory.js），stripMemoryTags 供展示过滤（前端流式与 result() 去标签）。
-// 标签可跨行（模型常把开启标签、正文、闭合标签分行写）；代码围栏（``` 行，允许缩进，未闭合视为代码到结尾）
-// 与行内代码（`…`）内一律不处理：写在反引号里的标签是在讨论标签，不是自报标签。
+// 代码区（围栏、缩进代码块、行内代码）一律不处理：写在代码里的标签是在讨论标签，不是自报标签，
+// 判定口径与 answer-tags、goal 共用 public/markdown-scan.js。
+import { maskCode, cutSpans, FILL } from "./markdown-scan.js";
 
-// title 是唯一仍在提取的标签；axiom_summary/summary/progress 来自已删除的摘要机制，
-// 仍留在列表内只为展示过滤：旧会话历史里存着这些标签，不剥就会漏进正文。
-const TAGS = ["axiom_summary", "summary", "title", "progress"];
+// 自报标签只有 title 一个，且只认「回复的第一行」：<title> 同时是常见 HTML 元素，正文里讲页头
+// 写法时出现的 <title>示例站点</title> 不是自报，既不能提取（污染会话标题）也不能删（吞掉正文）。
+const LIVE = "title";
+// axiom_summary/summary/progress 来自已删除的摘要机制，只做展示过滤：旧会话历史里存着这些标签，不剥就会漏进正文。
+const DEAD = ["axiom_summary", "summary", "progress"];
+const TAGS = [LIVE, ...DEAD];
 const NAMES = TAGS.join("|");
-// 有界标签，内容可跨行；内容排除其他标签起点，杜绝贪婪吞并同类标签与嵌套。
+// 有界标签，内容可跨行（模型常把开启标签、正文、闭合标签分行写）；内容排除其他标签起点，杜绝贪婪吞并与嵌套。
 const TAG = new RegExp(`<(${NAMES})>((?:(?!<(?:/?(?:${NAMES})))[\\s\\S])*?)</\\1>`, "gi");
 const OPEN = new RegExp(`<(${NAMES})>`, "gi");
 const CLOSE = new RegExp(`</(${NAMES})>`, "gi");
 const MARKS = TAGS.flatMap((tag) => [`<${tag}>`, `</${tag}>`]);
-const FENCE = /^\s*```/;
-// 行内代码跨度（CommonMark）：N 个反引号开头，到下一串恰好 N 个反引号结束；不跨行（够用）。
-const INLINE_CODE = /(`+)(?:(?!\1`)[^\n])+?\1(?!`)/g;
-// 已删标签的占位符：整行只剩占位符就丢弃该行，不留空档。
-const HOLE = "\u0000";
+const TITLE_MAX = 10;
+// 与真 HTML 元素同名的标签写在这些父元素里就是正经 HTML（<details> 的折叠标题、<head> 的页面标题），不剥。
+const PARENT = { summary: "details", title: "head" };
+// 已剥离内容的占位符：与 FILL（代码区）分开，反复剥壳时外层才不会把已剥内容误当代码区。
+const HOLE = "\u0002";
+const hide = (text) => text.replace(/[^\n]/g, HOLE);
+// 输入自带这两个控制字符会打乱掩码与下标对齐，入口先去掉（不可见字符，去掉不影响展示）。
+const sanitize = (text) => (text.includes(FILL) || text.includes(HOLE) ? text.replaceAll(FILL, "").replaceAll(HOLE, "") : text);
 
-// 行内代码遮罩：先换成不含尖括号的占位符，标签处理完再原样回填。
-// 不遮罩的后果：`<summary>` 这样的行内代码会被当成未闭合开启标签，按规则“截到段尾”把后文全吃掉。
-const MASK = "\u0001";
-function maskInlineCode(text) {
-  const spans = [];
-  const masked = text.replace(INLINE_CODE, (span) => `${MASK}${spans.push(span) - 1}${MASK}`);
-  return { masked, spans };
-}
-const unmaskInlineCode = (text, spans) =>
-  spans.length
-    ? text.replace(new RegExp(`${MASK}(\\d+)${MASK}`, "g"), (all, index) => spans[Number(index)] ?? all) // 输入自带占位符字符时不写出 undefined
-    : text;
-
-// 按代码围栏切段：连续同类（代码/非代码）行合成一段，段内可跨行匹配标签。
-function segments(text) {
-  const out = [];
-  let code = false;
-  for (const line of String(text).split("\n")) {
-    const fence = FENCE.test(line);
-    const inCode = fence || code;
-    if (fence) code = !code;
-    if (out.length && out.at(-1).inCode === inCode) out.at(-1).lines.push(line);
-    else out.push({ inCode, lines: [line] });
+// 回复的第一行（跳过空行与整行代码）的字符区间：自报标题只在这里生效。
+function headLine(masked) {
+  let at = 0;
+  for (const line of masked.split("\n")) {
+    if (line.replaceAll(FILL, "").trim()) return [at, at + line.length];
+    at += line.length + 1;
   }
-  return out;
+  return [0, 0];
 }
+const inHead = (at, head) => at >= head[0] && at < head[1];
+// 标签落在同名 HTML 元素的父元素里（前面有未闭合的 <details>/<head>）
+function inParent(masked, name, at) {
+  const parent = PARENT[name.toLowerCase()];
+  if (!parent) return false;
+  const before = masked.slice(0, at);
+  const opens = before.match(new RegExp(`<${parent}[\\s>]`, "gi"))?.length ?? 0;
+  const closes = before.match(new RegExp(`</${parent}>`, "gi"))?.length ?? 0;
+  return opens > closes;
+}
+// 前面有带属性的同名开启标签 → 落单的闭合标签属于那段真 HTML（<progress value="70"></progress>），不剥。
+const attributedOpen = (text, name, at) => new RegExp(`<${name}\\s[^<>]*>`, "i").test(text.slice(0, at));
 
-// 提取模型自报标签，返回 { title? }（缺省键不出现；旧摘要标签不再提取）。
-// 标签内容可跨行（换行折叠为空格）；title 取首个。
+// 提取模型自报标签，返回 { title? }（缺省键不出现；已删机制的旧标签不提取）。
+// 标签内容可跨行（换行折叠为空格）；title 取首个合法值。
 export function extractMemoryTags(text) {
   if (typeof text !== "string" || !text) return {};
-  const found = {};
-  for (const { inCode, lines } of segments(text)) {
-    if (inCode) continue;
-    for (const [, name, body] of maskInlineCode(lines.join("\n")).masked.matchAll(TAG)) {
-      const key = name.toLowerCase();
-      if (key !== "title") continue;
-      const value = body.trim().replace(/\s+/g, " ");
-      if (!value || key in found || [...value].length > 10) continue;
-      found[key] = value;
-    }
+  const clean = sanitize(text);
+  const masked = maskCode(clean);
+  const head = headLine(masked);
+  for (const match of masked.matchAll(TAG)) {
+    const name = match[1].toLowerCase();
+    if (name !== LIVE || !inHead(match.index, head) || inParent(masked, name, match.index)) continue;
+    const body = clean.slice(match.index + name.length + 2, match.index + match[0].length - name.length - 3);
+    const value = body.trim().replace(/\s+/g, " ");
+    if (!value || [...value].length > TITLE_MAX) continue;
+    return { title: value };
   }
-  return found;
+  return {};
 }
 
-// 从展示文本去除记忆标签（不改原文）：完整标签删除，首个无配对闭合的开启标签截到段尾
-// （正在流式输入的摘要），落单的闭合标签删除；streaming=true 再隐藏行尾正在输入的标签残片（"<sum"、"</t" 等）。
-// 代码围栏内不做任何处理。
+// 从展示文本去除记忆标签（不改原文）：完整标签连内容删除，落单的开启/闭合标签只删标签本身
+// （谈到标签名不该吞掉后文，更不该吞掉别的机制的标记）；整行只剩空白就丢掉该行，不留空档。
+// streaming=true 时另外两条：落单开启标签按「正在输入的整块」隐藏到文本末尾，行尾正在输入的
+// 标签残片（"<sum"、"</t" 等）也隐藏，避免半截标签闪现。
 export function stripMemoryTags(text, { streaming = false } = {}) {
   if (typeof text !== "string" || !text) return text;
-  const kept = [];
-  for (const { inCode, lines } of segments(text)) {
-    if (inCode) {
-      kept.push(...lines.map((line) => ({ line, inCode })));
-      continue;
-    }
-    // 反复剥壳：嵌套在外层的完整标签在内层剥掉后才完整可见。
-    const { masked, spans } = maskInlineCode(lines.join("\n").replaceAll(HOLE, ""));
-    let stripped = masked, prev;
-    do {
-      prev = stripped;
-      stripped = stripped.replace(TAG, HOLE);
-    } while (stripped !== prev);
-    for (const match of stripped.matchAll(OPEN)) {
-      const at = match.index;
-      if (new RegExp(`</${match[1]}>`, "i").test(stripped.slice(at + match[0].length))) continue;
-      stripped = stripped.slice(0, at) + HOLE;
-      break;
-    }
-    stripped = unmaskInlineCode(stripped.replace(CLOSE, HOLE), spans); // 开启标签丢失（跨围栏、被截断）时不让闭合标签漏进正文
-    for (const line of stripped.split("\n")) {
-      const bare = line.replaceAll(HOLE, "");
-      if (line !== bare && !bare.trim()) continue; // 整行只有标签
-      kept.push({ line: bare, inCode });
-    }
+  const clean = sanitize(text);
+  const masked = maskCode(clean);
+  const head = headLine(masked);
+  const spans = [];
+  // 归属：死标签任何位置都剥，自报标题只在第一行剥；同名真 HTML 的父元素内不剥。
+  const owned = (name, at) => (DEAD.includes(name.toLowerCase()) || inHead(at, head)) && !inParent(masked, name, at);
+  // 反复剥壳：嵌套在外层的完整标签在内层剥掉后才完整可见。守卫跳过的也要遮掉，否则下一轮反复命中。
+  let work = masked, prev;
+  do {
+    prev = work;
+    work = work.replace(TAG, (all, name, body, at) => {
+      if (owned(name, at)) spans.push([at, at + all.length]);
+      return hide(all);
+    });
+  } while (work !== prev);
+  for (const match of work.matchAll(OPEN)) {
+    if (!owned(match[1], match.index)) continue;
+    if (streaming) { spans.push([match.index, clean.length]); break; }
+    spans.push([match.index, match.index + match[0].length]);
   }
-  let lines = kept.map(({ line }) => line);
-  if (streaming && kept.length && !kept.at(-1).inCode) {
-    const last = kept.at(-1).line;
+  for (const match of work.matchAll(CLOSE)) {
+    if (!owned(match[1], match.index) || attributedOpen(work, match[1], match.index)) continue;
+    spans.push([match.index, match.index + match[0].length]);
+  }
+  if (streaming) {
     const max = Math.max(...MARKS.map((mark) => mark.length));
-    for (let len = 1; len <= Math.min(max, last.length); len++) {
-      const suffix = last.slice(-len).toLowerCase();
-      if (MARKS.some((mark) => mark.startsWith(suffix))) {
-        lines = [...lines.slice(0, -1), last.slice(0, -len)];
-        break;
-      }
+    for (let len = 1; len <= Math.min(max, masked.length); len++) {
+      const suffix = masked.slice(-len).toLowerCase();
+      if (MARKS.some((mark) => mark.startsWith(suffix))) { spans.push([masked.length - len, masked.length]); break; }
     }
   }
-  return lines.join("\n");
+  return cutSpans(clean, spans);
 }

@@ -22,6 +22,7 @@ async function page({ skills = [] } = {}) {
   w.cancelAnimationFrame = (id) => frames.delete(id);
   w.renderMarkdown = (node, text) => { node.textContent = text ?? ""; };
   w.stripMemoryTags = (text) => text;
+  w.stripGoalMarkers = (text) => text;
   w.createStreamRenderer = (render, after) => createStreamRenderer(render, after, w.requestAnimationFrame, w.cancelAnimationFrame);
   w.WebSocket = class { static OPEN = 1; readyState = 1; constructor() { w.__ws = this; } send() {} close() {} };
   for (const name of ["model-picker", "model-auth", "model-manager"]) {

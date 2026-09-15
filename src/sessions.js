@@ -184,6 +184,11 @@ function landedSessionFile(item) {
   return file && existsSync(file) ? file : null;
 }
 
+// SQLite 主结果码（扩展码低 8 位）里「重试有意义」的一组：忙、锁、内存不足、只读、
+// I/O、磁盘满、打不开、协议错。这些是环境状态，稍后重放同一增量可能成功。
+const RETRYABLE_SQLITE = new Set([5, 6, 7, 8, 10, 13, 14, 15]);
+const retryableWrite = (error) => error?.code === "ERR_SQLITE_ERROR" && RETRYABLE_SQLITE.has(error.errcode & 0xff);
+
 // 会话默认配置的库内布局：namespace "defaults" 下 "global" 是全局兜底，
 // 其余键 "workspace/<归一化cwd>" 是工作目录独立配置（含该目录的 projectSkills）。
 const DEFAULTS_NS = "defaults";
@@ -310,7 +315,11 @@ export class Sessions {
     try {
       const saved = this.database.get("settings", "taskBudget");
       if (saved === undefined) return;
-      this.taskBudget = taskBudgetSchema.parse({ ...taskBudgetDefaults, ...saved });
+      // 只挑已知键再 strict 校验：旧版本/未来字段留下的未知键不得连合法值一起丢掉
+      // （strict 整条解析失败会静默回落默认，用户设过的预算凭空消失）。
+      const known = Object.fromEntries(Object.keys(taskBudgetDefaults)
+        .filter((key) => saved?.[key] !== undefined).map((key) => [key, saved[key]]));
+      this.taskBudget = taskBudgetSchema.parse({ ...taskBudgetDefaults, ...known });
     } catch (error) {
       console.warn(`轮次预算读取失败，使用默认值：${error.message}`);
     }
@@ -321,7 +330,9 @@ export class Sessions {
   }
 
   // 保存前 zod 校验（坏值直接抛给 WS 通用错误回执），先持久化再更新内存值。
+  // 无库实例时明确报错：读侧有空库判断，写侧也必须有，不能靠 TypeError 暴露。
   configureTaskBudget(value) {
+    if (!this.database) throw new Error("未启用轮次预算持久化");
     const next = taskBudgetSchema.parse(value);
     this.database.set("settings", "taskBudget", next);
     this.taskBudget = next;
@@ -490,7 +501,13 @@ export class Sessions {
     }
     // 只有待通知会话需要主动恢复，串行启动避免历史任务同时唤醒大量 SDK。
     for (const id of this.store?.listPendingSessionIds() ?? []) {
-      try { await this.ensureLoaded(id); }
+      try {
+        // 暂停/等待确认的 Goal 会话投递必被拒（见 goalNotificationsBlocked），拉起 SDK 纯属白费；
+        // notified 仍留 0，等用户恢复 Goal 再投，不改「待通知」口径。
+        const phase = this.goalStore.load(id)?.phase;
+        if (phase && !["running", "verifying"].includes(phase)) continue;
+        await this.ensureLoaded(id);
+      }
       catch (error) { console.warn(`会话恢复失败 ${id}：${error.message}`); }
     }
   }
@@ -546,29 +563,46 @@ export class Sessions {
       titleManual: item.titleManual, titleRequested: item.titleRequested,
       createdAt: item.createdAt, updatedAt: item.updatedAt,
       elapsedMs: item.elapsedMs, runningSince: item.runningSince,
-      sessionFile: landedSessionFile(item),
+      // 已知真实路径优先取当前落盘结果，取不到则保留已知路径：JSONL 被外部删除时，库里
+      // 的路径是「历史丢失」的唯一证据，抹成 NULL 会让下次打开把它当全新会话静默重建。
+      sessionFile: landedSessionFile(item) ?? item.sessionFile ?? null,
       selection: item.agent ? { ...item.agent.config?.(), capabilities: item.capabilities,
         subagentCapabilities: item.subagentCapabilities, subagentModel: item.subagentModel,
         subagentThinking: item.subagentThinking, queueType: item.queueType, retry: item.retry,
+        // 轮次预算随会话创建定死（create 从 selection.taskBudget 读回）：不落进 selection
+        // 就无从区分「创建时的预算」与「当前全局值」，重开会话即被热更成新全局值。
+        taskBudget: item.taskBudget,
         trustProject: item.trustProject, useDefaults: false } : item.selection };
   }
 
   // 同步 SQL 在返回 Promise 前完成；调用方仍可 await/捕获，不排队复制整份历史。
+  // 事务边界复用存储层 change()（回滚自身的异常在那里被吞掉，不会掩盖原始错误）。
   async persist(item, change = { session: this.sessionData(item) }) {
     if (!this.store) return;
     // 失败的增量留待下次写入/关闭重试，不能指望全量快照偶然补救。
     item.pendingWrites ||= [];
-    item.pendingWrites.push(change);
+    item.pendingWrites.push({ change });
     while (item.pendingWrites.length) {
-      this.database.exec("SAVEPOINT session_change");
+      const head = item.pendingWrites[0];
       try {
-        this.writeChange(item, item.pendingWrites[0]);
-        this.database.exec("RELEASE session_change");
+        this.store.change(() => this.writeChange(item, head.change));
       } catch (error) {
-        this.database.exec("ROLLBACK TO session_change; RELEASE session_change");
-        throw error;
+        // 环境性失败（忙/锁/只读/磁盘满/IO）重试有意义：保留队头与增量顺序原样上抛，
+        // 由下次写入或关闭重放——顺序不能乱，否则旧快照会覆盖更新的字段值。
+        if (retryableWrite(error)) throw error;
+        // 确定性失败（未知字段、缺 id、库内坏 JSON）重试一万次也不会成功。每条增量给且只给
+        // 一次机会：首次确定性失败留队并上抛（调用方仍可修正后重来，整段增量不半途丢记录）；
+        // 再撞见同一条就丢弃并上报，绝不让一条坏增量把这个会话此后的全部落盘永久堵死。
+        if (!head.tried) {
+          head.tried = true;
+          throw error;
+        }
+        item.pendingWrites.shift();
+        const report = `会话保存失败，已丢弃无法写入的改动：${error.message}`;
+        if (item.emit) item.emit({ type: "error", data: { message: report } });
+        else console.warn(report);
       }
-      item.pendingWrites.shift();
+      if (item.pendingWrites[0] === head) item.pendingWrites.shift();
     }
   }
 
@@ -581,7 +615,8 @@ export class Sessions {
       const { id, ...patch } = change.session;
       this.store.updateSession(item.id, patch);
     }
-    if (change.title) this.store.updateSession(item.id, { title: item.title });
+    // 自报标题成功即固化「已索要过」：否则标题写库成功后崩溃，重启会再注入一次标题请求。
+    if (change.title) this.store.updateSession(item.id, { title: item.title, titleRequested: item.titleRequested });
     if (change.event) this.store.saveEvent(item.id, change.event.type, change.event.record);
     if (change.task) this.store.saveTask(item.id, change.task);
     if (change.deletedEvents) this.store.deleteEvents(item.id, change.deletedEvents.type, change.deletedEvents.records);
@@ -673,7 +708,7 @@ export class Sessions {
       titleRequested: saved?.titleRequested ?? !!saved,
       titlePending: false,
       // 轮次预算随会话创建定死：新会话取当前全局值（保存后新建即生效），运行中不热更；
-      // selection.taskBudget 仅供测试注入。
+      // 恢复的会话从 selection 读回创建时的预算，全局值后来改了也不追认。
       taskBudget: structuredClone(selection.taskBudget ?? this.taskBudget),
       // 老记录无 createdAt，回退 updatedAt 兜底（历史文件未存创建时间，无法还原真实值）。
       createdAt: saved?.createdAt || saved?.updatedAt || Date.now(),
@@ -761,8 +796,12 @@ export class Sessions {
         const wasRunning = item.runningSince;
         trackElapsed(item, pointStatus(item));
         envelope.data = { ...event.data, elapsedMs: item.elapsedMs, runningSince: item.runningSince };
+        // 顺路带上标题与 updatedAt：这两个字段在运行开始前就改好了（prompt 用首条输入推导标题、
+        // startRun 刷新时间），但原先要等整轮跑完的全量快照才落库。长任务跑到一半进程被杀，
+        // 重启后侧栏就是一排「新会话」加过期时间。搭已有的这一笔写，不多一次落盘。
         if (wasRunning !== item.runningSince)
-          this.saveChange(item, { session: { elapsedMs: item.elapsedMs, runningSince: item.runningSince } });
+          this.saveChange(item, { session: { title: item.title, updatedAt: item.updatedAt,
+            elapsedMs: item.elapsedMs, runningSince: item.runningSince } });
       }
       if (event.type === "agent.retry") {
         let record = item.retries.find((entry) => entry.agentId === agentId && entry.id === event.data.id);
@@ -979,10 +1018,14 @@ export class Sessions {
           retries: item.retries, tasks: item.tasks.snapshot() });
       } else if (this.store) {
         // 恢复时的中断状态与 JSONL 对账只写一次，不进入日常保存热路径。
-        await this.persist(item);
-        for (const task of item.tasks.snapshot()) this.store.saveTask(id, task);
-        for (const record of item.retries) this.store.saveEvent(id, "retry", record);
-        for (const record of item.compactions) this.store.saveEvent(id, "compaction", record);
+        // 整段一次 persist（数组增量走同一 SAVEPOINT）：逐条独立成事务时，中途失败会留下
+        // 半截归一化结果（任务已改写、事件没写）；同时把写放大从 1+N 次事务压到 1 次。
+        await this.persist(item, [
+          { session: this.sessionData(item) },
+          ...item.tasks.snapshot().map((task) => ({ task })),
+          ...item.retries.map((record) => ({ event: { type: "retry", record } })),
+          ...item.compactions.map((record) => ({ event: { type: "compaction", record } })),
+        ]);
       }
     } catch (error) {
       try { item.unsubscribe?.(); await item.agent?.dispose(); }
@@ -1009,8 +1052,10 @@ export class Sessions {
       // 顺序先于删目标：中途崩溃时目标还在（暂停态），不会出现无目标 + 未通知的自动唤醒窗口。
       for (const job of item.tasks.jobs.values()) {
         if (!job.resultId || job.notified) continue;
-        job.notified = true;
+        // 先落库再改内存：反了的话落库失败会留下「内存已通知、库里还是 0」，
+        // 本进程不再补发而重启又通知一遍。
         await this.persist(item, { task: { id: job.id, notified: true } });
+        job.notified = true;
       }
       item.goal.exit();
       item.agent.disableTools?.(GOAL_TOOL_NAMES);
@@ -1501,6 +1546,20 @@ export class Sessions {
     item.notificationsPaused = false;
     return item.tasks.retry(taskId);
   }
+  // 删会话的库侧清理：会话行与 goal 记录同一事务。goals 表没有指向 sessions 的外键
+  // （createGoalStore 可脱离 SessionStore 单用），两步分开做时崩在中间就成了「会话还在、
+  // 目标没了」——活着的目标比一条无害孤儿行金贵得多，必须同生共死。
+  deleteRecords(id) {
+    if (!this.store) {
+      this.goalStore.remove(id);
+      return;
+    }
+    this.store.change(() => {
+      this.store.deleteSession(id); // 子表外键级联
+      this.goalStore.remove(id);
+    });
+  }
+
   async remove(id, deleting = true) {
     let item = this.get(id);
     if (item.loading) {
@@ -1508,12 +1567,11 @@ export class Sessions {
       item = this.get(id);
     }
     item.closing = true;
-    if (deleting) this.goalStore.remove(id);
-    else item.goal?.freeze();
+    if (!deleting) item.goal?.freeze();
     if (!item.loaded) {
       if (!deleting && item.pendingWrites?.length) await this.persist(item, {});
       if (deleting) {
-        this.store?.deleteSession(id);
+        this.deleteRecords(id);
         const storageDir = this.storagePath && join(this.storagePath, createHash("sha256").update(process.platform === "win32" ? item.cwd.toLowerCase() : item.cwd).digest("hex"));
         if (storageDir) {
           if (item.sessionFile) await rm(item.sessionFile, { force: true });
@@ -1539,7 +1597,7 @@ export class Sessions {
     await this.persist(item);
     if (deleting) {
       // 删除顺序：先删库记录再清理文件；若中途崩溃，标记过的旧 JSON 不会复活会话。
-      this.store?.deleteSession(id);
+      this.deleteRecords(id);
       if (item.storageDir) {
         if (item.agent.sessionFile?.()) await rm(item.agent.sessionFile(), { force: true });
         await rm(join(item.storageDir, `${id}-tasks`), { recursive: true, force: true });

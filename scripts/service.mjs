@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 import { fork, spawn } from "node:child_process";
-import { mkdirSync, openSync, existsSync, realpathSync } from "node:fs";
+import { mkdirSync, openSync, existsSync, realpathSync, chmodSync } from "node:fs";
 import { createWriteStream } from "node:fs";
 import { cp, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { createServer as createControlServer, createConnection } from "node:net";
 import { createHash, randomBytes } from "node:crypto";
-import { dirname, delimiter, join } from "node:path";
+import { dirname, delimiter, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { Database } from "../src/database.js";
 import { npmSpec, commitFile, validateCommit } from "../src/update.js";
-import { createMaintState, sanitize } from "./maint-state.mjs";
+import { createMaintState, redact, sanitize } from "./maint-state.mjs";
 import { startMaintServer } from "./maint-server.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -189,7 +189,11 @@ export function localPort() {
   return port;
 }
 export const localAddress = () => `http://127.0.0.1:${localPort()}`;
-export const homeDir = () => process.env.AXIOM_HOME || join(homedir(), ".axiom");
+// 必须 resolve：AXIOM_HOME 是相对路径时，supervisor 按自己的 cwd 打开 axiom.db，而 worker 以
+// cwd:root fork 后按 root 打开——两个进程会写进两个库文件（维护状态与会话/设置分叉），
+// 且 sanitize 白名单用相对路径匹配不到日志里的绝对路径，/status 会泄漏本机路径。
+// 与 src/main.js 的 home 解析同口径。
+export const homeDir = () => resolve(process.env.AXIOM_HOME || join(homedir(), ".axiom"));
 
 // 浏览器打开方式：macOS open / Linux xdg-open / Windows start；参数不来自 shell，只拼地址。
 // platform 参数仅为纯函数测试保留，运行时恒为当前平台。
@@ -261,7 +265,11 @@ export async function supervise() {
   const logDir = homeDir();
   mkdirSync(logDir, { recursive: true });
   const logPath = join(logDir, "service.log");
-  const log = openSync(logPath, "a");
+  // 0600：worker 输出可能带栈与环境细节，与 axiom.db 同一权限口径（POSIX 下 chmod 才生效，
+  // Windows 只影响只读位，按平台容错）。
+  const log = openSync(logPath, "a", 0o600);
+  try { chmodSync(logPath, 0o600); }
+  catch (error) { if (process.platform !== "win32" && error.code !== "ENOENT") throw error; }
   output = ["ignore", log, log];
   const workerLog = createWriteStream(logPath, { flags: "a" });
   const token = randomBytes(32).toString("hex");
@@ -274,6 +282,9 @@ export async function supervise() {
   // 错误与环境变量一律先脱敏：AXIOM_SERVICE_ERROR 会经 service.status 原样到达页面，禁止暴露路径/源码位置。
   const redactions = [[token, "***"], [realpathSync(root), "<install>"], [logDir, "<home>"], [homedir(), "<home>"]];
   const state = await createMaintState({ database, key: `state-${installTag(address)}`, legacyFile: stateFile, redactions });
+  // worker 输出写盘前一律过白名单脱敏（token/安装路径/用户目录）：日志常被贴进 issue，凭证与
+  // 本机路径都不该落盘。这里用不截尾的 redact——service.log 是流式追加，按 16KB 截尾会吞内容。
+  const logLine = (text) => workerLog.write(redact(String(text), redactions));
   // 连接生命周期：所有退出路径（信号/管道停止/worker 退出停止）先冲刷状态、关库、关控制管道再退。
   const exit = (code) => { try { database.close(); } catch {} control.close(() => process.exit(code)); };
   // 崩溃重试终态（同 systemd StartLimitBurst/PM2 max_restarts）：连续崩溃达上限后停止自动重启，
@@ -318,19 +329,28 @@ export async function supervise() {
       });
     });
   });
-  if (process.platform !== "win32" && existsSync(socketPath)) {
-    const active = await new Promise((resolve, reject) => {
-      const probe = createConnection(socketPath);
-      probe.on("connect", () => { probe.destroy(); resolve(true); });
-      probe.on("error", (error) => error.code === "ECONNREFUSED" ? resolve(false) : reject(error));
+  // 抢锁失败必须完整收摊：maint server 已 listen、数据库已开，抛错前不关掉它们，事件循环会
+  // 被 HTTP 句柄一直持有 —— 进程既没在服务也永不退出，还占着库连接与随机端口。
+  try {
+    if (process.platform !== "win32" && existsSync(socketPath)) {
+      const active = await new Promise((resolve, reject) => {
+        const probe = createConnection(socketPath);
+        probe.on("connect", () => { probe.destroy(); resolve(true); });
+        probe.on("error", (error) => error.code === "ECONNREFUSED" ? resolve(false) : reject(error));
+      });
+      if (active) throw new Error("当前安装已有守护进程运行");
+      await rm(socketPath, { force: true });
+    }
+    await new Promise((resolve, reject) => {
+      control.once("error", reject);
+      control.listen(socketPath, resolve);
     });
-    if (active) throw new Error("当前安装已有守护进程运行");
-    await rm(socketPath, { force: true });
+  } catch (error) {
+    await maintenance.close().catch(() => {});
+    try { database.close(); } catch {}
+    control.close();
+    throw error;
   }
-  await new Promise((resolve, reject) => {
-    control.once("error", reject);
-    control.listen(socketPath, resolve);
-  });
   function spawnWorker(error = "") {
     if (stopping) return null;
     if (workerAlive()) throw new Error("旧 worker 尚未退出，拒绝重复启动");
@@ -341,14 +361,16 @@ export async function supervise() {
     child = fork(join(root, "src/main.js"), [], {
       cwd: root,
       env: {
-        ...process.env, AXIOM_SERVICE_ERROR: error, AXIOM_INSTANCE_ID: instanceId,
+        // AXIOM_HOME 必须传解析后的绝对路径：worker 以 cwd:root fork，沿用用户给的相对路径会被
+        // 它按 root 重新解析，于是 supervisor 与 worker 各开一个库（维护状态与会话/设置分叉）。
+        ...process.env, AXIOM_HOME: logDir, AXIOM_SERVICE_ERROR: error, AXIOM_INSTANCE_ID: instanceId,
         AXIOM_MAINTENANCE_URL: maintenance.url, AXIOM_MAINTENANCE_TOKEN: token,
       },
       stdio: ["ignore", "pipe", "pipe", "ipc"], windowsHide: true,
     });
     // 有界证据：worker 输出进 service.log 的同时保留脱敏尾部到状态文件。
     for (const stream of ["stdout", "stderr"])
-      child[stream].setEncoding("utf8").on("data", (text) => { workerLog.write(text); state.appendLog(text); });
+      child[stream].setEncoding("utf8").on("data", (text) => { logLine(text); state.appendLog(text); });
     child.on("error", (error) => { console.error(error); process.exitCode = 1; });
     child.on("message", onMessage);
     child.on("exit", (code) => {

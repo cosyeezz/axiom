@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { stripMemoryTags } from "../public/memory-tags.js";
 
 const ACTIVE = ["starting", "running"];
 
@@ -53,9 +52,11 @@ export class Tasks {
     this.emit({ type: "task.state", taskId: job.id,
       data: { ...this.view(job), runtime: job.runtime }, saved: this.snapshotJob(job) });
   }
+  // 子代理输出保持模型原文：<title> 自报只是主代理协议（session-memory.js 的 onReply 对子任务
+  // 直接返回），剥离只会让原文永久不可回读；展示由前端流式消息通道负责（public/app.js 已剥）。
   view(job) {
     const { id, task, status, text, error } = job;
-    return { id, task, status, text: typeof text === "string" ? stripMemoryTags(text) : text, error,
+    return { id, task, status, text, error,
       canRetry: this.retryable(job) };
   }
   // 可重试 = 终态（运行中/已完成不可）且有可恢复依据：历史已落盘、已知 sessionFile，
