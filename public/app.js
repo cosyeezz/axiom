@@ -292,32 +292,117 @@ let requestSeq = 0;
 function error(e) {
   $("error").textContent = e.message || String(e);
 }
-// 独立于正文解析保存诊断文本；不存 localStorage，不记录模型设置/凭据请求。
-let rawRecords = [], rawSize = 0, rawDropped = false, rawFrame;
-function recordRaw(label, value) {
-  const text = `--- ${label} ---\n${JSON.stringify(value, null, 2)}\n\n`;
-  rawRecords.push(text);
-  rawSize += text.length;
-  // ponytail: 页内诊断最多保留约 2M 字符；更长历史需要时再做文件导出。
-  while (rawSize > 2_000_000 && rawRecords.length > 1) {
-    rawSize -= rawRecords.shift().length;
-    rawDropped = true;
+// 消息原文独立于渲染 DOM，保留被标签解析隐藏的内容与压缩历史。
+let rawEntries = [], rawLive = new Map(), rawFrame;
+function rawMode(open) {
+  $("raw-io").hidden = !open;
+  $("workspace").classList.toggle("raw-open", open);
+  $("open-raw-io").setAttribute("aria-pressed", String(open));
+  if (open) paintRaw();
+}
+$("open-raw-io").onclick = () => {
+  const opening = $("raw-io").hidden;
+  rawMode(opening);
+  if (opening) {
+    const bounds = $("transcript").getBoundingClientRect();
+    const visible = rawEntries.find(entry => {
+      const rect = entry.item?.text.getBoundingClientRect();
+      return rect?.height > 0 && rect.bottom > bounds.top && rect.top < bounds.bottom;
+    });
+    selectRaw(visible || rawEntries.at(-1));
   }
-  if (rawSize > 2_000_000) {
-    rawRecords[0] = rawRecords[0].slice(-2_000_000);
-    rawSize = rawRecords[0].length;
-    rawDropped = true;
-  }
-  if ($("raw-io").open && rawFrame === undefined) rawFrame = requestAnimationFrame(() => {
+};
+$("close-raw-io").onclick = () => { rawMode(false); $("open-raw-io").focus(); };
+function rawChanged() {
+  if (!$("raw-io").hidden && rawFrame === undefined) rawFrame = requestAnimationFrame(() => {
     rawFrame = undefined;
-    showRaw();
+    paintRaw();
   });
 }
-function showRaw() {
-  $("raw-io-text").value = (rawDropped ? "[部分较早内容已截断，仅保留最近约 2M 字符]\n" : "")
-    + (rawRecords.join("") || "尚无当前会话原始信息。");
+function rawEntry(message, agentId = "main") {
+  const entry = { message, agentId };
+  rawEntries.push(entry);
+  return entry;
 }
-$("open-raw-io").onclick = () => { showRaw(); $("raw-io").showModal(); };
+function selectRaw(entry, source = false) {
+  if (!entry) return;
+  rawMode(true);
+  if (source && window.matchMedia?.("(max-width: 1000px)").matches) rawMode(false);
+  for (const record of rawEntries) {
+    record.node?.classList.toggle("raw-selected", record === entry);
+    record.item?.node.classList.toggle("raw-selected", record === entry);
+  }
+  const target = source ? entry.item?.node : entry.node;
+  if (source && target) {
+    for (let parent = target.parentElement; parent && parent !== $("output"); parent = parent.parentElement)
+      if (parent.tagName === "DETAILS") parent.open = true;
+    if (entry.item.task) entry.item.task.trigger.click();
+    follow = false;
+  }
+  target?.scrollIntoView?.({ block: "center" });
+}
+function bindRaw(item, entry) {
+  if (!entry) return;
+  entry.item = item;
+  item.node.addEventListener("click", (e) => {
+    if (!$("raw-io").hidden && !e.target.closest("button, a, input, textarea, summary") && !window.getSelection()?.toString()) selectRaw(entry);
+  });
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "raw-source-link secondary";
+  button.textContent = "对照原文";
+  button.onclick = () => selectRaw(entry);
+  item.node.append(button);
+}
+function paintRaw() {
+  const list = $("raw-io-list");
+  const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 80;
+  $("raw-io-empty").hidden = rawEntries.length > 0;
+  for (const [index, entry] of rawEntries.entries()) {
+    if (!entry.node) {
+      entry.node = document.createElement("article");
+      entry.node.className = "raw-message";
+      const bar = document.createElement("div");
+      bar.className = "raw-message-bar";
+      entry.label = document.createElement("span");
+      const locate = document.createElement("button");
+      locate.type = "button";
+      locate.className = "raw-locate secondary";
+      locate.textContent = "定位对话";
+      locate.onclick = () => selectRaw(entry, true);
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "raw-copy secondary";
+      copy.textContent = "复制原文";
+      copy.onclick = async () => {
+        try { await navigator.clipboard.writeText(entry.body.textContent); copy.textContent = "已复制"; }
+        catch { copy.textContent = "复制失败，请选中文字复制"; }
+      };
+      bar.append(entry.label, locate, copy);
+      entry.body = document.createElement("pre");
+      entry.extra = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = "思考 / 工具 / 附件信息";
+      entry.extraText = document.createElement("pre");
+      entry.extra.append(summary, entry.extraText);
+      entry.node.append(bar, entry.body, entry.extra);
+      $("raw-io-list").append(entry.node);
+    }
+    const { message, agentId } = entry;
+    entry.label.textContent = `${String(index + 1).padStart(2, "0")} · ${message.role === "user" ? "你的输入" : message.role === "toolResult" ? "工具结果" : "模型输出"}${agentId !== "main" ? " · 子代理" : ""}${rawLive.get(agentId) === entry ? " · 正在生成" : ""}`;
+    const blocks = typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content || [];
+    const text = blocks.filter(b => b?.type === "text").map(b => b.text).join("\n");
+    if (entry.body.textContent !== text) entry.body.textContent = text;
+    entry.body.hidden = !text;
+    entry.node.querySelector(".raw-copy").disabled = !text;
+    const extra = blocks.filter(b => b && b.type !== "text").map(b => b.type === "thinking" ? `思考\n${b.thinking || ""}` : b.type === "image" ? `图片附件 · ${b.mimeType || "image"}（不展开 base64）` : JSON.stringify(b, null, 2)).join("\n\n");
+    entry.extra.hidden = !extra && !!text;
+    entry.extraText.textContent = extra || "本条消息尚无文本输出。";
+    if (message.role === "user" && text.startsWith("[Axiom 子任务完成通知]")) entry.label.textContent = `${String(index + 1).padStart(2, "0")} · 内部任务通知`;
+    entry.node.querySelector(".raw-locate").hidden = !entry.item || entry.item.node.hidden;
+  }
+  if (atBottom) list.scrollTop = list.scrollHeight;
+}
 function request(type, data = {}) {
   return new Promise((resolve, reject) => {
     if (ws?.readyState !== WebSocket.OPEN)
@@ -326,8 +411,6 @@ function request(type, data = {}) {
     pending.set(id, { resolve, reject });
     const command = { id, type, ...data };
     ws.send(JSON.stringify(command));
-    if (data.sessionId === sessionId && ["prompt", "question.reply", "goal.action"].includes(type))
-      recordRaw("输入请求（已发送，是否接受以服务端为准）", command);
   });
 }
 function controls() {
@@ -1824,8 +1907,23 @@ function event(message) {
   }
   if (message.sessionId !== sessionId) return;
   const { type, agentId = "main", data } = message;
-  if (["agent.message.start", "agent.delta", "agent.message.end", "tool.state", "session.queue", "session.state", "error"].includes(type))
-    recordRaw("收到事件", message);
+  if (type === "agent.message.start" && data.message.role === "assistant") rawLive.set(agentId, rawEntry(JSON.parse(JSON.stringify(data.message)), agentId));
+  if (type === "agent.delta" && ["text_delta", "thinking_delta"].includes(data.type)) {
+    if (!rawLive.has(agentId)) rawLive.set(agentId, rawEntry({ role: "assistant", content: [] }, agentId));
+    const entry = rawLive.get(agentId);
+    const blocks = Array.isArray(entry.message.content) ? entry.message.content : (entry.message.content = []);
+    const kind = data.type === "text_delta" ? "text" : "thinking";
+    const index = data.contentIndex ?? 0;
+    blocks[index] ||= { type: kind, [kind]: "" };
+    blocks[index][kind] = (blocks[index][kind] || "") + data.delta;
+  }
+  let endedRaw;
+  if (type === "agent.message.end") {
+    endedRaw = rawLive.get(agentId) || rawEntry(data.message, agentId);
+    endedRaw.message = data.message;
+    rawLive.delete(agentId);
+  }
+  if (type.startsWith("agent.message.") || type === "agent.delta") rawChanged();
   if (type === "question.asked") questionUI.asked(message.sessionId, data);
   if (type === "question.closed") questionUI.closed(message.sessionId, data.toolCallId);
   if (type === "goal") {
@@ -1860,6 +1958,7 @@ function event(message) {
   if (type === "agent.message.end" && data.message.role === "user") {
     clearWaiting(agentId);
     const item = card("你", tasks.get(agentId));
+    bindRaw(item, endedRaw);
     renderMessage(item, data.message);
     if (agentId === "main") {
       mainItems.push({ item, entryId: data.entryId });
@@ -1902,6 +2001,7 @@ function event(message) {
         tasks.get(agentId),
       ),
     );
+    bindRaw(live.get(agentId), rawLive.get(agentId));
     live.get(agentId).active = true;
     updateActivity(live.get(agentId));
   }
@@ -1938,6 +2038,7 @@ function event(message) {
       live.get(agentId) ||
       card(agentId === "main" ? "AXIOM" : "子 Agent", tasks.get(agentId));
     clearWaiting(agentId);
+    if (!endedRaw.item) bindRaw(item, endedRaw);
     item.active = false;
     live.set(agentId, item);
     for (const call of Array.isArray(data.message.content) ? data.message.content : [])
@@ -2044,12 +2145,10 @@ function event(message) {
   if (type === "error") error(data.message);
 }
 function snapshot(state) {
-  rawRecords = [];
-  rawSize = 0;
-  rawDropped = false;
-  recordRaw("会话快照（消息原文；不含供应商 HTTP 报文）", {
-    sessionId: state.sessionId, messages: state.messages, live: state.live, queue: state.queue,
-  });
+  rawEntries = state.messages.map(({ message, agentId }) => ({ message, agentId }));
+  rawLive.clear();
+  $("raw-io-list").replaceChildren();
+  rawChanged();
   locatedScroll = undefined;
   lastScrollTops.delete(transcript);
   clearTimeout(escapeTimer);
@@ -2150,6 +2249,7 @@ function snapshot(state) {
       for (const call of Array.isArray(message.content) ? message.content : [])
         if (call.type === "toolCall") toolState(agentId, { phase: "history", toolCallId: call.id, toolName: call.name, args: call.arguments });
       live.delete(agentId);
+      bindRaw(item, rawEntries[index]);
       renderMessage(item, message);
       if (agentId === "main") {
         mainItems.push({ item, entryId });
@@ -2167,6 +2267,9 @@ function snapshot(state) {
       );
       clearWaiting(agentId);
       item.active = true;
+      const entry = rawEntry(JSON.parse(JSON.stringify(message)), agentId);
+      rawLive.set(agentId, entry);
+      bindRaw(item, entry);
       renderMessage(item, message);
       live.set(agentId, item);
     }

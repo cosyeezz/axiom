@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-15 原文对照改为逐条阅读
+
+- 原因：JSON 日志弹窗无法与聊天对应，用户要求真正可读的原文模式。
+- 内容：入口移到主题旁；桌面左右分栏，窄屏切换；逐消息纯文本、双向定位高亮、逐条复制、思考/工具折叠；移除整屏事件 JSON 和截断日志，历史与实时按消息统一保留。
+- 设计：沿用 Linear 的 canvas/surface/raised、ink/muted、accent 与 mono token，8px 卡片圆角；没有新增依赖、后端接口或内容渲染器。
+- 文件：public/app.js、public/index.html、public/style.css、tests/app.test.js、README.md、代码索引。
+- 验证：真实 Chromium 1440px/390px 布局、无横向溢出、无页面异常；页面测试覆盖原文标签、流式、复制、会话隔离与开关，全量 npm test 验证。
+
 ## 2026-09-15 独立鹈鹕自行车动画
 
 - 内容：新增 `pelican-bicycle.html`，以手绘 SVG 几何图形呈现自行车骑在鹈鹕背上，CSS 实现步态、颠簸、车轮旋转、围巾摆动和地面运动。

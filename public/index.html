@@ -52,11 +52,11 @@
             <div class="workspace-location"><span id="workspace-label"></span><button id="copy-workspace" class="icon-button" title="复制工作空间路径" aria-label="复制工作空间路径"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h11v12H9ZM15 9V3H4v12h5"/></svg></button><button id="reveal-workspace" class="icon-button" title="在资源管理器中打开" aria-label="在资源管理器中打开工作空间"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l3 3h9v4M3 7v13h16l3-9H7l-4 9"/></svg></button><span id="workspace-feedback" class="sr-only" role="status"></span></div>
           </div>
           <div class="service-controls">
-            <button type="button" id="open-raw-io" class="icon-button" aria-haspopup="dialog" aria-controls="raw-io" title="原始输入输出" aria-label="查看原始输入输出"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5-6 7 6 7M16 5l6 7-6 7M14 3l-4 18"/></svg></button>
             <a id="github-link" class="icon-button" href="https://github.com/cosyeezz/axiom" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码" aria-label="在 GitHub 查看源码（新标签页打开）"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-2.92-.88-2.92-2.9 0-.58.21-1.05.55-1.42-.05-.14-.24-.68.05-1.42 0 0 .56-.18 1.83.68a6.9 6.9 0 0 1 1.71-.23c.58 0 1.17.08 1.71.23 1.27-.87 1.83-.68 1.83-.68.29.74.1 1.28.05 1.42.34.37.55.84.55 1.42 0 2.03-1.15 2.7-2.93 2.9.3.26.56.76.56 1.54 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg></a>
             <button type="button" id="status" aria-live="polite" aria-haspopup="dialog" aria-controls="settings" title="查看服务与更新设置">连接中</button>
             <span id="service-dev" hidden title="开发环境">DEV</span>
             <span id="service-version" hidden title="当前安装版本"></span>
+            <button type="button" id="open-raw-io" class="icon-button" aria-pressed="false" aria-controls="raw-io" title="对照原文" aria-label="切换原文对照"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5-6 7 6 7M16 5l6 7-6 7M14 3l-4 18"/></svg></button>
             <button type="button" id="toggle-theme" class="icon-button" aria-pressed="false"><svg class="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.2v2.4M12 19.4v2.4M4.2 12H1.8M22.2 12h-2.4M6.5 6.5 4.8 4.8M19.2 19.2l-1.7-1.7M17.5 6.5l1.7-1.7M4.8 19.2l1.7-1.7"/></svg><svg class="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.6A8.6 8.6 0 0 1 9.4 3.5a8.6 8.6 0 1 0 11.1 11.1Z"/></svg></button>
           </div>
         </header>
@@ -68,8 +68,16 @@
         <section id="workspace" hidden>
           <div id="goal-track" class="goal-track" aria-label="目标进度" hidden></div>
           <button id="earliest" class="secondary" type="button" aria-controls="transcript" hidden>回到最早消息 ↑</button>
-          <div id="transcript" role="region" aria-label="对话记录" tabindex="0">
-            <div id="output"></div>
+          <div class="conversation-reading">
+            <div id="transcript" role="region" aria-label="对话记录" tabindex="0">
+              <div id="output"></div>
+            </div>
+            <section id="raw-io" aria-labelledby="raw-io-title" hidden>
+              <div class="raw-toolbar"><div><h2 id="raw-io-title">原文对照</h2><p>左侧看对话，右侧核对模型实际返回的文字</p></div><button type="button" id="close-raw-io" class="secondary" aria-label="关闭原文，返回正常对话">返回对话 ✕</button></div>
+              <p class="raw-hint">标签与换行原样保留 · 点击左侧消息可定位原文 · 不含供应商完整请求</p>
+              <p id="raw-io-empty">发送一条消息后，在这里对照输入和模型输出。</p>
+              <div id="raw-io-list" tabindex="0" aria-label="逐条消息原文"></div>
+            </section>
           </div>
           <div class="composer-wrap">
             <div id="goal-dock" class="goal-dock" aria-label="目标模式控制" hidden></div>
@@ -148,11 +156,6 @@
         <p id="error" role="alert"></p>
       </main>
     </div>
-    <dialog id="raw-io" aria-labelledby="raw-io-title" aria-describedby="raw-io-help">
-      <header><h2 id="raw-io-title">原始输入输出</h2><form method="dialog"><button class="secondary" aria-label="关闭原始输入输出" autofocus>✕</button></form></header>
-      <p id="raw-io-help">当前会话的消息原文与实时事件（含子代理），以纯文本 JSON 显示，不解析标签、Markdown 或 HTML。输入请求不等于模型已接收；快照不含刷新前的逐段事件，也不是供应商的 HTTP 请求/响应。切换会话或重连会重建快照；最多保留最近约 2M 字符。可在下方全选复制，请注意其中的隐私信息。</p>
-      <textarea id="raw-io-text" readonly spellcheck="false" aria-label="原始输入输出文本"></textarea>
-    </dialog>
     <dialog id="session-action" aria-labelledby="session-action-title">
       <form id="session-action-form" class="settings-body">
         <h2 id="session-action-title"></h2>

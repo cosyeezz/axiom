@@ -859,7 +859,6 @@ textarea {
   line-height: 1.6;
 }
 #settings,
-#raw-io,
 #session-action,
 #restart-dialog,
 .mm-dialog,
@@ -873,12 +872,34 @@ textarea {
   border-radius: 16px;
   box-shadow: 0 24px 80px light-dark(#00000029, #0008);
 }
-#raw-io { width: min(1000px, calc(100% - 32px)); height: 80dvh; }
-#raw-io[open] { display: flex; flex-direction: column; }
-#raw-io > header { flex-shrink: 0; justify-content: space-between; }
-#raw-io-title { margin: 0; font-size: 18px; }
-#raw-io-help { margin: 12px 16px; color: var(--muted); font-size: 12px; }
-#raw-io-text { flex: 1; min-height: 0; width: calc(100% - 32px); margin: 0 16px 16px; padding: 12px; resize: none; background: var(--canvas); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; font: 13px/1.5 var(--mono); }
+.conversation-reading { display: flex; flex: 1; min-height: 0; min-width: 0; }
+.conversation-reading > #transcript { min-width: 0; }
+#open-raw-io { display: grid; place-items: center; }
+#open-raw-io svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+#open-raw-io[aria-pressed="true"] { color: var(--accent-ink); border-color: var(--accent); background: var(--raised); }
+#raw-io { flex: 1; min-width: 0; min-height: 0; border-left: 1px solid var(--line); background: var(--surface); }
+#raw-io:not([hidden]) { display: flex; flex-direction: column; }
+.raw-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; border-bottom: 1px solid var(--line); }
+#raw-io-title { margin: 0; font-size: 14px; font-weight: 600; }
+.raw-toolbar p, .raw-hint, #raw-io-empty { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+.raw-hint, #raw-io-empty { padding: 8px 16px; }
+#raw-io-list { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 0 16px 24px; }
+.raw-message { margin: 12px 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--canvas); }
+.raw-message-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; background: var(--raised); border-bottom: 1px solid var(--line); font-size: 12px; }
+.raw-message-bar span { flex: 1; color: var(--accent-ink); }
+.raw-message-bar button, #close-raw-io { min-height: 32px; padding: 4px 8px; font-size: 12px; white-space: nowrap; }
+.raw-message pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; padding: 16px; color: var(--ink); font: 13px/1.7 var(--mono); }
+.raw-message details { border-top: 1px solid var(--line); }
+.raw-message summary { padding: 12px 16px; color: var(--muted); font-size: 12px; cursor: pointer; }
+.raw-selected { outline: 2px solid var(--accent); outline-offset: -2px; }
+.raw-open #earliest { left: 25%; }
+.raw-source-link { display: none; }
+.raw-open .raw-source-link { display: inline-flex; min-height: 28px; padding: 4px 8px; font-size: 12px; }
+@media (max-width: 1000px) {
+  .raw-open .conversation-reading > #transcript { display: none; }
+  #raw-io { border-left: 0; }
+  .raw-toolbar p { display: none; }
+}
 #restart-dialog { width: min(460px, calc(100% - 32px)); }
 #restart-title { margin: 0; font-size: 18px; }
 #settings { width: min(1000px, calc(100% - 32px)); height: 80dvh; overflow: hidden; }
@@ -918,7 +939,6 @@ textarea {
   }
 }
 #settings::backdrop,
-#raw-io::backdrop,
 #session-action::backdrop,
 #restart-dialog::backdrop,
 .task-dialog::backdrop {
