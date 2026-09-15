@@ -1489,7 +1489,7 @@ function renderMessage(item, message) {
   // 记忆标签与 goal 完成标记只属于助手自报内容；用户手写同名标签原样保留。顺序与后端展示口径
   // （src/goal.js 的 bodyText）一致：先去完成标记，再剥记忆标签，最后拆正式答复。
   item.buffer = message.role === "assistant" ? stripMemoryTags(stripGoalMarkers(raw)) : raw;
-  // 主会话解析 axiom_display（兼容旧 answer 标签）；未闭合回答仍展示，子任务透传。
+  // 主会话解析 axiom_display；未闭合回答仍展示，子任务透传。
   // 异常走原文回退，保证错误/中断始终可见。
   item.processBuffer = "";
   if (message.role === "assistant" && !item.task) {

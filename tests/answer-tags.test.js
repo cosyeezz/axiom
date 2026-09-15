@@ -2,8 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { splitAnswer } from "../public/answer-tags.js";
 
-for (const tag of ["axiom_display", "axiom_answer"]) {
-const open = `<${tag}>`, close = `</${tag}>`;
+const open = "<axiom_display>", close = "</axiom_display>";
 test("answer separates progress without mutating source", () => {
   const source = `检查中\n${open}\n**完成**\n${close}\n补充`;
   assert.deepEqual(splitAnswer(source), { found: true, answer: "**完成**", process: "检查中\n\n补充", incomplete: false, malformed: false });
@@ -46,13 +45,11 @@ test("A-T3 legacy 与畸形标记回退时丢协议不丢正文，裸标记不�
     assert.ok(!result.answer.includes(open) && !result.answer.includes(close));
   }
 });
-}
 
-test("mismatched display and legacy tags preserve text without accepting the pair", () => {
-  for (const [open, close] of [["axiom_display", "axiom_answer"], ["axiom_answer", "axiom_display"]]) {
-    const result = splitAnswer(`<${open}>\n正文\n</${close}>`);
-    assert.equal(result.found, false);
-    assert.equal(result.malformed, true);
-    assert.equal(result.answer, "正文");
+test("old answer tags are ordinary text, including during streaming", () => {
+  const source = "<axiom_answer>\n正文\n</axiom_answer>";
+  for (const streaming of [false, true]) {
+    assert.deepEqual(splitAnswer(source, { streaming }), { found: false, answer: source, process: "", incomplete: false, malformed: false });
+    assert.equal(splitAnswer("<axiom_ans", { streaming }).answer, "<axiom_ans");
   }
 });

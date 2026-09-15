@@ -3,12 +3,9 @@
 // 里的标记是在举例，不是协议（原先自带的行内反引号计数器跨行不重置，一个落单反引号就让整条消息失效）。
 import { maskCode, cutSpans } from "./markdown-scan.js";
 
-// 新输出使用 display；answer 仅用于兼容已保存的历史消息。
-const PAIRS = new Map([
-  ["<axiom_display>", "</axiom_display>"],
-  ["<axiom_answer>", "</axiom_answer>"],
-]);
-const MARKS = [...PAIRS.keys(), ...PAIRS.values()];
+const OPEN = "<axiom_display>";
+const CLOSE = "</axiom_display>";
+const MARKS = [OPEN, CLOSE];
 // 标记必须独占一行、缩进不超过 3 空格：4 空格起是缩进代码块，属于举例。
 const isMark = (line) => /^ {0,3}\S/.test(line) && MARKS.includes(line.trim());
 
@@ -35,7 +32,7 @@ export function splitAnswer(text, { streaming = false } = {}) {
     malformed,
   });
   if (!marks.length) return fallback();
-  if (!PAIRS.has(marks[0].kind) || marks.length > 2 || (marks[1] && marks[1].kind !== PAIRS.get(marks[0].kind))) return fallback(true);
+  if (marks[0].kind !== OPEN || marks.length > 2 || (marks[1] && marks[1].kind !== CLOSE)) return fallback(true);
   const [open, close] = marks;
   const answer = visible.slice(open.end, close?.start ?? visible.length).trim();
   // 完整但空的标签不能把本轮唯一说明折叠掉。
