@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-15 08:12 -0700 按用户要求移除旧回答标签兼容
+
+- 原因与决策：用户明确不需要历史兼容；展示解析仅识别 axiom_display，删除新旧标签配对表，恢复单组标签判定。旧 axiom_answer 不再作为展示协议解析，原始历史不改写。
+- 文件：public/answer-tags.js、public/app.js、src/goal.js、tests/answer-tags.test.js、tests/goal.test.js、tests/app.test.js、README.md、devlog.md、代码索引。
+- 验证：npm test 600 通过、2 跳过、0 失败；新增旧标签及其流式前缀按普通文本透传的断言，现有展示和 Goal 测试使用新标签；git diff --check 通过。
+
 ## 2026-09-15 08:10 -0700 展示标签改名与执行收尾约束
 
 - 原因：去掉模型无法判断的“界面支持的图示”，避免正式答复标签被理解为任务结束要求。

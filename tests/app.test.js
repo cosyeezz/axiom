@@ -382,7 +382,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(rawRows().length, 0);
     assert.equal($("raw-io-empty").hidden, false, "空会话给提示而不是伪造事件");
     const rawSession = window.sessionStorage.getItem("axiom.session");
-    const rawTag = '<axiom_answer>**原文**<img src=x onerror=alert(1)></axiom_answer>';
+    const rawTag = '<axiom_display>**原文**<img src=x onerror=alert(1)></axiom_display>';
     // 没有 message.start 也必须记录增量：正文渲染器会忽略这种事件。
     sockets[1].receive({ type: "agent.delta", sessionId: rawSession, data: { type: "text_delta", delta: rawTag } });
     paint();
