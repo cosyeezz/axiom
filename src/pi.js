@@ -6,7 +6,6 @@ import {
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { capabilityLoader, discoverCapabilities, refreshProjectSkills } from "./capabilities.js";
-import { stripMemoryTags } from "../public/memory-tags.js";
 import { createBackgroundCompaction, entryIdFor, normalizeCompaction, summarizedEntryIds } from "./compaction.js";
 import { WRAP_UP_PROMPT, budgetSystemPrompt } from "./task-budget.js";
 import { canResume, createAutoRetry, dropFailedAssistant } from "./retry.js";
@@ -464,7 +463,9 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
           .filter((block) => block.type === "text")
           .map((block) => block.text)
           .join("\n");
-        return memoryState ? stripMemoryTags(text) : text;
+        // 不剥记忆标签：result() 是模型原文出口，落库与父代理 read_result 都要原文；
+        // 剥离只属于展示层（public/app.js 渲染前自己剥）。
+        return text;
       },
       subscribe(listener) {
         listeners.add(listener);

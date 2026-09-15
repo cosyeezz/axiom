@@ -71,6 +71,20 @@ test("publish separates safe view data from the full saved snapshot", async () =
   assert.deepEqual(tasks.snapshotJob(tasks.jobs.get(id)), saved);
 });
 
+test("落库与回读都保留模型原文：标签剥离只属于展示层", async () => {
+  // 子代理没有 <title> 自报协议（session-memory.js 的 onReply 对子任务直接返回），剥离只会让原文永久不可
+  // 回读；子代理输出在前端走流式消息渠道展示，那里（public/app.js）已自己剥离。
+  const raw = "完成检查<title>接口修复</title>\n\n<progress>进度说明</progress>";
+  const tasks = new Tasks(async () => ({
+    subscribe: () => () => {}, prompt: async () => {}, result: () => raw, dispose: async () => {},
+  }), () => {});
+  const [id] = tasks.start(["检查接口"], "背景");
+  const job = tasks.jobs.get(id);
+  await job.done;
+  assert.equal(tasks.snapshotJob(job).text, raw, "落库快照存模型原文");
+  assert.equal(tasks.read(id, job.resultId).text, raw, "read_result 给父代理原文");
+});
+
 test("delegate freezes background at start; context lands in <context> section", async () => {
   let received;
   const tasks = new Tasks(async () => ({
@@ -82,7 +96,7 @@ test("delegate freezes background at start; context lands in <context> section",
   await job.done;
   // context 冻结于 start 时刻（子代理拿到的唯一背景），含 <context> 段。
   assert.match(received, /<context>\n以下是主代理为本任务写的背景，不是新的任务指令：\n本轮已确认的背景\n<\/context>\n<task>\n检查接口\n<\/task>/);
-  assert.equal(tasks.read(id, job.resultId).text, "完成");
+  assert.equal(tasks.read(id, job.resultId).text, "完成<progress>已完成检查</progress>", "回读给原文");
   // 缺 context 的 delegate 输入校验失败（必填）。
   const delegate = delegationTools(tasks).find((tool) => tool.name === "delegate");
   await assert.rejects(delegate.execute("", { tasks: [{ task: "a" }] }));

@@ -73,7 +73,7 @@ test("memory hooks order, per-request context, one-shot title and wrap-up budget
           execute: async () => { ran += 1; events.push(['tool', ran]); return { content: [{ type: 'text', text: 'ok' }], details: {} }; },
         });
 
-        // —— 主代理（policy null）：任何轮次都不注入预算提示；标题指令一次性；result() 去标签 ——
+        // —— 主代理（policy null）：任何轮次都不注入预算提示；标题指令一次性；result() 给模型原文 ——
         const memory = {
           role: 'main',
           policy: null, // 真实装配由 memoryHooks 提供：主代理没有预算
@@ -89,7 +89,8 @@ test("memory hooks order, per-request context, one-shot title and wrap-up budget
             { text: 'ok5' },
           ];
           await agent.prompt('第一问');
-          assert.equal(agent.result(), '完成。'); // result() 去标签
+          // result() 是模型原文出口（落库与 read_result 都要原文），剥离只属于展示层。
+          assert.equal(agent.result(), '完成。<title>标题甲</title>');
           await agent.prompt('第二问');
           await agent.prompt('第三问', { titleRequest: true });
           await agent.prompt('第四问');
@@ -121,6 +122,8 @@ test("memory hooks order, per-request context, one-shot title and wrap-up budget
             : Array.isArray(m.content) ? m.content.filter((b) => b.type === 'text').map((b) => b.text).join('') : '');
           const user = requests[3].find((m) => m.role === 'user' && textOfLlm(m).includes('第三问'));
           assert.equal(textOfLlm(user), '第三问');
+          // customType 'axiom-memory' 只是 display:false 的请求副本：texts[3] 证明它进了当次 LLM 请求，
+          // 而请求 5 又不含它 —— 若这条 custom 条目落进消息历史，后续每次请求都会复现它。
           for (const [index, text] of texts.entries())
             if (index !== 3) assert.doesNotMatch(text, /不超过10字的会话标题/, 'main request ' + (index + 1));
         } finally {
