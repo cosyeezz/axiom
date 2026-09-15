@@ -1258,3 +1258,12 @@
   - 不适用：按轮折叠（axiom 一条 message 即一个 turn，与 compaction public/app.js:2050-2090、call-group public/app.js:731-748/905-921、goal 轮次 public/goal.js:518-540 重叠）、后端历史分页（axiom 用事件增量，分页不解决首屏渲染成本）、GA 刷新恢复对齐（axiom 无打字机）。
 - 反例记录：conductor.html:540-542 整体重画仅适用于小数据量；chatapp_common.py:60-77 split_text 是 IM 平台消息分片，与 Web 渲染无关。
 - 涉及：新增 docs/perf-long-conversation/genericagent-mechanisms.md。产品代码（public/、src/、scripts/）零改动。
+
+## 2026-09-14 长对话性能调研第 4 轮：汇总报告与分优先级方案
+
+- 原因：前三轮分别产出了代码链路热点、真实长会话实测基线、genericagent 机制对照，需收口为一份可执行报告并给出取舍选项；同时回答「现有折叠机制是否已足够」。
+- 内容：把 `docs/frontend-long-conversation-perf.md` 从第 1 轮工作稿改写成最终报告，新增：五类场景根因表（每条带 axiom 文件:行号与实测支撑）、四项实测数值汇总与口径说明、折叠机制是否够用的三层判断、genericagent 三条可移植机制摘要与已具备/不适用分类、六条分优先级方案（P0-1 流式重绘双重闸门、P0-2 限定每帧 re-lex 范围、P1-1 交互期间让出渲染、P1-2 首屏分片重建、P2-1 CSS content-visibility、P2-2 常驻对象回收，每条含预期收益/风险/回退），以及修订后的实施目标草案与三个待确认取舍点。
+- 关键判断：「现有折叠机制已足够」不成立——实测 332 个 tool-record 全开 4.1ms 且 DOM 节点数不变、单个开/关 3–10ms，说明折叠（含 tool-record 惰性渲染 app.js:1048-1049）本身已到位且不是瓶颈；剩余卡顿来自折叠触及不到的三类常驻成本：每帧整段 lex（public/markdown.js:219-220）、每个 delta 整段重算（public/app.js:1869、1874）、每帧全量分组重排（public/app.js:797/757/1025）。滚动掉帧（idle 与 scroll 均 ~31.3ms/帧）与内存持续增长（3 轮 +0.7MB 且随 GC 回落）在本样本未复现，列为观测项而非优化目标。
+- 涉及：改写 docs/frontend-long-conversation-perf.md（第 1 轮链路图与 H1–H15 热点清单作为附录保留）。产品代码（public/、src/、scripts/）零改动。
+- 验证：`git diff --stat -- public src scripts` 为空；报告条目与 docs/perf-long-conversation/ 各 JSON 数值逐项对齐。
+- 后续：向用户提交 P0/P1/P2 取舍，确认后把目标修订为实施修复（草案见报告第七节）。
