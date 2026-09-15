@@ -211,3 +211,136 @@ test("shared Markdown renderer formats blocks and removes unsafe content", async
     window.close();
   }
 });
+
+// 块级复用的安全边界：共享容器走“按块复用”，每步都与“全新容器全量渲染”的 oracle 对比。
+// 覆盖 late reference definition（type/raw 不变但渲染变化）、列表松紧、追加/替换等。
+test("incremental Markdown rendering matches a fresh full render at every step", async () => {
+  const window = new JSDOM("").window;
+  try {
+    const source = (
+      await readFile(new URL("../public/markdown.js", import.meta.url), "utf8")
+    )
+      .replace(/^import .*;\r?\n/gm, "")
+      .replace("export function", "function");
+    const render = new Function(
+      "marked",
+      "DOMPurify",
+      `${source}; return renderMarkdown;`,
+    )(marked, createPurify(window));
+    const fresh = () => window.document.createElement("div");
+    const assertSameAsFresh = (container, text, label) => {
+      const oracle = fresh();
+      render(oracle, text);
+      assert.equal(
+        container.innerHTML,
+        oracle.innerHTML,
+        `${label} reused DOM diverged at ${JSON.stringify(text.slice(-60))}`,
+      );
+    };
+    const stream = (chunks, label) => {
+      const container = fresh();
+      let text = "";
+      for (const chunk of chunks) {
+        text += chunk;
+        render(container, text);
+        assertSameAsFresh(container, text, label);
+      }
+      return container;
+    };
+    const fenced = (body) => `\`\`\`\n${body}\n\`\`\``;
+
+    assert.equal(stream(["- a\n\n", "- b\n"], "loose list").querySelectorAll("li > p").length, 2);
+    assert.equal(stream(["- a\n\n", "  para\n"], "list second paragraph").querySelectorAll("li > p").length, 2);
+    assert.equal(stream(["Title\n", "====\n", "\nnext"], "setext").querySelector("h1").textContent, "Title");
+    assert.equal(stream(["| a | b |\n", "| - | - |\n", "| 1 | 2 |\n"], "table").querySelectorAll("td").length, 2);
+    assert.equal(
+      stream(["> q\n", "> r\n"], "blockquote").querySelector("blockquote").textContent.replace(/\s+/g, " ").trim(),
+      "q r",
+    );
+
+    // type/raw 不变但渲染变化：ref 解析依赖 lexer.links，追加 def 后必须重建。
+    const late = stream(["[reference][id]", "\n\n[id]: https://example.com"], "late definition");
+    assert.equal(late.querySelector("a").getAttribute("href"), "https://example.com");
+    assert.equal(
+      stream(["> [a][x]\n", ">\n", "> [x]: /u\n"], "definition in blockquote").querySelector("a").getAttribute("href"),
+      "/u",
+    );
+    assert.equal(
+      stream(["[a][x]\n\n[x]: /u\n", '  "title"\n'], "multiline definition").querySelector("a").getAttribute("title"),
+      "title",
+    );
+    // 转义 def 不构成定义：`[x][x]` 必须保持字面量，绝不能解析成链接。
+    const escaped = stream(["\\[x]: /u\n", "\n[x][x]\n"], "escaped definition");
+    assert.equal(escaped.querySelector("a"), null, "an escaped definition must not resolve references");
+    assert.equal(escaped.querySelectorAll("p")[1].textContent, "[x][x]");
+
+    const pseudo = stream([fenced("[x]: /u") + "\n", "\n[x]\n"], "definition-looking code fence");
+    assert.equal(pseudo.querySelector("a"), null, "a def inside code never resolves references");
+    assert.equal(pseudo.querySelector("code").textContent, "[x]: /u\n");
+    const cjk = stream(["**加粗。**中文\n", "\n" + fenced("**x。**y") + "\n"], "CJK bold around a fence");
+    assert.equal(cjk.querySelector("strong").textContent, "加粗");
+    assert.equal(cjk.querySelector("code").textContent, "**x。**y\n");
+    const json = stream(['{"a":', '1,"b":2}'], "bare JSON growth");
+    assert.equal(json.querySelector(".code-toolbar > span").textContent, "JSON");
+    assert.equal(json.querySelector("code").textContent, '{"a":1,"b":2}\n');
+
+    const dangerous = stream(
+      ["<img src=x onerror=alert(1)>", "\n\n[bad](javascript:alert(1))", "\n\n<script>alert(1)</script>"],
+      "dangerous HTML and links",
+    );
+    assert.equal(dangerous.querySelector("script,img,[onerror],a[href^='javascript:']"), null);
+
+    // 非追加替换：同一容器换整段文本（含 def 出现后又消失）仍与全量 oracle 一致。
+    const replaced = fresh();
+    for (const text of ["# one\n\n- a\n", "[r][k]\n\n[k]: /u\n", "# two\n\nplain", "- x\n- y"]) {
+      render(replaced, text);
+      assertSameAsFresh(replaced, text, "non-append replacement");
+    }
+  } finally {
+    window.close();
+  }
+});
+
+// linksKey 是拼接字符串：分隔符必须不可伪造，否则不同定义集合同签名会错误复用。
+// 两组反例：id 拼接碰撞、href/title 字段边界移动。
+test("reference signatures cannot collide across id/href/title boundaries", async () => {
+  const window = new JSDOM("").window;
+  try {
+    const source = (
+      await readFile(new URL("../public/markdown.js", import.meta.url), "utf8")
+    )
+      .replace(/^import .*;\r?\n/gm, "")
+      .replace("export function", "function");
+    const render = new Function(
+      "marked",
+      "DOMPurify",
+      `${source}; return renderMarkdown;`,
+    )(marked, createPurify(window));
+    const fresh = () => window.document.createElement("div");
+    // 两段文本各自的全量渲染必须不同，否则这组反例证明不了任何事。
+    const renderPair = (before, after, label) => {
+      const oracleBefore = fresh();
+      render(oracleBefore, before);
+      const oracleAfter = fresh();
+      render(oracleAfter, after);
+      assert.notEqual(oracleBefore.innerHTML, oracleAfter.innerHTML, `${label}: the pair must render differently`);
+      const reused = fresh();
+      render(reused, before);
+      render(reused, after);
+      assert.equal(reused.innerHTML, oracleAfter.innerHTML, `${label}: reused DOM kept the previous definitions`);
+    };
+
+    renderPair(
+      "[x][a]\n\n[a]: u\n\n[b]: v",
+      "[x][a]\n\n[a\u0000u\u0000\u0001b]: v",
+      "id boundary",
+    );
+    renderPair(
+      '[x][a]\n\n[a]: x\u0000y "t"',
+      '[x][a]\n\n[a]: x "y\u0000t"',
+      "href/title boundary",
+    );
+  } finally {
+    window.close();
+  }
+});

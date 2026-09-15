@@ -1075,6 +1075,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(task.querySelector(".task-system-prompt img"), null, "system prompts are plain text, not executable markup");
     assert.equal(task.querySelector(".message > .markdown").textContent, "");
     trigger.click();
+    // 之前的键盘/输入事件会让流式绘制让路；假 rAF 也须等交互窗口结束。
+    await new Promise((resolve) => setTimeout(resolve, 550));
     paint();
     assert.equal(task.open, true);
     const text = task.querySelector(".message > .markdown");
@@ -1104,6 +1106,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(renders, beforeClosed, "final messages remain lazy while the overlay is closed");
     trigger.click();
     task.dispatchEvent(new window.Event("close")); // A delayed close event must not clear a reopened overlay.
+    await new Promise((resolve) => setTimeout(resolve, 550));
     paint();
     assert.match(text.textContent, /final result/);
     assert.equal(text.querySelector("h1"), titleNode);

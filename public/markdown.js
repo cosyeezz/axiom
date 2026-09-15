@@ -209,6 +209,19 @@ function jsonControls(code, bar) {
   return status;
 }
 
+// Reference definitions produce no block token of their own: appending `[id]: url`
+// rewrites earlier inline content while those blocks keep the same `type`/`raw`.
+// The resolved definitions are therefore the only cross-block input to a block's DOM.
+function linksSignature(links) {
+  // JSON escapes separators, so ids/hrefs/titles containing \u0000/\u0001 cannot
+  // forge another definition set's signature and wrongly reuse stale DOM.
+  return JSON.stringify(
+    Object.entries(links || {})
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([id, def]) => [id, def.href ?? "", def.title ?? ""]),
+  );
+}
+
 export function renderMarkdown(element, text = "") {
   const previous = cache.get(element);
   if (previous?.text === text) return;
@@ -216,13 +229,20 @@ export function renderMarkdown(element, text = "") {
   // Only parse/sanitize/replace changed blocks, preserving completed DOM and selection.
   // Bare JSON objects/arrays are data, not Markdown; never interpret their contents as HTML.
   const bareJson = /^[\s]*[\[{]/.test(text) && isJson(text);
-  const tokens = (bareJson ? [{ type: "code", lang: "json", text }] : marked
-    .lexer(fixCjkBold(text), { gfm: true }))
-    .filter((token) => token.type !== "space");
+  const lexed = bareJson ? [{ type: "code", lang: "json", text }] : marked
+    .lexer(fixCjkBold(text), { gfm: true });
+  // `filter` returns a bare array, so read `links` off the lexer result before it.
+  const linksKey = linksSignature(lexed.links);
+  const tokens = lexed.filter((token) => token.type !== "space");
+  // Definitions changed (or first render): no block may be reused, since an inline
+  // reference anywhere in the document may have been resolved differently.
+  const reuse = Boolean(previous) && previous.linksKey === linksKey;
   const blocks = tokens.map((token, index) => {
-    const key = JSON.stringify(token);
+    // `type` + `raw` pin a block; `raw` is the source slice the lexer derived every
+    // other field from. Definitions are handled above, so no deep serialization is needed.
+    const key = `${token.type}\u0000${token.raw ?? JSON.stringify(token)}`;
     const old = previous?.blocks[index];
-    if (old?.key === key) return old;
+    if (reuse && old?.key === key) return old;
     const node = element.ownerDocument.createElement("div");
     node.className = "markdown-block";
     node.innerHTML = DOMPurify.sanitize(
@@ -312,5 +332,5 @@ export function renderMarkdown(element, text = "") {
   });
   for (const block of previous?.blocks.slice(blocks.length) || [])
     block.node.remove();
-  cache.set(element, { text, blocks });
+  cache.set(element, { text, blocks, linksKey });
 }

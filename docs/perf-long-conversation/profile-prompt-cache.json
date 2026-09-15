@@ -1,0 +1,889 @@
+{
+ "scene": "current（工作树未提交版本）长会话首屏加载 —— Chromium CPU profile 热点定位",
+ "generatedAt": "2026-09-15T11:57:59.031Z",
+ "method": {
+  "capture": "同一次导航同时开 CDP Profiler（100µs 采样）与 CDP Tracing（devtools.timeline,toplevel）；两者时间戳同属 Chromium TimeTicks(µs) 域，采样点按 trace 任务区间直接切片",
+  "completion": "#output 子树静默 700ms 判完成，硬超时 60s，完成后 +1.5s 复核计数不变量",
+  "blockingTask": "主线程顶层 ThreadControllerImpl::RunTask ≥ 50ms（与 PerformanceObserver longtask 同量级口径）",
+  "forcedLayoutProbe": "额外一次运行：拦截 Element.prototype.scrollHeight/clientHeight/offsetHeight 的 getter（测试侧注入），按调用点累计 >1ms 的同步布局耗时",
+  "phaseRule": [
+   "beginSnapshot ← beginSnapshot/snapshot",
+   "placeSnapshotMessage→renderMessage/Markdown ← placeSnapshotMessage/renderMessage/renderMarkdown/flush/paint/draw/card/toolState/applyEvent",
+   "finishSnapshot ← finishSnapshot",
+   "drainSnapshotQueue ← drainSnapshotQueue",
+   "finishSnapshot-post-rAF ← app.js:2293 rAF 回调 / resizePrompt"
+  ],
+  "caveat": "采样与 tracing 本身有开销，绝对耗时会略高于无观测时的成对测量值；占比与调用链结论不受影响"
+ },
+ "provenance": {
+  "repo": "F:\\worktrees\\axiom-长会话性能调研",
+  "sourceDb": "C:\\Users\\dane\\.axiom-dev\\axiom.db",
+  "longSessionId": "55e7fce9-c23b-441a-b6e1-1042321ad701",
+  "isolation": "VACUUM INTO 副本库 + JSONL 副本，session_file 指向副本；源库只读打开",
+  "rawArtifactsLocation": "C:\\Users\\dane\\AppData\\Local\\Temp\\axiom-profile-current-SwcAvZ\\raw-profiles",
+  "sampleTextInRepo": false,
+  "longSessionJsonl": {
+   "sha256": "6dfedb20cb2d97396b928067d0beb0410b8a817f48edeb83598a342fd61c7cf1",
+   "bytes": 12394998
+  },
+  "codeSha256": {
+   "appJs": "01af9c3b768063a0617103a3917d0a139a7bab1a27db874d183c972a756f0c6b",
+   "markdownJs": "30205bbfd5e114fbb63d31e6d3cb777d7cae95ba60ccbb33933fbb657097cea1",
+   "streamRendererJs": "68b0c04199e507140794011eedfdb43d293a152f817f1a7544c589fd358d91ef"
+  }
+ },
+ "env": {
+  "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.0.0 Safari/537.36",
+  "hardwareConcurrency": 16
+ },
+ "runs": {
+  "measured": [
+   {
+    "run": 1,
+    "wallMs": 2799,
+    "firstOutputMs": 896,
+    "lastDomMutationMs": 2081,
+    "settledAtMs": 2782,
+    "nodes": 41655,
+    "outputChildren": 92,
+    "messages": 143,
+    "longTaskEntries": [
+     {
+      "start": 464,
+      "dur": 432
+     },
+     {
+      "start": 1690,
+      "dur": 378
+     }
+    ],
+    "profile": {
+     "samples": 5547,
+     "profileDurationMs": 2785,
+     "perBlockingTask": [
+      {
+       "traceTaskMs": 432.7,
+       "fromCommitMs": 451,
+       "traceCompositionMs": {
+        "SimpleWatcher::OnHandleReady": 432.7,
+        "FunctionCall": 29.4,
+        "MinorGC": 7.6
+       },
+       "traceTopFunctionCalls": [
+        "ws.onmessage app.js:2362 29.3ms",
+        "MutationObserver.observe.childList :20 0.1ms",
+        "collapseObserver goal.js:533 0.0ms"
+       ],
+       "profile": {
+        "samples": 787,
+        "windowMs": 432.8,
+        "idleMs": 0,
+        "activeMs": 432.8,
+        "nativeProgramMs": 259.7,
+        "phaseActiveMs": {
+         "outside-snapshot": 281,
+         "beginSnapshot": 147.4,
+         "placeSnapshotMessage→renderMessage/Markdown": 4.4
+        },
+        "hotspots": [
+         {
+          "fn": "(program)",
+          "file": "",
+          "line": null,
+          "selfMs": 251.6,
+          "samples": 459,
+          "shareOfWindowPct": 58.1,
+          "shareOfActivePct": 58.1,
+          "stack": [
+           "(program)(:?)",
+           "(root)(:?)"
+          ]
+         },
+         {
+          "fn": "beginSnapshot",
+          "file": "app.js",
+          "line": 2148,
+          "selfMs": 145.8,
+          "samples": 262,
+          "shareOfWindowPct": 33.7,
+          "shareOfActivePct": 33.7,
+          "stack": [
+           "beginSnapshot(app.js:2148)",
+           "snapshot(app.js:2086)",
+           "$.onsubmit(app.js:2346)",
+           "(root)(:?)"
+          ]
+         },
+         {
+          "fn": "ws.onmessage",
+          "file": "app.js",
+          "line": 2361,
+          "selfMs": 20.8,
+          "samples": 39,
+          "shareOfWindowPct": 4.8,
+          "shareOfActivePct": 4.8,
+          "stack": [
+           "ws.onmessage(app.js:2361)",
+           "(root)(:?)"
+          ]
+         },
+         {
+          "fn": "(garbage collector)",
+          "file": "",
+          "line": null,
+          "selfMs": 8.1,
+          "samples": 15,
+          "shareOfWindowPct": 1.9,
+          "shareOfActivePct": 1.9,
+          "stack": [
+           "(garbage collector)(:?)",
+           "(root)(:?)"
+          ]
+         },
+         {
+          "fn": "count",
+          "file": "app.js",
+          "line": 451,
+          "selfMs": 2.2,
+          "samples": 4,
+          "shareOfWindowPct": 0.5,
+          "shareOfActivePct": 0.5,
+          "stack": [
+           "count(app.js:451)",
+           "runtimeSummary(app.js:448)",
+           "renderRuntime(app.js:461)",
+           "updateTaskRuntime(app.js:478)",
+           "applyEvent(app.js:1846)",
+           "beginSnapshot(app.js:2148)",
+           "snapshot(app.js:2086)",
+           "$.onsubmit(app.js:2346)"
+          ]
+         },
+         {
+          "fn": "applyEvent",
+          "file": "app.js",
+          "line": 1846,
+          "selfMs": 1.7,
+          "samples": 3,
+          "shareOfWindowPct": 0.4,
+          "shareOfActivePct": 0.4,
+          "stack": [
+           "applyEvent(app.js:1846)",
+           "beginSnapshot(app.js:2148)",
+           "snapshot(app.js:2086)",
+           "$.onsubmit(app.js:2346)",
+           "(root)(:?)"
+          ]
+         }
+        ]
+       }
+      },
+      {
+       "traceTaskMs": 378.5,
+       "fromCommitMs": 1677,
+       "traceCompositionMs": {
+        "Layout": 309.5,
+        "UpdateLayoutTree": 38.3,
+        "FunctionCall": 15.6,
+        "FireAnimationFrame": 15.4,
+        "PrePaint": 12.5,
+        "MajorGC": 7.2,
+        "Paint": 3.1,
+        "Layerize": 0.2
+       },
+       "traceTopFunctionCalls": [
+        "(anonymous) app.js:761 15.3ms",
+        "growthObserver app.js:219 0.2ms",
+        "MutationObserver.observe.childList :20 0.1ms",
+        "next :26 0.0ms"
+       ],
+       "profile": {
+        "samples": 715,
+        "windowMs": 378.5,
+        "idleMs": 0,
+        "activeMs": 378.5,
+        "nativeProgramMs": 370.7,
+        "phaseActiveMs": {
+         "outside-snapshot": 378.5
+        },
+        "hotspots": [
+         {
+          "fn": "(program)",
+          "file": "",
+          "line": null,
+          "selfMs": 363.4,
+          "samples": 685,
+          "shareOfWindowPct": 96,
+          "shareOfActivePct": 96,
+          "stack": [
+           "(program)(:?)",
+           "(root)(:?)"
+          ]
+         },
+         {
+          "fn": "(garbage collector)",
+          "file": "",
+          "line": null,
+          "selfMs": 7.3,
+          "samples": 14,
+          "shareOfWindowPct": 1.9,
+          "shareOfActivePct": 1.9,
+          "stack": [
+           "(garbage collector)(:?)",
+           "(root)(:?)"
+          ]
+         },
+         {
+          "fn": "refreshCallGroups",
+          "file": "app.js",
+          "line": 824,
+          "selfMs": 2.7,
+          "samples": 5,
+          "shareOfWindowPct": 0.7,
+          "shareOfActivePct": 0.7,
+          "stack": [
+           "refreshCallGroups(app.js:824)",
+           "(anonymous)(app.js:760)",
+           "(root)(:?)"
+          ]
+         },
+         {
+          "fn": "paintCallGroup",
+          "file": "app.js",
+          "line": 782,
+          "selfMs": 2.7,
+          "samples": 5,
+          "shareOfWindowPct": 0.7,
+          "shareOfActivePct": 0.7,
+          "stack": [
+           "paintCallGroup(app.js:782)",
+           "refreshCallGroups(app.js:824)",
+           "(anonymous)(app.js:760)",
+           "(root)(:?)"
+          ]
+         },
+         {
+          "fn": "(anonymous)",
+          "file": "app.js",
+          "line": 784,
+          "selfMs": 1.7,
+          "samples": 3,
+          "shareOfWindowPct": 0.5,
+          "shareOfActivePct": 0.5,
+          "stack": [
+           "(anonymous)(app.js:784)",
+           "paintCallGroup(app.js:782)",
+           "refreshCallGroups(app.js:824)",
+           "(anonymous)(app.js:760)",
+           "(root)(:?)"
+          ]
+         },
+         {
+          "fn": "(anonymous)",
+          "file": "app.js",
+          "line": 796,
+          "selfMs": 0.5,
+          "samples": 1,
+          "shareOfWindowPct": 0.1,
+          "shareOfActivePct": 0.1,
+          "stack": [
+           "(anonymous)(app.js:796)",
+           "paintCallGroup(app.js:782)",
+           "refreshCallGroups(app.js:824)",
+           "(anonymous)(app.js:760)",
+           "(root)(:?)"
+          ]
+         }
+        ]
+       }
+      }
+     ],
+     "wholeWindow": {
+      "samples": 5547,
+      "windowMs": 2785,
+      "idleMs": 1004.7,
+      "activeMs": 1780.2,
+      "nativeProgramMs": 837.1,
+      "phaseActiveMs": {
+       "outside-snapshot": 2046.5,
+       "placeSnapshotMessage→renderMessage/Markdown": 582.6,
+       "beginSnapshot": 147.4,
+       "finishSnapshot": 8.4
+      },
+      "hotspots": [
+       {
+        "fn": "(idle)",
+        "file": "",
+        "line": null,
+        "selfMs": 1004.7,
+        "samples": 1883,
+        "shareOfWindowPct": 36.1,
+        "shareOfActivePct": 56.4,
+        "stack": [
+         "(idle)(:?)",
+         "(root)(:?)"
+        ]
+       },
+       {
+        "fn": "(program)",
+        "file": "",
+        "line": null,
+        "selfMs": 809.9,
+        "samples": 1769,
+        "shareOfWindowPct": 29.1,
+        "shareOfActivePct": 45.5,
+        "stack": [
+         "(program)(:?)",
+         "(root)(:?)"
+        ]
+       },
+       {
+        "fn": "beginSnapshot",
+        "file": "app.js",
+        "line": 2148,
+        "selfMs": 145.8,
+        "samples": 262,
+        "shareOfWindowPct": 5.2,
+        "shareOfActivePct": 8.2,
+        "stack": [
+         "beginSnapshot(app.js:2148)",
+         "snapshot(app.js:2086)",
+         "$.onsubmit(app.js:2346)",
+         "(root)(:?)"
+        ]
+       },
+       {
+        "fn": "_initDocument",
+        "file": "purify.js",
+        "line": 1448,
+        "selfMs": 73.2,
+        "samples": 137,
+        "shareOfWindowPct": 2.6,
+        "shareOfActivePct": 4.1,
+        "stack": [
+         "_initDocument(purify.js:1448)",
+         "DOMPurify.sanitize(purify.js:2405)",
+         "(anonymous)(markdown.js:240)",
+         "renderMarkdown(markdown.js:225)",
+         "compactionCard(app.js:1475)",
+         "placeSnapshotMessage(app.js:2232)",
+         "step(app.js:2112)",
+         "(root)(:?)"
+        ]
+       },
+       {
+        "fn": "(anonymous)",
+        "file": "markdown.js",
+        "line": 240,
+        "selfMs": 42.9,
+        "samples": 80,
+        "shareOfWindowPct": 1.5,
+        "shareOfActivePct": 2.4,
+        "stack": [
+         "(anonymous)(markdown.js:240)",
+         "renderMarkdown(markdown.js:225)",
+         "compactionCard(app.js:1475)",
+         "placeSnapshotMessage(app.js:2232)",
+         "step(app.js:2112)",
+         "(root)(:?)"
+        ]
+       },
+       {
+        "fn": "(garbage collector)",
+        "file": "",
+        "line": null,
+        "selfMs": 27.2,
+        "samples": 51,
+        "shareOfWindowPct": 1,
+        "shareOfActivePct": 1.5,
+        "stack": [
+         "(garbage collector)(:?)",
+         "(root)(:?)"
+        ]
+       },
+       {
+        "fn": "refreshCallGroups",
+        "file": "app.js",
+        "line": 824,
+        "selfMs": 26.9,
+        "samples": 56,
+        "shareOfWindowPct": 1,
+        "shareOfActivePct": 1.5,
+        "stack": [
+         "refreshCallGroups(app.js:824)",
+         "(anonymous)(app.js:760)",
+         "(root)(:?)"
+        ]
+       },
+       {
+        "fn": "resizePrompt",
+        "file": "app.js",
+        "line": 174,
+        "selfMs": 25.7,
+        "samples": 47,
+        "shareOfWindowPct": 0.9,
+        "shareOfActivePct": 1.4,
+        "stack": [
+         "resizePrompt(app.js:174)",
+         "(anonymous)(app.js:1)",
+         "(root)(:?)"
+        ]
+       },
+       {
+        "fn": "DOMPurify.sanitize",
+        "file": "purify.js",
+        "line": 2405,
+        "selfMs": 21,
+        "samples": 39,
+        "shareOfWindowPct": 0.8,
+        "shareOfActivePct": 1.2,
+        "stack": [
+         "DOMPurify.sanitize(purify.js:2405)",
+         "(anonymous)(markdown.js:240)",
+         "renderMarkdown(markdown.js:225)",
+         "compactionCard(app.js:1475)",
+         "placeSnapshotMessage(app.js:2232)",
+         "step(app.js:2112)",
+         "(root)(:?)"
+        ]
+       },
+       {
+        "fn": "ws.onmessage",
+        "file": "app.js",
+        "line": 2361,
+        "selfMs": 20.9,
+        "samples": 40,
+        "shareOfWindowPct": 0.7,
+        "shareOfActivePct": 1.2,
+        "stack": [
+         "ws.onmessage(app.js:2361)",
+         "(root)(:?)"
+        ]
+       }
+      ]
+     }
+    },
+    "trace": {
+     "commitTs": 1025554100567,
+     "mainThreadTotalsMs": {
+      "ThreadControllerImpl::RunTask": 1779.1,
+      "FunctionCall": 766,
+      "RunPostTaskCallback": 619.3,
+      "SimpleWatcher::OnHandleReady": 471.2,
+      "Layout": 340.4,
+      "UpdateLayoutTree": 112.5,
+      "FireAnimationFrame": 106.2,
+      "ParseHTML": 77.6,
+      "Receive mojo message": 59.1,
+      "EventDispatch": 22.7,
+      "MinorGC": 17.9,
+      "PrePaint": 16,
+      "Paint": 15.5,
+      "MajorGC": 7.2,
+      "Layerize": 1.5,
+      "TimerFire": 0.4
+     },
+     "blockingTasks": [
+      {
+       "ts": 1025554551707,
+       "durMs": 432.7,
+       "fromCommitMs": 451,
+       "compositionMs": {
+        "SimpleWatcher::OnHandleReady": 432.7,
+        "FunctionCall": 29.4,
+        "MinorGC": 7.6
+       },
+       "topFunctionCalls": [
+        "ws.onmessage app.js:2362 29.3ms",
+        "MutationObserver.observe.childList :20 0.1ms",
+        "collapseObserver goal.js:533 0.0ms"
+       ]
+      },
+      {
+       "ts": 1025555777710,
+       "durMs": 378.5,
+       "fromCommitMs": 1677,
+       "compositionMs": {
+        "Layout": 309.5,
+        "UpdateLayoutTree": 38.3,
+        "FunctionCall": 15.6,
+        "FireAnimationFrame": 15.4,
+        "PrePaint": 12.5,
+        "MajorGC": 7.2,
+        "Paint": 3.1,
+        "Layerize": 0.2
+       },
+       "topFunctionCalls": [
+        "(anonymous) app.js:761 15.3ms",
+        "growthObserver app.js:219 0.2ms",
+        "MutationObserver.observe.childList :20 0.1ms",
+        "next :26 0.0ms"
+       ]
+      }
+     ]
+    },
+    "crossCheck": {
+     "pageLongTaskDurs": [
+      432,
+      378
+     ],
+     "traceBlockingTaskDurs": [
+      432.7,
+      378.5
+     ],
+     "matched": true
+    }
+   }
+  ],
+  "forcedLayout": {
+   "wallMs": 2512,
+   "firstOutputMs": 653,
+   "lastDomMutationMs": 1789,
+   "settledAtMs": 2490,
+   "nodes": 41655,
+   "outputChildren": 92,
+   "messages": 143,
+   "longTaskEntries": [
+    {
+     "start": 217,
+     "dur": 437
+    },
+    {
+     "start": 1401,
+     "dur": 376
+    }
+   ],
+   "forcedLayoutSlowMs": 16.9,
+   "sites": {
+    "scrollToLatest app.js:203 [scrollHeight]": {
+     "ms": 10.9,
+     "calls": 2,
+     "maxMs": 8
+    },
+    "(stack-unavailable) [scrollHeight]": {
+     "ms": 6,
+     "calls": 1,
+     "maxMs": 6
+    }
+   },
+   "slowest": [
+    {
+     "site": "scrollToLatest app.js:203 [scrollHeight]",
+     "ms": 8,
+     "atMs": 1789
+    },
+    {
+     "site": "(stack-unavailable) [scrollHeight]",
+     "ms": 6,
+     "atMs": 1365
+    },
+    {
+     "site": "scrollToLatest app.js:203 [scrollHeight]",
+     "ms": 2.9,
+     "atMs": 97
+    },
+    null,
+    null
+   ]
+  }
+ },
+ "summary": {
+  "crossCheckAllMatched": true,
+  "pageLongTasks": [
+   {
+    "run": 1,
+    "longTasks": [
+     {
+      "start": 464,
+      "dur": 432
+     },
+     {
+      "start": 1690,
+      "dur": 378
+     }
+    ]
+   }
+  ],
+  "blockingTasksByRun": [
+   {
+    "run": 1,
+    "tasks": [
+     {
+      "ms": 432.7,
+      "fromCommitMs": 451,
+      "activeMs": 432.8,
+      "nativeProgramMs": 259.7,
+      "phaseActiveMs": {
+       "outside-snapshot": 281,
+       "beginSnapshot": 147.4,
+       "placeSnapshotMessage→renderMessage/Markdown": 4.4
+      },
+      "top3": [
+       "(program)(:null) 251.6ms/58.1%",
+       "beginSnapshot(app.js:2148) 145.8ms/33.7%",
+       "ws.onmessage(app.js:2361) 20.8ms/4.8%"
+      ]
+     },
+     {
+      "ms": 378.5,
+      "fromCommitMs": 1677,
+      "activeMs": 378.5,
+      "nativeProgramMs": 370.7,
+      "phaseActiveMs": {
+       "outside-snapshot": 378.5
+      },
+      "top3": [
+       "(program)(:null) 363.4ms/96%",
+       "(garbage collector)(:null) 7.3ms/1.9%",
+       "refreshCallGroups(app.js:824) 2.7ms/0.7%"
+      ]
+     }
+    ]
+   }
+  ],
+  "biggestTask": {
+   "run": 1,
+   "traceTaskMs": 432.7,
+   "fromCommitMs": 451,
+   "traceCompositionMs": {
+    "SimpleWatcher::OnHandleReady": 432.7,
+    "FunctionCall": 29.4,
+    "MinorGC": 7.6
+   },
+   "traceTopFunctionCalls": [
+    "ws.onmessage app.js:2362 29.3ms",
+    "MutationObserver.observe.childList :20 0.1ms",
+    "collapseObserver goal.js:533 0.0ms"
+   ],
+   "profile": {
+    "samples": 787,
+    "windowMs": 432.8,
+    "idleMs": 0,
+    "activeMs": 432.8,
+    "nativeProgramMs": 259.7,
+    "phaseActiveMs": {
+     "outside-snapshot": 281,
+     "beginSnapshot": 147.4,
+     "placeSnapshotMessage→renderMessage/Markdown": 4.4
+    },
+    "hotspots": [
+     {
+      "fn": "(program)",
+      "file": "",
+      "line": null,
+      "selfMs": 251.6,
+      "samples": 459,
+      "shareOfWindowPct": 58.1,
+      "shareOfActivePct": 58.1,
+      "stack": [
+       "(program)(:?)",
+       "(root)(:?)"
+      ]
+     },
+     {
+      "fn": "beginSnapshot",
+      "file": "app.js",
+      "line": 2148,
+      "selfMs": 145.8,
+      "samples": 262,
+      "shareOfWindowPct": 33.7,
+      "shareOfActivePct": 33.7,
+      "stack": [
+       "beginSnapshot(app.js:2148)",
+       "snapshot(app.js:2086)",
+       "$.onsubmit(app.js:2346)",
+       "(root)(:?)"
+      ]
+     },
+     {
+      "fn": "ws.onmessage",
+      "file": "app.js",
+      "line": 2361,
+      "selfMs": 20.8,
+      "samples": 39,
+      "shareOfWindowPct": 4.8,
+      "shareOfActivePct": 4.8,
+      "stack": [
+       "ws.onmessage(app.js:2361)",
+       "(root)(:?)"
+      ]
+     },
+     {
+      "fn": "(garbage collector)",
+      "file": "",
+      "line": null,
+      "selfMs": 8.1,
+      "samples": 15,
+      "shareOfWindowPct": 1.9,
+      "shareOfActivePct": 1.9,
+      "stack": [
+       "(garbage collector)(:?)",
+       "(root)(:?)"
+      ]
+     },
+     {
+      "fn": "count",
+      "file": "app.js",
+      "line": 451,
+      "selfMs": 2.2,
+      "samples": 4,
+      "shareOfWindowPct": 0.5,
+      "shareOfActivePct": 0.5,
+      "stack": [
+       "count(app.js:451)",
+       "runtimeSummary(app.js:448)",
+       "renderRuntime(app.js:461)",
+       "updateTaskRuntime(app.js:478)",
+       "applyEvent(app.js:1846)",
+       "beginSnapshot(app.js:2148)",
+       "snapshot(app.js:2086)",
+       "$.onsubmit(app.js:2346)"
+      ]
+     },
+     {
+      "fn": "applyEvent",
+      "file": "app.js",
+      "line": 1846,
+      "selfMs": 1.7,
+      "samples": 3,
+      "shareOfWindowPct": 0.4,
+      "shareOfActivePct": 0.4,
+      "stack": [
+       "applyEvent(app.js:1846)",
+       "beginSnapshot(app.js:2148)",
+       "snapshot(app.js:2086)",
+       "$.onsubmit(app.js:2346)",
+       "(root)(:?)"
+      ]
+     }
+    ]
+   }
+  },
+  "forcedLayoutSites": {
+   "scrollToLatest app.js:203 [scrollHeight]": {
+    "ms": 10.9,
+    "calls": 2,
+    "maxMs": 8
+   },
+   "(stack-unavailable) [scrollHeight]": {
+    "ms": 6,
+    "calls": 1,
+    "maxMs": 6
+   }
+  },
+  "wholeWindowTop": [
+   {
+    "run": 1,
+    "hotspots": [
+     {
+      "fn": "(idle)",
+      "file": "",
+      "line": null,
+      "selfMs": 1004.7,
+      "samples": 1883,
+      "shareOfWindowPct": 36.1,
+      "shareOfActivePct": 56.4,
+      "stack": [
+       "(idle)(:?)",
+       "(root)(:?)"
+      ]
+     },
+     {
+      "fn": "(program)",
+      "file": "",
+      "line": null,
+      "selfMs": 809.9,
+      "samples": 1769,
+      "shareOfWindowPct": 29.1,
+      "shareOfActivePct": 45.5,
+      "stack": [
+       "(program)(:?)",
+       "(root)(:?)"
+      ]
+     },
+     {
+      "fn": "beginSnapshot",
+      "file": "app.js",
+      "line": 2148,
+      "selfMs": 145.8,
+      "samples": 262,
+      "shareOfWindowPct": 5.2,
+      "shareOfActivePct": 8.2,
+      "stack": [
+       "beginSnapshot(app.js:2148)",
+       "snapshot(app.js:2086)",
+       "$.onsubmit(app.js:2346)",
+       "(root)(:?)"
+      ]
+     },
+     {
+      "fn": "_initDocument",
+      "file": "purify.js",
+      "line": 1448,
+      "selfMs": 73.2,
+      "samples": 137,
+      "shareOfWindowPct": 2.6,
+      "shareOfActivePct": 4.1,
+      "stack": [
+       "_initDocument(purify.js:1448)",
+       "DOMPurify.sanitize(purify.js:2405)",
+       "(anonymous)(markdown.js:240)",
+       "renderMarkdown(markdown.js:225)",
+       "compactionCard(app.js:1475)",
+       "placeSnapshotMessage(app.js:2232)",
+       "step(app.js:2112)",
+       "(root)(:?)"
+      ]
+     },
+     {
+      "fn": "(anonymous)",
+      "file": "markdown.js",
+      "line": 240,
+      "selfMs": 42.9,
+      "samples": 80,
+      "shareOfWindowPct": 1.5,
+      "shareOfActivePct": 2.4,
+      "stack": [
+       "(anonymous)(markdown.js:240)",
+       "renderMarkdown(markdown.js:225)",
+       "compactionCard(app.js:1475)",
+       "placeSnapshotMessage(app.js:2232)",
+       "step(app.js:2112)",
+       "(root)(:?)"
+      ]
+     },
+     {
+      "fn": "(garbage collector)",
+      "file": "",
+      "line": null,
+      "selfMs": 27.2,
+      "samples": 51,
+      "shareOfWindowPct": 1,
+      "shareOfActivePct": 1.5,
+      "stack": [
+       "(garbage collector)(:?)",
+       "(root)(:?)"
+      ]
+     }
+    ],
+    "phaseActiveMs": {
+     "outside-snapshot": 2046.5,
+     "placeSnapshotMessage→renderMessage/Markdown": 582.6,
+     "beginSnapshot": 147.4,
+     "finishSnapshot": 8.4
+    }
+   }
+  ]
+ },
+ "verification": {
+  "passed": true,
+  "stableRecheck": "每次运行后 +1.5s 计数快照不变",
+  "counts": [
+   [
+    41655,
+    92,
+    143
+   ]
+  ]
+ }
+}

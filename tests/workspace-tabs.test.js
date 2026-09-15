@@ -82,6 +82,27 @@ async function bootPage(url, { hash, session, local } = {}) {
 
 const attachCalls = (requests) => requests.filter((r) => r.type === "session.attach").map((r) => r.sessionId);
 
+test("快照只在会话 hash 变化时更新 History，不重复触发同文档导航", async () => {
+  const page = await bootPage("http://localhost/", { hash: "session=s-a" });
+  try {
+    const replace = page.window.history.replaceState.bind(page.window.history);
+    let writes = 0;
+    page.window.history.replaceState = (...args) => { writes++; return replace(...args); };
+    await page.connect();
+    assert.equal(writes, 0, "首屏已有正确地址，无需重复写 History");
+    page.window.eval(`snapshot(${JSON.stringify(STATES.get("s-a"))})`);
+    assert.equal(writes, 0, "同会话重新恢复也不重写");
+    page.window.eval(`snapshot(${JSON.stringify(STATES.get("s-b"))})`);
+    assert.equal(writes, 1, "新会话仍同步更新地址");
+    assert.equal(page.window.location.hash, "#session=s-b");
+    assert.equal(page.window.sessionStorage.getItem("axiom.session"), "s-b");
+    replace(null, "", "/");
+    page.window.eval(`snapshot(${JSON.stringify(STATES.get("s-b"))})`);
+    assert.equal(writes, 2, "地址缺失时仍补回");
+    assert.equal(page.window.location.hash, "#session=s-b");
+  } finally { page.dom.window.close(); }
+});
+
 test("跨目录操作在新页签打开，保留当前会话和草稿，提供拦截后的打开链接", async () => {
   const page = await bootPage("http://localhost/", { hash: "session=s-a" });
   try {

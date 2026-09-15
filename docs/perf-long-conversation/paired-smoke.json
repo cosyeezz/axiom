@@ -1,0 +1,426 @@
+{
+ "scene": "同机成对首屏/切换：c7cf8a5 与工作树未提交版本，交替各 3 次",
+ "completionCriterion": {
+  "rule": "#output 子树在 700ms 内无任何 DOM 变更即判为重建完成；硬超时 60000ms 直接抛错（旧脚本的 .catch(()=>{}) 吞超时已移除）",
+  "postCheck": "完成后追加 1500ms 静默并复核计数不变量；并断言 baseline/current 两实例 DOM 计数完全一致",
+  "note": "firstOutputMs = #output 首次新增子节点（可见消息输出）；longTasks = 渲染阶段 [phaseStart, settledAtMs] 内的 longtask"
+ },
+ "provenance": {
+  "repo": "F:\\worktrees\\axiom-长会话性能调研",
+  "baselineCommit": "c7cf8a5",
+  "current": "worktree working tree (uncommitted)",
+  "codeSha256": {
+   "baseline": {
+    "appJs": "ab946d41af38c622cf183f713d0539b4b38d8da11279d07eb76f55a0fcf05528",
+    "markdownJs": "ccece070fbfe711dff0fa00ae6a64b14c5908af6926579f1bb6c91a7f8c9353b"
+   },
+   "current": {
+    "appJs": "6fc7761bce87a4f264a2c13fb97402189b13d568f35f61e7530c9b5153f760ef",
+    "markdownJs": "30205bbfd5e114fbb63d31e6d3cb777d7cae95ba60ccbb33933fbb657097cea1"
+   }
+  },
+  "sourceDb": {
+   "path": "C:\\Users\\dane\\.axiom-dev\\axiom.db",
+   "bytes": 10993664,
+   "mtimeMs": 1789462201523
+  },
+  "longSession": {
+   "id": "55e7fce9-c23b-441a-b6e1-1042321ad701",
+   "jsonlSha256": "6dfedb20cb2d97396b928067d0beb0410b8a817f48edeb83598a342fd61c7cf1",
+   "jsonlBytes": 12394998
+  },
+  "shortSession": {
+   "id": "eb6bc50b-43ec-42ea-ba14-b13193582293",
+   "jsonlBytes": 2900,
+   "groundTruth": {
+    "messages": 2,
+    "roles": {
+     "user": 1,
+     "assistant": 1
+    },
+    "tasks": 0,
+    "live": 0
+   }
+  },
+  "isolation": "VACUUM INTO 副本库 + JSONL 副本，session_file 指向副本；源库只读打开",
+  "sampleTextInRepo": false
+ },
+ "groundTruth": {
+  "baseline": {
+   "messages": 2393,
+   "roles": {
+    "user": 27,
+    "assistant": 1052,
+    "toolResult": 1314
+   },
+   "tasks": 9,
+   "live": 0
+  },
+  "current": {
+   "messages": 2393,
+   "roles": {
+    "user": 27,
+    "assistant": 1052,
+    "toolResult": 1314
+   },
+   "tasks": 9,
+   "live": 0
+  }
+ },
+ "env": {
+  "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.0.0 Safari/537.36",
+  "hw": 16,
+  "deviceMemory": 32,
+  "viewport": [
+   1280,
+   720
+  ]
+ },
+ "runs": {
+  "firstScreen": [
+   {
+    "version": "baseline",
+    "wallMs": 4517,
+    "scene": "firstScreen",
+    "firstOutputMs": 1629,
+    "lastOutputMs": 2171,
+    "lastDomMutationMs": 2239,
+    "settledAtMs": 2943,
+    "mutations": 3073,
+    "addedNodes": 263,
+    "nodes": 41628,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45,
+    "longTaskEntries": [
+     {
+      "start": 37,
+      "dur": 54
+     },
+     {
+      "start": 322,
+      "dur": 1309
+     },
+     {
+      "start": 1687,
+      "dur": 473
+     },
+     {
+      "start": 2160,
+      "dur": 60
+     }
+    ],
+    "longTasks": [
+     54,
+     1309,
+     473,
+     60
+    ],
+    "phaseStartMs": 0,
+    "stableRecheck": {
+     "firstOutputMs": 1629,
+     "lastOutputMs": 2171,
+     "lastDomMutationMs": 2239,
+     "settledAtMs": 2943,
+     "mutations": 3073,
+     "addedNodes": 263,
+     "nodes": 41628,
+     "outputChildren": 92,
+     "messages": 143,
+     "toolRecords": 329,
+     "callGroups": 45
+    }
+   },
+   {
+    "version": "current",
+    "wallMs": 4240,
+    "scene": "firstScreen",
+    "firstOutputMs": 740,
+    "lastOutputMs": 1530,
+    "lastDomMutationMs": 1970,
+    "settledAtMs": 2677,
+    "mutations": 3577,
+    "addedNodes": 279,
+    "nodes": 41628,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45,
+    "longTaskEntries": [
+     {
+      "start": 281,
+      "dur": 458
+     },
+     {
+      "start": 1548,
+      "dur": 381
+     }
+    ],
+    "longTasks": [
+     458,
+     381
+    ],
+    "phaseStartMs": 0,
+    "stableRecheck": {
+     "firstOutputMs": 740,
+     "lastOutputMs": 1530,
+     "lastDomMutationMs": 1970,
+     "settledAtMs": 2677,
+     "mutations": 3577,
+     "addedNodes": 279,
+     "nodes": 41628,
+     "outputChildren": 92,
+     "messages": 143,
+     "toolRecords": 329,
+     "callGroups": 45
+    }
+   }
+  ],
+  "switch": [
+   {
+    "version": "baseline",
+    "clickToWallMs": 4082,
+    "clickAtMs": 1397,
+    "scene": "switch",
+    "firstOutputMs": 3052,
+    "lastOutputMs": 3199,
+    "lastDomMutationMs": 3239,
+    "settledAtMs": 3943,
+    "mutations": 3074,
+    "addedNodes": 263,
+    "nodes": 41627,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45,
+    "longTaskEntries": [
+     {
+      "start": 1598,
+      "dur": 1456
+     },
+     {
+      "start": 3055,
+      "dur": 100
+     }
+    ],
+    "longTasks": [
+     1456,
+     100
+    ],
+    "stableRecheck": {
+     "firstOutputMs": 3052,
+     "lastOutputMs": 3199,
+     "lastDomMutationMs": 3239,
+     "settledAtMs": 3943,
+     "mutations": 3074,
+     "addedNodes": 263,
+     "nodes": 41627,
+     "outputChildren": 92,
+     "messages": 143,
+     "toolRecords": 329,
+     "callGroups": 45
+    }
+   },
+   {
+    "version": "current",
+    "clickToWallMs": 4555,
+    "clickAtMs": 1370,
+    "scene": "switch",
+    "firstOutputMs": 1942,
+    "lastOutputMs": 3602,
+    "lastDomMutationMs": 3700,
+    "settledAtMs": 4405,
+    "mutations": 4101,
+    "addedNodes": 289,
+    "nodes": 41627,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45,
+    "longTaskEntries": [
+     {
+      "start": 1520,
+      "dur": 422
+     },
+     {
+      "start": 2052,
+      "dur": 111
+     },
+     {
+      "start": 2207,
+      "dur": 63
+     },
+     {
+      "start": 3577,
+      "dur": 60
+     }
+    ],
+    "longTasks": [
+     422,
+     111,
+     63,
+     60
+    ],
+    "stableRecheck": {
+     "firstOutputMs": 1942,
+     "lastOutputMs": 3602,
+     "lastDomMutationMs": 3700,
+     "settledAtMs": 4405,
+     "mutations": 4101,
+     "addedNodes": 289,
+     "nodes": 41627,
+     "outputChildren": 92,
+     "messages": 143,
+     "toolRecords": 329,
+     "callGroups": 45
+    }
+   }
+  ]
+ },
+ "verification": {
+  "passed": true,
+  "semanticCountsIdenticalAcrossVersions": true,
+  "semanticCountsIdenticalAcrossRuns": true,
+  "nodeCountDelta": {
+   "firstScreen": 0,
+   "switch": 0
+  },
+  "groundTruthMessages": 2393,
+  "domMessageCards": 143,
+  "note": "语义计数（outputChildren/messages/toolRecords/callGroups）在 1×2 次运行间完全一致，且追加 1500ms 静默后全量快照不变"
+ },
+ "summary": {
+  "firstScreen": [
+   {
+    "version": "baseline",
+    "firstOutputMs": [
+     1629
+    ],
+    "firstOutputMsAvg": 1629,
+    "completionMs": [
+     2239
+    ],
+    "settledAtMs": [
+     2943
+    ],
+    "maxLongTaskMs": [
+     1309
+    ],
+    "maxLongTaskRenderMs": [
+     1309
+    ],
+    "wallMs": [
+     4517
+    ],
+    "nodes": 41628,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45
+   },
+   {
+    "version": "current",
+    "firstOutputMs": [
+     740
+    ],
+    "firstOutputMsAvg": 740,
+    "completionMs": [
+     1970
+    ],
+    "settledAtMs": [
+     2677
+    ],
+    "maxLongTaskMs": [
+     458
+    ],
+    "maxLongTaskRenderMs": [
+     458
+    ],
+    "wallMs": [
+     4240
+    ],
+    "nodes": 41628,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45
+   }
+  ],
+  "switch": [
+   {
+    "version": "baseline",
+    "firstOutputMs": [
+     3052
+    ],
+    "completionMs": [
+     3239
+    ],
+    "settledAtMs": [
+     3943
+    ],
+    "maxLongTaskMs": [
+     1456
+    ],
+    "maxLongTaskRenderMs": [
+     1456
+    ],
+    "clickToWallMs": [
+     4082
+    ],
+    "nodes": 41627,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45
+   },
+   {
+    "version": "current",
+    "firstOutputMs": [
+     1942
+    ],
+    "completionMs": [
+     3700
+    ],
+    "settledAtMs": [
+     4405
+    ],
+    "maxLongTaskMs": [
+     422
+    ],
+    "maxLongTaskRenderMs": [
+     422
+    ],
+    "clickToWallMs": [
+     4555
+    ],
+    "nodes": 41627,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45
+   }
+  ]
+ },
+ "thresholds": {
+  "target": {
+   "firstOutputMs": 1171,
+   "maxLongTaskMs": 200,
+   "originalBaseline": "docs/perf-long-conversation/first-screen.json（保留未改动）"
+  },
+  "firstScreen": {
+   "baseline": {
+    "firstOutputMsAvg": 1629,
+    "firstOutputAchieved": false,
+    "maxLongTaskRenderMs": 1309,
+    "maxLongTaskAchieved": false
+   },
+   "current": {
+    "firstOutputMsAvg": 740,
+    "firstOutputAchieved": true,
+    "maxLongTaskRenderMs": 458,
+    "maxLongTaskAchieved": false
+   }
+  }
+ }
+}
