@@ -34,7 +34,8 @@ desktop/pake.json ── Pake 独立桌面壳（macOS Universal / Windows x64）
   └─ 打开 http://127.0.0.1:4319（不内置/启动后端，复用以下网页）
      .github/workflows/desktop.yml 分平台打包
 浏览器 public/
-  index.html ── app.js（唯一入口：视图栈/WS客户端/会话设置UI）
+  index.html ── app.js（唯一入口：视图栈/权威归并/会话设置UI）
+                 ├─ transport.js        唯一业务连接、请求回执、逻辑订阅与快照闸门
                  ├─ goal.js/css         Goal 目标面板与轮次分组（复用现有消息节点）
                  ├─ question.js/css     主代理多题回答卡、键盘操作与回执
                  ├─ service-settings.js  服务设置：更新确认、维护阶段与断线诊断
@@ -54,6 +55,7 @@ scripts/autostart.mjs  Windows/macOS/Linux 用户登录自动启动注册
        ├─ maint-server.mjs 独立 loopback 状态/恢复入口
        └─ src/main.js  入口：端口/cwd 校验，组装并 listen(127.0.0.1)
   ├─ server.js       HTTP 静态路由 + /health + WS 升级分发
+  │    ├─ transport.js  所有回执/广播/删除通知统一有界发送
   │    └─ remote.js  可选 Tailscale 独立监听、同账号 whois 验证、本机远程配置
   ├─ model-config.js SQLite 模型配置、版本冲突保护与全局收藏（pi-model-storage.js 自动派生 SDK 兼容文件）
   ├─ Sessions        会话生命周期/队列、元数据启动与 SDK 按需恢复；Pi JSONL 为历史权威
@@ -75,12 +77,12 @@ scripts/autostart.mjs  Windows/macOS/Linux 用户登录自动启动注册
 1. **先读 knowledge.md**——WS 时序、渲染、协议校验是历史多发区，多数坑有记录
 2. 按数据流分层排查（一层层验证，别跳步）：
    ```
-   app.js 事件/pending Map → WS → server.js 分发 → sessions.js 状态
+   app.js 权威归并 ← transport.js 事件/pending Map → WS → server.js 分发 → sessions.js 状态
    → pi.js / capabilities.js / tasks.js → 回执经 protocol.js 校验
    → app.js renderMessage / renderer 渲染
    ```
 3. 常见怀疑点速查：
-   - 会话状态/回执错乱 → public/app.js `pending` Map 与 `ws.onmessage` 分支 + src/sessions.js
+   - 会话状态/回执错乱 → public/transport.js 请求表与消息分发 + src/sessions.js
    - 渲染/XSS → stream-renderer.js、markdown.js（DOMPurify 必须过）
    - 配置不生效/继承 → sessions.js defaults 快照 + capabilities.js resolveCapabilities
    - 委托子任务 → tasks.js + tools.js + sessions.js 装配处

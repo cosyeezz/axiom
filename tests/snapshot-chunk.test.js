@@ -28,7 +28,7 @@ async function page() {
   w.renderMarkdown = new Function("marked", "DOMPurify", `${markdown}; return renderMarkdown;`)(marked, createPurify(w));
   w.createStreamRenderer = (render, after) => createStreamRenderer(render, after, w.requestAnimationFrame, w.cancelAnimationFrame);
   const sent = [];
-  w.WebSocket = class { static OPEN = 1; readyState = 1; send(raw) { sent.push(JSON.parse(raw)); } };
+  w.WebSocket = class { static OPEN = 1; readyState = 1; close() {} send(raw) { sent.push(JSON.parse(raw)); } };
   for (const name of ["model-picker", "model-auth", "model-manager"]) {
     const module = await readFile(new URL(`../public/${name}.js`, import.meta.url), "utf8");
     const exports = [...module.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
@@ -39,7 +39,7 @@ async function page() {
     window.__originalPlaceSnapshotMessage = placeSnapshotMessage;
     window.useManualSnapshotScheduler = () => { scheduleSnapshotChunk = (fn) => { window.__chunks.push(fn); }; };
     window.stepSnapshotChunk = () => { window.__chunks.shift()?.(); return window.__chunks.length; };
-    window.queuedSnapshotEvents = () => snapshotQueue;
+    window.queuedSnapshotEvents = () => transport.getSnapshotQueue();
     window.snapshotWatermark = (id) => appliedSeq.get(id);
     window.failSnapshotScheduling = () => { scheduleSnapshotChunk = () => { throw new Error("分片调度失败"); }; };
     window.failSnapshotPlacement = () => { placeSnapshotMessage = () => { throw new Error("分片渲染失败"); }; };
@@ -133,7 +133,7 @@ test("长快照首片调度同步抛错后 Promise 拒绝且解除事件队列",
     await assert.rejects(done, /分片调度失败/);
     assert.equal(w.queuedSnapshotEvents(), null, "调度抛错后事件队列已解除");
     w.event(messageEvent("long", "调度失败后事件"));
-    assert.equal(count("调度失败后事件"), 1, "后续事件不被永久排队");
+    assert.equal(count("调度失败后事件"), 0, "失败后停用归并，等待受控快照恢复");
   } finally { dom.window.close(); }
 });
 
@@ -156,6 +156,6 @@ test("短快照渲染抛错后解除事件队列，后续事件不再被永久�
     assert.equal(w.queuedSnapshotEvents(), null, "抛错后事件队列已解除");
     w.restoreSnapshotPlacement();
     w.event(messageEvent("long", "错误后事件"));
-    assert.equal(count("错误后事件"), 1, "无需任何快照收尾即可立即应用");
+    assert.equal(count("错误后事件"), 0, "失败后不能继续归并半成品");
   } finally { dom.window.close(); }
 });

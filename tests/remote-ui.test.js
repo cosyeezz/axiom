@@ -31,7 +31,7 @@ const modelSources = await Promise.all(["model-picker", "model-auth", "model-man
     .replace(/^import .*;\r?\n/gm, "").replace("export function", "function");
   w.renderMarkdown = new Function("marked", "DOMPurify", `${markdown}; return renderMarkdown;`)(marked, createPurify(w));
   w.createStreamRenderer = (render, after) => createStreamRenderer(render, after, w.requestAnimationFrame, w.cancelAnimationFrame);
-  w.WebSocket = class { static OPEN = 1; readyState = 1; send(data) { (this.sent ||= []).push(data); } };
+  w.WebSocket = class { constructor() { w.__socket = this; } static OPEN = 1; readyState = 1; send(data) { (this.sent ||= []).push(data); } };
   w.eval(`${modelSources}\n${picker}\n${source}\nconnected = true;\n${extra}`);
   const state = { sessionId: "remote", title: "Remote", cwd: "C:/work", status: "idle", config: { model: "test/model", thinking: "off", levels: ["off"], skills: [] }, messages: [], tasks: [], live: {}, tools: {} };
   w.snapshot(state);
@@ -199,9 +199,10 @@ test("非安全上下文：请求 id 用自增序号，乱序回执按 id 匹配
     window.__probe = async () => {
       if (typeof crypto.randomUUID === "function") throw new Error("randomUUID 应不可用");
       // 走真实重连流程，拿到真实绑定的 ws.onmessage 回执分发
-      connected = false; connecting = false;
+      connected = false;
       document.getElementById("login").dispatchEvent(new Event("submit", { cancelable: true }));
       await new Promise((r) => setTimeout(r, 0));
+      const ws = window.__socket;
       ws.onopen();
       await new Promise((r) => setTimeout(r, 0)); // onsubmit 继续，发出 service.status 并挂起
       const p1 = request("remote.get");

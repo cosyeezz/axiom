@@ -843,7 +843,11 @@ export class Sessions {
       if (event.type === "task.state") this.saveChange(item, { task: event.saved ?? event.data });
       // 持久化专用字段不进入 WebSocket 广播。
       delete envelope.saved;
-      for (const listener of item.listeners) listener(envelope);
+      for (const listener of item.listeners) {
+        try {
+          Promise.resolve(listener(envelope)).catch(() => console.warn("[sessions] listener_failed"));
+        } catch { console.warn("[sessions] listener_failed"); }
+      }
     };
     item.goal = new Goal({ sessionId: id, store: this.goalStore, emit: item.emit,
       messageCount: () => item.messages.length });

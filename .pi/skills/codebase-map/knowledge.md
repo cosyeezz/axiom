@@ -607,3 +607,7 @@
 - 根因：部分推理模型 thinkingLevelMap.off=null，默认压缩 off 被严格模型校验拒绝；页面把 session.create 业务失败当断线循环。
 - 修复：protocol.resolveCompaction 统一保留合法偏好、不兼容取模型最低支持等级，pi/sessions 共用；页面保留连接、草稿与设置/更新入口。
 - 防再犯：model-onboarding.test.js 用真实 SDK 和隔离目录验证 reasoning-only 默认新建，不能只验证 /health；model-onboarding-ui.test.js 验证配置失败仍能进入和修复重试，真实网络断线仍重连。
+
+### 2026-06-01：快照回执到渲染间的事件空窗
+- 症状：快照覆盖先到的实时正文；归并失败后水位提前推进。根因：旧 app.js 仅在渲染时建闸、先记 seq 后归并。
+- 修复：public/transport.js 在快照回执时建闸、成功归并后记水位；失败受控恢复；public/app.js 在断线时作废旧分片。tests/realtime-transport.test.js 与 snapshot-first-screen.test.js 防回归。

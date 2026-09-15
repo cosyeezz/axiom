@@ -1,3 +1,4 @@
+import { publicSource } from "./helpers/public-source.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -9,7 +10,7 @@ import { splitAnswer } from "../public/answer-tags.js";
 // 走 snapshot / event 两条真实入口，只断言 DOM 与 WS 载荷，不 mock 目标模式内部逻辑。
 async function page() {
   const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
-  const source = (await readFile(new URL("../public/app.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "");
+  const source = await publicSource("app");
   const dom = new JSDOM(html, { url: "http://localhost", runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window;
   w.splitAnswer = splitAnswer;

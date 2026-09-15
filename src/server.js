@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { readFileSync, statSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { createSender } from "./transport.js";
 import { WebSocketServer, WebSocket } from "ws";
 import { command } from "./protocol.js";
 import { createModelAuthService } from "./model-auth.js";
@@ -31,6 +32,7 @@ const assets = new Map(
     ["/style.css", "public/style.css", "text/css"],
     ["/theme.js", "public/theme.js"],
     ["/app.js", "public/app.js"],
+    ["/transport.js", "public/transport.js"],
     ["/goal.js", "public/goal.js"],
     ["/goal.css", "public/goal.css", "text/css"],
     ["/question.js", "public/question.js"],
@@ -65,6 +67,8 @@ for (const [route, file, type = "text/javascript"] of [
 }
 
 export function createServerApp(sessions, service = {}) {
+  const sender = createSender();
+  const instanceId = service.instanceId || randomUUID();
   const modelAuth = createModelAuthService({ auth: sessions.createAgent,
     onChanged: () => broadcast({ type: "models.config.changed" }) });
   let stopping = false, closing = false;
@@ -153,9 +157,7 @@ export function createServerApp(sessions, service = {}) {
   };
   // 广播给所有客户端（跨窗口共享）：models.config.changed / models.favorites.changed。
   const broadcast = (message) => {
-    const raw = JSON.stringify(message);
-    for (const client of wss.clients)
-      if (client.readyState === WebSocket.OPEN) client.send(raw);
+    sender.broadcast(wss.clients, message);
   };
   server.on("upgrade", (req, socket, head) => {
     const port = server.address().port;
@@ -247,25 +249,15 @@ export function createServerApp(sessions, service = {}) {
       }, 30_000);
       ws.on("close", () => clearInterval(reauthTimer));
     }
-    const send = (message) => {
-      if (ws.readyState !== WebSocket.OPEN) return;
-      // Bound network buffering, not task output; reconnect retrieves the current snapshot.
-      // 上限与 WS maxPayload 一致：带图快照（最多 20MiB 图片）单次发送不应被判为慢消费者。
-      if (ws.bufferedAmount > 32 * 1024 * 1024) {
-        ws.terminate();
-        return;
-      }
-      ws.send(JSON.stringify(message));
-    };
+    const send = (message) => sender.send(ws, message);
     const attach = async (id) => {
       const sequence = ++attachSequence;
       await sessions.ensureLoaded(id);
       if (ws.readyState !== WebSocket.OPEN) return;
-      if (sequence === attachSequence) {
-        unsubscribe?.();
-        unsubscribe = sessions.subscribe(id, send);
-      }
-      return sessions.snapshot(id);
+      if (sequence !== attachSequence) throw new Error("会话切换已被后续请求替代");
+      unsubscribe?.();
+      unsubscribe = sessions.subscribe(id, send);
+      return { ...sessions.snapshot(id), instanceId };
     };
     ws.on("error", () => {});
     ws.on("close", () => {
@@ -406,9 +398,7 @@ export function createServerApp(sessions, service = {}) {
               break;
             case "session.close":
               await sessions.remove(request.sessionId);
-              for (const client of wss.clients)
-                if (client !== ws && client.readyState === WebSocket.OPEN)
-                  client.send(JSON.stringify({ type: "session.deleted", sessionId: request.sessionId }));
+              sender.broadcast(wss.clients, { type: "session.deleted", sessionId: request.sessionId }, ws);
               break;
             case "goal.action":
               data = await sessions.goalAction(request.sessionId, request.action, request.text);

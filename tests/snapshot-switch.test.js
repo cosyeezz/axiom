@@ -63,7 +63,7 @@ function boot() {
   window.eval([
     modelSources, pickerSource, pageSource, answerSource,
     "window.__app = { snapshot, event, saveView, live, views, appliedSeq, renderer," +
-    " snapshotQueue: () => snapshotQueue, snapshotJob: () => snapshotJob, session: () => sessionId," +
+    " snapshotQueue: () => transport.getSnapshotQueue(), snapshotJob: () => snapshotJob, session: () => sessionId," +
     " withdrawQueue, switchSession, request: (type, data) => request(type, data), setRequest: (fn) => { request = fn; }," +
     " setConnected: (value) => { connected = value; controls(); } };",
   ].join("\n"));
@@ -103,7 +103,7 @@ test("长快照分片中快速切新会话：旧片与旧事件都不污染新�
   const fresh = sessionState("b", { seq: 20, messages: history(130, "NEW-B") });
   const second = app.snapshot(fresh);
   assert.equal(app.session(), "b");
-  assert.equal(app.snapshotQueue().length, 0, "新快照接管事件阀，旧队列被丢弃");
+  assert.equal(app.snapshotQueue().length, 1, "新快照保留在途队列，提交时按会话及水位过滤");
   assert.doesNotMatch($("output").textContent, /OLD-A/, "切换即清空旧会话消息区");
   // 队列里此刻只剩旧片退场回调，先放它跑：必须静默退场，不把旧消息塞回来。
   runChunk();
@@ -116,7 +116,7 @@ test("长快照分片中快速切新会话：旧片与旧事件都不污染新�
   runChunk();
   assert.match($("output").textContent, /NEW-B-0/, "新会话首片正常落地");
   app.event({ type: "agent.message.end", sessionId: "b", seq: 21, data: { entryId: "tail-b", message: { role: "user", content: "TAIL-B" } } });
-  assert.equal(app.snapshotQueue().length, 1, "新会话分片期间事件同样排队");
+  assert.equal(app.snapshotQueue().length, 2, "新会话分片期间事件同样排队");
   while (pendingChunks()) runChunk();
   await second;
   paint();
