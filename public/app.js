@@ -160,22 +160,34 @@ window.addEventListener("storage", (event) => {
   } catch { error("会话列表设置同步失败"); }
 });
 function saveView() {
-  if (sessionId)
-    views.set(sessionId, {
-      draft: $("prompt").value,
-      contextFiles: [...contextFiles],
-      images: [...images],
-      selectedSkill,
-      scroll: $("transcript").scrollTop,
-      follow,
-    });
+  if (!sessionId) return;
+  // 分片在飞时 DOM 只是过渡态：scrollTop 是半截布局值，沿用已存滚动，别让中间值覆盖既有阅读位置。
+  // 只护 scroll：草稿/附件/选中技能/跟随仍要实存，分片中断线时不能把整段视图保存跳过。
+  const previous = views.get(sessionId)?.scroll;
+  views.set(sessionId, {
+    draft: $("prompt").value,
+    contextFiles: [...contextFiles],
+    images: [...images],
+    selectedSkill,
+    scroll: snapshotQueue ? (previous ?? 0) : $("transcript").scrollTop,
+    follow,
+  });
 }
+// 高度只在「内容」或「可用宽度」变化时重算，缓存键全部由不触发布局的信号拼成，键没变直接返回。
+// 长会话里那次 scrollHeight 读会让浏览器对整份文档做一次同步布局，所以重复调用（快照后、重连后、
+// 每次 oninput）不能各自再量一遍。注意：键变了仍要真量一次，那是布局本身的成本，缓存只消除重复。
+let promptLayout = 0;
+let promptFit = { layout: -1, phone: null, value: null };
 function resizePrompt() {
-  const phone = matchMedia("(max-width: 700px)").matches;
-  $("prompt").rows = phone ? 1 : 3;
-  $("prompt").style.height = "auto";
-  $("prompt").style.height = (phone && !$("prompt").value ? 44 : Math.min($("prompt").scrollHeight, 240)) + "px";
+  const input = $("prompt"), phone = mobile.matches;
+  if (promptFit.layout === promptLayout && promptFit.phone === phone && promptFit.value === input.value) return;
+  promptFit = { layout: promptLayout, phone, value: input.value };
+  input.rows = phone ? 1 : 3;
+  input.style.height = "auto";
+  input.style.height = (phone && !input.value ? 44 : Math.min(input.scrollHeight, 240)) + "px";
 }
+// 可用宽度或字体度量可能变了（断点、侧栏折叠、手机展开、视口尺寸、字体晚到）：先标脏再重算。
+function invalidatePrompt() { promptLayout++; resizePrompt(); }
 let scrollFrame, locatedScroll;
 const FOLLOW_GAP = 80;
 const scrollIntent = new WeakMap();
@@ -198,7 +210,7 @@ function readFollow(el, current) {
 const scrollToLatest = (el) => { el.scrollTop = el.scrollHeight; };
 function scrollLatest() {
   scheduleCallGroups();
-  if (changing || scrollFrame !== undefined || (!follow && !activeTask?.follow)) return;
+  if (changing || snapshotQueue || scrollFrame !== undefined || (!follow && !activeTask?.follow)) return;
   scrollFrame = requestAnimationFrame(() => {
     scrollFrame = undefined;
     if (changing) return;
@@ -217,6 +229,9 @@ function forgetGrowth(el) { growthWatch.delete(el); growthObserver?.unobserve(el
 for (const event of ["wheel", "touchstart", "touchmove", "keydown", "pointerdown"])
   transcript.addEventListener(event, () => noteScrollIntent(transcript), { capture: true, passive: true });
 const renderer = createStreamRenderer(renderMarkdown, scrollLatest);
+// 只监听用户意图，不监听程序触发的 scroll，以免贴底刷新自我延迟。
+for (const event of ["wheel", "touchstart", "touchmove", "pointerdown", "keydown", "input"])
+  document.addEventListener(event, () => renderer.interact(), { capture: true, passive: true });
 watchGrowth($("output"), () => { if (follow) scrollLatest(); });
 transcript.onscroll = () => {
   $("earliest").hidden = transcript.scrollTop < FOLLOW_GAP;
@@ -244,22 +259,37 @@ $("latest").onclick = () => {
 };
 const mobile = matchMedia("(max-width: 700px)");
 function sidebar(open) {
-  document.querySelector(".shell").classList.toggle("collapsed", !open);
+  const shell = document.querySelector(".shell");
+  const collapsed = !open;
+  const widthChanged = shell.classList.contains("collapsed") !== collapsed;
+  shell.classList.toggle("collapsed", collapsed);
   $("toggle-sidebar").setAttribute("aria-expanded", String(open));
   $("sidebar-backdrop").hidden = !open || !mobile.matches;
   document.querySelector("main").inert = open && mobile.matches;
   if (open && mobile.matches) $("search").focus();
   else if ($("sidebar").contains(document.activeElement))
     $("toggle-sidebar").focus();
+  // 桌面折叠会改主区宽度 → 换行数变化，输入框高度得重算。
+  if (widthChanged) invalidatePrompt();
 }
 $("toggle-sidebar").onclick = () =>
   sidebar($("toggle-sidebar").getAttribute("aria-expanded") !== "true");
 $("sidebar-backdrop").onclick = () => sidebar(false);
 mobile.onchange = () => {
   sidebar(!mobile.matches);
-  resizePrompt();
+  invalidatePrompt();
 };
 sidebar(!mobile.matches);
+// 长会话内容插入前先量一次：之后 snapshot/connect 里的重复调用直接命中缓存，不再触发整文档同步布局。
+resizePrompt();
+let promptResizeFrame;
+// 同断点内拖窗口会连发 resize，按帧合并，一帧最多重算一次。
+addEventListener("resize", () => {
+  if (promptResizeFrame !== undefined) return;
+  promptResizeFrame = requestAnimationFrame(() => { promptResizeFrame = undefined; invalidatePrompt(); });
+});
+// 目前全站用系统字体；万一以后引入 webfont，度量变化同样要重算。
+document.fonts?.addEventListener?.("loadingdone", invalidatePrompt);
 // 明暗主题：theme.js 已在首帧前写好 data-theme，这里只负责切换、持久化与按钮语义。
 // theme-color 跟着改，移动端浏览器地址栏才不会跟页面对不上。
 const themeColors = { dark: "#010102", light: "#f7f8fa" };
@@ -281,7 +311,7 @@ $("mobile-expand").onclick = () => {
   const expanded = document.querySelector(".shell").classList.toggle("mobile-expanded");
   $("mobile-expand").setAttribute("aria-expanded", String(expanded));
   $("mobile-expand").textContent = expanded ? "收起" : "展开";
-  if (expanded) resizePrompt();
+  if (expanded) invalidatePrompt();
 };
 const pending = new Map(),
   live = new Map(),
@@ -292,32 +322,117 @@ let requestSeq = 0;
 function error(e) {
   $("error").textContent = e.message || String(e);
 }
-// 独立于正文解析保存诊断文本；不存 localStorage，不记录模型设置/凭据请求。
-let rawRecords = [], rawSize = 0, rawDropped = false, rawFrame;
-function recordRaw(label, value) {
-  const text = `--- ${label} ---\n${JSON.stringify(value, null, 2)}\n\n`;
-  rawRecords.push(text);
-  rawSize += text.length;
-  // ponytail: 页内诊断最多保留约 2M 字符；更长历史需要时再做文件导出。
-  while (rawSize > 2_000_000 && rawRecords.length > 1) {
-    rawSize -= rawRecords.shift().length;
-    rawDropped = true;
+// 消息原文独立于渲染 DOM，保留被标签解析隐藏的内容与压缩历史。
+let rawEntries = [], rawLive = new Map(), rawFrame;
+function rawMode(open) {
+  $("raw-io").hidden = !open;
+  $("workspace").classList.toggle("raw-open", open);
+  $("open-raw-io").setAttribute("aria-pressed", String(open));
+  if (open) paintRaw();
+}
+$("open-raw-io").onclick = () => {
+  const opening = $("raw-io").hidden;
+  rawMode(opening);
+  if (opening) {
+    const bounds = $("transcript").getBoundingClientRect();
+    const visible = rawEntries.find(entry => {
+      const rect = entry.item?.text.getBoundingClientRect();
+      return rect?.height > 0 && rect.bottom > bounds.top && rect.top < bounds.bottom;
+    });
+    selectRaw(visible || rawEntries.at(-1));
   }
-  if (rawSize > 2_000_000) {
-    rawRecords[0] = rawRecords[0].slice(-2_000_000);
-    rawSize = rawRecords[0].length;
-    rawDropped = true;
-  }
-  if ($("raw-io").open && rawFrame === undefined) rawFrame = requestAnimationFrame(() => {
+};
+$("close-raw-io").onclick = () => { rawMode(false); $("open-raw-io").focus(); };
+function rawChanged() {
+  if (!$("raw-io").hidden && rawFrame === undefined) rawFrame = requestAnimationFrame(() => {
     rawFrame = undefined;
-    showRaw();
+    paintRaw();
   });
 }
-function showRaw() {
-  $("raw-io-text").value = (rawDropped ? "[部分较早内容已截断，仅保留最近约 2M 字符]\n" : "")
-    + (rawRecords.join("") || "尚无当前会话原始信息。");
+function rawEntry(message, agentId = "main") {
+  const entry = { message, agentId };
+  rawEntries.push(entry);
+  return entry;
 }
-$("open-raw-io").onclick = () => { showRaw(); $("raw-io").showModal(); };
+function selectRaw(entry, source = false) {
+  if (!entry) return;
+  rawMode(true);
+  if (source && window.matchMedia?.("(max-width: 1000px)").matches) rawMode(false);
+  for (const record of rawEntries) {
+    record.node?.classList.toggle("raw-selected", record === entry);
+    record.item?.node.classList.toggle("raw-selected", record === entry);
+  }
+  const target = source ? entry.item?.node : entry.node;
+  if (source && target) {
+    for (let parent = target.parentElement; parent && parent !== $("output"); parent = parent.parentElement)
+      if (parent.tagName === "DETAILS") parent.open = true;
+    if (entry.item.task) entry.item.task.trigger.click();
+    follow = false;
+  }
+  target?.scrollIntoView?.({ block: "center" });
+}
+function bindRaw(item, entry) {
+  if (!entry) return;
+  entry.item = item;
+  item.node.addEventListener("click", (e) => {
+    if (!$("raw-io").hidden && !e.target.closest("button, a, input, textarea, summary") && !window.getSelection()?.toString()) selectRaw(entry);
+  });
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "raw-source-link secondary";
+  button.textContent = "对照原文";
+  button.onclick = () => selectRaw(entry);
+  item.node.append(button);
+}
+function paintRaw() {
+  const list = $("raw-io-list");
+  const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 80;
+  $("raw-io-empty").hidden = rawEntries.length > 0;
+  for (const [index, entry] of rawEntries.entries()) {
+    if (!entry.node) {
+      entry.node = document.createElement("article");
+      entry.node.className = "raw-message";
+      const bar = document.createElement("div");
+      bar.className = "raw-message-bar";
+      entry.label = document.createElement("span");
+      const locate = document.createElement("button");
+      locate.type = "button";
+      locate.className = "raw-locate secondary";
+      locate.textContent = "定位对话";
+      locate.onclick = () => selectRaw(entry, true);
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "raw-copy secondary";
+      copy.textContent = "复制原文";
+      copy.onclick = async () => {
+        try { await navigator.clipboard.writeText(entry.body.textContent); copy.textContent = "已复制"; }
+        catch { copy.textContent = "复制失败，请选中文字复制"; }
+      };
+      bar.append(entry.label, locate, copy);
+      entry.body = document.createElement("pre");
+      entry.extra = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = "思考 / 工具 / 附件信息";
+      entry.extraText = document.createElement("pre");
+      entry.extra.append(summary, entry.extraText);
+      entry.node.append(bar, entry.body, entry.extra);
+      $("raw-io-list").append(entry.node);
+    }
+    const { message, agentId } = entry;
+    entry.label.textContent = `${String(index + 1).padStart(2, "0")} · ${message.role === "user" ? "你的输入" : message.role === "toolResult" ? "工具结果" : "模型输出"}${agentId !== "main" ? " · 子代理" : ""}${rawLive.get(agentId) === entry ? " · 正在生成" : ""}`;
+    const blocks = typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content || [];
+    const text = blocks.filter(b => b?.type === "text").map(b => b.text).join("\n");
+    if (entry.body.textContent !== text) entry.body.textContent = text;
+    entry.body.hidden = !text;
+    entry.node.querySelector(".raw-copy").disabled = !text;
+    const extra = blocks.filter(b => b && b.type !== "text").map(b => b.type === "thinking" ? `思考\n${b.thinking || ""}` : b.type === "image" ? `图片附件 · ${b.mimeType || "image"}（不展开 base64）` : JSON.stringify(b, null, 2)).join("\n\n");
+    entry.extra.hidden = !extra && !!text;
+    entry.extraText.textContent = extra || "本条消息尚无文本输出。";
+    if (message.role === "user" && text.startsWith("[Axiom 子任务完成通知]")) entry.label.textContent = `${String(index + 1).padStart(2, "0")} · 内部任务通知`;
+    entry.node.querySelector(".raw-locate").hidden = !entry.item || entry.item.node.hidden;
+  }
+  if (atBottom) list.scrollTop = list.scrollHeight;
+}
 function request(type, data = {}) {
   return new Promise((resolve, reject) => {
     if (ws?.readyState !== WebSocket.OPEN)
@@ -326,8 +441,6 @@ function request(type, data = {}) {
     pending.set(id, { resolve, reject });
     const command = { id, type, ...data };
     ws.send(JSON.stringify(command));
-    if (data.sessionId === sessionId && ["prompt", "question.reply", "goal.action"].includes(type))
-      recordRaw("输入请求（已发送，是否接受以服务端为准）", command);
   });
 }
 function controls() {
@@ -1036,6 +1149,8 @@ function stopActivity(agentId, label = "已停止") {
   const item = live.get(agentId);
   if (item) {
     item.active = false;
+    // 落定停用态记在 item 上：挂起的流式帧/工具更新不得再把它回退成 done/connecting。
+    item.stopped = label;
     updateActivity(item, label);
   }
   for (const tool of toolItems.values()) if (tool.agentId === agentId && ["running", "waiting"].includes(tool.node.dataset.state))
@@ -1043,6 +1158,8 @@ function stopActivity(agentId, label = "已停止") {
 }
 function updateActivity(item, stopped) {
   if (item.heading.textContent === "你") return;
+  // 停用是不可逆落定态：任何后续刷新（挂起绘制、工具完成等）都要保留，不能回退成运行态。
+  if (item.stopped && !item.active) stopped = item.stopped;
   const pure = !item.buffer.trim() && !item.tools.childElementCount;
   item.node.classList.toggle("activity-only", !item.buffer.trim());
   item.node.classList.toggle("pure-thought", pure && !!item.reasoning);
@@ -1083,8 +1200,10 @@ try {
   if (["split", "unified"].includes(saved)) diffView = saved;
 } catch {}
 function renderToolDetail(tool) {
-  if (!tool.container.open || !tool.container.isConnected) return;
+  if (!tool.container.isConnected) return;
+  // 关闭即释放详情 DOM，重开时再用 tool.args/tool.result 重建，长会话里折叠记录不再常驻节点。
   tool.body.replaceChildren();
+  if (!tool.container.open) return;
   const section = (label, text, diff = false) => {
     if (!text) return;
     const heading = document.createElement("h4");
@@ -1270,6 +1389,9 @@ function card(title, task) {
     paintedText: "",
     paintedProcess: "",
     processGroup: undefined,
+    raw: "",
+    pending: false,
+    prepare: prepareStream,
   };
   messageItems.set(node, item);
   task?.messages.push(item);
@@ -1277,6 +1399,29 @@ function card(title, task) {
     if (thinking.open) renderer.mark(item);
   };
   return item;
+}
+// 流式 delta 只累计原文/思考并标 pending；到真正绘制前一次性去标签、拆分回答与过程，
+// 顺带刷新活动状态（依赖 buffer，不能留在 delta 到达时算）。
+function prepareStream(item) {
+  // 纯思考 delta 不改原文，未变化的 raw 不重复去标签/拆分。
+  if (item.preparedRaw !== item.raw) {
+    item.preparedRaw = item.raw;
+    // 与最终渲染同序：先剥 goal 完成标记，再剥记忆标签；半截标记由 streaming 模式暂存。
+    item.buffer = stripMemoryTags(stripGoalMarkers(item.raw || "", { streaming: true }), { streaming: true });
+    // 累计解析：开标签到达即展示回答，半截标签暂存。
+    item.processBuffer = "";
+    if (!item.task) {
+      let split;
+      try { split = splitAnswer(item.buffer, { streaming: true }); }
+      catch { split = null; }
+      if (split) {
+        item.buffer = split.answer;
+        item.hasAnswer = split.found;
+        item.processBuffer = split.process || "";
+      }
+    }
+  }
+  updateActivity(item);
 }
 function renderMessage(item, message) {
   const text = typeof message.content === "string" ? message.content
@@ -1286,6 +1431,10 @@ function renderMessage(item, message) {
     item.node.hidden = true;
     return;
   }
+  // 最终态优先：挂起的流式绘制不得再用旧 pending 覆盖已落定的内容。
+  item.pending = false;
+  // 消息已落定，停用摘要让位给最终内容/自身的 stopReason。
+  item.stopped = undefined;
   item.modelInfo.replaceChildren();
   if (message.role === 'assistant' && message.model) {
     const identity = document.createElement('span');
@@ -1812,6 +1961,15 @@ function renderRetry(agentId = "main", data, historical = false) {
   scrollLatest();
 }
 function event(message) {
+  // 分片期间外部事件按到达顺序排队，尾部排空时再走水门；否则立即应用。
+  if (snapshotQueue) {
+    snapshotQueue.push(message);
+    return;
+  }
+  applyEvent(message);
+}
+function applyEvent(message) {
+  if (!acceptEventSeq(message)) return;
   if (message.type === "session.deleted") {
     if (message.sessionId === sessionId) {
       sessionMissing = true;
@@ -1824,8 +1982,23 @@ function event(message) {
   }
   if (message.sessionId !== sessionId) return;
   const { type, agentId = "main", data } = message;
-  if (["agent.message.start", "agent.delta", "agent.message.end", "tool.state", "session.queue", "session.state", "error"].includes(type))
-    recordRaw("收到事件", message);
+  if (type === "agent.message.start" && data.message.role === "assistant") rawLive.set(agentId, rawEntry(JSON.parse(JSON.stringify(data.message)), agentId));
+  if (type === "agent.delta" && ["text_delta", "thinking_delta"].includes(data.type)) {
+    if (!rawLive.has(agentId)) rawLive.set(agentId, rawEntry({ role: "assistant", content: [] }, agentId));
+    const entry = rawLive.get(agentId);
+    const blocks = Array.isArray(entry.message.content) ? entry.message.content : (entry.message.content = []);
+    const kind = data.type === "text_delta" ? "text" : "thinking";
+    const index = data.contentIndex ?? 0;
+    blocks[index] ||= { type: kind, [kind]: "" };
+    blocks[index][kind] = (blocks[index][kind] || "") + data.delta;
+  }
+  let endedRaw;
+  if (type === "agent.message.end") {
+    endedRaw = rawLive.get(agentId) || rawEntry(data.message, agentId);
+    endedRaw.message = data.message;
+    rawLive.delete(agentId);
+  }
+  if (type.startsWith("agent.message.") || type === "agent.delta") rawChanged();
   if (type === "question.asked") questionUI.asked(message.sessionId, data);
   if (type === "question.closed") questionUI.closed(message.sessionId, data.toolCallId);
   if (type === "goal") {
@@ -1860,6 +2033,7 @@ function event(message) {
   if (type === "agent.message.end" && data.message.role === "user") {
     clearWaiting(agentId);
     const item = card("你", tasks.get(agentId));
+    bindRaw(item, endedRaw);
     renderMessage(item, data.message);
     if (agentId === "main") {
       mainItems.push({ item, entryId: data.entryId });
@@ -1902,35 +2076,26 @@ function event(message) {
         tasks.get(agentId),
       ),
     );
+    bindRaw(live.get(agentId), rawLive.get(agentId));
     live.get(agentId).active = true;
     updateActivity(live.get(agentId));
   }
   if (type === "agent.delta") {
     const item = live.get(agentId);
     if (!item) return;
+    // 只累计并标待处理：stripGoalMarkers/stripMemoryTags/splitAnswer/活动状态都留到绘制前一次完成。
     if (data.type === "text_delta") {
       item.raw = (item.raw || "") + data.delta;
-      // 流式剥离从未完成的原始累计文本重算，避免残缺标签（含半截完成标记）闪现。
-      item.buffer = stripMemoryTags(stripGoalMarkers(item.raw, { streaming: true }), { streaming: true });
-      // 累计解析：开标签到达即展示回答，半截标签暂存。
-      item.processBuffer = "";
-      if (!item.task) {
-        let split;
-        try { split = splitAnswer(item.buffer, { streaming: true }); }
-        catch { split = null; }
-        if (split) {
-          item.buffer = split.answer;
-          item.hasAnswer = split.found;
-          item.processBuffer = split.process || "";
-        }
-      }
+      item.pending = true;
     }
-    else if (data.type === "thinking_delta") item.reasoning += data.delta;
+    else if (data.type === "thinking_delta") {
+      item.reasoning += data.delta;
+      item.pending = true;
+    }
     else if (data.type === "thinking_start") { setActivity(item.activity, "thinking...", "thinking"); return; }
     else if (data.type === "toolcall_start" || data.type === "toolcall_delta") { setActivity(item.activity, "calling...", "running"); return; }
     else if (data.type === "toolcall_end") { toolState(agentId, { phase: "start", toolCallId: data.toolCall.id, toolName: data.toolCall.name, args: data.toolCall.arguments }); return; }
     else return;
-    updateActivity(item);
     renderer.mark(item);
   }
   if (type === "agent.message.end" && data.message.role === "assistant") {
@@ -1938,6 +2103,7 @@ function event(message) {
       live.get(agentId) ||
       card(agentId === "main" ? "AXIOM" : "子 Agent", tasks.get(agentId));
     clearWaiting(agentId);
+    if (!endedRaw.item) bindRaw(item, endedRaw);
     item.active = false;
     live.set(agentId, item);
     for (const call of Array.isArray(data.message.content) ? data.message.content : [])
@@ -2043,13 +2209,104 @@ function event(message) {
   }
   if (type === "error") error(data.message);
 }
-function snapshot(state) {
-  rawRecords = [];
-  rawSize = 0;
-  rawDropped = false;
-  recordRaw("会话快照（消息原文；不含供应商 HTTP 报文）", {
-    sessionId: state.sessionId, messages: state.messages, live: state.live, queue: state.queue,
+// 首屏/切换分片：超过阈值的快照按「时间预算 + 条数上限」切片，短快照仍一次同步完成。
+// 调度用后台也能推进的 setTimeout/postTask（隐藏标签页里 rAF 会暂停），
+// 共享 job 身份递增即取消旧片；分片期间外部事件按到达顺序排队，尾部排空并按真实 seq 水位去重。
+const SNAPSHOT_SYNC_MESSAGES = 120;
+const SNAPSHOT_CHUNK_MS = 8;
+const SNAPSHOT_CHUNK_ITEMS = 40;
+let snapshotJob = 0;
+let snapshotQueue = null;
+const appliedSeq = new Map();
+function scheduleSnapshotChunk(fn) {
+  if (typeof scheduler === "object" && scheduler?.postTask) {
+    scheduler.postTask(fn, { priority: "background" });
+    return;
+  }
+  setTimeout(fn, 0);
+}
+// 无 seq 事件（如 session.deleted）不参与水位去重，必须原样放行。
+function acceptEventSeq(message) {
+  if (message.seq == null) return true;
+  const seen = appliedSeq.get(message.sessionId);
+  if (seen != null && message.seq <= seen) return false;
+  appliedSeq.set(message.sessionId, message.seq);
+  return true;
+}
+// onReady 是可选首屏钩子：同步清理旧 DOM、恢复草稿与身份切换完成后、首个分片调度前调用。
+// 长会话的调用方借此提前显示 workspace，让消息边补齐边展示；连接与发送能力仍由调用方
+// 在完整恢复后开放，所以这里只负责“此刻 DOM 已经属于目标会话”这个事实。
+function snapshot(state, onReady) {
+  const job = ++snapshotJob;
+  const target = state.sessionId;
+  // 新快照接管事件阀：旧片的排队事件已被新快照的 state 覆盖（seq 不会倒退），直接丢弃。
+  snapshotQueue = [];
+  let ctx;
+  try {
+    ctx = beginSnapshot(state, target);
+    // 首屏钩子与 beginSnapshot 同路：它抛错也不能留下半成品首屏和锁死的事件阀。
+    // beginSnapshot 抛错时此行不执行：半成品状态不暴露为首屏。
+    onReady?.();
+  } catch (e) {
+    snapshotQueue = null;
+    throw e;
+  }
+  if (state.messages.length <= SNAPSHOT_SYNC_MESSAGES) {
+    try {
+      for (let index = 0; index < state.messages.length; index++)
+        placeSnapshotMessage(ctx, index, state.messages[index]);
+      finishSnapshot(job, ctx);
+      drainSnapshotQueue(job);
+    } catch (e) {
+      if (job === snapshotJob) snapshotQueue = null;
+      throw e;
+    }
+    return;
+  }
+  return new Promise((resolve, reject) => {
+    let index = 0;
+    const step = () => {
+      // 已被更新的快照取代：静默退场，不碰新快照的 DOM 与事件队列。
+      if (job !== snapshotJob) {
+        resolve();
+        return;
+      }
+      try {
+        const deadline = performance.now() + SNAPSHOT_CHUNK_MS;
+        let count = 0;
+        do {
+          placeSnapshotMessage(ctx, index, state.messages[index]);
+          index++;
+          count++;
+        } while (index < state.messages.length && count < SNAPSHOT_CHUNK_ITEMS && performance.now() < deadline);
+        if (index < state.messages.length) {
+          scheduleSnapshotChunk(step);
+          return;
+        }
+        finishSnapshot(job, ctx);
+        drainSnapshotQueue(job);
+        resolve();
+      } catch (e) {
+        // 失败半成品不做成功排空：丢弃排队事件，错误由调用方现有入口报告并解除忙态。
+        if (job === snapshotJob) snapshotQueue = null;
+        reject(e);
+      }
+    };
+    try {
+      scheduleSnapshotChunk(step);
+    } catch (e) {
+      if (job === snapshotJob) snapshotQueue = null;
+      reject(e);
+    }
   });
+}
+// 同步重置 + 建索引：拿到 state 立即完成，后续分片只做消息落地。
+function beginSnapshot(state, target) {
+  // 原文对照的数据源与消息同一份快照：整表一次重建，分片期间只做逐条绑定。
+  rawEntries = state.messages.map(({ message, agentId }) => ({ message, agentId }));
+  rawLive.clear();
+  $("raw-io-list").replaceChildren();
+  rawChanged();
   locatedScroll = undefined;
   lastScrollTops.delete(transcript);
   clearTimeout(escapeTimer);
@@ -2062,12 +2319,13 @@ function snapshot(state) {
   if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame);
   scrollFrame = undefined;
   sessionMissing = false;
-  sessionId = state.sessionId;
+  sessionId = target;
   questionUI.show(sessionId, state.questions);
   try {
     sessionStorage.setItem("axiom.session", sessionId);
   } catch {}
-  history.replaceState(null, "", `#${new URLSearchParams({ session: sessionId })}`);
+  const sessionHash = `#${new URLSearchParams({ session: sessionId })}`;
+  if (location.hash !== sessionHash) history.replaceState(null, "", sessionHash);
   markSessionSeen(sessionId);
   $("session-title").textContent = state.title || "新会话";
   currentCwd = state.cwd;
@@ -2097,7 +2355,8 @@ function snapshot(state) {
   goalAnchors = new Map();
   goalAnchorCount = 0;
   for (const task of state.tasks) {
-    event({ type: "task.state", sessionId, taskId: task.id, data: task });
+    // 内部 task 恢复直接应用事件，不能进入自己的分片事件队列。
+    applyEvent({ type: "task.state", sessionId, taskId: task.id, data: task });
     tasks.get(task.id).trigger.remove();
   }
   const folded = new Map();
@@ -2120,45 +2379,64 @@ function snapshot(state) {
       renderRetry(record.agentId, { ...record, anchorEntryId: record.anchorEntryId || anchor }, true);
     }
   };
-  for (const [index, { agentId, message, entryId }] of state.messages.entries()) {
-    restoreRetries(index);
-    if (message.role === "toolResult") {
-      if (toolItems.has(`${agentId}:${message.toolCallId}`)) toolState(agentId, { ...message, phase: "end" });
-      if (agentId === "main") placeCompactedTasks();
-    }
-    if (["assistant", "user"].includes(message.role)) {
-      if (agentId === "main" && entryId && folded.has(entryId)) {
-        const record = folded.get(entryId);
-        for (const call of Array.isArray(message.content) ? message.content : [])
-          if (call.type === "toolCall") foldedTools.add(`${agentId}:${call.id}`);
-        if (!placed.has(record.id)) {
-          placed.add(record.id);
-          $("output").append(compactionCard(record));
-        }
-        continue;
-      }
-      const item = card(
-        message.role === "user"
-          ? "你"
-          : agentId === "main"
-            ? "AXIOM"
-            : "子 Agent",
-        tasks.get(agentId),
-      );
-      clearWaiting(agentId);
-      live.set(agentId, item);
+  // 视图状态（草稿/附件/跟随）在同步阶段落地：分片期间用户的新输入不会被尾部旧视图覆盖。
+  const view = views.get(sessionId);
+  $("prompt").value = view?.draft || "";
+  contextFiles = [...(view?.contextFiles || [])];
+  images = [...(view?.images || [])];
+  renderImages();
+  selectedSkill = view?.selectedSkill || "";
+  filePicker.close();
+  closeCompletion();
+  $("context-menu").hidePopover?.();
+  follow = view?.follow ?? true;
+  $("latest").hidden = follow;
+  return { state, folded, placed, foldedTools, restoreRetries, view };
+}
+function placeSnapshotMessage(ctx, index, { agentId, message, entryId }) {
+  ctx.restoreRetries(index);
+  if (message.role === "toolResult") {
+    if (toolItems.has(`${agentId}:${message.toolCallId}`)) toolState(agentId, { ...message, phase: "end" });
+    if (agentId === "main") placeCompactedTasks();
+  }
+  if (["assistant", "user"].includes(message.role)) {
+    if (agentId === "main" && entryId && ctx.folded.has(entryId)) {
+      const record = ctx.folded.get(entryId);
       for (const call of Array.isArray(message.content) ? message.content : [])
-        if (call.type === "toolCall") toolState(agentId, { phase: "history", toolCallId: call.id, toolName: call.name, args: call.arguments });
-      live.delete(agentId);
-      renderMessage(item, message);
-      if (agentId === "main") {
-        mainItems.push({ item, entryId });
-        anchorGoal(index, item, entryId);
+        if (call.type === "toolCall") ctx.foldedTools.add(`${agentId}:${call.id}`);
+      if (!ctx.placed.has(record.id)) {
+        ctx.placed.add(record.id);
+        $("output").append(compactionCard(record));
       }
+      return;
+    }
+    const item = card(
+      message.role === "user"
+        ? "你"
+        : agentId === "main"
+          ? "AXIOM"
+          : "子 Agent",
+      tasks.get(agentId),
+    );
+    clearWaiting(agentId);
+    live.set(agentId, item);
+    for (const call of Array.isArray(message.content) ? message.content : [])
+      if (call.type === "toolCall") toolState(agentId, { phase: "history", toolCallId: call.id, toolName: call.name, args: call.arguments });
+    live.delete(agentId);
+    // 绑定与下标同构的原文条目：rawEntries 与 state.messages 顺序一致。
+    bindRaw(item, rawEntries[index]);
+    renderMessage(item, message);
+    if (agentId === "main") {
+      mainItems.push({ item, entryId });
+      anchorGoal(index, item, entryId);
     }
   }
+}
+function finishSnapshot(job, ctx) {
+  if (job !== snapshotJob) return;
+  const { state, view } = ctx;
   goalAnchorCount = state.messages.length;
-  restoreRetries(state.messages.length);
+  ctx.restoreRetries(state.messages.length);
   for (const [agentId, message] of Object.entries(state.live))
     if (message.role === "assistant") {
       const item = card(
@@ -2167,11 +2445,20 @@ function snapshot(state) {
       );
       clearWaiting(agentId);
       item.active = true;
+      // 恢复中的流要有原始累计原文做 delta 基线：否则首个 text_delta 会丢掉快照里的历史前缀。
+      item.raw = typeof message.content === "string" ? message.content
+        : (message.content || []).filter((block) => block?.type === "text")
+          .map((block) => block.text).join("\n");
+      // 快照里的半成品流没有对应 state.messages 槽位，单独补一条原文条目并继续接收后续 delta。
+      const entry = rawEntry(JSON.parse(JSON.stringify(message)), agentId);
+      rawLive.set(agentId, entry);
+      bindRaw(item, entry);
       renderMessage(item, message);
+      item.preparedRaw = undefined;
       live.set(agentId, item);
     }
   for (const tool of Object.values(state.tools || {}))
-    if (!foldedTools.has(`${tool.agentId || "main"}:${tool.toolCallId}`)) toolState(tool.agentId || "main", tool);
+    if (!ctx.foldedTools.has(`${tool.agentId || "main"}:${tool.toolCallId}`)) toolState(tool.agentId || "main", tool);
   mergeThoughts($("output"));
   for (const [id, task] of tasks) {
     mergeThoughts(task.output);
@@ -2196,18 +2483,7 @@ function snapshot(state) {
       '<span class="empty-mark" aria-hidden="true">A</span><p class="eyebrow">你的本地 AI 工作台</p><h2>把想法，变成下一步。</h2><p>描述目标，让 Axiom 协同思考与执行。</p><div class="empty-hints"><span>梳理代码</span><span>排查问题</span><span>实现想法</span></div>';
     $("output").append(empty);
   }
-  const view = views.get(sessionId);
-  $("prompt").value = view?.draft || "";
-  contextFiles = [...(view?.contextFiles || [])];
-  images = [...(view?.images || [])];
-  renderImages();
-  selectedSkill = view?.selectedSkill || "";
-  filePicker.close();
-  closeCompletion();
-  $("context-menu").hidePopover?.();
-  follow = view?.follow ?? true;
   lastScrollTops.delete(transcript);
-  $("latest").hidden = follow;
   scrollFrame = requestAnimationFrame(() => {
     scrollFrame = undefined;
     resizePrompt();
@@ -2220,6 +2496,21 @@ function snapshot(state) {
   config.compaction = state.config.compaction || compactionDefaults;
   controls();
   goalUI.show(sessionId, state.goal, goalAnchors);
+  // 恢复成功后才提交水位；尾部排队事件仍按快照序号去重。
+  if (Number.isInteger(state.seq)) appliedSeq.set(state.sessionId, state.seq);
+}
+// 尾部一次性排空：分片期间排队的事件按到达顺序补放，快照已含的按 seq 水位剔除。
+function drainSnapshotQueue(job) {
+  if (job !== snapshotJob) return;
+  const queued = snapshotQueue;
+  snapshotQueue = null;
+  for (const message of queued) {
+    try {
+      applyEvent(message);
+    } catch (e) {
+      error(e);
+    }
+  }
 }
 let reconnectTimer, connecting = false, reconnectDelay = 1000;
 $("login").onsubmit = async (e) => {
@@ -2260,6 +2551,7 @@ $("login").onsubmit = async (e) => {
       ws.onclose = () => {
         connected = false;
         for (const id of new Set(["main", ...tasks.keys(), ...waitingItems.keys()])) stopActivity(id, "连接断开，等待恢复");
+        // 分片在飞时也要存视图（草稿/附件不能丢）：半截滚动值由 saveView 内部按 snapshotQueue 保住。
         if (!$("workspace").hidden) saveView();
         reject(new Error("连接断开"));
         serviceUi.cancelRestart();
@@ -2331,7 +2623,9 @@ $("login").onsubmit = async (e) => {
     }
     if (!state) state = await request("session.create");
     if (!$("workspace").hidden) saveView();
-    snapshot(state);
+    // 首屏渐进显示：身份切换同步完成后就让 workspace 可见，长快照的分片在可见容器里继续补齐，
+    // 不再等全部分片建完 DOM 才做一次整体布局。connected 与发送能力保持未开放。
+    await snapshot(state, () => { $("workspace").hidden = false; });
     await refreshSessions();
     $("login").hidden = true;
     $("workspace").hidden = false;
@@ -2623,11 +2917,14 @@ async function withdrawQueue(recall = false) {
     const restored = queuedImages.flat().filter(Boolean);
     if (!text && !restored.length) return;
     // 上下文里的输入被撤回后，叶子已回退：重新取快照重绘消息区（saveView 先保住当前草稿与附件）。
-    if (recalled.length && sessionId === target) {
-      saveView();
-      snapshot(await request("session.attach", { sessionId: target }));
+    if (recalled.length && sessionId === target && !changing) {
+      const state = await request("session.attach", { sessionId: target });
+      if (sessionId === target && !changing && connected) {
+        saveView();
+        await snapshot(state);
+      }
     }
-    if (sessionId === target) {
+    if (sessionId === target && !changing) {
       $("prompt").value = [$("prompt").value, text].filter(Boolean).join("\n\n");
       images = [...images, ...restored];
       renderImages(); resizePrompt(); controls(); $("prompt").focus();
@@ -2787,7 +3084,7 @@ async function recoverMissingSession() {
     // 不把旧草稿塞入另一条已有会话；独立新建，且不自动发送。
     const state = await request("session.create", { cwd });
     views.set(state.sessionId, draft);
-    snapshot(state);
+    await snapshot(state);
     error("原会话已在其他页面删除，已在原工作空间新建会话并保留草稿，尚未发送。");
     allSessions = await request("sessions.list");
   } catch (e) {
@@ -2816,7 +3113,7 @@ async function switchSession(action) {
       $("error").append(link);
     } else {
       if (sessionMissing) views.set(state.sessionId, { draft: $("prompt").value, contextFiles: [...contextFiles], images: [...images], selectedSkill, follow: true, scroll: 0 });
-      snapshot(state);
+      await snapshot(state);
     }
     renderSessions();
     if (mobile.matches) sidebar(false);

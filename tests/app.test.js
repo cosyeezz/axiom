@@ -361,25 +361,48 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     sockets[1].open();
     await settle();
     paint();
+    // 原文视图是并排面板（非 modal），按钮紧挨主题切换，用 aria-pressed 表示开合。
+    assert.equal($("open-raw-io").nextElementSibling, $("toggle-theme"), "原文按钮紧邻主题切换");
     $("open-raw-io").click();
-    assert.equal($("raw-io").open, true);
-    assert.match($("raw-io-text").value, /会话快照/);
-    assert.doesNotMatch($("raw-io-text").value, /secret/, "服务凭据不进入原始会话面板");
+    assert.equal($("raw-io").hidden, false);
+    assert.equal($("raw-io").tagName, "SECTION", "原文视图是面板不是 modal 对话框");
+    assert.equal(window.document.querySelector("dialog#raw-io"), null);
+    assert.equal($("open-raw-io").getAttribute("aria-pressed"), "true");
+    const rawRows = () => [...$("raw-io-list").querySelectorAll(".raw-message")];
+    assert.equal(rawRows().length, 0);
+    assert.equal($("raw-io-empty").hidden, false, "空会话给提示而不是伪造事件");
     const rawSession = window.sessionStorage.getItem("axiom.session");
     const rawTag = '<axiom_answer>**原文**<img src=x onerror=alert(1)></axiom_answer>';
     // 没有 message.start 也必须记录增量：正文渲染器会忽略这种事件。
     sockets[1].receive({ type: "agent.delta", sessionId: rawSession, data: { type: "text_delta", delta: rawTag } });
     paint();
-    assert.ok($("raw-io-text").value.includes(rawTag));
-    assert.equal($("raw-io").querySelector("img"), null);
+    assert.equal(rawRows().length, 1);
+    const streamed = rawRows()[0];
+    assert.match(streamed.querySelector(".raw-message-bar").textContent, /模型输出/, "流式消息带标签");
+    assert.equal(streamed.querySelector("pre").textContent, rawTag, "标签按原文保留，不解析 Markdown/HTML");
+    assert.equal(streamed.querySelector("pre").children.length, 0, "原文只有文本节点");
+    assert.equal($("raw-io-list").querySelector("img"), null, "原文不执行 HTML");
     sockets[1].receive({ type: "agent.delta", sessionId: "other-session", data: { type: "text_delta", delta: "不能串会话" } });
     paint();
-    assert.doesNotMatch($("raw-io-text").value, /不能串会话/);
-    $("raw-io").close();
+    assert.equal(rawRows().length, 1, "其他会话的事件不进当前原文面板");
+    assert.doesNotMatch($("raw-io-list").textContent, /不能串会话/);
+    // 复制按钮沿用已有剪贴板 mock，取的是原文而不是渲染后的正文。
+    copiedPath = "unchanged";
+    streamed.querySelector(".raw-copy").click();
+    await settle();
+    assert.equal(copiedPath, rawTag, "复制的是逐字原文");
+    // 关闭后再来增量：重开时补画，不丢内容也不在隐藏时白白渲染 DOM。
+    $("close-raw-io").click();
+    assert.equal($("raw-io").hidden, true);
+    assert.equal($("open-raw-io").getAttribute("aria-pressed"), "false");
+    assert.equal(window.document.activeElement, $("open-raw-io"), "关闭后焦点回到开关按钮");
     sockets[1].receive({ type: "agent.delta", sessionId: rawSession, agentId: "child", data: { type: "text_delta", delta: "关闭后仍记录子代理" } });
+    paint();
     $("open-raw-io").click();
-    assert.match($("raw-io-text").value, /关闭后仍记录子代理/);
-    $("raw-io").close();
+    assert.equal(rawRows().length, 2);
+    assert.match(rawRows()[1].querySelector(".raw-message-bar").textContent, /模型输出 · 子代理/, "子代理原文单独标记");
+    assert.equal(rawRows()[1].querySelector("pre").textContent, "关闭后仍记录子代理");
+    $("close-raw-io").click();
     assert.equal($("service-dev").hidden, false);
     assert.doesNotMatch($("service-dev").outerHTML, /[DF]:[\\/]/, "dev badge must not expose the source path");
     assert.equal($("service-update-section").hidden, true, "dev hides the update group");
@@ -648,10 +671,28 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     await settle();
     assert.equal(requests.findLast((req) => req.type === "prompt").text, "/skill:codebase-map 检查代码");
     $("open-raw-io").click();
-    assert.match($("raw-io-text").value, /输入请求/);
-    assert.match($("raw-io-text").value, /\/skill:codebase-map 检查代码/);
-    assert.doesNotMatch($("raw-io-text").value, /关闭后仍记录子代理/, "切换快照清除旧会话事件");
-    $("raw-io").close();
+    const liveRows = [...$("raw-io-list").querySelectorAll(".raw-message")];
+    assert.ok(liveRows.length >= 1);
+    assert.match(liveRows.at(-1).querySelector(".raw-message-bar").textContent, /你的输入/, "用户输入带标签");
+    assert.equal(liveRows.at(-1).querySelector("pre").textContent, "/skill:codebase-map 检查代码", "输入请求按原文逐条展示");
+    assert.doesNotMatch($("raw-io-list").textContent, /关闭后仍记录子代理/, "切换快照清除旧会话事件");
+    // 点击左侧消息后可用「定位对话」从原文跳回正文消息（面板收起，对应行标记选中）。
+    assert.equal(liveRows.at(-1).querySelector(".raw-locate").hidden, false, "已绑定的消息可回跳");
+    liveRows.at(-1).querySelector(".raw-locate").click();
+    assert.equal($("raw-io").hidden, true, "定位后收起面板回到对话");
+    assert.equal(liveRows.at(-1).classList.contains("raw-selected"), true, "对应原文行被标记选中");
+    $("open-raw-io").click();
+    // 换会话后原文面板换成该会话的历史消息（来自快照），上一会话的残留不串台。
+    await window.eval('switchSession(() => request("session.attach", { sessionId: "b" }))');
+    paint();
+    const historyRows = [...$("raw-io-list").querySelectorAll(".raw-message")];
+    assert.deepEqual(historyRows.map((row) => row.querySelector("pre").textContent), ["historical prompt", "historical result"], "历史消息按原文逐条列出");
+    assert.match(historyRows[0].querySelector(".raw-message-bar").textContent, /你的输入/);
+    assert.match(historyRows[1].querySelector(".raw-message-bar").textContent, /模型输出 · 子代理/);
+    assert.doesNotMatch($("raw-io-list").textContent, /skill:codebase-map/, "会话隔离：另一会话的原文不串台");
+    await window.eval('switchSession(() => request("session.attach", { sessionId: "a" }))');
+    paint();
+    $("close-raw-io").click();
     assert.equal($("composer-skill").value, "");
     sockets[1].receive({ type: "session.status", sessionId: "a", data: { status: "idle" } });
     // 正在看的会话跑完即算已读：idle 事件要写回 seen，否则切走后会被错标成待查看。
@@ -1150,6 +1191,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(task.querySelector(".task-system-prompt img"), null, "system prompts are plain text, not executable markup");
     assert.equal(task.querySelector(".message > .markdown").textContent, "");
     trigger.click();
+    // 之前的键盘/输入事件会让流式绘制让路；假 rAF 也须等交互窗口结束。
+    await new Promise((resolve) => setTimeout(resolve, 550));
     paint();
     assert.equal(task.open, true);
     const text = task.querySelector(".message > .markdown");
@@ -1179,6 +1222,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(renders, beforeClosed, "final messages remain lazy while the overlay is closed");
     trigger.click();
     task.dispatchEvent(new window.Event("close")); // A delayed close event must not clear a reopened overlay.
+    await new Promise((resolve) => setTimeout(resolve, 550));
     paint();
     assert.match(text.textContent, /final result/);
     assert.equal(text.querySelector("h1"), titleNode);

@@ -1,0 +1,29 @@
+{
+  "scene": "滚动掉帧与折叠（details 展开）成本",
+  "instance": "http://127.0.0.1:4410，视口 1440x900",
+  "scrollContainer": "#transcript（overflow:auto）",
+  "geometry": {"clientHeight": 397, "scrollHeight": 32173, "range": 31776},
+  "scrollProtocol": "每帧 scrollTop += 900px，共 120 帧，记录 rAF 帧间隔；同页面对照 idle（只等 rAF 不滚动）。滚动范围 31776px，约 36 帧即触底，其后可能保持静止，故为有限帧数检测",
+  "idle": [
+    {"avg": 31.3, "p50": 31.2, "p95": 31.6, "max": 33, "over33": 0, "over100": 0},
+    {"avg": 31.3, "p50": 31.3, "p95": 31.7, "max": 31.9, "over33": 0, "over100": 0}
+  ],
+  "scroll": [
+    {"avg": 31.2, "p50": 31.3, "p95": 31.7, "max": 32.3, "over33": 0, "over100": 0},
+    {"avg": 31.2, "p50": 31.2, "p95": 31.7, "max": 42.7, "over33": 1, "over100": 0}
+  ],
+  "noViewportSetRun": {"note": "未显式设置视口时 clientHeight 仅 90px", "scroll": {"avg": 31.4, "p50": 31.3, "p95": 31.8, "max": 68, "over33": 1}},
+  "scrollConclusion": "本环境静止基线即 ~31.3ms/帧（≈32fps，浏览器 vsync/节流所致，非渲染代价）；120 帧内滚动与静止均未见 >33ms 帧（over33 0–1），但滚动约 36 帧即触底、其后可能静止，检测能力有限，不能表述为「统计学无差异」或「滚动不是瓶颈」。「滚动掉帧」在该样本上未检出，不等于不存在。",
+  "fold": {
+    "toolRecordTotal": 332,
+    "callGroupTotal": 48,
+    "singleToolRecordOpenMs": [6.6, 4.1, 3.8, 3.7, 3.2, 2.9, 3.3, 9.5, 3.6, 3.2],
+    "singleToolRecordCloseMs": [3.3, 3.2, 3.0, 2.9, 3.2, 4.2, 3.4, 3.2, 2.9, 3.1],
+    "openAllToolRecordsMs": 4.1,
+    "closeAllToolRecordsMs": 3.6,
+    "nodesAfterOpenAll": 39947,
+    "openAllCallGroupsMs": 57.1,
+    "nodesAfterOpenAllCallGroups": 39947
+  },
+  "foldConclusion": "单个 tool-record 开/关 3–10ms；全部 332 个 tool-record 置 open 后同步强制布局仅 4.1ms 且总 DOM 节点数不变（39947）。注意：修改 open 属性会异步派发 toggle，该计时只覆盖属性设置 + 同步布局，不含异步入场处理，不能当作全部详情渲染完成的耗时，也不能单凭它证明惰性渲染。惰性渲染由源码早退（app.js:1049）与 ontoggle 处理器（app.js:1160）确认。48 个 call-group 全开 57.1ms，同样不增加节点数。"
+}

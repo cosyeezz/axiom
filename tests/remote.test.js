@@ -7,6 +7,7 @@ import { EventEmitter } from "node:events";
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { WebSocket } from "ws";
 import { createServerApp } from "../src/server.js";
 import {
@@ -728,7 +729,7 @@ test("启动即停机：远程访问首次配置写入不得被关库抢先", as
   let database;
   try {
     const child = spawn(process.execPath, ["src/main.js"], {
-      cwd: new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"),
+      cwd: fileURLToPath(new URL("..", import.meta.url)),
       env: { ...process.env, AXIOM_PORT: "4387", AXIOM_CWD: process.cwd(), AXIOM_HOME: root, AXIOM_DEV: "1" },
       stdio: ["ignore", "pipe", "pipe", "ipc"],
     });

@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-15 原文对照改为逐条阅读
+
+- 原因：JSON 日志弹窗无法与聊天对应，用户要求真正可读的原文模式。
+- 内容：入口移到主题旁；桌面左右分栏，窄屏切换；逐消息纯文本、双向定位高亮、逐条复制、思考/工具折叠；移除整屏事件 JSON 和截断日志，历史与实时按消息统一保留。
+- 设计：沿用 Linear 的 canvas/surface/raised、ink/muted、accent 与 mono token，8px 卡片圆角；没有新增依赖、后端接口或内容渲染器。
+- 文件：public/app.js、public/index.html、public/style.css、tests/app.test.js、README.md、代码索引。
+- 验证：真实 Chromium 1440px/390px 布局、无横向溢出、无页面异常；页面测试覆盖原文标签、流式、复制、会话隔离与开关，全量 npm test 验证。
+
 ## 2026-09-15 独立鹈鹕自行车动画
 
 - 内容：新增 `pelican-bicycle.html`，以手绘 SVG 几何图形呈现自行车骑在鹈鹕背上，CSS 实现步态、颠簸、车轮旋转、围巾摆动和地面运动。
@@ -1271,6 +1279,257 @@
 - 内容：输入区增加角色下拉并复用现有选择器；session.configure 支持 nullable subagentThinking；保持默认配置及已启动任务不变。沿用现有暗色表面、细边框、圆角与键盘交互，不引入样式或依赖。
 - 涉及：public/app.js、public/index.html、src/protocol.js、src/sessions.js、tests/app.test.js、tests/config.test.js、README.md、devlog.md、代码索引。
 
+## 2026-09-14 长对话性能调研第 2 轮：真实长会话实测基线
+
+- 原因：第 1 轮只有代码级热点，需真实 goal 长会话的可复现数值支撑（首屏/切换耗时、DOM 节点数、流式单帧耗时、内存占用）。
+- 样本：goal 模式最大真实会话 55e7fce9-c23b-441a-b6e1-1042321ad701（JSONL 11,553,809B / 1877 行 / 1831 消息行：user 18、assistant 803、toolResult 1010 / 38 次 compaction / 正文 2,193,665 字符 / thinking 1,390,647 字符 / 145 个代码块）。筛选口径为 goal + 最大体量，而非用户口头报告的 aff6e5c0（588KB，体量不足以暴露卡顿）。
+- 修正：业务库实为 `~/.axiom-dev/axiom.db`（9.8MB，sessions 89/goals 3），先前假设的 `~/.axiom/axiom.db` 仅 12KB 且只有守护状态。
+- 环境：`VACUUM INTO` 只读复制库 + JSONL 副本，独立端口 4410 启动，测量全程不写入原始数据、不外传会话原文（临时导出的原文样本已删除）。
+- 实测（Chromium 152 / Playwright）：首屏 firstOutput 1171ms、lastOutput 1626ms、最大长任务 955ms；切换触发 1345ms 长任务；**DOM 节点 39,947**（#output 97、tool-record 332、call-group 48）；流式文本尾部每帧 7–12ms（峰值 33ms）、头部 2–4ms、64000 字符全量冷渲染 502.6ms；长会话堆 50.6MB、切换后 53.3MB、短会话 3.4MB。滚动与静止基线均 ~31.3ms/帧（≈32fps），滚动掉帧未复现；3 轮切换内存 +0.7MB 并随 GC 回落，短周期未复现持续增长。折叠成本：单个 tool-record 3–10ms，332 个全开 4.1ms 且 DOM 数不变（惰性渲染生效）。
+- 涉及：新增 docs/perf-long-conversation/（README.md 测量口径、session-stats.json、first-screen.json、switch.json、memory.json、scroll-fold.json、stream-render.json、measure.mjs）。产品代码（public/、src/、scripts/）零改动。
+- 验证：`git diff --stat -- public src scripts` 为空；两处实例（4399/4410）结果交叉印证。
+
+## 2026-09-14 长对话性能调研第 3 轮：genericagent 前端机制对照
+
+- 原因：需确认 genericagent 的 Web 聊天前端/后端流式处理里哪些机制值得移植，避免把 axiom 已有的能力当缺口重复建议。
+- 对象：本地只读克隆 `/f/tmp/GenericAgent-ro` @ f6e5657；限定 frontends/desktop/static/*、ga-web.js、desktop_bridge.py、conductor.html、chatapp_common.py，未做全仓库扫描。未运行 genericagent，未改产品代码。
+- 结论（11 条机制，每条含 GA 文件:行号 + axiom 等价物）：
+  - 已具备但实现不同（勿重复建议）：批量 hydrate 单次整表渲染（GA app.js:3047-3052/2247-2253 ↔ axiom public/app.js:2001-2125）、增量游标拉取（GA app.js:1585/2996-3004 ↔ axiom WS 增量 src/sessions.js:744）、展开才渲染的惰性（GA app.js:1291-1303 ↔ axiom public/app.js:1160、1048-1049、1239-1241、1329）、滚动 rAF 贴底（GA app.js:2294-2301 ↔ axiom public/app.js:195-204）。
+  - axiom 确实缺失（本轮 3 条适用结论）：① 流式重绘节流与逐字步长（GA app.js:2303-2306/2421-2444；axiom public/app.js:1863-1889 → public/stream-renderer.js:9-25 每帧全量重绘，实测 7–12ms/帧、峰值 33ms）；② 每帧对整条消息跑 marked.lexer（axiom public/markdown.js:219-220，块级 DOM 缓存已有但 lex 范围未限定）；③ 用户交互期间暂停 DOM 重写（GA app.js:2306-2337 DRAFT_INTERACT_MS=520；axiom 无对应机制）。
+  - 不适用：按轮折叠（axiom 一条 message 即一个 turn，与 compaction public/app.js:2050-2090、call-group public/app.js:731-748/905-921、goal 轮次 public/goal.js:518-540 重叠）、后端历史分页（axiom 用事件增量，分页不解决首屏渲染成本）、GA 刷新恢复对齐（axiom 无打字机）。
+- 反例记录：conductor.html:540-542 整体重画仅适用于小数据量；chatapp_common.py:60-77 split_text 是 IM 平台消息分片，与 Web 渲染无关。
+- 涉及：新增 docs/perf-long-conversation/genericagent-mechanisms.md。产品代码（public/、src/、scripts/）零改动。
+
+## 2026-09-14 长对话性能调研第 4 轮：汇总报告与分优先级方案
+
+- 原因：前三轮分别产出了代码链路热点、真实长会话实测基线、genericagent 机制对照，需收口为一份可执行报告并给出取舍选项；同时回答「现有折叠机制是否已足够」。
+- 内容：把 `docs/frontend-long-conversation-perf.md` 从第 1 轮工作稿改写成最终报告，新增：五类场景根因表（每条带 axiom 文件:行号与实测支撑）、四项实测数值汇总与口径说明、折叠机制是否够用的三层判断、genericagent 三条可移植机制摘要与已具备/不适用分类、六条分优先级方案（P0-1 流式重绘双重闸门、P0-2 限定每帧 re-lex 范围、P1-1 交互期间让出渲染、P1-2 首屏分片重建、P2-1 CSS content-visibility、P2-2 常驻对象回收，每条含预期收益/风险/回退），以及修订后的实施目标草案与三个待确认取舍点。
+- 关键判断：「现有折叠机制已足够」不成立——实测 332 个 tool-record 全开 4.1ms 且 DOM 节点数不变、单个开/关 3–10ms，说明折叠（含 tool-record 惰性渲染 app.js:1048-1049）本身已到位且不是瓶颈；剩余卡顿来自折叠触及不到的三类常驻成本：每帧整段 lex（public/markdown.js:219-220）、每个 delta 整段重算（public/app.js:1869、1874）、每帧全量分组重排（public/app.js:797/757/1025）。滚动掉帧（idle 与 scroll 均 ~31.3ms/帧）与内存持续增长（3 轮 +0.7MB 且随 GC 回落）在本样本未复现，列为观测项而非优化目标。
+- 涉及：改写 docs/frontend-long-conversation-perf.md（第 1 轮链路图与 H1–H15 热点清单作为附录保留）。产品代码（public/、src/、scripts/）零改动。
+- 验证：`git diff --stat -- public src scripts` 为空；报告条目与 docs/perf-long-conversation/ 各 JSON 数值逐项对齐。
+- 后续：向用户提交 P0/P1/P2 取舍，确认后把目标修订为实施修复（草案见报告第七节）。
+
+## 2026-09-14 长对话性能调研第 5 轮：跨文档证据纠错（不提交，待独立验收）
+
+- 原因：第 4 轮报告及配套 JSON/README 的部分表述超出实测证据边界（把属性设置+同步布局的计时当作详情渲染完成、把微基准当真实上/下界、把有限帧数检测当统计学无差异、断言 39,947 节点全部参与布局等），需在不改任何原始数值的前提下把解释文字改成可核查的表述。
+- 取舍：只改解释与结论文字，**所有原始数值/样本/协议参数一律保留**；不改产品/测试/`measure.mjs`，不新增测量；保留「不做后端历史分页」的决策，但把理由改为「GA 增量游标分页首屏 limit=0 仍全量」，并承认真正按需分页可能降低初始构建量；GA 惰性渲染改为由源码早退 + `ontoggle` 确认（引用不足处标「未量化」而不编造）。
+- 修正要点：
+  1. GA M3：节流只降重绘频次、不限制单次全文 lex 成本，10 字符是常规步长而非硬上限；删除「单帧成本有界/与文本长度脱钩」的推断，未测 GA 单帧耗时。
+  2. 折叠：4.1ms/57.1ms 与单条 3–10ms 只覆盖「改 `open` 属性 + 同步布局」，`open` 会异步派发 `toggle`，不能算详情渲染完成或据此证明惰性；惰性改由 `app.js:1049` 早退 + `app.js:1160` `ontoggle` 确认。
+  3. 流式：删除「超线性」结论，也不反说次线性；不同文本样本不能判复杂度增长阶数。
+  4. 微基准：强制布局 + 600 字符步长，非真实流式，既非上界也非下界；报告/README/JSON 三处「下界」全部纠正。
+  5. 滚动：范围 31,776px、每帧 +900px、约 36 帧触底后可能静止，检测能力有限；未检出≠无掉帧，不能称「统计学无差异/非瓶颈」，不能称 39,947 节点全部参与布局。
+  6. paint：`stream-renderer.js:10-25` 已有文本变化守卫，只缺交互让路，非无条件重写。
+  7. P0-2 收益参照真实尾部 7–12ms；502.6ms 是另一口径的合成冷渲染，不是收益上限。
+  8. 内存：4410 首屏 50.6/53.3MB 与 4399 趋势 23.5→24.2MB 为不同实例样本，未强制/记录 GC；回落与 GC 相容但不证实，+0.7MB 不能判泄漏，50.6MB 是整页堆非某对象占用。
+  9. 其他：删去「折叠省最大块」的无量化表述；588KB 样本改述为「体量远小于主样本，未在该会话复现」；首屏 955ms 归因 `snapshot` 标为代码候选而非 CPU profile 结论。
+  10. 行号修正：`src/sessions.js` emit 711→708（H15 与链路图、场景 B）；`public/markdown.js` 注释 218→215。
+- 涉及：docs/frontend-long-conversation-perf.md、docs/perf-long-conversation/{README.md,genericagent-mechanisms.md,scroll-fold.json,stream-render.json,memory.json}、README.md（补报告入口）。产品代码（public/、src/、scripts/）零改动。
+- 验证（见本轮收口）：JSON 全部可解析；三份 JSON 数值与 HEAD 逐项一致（仅解释字段变化）；`git diff --check` 无空白错误；`git diff --stat 2c8051b -- public src scripts` 为空。未提交，交独立代理验收后提交。
+
+## 2026-09-14 长对话性能实施第 6 轮：P0-1 最小流式节流 + delta 预处理延后（不提交，待独立验收）
+
+- 原因：调研确认流式路径每帧整段重算（`public/app.js` 旧 1869/1874 每个 delta 都跑 `stripMemoryTags`/`splitAnswer`）且绘制无时间闸门，需先落最小改法：节流 + 把预处理移到绘制前一次。
+- 内容：
+  1. `public/stream-renderer.js`：`mark()` 首次标记后按 `interval=40ms` 调度一次绘制，期间到达只累计进 dirty（不重置计时，持续输入不饿死）；`paint()` 在绘制前对 `item.pending` 执行一次 `item.prepare(item)`；默认调度改为 `setTimeout/clearTimeout`（rAF 无法延迟），`flush()` 仍立即绘制并收口 pending，`clear()` 取消挂起调度；签名新增第 5 个可选参数 `interval`，前 4 个位置参数不变。
+  2. `public/app.js`：`agent.delta` 只做 `raw += delta` / `reasoning += delta` 并标 `pending`，不再在到达时解析；新增 `prepareStream(item)`（去记忆标签 + 回答/过程拆分 + `updateActivity`）挂到卡片 `item.prepare`，由绘制前一次调用——活动状态依赖 buffer，必须与正文同一时机刷新；`renderMessage` 开头清 `item.pending`，最终态不被挂起的流式帧覆盖。主/子任务语义不变（子任务仍不做回答标签拆分）。
+  3. 折叠子任务：`mark()` 早退不变，因此折叠期间既不调度也不预处理，展开时按最新累计 `raw` 补画（原行为保留）。
+- 未做：Markdown 尾部解析优化（P0-1 范围内明确不做）；逐字动画/任意字符步长；新依赖或单用途工厂。
+- 诚实边界：仍是单次绘制整段完整 Markdown 词法分析（`public/markdown.js`），本次只降低绘制频次，**未达成单帧 ≤4ms**，需 P0-2 复测。
+- 涉及：public/stream-renderer.js、public/app.js、tests/stream-renderer.test.js（+4 例：突发合并/持续输入上限且不饿死/flush 与 clear/折叠展开）、tests/message-activity.test.js（+1 例：绘制前不处理与最终态不被覆盖）、README.md（流式说明）。`.pi/skills/codebase-map/INDEX.md` 由 `tests/codebase-index.test.js` 重建（行号同步）。
+- 验证：`npm test` 全量 490 例、488 通过、0 失败、2 跳过（EXIT=0）；`node --test tests/stream-renderer.test.js tests/message-activity.test.js` 17 例全绿；`git diff --check` 见下轮收口。未提交，交独立代理复核后提交。
+
+## 2026-09-14 长对话性能实施第 6 轮补充：修复 stop×挂起帧回归（不提交，待独立验收）
+
+- 原因：独立复核 b26e416e 复现真实回归——真实事件序列 `session.state running → agent.message.start assistant → thinking_delta → session.state idle`（无 `message.end`）后等待绘制，摘要本应停在「已结束/stopped」，却被挂起的 `prepareStream → updateActivity(item)` 覆盖成 `done`（thinking 行回到 `thinking`，主活动行回到 `connecting...`）。根因：停用态只写在 DOM 上，`updateActivity` 无条件刷新活动显示。
+- 内容：
+  1. `public/app.js` 共享路径修：`stopActivity()` 把停用标签落到 `item.stopped`；`updateActivity()` 在 `item.stopped && !item.active` 时强制沿用停用态，覆盖所有挂起刷新入口（流式绘制、工具更新等），不再回退为运行/连接态；`renderMessage()` 落定最终消息时清 `item.stopped`，让最终内容与自身 `stopReason` 生效。
+  2. `public/app.js` `prepareStream()`：仅当 `item.raw` 变化时才重算去标签/拆分（纯思考 delta 不再重复解析未变化的回答原文）。
+  3. `public/stream-renderer.js` `flush()`：收口后若 `dirty` 已空则取消无用的节流定时器；仍有其他 dirty 项时保留共享定时器，不影响其他待绘项。
+- 未做：不改 `markdown.js`；不做 P0-2/P0-3 等其余范围优化；不声称性能达标。
+- 涉及：public/app.js、public/stream-renderer.js、tests/message-activity.test.js（+2 例：主代理 idle 停用摘要不被挂起帧覆盖、子任务 cancelled 同理）、tests/stream-renderer.test.js（flush 取消定时器断言 + 有其他 dirty 项时保留 + 生产默认真实 `setTimeout` 有界等待）。`.pi/skills/codebase-map/INDEX.md` 由 `tests/codebase-index.test.js` 中的 `reindex.mjs` 重建（行号同步）。
+- 验证（先失败后通过）：修复前新增用例报 `AssertionError: 挂起帧不得把已停止的摘要改回 done / 'done' !== 'stopped'`；修复后 `node --test tests/stream-renderer.test.js tests/message-activity.test.js` 20 例全绿；`npm test` 全量 493 例、491 通过、0 失败、2 跳过（EXIT=0）。未提交，交独立代理复核后提交。
+
+## 2026-09-14 长对话性能实施第 6 轮收口：固化 P0-1 生产默认定时器回归检查（不提交，待独立验收）
+
+- 原因：P0-1 已通过的应用级验证用的是临时脚本（已删），需把「真实事件序列下产品默认 setTimeout 绘制不得回退 stopped」固化进常驻测试。
+- 内容：`tests/message-activity.test.js` 的 `page()` 最小加参 `{ defaultSchedule }`（为真时不注入 rAF，走 `public/stream-renderer.js` 默认 `setTimeout/clearTimeout` 调度，仅包一层 `afterPaint` 计数供等待）；新增 1 例：running → message.start → thinking_delta → idle（停用立即 stopped）→ 等生产默认定时器绘制落地仍 stopped → message.end 清 stopped 且正文完整。等待为 5ms×200 有界轮询，不做脆弱墙钟断言；同步修既有同类用例 `scope >` 缺冒号笔误（`:scope >`）。
+- 未做：不改产品代码与 markdown/README，不新增多余 helper 抽象；不跑会重建 `.pi/skills/codebase-map/INDEX.md` 的全量测试。
+- 验证：`node --test tests/message-activity.test.js tests/stream-renderer.test.js` 21 例全绿；`git diff --check` 无空白错误；临时把 `updateActivity` 的 stopped 守卫改回旧行为时新用例失败，恢复后 sha256 与原文一致（见本轮收口回复）。
+- 涉及：tests/message-activity.test.js、devlog.md（本条）。未提交，交独立代理复核后提交。
+
+## 2026-09-15 长对话性能实施第 6 轮：P0-2 第一步最小安全块缓存（不提交，待独立验收）
+
+- 原因：`public/markdown.js` 每帧对每个 block token 做 `JSON.stringify(token)` 当复用键，长对话下是帧内固定深序列化开销；目标是消除它，同时不得破坏「晚到引用定义会改变先前块」的正确性（审查 0c60e1ce：冻结最后 token 之前不安全、def 可多行/转义/在容器内、regex 不可靠）。
+- 内容：
+  1. `public/markdown.js`：新增 `linksSignature(links)`（按 id 排序拼接 id/href/title）；块键由 `JSON.stringify(token)` 改为 `type + "\0" + raw`，`raw` 缺失时回退 `JSON.stringify` 兜底；`linksKey` 变化（或首次渲染）时本轮禁用全部复用；缓存项新增 `linksKey`。注意 `Array.filter` 会丢掉 `marked.lexer` 返回数组上的 `links` 属性，必须在 filter 前读取 `lexed.links`。
+  2. 为何 `type`+`raw` 足够：marked 块 token 的其余字段（depth/loose/align/lang/href/title/start/text…）都由 `raw` 与文档级 `lexer.links` 派生；唯一的跨块依赖是引用定义（定义自己不产生块），由 `linksKey` 覆盖。反例已固化为测试：`[reference][id]` 单独出现 vs 追加 `[id]: url` 后，paragraph 的 `type`/`raw` 逐字相同，DOM 从字面量变为链接。
+  3. `tests/markdown.test.js` 新增独立 test：同一共享容器逐步追加，每步与「全新容器全量渲染」oracle 比对 innerHTML；覆盖 loose list、list 第二段、setext、表格、blockquote、晚到 ref、blockquote 内 def、多行 def、转义 def（必须不解析为链接）、代码内伪 def、CJK 围栏、裸 JSON 增长、危险 HTML/链接、非追加替换。
+- 未做（P0-2 仅部分实施）：仍每帧完整 `marked.lexer`（不减少词法范围）、`fixCjkBold` 保留；不做冒险前缀冻结；不改 `app.js`/`stream-renderer.js`；不声称单帧 ≤4ms。`linksKey` 变化时保守重建全部块（定义极少变化，代价可接受）——正确性优先于该边界下的 DOM 复用率；定义变化导致未变块 DOM 身份丢失是本步已知边界。
+- 涉及：public/markdown.js、tests/markdown.test.js、README.md（流式说明）、.pi/skills/codebase-map/INDEX.md（`scripts/reindex.mjs` 重建）。未提交，交独立代理验收。
+- 验证：`npm test` 全量 495 例、493 通过、0 失败、2 跳过（EXIT=0）；`node --test tests/markdown.test.js` 2 例全绿；另以临时脚本对 18 条追加序列 + 400 条随机 fuzz 逐步比对「新键 / 旧键(git HEAD) / 新鲜容器 oracle」三方 DOM 全一致（临时脚本已删）。
+
+## 2026-09-15 长对话性能实施第 6 轮：修复 linksSignature 分隔符碰撞（不提交，待独立验收）
+
+- 原因：独立审查 e327b742 发现 `linksSignature` 用 `\u0000`/`\u0001` 拼接 id/href/title，拼接边界可被伪造——不同定义集合产生同一签名字符串，导致错误复用旧块 DOM。两个已确认碰撞：`[a]: u` + `[b]: v` 与 `[a\0u\0\u0001b]: v` 签名同为 `a\0u\0\u0001b\0v\0`；`[a]: x\0y "t"` 与 `[a]: x "y\0t"` 签名同为 `a\0x\0y\0t`。
+- 内容：`public/markdown.js` 的 `linksSignature` 改为 `JSON.stringify(Object.entries(links||{}).sort(([a],[b])=>a<b?-1:a>b?1:0).map(([id,def])=>[id,def.href??"",def.title??""]))`——JSON 自带转义与字段边界，id/href/title 内含分隔符也无法跨字段伪造；`type`/`raw` 块键与完整 `marked.lexer` 流程不变。`tests/markdown.test.js` 新增常驻用例：两组「先后渲染（先 A 后 B）vs 全新容器 oracle」对照，并先断言 A/B 的全量渲染确实不同（防止反例本身失效）。
+- 未做：README 第 373 行只描述「引用定义另用 `lexer.links` 签名触发失效」，未写分隔符实现，无需纠正，故 README 不动；不跑会重建 INDEX 的全量用例；不动已有实测 JSON/脚本。
+- 涉及：public/markdown.js、tests/markdown.test.js、devlog.md（本条）。
+- 已知边界：`public/markdown.js` 由 333 行变 336 行（+3 行注释），`.pi/skills/codebase-map/INDEX.md` 中该文件的行号/行数未同步，待下次跑 `scripts/reindex.mjs` 时校正。
+- 验证（先失败后通过）：修复前新用例报 `AssertionError: id boundary: reused DOM kept the previous definitions`（实际 `<a href="u">x</a>` vs 期望字面量 `[x][a]`）；修复后 `node --test tests/markdown.test.js` 3 例全绿；`git diff --check` 无空白错误。未提交，交独立代理复核后提交。
+
+### 2026-09-15 交互让路（直接实施）
+- 修改 public/stream-renderer.js、public/app.js：用户交互后让路520ms，每批等待硬截止1秒；flush立即收口，clear取消并重置窗口。不改变布局、样式或历史内容。
+- tests/stream-renderer.test.js 用受控时钟覆盖恢复、持续交互截止、结束与切换；tests/app.test.js 两处假rAF检查等待真实交互窗口。README同步；相关25项测试通过。浏览器交互延迟与rAF p95尚待实测，不据单测宣称性能达标。
+
+### 2026-09-15 首屏分片实施与事件回归（未提交）
+- public/app.js 将 snapshot 拆为同步初始化、分片消息恢复与尾部整理；超过120条按8ms/40条预算后台调度。共享任务身份取消旧片，外部事件排队并按快照seq去重，无seq事件放行；内部task恢复直接应用。调用链等待分片完成，草稿恢复前移避免覆盖新输入。
+- 主代理补短同步路径失败清队列，并补 live 原文恢复（含字符串正文），避免后续delta丢前缀。README同步说明；单条巨块及同步尾部仍有性能上限，不据预算声称最大长任务达标。
+- tests/snapshot-chunk.test.js 新增4项受控检查：片间事件顺序且恰好一次、水位去重、无seq放行、短快照异常解除排队。子代理4/4通过；主代理与stream-renderer合跑13/13通过。交互测试新增旁支mark/flush不重置首项1秒截止，渲染器9/9通过；独立交互复核尚待结果。
+- 快速切换/草稿/live恢复测试、浏览器实测和全量验证尚未完成；本条不代表五项优化已验收。
+
+### 2026-09-15 用户授权合并master并在4320预览
+- 用户明确改为提交到master，在现有4320预览，不另起4330。功能分支fetch origin并合并最新master，冲突在worktree内解决；主仓库未跟踪.playwright-mcp与历史stash不动，不重启服务。
+- master新增原始输入输出查看与Goal标记过滤，app.js冲突需保留raw绑定及流式过滤；委派9b1d0723独占产品整合，e7d966ea独占5个新增测试的真实模块依赖接线。devlog保留双方记录，INDEX重建而非手拼。
+- 合并后全量首次599项仅remote.test.js中文路径URL未解码失败；改用fileURLToPath后专项13/13，再全量599项597通过、0失败、2跳过（55.1秒，工具timeout=180）。5个新增测试加载器接入master真实markdown-scan/goal-markers，断言不变；INDEX重建165文件。
+- 功能分支先提交整合并推送，再以合并方式更新master；性能未达标说明不变，4320服务不重启。
+
+### 2026-09-15 用户授权预览检查点
+- 用户同意先提交可预览版本，后续持续优化。此次仅功能分支检查点，不代表性能验收完成，不合并master、不push、不重启现有服务；保留worktree用于预览与后续优化。
+- 主代理重建INDEX（159文件、0未登记），npm test工具timeout=180：537项、535通过、0失败、2跳过，30.9秒。原生前端无额外构建步骤。
+- 提交范围为本轮产品、回归、文档与已保留的诊断产物；临时dbg.mjs不纳入提交。剩余282ms长任务、微基准4.74ms、三次配对/交互/十轮内存验收仍未收口。
+
+### 2026-09-15 渐进显示断线修复与单次诊断
+- 94e600ea将保护收敛到saveView.scroll，分片期间仍存草稿/附件/技能；onReady移入try/catch，新增断线真实恢复与钩子异常回归。主代理相关21/21通过、diff检查通过，显式timeout=180。
+- 锁不存在后串行采集profile-progressive-reveal-1.json（timeout=180），样本hash与前次一致，app.js hash1001e36c…275679。页面282/167/134/50/74ms，trace282/134.8/74.3/50.6ms；计数41655/92/143；首次DOM734ms。无原403ms任务，但仍>200ms且crossCheck=false，不计性能验收。退出码1为预期诊断失败而非超时；事后锁不存在。
+- 新诊断md及README同步。未据单次测量宣称提速，未提交/推送。
+
+### 2026-09-15 首屏渐进显示落地与断线草稿风险复查
+- ab6a726b实现snapshot可选onReady（仅登录入口传入）同步清场后显示workspace，connected仍末尾设置；新增snapshot-first-screen两例。子任务报告535项533过2跳过0失败，尚未浏览器验证。
+- 主代理读saveView发现新增ws.onclose按!snapshotQueue跳过整个保存会同时漏存新草稿/附件/技能，不能接受。委派94e600ea独占原两文件改共享保存边界、追踪断线恢复二次保存、补真实断线恢复回归，并将onReady放入现有try/catch解事件阀；修复完成前不复测。
+- 当前渐进显示失败后允许半成品可见但不可发，仍有错误/重连条；暂保留这一可恢复状态，不冒称失败回退与旧版完全一致。
+
+### 2026-09-15 首屏渐进显示继续实施
+- b5aabc31只读复核因Upstream stream ended失败，无可用结论、不计通过。主代理直接检查app.js snapshot/beginSnapshot及登录恢复链，确认同步清理完成后才开始分片，登录connected仍在整个恢复末尾设置。
+- 委派ab6a726b独占app.js和新测试，先核查调用再最小接线：仅登录入口在beginSnapshot成功后首片前显示workspace，不提前connected/开放发送，其他snapshot调用不受影响；须覆盖清旧内容、忙态、完成及失败/切换。暂无性能收益结论、不启动采集。
+
+### 2026-09-15 首布局归因与P1-2显示时机复核
+- 699c9972只读确认403ms任务主要Layout334.9ms、全量15384布局对象；恢复链末尾workspace.hidden=false让此前隐藏构建的DOM一次布局。294ms主要program，无法细分原生计算/等待，报告不采纳“97KB不可能解析250ms”等无充分依据推断。
+- 不采纳“渐进显示必定越界因此无可做”的结论：用户已经批准首屏分片，提前安全显示可能是该实现缺口。委派b5aabc31只读查登录/恢复/重连/切换及显示时机边界，禁浏览器/服务/采集，暂不改产品；新诊断md同步。
+
+### 2026-09-15 排序修复与全量验证
+- be1a4d30修profile-current-hotspots.mjs比较时长副本排序，保留严格等长及<=2ms容差与原始输出顺序；tests/perf-profile-cli.test.js覆盖排序/容差/多余项/重复值及不修改输入。旧JSON未改，新规则重算hashguard依旧false。
+- 主代理重建INDEX（158文件、0未登记），npm test显式timeout=180：533项、531通过、0失败、2跳过，30.5秒；git diff --check无错误，仅LF/CRLF提示。
+- 委派699c9972只读归因294/403ms已匹配热点，寻找不改变展示/安全性的最小产品优化，不启动新采集。性能尚未达标，不提交/推送。
+
+### 2026-09-15 trace核对排序问题与证据边界
+- 890d86f1只读核对发现页面按时间序、trace按耗时序却逐项比较；另有161ms页面条目在trace无对应RunTask，同窗CPU采样idle。新诊断md记录原始事件与时钟偏移，纠正子任务报告偏移符号；不采用“幻影任务”定论。
+- 拒绝其trace子集匹配即可通过的建议（且所给排序后下标代码本身也不能跳过额外161ms）。委派be1a4d30仅修副本排序，仍严格等数量、每项差<=2ms，并补多余条目/重复值等回归。不改旧JSON、不重测。
+
+### 2026-09-15 测量关闭确认回归与报告成功状态修复
+- 94d8e49f完成paired WebSocket统一收口、登记与有限等待close；主代理合跑四组测量测试14/14通过，git diff --check通过。子代理报告全量531项529过2跳过0失败；主代理本次没有重复全量。
+- profile报告原先在crossCheck失败时仍写verification.passed=true。现在采用summary.crossCheckAllMatched，失败保留新诊断JSON但exitCode=1，console.ok同步。tests/perf-profile-cli.test.js新增VM运行真实收尾逻辑覆盖true/false、独占写与保留失败证据；2/2通过（工具timeout=180）。不回写旧JSON。README同步。
+
+### 2026-09-15 History判断后单次串行profile
+- d3af58b4核对参数可用，但把History hash判断误解为缺少样本sha guard；未采纳该新增范围。主代理确认app.js守卫存在、profile不走paired的业务WS、锁不存在后，修正先前一概等待WS的流程决定，仅串行执行profile。
+- 显式工具timeout=180，--runs1输出新profile-current-hotspots-hashguard.json，正常退出，事后锁不存在。实际JSONL哈希与旧样本相同，app.js hash f8165f01…249896。
+- 页面长任务294/161/403ms，首次DOM740ms；trace汇总仅403/294.6ms，crossCheck=false。beginSnapshot phase3.2ms不能直接当150ms总收益；未通过性能验收。新md明确JSON verification.passed不代表crosscheck成功，委派890d86f1只读查漏161ms，不重测。
+
+### 2026-09-15 失败启动专项回归完成
+- a82b7abf新增tests/perf-startup-cleanup.test.js，用VM执行脚本真实startServer/stopServer和受控进程/时钟桩，覆盖健康失败且kill未退出仍保有登记、已exit、spawn抛错关闭fd；内存移除登记验证反例。未启动实际服务/浏览器。
+- 主代理合跑startup/lock/CLI，9/9通过（工具timeout=180，约0.2秒），git diff --check通过。README同步；WebSocket异常关闭专项仍在进行。
+- 委派d3af58b4只读准备复测参数/样本hash/锁状态，不启动采集、不删除锁；后续仅串行采集，不覆盖旧产物。
+
+### 2026-09-15 History独立复核通过与全量回归
+- 862035d1只读复核通过：History无项目state消费者，sessionStorage照常写；hash启动/切换/恢复及特殊字符编码检查未发现新增回归（孤立代理项的USVString替换是既有行为）。workspace-tabs 9/9，app/snapshot合跑14/14通过；此结论仅正确性，不是150ms收益验收。
+- 主代理重建索引并npm test（工具timeout=180）：519项，517通过、0失败、2跳过，约31.8秒。此时尚不含进行中的失败启动专项测试。
+- 继续委派94d8e49f独占paired脚本修attachGroundTruth异常/超时WS清理并写受控桩测试，不跑实际浏览器/服务。所有安全边界补齐前不启动新采集。
+
+### 2026-09-15 测量锁接线复查与失败启动修复
+- 12b5b987交付两脚本锁接线、paired参数/输出独占保护、浏览器15秒关闭上限和自起服务退出确认；报告明确未覆盖浏览器超时残留等边界，不视作完整有界退出验收。
+- 主代理复查发现startServer失败且内部stop失败时，外层尚未登记进程却可能放锁。修复profile在spawn后立即登记spawnedServer、paired立即push进procs，不等健康返回；外层可再次确认退出，失败保锁。paired清理失败不再尝试删除仍被占用的隔离目录。
+- 两脚本语法、CLI和锁测试2/2通过（timeout=180）；委派a82b7abf新增真实startServer函数+VM进程桩回归，不启动浏览器/服务。README同步；仍未实测，不用process.exit兜底。
+
+### 2026-09-15 跳过相同地址的History更新
+- d6248e98只读原始profile positionTicks，将beginSnapshot约150ms采样定位到history.replaceState行；任务壳恢复仅数ms，不盲目改成子任务懒恢复。该线索不等于干净配对收益，也不能解决另250ms原生/约310ms布局成本。
+- 主代理修改public/app.js唯一replaceState调用：构造sessionHash，仅location.hash不同才更新；保留sessionStorage以及真正切换/缺hash写回。tests/workspace-tabs.test.js新增实际History调用次数与恢复断言，和snapshot两组共20/20通过（timeout=180）。
+- README同步，独立只读复核已委派862035d1，未启动浏览器实测、未承诺<200ms达标。
+
+### 2026-09-15 测量共享锁与资源接线
+- 读取1462573c只读复核，采纳跨脚本同一临时目录锁、参数校验后且副本创建前获取、资源确认退出后释放；不采纳process.exit看门狗（与用户防泄漏约束不符）。互斥只能约束遵循该协议的脚本，不能排除第三方CPU负载或端口竞争。
+- 新增measure-lock.mjs：mkdir原子获取，随机token核对释放，owner记录PID/主机/时间/输出；未知owner或token改变不自动删锁。perf-measure-lock.test.js真实目录测试不同输出并发拒绝、释放后恢复、所有权改变和无owner锁保留，1/1通过（显式timeout=180）。
+- 委派12b5b987独占两份测量脚本接线及有限清理，主代理仅改锁模块/独立测试/文档，避免并发编辑同文件；未运行浏览器实测。
+
+### 2026-09-15 接续修复profile证据写入门禁
+- profile-current-hotspots.mjs在任何副本/浏览器创建前拒绝已有输出和无效runs，最终用wx独占创建结果，避免竞态覆盖旧证据；修复缺db参数先path.resolve抛错的问题。crossCheck从只比任务数量改为逐项耗时差≤2ms，不再以数量相同冒充对应一致。
+- 新增tests/perf-profile-cli.test.js：真实CLI子进程验证已有证据不变、无效runs在打开库/浏览器前拒绝。首跑因中文路径URL未解码失败，改标准库fileURLToPath后1/1通过，显式工具timeout=180，无浏览器/服务启动。
+- 同时委派两项只读小调查：beginSnapshot任务恢复成本、测量脚本共享互斥与退出清理。尚未声称防并发测量已完成，也未启动新实测。
+- 接续修复profile.startServer：spawn后finally关闭日志fd，记录spawn错误，健康fetch限2秒、启动限30秒，失败终止自己启动的进程，去掉硬编码AXIOM_CWD；loadOnce健康检查也限2秒。语法检查和CLI回归通过；未把kill调用当退出确认，browser.close等剩余退出边界仍待补齐。
+- 索引重建、git diff --check通过；CLI/prompt/snapshot两组共15/15通过（显式timeout=180，约7秒）。
+
+### 2026-09-15 profile证据只读复核与纠错
+- 208d46a0独立核查确认当前JSON点值与来源内部自洽，PIEDXg原始trace支持另一次运行；但并发污染不能用于性能收益验收。其丢失JSON中的18.6ms探针数字和代码hash不可直接核对。
+- 完整重写profile-prompt-cache.md，区分>1ms慢读与总读取、原生采样无JS父帧与任务内仍有JS、一次探针对比与三次测量；删除混用被覆盖运行的区间及未留档收益推断。
+- 旧profile-current-hotspots.md运行次数/部分组成值与旧JSON不一致，追加警示并保留历史正文与原始JSON；差异原因未知，不将不一致直接判作旧并发。当前长任务仍未达<200ms，未启动新测量。
+
+### 2026-09-15 缓存后profile并发污染：不计验收
+- cb95663a返回profile-prompt-cache.json/md，同时报告另一个同路径并发运行覆盖JSON。保留产物但标为待核验诊断线索，不用于性能验收；未立即重跑，也未据此承诺收益。修正文案：>1ms站点未检出不等于读取次数为0。
+- 主代理用显式timeout=30查询Win32_Process，profile-current-hotspots/profile-prompt-cache/axiom-perf-profile仅匹配本次查询自身；未擅自杀进程或声称全局无残留。已委派只读核验JSON/md与来源，不再启动并发测量。
+- 当前诊断文件仍显示约432/378ms长任务，<200ms未达标；布局成本可能从同步JS读转移到浏览器帧内，需清洁采集后确认。
+
+### 2026-09-15 输入框缓存独立复核
+- e580e378只读复核通过：内容、viewport、侧栏、断点、手机展开、字体失效接线覆盖，无初始化TDZ；prompt测试3/3、与snapshot-switch合跑8/8通过。手机隐藏时非空草稿可能测得0，但当前展开/跨断点必失效恢复，记录边界，不新增抽象。
+- JSDOM只证明重复几何读取减少，不证明真实布局耗时减少；已委派单次缓存后profile及强制布局探针，使用新产物路径保留旧数据，所有bash显式工具超时且先核查资源清理。尚不宣称<200ms达标。
+
+### 2026-09-15 接续输入框缓存与防卡死修复
+- resize子任务06cccf8c取消，未当作成功交付。其dbg.mjs缺少JSDOM清理，用户终止挂起PID58912；主代理补try/finally清回调队列并dom.window.close()，显式timeout=30运行正常退出，不用process.exit。之后所有bash显式超时（诊断30秒、测试≤180秒），新委派共享该约束；不改全局超时、不重启服务或修改业务历史。
+- 接续public/app.js的promptFit/promptLayout缓存与viewport/侧栏/手机/字体失效接线。tests/prompt-resize.test.js原手机空内容断言错误：既有44px分支不读scrollHeight，修正预期并补字体loadingdone验证，非删除必要检查。
+- 带timeout=180：prompt/app/snapshot-switch合跑11/11通过；npm test 516项，514通过、0失败、2跳过（约31.9秒）。README同步；独立复核已委派，尚未重测浏览器性能，不以测试通过替代<200ms验收。dbg.mjs仍为已清理资源的临时诊断文件，交付前移除。
+
+### 2026-09-15 首屏配对报告纠正完成
+- 7b383013仅重写docs/perf-long-conversation/paired-first-screen.md，逐项机器复算JSON：首屏DOM均1301→672ms，longtask1115→450ms；切换点击后DOM均1602→606ms，最后DOM1766→2196ms（+24.4%），longtask1438→429ms。JSON/mjs与既有基线未改。
+- 删除完整重建证明和未经profile支持的巨块/尾部归因；强调MutationObserver不是paint，静默完成只是推断，longtask统计只有上界过滤，代码hash覆盖不全。样本增长/跨浏览器与并发时间线限制保留。
+- 下一步只采当前版本CPU profile，确认剩余长任务实际热点后再改产品，不把此次报告纠错当作性能优化或达标。
+
+### 2026-09-15 首屏配对实测证据纠错（未验收达标）
+- 实测任务df03先返回服务失败、后返回完成及paired-first-screen.mjs/json/md。独立审核b65ce7f2发现md表格数值与JSON不一致，原报告445/454ms及切换+30%无对应原始产物，禁止继续引用，已委派仅按JSON重写md。
+- JSON核算：首屏首次DOM输出均1301→672ms，最大longtask1115→450ms；切换首次DOM相对点击1602→606ms，最大longtask1438→429ms，最后DOM变更1766→2196ms（约+24%）。<200ms未达；首次DOM输出不是paint实测，不能据672ms声称可见首屏目标已验收。
+- 12次语义计数一致且尾部命中，静默700ms+1.5s仅增强完成推断，不证明全部快照完整。样本已增至2393条，旧1171ms仅参考，不跨浏览器版本对比。早期临时目录提示并发，但最终03:14运行无可核验并发干扰证据，不声称“无系统偏移”。当前产物哈希覆盖app/markdown，未覆盖stream-renderer等，来源信息仍需补强。
+
+### 2026-09-15 快照修复独立验收
+- 独立复核1bbcd1c4通过：快照11/11、合并详情回收14/14；首片异常清队列、成功后提交水位、召回attach迟到身份检查均成立。额外临时探针验证同会话attach等待期间新增草稿保留，未发现回归。
+- 报告末尾对断线分支“总写views”的描述与代码不完全一致：最终写输入框分支检查sessionId与changing、不检查connected；当前会话断线时仍可保留在输入框。该分支未独立测，不将其计为验收证据。
+- 已启动同环境同真实样本首屏/切换前后各3次实测任务；原始基线保留，不能据逻辑验收声称达到1171ms/<200ms。
+
+### 2026-09-15 详情回收独立验收与全量回归
+- 独立复核1d384fa7通过：详情回收3/3、与快照合跑14/14、既有message-activity/app测试17/17；关闭重开、diff、结果更新和锚点均未发现回归，未改仓库文件。
+- 主代理执行npm test：513项，511通过、0失败、2跳过，约35.2秒。此次全量覆盖当前详情回收和快照三处修复，不替代尚待完成的浏览器性能验收及快照独立复核。
+
+### 2026-09-15 详情回收及快照复核缺陷修复
+- public/app.js 的renderToolDetail在已连接记录关闭时清body，保留args/result及全部历史索引；重开使用既有渲染，未加依赖或折叠层。tests/tool-detail-reclaim.test.js三项通过，覆盖普通工具、diff视图、关闭期间更新；README同步页内查找限制。尚未做10轮浏览器GC/堆实测，不宣称完整P2-2验收。
+- 首片调度同步异常纳入清队列路径；快照水位改为finishSnapshot成功后、drain之前提交。失败渲染仍须重新恢复快照才补全历史，不把水位修复当完整恢复。
+- withdrawQueue在attach回包后再次检查会话、changing和connected；saveView移到重绘前保留等待期间新增输入，切换期间召回文本写回目标views而不写当前输入框。
+- tests/snapshot-chunk.test.js两项失败（调度/水位）与tests/snapshot-switch.test.js两种召回回包顺序失败均先复现再转绿；取消快照不再提交水位，调整对应断言。主代理合跑上述两文件与详情回收14/14通过；三处修复及详情回收已交独立复核，尚未提交。
+
+### 2026-09-15 分片真实调用链独立复核（需修复）
+- 独立复核748befc9重跑snapshot测试7/7通过，但发现直接snapshot测试未覆盖的withdrawQueue attach回包夺屏窗口，以及首片调度同步抛错未解除snapshotQueue。已分别委派最小失败回归，产品修改等待工具详情写入者完成后串行进行。
+- 复核另指出快照开始即抬appliedSeq会使失败视图仍按新水位丢弃旧事件；计划改为成功完成后提交水位。注意：回退水位本身不能恢复已清空的历史，不能据此宣称失败视图完整恢复。
+- 报告对changing误清的结论前后矛盾：前文给出withdrawQueue抢占switchSession反例，后文又声称不可达。以真实入口受控测试裁定，不把矛盾表述作为通过证据。
+
+### 2026-09-15 分片切换与恢复回归
+- tests/snapshot-switch.test.js 新增受控调度测试：旧片/旧事件不污染新会话，分片中新草稿保留且切回恢复，live原文前缀接续delta；子代理3/3通过。主代理补thinking块恢复及继续thinking_delta断言，两个snapshot文件合跑7/7通过。
+- 子任务报告中“thinking块不会恢复”的观察不成立：renderMessage既有逻辑提取thinking，新增断言确认无需产品修复。真实switchSession的attach等待窗口另交独立复核，直接snapshot测试不能替代整条调用链验收。
+
+### 2026-09-15 交互让路独立复核及测试补强
+- 独立复核任务34bc0fe1完成：520ms窗口、首批dirty起1秒截止、旁支flush、clear取消、终态flush五类边界通过；既有9项测试与独立虚拟时钟探针30项断言通过，未发现功能缺陷。此前两次上游失败不计作验收。
+- tests/stream-renderer.test.js 将持续交互循环补为实际持续mark及文本变化，新增定时器已顺延后flush/clear取消补画与新会话恢复测试；主代理重跑10/10通过，无产品改动。浏览器事件到绘制延迟与rAF p95仍未测，逻辑验收不替代性能验收。
+
+### 2026-09-15 paired-first-screen 地面真值 WS 退出统一（子代理 94d8e49f）
+- docs/perf-long-conversation/paired-first-screen.mjs：attachGroundTruth 改为单一 finalize 收口（成功/拒绝/畸形JSON/ws error/提前close/超时都清定时器并 close()）；JSON.parse 与响应处理全部 try/catch→reject，不再从 ws.onmessage 回调原样抛出；onclose 既判「提前断开」失败又从登记表移除；重复事件由 settled 幂等忽略。
+- close() 只算发起关闭：新增模块级 openSockets 登记 + 真实 closeSocket(ws, CLOSE_LIMIT_MS)（等 'close' 事件或已是 CLOSED，有限超时），在 finally 里先于 browser.close 确认；未确认即计入 cleanupErrors → 保留测量锁。未改动任何测量口径、阈值、产物字段。
+- 新增 tests/perf-attach-ground-truth.test.js：node:vm 从脚本切出真实 attachGroundTruth/closeSocket/withLimit/sha256，注入假 WebSocket + 受控定时器（fireTimers 触发超时，不等真实 30s），5/5 通过（约 0.1 秒）：成功、畸形JSON与服务端ok:false、ws error/提前close（含结算后事件忽略）、超时清定时器+保登记+未确认保锁、内存删除 openSockets.add 行的承重变异。
+- 主代理 npm test（工具 timeout=180）：531 项、529 通过、0 失败、2 跳过，约 32.3 秒。
+- 遗留风险：closeSocket 只在真实服务/浏览器场景外验证（本机未跑采集）；登记表只覆盖本脚本自建 socket，不覆盖 Playwright/Chromium 内部连接；close 事件迟迟不来时每次清理最多多等 CLOSE_LIMIT_MS；仍未实测「服务端拒绝 attach」的真实报文形状。
 ## 2026-09-14T13:06 SQLite 持久化排查清单逐条修复（第 2 轮 / 共 6 轮）
 
 - 原因：第 1 轮只读排查产出 33 条问题清单（跨类 P1-P2、会话 S1-S5、任务 T1-T3、事件 E1-E4、模型存储与配置 M1-M12、守护进程与维护状态 X1-X7）。本轮按「数据丢失/不一致 > 安全 > 性能 > 整洁」逐条修复，每点先写会失败的回归测试并记录失败输出，再改代码使其通过。

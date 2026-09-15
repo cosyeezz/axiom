@@ -8,7 +8,8 @@ import { createStreamRenderer } from "../public/stream-renderer.js";
 import { publicSource } from "./helpers/public-source.js";
 
 // Run the real page's snapshot/event handlers without a model or server.
-async function page() {
+// defaultSchedule=true 时不注入 rAF，走产品默认的 setTimeout 定时器（配 paints 计数做有界等待）。
+async function page({ defaultSchedule = false } = {}) {
   const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
   const source = await publicSource("markdown-scan", "memory-tags", "goal-markers", "question", "service-settings", "app");
   const picker = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
@@ -24,7 +25,13 @@ async function page() {
   const markdown = (await readFile(new URL("../public/markdown.js", import.meta.url), "utf8"))
     .replace(/^import .*;\r?\n/gm, "").replace("export function", "function");
   w.renderMarkdown = new Function("marked", "DOMPurify", `${markdown}; return renderMarkdown;`)(marked, createPurify(w));
-  w.createStreamRenderer = (render, after) => createStreamRenderer(render, after, w.requestAnimationFrame, w.cancelAnimationFrame);
+  let paints = 0;
+  w.createStreamRenderer = (render, after) => createStreamRenderer(
+    render,
+    after && (() => { paints += 1; after(); }),
+    defaultSchedule ? undefined : w.requestAnimationFrame,
+    defaultSchedule ? undefined : w.cancelAnimationFrame,
+  );
   w.WebSocket = class { static OPEN = 1; readyState = 1; send() {} };
   for (const name of ["model-picker", "model-auth", "model-manager"]) {
     const module = await readFile(new URL(`../public/${name}.js`, import.meta.url), "utf8");
@@ -37,7 +44,7 @@ async function page() {
   const emit = (type, data, agentId = "main") => w.event({ sessionId: state.sessionId, type, data, agentId });
   const paint = () => { const batch = [...frames.values()]; frames.clear(); batch.forEach((fn) => fn()); };
   restore();
-  return { dom, w, emit, restore, paint, output: w.document.getElementById("output") };
+  return { dom, w, emit, restore, paint, paints: () => paints, output: w.document.getElementById("output") };
 }
 
 const assistant = (content, more = {}) => ({ role: "assistant", content, model: "model", provider: "test", usage: { input: 20, output: 10 }, ...more });
@@ -317,6 +324,93 @@ test("expanded tool sections keep truncation notices outside both diff views", a
       assert.match(record.querySelector(".tool-truncation").textContent, /60,000/);
       assert.equal(record.querySelector(".tool-detail > pre").textContent.length, 60000);
     }
+  } finally { dom.window.close(); }
+});
+
+test("streamed deltas defer preprocessing to paint and never overwrite the final message", async () => {
+  const { dom, emit, paint, output } = await page();
+  try {
+    emit("session.state", { status: "running" });
+    emit("agent.message.start", { message: assistant([]) });
+    const card = output.lastElementChild;
+    const line = card.querySelector(":scope > .activity-line");
+    assert.equal(line.hidden, false, "正文到达前活动行可见");
+    emit("agent.delta", { type: "text_delta", delta: "<axiom_ans" });
+    const nl = String.fromCharCode(10);
+    emit("agent.delta", { type: "text_delta", delta: ["wer>", "流式回答", "</axiom_answer>"].join(nl) });
+    assert.equal(line.hidden, false, "绘制前不刷新活动状态，预处理与活动状态一起延后");
+    assert.equal(card.querySelector(":scope > .markdown").textContent, "", "绘制前不渲染正文");
+    const final = assistant([{ type: "text", text: "完整最终回答" }]);
+    emit("agent.message.end", { message: final, entryId: "final" });
+    assert.equal(card.querySelector(":scope > .markdown").textContent.trim(), "完整最终回答");
+    paint();
+    assert.equal(card.querySelector(":scope > .markdown").textContent.trim(), "完整最终回答", "挂起的流式帧不得覆盖最终消息");
+    assert.doesNotMatch(card.textContent, /流式回答|axiom_answer/);
+    assert.equal(line.hidden, true, "最终态活动行让位给正文");
+  } finally { dom.window.close(); }
+});
+
+test("stopped summary from idle survives a pending thinking-only frame without a final message", async () => {
+  const { dom, emit, paint, output } = await page();
+  try {
+    emit("session.state", { status: "running" });
+    emit("agent.message.start", { message: assistant([]) });
+    const card = output.lastElementChild;
+    const line = card.querySelector(":scope > .thinking-record .activity-line");
+    emit("agent.delta", { type: "thinking_delta", delta: "半截思考" });
+    emit("session.state", { status: "idle" });
+    assert.equal(line.dataset.state, "stopped", "停用后摘要立即进入 stopped");
+    assert.equal(line.querySelector(".activity-label").textContent, "thinking · 已结束");
+    paint();
+    assert.equal(line.dataset.state, "stopped", "挂起帧不得把已停止的摘要改回 done");
+    assert.equal(line.querySelector(".activity-label").textContent, "thinking · 已结束");
+    assert.equal(card.querySelector(":scope > .activity-line").dataset.state !== "waiting", true, "主活动行也不得回到 connecting");
+  } finally { dom.window.close(); }
+});
+
+test("production default timer keeps a stopped summary until message.end clears it", async () => {
+  const { dom, emit, paints, output } = await page({ defaultSchedule: true });
+  // 生产默认定时器是 40ms setTimeout：有界轮询等它落地，不做脆弱的墙钟断言。
+  const settle = async (ready) => {
+    for (let i = 0; i < 200 && !ready(); i += 1) await new Promise((r) => setTimeout(r, 5));
+    assert.equal(ready(), true, "等待生产默认定时器绘制落地超时");
+  };
+  try {
+    emit("session.state", { status: "running" });
+    emit("agent.message.start", { message: assistant([]) });
+    const card = output.lastElementChild;
+    const line = card.querySelector(":scope > .thinking-record .activity-line");
+    emit("agent.delta", { type: "thinking_delta", delta: "半截思考" });
+    const marked = paints();
+    emit("session.state", { status: "idle" });
+    assert.equal(line.dataset.state, "stopped", "停用后摘要立即进入 stopped");
+    assert.equal(line.querySelector(".activity-label").textContent, "thinking · 已结束");
+    await settle(() => paints() > marked);
+    assert.equal(line.dataset.state, "stopped", "生产默认定时器落地不得把已停止的摘要改回 done");
+    assert.equal(line.querySelector(".activity-label").textContent, "thinking · 已结束");
+    emit("agent.message.end", { message: assistant([{ type: "text", text: "最终完整回答" }]), entryId: "final" });
+    await settle(() => card.querySelector(":scope > .markdown").textContent.trim() === "最终完整回答");
+    assert.equal(line.dataset.state, "done", "最终消息落定后清 stopped");
+    assert.equal(line.querySelector(".activity-label").textContent, "thinking");
+    assert.equal(card.querySelector(":scope > .markdown").textContent.trim(), "最终完整回答", "正文完整");
+  } finally { dom.window.close(); }
+});
+
+test("child task cancellation also survives a pending thinking-only frame", async () => {
+  const { dom, w, emit, paint } = await page();
+  try {
+    const task = { id: "child", task: "work", status: "running" };
+    w.event({ sessionId: "activity", type: "task.state", taskId: task.id, data: task });
+    w.document.querySelector("#task-child").open = true;
+    emit("agent.message.start", { message: assistant([]) }, "child");
+    emit("agent.delta", { type: "thinking_delta", delta: "子思考" }, "child");
+    w.event({ sessionId: "activity", type: "task.state", taskId: task.id, data: { ...task, status: "cancelled" } });
+    const line = w.document.querySelector("#task-child .thinking-record .activity-line");
+    assert.equal(line.dataset.state, "stopped");
+    assert.equal(line.querySelector(".activity-label").textContent, "thinking · 已取消");
+    paint();
+    assert.equal(line.dataset.state, "stopped", "子任务挂起帧不得把已取消摘要改回 done");
+    assert.equal(line.querySelector(".activity-label").textContent, "thinking · 已取消");
   } finally { dom.window.close(); }
 });
 

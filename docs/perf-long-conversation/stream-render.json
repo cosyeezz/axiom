@@ -1,0 +1,29 @@
+{
+  "scene": "流式渲染单帧耗时",
+  "protocol": "对真实会话文本直接调用 public/markdown.js 的 renderMarkdown，文本累计增长，每帧追加 600 字符并强制读回布局（offsetHeight），记录该帧 renderMarkdown 调用耗时",
+  "sampleTextChars": 43645,
+  "frames": 72,
+  "chunkChars": 600,
+  "buckets": [
+    {"range": "0-10k", "frames": 16, "avgMs": 3.79, "maxMs": 12.4},
+    {"range": "10k-30k", "frames": 33, "avgMs": 2.98, "maxMs": 8.6},
+    {"range": "30k-40k", "frames": 17, "avgMs": 12.12, "maxMs": 33.0}
+  ],
+  "tailFramesMs": [9.0, 7.5, 10.4, 7.2],
+  "samplesMs": [
+    {"chars": 600, "ms": 10.5}, {"chars": 5400, "ms": 2.0}, {"chars": 10200, "ms": 1.9},
+    {"chars": 15000, "ms": 2.5}, {"chars": 19800, "ms": 2.8}, {"chars": 24600, "ms": 2.3},
+    {"chars": 29400, "ms": 8.6}, {"chars": 34200, "ms": 6.8}, {"chars": 39000, "ms": 8.5}
+  ],
+  "syntheticMicrobench": {
+    "protocol": "合成文本，单次 renderMarkdown 全量渲染（冷）与缓存命中（热）对比",
+    "cases": [
+      {"chars": 320, "coldMs": 20.8, "cachedMs": 0.1},
+      {"chars": 6400, "coldMs": 70.3, "cachedMs": 0.0},
+      {"chars": 64000, "coldMs": 502.6, "cachedMs": 6.8},
+      {"chars": 68411, "note": "含代码块，增量追加到已渲染元素", "coldMs": 55.8, "cachedMs": 0.0}
+    ]
+  },
+  "conclusion": "长文本尾部每帧 7–12ms（峰值 33ms），明显高于文本头部（2–4ms）；说明分块缓存只对已完成块生效，当前帧所在块随文本增长被反复全量重解析（markdown.js:219-220 全量 lex）。不同文本样本（真实文本流 vs 合成文本冷渲染）不能用来判定渲染复杂度的增长阶数，本组数据不支持也不反对超线性/次线性结论。",
+  "caveat": "该数值来自对真实文本直接调用 renderMarkdown 的微基准（每帧追加 600 字符并强制读回 offsetHeight 触发布局），既不是真实模型流式事件，也不是真实分片，且未叠加 app.js 的 delta 处理与 DOM 重建，故既不能当真实成本的上界也不能当下界，只适合同口径相对比较。"
+}

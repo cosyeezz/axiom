@@ -1,0 +1,915 @@
+{
+ "scene": "同机成对首屏/切换：c7cf8a5 与工作树未提交版本，交替各 3 次",
+ "generatedAt": "2026-09-15T10:14:07.383Z",
+ "completionCriterion": {
+  "rule": "#output 子树在 700ms 内无任何 DOM 变更即判为重建完成；硬超时 60000ms 直接抛错（旧脚本的 .catch(()=>{}) 吞超时已移除）",
+  "postCheck": "完成后追加 1500ms 静默并复核计数不变量；并断言 baseline/current 两实例 DOM 计数完全一致",
+  "note": "firstOutputMs = #output 首次新增子节点（可见消息输出）；longTasks = 渲染阶段 [phaseStart, settledAtMs] 内的 longtask"
+ },
+ "provenance": {
+  "repo": "F:\\worktrees\\axiom-长会话性能调研",
+  "baselineCommit": "c7cf8a5",
+  "current": "worktree working tree (uncommitted)",
+  "codeSha256": {
+   "baseline": {
+    "appJs": "ab946d41af38c622cf183f713d0539b4b38d8da11279d07eb76f55a0fcf05528",
+    "markdownJs": "ccece070fbfe711dff0fa00ae6a64b14c5908af6926579f1bb6c91a7f8c9353b"
+   },
+   "current": {
+    "appJs": "6fc7761bce87a4f264a2c13fb97402189b13d568f35f61e7530c9b5153f760ef",
+    "markdownJs": "30205bbfd5e114fbb63d31e6d3cb777d7cae95ba60ccbb33933fbb657097cea1"
+   }
+  },
+  "sourceDb": {
+   "path": "C:\\Users\\dane\\.axiom-dev\\axiom.db",
+   "bytes": 11399168,
+   "mtimeMs": 1789466482069
+  },
+  "longSession": {
+   "id": "55e7fce9-c23b-441a-b6e1-1042321ad701",
+   "jsonlSha256": "6dfedb20cb2d97396b928067d0beb0410b8a817f48edeb83598a342fd61c7cf1",
+   "jsonlBytes": 12394998
+  },
+  "shortSession": {
+   "id": "eb6bc50b-43ec-42ea-ba14-b13193582293",
+   "jsonlBytes": 2900,
+   "groundTruth": {
+    "messages": 2,
+    "roles": {
+     "user": 1,
+     "assistant": 1
+    }
+   }
+  },
+  "isolation": "VACUUM INTO 副本库 + JSONL 副本，session_file 指向副本；源库只读打开",
+  "sampleTextInRepo": false
+ },
+ "groundTruth": {
+  "baseline": {
+   "messages": 2393,
+   "roles": {
+    "user": 27,
+    "assistant": 1052,
+    "toolResult": 1314
+   },
+   "tasks": 9,
+   "live": 0,
+   "tailSnippetSha256": "0d7c5f6081ffcd26bed4259d84ffae49d1a619d88b7ca7337688d16e47508c48"
+  },
+  "current": {
+   "messages": 2393,
+   "roles": {
+    "user": 27,
+    "assistant": 1052,
+    "toolResult": 1314
+   },
+   "tasks": 9,
+   "live": 0
+  }
+ },
+ "env": {
+  "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.0.0 Safari/537.36",
+  "hw": 16,
+  "deviceMemory": 32,
+  "viewport": [
+   1280,
+   720
+  ]
+ },
+ "runs": {
+  "firstScreen": [
+   {
+    "version": "baseline",
+    "wallMs": 4165,
+    "scene": "firstScreen",
+    "firstOutputMs": 1287,
+    "lastOutputMs": 1813,
+    "lastDomMutationMs": 1877,
+    "settledAtMs": 2586,
+    "mutations": 3073,
+    "addedNodes": 263,
+    "nodes": 41628,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45,
+    "longTaskEntries": [
+     {
+      "start": 227,
+      "dur": 1062
+     },
+     {
+      "start": 1330,
+      "dur": 474
+     },
+     {
+      "start": 1804,
+      "dur": 50
+     }
+    ],
+    "longTasks": [
+     1062,
+     474,
+     50
+    ],
+    "phaseStartMs": 0,
+    "tailContentFound": true,
+    "stableRecheck": {
+     "firstOutputMs": 1287,
+     "lastOutputMs": 1813,
+     "lastDomMutationMs": 1877,
+     "settledAtMs": 2586,
+     "mutations": 3073,
+     "addedNodes": 263,
+     "nodes": 41628,
+     "outputChildren": 92,
+     "messages": 143,
+     "toolRecords": 329,
+     "callGroups": 45
+    }
+   },
+   {
+    "version": "current",
+    "wallMs": 4123,
+    "scene": "firstScreen",
+    "firstOutputMs": 691,
+    "lastOutputMs": 1404,
+    "lastDomMutationMs": 1891,
+    "settledAtMs": 2592,
+    "mutations": 3664,
+    "addedNodes": 279,
+    "nodes": 41628,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45,
+    "longTaskEntries": [
+     {
+      "start": 241,
+      "dur": 450
+     },
+     {
+      "start": 1424,
+      "dur": 425
+     }
+    ],
+    "longTasks": [
+     450,
+     425
+    ],
+    "phaseStartMs": 0,
+    "tailContentFound": true,
+    "stableRecheck": {
+     "firstOutputMs": 691,
+     "lastOutputMs": 1404,
+     "lastDomMutationMs": 1891,
+     "settledAtMs": 2592,
+     "mutations": 3664,
+     "addedNodes": 279,
+     "nodes": 41628,
+     "outputChildren": 92,
+     "messages": 143,
+     "toolRecords": 329,
+     "callGroups": 45
+    }
+   },
+   {
+    "version": "current",
+    "wallMs": 4117,
+    "scene": "firstScreen",
+    "firstOutputMs": 664,
+    "lastOutputMs": 1372,
+    "lastDomMutationMs": 1849,
+    "settledAtMs": 2551,
+    "mutations": 3366,
+    "addedNodes": 263,
+    "nodes": 41628,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45,
+    "longTaskEntries": [
+     {
+      "start": 213,
+      "dur": 450
+     },
+     {
+      "start": 1390,
+      "dur": 415
+     }
+    ],
+    "longTasks": [
+     450,
+     415
+    ],
+    "phaseStartMs": 0,
+    "tailContentFound": true,
+    "stableRecheck": {
+     "firstOutputMs": 664,
+     "lastOutputMs": 1372,
+     "lastDomMutationMs": 1849,
+     "settledAtMs": 2551,
+     "mutations": 3366,
+     "addedNodes": 263,
+     "nodes": 41628,
+     "outputChildren": 92,
+     "messages": 143,
+     "toolRecords": 329,
+     "callGroups": 45
+    }
+   },
+   {
+    "version": "baseline",
+    "wallMs": 4033,
+    "scene": "firstScreen",
+    "firstOutputMs": 1282,
+    "lastOutputMs": 1708,
+    "lastDomMutationMs": 1778,
+    "settledAtMs": 2491,
+    "mutations": 3073,
+    "addedNodes": 263,
+    "nodes": 41628,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45,
+    "longTaskEntries": [
+     {
+      "start": 233,
+      "dur": 1050
+     },
+     {
+      "start": 1322,
+      "dur": 373
+     },
+     {
+      "start": 1696,
+      "dur": 52
+     }
+    ],
+    "longTasks": [
+     1050,
+     373,
+     52
+    ],
+    "phaseStartMs": 0,
+    "tailContentFound": true,
+    "stableRecheck": {
+     "firstOutputMs": 1282,
+     "lastOutputMs": 1708,
+     "lastDomMutationMs": 1778,
+     "settledAtMs": 2491,
+     "mutations": 3073,
+     "addedNodes": 263,
+     "nodes": 41628,
+     "outputChildren": 92,
+     "messages": 143,
+     "toolRecords": 329,
+     "callGroups": 45
+    }
+   },
+   {
+    "version": "baseline",
+    "wallMs": 4131,
+    "scene": "firstScreen",
+    "firstOutputMs": 1335,
+    "lastOutputMs": 1803,
+    "lastDomMutationMs": 1864,
+    "settledAtMs": 2570,
+    "mutations": 3073,
+    "addedNodes": 263,
+    "nodes": 41628,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45,
+    "longTaskEntries": [
+     {
+      "start": 222,
+      "dur": 1115
+     },
+     {
+      "start": 1385,
+      "dur": 410
+     }
+    ],
+    "longTasks": [
+     1115,
+     410
+    ],
+    "phaseStartMs": 0,
+    "tailContentFound": true,
+    "stableRecheck": {
+     "firstOutputMs": 1335,
+     "lastOutputMs": 1803,
+     "lastDomMutationMs": 1864,
+     "settledAtMs": 2570,
+     "mutations": 3073,
+     "addedNodes": 263,
+     "nodes": 41628,
+     "outputChildren": 92,
+     "messages": 143,
+     "toolRecords": 329,
+     "callGroups": 45
+    }
+   },
+   {
+    "version": "current",
+    "wallMs": 4013,
+    "scene": "firstScreen",
+    "firstOutputMs": 661,
+    "lastOutputMs": 1341,
+    "lastDomMutationMs": 1756,
+    "settledAtMs": 2462,
+    "mutations": 3376,
+    "addedNodes": 264,
+    "nodes": 41628,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45,
+    "longTaskEntries": [
+     {
+      "start": 218,
+      "dur": 442
+     },
+     {
+      "start": 1355,
+      "dur": 360
+     }
+    ],
+    "longTasks": [
+     442,
+     360
+    ],
+    "phaseStartMs": 0,
+    "tailContentFound": true,
+    "stableRecheck": {
+     "firstOutputMs": 661,
+     "lastOutputMs": 1341,
+     "lastDomMutationMs": 1756,
+     "settledAtMs": 2462,
+     "mutations": 3376,
+     "addedNodes": 264,
+     "nodes": 41628,
+     "outputChildren": 92,
+     "messages": 143,
+     "toolRecords": 329,
+     "callGroups": 45
+    }
+   }
+  ],
+  "switch": [
+   {
+    "version": "baseline",
+    "clickToWallMs": 4030,
+    "clickAtMs": 1367,
+    "scene": "switch",
+    "firstOutputMs": 2966,
+    "lastOutputMs": 3091,
+    "lastDomMutationMs": 3141,
+    "settledAtMs": 3852,
+    "mutations": 3074,
+    "addedNodes": 263,
+    "nodes": 41627,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45,
+    "longTaskEntries": [
+     {
+      "start": 1535,
+      "dur": 1435
+     },
+     {
+      "start": 2970,
+      "dur": 89
+     }
+    ],
+    "longTasks": [
+     1435,
+     89
+    ],
+    "tailContentFound": true,
+    "completionFromClickMs": 1774,
+    "settledFromClickMs": 2485,
+    "stableRecheck": {
+     "firstOutputMs": 2966,
+     "lastOutputMs": 3091,
+     "lastDomMutationMs": 3141,
+     "settledAtMs": 3852,
+     "mutations": 3074,
+     "addedNodes": 263,
+     "nodes": 41627,
+     "outputChildren": 92,
+     "messages": 143,
+     "toolRecords": 329,
+     "callGroups": 45
+    }
+   },
+   {
+    "version": "current",
+    "clickToWallMs": 4525,
+    "clickAtMs": 1510,
+    "scene": "switch",
+    "firstOutputMs": 2106,
+    "lastOutputMs": 3682,
+    "lastDomMutationMs": 3788,
+    "settledAtMs": 4492,
+    "mutations": 3786,
+    "addedNodes": 265,
+    "nodes": 41627,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45,
+    "longTaskEntries": [
+     {
+      "start": 1677,
+      "dur": 429
+     },
+     {
+      "start": 2213,
+      "dur": 100
+     },
+     {
+      "start": 2362,
+      "dur": 58
+     },
+     {
+      "start": 2860,
+      "dur": 66
+     },
+     {
+      "start": 3444,
+      "dur": 52
+     }
+    ],
+    "longTasks": [
+     429,
+     100,
+     58,
+     66,
+     52
+    ],
+    "tailContentFound": true,
+    "completionFromClickMs": 2278,
+    "settledFromClickMs": 2982,
+    "stableRecheck": {
+     "firstOutputMs": 2106,
+     "lastOutputMs": 3682,
+     "lastDomMutationMs": 3788,
+     "settledAtMs": 4492,
+     "mutations": 3786,
+     "addedNodes": 265,
+     "nodes": 41627,
+     "outputChildren": 92,
+     "messages": 143,
+     "toolRecords": 329,
+     "callGroups": 45
+    }
+   },
+   {
+    "version": "current",
+    "clickToWallMs": 4449,
+    "clickAtMs": 1357,
+    "scene": "switch",
+    "firstOutputMs": 1971,
+    "lastOutputMs": 3447,
+    "lastDomMutationMs": 3569,
+    "settledAtMs": 4270,
+    "mutations": 3655,
+    "addedNodes": 266,
+    "nodes": 41627,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45,
+    "longTaskEntries": [
+     {
+      "start": 1542,
+      "dur": 429
+     },
+     {
+      "start": 2071,
+      "dur": 121
+     },
+     {
+      "start": 2226,
+      "dur": 66
+     },
+     {
+      "start": 2385,
+      "dur": 63
+     },
+     {
+      "start": 3250,
+      "dur": 61
+     }
+    ],
+    "longTasks": [
+     429,
+     121,
+     66,
+     63,
+     61
+    ],
+    "tailContentFound": true,
+    "completionFromClickMs": 2212,
+    "settledFromClickMs": 2913,
+    "stableRecheck": {
+     "firstOutputMs": 1971,
+     "lastOutputMs": 3447,
+     "lastDomMutationMs": 3569,
+     "settledAtMs": 4270,
+     "mutations": 3655,
+     "addedNodes": 266,
+     "nodes": 41627,
+     "outputChildren": 92,
+     "messages": 143,
+     "toolRecords": 329,
+     "callGroups": 45
+    }
+   },
+   {
+    "version": "baseline",
+    "clickToWallMs": 4038,
+    "clickAtMs": 1343,
+    "scene": "switch",
+    "firstOutputMs": 2963,
+    "lastOutputMs": 3089,
+    "lastDomMutationMs": 3127,
+    "settledAtMs": 3842,
+    "mutations": 3074,
+    "addedNodes": 263,
+    "nodes": 41627,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45,
+    "longTaskEntries": [
+     {
+      "start": 1527,
+      "dur": 1438
+     },
+     {
+      "start": 2965,
+      "dur": 89
+     }
+    ],
+    "longTasks": [
+     1438,
+     89
+    ],
+    "tailContentFound": true,
+    "completionFromClickMs": 1784,
+    "settledFromClickMs": 2499,
+    "stableRecheck": {
+     "firstOutputMs": 2963,
+     "lastOutputMs": 3089,
+     "lastDomMutationMs": 3127,
+     "settledAtMs": 3842,
+     "mutations": 3074,
+     "addedNodes": 263,
+     "nodes": 41627,
+     "outputChildren": 92,
+     "messages": 143,
+     "toolRecords": 329,
+     "callGroups": 45
+    }
+   },
+   {
+    "version": "baseline",
+    "clickToWallMs": 3976,
+    "clickAtMs": 1364,
+    "scene": "switch",
+    "firstOutputMs": 2952,
+    "lastOutputMs": 3062,
+    "lastDomMutationMs": 3104,
+    "settledAtMs": 3811,
+    "mutations": 3074,
+    "addedNodes": 263,
+    "nodes": 41627,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45,
+    "longTaskEntries": [
+     {
+      "start": 1541,
+      "dur": 1413
+     },
+     {
+      "start": 2954,
+      "dur": 74
+     }
+    ],
+    "longTasks": [
+     1413,
+     74
+    ],
+    "tailContentFound": true,
+    "completionFromClickMs": 1740,
+    "settledFromClickMs": 2447,
+    "stableRecheck": {
+     "firstOutputMs": 2952,
+     "lastOutputMs": 3062,
+     "lastDomMutationMs": 3104,
+     "settledAtMs": 3811,
+     "mutations": 3074,
+     "addedNodes": 263,
+     "nodes": 41627,
+     "outputChildren": 92,
+     "messages": 143,
+     "toolRecords": 329,
+     "callGroups": 45
+    }
+   },
+   {
+    "version": "current",
+    "clickToWallMs": 4352,
+    "clickAtMs": 1365,
+    "scene": "switch",
+    "firstOutputMs": 1972,
+    "lastOutputMs": 3366,
+    "lastDomMutationMs": 3463,
+    "settledAtMs": 4170,
+    "mutations": 3732,
+    "addedNodes": 269,
+    "nodes": 41627,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45,
+    "longTaskEntries": [
+     {
+      "start": 1549,
+      "dur": 423
+     },
+     {
+      "start": 2077,
+      "dur": 113
+     },
+     {
+      "start": 3137,
+      "dur": 54
+     }
+    ],
+    "longTasks": [
+     423,
+     113,
+     54
+    ],
+    "tailContentFound": true,
+    "completionFromClickMs": 2098,
+    "settledFromClickMs": 2805,
+    "stableRecheck": {
+     "firstOutputMs": 1972,
+     "lastOutputMs": 3366,
+     "lastDomMutationMs": 3463,
+     "settledAtMs": 4170,
+     "mutations": 3732,
+     "addedNodes": 269,
+     "nodes": 41627,
+     "outputChildren": 92,
+     "messages": 143,
+     "toolRecords": 329,
+     "callGroups": 45
+    }
+   }
+  ]
+ },
+ "verification": {
+  "passed": true,
+  "semanticCountsIdenticalAcrossVersions": true,
+  "semanticCountsIdenticalAcrossRuns": true,
+  "nodeCountDelta": {
+   "firstScreen": 0,
+   "switch": 0
+  },
+  "expectedFromGroundTruthMessages": 2393,
+  "tailContentCheck": {
+   "rule": "服务端 attach 的最后一条 user 消息最长片段（内存中传递，不落盘）作为辅助诊断：是否出现在页面文本中",
+   "snippetSha256": "0d7c5f6081ffcd26bed4259d84ffae49d1a619d88b7ca7337688d16e47508c48",
+   "foundFirstScreen": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "foundSwitch": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ]
+  },
+  "domMessageCards": 143,
+  "note": "语义计数（outputChildren/messages/toolRecords/callGroups）在 3×2 次运行间完全一致，且追加 1500ms 静默后全量快照不变"
+ },
+ "summary": {
+  "firstScreen": [
+   {
+    "version": "baseline",
+    "firstOutputMs": [
+     1287,
+     1282,
+     1335
+    ],
+    "firstOutputMsAvg": 1301,
+    "completionMs": [
+     1877,
+     1778,
+     1864
+    ],
+    "settledAtMs": [
+     2586,
+     2491,
+     2570
+    ],
+    "maxLongTaskMs": [
+     1062,
+     1050,
+     1115
+    ],
+    "maxLongTaskRenderMs": [
+     1062,
+     1050,
+     1115
+    ],
+    "wallMs": [
+     4165,
+     4033,
+     4131
+    ],
+    "nodes": 41628,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45
+   },
+   {
+    "version": "current",
+    "firstOutputMs": [
+     691,
+     664,
+     661
+    ],
+    "firstOutputMsAvg": 672,
+    "completionMs": [
+     1891,
+     1849,
+     1756
+    ],
+    "settledAtMs": [
+     2592,
+     2551,
+     2462
+    ],
+    "maxLongTaskMs": [
+     450,
+     450,
+     442
+    ],
+    "maxLongTaskRenderMs": [
+     450,
+     450,
+     442
+    ],
+    "wallMs": [
+     4123,
+     4117,
+     4013
+    ],
+    "nodes": 41628,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45
+   }
+  ],
+  "switch": [
+   {
+    "version": "baseline",
+    "firstOutputMs": [
+     2966,
+     2963,
+     2952
+    ],
+    "completionMs": [
+     3141,
+     3127,
+     3104
+    ],
+    "settledAtMs": [
+     3852,
+     3842,
+     3811
+    ],
+    "maxLongTaskMs": [
+     1435,
+     1438,
+     1413
+    ],
+    "maxLongTaskRenderMs": [
+     1435,
+     1438,
+     1413
+    ],
+    "completionFromClickMs": [
+     1774,
+     1784,
+     1740
+    ],
+    "settledFromClickMs": [
+     2485,
+     2499,
+     2447
+    ],
+    "clickToWallMs": [
+     4030,
+     4038,
+     3976
+    ],
+    "nodes": 41627,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45
+   },
+   {
+    "version": "current",
+    "firstOutputMs": [
+     2106,
+     1971,
+     1972
+    ],
+    "completionMs": [
+     3788,
+     3569,
+     3463
+    ],
+    "settledAtMs": [
+     4492,
+     4270,
+     4170
+    ],
+    "maxLongTaskMs": [
+     429,
+     429,
+     423
+    ],
+    "maxLongTaskRenderMs": [
+     429,
+     429,
+     423
+    ],
+    "completionFromClickMs": [
+     2278,
+     2212,
+     2098
+    ],
+    "settledFromClickMs": [
+     2982,
+     2913,
+     2805
+    ],
+    "clickToWallMs": [
+     4525,
+     4449,
+     4352
+    ],
+    "nodes": 41627,
+    "outputChildren": 92,
+    "messages": 143,
+    "toolRecords": 329,
+    "callGroups": 45
+   }
+  ]
+ },
+ "thresholds": {
+  "target": {
+   "firstOutputMs": 1171,
+   "maxLongTaskMs": 200,
+   "originalBaseline": "docs/perf-long-conversation/first-screen.json（保留未改动）"
+  },
+  "firstScreen": {
+   "baseline": {
+    "firstOutputMsAvg": 1301,
+    "firstOutputAchieved": false,
+    "maxLongTaskRenderMs": 1115,
+    "maxLongTaskAchieved": false
+   },
+   "current": {
+    "firstOutputMsAvg": 672,
+    "firstOutputAchieved": true,
+    "maxLongTaskRenderMs": 450,
+    "maxLongTaskAchieved": false
+   }
+  }
+ }
+}

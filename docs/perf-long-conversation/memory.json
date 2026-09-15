@@ -1,0 +1,18 @@
+{
+  "scene": "页面内存占用与短周期增长趋势",
+  "instance": "http://127.0.0.1:4410（长会话首屏/切换）与 http://127.0.0.1:4399（长短会话反复切换趋势）",
+  "metric": "performance.memory.usedJSHeapSize（Chromium JS 堆，含未回收垃圾，未强制 GC）",
+  "longSessionHeapMBFirstScreen": [50.8, 50.5, 50.4],
+  "afterSwitchToLongSessionHeapMB": 53.3,
+  "shortSessionHeapMB": 3.4,
+  "toggleTrend_3Cycles": [
+    {"step": "short#1", "heapMB": 53.6, "nodes": 2684},
+    {"step": "long#1", "heapMB": 23.5, "nodes": 39946},
+    {"step": "short#2", "heapMB": 25.7, "nodes": 2684},
+    {"step": "long#2", "heapMB": 23.8, "nodes": 39946},
+    {"step": "short#3", "heapMB": 26.1, "nodes": 2684},
+    {"step": "long#3", "heapMB": 24.2, "nodes": 39943}
+  ],
+  "observation": "3 轮长短会话反复切换中，堆在切换后回落，与 GC 生效相容但不能证实（采集未强制 GC、也未记录 GC 事件）；长会话侧 23.5→23.8→24.2MB 仅 +0.7MB，样本量小，不能据此判定泄漏，也不能排除。需更长周期/更多轮次或强制 GC 后对比 retained heap。首屏 50.6/53.3MB 来自实例 4410，本趋势来自实例 4399，二者是不同实例的样本，不可直接比较；50.6MB 是整页 JS 堆，不是某个对象群的占用量。",
+  "caveat": "usedJSHeapSize 采样点受 GC 时机影响较大（同一实例不同时刻差值可达 20MB+），单点数值不宜直接跨采样比较。"
+}
