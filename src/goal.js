@@ -1,7 +1,11 @@
 import { z } from "zod";
-import { cutSpans, maskCode } from "../public/markdown-scan.js";
 import { stripMemoryTags } from "../public/memory-tags.js";
 import { splitAnswer } from "../public/answer-tags.js";
+// 完成标记的解析与剥离前后端共用 public/goal-markers.js：后端在这里判轮次、生成小结，前端 app.js
+// 用它做展示剥离（同一份实现，避免两侧正则漂移——第 5 轮 X2 的教训）。
+import { ROUND_MARKER, GOAL_MARKER, parseGoalMarkers, stripGoalMarkers } from "../public/goal-markers.js";
+
+export { ROUND_MARKER, GOAL_MARKER, parseGoalMarkers, stripGoalMarkers };
 
 // Goal 模式：在外层封装现有对话，普通会话零影响（无目标时 snapshot/context 为 null）。
 // 本文件自成一体，只依赖 Database 暴露的 prepare/exec（src/database.js）；无 DB（测试会话）退化为内存态。
@@ -47,51 +51,10 @@ export const ROUND_STATUSES = ["pending", "running", "done", "skipped"];
 // 自动执行段上限：到顶即持久暂停（fail），由主控计数触发。
 export const GOAL_MAX_SEGMENTS = 64;
 
-export const ROUND_MARKER = "<axiom_round_finished>";
-export const GOAL_MARKER = "<axiom_goal_finished>";
-// 展示层要清掉的标记原文：开启与闭合两种写法都算（模型常自作主张补上闭合标签）。大小写不敏感——
-// 大写变体不是有效信号，但同样是协议残留，不该漏进展示文本。
-const MARKER_TOKENS = new RegExp([ROUND_MARKER, GOAL_MARKER].map((mark) => `</?${mark.slice(1)}`).join("|"), "gi");
 const SUMMARY_MAX = 500;
 // 目标工具/提问工具的结果不能作为验收证据（否则模型用自报工具自证）。
 const NON_EVIDENCE_TOOLS = new Set(["goal_plan", "goal_evidence", "goal_block", "goal_progress", "question", "delegate", "append"]);
 const ACTIVE_TASKS = new Set(["starting", "running"]);
-
-// 协议标记只认「代码区外、缩进不超过 3 空格」的行：写在围栏、缩进代码块或行内代码里的标记是在
-// 举例，不是信号；4 空格/Tab 起头的缩进代码、引用与列表内容同样不算独立信号。代码区判定与
-// memory-tags、answer-tags 共用 public/markdown-scan.js（原先本文件另写一套围栏正则，三处口径各自漂移）。
-function signalLines(text) {
-  const lines = [];
-  let at = 0;
-  for (const line of maskCode(text).split("\n")) {
-    if (/^ {0,3}\S/.test(line)) lines.push({ line, start: at });
-    at += line.length + 1;
-  }
-  return lines;
-}
-
-// 严格解析完成标记：整行独占、精确小写、无闭合标签、无内文；代码区内不算。
-export function parseGoalMarkers(text) {
-  const found = { roundFinished: false, goalFinished: false };
-  if (typeof text !== "string" || !text) return found;
-  for (const { line } of signalLines(text)) {
-    const marker = line.trim();
-    if (marker === ROUND_MARKER) found.roundFinished = true;
-    else if (marker === GOAL_MARKER) found.goalFinished = true;
-  }
-  return found;
-}
-
-// 展示用：删掉代码区外的标记原文（含模型补的闭合标签、空标签对），删完整行只剩空白就丢掉该行。
-// 「不认作信号」与「要清掉原文」是两件事：空标签对不算完成信号（不放宽防伪造口径），但也不能
-// 让 <axiom_round_finished></axiom_round_finished> 这种残留漏进展示文本与轮次小结。
-export function stripGoalMarkers(text) {
-  if (typeof text !== "string" || !text) return text;
-  const spans = [];
-  for (const { line, start } of signalLines(text))
-    for (const hit of line.matchAll(MARKER_TOKENS)) spans.push([start + hit.index, start + hit.index + hit[0].length]);
-  return cutSpans(text, spans);
-}
 
 const messageText = (message) =>
   (message?.content ?? []).filter((block) => block.type === "text").map((block) => block.text).join("\n");

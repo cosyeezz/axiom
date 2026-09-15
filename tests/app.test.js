@@ -57,7 +57,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     new URL("../public/index.html", import.meta.url),
     "utf8",
   );
-  const source = await publicSource("markdown-scan", "memory-tags", "question", "app");
+  const source = await publicSource("markdown-scan", "memory-tags", "goal-markers", "question", "app");
   const dom = new JSDOM(html, {
     url: "http://localhost",
     runScripts: "outside-only",
@@ -1403,7 +1403,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     new URL("../public/index.html", import.meta.url),
     "utf8",
   );
-  const source = await publicSource("markdown-scan", "memory-tags", "question", "app");
+  const source = await publicSource("markdown-scan", "memory-tags", "goal-markers", "question", "app");
   const dom = new JSDOM(html, {
     url: "http://localhost",
     runScripts: "outside-only",

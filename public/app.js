@@ -2,6 +2,7 @@ import { renderMarkdown } from "./markdown.js";
 import { stripMemoryTags } from "./memory-tags.js";
 import { createStreamRenderer } from "./stream-renderer.js";
 import { splitAnswer } from "./answer-tags.js";
+import { stripGoalMarkers } from "./goal-markers.js";
 import { createFilePicker, fileIcon } from "./file-picker.js";
 import "./tooltip.js";
 import { createModelPicker } from "./model-picker.js";
@@ -1286,8 +1287,9 @@ function renderMessage(item, message) {
     .filter((c) => c?.type === "text")
     .map((c) => c.text)
     .join("\n");
-  // 记忆标签只属于助手自报内容；用户手写同名标签原样保留。
-  item.buffer = message.role === "assistant" ? stripMemoryTags(raw) : raw;
+  // 记忆标签与 goal 完成标记只属于助手自报内容；用户手写同名标签原样保留。顺序与后端展示口径
+  // （src/goal.js 的 bodyText）一致：先去完成标记，再剥记忆标签，最后拆正式答复。
+  item.buffer = message.role === "assistant" ? stripMemoryTags(stripGoalMarkers(raw)) : raw;
   // 主会话解析 axiom_answer；未闭合回答仍展示，子任务透传。
   // 异常走原文回退，保证错误/中断始终可见。
   item.processBuffer = "";
@@ -1866,8 +1868,8 @@ function event(message) {
     if (!item) return;
     if (data.type === "text_delta") {
       item.raw = (item.raw || "") + data.delta;
-      // 流式剥离从未完成的原始累计文本重算，避免残缺标签闪现。
-      item.buffer = stripMemoryTags(item.raw, { streaming: true });
+      // 流式剥离从未完成的原始累计文本重算，避免残缺标签（含半截完成标记）闪现。
+      item.buffer = stripMemoryTags(stripGoalMarkers(item.raw, { streaming: true }), { streaming: true });
       // 累计解析：开标签到达即展示回答，半截标签暂存。
       item.processBuffer = "";
       if (!item.task) {

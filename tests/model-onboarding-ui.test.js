@@ -13,7 +13,7 @@ const modelSources = await Promise.all(["model-picker", "model-auth", "model-man
   return `Object.assign(window, (() => { ${stripImports(source)}\nreturn {${exports.join(",")}}; })());`;
 })).then((parts) => parts.join("\n"));
 const pickerSource = stripImports(await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8"));
-const memoryTagsSource = await publicSource("markdown-scan", "memory-tags");
+const memoryTagsSource = await publicSource("markdown-scan", "memory-tags", "goal-markers");
 const appSource = memoryTagsSource + "\n" + stripImports(await readFile(new URL("../public/question.js", import.meta.url), "utf8")) + "\n" + stripImports(await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")) + "\n" + stripImports(await readFile(new URL("../public/app.js", import.meta.url), "utf8"));
 
 const config = { model: null, thinking: "off", levels: ["off"], skills: [] };

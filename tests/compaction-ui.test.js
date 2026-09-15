@@ -10,7 +10,7 @@ import { publicSource } from "./helpers/public-source.js";
 // Run the real page's snapshot/event handlers without a model or server.
 async function page() {
   const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
-  const source = await publicSource("markdown-scan", "memory-tags", "question", "service-settings", "app");
+  const source = await publicSource("markdown-scan", "memory-tags", "goal-markers", "question", "service-settings", "app");
   const picker = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
   const dom = new JSDOM(html, { url: "http://localhost", runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window;
