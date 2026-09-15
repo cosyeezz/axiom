@@ -5,6 +5,7 @@ import { JSDOM } from "jsdom";
 import { marked } from "marked";
 import createPurify from "dompurify";
 import { createStreamRenderer } from "../public/stream-renderer.js";
+import { publicSource } from "./helpers/public-source.js";
 
 const pickerSource = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
 const modelSources = await Promise.all(["model-picker", "model-auth", "model-manager"].map(async (name) => {
@@ -56,9 +57,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     new URL("../public/index.html", import.meta.url),
     "utf8",
   );
-  const source = (await readFile(new URL("../public/memory-tags.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/question.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (
-    await readFile(new URL("../public/app.js", import.meta.url), "utf8")
-  ).replace(/^import .*;\r?\n/gm, "");
+  const source = await publicSource("markdown-scan", "memory-tags", "question", "app");
   const dom = new JSDOM(html, {
     url: "http://localhost",
     runScripts: "outside-only",
@@ -1404,9 +1403,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     new URL("../public/index.html", import.meta.url),
     "utf8",
   );
-  const source = (await readFile(new URL("../public/memory-tags.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/question.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (
-    await readFile(new URL("../public/app.js", import.meta.url), "utf8")
-  ).replace(/^import .*;\r?\n/gm, "");
+  const source = await publicSource("markdown-scan", "memory-tags", "question", "app");
   const dom = new JSDOM(html, {
     url: "http://localhost",
     runScripts: "outside-only",

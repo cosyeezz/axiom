@@ -3,10 +3,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
 import { createStreamRenderer } from "../public/stream-renderer.js";
+import { publicSource } from "./helpers/public-source.js";
 
 // 思考程度收藏端到端：主 composer 星标必须按后端契约上报 provider/model:level
 // （model id 含冒号时后端按最后一个冒号切分），星标渲染按映射键匹配，无模型上下文无星。
-const appSource = (await readFile(new URL("../public/memory-tags.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/question.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/app.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "");
+const appSource = await publicSource("markdown-scan", "memory-tags", "question", "service-settings", "app");
 const pickerSource = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
 const modelSources = await Promise.all(["model-picker", "model-auth", "model-manager"].map(async (name) => {
   const source = await readFile(new URL(`../public/${name}.js`, import.meta.url), "utf8");

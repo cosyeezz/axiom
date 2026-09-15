@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
 import { createStreamRenderer } from "../public/stream-renderer.js";
+import { publicSource } from "./helpers/public-source.js";
 
 // 空模型目录启动的前端回归：保持连接引导首次配置；保存模型后无需重启即可新建会话。
 const stripImports = (source) => source.replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "");
@@ -12,7 +13,7 @@ const modelSources = await Promise.all(["model-picker", "model-auth", "model-man
   return `Object.assign(window, (() => { ${stripImports(source)}\nreturn {${exports.join(",")}}; })());`;
 })).then((parts) => parts.join("\n"));
 const pickerSource = stripImports(await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8"));
-const memoryTagsSource = stripImports(await readFile(new URL("../public/memory-tags.js", import.meta.url), "utf8"));
+const memoryTagsSource = await publicSource("markdown-scan", "memory-tags");
 const appSource = memoryTagsSource + "\n" + stripImports(await readFile(new URL("../public/question.js", import.meta.url), "utf8")) + "\n" + stripImports(await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")) + "\n" + stripImports(await readFile(new URL("../public/app.js", import.meta.url), "utf8"));
 
 const config = { model: null, thinking: "off", levels: ["off"], skills: [] };

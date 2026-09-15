@@ -20,9 +20,28 @@ test("code fences, inline code and ordinary examples are not protocol", () => {
     assert.equal(splitAnswer(text).answer, text);
   }
 });
-test("legacy, duplicate, nested and empty answers fall back without loss", () => {
-  for (const text of ["旧回答", close, `${open}\n${open}\n内容\n${close}`, `${open}\n${close}`, `${open}\na\n${close}\n${open}\nb\n${close}`]) {
-    assert.equal(splitAnswer(text).found, false);
-    assert.equal(splitAnswer(text).answer, text);
+test("A-T2 缩进代码块里的标记是例子；0-3 空格缩进仍算协议", () => {
+  const sample = `    ${open}\n    例子\n    ${close}`;
+  assert.equal(splitAnswer(sample).found, false);
+  assert.equal(splitAnswer(sample).answer, sample);
+  assert.deepEqual(splitAnswer(`检查中\n\n  ${open}\n答\n  ${close}`), { found: true, answer: "答", process: "检查中", incomplete: false, malformed: false });
+});
+test("A-T1 落单反引号不跨行配对，协议标记照旧生效", () => {
+  const source = `进度 \` 未配对\n${open}\n**完成**\n${close}`;
+  assert.deepEqual(splitAnswer(source), { found: true, answer: "**完成**", process: "进度 ` 未配对", incomplete: false, malformed: false });
+});
+test("A-T3 legacy 与畸形标记回退时丢协议不丢正文，裸标记不进展示文本", () => {
+  assert.deepEqual(splitAnswer("旧回答"), { found: false, answer: "旧回答", process: "", incomplete: false, malformed: false });
+  for (const [text, expected] of [
+    [close, ""],
+    [`${open}\n${open}\n内容\n${close}`, "内容"],
+    [`${open}\n${close}`, ""],
+    [`${open}\na\n${close}\n${open}\nb\n${close}`, "a\nb"],
+  ]) {
+    const result = splitAnswer(text);
+    assert.equal(result.found, false);
+    assert.equal(result.malformed, true);
+    assert.equal(result.answer, expected);
+    assert.ok(!result.answer.includes(open) && !result.answer.includes(close));
   }
 });

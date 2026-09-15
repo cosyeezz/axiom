@@ -32,6 +32,8 @@ const MODULE_INFO = {
   "public/answer-tags.js": "主代理回答标签解析、代码保护与流式容错",
   "src/prompts.js": "Axiom 自有提示词按 main/subagent/compaction 角色集中维护",
   "public/memory-tags.js": "主子代理共享简单标签提取与流式显示过滤",
+  "public/markdown-scan.js": "共享代码区扫描：围栏/缩进/行内代码掩码与区间切割",
+  "tests/helpers/public-source.js": "页面测试加载 public ESM 源码：按序拼接并剥模块语法",
   "tests/session-memory.test.js": "摘要时序、被动进度、标题保护与JSON恢复回归",
   "tests/memory-tags.test.js": "标签边界、代码块、流式前缀与合法性回归",
   "tests/pi-memory.test.js": "Pi事件接入、turn计数与请求前提示注入回归",

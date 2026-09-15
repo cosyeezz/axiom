@@ -6,14 +6,14 @@ import { marked } from "marked";
 import createPurify from "dompurify";
 import { createStreamRenderer } from "../public/stream-renderer.js";
 import { splitAnswer } from "../public/answer-tags.js";
+import { publicSource } from "./helpers/public-source.js";
 
 // 标签提取/剥离的纯函数用例在 tests/memory-tags.test.js；本文件只覆盖页面集成行为。
 
 // Run the real page's snapshot/event handlers without a model or server.
 async function page() {
   const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
-  const memoryTags = (await readFile(new URL("../public/memory-tags.js", import.meta.url), "utf8")).replace(/^export /gm, "");
-  const source = memoryTags + "\n" + (await readFile(new URL("../public/question.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/app.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "");
+  const source = await publicSource("markdown-scan", "memory-tags", "question", "service-settings", "app");
   const picker = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
   const dom = new JSDOM(html, { url: "http://localhost", runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window;
