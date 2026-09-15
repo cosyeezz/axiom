@@ -43,6 +43,13 @@ test("header path icons do not inherit the global button minimum height", async 
     assert.equal(computed(".task-run-text").textOverflow, "ellipsis", "run rows truncate long task text");
     assert.equal(computed(".task-run-text").whiteSpace, "nowrap");
     assert.equal(computed(".task-run-spin").animationName, "task-run-spin", "spinner is a CSS animation, no inline style");
+    // 安全停止提示条：图标与省略号都靠 CSS 动画，且不能把标题行撑高（全局 button 有 40px 最小高度）。
+    assert.equal(computed(".safe-stop-icon").animationName, "safe-stop-pulse");
+    assert.equal(computed(".safe-stop-dots i").animationName, "safe-stop-bounce");
+    assert.equal(computed("#session-alert").minHeight, "0px", "标题前提醒点不继承全局按钮高度");
+    assert.equal(computed("#session-alert").padding, "0px");
+    assert.equal(computed(".title-row").display, "flex", "提醒点与标题同行，且 h1 仍可省略");
+    assert.equal(computed(".title-row").minWidth, "0px");
     // 复选框不能吃到全局 input 的 40px 高度：否则控件顶在盒子上沿、同行文字落到下沿，看起来错行。
     // 复选框由脚本生成（能力选择、压缩开关），静态页面里没有，这里补一个再量。
     const box = dom.window.document.createElement("input");
@@ -954,6 +961,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape" }));
     await settle();
     assert.equal(requests.filter((r) => r.type === "cancel").length, cancels + 1, "double Esc cancels");
+    assert.equal(requests.findLast((r) => r.type === "cancel").mode, "safe", "快捷键只给安全停止，不能误触丢产出的强停");
     // 三次 Esc：把已进入上下文的输入退回输入框（服务端回退分支，客户端按新快照重绘消息区）。
     states[0].messages = [{ agentId: "main", entryId: "u1", message: { role: "user", content: "撤回的输入" } }];
     emit("session.state", { status: "idle" });
@@ -980,6 +988,50 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.match($("prompt").value, /撤回的输入/, "recalled input goes back into the box");
     assert.doesNotMatch($("output").textContent, /撤回的输入/, "the recalled message is gone from the transcript");
     input("");
+
+    // 两层停止：安全停止等轮次边界（结束前一直挂绿条），强停会丢产出所以要弹窗确认。
+    emit("session.state", { status: "running" });
+    await settle();
+    assert.equal($("stop").hidden, false);
+    assert.equal($("force-stop").hidden, false, "硬停始终是逃生门：长命令等不起安全点时还能立即停");
+    assert.equal($("force-stop").classList.contains("danger"), true, "会丢产出的动作用警示色");
+    assert.equal($("safe-stop-progress").hidden, true);
+    assert.equal($("session-alert").hidden, true);
+    $("stop").click();
+    await settle();
+    assert.equal(requests.findLast((r) => r.type === "cancel").mode, "safe");
+    assert.equal(requests.findLast((r) => r.type === "queue.withdraw").sessionId, "a", "停止前先撤回队列，不让排队消息在下一次运行开头被默默消化");
+    emit("session.state", { status: "running", safeStop: true });
+    await settle();
+    assert.equal($("safe-stop-progress").hidden, false, "等待期间给个看得见的交代");
+    assert.match($("safe-stop-progress").textContent, /安全停止中/);
+    assert.equal($("safe-stop-progress").getAttribute("role"), "status");
+    assert.equal($("stop").hidden, true, "已在等安全点：再点一次没效果，只留强停");
+    assert.equal($("force-stop").hidden, false);
+    emit("session.state", { status: "idle", stopped: "safe" });
+    await settle();
+    assert.equal($("safe-stop-progress").hidden, true);
+    assert.equal($("session-alert").hidden, false, "停住了就在标题前留点，用户回来才知道");
+    $("session-alert").click();
+    await settle();
+    assert.equal($("session-alert").hidden, true, "点一下就消");
+    emit("session.state", { status: "running" });
+    await settle();
+    const beforeForce = requests.filter((r) => r.type === "cancel").length;
+    $("force-stop").click();
+    assert.equal($("force-stop-dialog").open, true);
+    assert.equal(window.document.activeElement, $("force-stop-cancel"));
+    $("force-stop-cancel").click();
+    await settle();
+    assert.equal(requests.filter((r) => r.type === "cancel").length, beforeForce, "取消弹窗不停任务");
+    $("force-stop").click();
+    $("force-stop-form").requestSubmit();
+    await settle();
+    assert.equal($("force-stop-dialog").open, false);
+    assert.equal(requests.findLast((r) => r.type === "cancel").mode, "force", "确认后才真停");
+    emit("session.state", { status: "idle" });
+    await settle();
+    assert.equal($("session-alert").hidden, true, "正常跑完不留提醒点");
     emit(
       "task.state",
       { task: "Inspect code", status: "running" },

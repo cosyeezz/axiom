@@ -42,6 +42,7 @@ const assets = new Map(
     ["/file-picker.css", "public/file-picker.css", "text/css"],
     ["/markdown.js", "public/markdown.js"],
     ["/stream-renderer.js", "public/stream-renderer.js"],
+    ["/markdown-scan.js", "public/markdown-scan.js"],
     ["/memory-tags.js", "public/memory-tags.js"],
     ["/answer-tags.js", "public/answer-tags.js"],
     ["/goal-markers.js", "public/goal-markers.js"],
@@ -424,7 +425,8 @@ export function createServerApp(sessions, service = {}) {
               data = sessions.replyQuestion(request.sessionId, request.toolCallId, request.answers);
               break;
             case "cancel":
-              await sessions.cancel(request.sessionId);
+              if (request.mode === "safe") await sessions.safeStop(request.sessionId);
+              else await sessions.cancel(request.sessionId);
               break;
             case "session.retry":
               data = { runId: await sessions.retry(request.sessionId) };

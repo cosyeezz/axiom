@@ -1,5 +1,22 @@
 # 开发记录
 
+## 2026-09-14 更新后页面连接中：补齐标签扫描模块路由
+
+- 根因：d99efdc 新增 public/markdown-scan.js 并被前端标签模块静态导入，但 src/server.js 未注册路由；HTTP health 正常，浏览器模块 404 导致 app.js 不执行。
+- 修复：仅补静态资源路由，不改自启或 Node 支持范围；tests/server.test.js 补三个标签模块及扫描模块的 HTTP 状态、JavaScript MIME 与缓存验证。README.md 同步排障说明，knowledge.md 沉淀并重建 INDEX.md。
+- 验证：新增测试在修复前明确失败于 /markdown-scan.js 404，修复后通过；npm test 534 项，532 通过、2 跳过、0 失败。Windows 本地真实 HTTP 验证，Mac 待用户更新确认。合并 origin/master a568d0b 后再次全测：539 项，537 通过、2 跳过、0 失败。
+
+## 2026-09-14 安全点停止：两级停止 + 等待提示条 + 停下提醒点
+- 原因：只有硬停，一点就把本轮正在跑的工具和已写一半的回答丢了；需要一个「跑完这一步再停」的选项，同时把会丢产出的硬停降级为需要确认的强制停止。硬停保留为逃生门：安全点粒度是一个 turn，长命令可能等很久。
+- 后端：src/pi.js 在建会话时常驻安装 SDK 原生 `shouldStopAfterTurn` 钩子（loopConfig 在 run 开始就捕获该函数，运行中赋值对本轮无效），新增 `requestSafeStop()` / `safeStopPending()` 与 goal 暂停共用一个函数：先看 `safeStopPending`，再看 goal 的 `paused`，最后问 `shouldPause()`，三者都只请求「边界即停」。SDK 的 `AgentSession` 在轮次边界后还会按 `hasQueuedMessages()` 继续抽干 steer/followUp 队列，单靠 `shouldStopAfterTurn` 挡不住，因此把 `hasQueuedMessages` 一并门控为 `!stopping()`；标志因此必须闩到 `beginRun()`（prompt/reask/resume 入口）或 `abort()` 才复位，否则抽水那次查询就已经是 false。退避等待期没有 turn 边界，`requestSafeStop()` 顺手 `retry.cancel()`（无等待时 no-op，不影响在飞请求与工具）。prompt 的 catch 与 `result()` 同步改为按 `stopping()` 判定：收工导致的退避取消不当失败报错。
+- src/sessions.js 新增 `safeStop(id)`：不 abort、不杀工具，只置 `safeStopping` 并发 `session.state { status:"running", safeStop:true }`；同时 `notificationsPaused = true`，否则子任务完成通知会在 idle 时调 prompt 把会话重新拉起来（与 cancel 同手法，下一次运行开始时恢复）。goal 会话转交 `goalAction(id,"pause")`（master 已有「停=安全暂停目标」的专用路径），避免同一颗按钮两套语义。收尾 idle 带 `stopped:"safe"`，`snapshot()` 在 running 时带 `safeStop`，刷新/重连不丢状态；不新增状态值。
+- 协议：src/protocol.js 的 `cancel` 增加 `mode: "force" | "safe"`，缺省 `force` 保留旧客户端语义；src/server.js 按 mode 分发到 `safeStop` / `cancel`。
+- 前端：public/index.html 拆为 `#stop`（安全停止，文案仍 Stop ■）+ `#force-stop`（`button.danger`，Force ⚠，弹 `#force-stop-dialog` 确认，焦点默认在取消）；新增 `#safe-stop-progress` 绿色提示条（SVG 图标 + 跳动三点，纳入 prefers-reduced-motion）；标题前 `#session-alert` 复用 `.session-attention-dot`，点击清除并 `markSessionSeen`。双按 Esc 只走安全停止；两条停止路径都先 `withdrawQueue()`。样式只用现有 token（`--success` / `--danger` / `--accent-ink` / `--line` / `--surface`）。
+- 边界：主代理停下后子代理继续跑完自己（侧栏仍显示运行中）；暂停期内的子任务通知不补发；队列消息原样退回输入框；标题提醒点仅覆盖安全停止，不复用失败中断，且为页面内存态不跨标签页。goal 模式下两颗停止按钮都走 Goal 的安全暂停（保留目标进度、等子任务收尾），强停的「立即中断」语义仅对普通会话成立。
+- 验证：新增 tests/safe-stop.test.js 4 个用例（真实 Pi SDK + fake SSE 子进程：工具跑完、文本不丢、stopReason 仍可 resume、resume 后正常收尾、排队消息不被抽水循环消费；`sessions.safeStop` 不 abort / 暂停通知 / 快照标志 / idle 标记；idle 幂等与强停优先；cancel 缺省 mode）；tests/goal-sessions.test.js 补 goal 会话转交暂停的回归；tests/app.test.js 补两级停止 UI 回归。
+- 涉及文件：src/pi.js、src/sessions.js、src/server.js、src/protocol.js、public/index.html、public/style.css、public/app.js、tests/safe-stop.test.js、tests/goal-sessions.test.js、tests/app.test.js、README.md、devlog.md。
+- 合并：与 origin/master（2c8051b，含 Goal 模式）合并时，goal 的安全暂停与本功能共用同一个 `shouldStopAfterTurn`/`hasQueuedMessages` 钩子，需合为一个函数（否则后赋值的会覆盖 goal 的暂停）；冲突集中在 src/pi.js（三处 `beginRun()`）、src/sessions.js（startRun 通知复位）、devlog.md 与生成物 INDEX.md。随后又并入 b1cee83（SQLite 持久化排查修复、goal 完成标记展示层剥离、任务结果落库口径），唯一冲突同样是生成物 INDEX.md；重点复核了 `persist()/writeChange()` 改为支持增量数组后，本功能按单对象调用仍然有效。两次合并后 npm test：539 项，537 通过、2 跳过、0 失败。
+
 ## 2026-09-14 工作空间独立会话配置
 
 - 决策：移除具名预设；保留全局默认兜底，每个真实工作目录独立保存配置，下拉只切换编辑对象。删除配置不删除目录或会话，旧预设不迁移。
@@ -44,6 +61,7 @@
 - 边界：文档只写设计意图与安全边界，明确不做「绝对无漏洞」承诺，验收证据是可核对材料而非正确性证明；普通会话路径不变。
 - 未做/状态：本次只改 README.md 与 devlog.md，不碰实现文件；`src/goal.js`、`public/goal.*` 及前端按钮由并行的 runtime/UI 任务实现，尚无端到端验收，README 描述目标行为，不代表已实现或已测试通过。
 - 涉及：README.md、devlog.md。
+
 ## 2026-09-14 默认会话配置的后台自动压缩改为默认开启
 - 原因：新会话一律要手动去默认配置里勾选才能用上后台压缩，默认值偏保守。
 - src/protocol.js compactionDefaults 改为 enabled: true、percentThreshold: 50、keepRecentTokens: 5000（token 阈值仍 100000）；public/app.js 的同名前端默认值保持同源同步。

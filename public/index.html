@@ -48,7 +48,7 @@
             ☰
           </button>
           <div class="header-title">
-            <h1 id="session-title">新会话</h1>
+            <div class="title-row"><button type="button" id="session-alert" class="session-attention-dot" title="任务已停下，点击知道了" aria-label="任务已停下，点击标记为已查看" hidden></button><h1 id="session-title">新会话</h1></div>
             <div class="workspace-location"><span id="workspace-label"></span><button id="copy-workspace" class="icon-button" title="复制工作空间路径" aria-label="复制工作空间路径"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h11v12H9ZM15 9V3H4v12h5"/></svg></button><button id="reveal-workspace" class="icon-button" title="在资源管理器中打开" aria-label="在资源管理器中打开工作空间"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l3 3h9v4M3 7v13h16l3-9H7l-4 9"/></svg></button><span id="workspace-feedback" class="sr-only" role="status"></span></div>
           </div>
           <div class="service-controls">
@@ -77,6 +77,7 @@
             <div id="message-queue" aria-label="待发送队列" aria-live="polite" hidden></div>
             <div id="task-runs" role="status" aria-label="运行中的子代理任务" hidden></div>
             <div id="compaction-progress" role="status" aria-live="polite" aria-atomic="true" aria-label="后台上下文压缩进度" hidden></div>
+            <div id="safe-stop-progress" role="status" aria-live="polite" aria-atomic="true" aria-label="安全停止进度" hidden><svg class="safe-stop-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5h5v5h-5z"/></svg><span class="safe-stop-text">安全停止中，等待安全点<span class="safe-stop-dots" aria-hidden="true"><i></i><i></i><i></i></span></span></div>
             <div class="context-bar">
               <div class="icon-group" role="group" aria-label="输入区图标">
                 <button type="button" id="add-context" class="icon-button" popovertarget="context-menu" title="添加上下文" aria-label="添加 Skill、文件或文件夹"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
@@ -127,7 +128,8 @@
                     ><select id="thinking" title="思考程度"></select
                   ></label>
                 </div>
-                <button type="button" class="secondary" id="stop" title="停止当前会话任务" aria-label="停止当前会话任务" hidden>Stop <span aria-hidden="true">■</span></button
+                <button type="button" class="secondary" id="stop" title="安全停止：等当前一步跑完再停，不丢已完成的产出" aria-label="安全停止当前会话任务" hidden>Stop <span aria-hidden="true">■</span></button
+                ><button type="button" class="danger" id="force-stop" title="强制停止：立即中断，本轮未完成的回答与工具产出会丢失" aria-label="强制停止当前会话任务" hidden>Force <span aria-hidden="true">⚠</span></button
                 ><button type="submit" class="secondary" id="send-steer" data-queue="steer" title="在下一个可介入节点补充指令，不中断正在运行的工具" hidden>Steer</button><button type="submit" class="secondary" id="send-followup" data-queue="followUp" title="等待当前这一轮结束后发送，不影响当前执行" hidden>Follow-up</button><button id="send">Send</button>
               </div>
               <div id="session-runtime" class="runtime-summary" role="status" aria-live="polite"></div>
@@ -138,7 +140,7 @@
             </form>
             <div class="composer-footer" id="composer-help">
               <span>/ Skill · @ 文件/文件夹 · Enter 发送 · Shift / Ctrl / ⌘ + Enter 换行 · Ctrl+Z 撤销 · Ctrl+C 清空文字</span
-              ><span>Esc 撤回队列 · 双按 Esc 停止</span>
+              ><span>Esc 撤回队列 · 双按 Esc 安全停止</span>
             </div>
           </div>
         </section>
@@ -165,6 +167,14 @@
         <p id="restart-description"></p>
         <p id="restart-warning">请先停止所有会话任务。重启不会删除会话历史。</p>
         <div class="dialog-actions"><button type="button" id="restart-cancel" class="secondary" autofocus>取消</button><button id="restart-submit">确认重启</button></div>
+      </form>
+    </dialog>
+    <dialog id="force-stop-dialog" aria-labelledby="force-stop-title" aria-describedby="force-stop-description force-stop-warning">
+      <form id="force-stop-form" class="settings-body">
+        <h2 id="force-stop-title">强制停止任务</h2>
+        <p id="force-stop-description">立即中断当前会话：正在生成的回答会被截断，正在执行的命令与子任务会被杀掉，本轮未完成的产出丢失。</p>
+        <p id="force-stop-warning">不急的话选「安全停止」：等当前这一步跑完再停，已完成的内容全部保留。目标模式下两种停止都会先保留目标进度（由 Goal 安全暂停落定）。</p>
+        <div class="dialog-actions"><button type="button" id="force-stop-cancel" class="secondary" autofocus>取消</button><button id="force-stop-submit" class="danger">确认强停</button></div>
       </form>
     </dialog>
     <div id="task-overlays"></div>
