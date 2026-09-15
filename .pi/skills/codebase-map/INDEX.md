@@ -1,19 +1,20 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/14 15:43:36）
+# Axiom 多级代码索引（生成于 2026/9/14 19:02:26）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| public/answer-tags.js | 48 | 主代理回答标签解析、代码保护与流式容错 | OPEN, CLOSE, splitAnswer |
+| public/answer-tags.js | 47 | 主代理回答标签解析、代码保护与流式容错 | OPEN, CLOSE, isMark, splitAnswer |
 | public/app.js | 3569 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | questionUI, filePicker, $, ws |
 | public/file-picker.css | 276 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 355 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/goal.css | 239 | Goal 目标面板、轮次与控制样式 | - |
 | public/goal.js | 642 | Goal 专属状态、操作与复用消息轮次分组 | createGoalUI |
 | public/index.html | 356 | 页面骨架与元素 id（见 L3） | - |
+| public/markdown-scan.js | 72 | 共享代码区扫描：围栏/缩进/行内代码掩码与区间切割 | FILL, FENCE, INLINE, fill |
 | public/markdown.js | 317 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, textLanguages, isText |
-| public/memory-tags.js | 111 | 主子代理共享简单标签提取与流式显示过滤 | TAGS, NAMES, TAG, OPEN |
+| public/memory-tags.js | 107 | 主子代理共享简单标签提取与流式显示过滤 | LIVE, DEAD, TAGS, NAMES |
 | public/model-auth.js | 97 | 网页登录：授权提示、设备码、凭据输入与取消 | createModelAuth |
 | public/model-manager.css | 520 | 模型配置页：供应商列表、编辑表单与响应式布局 | - |
 | public/model-manager.js | 1278 | 统一模型管理：供应商、字段覆盖与思考等级编辑 | THINKING_LEVELS, API_TYPES, PROVIDER_TEMPLATES, PROVIDER_ID |
@@ -35,15 +36,15 @@
 | scripts/service.mjs | 619 | 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道 | root, output, run, npmRun |
 | scripts/uninstall.mjs | 18 | 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据 | uninstall |
 | src/capabilities.js | 138 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
-| src/compaction.js | 375 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
+| src/compaction.js | 391 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
 | src/database.js | 103 | 共享 SQLite 连接、小配置 KV、WAL 与一致性备份 | nodeOk, Database |
-| src/goal.js | 1024 | Goal：会话级目标状态、轮次计划、验收门与持久化 | GOAL_PHASES, GOAL_ACTIONS, ROUND_STATUSES, GOAL_MAX_SEGMENTS |
+| src/goal.js | 1025 | Goal：会话级目标状态、轮次计划、验收门与持久化 | GOAL_PHASES, GOAL_ACTIONS, ROUND_STATUSES, GOAL_MAX_SEGMENTS |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
 | src/main.js | 122 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, home, database |
 | src/model-auth.js | 89 | SDK 登录桥：连接隔离、超时取消与安全事件投影 | safeUrl, text, eventView, createModelAuthService |
 | src/model-config.js | 619 | Pi models.json 无损配置读写与共享收藏持久化 | sdkModelConfig, sdkResolveConfigValue, digest, LEVELS |
 | src/pi-model-storage.js | 409 | 模型与凭据 SQLite 权威存储、Pi 派生兼容文件 | sdkResolveConfigValue, sdkIsCommandConfigValue, NAMESPACE, AUTH_NAMESPACE |
-| src/pi.js | 509 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, queueStateOf, hasModelOutput, withdrawQueue |
+| src/pi.js | 510 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, queueStateOf, hasModelOutput, withdrawQueue |
 | src/prompts.js | 35 | Axiom 自有提示词按 main/subagent/compaction 角色集中维护 | USER_COMMUNICATION, DELEGATION_PROMPT, TITLE_INSTRUCTION, SUBAGENT_PROMPT |
 | src/protocol.js | 363 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/questions.js | 86 | 主代理 question 工具、参数校验与可取消的回答等待 | text, option, input, questionAnswers |
@@ -54,13 +55,13 @@
 | src/session-store.js | 479 | 会话三表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, TABLES, INDEXES |
 | src/sessions.js | 1575 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | GOAL_TOOL_NAMES, hasRunningTasks, BROWSE_PAGE, SEARCH_LIMIT |
 | src/task-budget.js | 35 | 主子代理轮次预算规则、收尾提示词与配置页参数校验 | TASK_BUDGET_LIMITS, taskBudgetDefaults, within, taskBudgetPolicy |
-| src/tasks.js | 209 | Tasks：子任务（委托）生命周期 | ACTIVE, historyResult, Tasks |
+| src/tasks.js | 210 | Tasks：子任务（委托）生命周期 | ACTIVE, historyResult, Tasks |
 | src/tools.js | 110 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
 | tests/__pycache__/goal-ui.cpython-312.pyc | 165 | node --test 测试（npm test） | - |
 | tests/activity-groups-ui.py | 201 | node --test 测试（npm test） | activityHistory, sessions |
-| tests/answer-tags.test.js | 29 | node --test 测试（npm test） | open |
-| tests/app.test.js | 1823 | node --test 测试（npm test） | pickerSource, modelSources, serviceSource |
+| tests/answer-tags.test.js | 48 | node --test 测试（npm test） | open |
+| tests/app.test.js | 1820 | node --test 测试（npm test） | pickerSource, modelSources, serviceSource |
 | tests/autoscroll-ui.py | 99 | node --test 测试（npm test） | - |
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
@@ -70,7 +71,7 @@
 | tests/compaction-config.test.js | 113 | node --test 测试（npm test） | - |
 | tests/compaction-ui.py | 57 | node --test 测试（npm test） | - |
 | tests/compaction-ui.test.js | 187 | node --test 测试（npm test） | page |
-| tests/compaction.test.js | 802 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
+| tests/compaction.test.js | 823 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
 | tests/config.test.js | 300 | node --test 测试（npm test） | - |
 | tests/context-menu-ui.py | 66 | node --test 测试（npm test） | - |
 | tests/conversation-preview.mjs | 124 | node --test 测试（npm test） | markdown, message, thinking, state |
@@ -86,30 +87,31 @@
 | tests/goal-sessions.test.js | 711 | node --test 测试（npm test） | PLAN, factoryFixture, tick, until |
 | tests/goal-ui.py | 488 | node --test 测试（npm test） | - |
 | tests/goal-ui.test.js | 429 | node --test 测试（npm test） | page, $, labels, messages |
-| tests/goal.test.js | 761 | node --test 测试（npm test） | ROUND, GOAL, PLAN, PLAN2 |
+| tests/goal.test.js | 853 | node --test 测试（npm test） | ROUND, GOAL, PLAN, PLAN2 |
 | tests/helpers/model-concurrency-child.mjs | 82 | node --test 测试（npm test） | barrier, runOpponent |
+| tests/helpers/public-source.js | 10 | node --test 测试（npm test） | publicSource |
 | tests/image-input.test.js | 169 | node --test 测试（npm test） | pngBase64, jpegBase64, image, parsePrompt |
 | tests/inline-images.test.js | 42 | node --test 测试（npm test） | text, a, b, user |
 | tests/install.test.js | 150 | node --test 测试（npm test） | fakeService |
 | tests/manual-retry.test.js | 197 | node --test 测试（npm test） | session, assistant, page, message |
 | tests/markdown.test.js | 214 | node --test 测试（npm test） | - |
 | tests/memory-preview.mjs | 22 | node --test 测试（npm test） | state, sessions, app |
-| tests/memory-tags.test.js | 83 | node --test 测试（npm test） | - |
+| tests/memory-tags.test.js | 115 | node --test 测试（npm test） | - |
 | tests/memory-ui.test.js | 123 | node --test 测试（npm test） | page |
 | tests/message-activity.test.js | 427 | node --test 测试（npm test） | page, assistant, thought, call |
 | tests/mobile-reading-ui.py | 130 | node --test 测试（npm test） | - |
 | tests/model-auth.test.js | 133 | node --test 测试（npm test） | SECRET, fakeAuth, waitFor, noLeak |
 | tests/model-config.test.js | 1159 | node --test 测试（npm test） | sha, EMPTY, tempDir, openDatabases |
 | tests/model-manager.test.js | 1229 | node --test 测试（npm test） | authSource, source, tick, j |
-| tests/model-onboarding-ui.test.js | 153 | node --test 测试（npm test） | stripImports, modelSources, pickerSource, memoryTagsSource |
+| tests/model-onboarding-ui.test.js | 154 | node --test 测试（npm test） | stripImports, modelSources, pickerSource, memoryTagsSource |
 | tests/model-onboarding.test.js | 55 | node --test 测试（npm test） | - |
 | tests/model-picker.test.js | 311 | node --test 测试（npm test） | source, tick, nap, OPTS |
 | tests/model-runtime-catalog.test.js | 27 | node --test 测试（npm test） | - |
 | tests/model-selection-preview.mjs | 52 | node --test 测试（npm test） | home, catalog, factory, sessions |
 | tests/model-selection-ui.py | 60 | node --test 测试（npm test） | - |
 | tests/model-settings-ui.py | 44 | node --test 测试（npm test） | - |
-| tests/model-thinking-favorites.test.js | 121 | node --test 测试（npm test） | appSource, pickerSource, modelSources, html |
-| tests/pi-memory.test.js | 168 | node --test 测试（npm test） | - |
+| tests/model-thinking-favorites.test.js | 122 | node --test 测试（npm test） | appSource, pickerSource, modelSources, html |
+| tests/pi-memory.test.js | 171 | node --test 测试（npm test） | - |
 | tests/pi-model-storage.test.js | 624 | node --test 测试（npm test） | tempDir, makeStorage, seedPiModels, seedPiAuth |
 | tests/pi-question.test.js | 197 | node --test 测试（npm test） | - |
 | tests/presets.test.js | 112 | node --test 测试（npm test） | makeFactory |
@@ -146,7 +148,7 @@
 | tests/task-notifications.test.js | 197 | node --test 测试（npm test） | factoryFixture, tick, until |
 | tests/task-resume.test.js | 182 | node --test 测试（npm test） | fakeAgent, fixture, restored |
 | tests/task-timer.test.js | 55 | node --test 测试（npm test） | factory, state, settle |
-| tests/tasks.test.js | 118 | node --test 测试（npm test） | fixture |
+| tests/tasks.test.js | 132 | node --test 测试（npm test） | fixture |
 | tests/text-diagram-ui.py | 36 | node --test 测试（npm test） | - |
 | tests/tooltip.test.js | 282 | node --test 测试（npm test） | source, boot, fire, tip |
 | tests/ui-sticky-check.html | 63 | node --test 测试（npm test） | checks, lines, ok |
@@ -155,17 +157,18 @@
 | tests/update.test.js | 38 | node --test 测试（npm test） | old |
 | tests/workspace-isolation.test.js | 80 | node --test 测试（npm test） | - |
 | tests/workspace-picker.test.js | 99 | node --test 测试（npm test） | - |
-| tests/workspace-tabs.test.js | 234 | node --test 测试（npm test） | appSource, pickerSource, modelSources, html |
+| tests/workspace-tabs.test.js | 235 | node --test 测试（npm test） | appSource, pickerSource, modelSources, html |
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
-### public/answer-tags.js（48 行） — 主代理回答标签解析、代码保护与流式容错
+### public/answer-tags.js（47 行） — 主代理回答标签解析、代码保护与流式容错
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| OPEN | const | 2 |
-| CLOSE | const | 3 |
-| splitAnswer | function | 5 |
+| OPEN | const | 6 |
+| CLOSE | const | 7 |
+| isMark | const | 9 |
+| splitAnswer | function | 11 |
 
 ### public/app.js（3569 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
@@ -470,6 +473,17 @@
 |---|---|---|
 | createGoalUI | function | 9 |
 
+### public/markdown-scan.js（72 行） — 共享代码区扫描：围栏/缩进/行内代码掩码与区间切割
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| FILL | const | 13 |
+| FENCE | const | 15 |
+| INLINE | const | 17 |
+| fill | const | 18 |
+| maskCode | function | 21 |
+| cutSpans | function | 53 |
+
 ### public/markdown.js（317 行） — marked + DOMPurify 渲染（XSS 边界）
 
 | 符号 | 类型 | 行 |
@@ -493,25 +507,29 @@
 | jsonControls | function | 173 |
 | renderMarkdown | function | 212 |
 
-### public/memory-tags.js（111 行） — 主子代理共享简单标签提取与流式显示过滤
+### public/memory-tags.js（107 行） — 主子代理共享简单标签提取与流式显示过滤
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| TAGS | const | 8 |
-| NAMES | const | 9 |
-| TAG | const | 11 |
-| OPEN | const | 12 |
-| CLOSE | const | 13 |
-| MARKS | const | 14 |
-| FENCE | const | 15 |
-| INLINE_CODE | const | 17 |
-| HOLE | const | 19 |
-| MASK | const | 23 |
-| maskInlineCode | function | 24 |
-| unmaskInlineCode | const | 29 |
-| segments | function | 35 |
-| extractMemoryTags | function | 50 |
-| stripMemoryTags | function | 69 |
+| LIVE | const | 9 |
+| DEAD | const | 11 |
+| TAGS | const | 12 |
+| NAMES | const | 13 |
+| TAG | const | 15 |
+| OPEN | const | 16 |
+| CLOSE | const | 17 |
+| MARKS | const | 18 |
+| TITLE_MAX | const | 19 |
+| PARENT | const | 21 |
+| HOLE | const | 23 |
+| hide | const | 24 |
+| sanitize | const | 26 |
+| headLine | function | 29 |
+| inHead | const | 37 |
+| inParent | function | 39 |
+| attributedOpen | const | 48 |
+| extractMemoryTags | function | 52 |
+| stripMemoryTags | function | 72 |
 
 ### public/model-auth.js（97 行） — 网页登录：授权提示、设备码、凭据输入与取消
 
@@ -748,22 +766,23 @@
 | refreshProjectSkills | function | 95 |
 | capabilityLoader | function | 105 |
 
-### src/compaction.js（375 行） — 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交
+### src/compaction.js（391 行） — 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| contextTokens | function | 21 |
-| prepareBackgroundCompaction | function | 28 |
-| DEFAULT_COMPACTION_CONFIG | const | 55 |
-| normalizeCompaction | function | 57 |
-| overCompactionThreshold | function | 61 |
-| entryIdFor | function | 67 |
-| summarizedEntryIds | function | 80 |
-| parseSummaryOutput | function | 98 |
-| throwIfAborted | function | 111 |
-| summarizeWithPiSession | function | 115 |
-| throwIfAborted | method | 116 |
-| createBackgroundCompaction | function | 189 |
+| contextTokens | function | 22 |
+| prepareBackgroundCompaction | function | 29 |
+| DEFAULT_COMPACTION_CONFIG | const | 56 |
+| normalizeCompaction | function | 58 |
+| overCompactionThreshold | function | 62 |
+| entryIdFor | function | 68 |
+| summarizedEntryIds | function | 81 |
+| COMPACT_MAX | const | 102 |
+| parseSummaryOutput | function | 103 |
+| throwIfAborted | function | 127 |
+| summarizeWithPiSession | function | 131 |
+| throwIfAborted | method | 132 |
+| createBackgroundCompaction | function | 205 |
 
 ### src/database.js（103 行） — 共享 SQLite 连接、小配置 KV、WAL 与一致性备份
 
@@ -779,68 +798,68 @@
 | exec | method | 95 |
 | close | method | 99 |
 
-### src/goal.js（1024 行） — Goal：会话级目标状态、轮次计划、验收门与持久化
+### src/goal.js（1025 行） — Goal：会话级目标状态、轮次计划、验收门与持久化
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| GOAL_PHASES | const | 38 |
-| GOAL_ACTIONS | const | 41 |
-| ROUND_STATUSES | const | 43 |
-| GOAL_MAX_SEGMENTS | const | 45 |
-| ROUND_MARKER | const | 47 |
-| GOAL_MARKER | const | 48 |
-| MARKERS | const | 49 |
-| FENCE | const | 50 |
-| SUMMARY_MAX | const | 51 |
-| NON_EVIDENCE_TOOLS | const | 53 |
-| ACTIVE_TASKS | const | 54 |
-| outsideFences | function | 57 |
+| GOAL_PHASES | const | 41 |
+| GOAL_ACTIONS | const | 44 |
+| ROUND_STATUSES | const | 46 |
+| GOAL_MAX_SEGMENTS | const | 48 |
+| ROUND_MARKER | const | 50 |
+| GOAL_MARKER | const | 51 |
+| MARKER_TOKENS | const | 54 |
+| SUMMARY_MAX | const | 55 |
+| NON_EVIDENCE_TOOLS | const | 57 |
+| ACTIVE_TASKS | const | 58 |
+| signalLines | function | 63 |
 | parseGoalMarkers | function | 74 |
-| stripGoalMarkers | function | 86 |
-| messageText | const | 101 |
-| normCriterion | const | 105 |
-| firstLine | const | 106 |
-| normalizeToolResult | const | 108 |
-| TABLE | const | 121 |
-| createGoalStore | function | 127 |
-| GoalStore | class | 131 |
-| constructor | method | 136 |
-| load | method | 147 |
-| save | method | 158 |
-| remove | method | 168 |
-| list | method | 177 |
-| planText | const | 192 |
-| planRound | const | 193 |
-| planSchema | const | 198 |
-| evidenceItem | const | 205 |
-| evidenceSchema | const | 211 |
-| field | const | 216 |
-| list | const | 217 |
-| result | const | 218 |
-| bullets | const | 219 |
-| Goal | class | 223 |
-| constructor | method | 232 |
-| snapshot | method | 248 |
-| evidence | method | 274 |
-| failure | method | 279 |
-| context | method | 284 |
-| submitPlan | method | 348 |
-| planTool | method | 381 |
-| blockTool | method | 420 |
-| progressTool | method | 431 |
-| verificationTool | method | 444 |
-| submitEvidence | method | 485 |
-| noteToolResult | method | 546 |
-| action | method | 554 |
-| onReply | method | 572 |
-| pauseAtSafePoint | method | 615 |
-| fail | method | 627 |
-| settle | method | 635 |
-| whenSettled | method | 641 |
-| freeze | method | 647 |
-| exit | method | 657 |
-| remove | method | 666 |
-| supplyObjective | method | 706 |
+| stripGoalMarkers | function | 88 |
+| messageText | const | 96 |
+| normCriterion | const | 100 |
+| bodyText | const | 103 |
+| firstLine | const | 104 |
+| normalizeToolResult | const | 106 |
+| TABLE | const | 119 |
+| createGoalStore | function | 125 |
+| GoalStore | class | 129 |
+| constructor | method | 134 |
+| load | method | 145 |
+| save | method | 156 |
+| remove | method | 166 |
+| list | method | 175 |
+| planText | const | 190 |
+| planRound | const | 191 |
+| planSchema | const | 196 |
+| evidenceItem | const | 203 |
+| evidenceSchema | const | 209 |
+| field | const | 214 |
+| list | const | 215 |
+| result | const | 216 |
+| bullets | const | 217 |
+| Goal | class | 221 |
+| constructor | method | 230 |
+| snapshot | method | 246 |
+| evidence | method | 272 |
+| failure | method | 277 |
+| context | method | 282 |
+| submitPlan | method | 349 |
+| planTool | method | 382 |
+| blockTool | method | 421 |
+| progressTool | method | 432 |
+| verificationTool | method | 445 |
+| submitEvidence | method | 486 |
+| noteToolResult | method | 547 |
+| action | method | 555 |
+| onReply | method | 573 |
+| pauseAtSafePoint | method | 616 |
+| fail | method | 629 |
+| settle | method | 637 |
+| whenSettled | method | 643 |
+| freeze | method | 649 |
+| exit | method | 659 |
+| remove | method | 668 |
+| supplyObjective | method | 708 |
 
 ### src/inline-images.js（32 行） — 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列
 
@@ -929,18 +948,18 @@
 | isPlainObject | method | 43 |
 | createPiModelStorage | function | 51 |
 
-### src/pi.js（509 行） — createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）
+### src/pi.js（510 行） — createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| agentRuntime | function | 16 |
-| queueStateOf | function | 32 |
-| hasModelOutput | function | 51 |
-| withdrawQueue | function | 61 |
-| recallLastMessage | function | 71 |
-| CHECKPOINT_BOUNDARY | const | 99 |
-| memoryExtension | function | 109 |
-| createPiFactory | function | 134 |
+| agentRuntime | function | 15 |
+| queueStateOf | function | 31 |
+| hasModelOutput | function | 50 |
+| withdrawQueue | function | 60 |
+| recallLastMessage | function | 70 |
+| CHECKPOINT_BOUNDARY | const | 98 |
+| memoryExtension | function | 108 |
+| createPiFactory | function | 133 |
 
 ### src/prompts.js（35 行） — Axiom 自有提示词按 main/subagent/compaction 角色集中维护
 
@@ -1172,26 +1191,26 @@
 | within | const | 15 |
 | taskBudgetPolicy | function | 22 |
 
-### src/tasks.js（209 行） — Tasks：子任务（委托）生命周期
+### src/tasks.js（210 行） — Tasks：子任务（委托）生命周期
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| ACTIVE | const | 5 |
-| historyResult | const | 8 |
-| Tasks | class | 17 |
-| constructor | method | 18 |
-| start | method | 26 |
-| snapshotJob | method | 42 |
-| publish | method | 51 |
-| view | method | 56 |
-| retryable | method | 63 |
-| snapshot | method | 68 |
-| run | method | 72 |
-| read | method | 149 |
-| retry | method | 157 |
-| append | method | 176 |
-| cancel | method | 186 |
-| interrupt | method | 202 |
+| ACTIVE | const | 4 |
+| historyResult | const | 7 |
+| Tasks | class | 16 |
+| constructor | method | 17 |
+| start | method | 25 |
+| snapshotJob | method | 41 |
+| publish | method | 50 |
+| view | method | 57 |
+| retryable | method | 64 |
+| snapshot | method | 69 |
+| run | method | 73 |
+| read | method | 150 |
+| retry | method | 158 |
+| append | method | 177 |
+| cancel | method | 187 |
+| interrupt | method | 203 |
 
 ### src/tools.js（110 行） — delegationTools：委托/凭证读取/追加工具定义（zod 入参）
 
@@ -1220,19 +1239,19 @@
 | activityHistory | const | 16 |
 | sessions | const | 27 |
 
-### tests/answer-tags.test.js（29 行） — node --test 测试（npm test）
+### tests/answer-tags.test.js（48 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | open | const | 5 |
 
-### tests/app.test.js（1823 行） — node --test 测试（npm test）
+### tests/app.test.js（1820 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| pickerSource | const | 9 |
-| modelSources | const | 10 |
-| serviceSource | const | 15 |
+| pickerSource | const | 10 |
+| modelSources | const | 11 |
+| serviceSource | const | 16 |
 
 ### tests/autostart.test.js（71 行） — node --test 测试（npm test）
 
@@ -1267,35 +1286,35 @@
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| page | function | 10 |
+| page | function | 11 |
 | restore | method | 39 |
 
-### tests/compaction.test.js（802 行） — node --test 测试（npm test）
+### tests/compaction.test.js（823 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| fakeModel | const | 83 |
-| createTestSession | function | 96 |
-| seq | const | 113 |
-| userMsg | const | 114 |
-| assistantMsg | const | 115 |
-| big | const | 121 |
-| seed | function | 123 |
-| settle | const | 128 |
-| waitFor | function | 130 |
-| enabledConfig | const | 138 |
-| fakeSummarize | function | 147 |
-| startHangingLlmServer | function | 155 |
-| startFakeLlmServer | function | 178 |
-| zodError | method | 235 |
-| zodError | method | 236 |
-| zodError | method | 237 |
-| zodError | method | 238 |
-| zodError | method | 239 |
-| zodError | method | 240 |
-| hangingSummarize | function | 565 |
-| createLoopSession | function | 662 |
-| writeFileSync | method | 663 |
+| fakeModel | const | 104 |
+| createTestSession | function | 117 |
+| seq | const | 134 |
+| userMsg | const | 135 |
+| assistantMsg | const | 136 |
+| big | const | 142 |
+| seed | function | 144 |
+| settle | const | 149 |
+| waitFor | function | 151 |
+| enabledConfig | const | 159 |
+| fakeSummarize | function | 168 |
+| startHangingLlmServer | function | 176 |
+| startFakeLlmServer | function | 199 |
+| zodError | method | 256 |
+| zodError | method | 257 |
+| zodError | method | 258 |
+| zodError | method | 259 |
+| zodError | method | 260 |
+| zodError | method | 261 |
+| hangingSummarize | function | 586 |
+| createLoopSession | function | 683 |
+| writeFileSync | method | 684 |
 
 ### tests/conversation-preview.mjs（124 行） — node --test 测试（npm test）
 
@@ -1398,7 +1417,7 @@
 | labels | const | 52 |
 | messages | const | 53 |
 
-### tests/goal.test.js（761 行） — node --test 测试（npm test）
+### tests/goal.test.js（853 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1423,6 +1442,12 @@
 | writeSync | method | 12 |
 | runOpponent | function | 17 |
 | createInterface | method | 29 |
+
+### tests/helpers/public-source.js（10 行） — node --test 测试（npm test）
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| publicSource | const | 5 |
 
 ### tests/image-input.test.js（169 行） — node --test 测试（npm test）
 
@@ -1453,14 +1478,14 @@
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| session | const | 11 |
-| assistant | const | 12 |
-| dropFailedAssistant | method | 27 |
-| dropFailedAssistant | method | 31 |
-| dropFailedAssistant | method | 34 |
-| finish | method | 61 |
-| finish | method | 82 |
-| page | function | 98 |
+| session | const | 12 |
+| assistant | const | 13 |
+| dropFailedAssistant | method | 28 |
+| dropFailedAssistant | method | 32 |
+| dropFailedAssistant | method | 35 |
+| finish | method | 62 |
+| finish | method | 83 |
+| page | function | 99 |
 | restore | method | 128 |
 | message | const | 132 |
 | prompt | const | 133 |
@@ -1477,14 +1502,14 @@
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| page | function | 13 |
+| page | function | 14 |
 | restore | method | 43 |
 
 ### tests/message-activity.test.js（427 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| page | function | 10 |
+| page | function | 11 |
 | restore | method | 39 |
 | assistant | const | 43 |
 | thought | const | 44 |
@@ -1578,17 +1603,17 @@
 | confirmDialog | method | 1182 |
 | confirmDialog | method | 1214 |
 
-### tests/model-onboarding-ui.test.js（153 行） — node --test 测试（npm test）
+### tests/model-onboarding-ui.test.js（154 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| stripImports | const | 8 |
-| modelSources | const | 9 |
-| pickerSource | const | 14 |
-| memoryTagsSource | const | 15 |
-| appSource | const | 16 |
-| config | const | 18 |
-| harness | const | 19 |
+| stripImports | const | 9 |
+| modelSources | const | 10 |
+| pickerSource | const | 15 |
+| memoryTagsSource | const | 16 |
+| appSource | const | 17 |
+| config | const | 19 |
+| harness | const | 20 |
 
 ### tests/model-picker.test.js（311 行） — node --test 测试（npm test）
 
@@ -1622,20 +1647,20 @@
 | port | const | 42 |
 | close | function | 44 |
 
-### tests/model-thinking-favorites.test.js（121 行） — node --test 测试（npm test）
+### tests/model-thinking-favorites.test.js（122 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| appSource | const | 9 |
-| pickerSource | const | 10 |
-| modelSources | const | 11 |
-| html | const | 16 |
-| MODEL_KEY | const | 18 |
-| bootPage | function | 20 |
-| click | const | 75 |
-| menu | const | 76 |
-| opts | const | 77 |
-| stars | const | 78 |
+| appSource | const | 10 |
+| pickerSource | const | 11 |
+| modelSources | const | 12 |
+| html | const | 17 |
+| MODEL_KEY | const | 19 |
+| bootPage | function | 21 |
+| click | const | 76 |
+| menu | const | 77 |
+| opts | const | 78 |
+| stars | const | 79 |
 
 ### tests/pi-model-storage.test.js（624 行） — node --test 测试（npm test）
 
@@ -1686,7 +1711,7 @@
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| page | function | 10 |
+| page | function | 11 |
 | modelSources | const | 16 |
 | flush | const | 40 |
 | stubRequest | function | 41 |
@@ -1935,7 +1960,7 @@
 | state | const | 19 |
 | settle | const | 20 |
 
-### tests/tasks.test.js（118 行） — node --test 测试（npm test）
+### tests/tasks.test.js（132 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -2023,18 +2048,18 @@
 |---|---|---|
 | old | const | 8 |
 
-### tests/workspace-tabs.test.js（234 行） — node --test 测试（npm test）
+### tests/workspace-tabs.test.js（235 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| appSource | const | 9 |
-| pickerSource | const | 10 |
-| modelSources | const | 11 |
-| html | const | 16 |
-| state | const | 18 |
-| STATES | const | 23 |
-| bootPage | function | 29 |
-| attachCalls | const | 83 |
+| appSource | const | 10 |
+| pickerSource | const | 11 |
+| modelSources | const | 12 |
+| html | const | 17 |
+| state | const | 19 |
+| STATES | const | 24 |
+| bootPage | function | 30 |
+| attachCalls | const | 84 |
 
 ## L3 横切常量（跨模块定位入口）
 
