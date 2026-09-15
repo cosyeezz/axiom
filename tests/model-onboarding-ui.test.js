@@ -57,7 +57,7 @@ const harness = async () => {
           case "sessions.list": data = sessions.map((s) => ({ ...s, updatedAt: Date.now() })); break;
           case "session.attach": data = sessions.find((s) => s.sessionId === req.sessionId); break;
           case "session.create": { const state = newState(); sessions.push(state); data = state; break; }
-          case "session.presets.list": data = { presets: [] }; break;
+          case "session.defaults.list": data = { workspaces: [] }; break;
           case "capabilities.list": data = { needsTrust: false, warnings: [], skills: [], mcp: [], plugins: [] }; break;
           case "session.defaults.get": data = { model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null }; break;
           default: data = {};

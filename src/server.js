@@ -369,14 +369,11 @@ export function createServerApp(sessions, service = {}) {
             case "session.defaults.configure":
               data = await sessions.configureDefaults(request.cwd, request);
               break;
-            case "session.presets.list":
-              data = await sessions.listPresets();
+            case "session.defaults.list":
+              data = sessions.listDefaults();
               break;
-            case "session.presets.save":
-              data = await sessions.savePreset(request);
-              break;
-            case "session.presets.delete":
-              data = await sessions.deletePreset(request.presetId);
+            case "session.defaults.delete":
+              data = await sessions.deleteDefaults(request.cwd);
               break;
             case "session.create": {
               const id = await sessions.create(request.cwd, request);

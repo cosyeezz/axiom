@@ -79,14 +79,6 @@ export const taskBudget = z.object({
   maxTurns: z.number().int().min(TASK_BUDGET_LIMITS.turns[0]).max(TASK_BUDGET_LIMITS.turns[1]),
   wrapUpWindow: z.number().int().min(TASK_BUDGET_LIMITS.window[0]).max(TASK_BUDGET_LIMITS.window[1]),
 }).strict();
-// 具名会话预设：沿用 selection schema；trustProject/useDefaults 不在 schema 内，保存即剥离。
-export const preset = z.object({
-  id: z.string().uuid(),
-  name: z.string().trim().min(1).max(80),
-  cwd: workspace,
-  selection,
-}).strict();
-export const presetStore = z.object({ presets: z.array(preset) }).strict();
 // —— 模型配置（models.json）与收藏，协议：docs/model-config-protocol.md ——
 export const providerKey = z
   .string()
@@ -288,22 +280,13 @@ export const command = z.discriminatedUnion("type", [
     id, type: z.literal("capabilities.list"),
     cwd: workspace, trustProject: z.boolean().optional(),
   }).strict(),
+  // 会话默认配置：带 cwd 读写该工作目录的独立配置，不带 cwd 读写全局兜底；list/delete 管理目录条目。
   z.object({ id, type: z.literal("session.defaults.get"), cwd: workspace }).strict(),
   selection.extend({ id, type: z.literal("session.defaults.configure"), cwd: workspace }).strict(),
+  z.object({ id, type: z.literal("session.defaults.list") }).strict(),
+  z.object({ id, type: z.literal("session.defaults.delete"), cwd: z.string().trim().min(1).max(4096) }).strict(),
   z.object({ id, type: z.literal("task.budget.get") }).strict(),
   z.object({ id, type: z.literal("task.budget.configure"), budget: taskBudget }).strict(),
-  z.object({ id, type: z.literal("session.presets.list") }).strict(),
-  z
-    .object({
-      id,
-      type: z.literal("session.presets.save"),
-      presetId: z.string().uuid().optional(),
-      name: z.string().trim().min(1).max(80),
-      cwd: workspace,
-      selection,
-    })
-    .strict(),
-  z.object({ id, type: z.literal("session.presets.delete"), presetId: z.string().uuid() }).strict(),
   z
     .object({
       id,

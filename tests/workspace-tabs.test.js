@@ -68,7 +68,7 @@ async function bootPage(url, { hash, session, local } = {}) {
             data = state("recovered", "恢复的会话", req.cwd);
             STATES.set(data.sessionId, data);
             break;
-          case "session.presets.list": data = { presets: [] }; break;
+          case "session.defaults.list": data = { workspaces: [] }; break;
           default: data = {};
         }
         this.receive({ type: "response", id: req.id, ok: true, data });
