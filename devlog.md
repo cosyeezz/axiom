@@ -2049,3 +2049,16 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 决策：Vite 8.3.0 仅devDependency，独立5173代理隔离4320；业务WS和开发WS分离，前端不管理后端进程。先校验同源再改写代理头；正式CSP不动，开发限定样式注入与loopback维护访问。
 - 有意阶段性收窄：草稿、附件、阅读锚点尚无可靠跨刷新保存，暂停JS/HTML整页自动刷新并明确提示，未冒称无损HMR。保留CSS热替换，不额外造保存框架或业务reload协议。
 - 验证：分区提交全量608通过/0失败/2跳过；Vite专项通过，真实Chromium验证CSS保留草稿和页面、JS刷新暂停、后端身份不变。最终全量另行复跑。
+## 2026-06-01 — WebSocket 基础设施收口
+
+- 原因：app.js 的 socket/pending/重连/事件水位分散，回执到快照渲染有空窗；广播与删除通知绕过缓冲限制，监听异常能冒泡进业务。
+- 内容：新增 public/transport.js、src/transport.js；app.js 删除旧 ws、pending、requestSeq、reconnectTimer、acceptEventSeq、snapshotQueue 与 drainSnapshotQueue，统一由通信层持有连接、清理请求、提交水位和订阅；server.js 所有发送接入 sender，快照携带 instanceId，拒绝过时 attach；sessions.js 隔离同步/异步监听失败。
+- 入口清单：登录 -> transport.connect；所有页面 request（含注入 question/file-picker/model-manager/service-settings）-> transport.request；models.* -> subscribe；snapshot -> begin/commit/failSnapshot；服务端回执/会话事件 -> sender.send，模型广播/删除通知 -> sender.broadcast。
+- 决策：不加依赖、不加第二条业务连接、不加应用优先级队列，不改协议 seq 含义。归并失败停止后续事件并受控重快照，不再吞错推进；32 MiB 单帧上限会限制超大历史快照，明确留给 05 分页恢复，不用无限重下载掩盖限制。自动恢复上限 5 次，维护超过窗口后手动恢复。
+- 复核修复：断线作废旧渲染尾部；等待旧初始化退出再建新连接；重连坏会话回落初始化；跨工作空间打开后恢复本页订阅；bfcache pagehide 不销毁通信层；1009 清空队列。
+- 测试：新增 tests/realtime-transport.test.js，迁移 public-source 夹具与 app/goal/model/remote/snapshot 集成用例；全量 npm test 验证，未运行真实业务服务或模型，未安装依赖（仅 junction 复用已有 node_modules）。同步 README 与 codebase-map 架构/模块索引。
+
+## 2026-09-15 功能分支同步最新 master 与最终复验
+- 合入 origin/master 的03连接基础设施；冲突保留 createTransport 唯一连接/水位/快照队列，删除本分支被替代的 appliedSeq/acceptEventSeq/旧WS监听，区域可用性接 onState；非bfcache离页释放 modelPicker。
+- 最终合并后全量616通过、0失败、2跳过；两组真实Chromium专项均通过。仅推送 feat/frontend-regions，按统一集成例外保留 worktree，不改动/推送 master。
+- 未完成：JS/HTML自动刷新与跨刷新完整保存（当前明确暂停）；Electron成品验收和真实模型长流性能采集。

@@ -93,11 +93,11 @@ function boot(state = longState()) {
   window.eval([
     modelSources, pickerSource, pageSource, answerSource,
     "window.__app = {" +
-    " state: () => ({ connected, connecting, sessionId, queue: snapshotQueue })," +
+    " state: () => ({ connected, connecting: ['connecting', 'restoring'].includes(transport.getConnectionState()), sessionId, queue: transport.getSnapshotQueue() })," +
     " views, snapshot," +
     " watermark: (id) => appliedSeq.get(id)," +
     " failPlacement: () => { const original = placeSnapshotMessage; placeSnapshotMessage = () => { throw new Error('分片渲染失败'); }; return () => { placeSnapshotMessage = original; }; }," +
-    " stopReconnect: () => clearTimeout(reconnectTimer) };",
+    " stopReconnect: () => {}, dispose: () => transport.dispose() };",
   ].join("\n"));
   return {
     dom, window, $, app: window.__app, requests, sockets, chunks,
@@ -116,7 +116,7 @@ async function until(predicate, label) {
 
 test("登录恢复：首片调度前显示 workspace，但连接与发送保持未开放", async (t) => {
   const { dom, $, app, requests, sockets, chunks, runChunk } = boot();
-  const close = () => { app.stopReconnect(); dom.window.close(); };
+  const close = () => { app.dispose(); dom.window.close(); };
   t.after(close);
   try {
     // 断线重连时页面上残留的旧会话内容：身份切换必须先清掉它，再显示首屏。
@@ -167,7 +167,7 @@ test("登录恢复：首片调度前显示 workspace，但连接与发送保持�
 
 test("登录恢复分片失败：不连接、不可发，错误回到重连入口", async (t) => {
   const { dom, $, app, sockets, chunks, runChunk } = boot();
-  const close = () => { app.stopReconnect(); dom.window.close(); };
+  const close = () => { app.dispose(); dom.window.close(); };
   t.after(close);
   try {
     sockets[0].open();
@@ -187,7 +187,7 @@ test("登录恢复分片失败：不连接、不可发，错误回到重连入�
 
 test("分片中断线重连：新草稿不丢，半截布局的滚动值不覆盖既有阅读位置", async (t) => {
   const { dom, $, app, sockets, chunks, runChunk, paint } = boot();
-  const close = () => { app.stopReconnect(); dom.window.close(); };
+  const close = () => { app.dispose(); dom.window.close(); };
   t.after(close);
   try {
     // 既有视图：该会话上次留下的阅读位置与「暂停跟随」。views 是内存表，必须在首个快照同步阶段前置入。
@@ -210,7 +210,7 @@ test("分片中断线重连：新草稿不丢，半截布局的滚动值不覆�
     // 断线不影响已在飞的分片：它照旧铺完；随后这次登录在死连接上失败退出，回到重连入口。
     for (let guard = 1000; chunks.length && guard-- > 0;) runChunk();
     paint();
-    assert.equal($("transcript").scrollTop, 777, "在飞快照的尾部照样还原既有阅读位置");
+    assert.equal($("transcript").scrollTop, 321, "断线作废旧分片，旧尾部不再修改视图");
     await until(() => !app.state().connecting, "死连接上的登录收尾");
     app.stopReconnect();
     assert.equal(app.views.get("long").scroll, 777, "收尾保存写的是还原后的位置，不是半截布局的中间值");
@@ -236,7 +236,7 @@ test("分片中断线重连：新草稿不丢，半截布局的滚动值不覆�
 
 test("首屏钩子抛错与 beginSnapshot 抛错同路：解阀，不留半成品锁死事件", async (t) => {
   const { dom, app } = boot();
-  const close = () => { app.stopReconnect(); dom.window.close(); };
+  const close = () => { app.dispose(); dom.window.close(); };
   t.after(close);
   try {
     assert.throws(() => app.snapshot(longState(), () => { throw new Error("首屏钩子失败"); }), /首屏钩子失败/);

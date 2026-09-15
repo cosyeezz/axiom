@@ -629,7 +629,7 @@ Axiom 使用数据目录中的 `axiom.db`（Node 内置 SQLite，WAL 模式）�
 
 已删除 `controls()` 及它的全量菜单同步。`updateAvailability()` 仅用于连接/切换等确实影响多区的可用性变化；`syncAll()` 仅保留共享收藏初始化/变化，目录和选中值走单选择器同步。模型缺失显示“当前不可用”，不静默替换；无变化保留节点，目录变化按模型键恢复焦点/滚动。动态表单重建前释放选择器，组件 `dispose(select)` / `dispose()` 清理监听、Observer、定时器与定位规则。
 
-与任务03的订阅入口尚未接线：本分支仍复用已有事件分发；集成时迁移通知入口，不复制消息 reducer。05/06继续拥有历史窗口和流式绘制算法，本改动不替换它们。
+已合入任务03的 `createTransport`：连接生命周期、事件水位和快照队列由它唯一管理，共享收藏/目录通过 `subscribe` 接入；当前会话归并仍走唯一 reducer，不复制消息状态。页面离开（非 bfcache）同时 dispose 连接和选择器。05/06继续拥有历史窗口和流式绘制算法，本改动不替换它们。
 
 隔离验证：`node --test tests/frontend-regions.test.js tests/model-picker.test.js`；真实 Chromium：`python tests/frontend-regions-ui.py`（自动启动随机端口假数据服务，截图位于系统临时目录 `axiom-frontend-regions`）。浏览器输出增长测试直接增加正文 DOM；真实事件路径另由单测覆盖，不宣称已完成真实模型流式压测或 Electron 验收。
 
@@ -648,3 +648,17 @@ Axiom 使用数据目录中的 `axiom.db`（Node 内置 SQLite，WAL 模式）�
 安全边界：Vite 仅绑定 loopback，HTTP/业务 WS 在代理改写头之前拒绝非同源 Origin；生产鉴权/Host/Origin/CSP不变。仅开发维护服务允许固定5173 Origin（token仍必需）；开发CSP仅为CSS注入允许 inline style，并允许loopback维护端口，不允许 inline script/unsafe-eval。Vite仍是开发工具，不应向局域网或公网暴露。
 
 验证：`node --test tests/dev-vite.test.js tests/dev-assets.test.js`；`python tests/dev-vite-ui.py`（串行运行，会临时追加并 finally 恢复本 worktree 的 CSS/JS）。后者验证真实 CSS 更新、草稿与页面身份保留、JS刷新暂停、隔离后端健康身份不变。
+### 实时通信基础层
+
+```text
+app.js 权威归并/视图 <- public/transport.js（唯一业务连接）
+                            | 原生 WebSocket，逻辑订阅不隔离物理带宽
+sessions.js 事件 -> server.js -> src/transport.js（统一发送保护）
+```
+
+- 请求回执统一超时（默认 120 秒）、取消本地等待与清理；断线中的副作用请求标记结果未知，不自动重放。
+- `subscribe(type, {sessionId, agentId}, listener)` 返回退订函数；异步监听者提交前使用 `context.commit`，退订或销毁后不再提交。权威同步归并失败不推进 seq，停止归并并重新恢复。
+- attach/create/import 回执到达即合上事件闸门，渲染成功后提交快照并按到达顺序补放；实例变化清除旧水位。没有额外优先级发送队列，同会话正文与完成事件不逆序。
+- 收发默认上限 32 MiB，快照事件队列最多 10000 条，等待请求最多 256 个；广播与删除通知共用保护，慢客户端单独断开。超大单帧关闭码 1009 停止自动恢复；连续恢复失败最多自动重试 5 次（1/2/4/8/15 秒），之后需手动连接，长时间维护后亦然。
+- 当前全量快照超过 32 MiB 会进入受限状态，手动重试不会缩小快照；这不是历史分页的替代品，05 需接入有界首屏恢复。未宣称大历史/真实高负载验收通过。05 负责历史挂载与滚动，06 只消费权威归并正文，不自行建立连接。
+- 专项回归：`node --test tests/realtime-transport.test.js tests/snapshot*.test.js`，使用假连接与受控快照，不调用模型。

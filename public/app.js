@@ -1,3 +1,4 @@
+import { createTransport } from "./transport.js";
 import { renderMarkdown } from "./markdown.js";
 import { stripMemoryTags } from "./memory-tags.js";
 import { createStreamRenderer } from "./stream-renderer.js";
@@ -14,8 +15,7 @@ const questionUI = createQuestionUI({ root: document.getElementById("question-do
 
 const filePicker = createFilePicker(request);
 const $ = (id) => document.getElementById(id);
-let ws,
-  sessionId,
+let sessionId,
   models = [],
   config,
   runtime,
@@ -169,7 +169,7 @@ function saveView() {
     contextFiles: [...contextFiles],
     images: [...images],
     selectedSkill,
-    scroll: snapshotQueue ? (previous ?? 0) : $("transcript").scrollTop,
+    scroll: transport.getSnapshotQueue() ? (previous ?? 0) : $("transcript").scrollTop,
     follow,
   });
 }
@@ -210,7 +210,7 @@ function readFollow(el, current) {
 const scrollToLatest = (el) => { el.scrollTop = el.scrollHeight; };
 function scrollLatest() {
   scheduleCallGroups();
-  if (changing || snapshotQueue || scrollFrame !== undefined || (!follow && !activeTask?.follow)) return;
+  if (changing || transport.getSnapshotQueue() || scrollFrame !== undefined || (!follow && !activeTask?.follow)) return;
   scrollFrame = requestAnimationFrame(() => {
     scrollFrame = undefined;
     if (changing) return;
@@ -328,12 +328,7 @@ $("mobile-expand").onclick = () => {
   $("mobile-expand").textContent = expanded ? "收起" : "展开";
   if (expanded) invalidatePrompt();
 };
-const pending = new Map(),
-  live = new Map(),
-  tasks = new Map();
-// 非安全上下文（如 Tailscale 的 http://100.x 地址）没有 crypto.randomUUID；
-// 请求 id 只需本页内唯一用于匹配回执，用自增序号即可（协议仅要求非空字符串）。
-let requestSeq = 0;
+const live = new Map(), tasks = new Map();
 function error(e) {
   $("error").textContent = e.message || String(e);
 }
@@ -449,14 +444,7 @@ function paintRaw() {
   if (atBottom) list.scrollTop = list.scrollHeight;
 }
 function request(type, data = {}) {
-  return new Promise((resolve, reject) => {
-    if (ws?.readyState !== WebSocket.OPEN)
-      return reject(new Error("连接已断开，请重新连接"));
-    const id = String(++requestSeq);
-    pending.set(id, { resolve, reject });
-    const command = { id, type, ...data };
-    ws.send(JSON.stringify(command));
-  });
+  return transport.request({ type, ...data });
 }
 // 区域只持有 DOM 更新职责，业务数据仍由 sessionId/config/models 等现有来源提供。
 // 仅包 UI 更新，不包事件归并/快照：权威数据失败必须继续向调用方传播。
@@ -2029,20 +2017,7 @@ function renderRetry(agentId = "main", data, historical = false) {
   placeCompactedRetries();
   scrollLatest();
 }
-function event(message) {
-  // 分片期间外部事件按到达顺序排队，尾部排空时再走水门；否则立即应用。
-  if (snapshotQueue) {
-    snapshotQueue.push(message);
-    return;
-  }
-  applyEvent(message);
-}
 function applyEvent(message) {
-  if (!acceptEventSeq(message)) return;
-  applyAcceptedEvent(message);
-  if (Number.isInteger(message.seq)) appliedSeq.set(message.sessionId, message.seq);
-}
-function applyAcceptedEvent(message) {
   if (message.type === "session.deleted") {
     if (message.sessionId === sessionId) {
       sessionMissing = true;
@@ -2289,8 +2264,6 @@ const SNAPSHOT_SYNC_MESSAGES = 120;
 const SNAPSHOT_CHUNK_MS = 8;
 const SNAPSHOT_CHUNK_ITEMS = 40;
 let snapshotJob = 0;
-let snapshotQueue = null;
-const appliedSeq = new Map();
 function scheduleSnapshotChunk(fn) {
   if (typeof scheduler === "object" && scheduler?.postTask) {
     scheduler.postTask(fn, { priority: "background" });
@@ -2298,21 +2271,13 @@ function scheduleSnapshotChunk(fn) {
   }
   setTimeout(fn, 0);
 }
-// 无 seq 事件（如 session.deleted）不参与水位去重，必须原样放行。
-function acceptEventSeq(message) {
-  if (message.seq == null) return true;
-  const seen = appliedSeq.get(message.sessionId);
-  if (seen != null && message.seq <= seen) return false;
-  return true;
-}
 // onReady 是可选首屏钩子：同步清理旧 DOM、恢复草稿与身份切换完成后、首个分片调度前调用。
 // 长会话的调用方借此提前显示 workspace，让消息边补齐边展示；连接与发送能力仍由调用方
 // 在完整恢复后开放，所以这里只负责“此刻 DOM 已经属于目标会话”这个事实。
 function snapshot(state, onReady) {
   const job = ++snapshotJob;
   const target = state.sessionId;
-  // 新快照接管事件阀：旧片的排队事件已被新快照的 state 覆盖（seq 不会倒退），直接丢弃。
-  snapshotQueue = [];
+  transport.beginSnapshot();
   let ctx;
   try {
     ctx = beginSnapshot(state, target);
@@ -2320,7 +2285,7 @@ function snapshot(state, onReady) {
     // beginSnapshot 抛错时此行不执行：半成品状态不暴露为首屏。
     onReady?.();
   } catch (e) {
-    snapshotQueue = null;
+    transport.failSnapshot();
     throw e;
   }
   if (state.messages.length <= SNAPSHOT_SYNC_MESSAGES) {
@@ -2328,9 +2293,9 @@ function snapshot(state, onReady) {
       for (let index = 0; index < state.messages.length; index++)
         placeSnapshotMessage(ctx, index, state.messages[index]);
       finishSnapshot(job, ctx);
-      drainSnapshotQueue(job);
+      transport.commitSnapshot(state);
     } catch (e) {
-      if (job === snapshotJob) snapshotQueue = null;
+      if (job === snapshotJob) transport.failSnapshot();
       throw e;
     }
     return;
@@ -2356,18 +2321,18 @@ function snapshot(state, onReady) {
           return;
         }
         finishSnapshot(job, ctx);
-        drainSnapshotQueue(job);
+        transport.commitSnapshot(state);
         resolve();
       } catch (e) {
         // 失败半成品不做成功排空：丢弃排队事件，错误由调用方现有入口报告并解除忙态。
-        if (job === snapshotJob) snapshotQueue = null;
+        if (job === snapshotJob) transport.failSnapshot();
         reject(e);
       }
     };
     try {
       scheduleSnapshotChunk(step);
     } catch (e) {
-      if (job === snapshotJob) snapshotQueue = null;
+      if (job === snapshotJob) transport.failSnapshot();
       reject(e);
     }
   });
@@ -2568,70 +2533,70 @@ function finishSnapshot(job, ctx) {
   config.compaction = state.config.compaction || compactionDefaults;
   updateAvailability();
   region("对话展示", () => goalUI.show(sessionId, state.goal, goalAnchors));
-  // 恢复成功后才提交水位；尾部排队事件仍按快照序号去重。
-  if (Number.isInteger(state.seq)) appliedSeq.set(state.sessionId, state.seq);
 }
-// 尾部一次性排空：分片期间排队的事件按到达顺序补放，快照已含的按 seq 水位剔除。
-function drainSnapshotQueue(job) {
-  if (job !== snapshotJob) return;
-  const queued = snapshotQueue;
-  snapshotQueue = null;
-  for (const message of queued) applyEvent(message);
-}
-let reconnectTimer, connecting = false, reconnectDelay = 1000;
-$("login").onsubmit = async (e) => {
+const transport = createTransport({
+  url: () => `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`,
+  reduce: applyEvent,
+  initialize: initializeConnection,
+  onState(state) {
+    if (["connecting", "restoring"].includes(state)) {
+      connected = false;
+    } else if (["disconnected", "closed", "recovering", "limited"].includes(state)) {
+      configureSeq++;
+      connected = false;
+      for (const id of new Set(["main", ...tasks.keys(), ...waitingItems.keys()])) stopActivity(id, "连接断开，等待恢复");
+      if (!$("workspace").hidden) saveView();
+      ++snapshotJob;
+      serviceUi.cancelRestart();
+      serviceUi.watch();
+      $("login").hidden = false;
+      $("connect").disabled = false;
+      if (state === "limited") error("自动恢复已暂停：快照过大或连续恢复失败。请确认服务状态后手动连接。");
+    }
+    updateAvailability();
+    if (["connecting", "restoring"].includes(state)) $("status").textContent = "连接中";
+    if (state === "limited") $("status").textContent = "连接受限，请手动重试";
+  },
+});
+transport.subscribe("models.favorites.changed", {}, (message) => {
+  modelFavorites = message.data;
+  modelPicker.syncAll();
+});
+transport.subscribe("models.config.changed", {}, () => refreshModelCatalog());
+window.addEventListener("pagehide", (event) => {
+  if (event.persisted) return;
+  transport.dispose();
+  modelPicker.dispose();
+});
+$("login").onsubmit = (e) => {
   e.preventDefault();
-  if (connecting || connected) return;
-  clearTimeout(reconnectTimer);
-  connecting = true;
-  connected = false;
-  updateAvailability();
-  $("connect").disabled = true;
-  $("status").textContent = "连接中";
+  void transport.connect().catch((e) => {
+    if (transport.getConnectionState() !== "disposed") error(e);
+  });
+};
+let initialized = false;
+async function initializeConnection({ isCurrent }) {
   $("error").textContent = "";
   let initializingSession = false;
   try {
-    ws = new WebSocket(
-      `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`,
-      ["axiom"],
-    );
-    ws.onmessage = ({ data }) => {
-      const message = JSON.parse(data);
-      if (message.type === "response") {
-        const p = pending.get(message.id);
-        if (p) {
-          pending.delete(message.id);
-          message.ok
-            ? p.resolve(message.data)
-            : p.reject(new Error(message.error));
-        }
-      } else if (message.type === "models.favorites.changed") {
-        modelFavorites = message.data;
-        modelPicker.syncAll();
-      } else if (message.type === "models.config.changed") {
-        void refreshModelCatalog().catch(error);
-      } else event(message);
-    };
-    await new Promise((resolve, reject) => {
-      ws.onopen = resolve;
-      ws.onerror = () => reject(new Error("连接失败，请检查服务是否运行"));
-      ws.onclose = () => {
-        configureSeq++;
-        connected = false;
-        for (const id of new Set(["main", ...tasks.keys(), ...waitingItems.keys()])) stopActivity(id, "连接断开，等待恢复");
-        // 分片在飞时也要存视图（草稿/附件不能丢）：半截滚动值由 saveView 内部按 snapshotQueue 保住。
-        if (!$("workspace").hidden) saveView();
-        reject(new Error("连接断开"));
-        serviceUi.cancelRestart();
-        serviceUi.watch();
-        for (const p of pending.values()) p.reject(new Error("连接断开"));
-        pending.clear();
-        if (!connecting) scheduleReconnect();
-        $("login").hidden = false;
-        $("connect").disabled = false;
-        updateAvailability();
-      };
-    });
+    // Reconnect restores the active conversation first; configuration does not gate it.
+    if (initialized && sessionId) {
+      if (!$("workspace").hidden) saveView();
+      let state;
+      try { state = await request("session.attach", { sessionId }); }
+      catch (e) {
+        if (e.code !== "response_error") throw e;
+        initialized = false;
+        return initializeConnection({ isCurrent });
+      }
+      if (!isCurrent()) return;
+      await snapshot(state);
+      if (!isCurrent()) return;
+      connected = true;
+      $("login").hidden = true;
+      updateAvailability();
+      return;
+    }
     const service = await request("service.status");
     importDir = service.importDir || "";
     region("连接状态", () => serviceUi.apply(service));
@@ -2654,7 +2619,7 @@ $("login").onsubmit = async (e) => {
       error("尚无可用模型：请在「设置 → 模型与供应商」中添加并保存；保存后点击「＋ 新会话」即可开始，无需重启。");
       showSettingsPanel("models");
       if (!$("settings").open) $("settings").showModal();
-      reconnectDelay = 1000;
+      initialized = true;
       return;
     }
     onboarding = false;
@@ -2695,17 +2660,19 @@ $("login").onsubmit = async (e) => {
     if (!$("workspace").hidden) saveView();
     // 首屏渐进显示：身份切换同步完成后就让 workspace 可见，长快照的分片在可见容器里继续补齐，
     // 不再等全部分片建完 DOM 才做一次整体布局。connected 与发送能力保持未开放。
+    if (!isCurrent()) return;
     await snapshot(state, () => { $("workspace").hidden = false; });
+    if (!isCurrent()) return;
     await refreshSessions();
     $("login").hidden = true;
     $("workspace").hidden = false;
     connected = true;
     remoteOnReconnect();
-    reconnectDelay = 1000;
+    initialized = true;
     resizePrompt();
     updateAvailability();
   } catch (e) {
-    if (initializingSession && ws?.readyState === WebSocket.OPEN) {
+    if (initializingSession && isCurrent()) {
       // 业务配置失败不等于断线：保留设置/更新入口，避免安装后陷入重连死循环。
       sessionMissing = true;
       connected = true;
@@ -2714,23 +2681,16 @@ $("login").onsubmit = async (e) => {
       updateAvailability();
       $("open-settings").click();
       error(`会话暂时无法打开：${e.message}。服务仍已连接，可在设置中修正配置或更新服务，然后点击「＋ 新会话」重试。`);
-      reconnectDelay = 1000;
+      initialized = true;
     } else {
       error(e);
       $("login").hidden = false;
-      ws?.close();
+      throw e;
     }
   } finally {
-    connecting = false;
     $("connect").disabled = false;
     updateAvailability();
-    if (!connected) scheduleReconnect();
   }
-};
-function scheduleReconnect() {
-  clearTimeout(reconnectTimer);
-  reconnectTimer = setTimeout(() => $("login").requestSubmit(), reconnectDelay);
-  reconnectDelay = Math.min(reconnectDelay * 2, 15000);
 }
 let importDir = "";
 updateAvailability();
@@ -3000,11 +2960,10 @@ async function withdrawQueue(recall = false) {
     if (!text && !restored.length) return;
     // 上下文里的输入被撤回后，叶子已回退：重新取快照重绘消息区（saveView 先保住当前草稿与附件）。
     if (recalled.length && sessionId === target && !changing) {
+      saveView();
       const state = await request("session.attach", { sessionId: target });
-      if (sessionId === target && !changing && connected) {
-        saveView();
-        await snapshot(state);
-      }
+      if (sessionId === target && !changing && connected) await snapshot(state);
+      else queueMicrotask(() => transport.failSnapshot());
     }
     if (sessionId === target && !changing) {
       $("prompt").value = [$("prompt").value, text].filter(Boolean).join("\n\n");
@@ -3193,6 +3152,8 @@ async function switchSession(action) {
       link.href = url; link.target = "_blank"; link.rel = "noopener";
       link.textContent = "打开工作空间";
       $("error").append(link);
+      // attach changed the server subscription too: restore this tab, not just its event gate.
+      await snapshot(await request("session.attach", { sessionId }));
     } else {
       if (sessionMissing) views.set(state.sessionId, { draft: $("prompt").value, contextFiles: [...contextFiles], images: [...images], selectedSkill, follow: true, scroll: 0 });
       await snapshot(state);
