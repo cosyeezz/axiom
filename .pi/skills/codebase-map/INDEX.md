@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/15 09:11:38）
+# Axiom 多级代码索引（生成于 2026/9/15 09:16:45）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -98,6 +98,7 @@
 | tests/helpers/history-page.js | 177 | node --test 测试（npm test） | PAGE_SIZE, CONFIG, makeRecords, html |
 | tests/helpers/model-concurrency-child.mjs | 82 | node --test 测试（npm test） | barrier, runOpponent |
 | tests/helpers/public-source.js | 14 | node --test 测试（npm test） | publicSource, event, appliedSeq |
+| tests/history-reading.test.js | 36 | node --test 测试（npm test） | - |
 | tests/image-input.test.js | 169 | node --test 测试（npm test） | pngBase64, jpegBase64, image, parsePrompt |
 | tests/inline-images.test.js | 42 | node --test 测试（npm test） | text, a, b, user |
 | tests/install.test.js | 150 | node --test 测试（npm test） | fakeService |
