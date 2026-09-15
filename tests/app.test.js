@@ -363,6 +363,16 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     paint();
     // 原文视图是并排面板（非 modal），按钮紧挨主题切换，用 aria-pressed 表示开合。
     assert.equal($("open-raw-io").nextElementSibling, $("toggle-theme"), "原文按钮紧邻主题切换");
+    const fontScale = $("conversation-font-scale");
+    assert.equal(fontScale.value, "100");
+    for (const scale of ["125", "150", "175", "200", "100"]) {
+      fontScale.value = scale;
+      fontScale.dispatchEvent(new window.Event("change"));
+      assert.equal(window.document.documentElement.dataset.conversationFontScale, scale);
+      assert.equal(window.localStorage.getItem("axiom.conversationFontScale"), scale);
+    }
+    window.eval('applyConversationFontScale("invalid")');
+    assert.equal(fontScale.value, "100", "损坏配置回退默认字号");
     $("open-raw-io").click();
     assert.equal($("raw-io").hidden, false);
     assert.equal($("raw-io").tagName, "SECTION", "原文视图是面板不是 modal 对话框");

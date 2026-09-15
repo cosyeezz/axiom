@@ -290,6 +290,21 @@ addEventListener("resize", () => {
 });
 // 目前全站用系统字体；万一以后引入 webfont，度量变化同样要重算。
 document.fonts?.addEventListener?.("loadingdone", invalidatePrompt);
+// 阅读字号是设备偏好；CSS 限定到桌面会话内容，不缩放整页。
+const fontScale = $("conversation-font-scale");
+function applyConversationFontScale(value) {
+  const scale = ["100", "125", "150", "175", "200"].includes(value) ? value : "100";
+  document.documentElement.dataset.conversationFontScale = scale;
+  fontScale.value = scale;
+}
+let savedFontScale;
+try { savedFontScale = localStorage.getItem("axiom.conversationFontScale"); } catch {}
+applyConversationFontScale(savedFontScale);
+fontScale.onchange = () => {
+  applyConversationFontScale(fontScale.value);
+  try { localStorage.setItem("axiom.conversationFontScale", fontScale.value); } catch {}
+};
+
 // 明暗主题：theme.js 已在首帧前写好 data-theme，这里只负责切换、持久化与按钮语义。
 // theme-color 跟着改，移动端浏览器地址栏才不会跟页面对不上。
 const themeColors = { dark: "#010102", light: "#f7f8fa" };

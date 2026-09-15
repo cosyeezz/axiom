@@ -1422,6 +1422,27 @@ summary:hover > .disclosure-action { color: var(--ink); }
   .compaction-card > summary { gap: 4px 8px; }
   .compaction-card > summary small { flex-basis: 100%; order: 1; }
 }
+/* Desktop conversation typography only; no page zoom or inherited composer/sidebar scale. */
+#conversation-font-scale { width: auto; min-height: 32px; padding: 4px 8px; border-radius: 8px; font-size: 12px; background: var(--surface); color: var(--body-ink); border: 1px solid var(--line); }
+@media (max-width: 700px) { #conversation-font-scale { display: none; } }
+@media (min-width: 701px) {
+  :root[data-conversation-font-scale="125"] { --conversation-font-scale: 1.25; }
+  :root[data-conversation-font-scale="150"] { --conversation-font-scale: 1.5; }
+  :root[data-conversation-font-scale="175"] { --conversation-font-scale: 1.75; }
+  :root[data-conversation-font-scale="200"] { --conversation-font-scale: 2; }
+  :is(#output, .task-body, #raw-io-list) { font-size: calc(13px * var(--conversation-font-scale, 1)); }
+  :is(#output, .task-body, #raw-io-list) :is(.task-meta, .task-badge, .skill-badge, .runtime-summary, .goal-round-head, .goal-round-index, .goal-round-status, .goal-round-toggle) { font-size: calc(11px * var(--conversation-font-scale, 1)); }
+  :is(#output, .task-body, #raw-io-list) :is(.message > h3, .markdown kbd, .code-toolbar, .code-toolbar button, .json-status, .message-model, .task-description, .task-system-prompt pre, .skill-invocation summary, .compaction-card > summary, .activity-line, .disclosure-action, .tool-target, .tool-status, .tool-detail h4, .tool-detail h4 select, .tool-truncation, .goal-round-title, .raw-message-bar, .raw-message-bar button, .raw-message summary, .raw-source-link) { font-size: calc(12px * var(--conversation-font-scale, 1)); }
+  :is(#output, .task-body, #raw-io-list) :is(.markdown pre, .tool-detail pre, .task-title, .skill-invocation > div, .compaction-summary, .raw-message pre) { font-size: calc(13px * var(--conversation-font-scale, 1)); }
+  :is(#output, .task-body) :is(.markdown, .markdown td, .markdown th, .markdown h4, .markdown h5, .markdown h6, .thinking-content) { font-size: calc(14px * var(--conversation-font-scale, 1)); }
+  :is(#output, .task-body) .markdown h3 { font-size: calc(16px * var(--conversation-font-scale, 1)); }
+  :is(#output, .task-body) .markdown h2 { font-size: calc(20px * var(--conversation-font-scale, 1)); }
+  :is(#output, .task-body) .markdown h1 { font-size: calc(24px * var(--conversation-font-scale, 1)); }
+  :is(#output, .task-body) .thinking-content h1 { font-size: calc(22px * var(--conversation-font-scale, 1)); }
+  :is(#output, .task-body) :is(.retry-prompt, .retry-card p, .retry-card li) { font-size: calc(.85rem * var(--conversation-font-scale, 1)); }
+  :is(#output, .task-body) .call-group { --call-row-height: calc(36px * var(--conversation-font-scale, 1)); }
+}
+
 /* Shared active-state motion: slim 12px ring, no halo, one turn per 1.6s. */
 .activity-line:is([data-state="waiting"], [data-state="running"]) .activity-icon[data-icon="waiting"]::after,
 .activity-line[data-state="thinking"] .activity-icon::after,
