@@ -24,6 +24,8 @@ test("selected workspaces load project skills by default, filter plugins and lea
     assert.equal(resources.catalog.projectTrusted, true);
     assert.equal(resources.catalog.needsTrust, false);
     assert.equal(resources.catalog.plugins.length, 2);
+    assert.equal(resources.catalog.plugins.find((entry) => entry.id.endsWith("good.js")).scope, "global");
+    assert.equal(resources.catalog.plugins.find((entry) => entry.id.endsWith("bad.js")).scope, "project");
     assert.deepEqual(resources.catalog.skills.map((s) => s.name).sort(), ["project-sample", "sample"]);
     // 旧会话保存的 false 也不能让工作空间退回仅全局能力。
     const restored = await discoverCapabilities(cwd, { agentDir, trustProject: false });
@@ -218,4 +220,69 @@ test("runtime-added project skills appear via extendResources refresh, allowlist
     assert.equal(command.safeParse({ id: "1", type: "session.skills.refresh", sessionId: "s" }).success, true);
     assert.equal(command.safeParse({ id: "1", type: "session.skills.refresh" }).success, false);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("mcp catalog is per-project isolated, marks global servers and re-reads config without restart", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-mcp-catalog-"));
+  const agentDir = join(root, "agent"), a = join(root, "a"), b = join(root, "b");
+  const adapterDir = join(agentDir, "extensions", "pi-mcp-adapter");
+  const globalFile = join(agentDir, "mcp-global.json");
+  // 假适配器 config.ts：与 pi-mcp-adapter 一样按 cwd 读盘，provenance 单独给出。
+  const config = [
+    'import { readFileSync } from "node:fs";',
+    'import { dirname, join } from "node:path";',
+    'import { fileURLToPath } from "node:url";',
+    'const agentDir = dirname(dirname(dirname(fileURLToPath(import.meta.url))));',
+    'const read = (file) => { try { return JSON.parse(readFileSync(file, "utf8")); } catch { return { mcpServers: {}, provenance: {} }; } };',
+    'const merge = (cwd) => {',
+    '  const global = read(join(agentDir, "mcp-global.json")), project = read(join(cwd, "mcp.json"));',
+    '  return { ...global.mcpServers, ...project.mcpServers };',
+    '};',
+    'export function loadMcpConfig(_paths, cwd) { return { mcpServers: merge(cwd) }; }',
+    'export function getServerProvenance(_paths, cwd) {',
+    '  const global = read(join(agentDir, "mcp-global.json")), project = read(join(cwd, "mcp.json"));',
+    '  return new Map(Object.entries({ ...global.provenance, ...project.provenance }));',
+    '}',
+  ].join("\n");
+  try {
+    await mkdir(adapterDir, { recursive: true });
+    await mkdir(a);
+    await mkdir(b);
+    await writeFile(join(agentDir, "settings.json"), "{}");
+    await writeFile(globalFile, JSON.stringify({ mcpServers: { global: { command: "g" } }, provenance: { global: { kind: "user" } } }));
+    await writeFile(join(adapterDir, "config.ts"), config);
+    await writeFile(join(adapterDir, "index.ts"), "export function createMcpAdapter() { return async () => {}; }");
+    await writeFile(join(a, "mcp.json"), JSON.stringify({
+      mcpServers: { "project-a": { command: "a" }, off: { command: "x", disabled: true }, imported: { url: "http://x" } },
+      provenance: { "project-a": { kind: "project" } },
+    }));
+    await writeFile(join(b, "mcp.json"), JSON.stringify({
+      mcpServers: { "project-b": { command: "b" } }, provenance: { "project-b": { kind: "project" } },
+    }));
+    const scopeOf = (catalog, id) => catalog.mcp.find((server) => server.id === id)?.scope;
+    const first = await discoverCapabilities(a, { agentDir, loadAdapter: false });
+    assert.deepEqual(first.catalog.mcp.map((s) => s.id).sort(), ["global", "imported", "project-a"], "disabled 条目不入目录");
+    assert.equal(scopeOf(first.catalog, "global"), "global");
+    assert.equal(scopeOf(first.catalog, "project-a"), "project");
+    assert.equal(scopeOf(first.catalog, "imported"), "project", "来源不明保守归当前项目");
+    assert.deepEqual(first.catalog.plugins, [], "适配器自身不出现在插件列表");
+    const other = await discoverCapabilities(b, { agentDir, loadAdapter: false });
+    assert.deepEqual(other.catalog.mcp.map((s) => s.id).sort(), ["global", "project-b"], "项目之间互不可见");
+    // 改盘后重新 discover（不重启）即可见新条目。
+    await writeFile(join(a, "mcp.json"), JSON.stringify({
+      mcpServers: { "project-a": { command: "a" }, "project-a2": { command: "a2" } }, provenance: { "project-a": { kind: "project" } },
+    }));
+    await writeFile(globalFile, JSON.stringify({
+      mcpServers: { global: { command: "g" }, "global-two": { command: "g2" } },
+      provenance: { global: { kind: "user" }, "global-two": { kind: "user" } },
+    }));
+    const refreshed = await discoverCapabilities(a, { agentDir, loadAdapter: false });
+    assert.deepEqual(refreshed.catalog.mcp.map((s) => s.id).sort(), ["global", "global-two", "project-a", "project-a2"]);
+    assert.equal(scopeOf(refreshed.catalog, "global-two"), "global");
+    assert.equal(scopeOf(refreshed.catalog, "project-a2"), "project");
+    assert(!refreshed.catalog.mcp.some((s) => s.id === "imported"), "删除的条目重新发现后消失");
+    assert.deepEqual((await discoverCapabilities(b, { agentDir, loadAdapter: false })).catalog.mcp.map((s) => s.id).sort(), ["global", "global-two", "project-b"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

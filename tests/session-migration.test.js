@@ -56,7 +56,7 @@ test("旧版单条 defaults 记录按新布局拆分：全局兜底 + 各工作�
   const b = join(dir, "b");
   await mkdir(b);
   // 带能力目录的桩，才走项目技能合并分支（与旧版 workspaceDefaults 一致）。
-  const capabilityFactory = Object.assign(async () => ({}), factory, { capabilities: async () => ({ skills: [], mcp: [], plugins: [] }) });
+  const capabilityFactory = Object.assign(async () => ({}), factory, { capabilities: async (cwd) => ({ skills: cwd === a ? [{ id: "a-skill", scope: "project" }] : [], mcp: [], plugins: [] }) });
   const sessions = new Sessions(capabilityFactory, join(dir, "defaults.json"));
   try {
     // 旧记录：一份全局配置 + A 目录的项目技能表（键是 realpath，旧版就如此），B 从未配置过

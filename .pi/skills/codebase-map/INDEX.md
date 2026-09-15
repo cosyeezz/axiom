@@ -1,12 +1,12 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/14 19:46:33）
+# Axiom 多级代码索引（生成于 2026/9/14 23:38:59）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
 | public/answer-tags.js | 47 | 主代理回答标签解析、代码保护与流式容错 | OPEN, CLOSE, isMark, splitAnswer |
-| public/app.js | 3534 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | questionUI, filePicker, $, ws |
+| public/app.js | 3532 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | questionUI, filePicker, $, ws |
 | public/file-picker.css | 276 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 355 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/goal-markers.js | 60 | 前后端共享 goal 完成标记解析与展示层剥离（含流式半截） | ROUND_MARKER, GOAL_MARKER, MARKER_TOKENS, SUFFIXES |
@@ -36,7 +36,7 @@
 | scripts/maint-state.mjs | 138 | 守护维护状态：持久化阶段、最近结果与有界脱敏证据 | NAMESPACE, LOG_LIMIT, redact, sanitize |
 | scripts/service.mjs | 619 | 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道 | root, output, run, npmRun |
 | scripts/uninstall.mjs | 18 | 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据 | uninstall |
-| src/capabilities.js | 138 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
+| src/capabilities.js | 144 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/compaction.js | 391 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
 | src/database.js | 103 | 共享 SQLite 连接、小配置 KV、WAL 与一致性备份 | nodeOk, Database |
 | src/goal.js | 988 | Goal：会话级目标状态、轮次计划、验收门与持久化 | GOAL_PHASES, GOAL_ACTIONS, ROUND_STATUSES, GOAL_MAX_SEGMENTS |
@@ -51,10 +51,10 @@
 | src/questions.js | 86 | 主代理 question 工具、参数校验与可取消的回答等待 | text, option, input, questionAnswers |
 | src/remote.js | 547 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
 | src/retry.js | 196 | 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_DELAY_MS, MAX_RETRIES, RECOVERY_PROMPT |
-| src/server.js | 505 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | dev, digest, load, freshen |
+| src/server.js | 509 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | dev, digest, load, freshen |
 | src/session-memory.js | 29 | 标题提取登记、轮次预算挂钩与委派背景 | textOf, memoryHooks |
 | src/session-store.js | 479 | 会话三表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, TABLES, INDEXES |
-| src/sessions.js | 1596 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | GOAL_TOOL_NAMES, hasRunningTasks, BROWSE_PAGE, SEARCH_LIMIT |
+| src/sessions.js | 1610 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | GOAL_TOOL_NAMES, hasRunningTasks, BROWSE_PAGE, SEARCH_LIMIT |
 | src/task-budget.js | 35 | 主子代理轮次预算规则、收尾提示词与配置页参数校验 | TASK_BUDGET_LIMITS, taskBudgetDefaults, within, taskBudgetPolicy |
 | src/tasks.js | 210 | Tasks：子任务（委托）生命周期 | ACTIVE, historyResult, Tasks |
 | src/tools.js | 110 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
@@ -66,14 +66,14 @@
 | tests/autoscroll-ui.py | 99 | node --test 测试（npm test） | - |
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
-| tests/capabilities.test.js | 222 | node --test 测试（npm test） | - |
+| tests/capabilities.test.js | 289 | node --test 测试（npm test） | - |
 | tests/cli-help.test.js | 46 | node --test 测试（npm test） | cli |
 | tests/codebase-index.test.js | 20 | node --test 测试（npm test） | ROOT, SKILL |
 | tests/compaction-config.test.js | 152 | node --test 测试（npm test） | - |
 | tests/compaction-ui.py | 57 | node --test 测试（npm test） | - |
 | tests/compaction-ui.test.js | 187 | node --test 测试（npm test） | page |
 | tests/compaction.test.js | 823 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
-| tests/config.test.js | 304 | node --test 测试（npm test） | - |
+| tests/config.test.js | 305 | node --test 测试（npm test） | - |
 | tests/context-menu-ui.py | 66 | node --test 测试（npm test） | - |
 | tests/conversation-preview.mjs | 124 | node --test 测试（npm test） | markdown, message, thinking, state |
 | tests/conversation-ui.py | 254 | node --test 测试（npm test） | - |
@@ -116,7 +116,7 @@
 | tests/pi-memory.test.js | 171 | node --test 测试（npm test） | - |
 | tests/pi-model-storage.test.js | 624 | node --test 测试（npm test） | tempDir, makeStorage, seedPiModels, seedPiAuth |
 | tests/pi-question.test.js | 197 | node --test 测试（npm test） | - |
-| tests/project-skills.test.js | 66 | node --test 测试（npm test） | - |
+| tests/project-skills.test.js | 143 | node --test 测试（npm test） | scopeKey, setup |
 | tests/question-layout-ui.py | 48 | node --test 测试（npm test） | - |
 | tests/question-preview.mjs | 36 | node --test 测试（npm test） | factory, sessions, app, port |
 | tests/question-ui.test.js | 98 | node --test 测试（npm test） | source |
@@ -127,7 +127,7 @@
 | tests/remote.test.js | 750 | node --test 测试（npm test） | EMAIL, mockTailscale, fakeChild, fakeDatabase |
 | tests/retry-settings-ui.py | 30 | node --test 测试（npm test） | - |
 | tests/retry.test.js | 407 | node --test 测试（npm test） | RATE_LIMIT, QUOTA, ABORTED, fakeSession |
-| tests/server.test.js | 138 | node --test 测试（npm test） | - |
+| tests/server.test.js | 149 | node --test 测试（npm test） | - |
 | tests/service-api.test.js | 106 | node --test 测试（npm test） | - |
 | tests/service-settings-api.test.js | 71 | node --test 测试（npm test） | - |
 | tests/service-settings-ui.py | 60 | node --test 测试（npm test） | - |
@@ -171,7 +171,7 @@
 | isMark | const | 9 |
 | splitAnswer | function | 11 |
 
-### public/app.js（3534 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
+### public/app.js（3532 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -442,14 +442,14 @@
 | fill | method | 3309 |
 | fillThinking | method | 3317 |
 | options | method | 3319 |
-| defaultsSelection | const | 3367 |
-| defaultsSaving | const | 3380 |
-| loadCreation | function | 3382 |
-| openDefaults | function | 3416 |
-| controls | method | 3465 |
-| updateDefaultsPreview | function | 3478 |
-| updateDefaultsPreview | method | 3502 |
-| controls | method | 3518 |
+| defaultsSelection | const | 3365 |
+| defaultsSaving | const | 3378 |
+| loadCreation | function | 3380 |
+| openDefaults | function | 3414 |
+| controls | method | 3463 |
+| updateDefaultsPreview | function | 3476 |
+| updateDefaultsPreview | method | 3500 |
+| controls | method | 3516 |
 
 ### public/file-picker.js（355 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 
@@ -771,7 +771,7 @@
 |---|---|---|
 | uninstall | function | 8 |
 
-### src/capabilities.js（138 行） — 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities）
+### src/capabilities.js（144 行） — 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -781,9 +781,9 @@
 | jiti | const | 22 |
 | snapshotSettings | function | 24 |
 | discoverCapabilities | function | 37 |
-| resolveCapabilities | function | 78 |
-| refreshProjectSkills | function | 95 |
-| capabilityLoader | function | 105 |
+| resolveCapabilities | function | 84 |
+| refreshProjectSkills | function | 101 |
+| capabilityLoader | function | 111 |
 
 ### src/compaction.js（391 行） — 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交
 
@@ -1068,7 +1068,7 @@
 | canResume | function | 86 |
 | createAutoRetry | function | 102 |
 
-### src/server.js（505 行） — createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发
+### src/server.js（509 行） — createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1115,7 +1115,7 @@
 | saveTask | method | 450 |
 | listTasks | method | 473 |
 
-### src/sessions.js（1596 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
+### src/sessions.js（1610 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1138,67 +1138,70 @@
 | landedSessionFile | function | 182 |
 | RETRYABLE_SQLITE | const | 189 |
 | retryableWrite | const | 190 |
-| DEFAULTS_NS | const | 194 |
-| WORKSPACE_PREFIX | const | 195 |
-| workspaceKeyOf | const | 196 |
-| validateProjectSkills | function | 199 |
-| validateProjectSkillEntry | function | 203 |
-| Sessions | class | 210 |
-| constructor | method | 211 |
-| applyDefaults | method | 236 |
-| loadDefaults | method | 243 |
-| migrateDefaults | method | 255 |
-| migrateLegacyStore | method | 270 |
-| loadWorkspaceDefaults | method | 294 |
-| loadTaskBudget | method | 313 |
-| getTaskBudget | method | 328 |
-| configureTaskBudget | method | 334 |
-| getDefaults | method | 341 |
-| defaultsFor | method | 345 |
-| listDefaults | method | 349 |
-| deleteDefaults | method | 355 |
-| removeDefaults | method | 360 |
-| workspaceDefaults | method | 371 |
-| configureDefaults | method | 389 |
-| saveDefaults | method | 395 |
-| pushCompaction | method | 433 |
-| validateSelection | method | 444 |
-| validateCompaction | method | 475 |
-| load | method | 490 |
-| ensureLoaded | method | 515 |
-| migrateLegacySessions | method | 537 |
-| sessionData | method | 561 |
-| persist | method | 580 |
-| writeChange | method | 609 |
-| saveChange | method | 625 |
-| list | method | 630 |
-| rename | method | 647 |
-| importSession | method | 660 |
-| create | method | 687 |
-| goalAction | method | 1042 |
-| scheduleGoal | method | 1088 |
-| advanceGoal | method | 1100 |
-| goalNotificationsBlocked | method | 1138 |
-| scheduleTaskNotifications | method | 1145 |
-| deliverTaskNotifications | method | 1157 |
-| get | method | 1185 |
-| revealWorkspace | method | 1190 |
-| browse | method | 1204 |
-| listFiles | method | 1210 |
-| refreshSkills | method | 1272 |
-| snapshot | method | 1278 |
-| subscribe | method | 1310 |
-| configure | method | 1316 |
-| startRun | method | 1352 |
-| retry | method | 1391 |
-| prompt | method | 1400 |
-| withdraw | method | 1435 |
-| replyQuestion | method | 1484 |
-| cancel | method | 1490 |
-| retryTask | method | 1516 |
-| deleteRecords | method | 1527 |
-| remove | method | 1538 |
-| close | method | 1586 |
+| DEFAULTS_NS | const | 195 |
+| WORKSPACE_PREFIX | const | 196 |
+| workspaceKeyOf | const | 197 |
+| CAPABILITY_KINDS | const | 198 |
+| catalogProjectsOf | const | 200 |
+| validateProjectSkills | function | 203 |
+| validateProjectSkillEntry | function | 207 |
+| mergeLegacyProjectSkills | function | 215 |
+| Sessions | class | 224 |
+| constructor | method | 225 |
+| applyDefaults | method | 249 |
+| loadDefaults | method | 255 |
+| migrateDefaults | method | 267 |
+| migrateLegacyStore | method | 282 |
+| loadWorkspaceDefaults | method | 306 |
+| loadTaskBudget | method | 325 |
+| getTaskBudget | method | 340 |
+| configureTaskBudget | method | 346 |
+| getDefaults | method | 353 |
+| defaultsFor | method | 357 |
+| listDefaults | method | 361 |
+| deleteDefaults | method | 367 |
+| removeDefaults | method | 372 |
+| workspaceDefaults | method | 382 |
+| configureDefaults | method | 402 |
+| saveDefaults | method | 408 |
+| pushCompaction | method | 447 |
+| validateSelection | method | 458 |
+| validateCompaction | method | 489 |
+| load | method | 504 |
+| ensureLoaded | method | 529 |
+| migrateLegacySessions | method | 551 |
+| sessionData | method | 575 |
+| persist | method | 594 |
+| writeChange | method | 623 |
+| saveChange | method | 639 |
+| list | method | 644 |
+| rename | method | 661 |
+| importSession | method | 674 |
+| create | method | 701 |
+| goalAction | method | 1056 |
+| scheduleGoal | method | 1102 |
+| advanceGoal | method | 1114 |
+| goalNotificationsBlocked | method | 1152 |
+| scheduleTaskNotifications | method | 1159 |
+| deliverTaskNotifications | method | 1171 |
+| get | method | 1199 |
+| revealWorkspace | method | 1204 |
+| browse | method | 1218 |
+| listFiles | method | 1224 |
+| refreshSkills | method | 1286 |
+| snapshot | method | 1292 |
+| subscribe | method | 1324 |
+| configure | method | 1330 |
+| startRun | method | 1366 |
+| retry | method | 1405 |
+| prompt | method | 1414 |
+| withdraw | method | 1449 |
+| replyQuestion | method | 1498 |
+| cancel | method | 1504 |
+| retryTask | method | 1530 |
+| deleteRecords | method | 1541 |
+| remove | method | 1552 |
+| close | method | 1600 |
 
 ### src/task-budget.js（35 行） — 主子代理轮次预算规则、收尾提示词与配置页参数校验
 
@@ -1696,6 +1699,13 @@
 | makeStorage | function | 18 |
 | seedPiModels | const | 23 |
 | seedPiAuth | const | 27 |
+
+### tests/project-skills.test.js（143 行） — node --test 测试（npm test）
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| scopeKey | const | 9 |
+| setup | function | 16 |
 
 ### tests/question-preview.mjs（36 行） — node --test 测试（npm test）
 

@@ -1693,3 +1693,10 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 全量：`npm test` → **tests 537 / pass 535 / fail 0 / skipped 2**（新增 5 条即本轮；两条 skip 为既有 win32 平台守卫，与第 3、5 轮基线同为 2）。
 - 表结构影响：无。本轮未增删改任何表或字段。
 - 临时文件：`probe6.tmp.mjs`、`probe6b.tmp.mjs` 已删除。
+
+## 2026-09-14 — 工作空间能力选择持久化与隔离
+
+- 修复旧目录记录缺字段导致新勾选未保存：按 selection schema 合并补丁，项目技能并入目录完整 selection；继续复用 SQLite store 表，每套配置一行，落盘成功才更新内存。
+- skills/MCP/插件按当前目录清单校验；全局编辑不列项目资源，前端不补外项目/不可用能力为可选项，补充来源标签。发现清单每次按目录刷新，默认选择热生效，不覆盖已有会话的能力配置。
+- 涉及 src/sessions.js、src/capabilities.js、src/server.js、public/app.js 及对应测试、README.md、代码索引与坑库。
+- 验证：npm test：536 项，534 通过、2 跳过、0 失败。

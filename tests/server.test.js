@@ -87,6 +87,17 @@ test("local connection without token, foreign origin rejection, recovery and shu
     req.destroy();
     bad.terminate();
     ws = await connect();
+    sessions.createAgent.capabilities = async () => Object.fromEntries(["skills", "mcp", "plugins"].map((kind) =>
+      [kind, [{ id: "global", scope: "global" }, { id: "project", scope: "project" }]]));
+    const globalCatalog = await request(ws, { id: "global-catalog", type: "capabilities.list" });
+    const projectCatalog = await request(ws, { id: "project-catalog", type: "capabilities.list", cwd: process.cwd() });
+    assert.equal(globalCatalog.ok, true);
+    assert.equal(projectCatalog.ok, true);
+    for (const kind of ["skills", "mcp", "plugins"]) {
+      assert.deepEqual(globalCatalog.data[kind].map((entry) => entry.id), ["global"]);
+      assert.deepEqual(projectCatalog.data[kind].map((entry) => entry.id), ["global", "project"]);
+    }
+    delete sessions.createAgent.capabilities;
     const empty = { skills: [], mcp: [], plugins: [] };
     const defaults = await request(ws, { id: "defaults-save", type: "session.defaults.configure", capabilities: empty });
     assert.equal(defaults.ok, true);

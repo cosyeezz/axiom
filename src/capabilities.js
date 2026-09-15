@@ -47,11 +47,13 @@ export async function discoverCapabilities(cwd, { agentDir = getAgentDir(), load
   const plugins = enabled("extensions");
   const adapter = plugins.find((r) => /[/\\]pi-mcp-adapter[/\\]/.test(r.path));
   let mcpConfig = { mcpServers: {} }, createMcpAdapter;
+  let mcpProvenance = new Map();
   if (adapter) {
     const root = dirname(adapter.path);
     const configModule = await jiti.import(join(root, "config.ts"));
     // An untrusted project must not activate project MCP commands or imports.
     mcpConfig = configModule.loadMcpConfig(undefined, projectTrusted ? cwd : join(agentDir, "axiom-no-project"));
+    mcpProvenance = configModule.getServerProvenance?.(undefined, cwd) ?? new Map();
     if (loadAdapter) ({ createMcpAdapter } = await jiti.import(adapter.path));
   }
   const catalog = {
@@ -66,10 +68,14 @@ export async function discoverCapabilities(cwd, { agentDir = getAgentDir(), load
     }),
     plugins: plugins.filter((r) => r !== adapter).map((r) => ({
       id: r.path,
+      scope: r.metadata.scope === "project" ? "project" : "global",
       name: r.metadata.origin === "package" ? `${r.metadata.source} · ${basename(r.path)}` : basename(r.path),
     })),
     mcp: Object.entries(mcpConfig.mcpServers).filter(([, server]) => server.disabled !== true)
-      .map(([name]) => ({ id: name, name })),
+      .map(([name]) => ({ id: name, name,
+        // 来源不明（旧适配器、项目导入或插件贡献）保守归当前项目，不向全局兜底泄漏。
+        scope: mcpProvenance.get(name)?.kind === "user" ? "global" : "project",
+      })),
     warnings: skills.diagnostics.map((d) => d.message),
   };
   return { catalog, settingsManager, paths, adapter, mcpConfig, createMcpAdapter, agentDir, cwd };

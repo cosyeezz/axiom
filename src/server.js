@@ -307,6 +307,10 @@ export function createServerApp(sessions, service = {}) {
               break;
             case "capabilities.list":
               data = await sessions.createAgent.capabilities(request.cwd, request.trustProject);
+              // 全局默认编辑器不能选中服务启动目录的项目资源。
+              if (!request.cwd) data = { ...data, ...Object.fromEntries(
+                ["skills", "mcp", "plugins"].map((kind) => [kind, data[kind].filter((entry) => entry.scope !== "project")]),
+              ) };
               break;
             case "files.browse":
               data = await sessions.listFiles(request);
