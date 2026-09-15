@@ -4,7 +4,7 @@
 
 - 根因：d99efdc 新增 public/markdown-scan.js 并被前端标签模块静态导入，但 src/server.js 未注册路由；HTTP health 正常，浏览器模块 404 导致 app.js 不执行。
 - 修复：仅补静态资源路由，不改自启或 Node 支持范围；tests/server.test.js 补三个标签模块及扫描模块的 HTTP 状态、JavaScript MIME 与缓存验证。README.md 同步排障说明，knowledge.md 沉淀并重建 INDEX.md。
-- 验证：新增测试在修复前明确失败于 /markdown-scan.js 404，修复后通过；npm test 534 项，532 通过、2 跳过、0 失败。Windows 本地真实 HTTP 验证，Mac 待用户更新确认。
+- 验证：新增测试在修复前明确失败于 /markdown-scan.js 404，修复后通过；npm test 534 项，532 通过、2 跳过、0 失败。Windows 本地真实 HTTP 验证，Mac 待用户更新确认。合并 origin/master a568d0b 后再次全测：539 项，537 通过、2 跳过、0 失败。
 
 ## 2026-09-14 安全点停止：两级停止 + 等待提示条 + 停下提醒点
 - 原因：只有硬停，一点就把本轮正在跑的工具和已写一半的回答丢了；需要一个「跑完这一步再停」的选项，同时把会丢产出的硬停降级为需要确认的强制停止。硬停保留为逃生门：安全点粒度是一个 turn，长命令可能等很久。
