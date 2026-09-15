@@ -17,6 +17,7 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  * 未登记的文件会在 INDEX.md 里标 ⚠ 提醒补充。
  */
 const MODULE_INFO = {
+  "tests/task-cancel-notifications.test.js": "单子任务取消工具注册、兄弟隔离与持久化完成通知集成回归",
   "src/questions.js": "主代理 question 工具、参数校验与可取消的回答等待",
   "tests/questions.test.js": "提问等待、校验、会话隔离、子代理不可用与取消回归",
   "tests/pi-question.test.js": "真实Pi SDK提问等待、工具答案续轮与取消回归",

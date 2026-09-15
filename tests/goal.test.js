@@ -279,6 +279,7 @@ test("证据门：伪造 toolCallId 被服务端拒绝", async () => {
 test("证据门：目标工具自身结果、失败调用、标准不匹配都被拒绝", async () => {
   const results = [
     { toolCallId: "self", toolName: "goal_evidence", isError: false },
+    { toolCallId: "cancel", toolName: "cancel_task", isError: false },
     { toolCallId: "bad", toolName: "bash", isError: true },
     { toolCallId: "ok", toolName: "bash", isError: false },
   ];
@@ -289,14 +290,16 @@ test("证据门：目标工具自身结果、失败调用、标准不匹配都�
       { criterion: "启动不再崩溃", toolCallId: "bad" },
       { criterion: "根本没这条标准", toolCallId: "ok" },
       { criterion: "启动不再崩溃", toolCallId: "ok", tool: "别名" },
+      { criterion: "启动不再崩溃", toolCallId: "cancel" },
     ],
   });
   assert.equal(outcome.accepted, false);
-  assert.equal(outcome.invalid.length, 4);
+  assert.equal(outcome.invalid.length, 5);
   assert.match(outcome.invalid[0].reason, /不能作为验收证据/);
   assert.match(outcome.invalid[1].reason, /失败/);
   assert.match(outcome.invalid[2].reason, /验收标准/);
   assert.match(outcome.invalid[3].reason, /工具名不符/);
+  assert.match(outcome.invalid[4].reason, /不能作为验收证据/);
 });
 
 test("证据门：工具只记录证据不推进状态，最终回复的轮次标记才进下一轮", async () => {
