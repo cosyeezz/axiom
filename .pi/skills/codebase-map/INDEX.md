@@ -1,11 +1,11 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/15 07:55:54）
+# Axiom 多级代码索引（生成于 2026/9/15 08:08:18）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| public/answer-tags.js | 47 | 主代理回答标签解析、代码保护与流式容错 | OPEN, CLOSE, isMark, splitAnswer |
+| public/answer-tags.js | 51 | 主代理回答标签解析、代码保护与流式容错 | PAIRS, MARKS, isMark, splitAnswer |
 | public/app.js | 3929 | 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度 | questionUI, filePicker, $, ws |
 | public/file-picker.css | 276 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 355 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
@@ -46,7 +46,7 @@
 | src/model-config.js | 619 | Pi models.json 无损配置读写与共享收藏持久化 | sdkModelConfig, sdkResolveConfigValue, digest, LEVELS |
 | src/pi-model-storage.js | 409 | 模型与凭据 SQLite 权威存储、Pi 派生兼容文件 | sdkResolveConfigValue, sdkIsCommandConfigValue, NAMESPACE, AUTH_NAMESPACE |
 | src/pi.js | 535 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, queueStateOf, hasModelOutput, withdrawQueue |
-| src/prompts.js | 35 | Axiom 自有提示词按 main/subagent/compaction 角色集中维护 | USER_COMMUNICATION, DELEGATION_PROMPT, TITLE_INSTRUCTION, SUBAGENT_PROMPT |
+| src/prompts.js | 36 | Axiom 自有提示词按 main/subagent/compaction 角色集中维护 | USER_COMMUNICATION, DELEGATION_PROMPT, TITLE_INSTRUCTION, SUBAGENT_PROMPT |
 | src/protocol.js | 358 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/questions.js | 86 | 主代理 question 工具、参数校验与可取消的回答等待 | text, option, input, questionAnswers |
 | src/remote.js | 547 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
@@ -61,7 +61,7 @@
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
 | tests/__pycache__/goal-ui.cpython-312.pyc | 165 | node --test 测试（npm test） | - |
 | tests/activity-groups-ui.py | 201 | node --test 测试（npm test） | activityHistory, sessions |
-| tests/answer-tags.test.js | 48 | node --test 测试（npm test） | open |
+| tests/answer-tags.test.js | 59 | node --test 测试（npm test） | open |
 | tests/app.test.js | 1895 | node --test 测试（npm test） | pickerSource, modelSources, serviceSource |
 | tests/autoscroll-ui.py | 99 | node --test 测试（npm test） | - |
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
@@ -174,14 +174,14 @@
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
-### public/answer-tags.js（47 行） — 主代理回答标签解析、代码保护与流式容错
+### public/answer-tags.js（51 行） — 主代理回答标签解析、代码保护与流式容错
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| OPEN | const | 6 |
-| CLOSE | const | 7 |
-| isMark | const | 9 |
-| splitAnswer | function | 11 |
+| PAIRS | const | 7 |
+| MARKS | const | 11 |
+| isMark | const | 13 |
+| splitAnswer | function | 15 |
 
 ### public/app.js（3929 行） — 前端唯一入口：视图栈、WS 客户端、会话/设置 UI、渲染调度
 
@@ -1025,18 +1025,18 @@
 | memoryExtension | function | 109 |
 | createPiFactory | function | 134 |
 
-### src/prompts.js（35 行） — Axiom 自有提示词按 main/subagent/compaction 角色集中维护
+### src/prompts.js（36 行） — Axiom 自有提示词按 main/subagent/compaction 角色集中维护
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | USER_COMMUNICATION | const | 2 |
-| DELEGATION_PROMPT | const | 8 |
-| TITLE_INSTRUCTION | const | 9 |
-| SUBAGENT_PROMPT | const | 12 |
-| WRAP_UP_PROMPT | const | 13 |
-| budgetSystemPrompt | const | 14 |
-| SUMMARY_SYSTEM_PROMPT | const | 18 |
-| summaryRequest | function | 21 |
+| DELEGATION_PROMPT | const | 9 |
+| TITLE_INSTRUCTION | const | 10 |
+| SUBAGENT_PROMPT | const | 13 |
+| WRAP_UP_PROMPT | const | 14 |
+| budgetSystemPrompt | const | 15 |
+| SUMMARY_SYSTEM_PROMPT | const | 19 |
+| summaryRequest | function | 22 |
 
 ### src/protocol.js（358 行） — zod 协议：selection / command 判别联合（消息类型见 L3）
 
@@ -1316,11 +1316,11 @@
 | activityHistory | const | 16 |
 | sessions | const | 27 |
 
-### tests/answer-tags.test.js（48 行） — node --test 测试（npm test）
+### tests/answer-tags.test.js（59 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| open | const | 5 |
+| open | const | 6 |
 
 ### tests/app.test.js（1895 行） — node --test 测试（npm test）
 

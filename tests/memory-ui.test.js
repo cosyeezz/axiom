@@ -67,19 +67,19 @@ test("助手文本流式与成稿都剥离记忆标签，用户手写标签不�
 
 test("正式回答与过程分离，流式和历史均可独立阅读", async () => {
   const { dom, emit, restore, paint, output } = await page();
-  const answer = '<axiom_answer>\n完成修复\n</axiom_answer>';
+  const answer = '<axiom_display>\n完成修复\n</axiom_display>';
   try {
     emit('agent.message.end', { message: { role: 'user', content: '第一行\n第二行' } });
     emit('agent.message.end', { message: { role: 'assistant', content: '正在检查' } });
     emit('agent.message.start', { message: { role: 'assistant' } });
-    emit('agent.delta', { type: 'text_delta', delta: '<axiom_ans' }); paint();
-    assert.ok(!output.textContent.includes('<axiom_ans'));
+    emit('agent.delta', { type: 'text_delta', delta: '<axiom_dis' }); paint();
+    assert.ok(!output.textContent.includes('<axiom_dis'));
     emit('agent.delta', { type: 'text_delta', delta: 'wer>\n完成修复' }); paint(); paint();
     assert.match(output.textContent, /完成修复/);
     emit('agent.message.end', { message: { role: 'assistant', content: answer } }); paint(); paint();
     assert.equal(output.querySelector('.user > .markdown').textContent, '第一行\n第二行');
     assert.ok([...output.querySelectorAll('.call-group')].some(g => !g.open && g.textContent.includes('正在检查')));
-    assert.ok(!output.textContent.includes('axiom_answer'));
+    assert.ok(!output.textContent.includes('axiom_display'));
     restore({ messages: [
       { agentId: 'main', message: { role: 'user', content: '问题' } },
       { agentId: 'main', message: { role: 'assistant', content: '检查中\n' + answer } },
