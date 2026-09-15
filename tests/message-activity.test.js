@@ -335,9 +335,9 @@ test("streamed deltas defer preprocessing to paint and never overwrite the final
     const card = output.lastElementChild;
     const line = card.querySelector(":scope > .activity-line");
     assert.equal(line.hidden, false, "正文到达前活动行可见");
-    emit("agent.delta", { type: "text_delta", delta: "<axiom_ans" });
+    emit("agent.delta", { type: "text_delta", delta: "<axiom_dis" });
     const nl = String.fromCharCode(10);
-    emit("agent.delta", { type: "text_delta", delta: ["wer>", "流式回答", "</axiom_answer>"].join(nl) });
+    emit("agent.delta", { type: "text_delta", delta: ["play>", "流式回答", "</axiom_display>"].join(nl) });
     assert.equal(line.hidden, false, "绘制前不刷新活动状态，预处理与活动状态一起延后");
     assert.equal(card.querySelector(":scope > .markdown").textContent, "", "绘制前不渲染正文");
     const final = assistant([{ type: "text", text: "完整最终回答" }]);
@@ -345,7 +345,7 @@ test("streamed deltas defer preprocessing to paint and never overwrite the final
     assert.equal(card.querySelector(":scope > .markdown").textContent.trim(), "完整最终回答");
     paint();
     assert.equal(card.querySelector(":scope > .markdown").textContent.trim(), "完整最终回答", "挂起的流式帧不得覆盖最终消息");
-    assert.doesNotMatch(card.textContent, /流式回答|axiom_answer/);
+    assert.doesNotMatch(card.textContent, /流式回答|axiom_display/);
     assert.equal(line.hidden, true, "最终态活动行让位给正文");
   } finally { dom.window.close(); }
 });

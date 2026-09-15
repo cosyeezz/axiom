@@ -3,10 +3,11 @@
 // 里的标记是在举例，不是协议（原先自带的行内反引号计数器跨行不重置，一个落单反引号就让整条消息失效）。
 import { maskCode, cutSpans } from "./markdown-scan.js";
 
-const OPEN = "<axiom_answer>";
-const CLOSE = "</axiom_answer>";
+const OPEN = "<axiom_display>";
+const CLOSE = "</axiom_display>";
+const MARKS = [OPEN, CLOSE];
 // 标记必须独占一行、缩进不超过 3 空格：4 空格起是缩进代码块，属于举例。
-const isMark = (line) => /^ {0,3}\S/.test(line) && (line.trim() === OPEN || line.trim() === CLOSE);
+const isMark = (line) => /^ {0,3}\S/.test(line) && MARKS.includes(line.trim());
 
 export function splitAnswer(text, { streaming = false } = {}) {
   text = String(text ?? "");
@@ -18,11 +19,11 @@ export function splitAnswer(text, { streaming = false } = {}) {
     if (isMark(line)) marks.push({ kind: trimmed, start: offset, end: offset + line.length });
     // 流式：末行正在输入的标记前缀先藏起来，避免半截标签闪现。
     else if (streaming && i === lines.length - 1 && trimmed && /^ {0,3}\S/.test(line)
-      && [OPEN, CLOSE].some((mark) => mark.startsWith(trimmed))) pending = offset;
+      && MARKS.some((mark) => mark.startsWith(trimmed))) pending = offset;
     offset += line.length + 1;
   }
   const visible = pending < 0 ? text : text.slice(0, pending);
-  // 丢协议不丢正文：解析不出协议时照样删掉独占行的裸标记，不让 <axiom_answer> 漏进展示文本。
+  // 丢协议不丢正文：解析不出协议时照样删掉独占行的裸标记，不让展示标签漏进展示文本。
   const fallback = (malformed = false) => ({
     found: false,
     answer: cutSpans(visible, marks.map((mark) => [mark.start, mark.end])),

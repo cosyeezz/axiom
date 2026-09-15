@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { splitAnswer } from "../public/answer-tags.js";
 
-const open = "<axiom_answer>", close = "</axiom_answer>";
+const open = "<axiom_display>", close = "</axiom_display>";
 test("answer separates progress without mutating source", () => {
   const source = `检查中\n${open}\n**完成**\n${close}\n补充`;
   assert.deepEqual(splitAnswer(source), { found: true, answer: "**完成**", process: "检查中\n\n补充", incomplete: false, malformed: false });
@@ -12,7 +12,7 @@ test("streaming tag prefixes never flash; interrupted answer survives", () => {
   for (let i = 1; i < close.length; i++) assert.equal(splitAnswer(`${open}\n答复\n${close.slice(0, i)}`, { streaming: true }).answer, "答复");
   assert.equal(splitAnswer(`${open}\n答复`).answer, "答复");
   assert.equal(splitAnswer(`${open}\n答复`).incomplete, true);
-  assert.equal(splitAnswer("<axiom_ans").answer, "<axiom_ans");
+  assert.equal(splitAnswer(open.slice(0, -2)).answer, open.slice(0, -2));
 });
 test("code fences, inline code and ordinary examples are not protocol", () => {
   for (const text of [`\`\`\`xml\n${open}\n例子\n${close}\n\`\`\``, `~~~~\n${open}\n例子\n${close}\n~~~~`, `\`${open}\``, `例子 ${open}正文${close}`, `\`\n${open}\n${close}\n\``]) {
@@ -43,5 +43,13 @@ test("A-T3 legacy 与畸形标记回退时丢协议不丢正文，裸标记不�
     assert.equal(result.malformed, true);
     assert.equal(result.answer, expected);
     assert.ok(!result.answer.includes(open) && !result.answer.includes(close));
+  }
+});
+
+test("old answer tags are ordinary text, including during streaming", () => {
+  const source = "<axiom_answer>\n正文\n</axiom_answer>";
+  for (const streaming of [false, true]) {
+    assert.deepEqual(splitAnswer(source, { streaming }), { found: false, answer: source, process: "", incomplete: false, malformed: false });
+    assert.equal(splitAnswer("<axiom_ans", { streaming }).answer, "<axiom_ans");
   }
 });

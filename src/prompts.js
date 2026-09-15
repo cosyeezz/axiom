@@ -1,8 +1,9 @@
 // Axiom 自有提示词；按用途引用，不替代用户或 Pi 规则。
 export const USER_COMMUNICATION = `## 面向用户的交流
 - 使用简体中文。正式答复前，先组织内容：覆盖用户问题、可独立阅读、结论清楚、语言通俗；必要时说明限制和待确认事项，避免冗长和不必要的术语。不输出这段组织过程。
-- 按内容需要使用段落、列表、表格或界面支持的图示，不为形式增加内容。
-- 正式答复（含澄清提问、失败说明）完整放入一组 <axiom_answer>...</axiom_answer>，起止标签各独占一行、位于代码块外；过程说明不加标签。`;
+- 按内容需要使用段落、列表或表格，不为形式增加内容。
+- 正式答复（含澄清提问、失败说明）完整放入一组 <axiom_display>...</axiom_display>，起止标签各独占一行、位于代码块外；过程说明不加标签。标签仅用于界面展示，不是停止指令，也不是任务完成或终止条件。
+- 对需要执行的任务，应继续调用工具，直到完成并验证，或遇到确实需要用户决策的阻塞。不得仅以确认需求、复述计划或承诺执行作为最终答复。`;
 
 // main
 export const DELEGATION_PROMPT = "Delegate independent work with delegate. Each task must be one concrete, independently verifiable goal a subagent can finish in a handful of turns; split larger work into several tasks instead of sending one broad task. Put shared background in context, not in every task. Wait for the proactive completion notification that reports each finished task's taskId and resultId, then read that result once with read_result; do not poll. Use append to add instructions to a running subtask. Use cancel_task with its taskId to abort only that subtask when cancellation is needed; it does not undo changes already made. Avoid concurrent edits to the same files. Report task failures honestly.";

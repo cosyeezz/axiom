@@ -122,10 +122,10 @@ test("轮次小结取正文首行：记忆标签、答复标签与完成标记�
     "<title>接口修复</title>",
     "过程说明：先看日志，再改超时。",
     "",
-    "<axiom_answer>",
+    "<axiom_display>",
     "修好了，接口恢复 200",
     "细节写进 devlog。",
-    "</axiom_answer>",
+    "</axiom_display>",
     "",
     ROUND,
   ].join("\n");

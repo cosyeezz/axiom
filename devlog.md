@@ -1,5 +1,18 @@
 # 开发记录
 
+## 2026-09-15 08:12 -0700 按用户要求移除旧回答标签兼容
+
+- 原因与决策：用户明确不需要历史兼容；展示解析仅识别 axiom_display，删除新旧标签配对表，恢复单组标签判定。旧 axiom_answer 不再作为展示协议解析，原始历史不改写。
+- 文件：public/answer-tags.js、public/app.js、src/goal.js、tests/answer-tags.test.js、tests/goal.test.js、tests/app.test.js、README.md、devlog.md、代码索引。
+- 验证：npm test 600 通过、2 跳过、0 失败；新增旧标签及其流式前缀按普通文本透传的断言，现有展示和 Goal 测试使用新标签；git diff --check 通过。
+
+## 2026-09-15 08:10 -0700 展示标签改名与执行收尾约束
+
+- 原因：去掉模型无法判断的“界面支持的图示”，避免正式答复标签被理解为任务结束要求。
+- 内容与决策：主代理提示词改用 axiom_display，明确标签仅用于界面展示而非停止/完成/终止条件；需要执行的任务持续调用工具直到完成并验证或遇到需要用户决策的阻塞，不得以确认需求、复述计划或承诺执行代替交付。共享解析器支持新标签并兼容历史 axiom_answer，不改原始消息、不新增终止逻辑；新旧标签不能错配。
+- 文件：src/prompts.js、public/answer-tags.js、public/app.js、src/goal.js、tests/answer-tags.test.js、tests/goal-markers.test.js、tests/memory-ui.test.js、tests/message-activity.test.js、README.md、devlog.md、代码索引。
+- 验证：独立 worktree 内 npm test：606 通过、2 跳过、0 失败；覆盖新旧标签、流式前缀、代码示例保护、畸形/错配回退，以及新标签的前端显示和 Goal 完成标记组合。git diff --check 通过。未改视觉样式，未操作运行中的服务。
+
 ## 2026-09-15 桌面会话字号等比调整
 
 - 原因：会话字体偏小，需要放大阅读内容但不改变侧边栏与输入栏。
