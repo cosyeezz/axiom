@@ -44,7 +44,8 @@ desktop/pake.json ── Pake 独立桌面壳（macOS Universal / Windows x64）
                  ├─ file-picker.js       共享文件/目录选择、分类图标、按目录分页加载
                  ├─ tooltip.js/css       全站统一暗色悬停提示（接管原生 title、键盘/Popover/Esc）
                  ├─ markdown.js          marked + DOMPurify（XSS 边界）
-                 └─ stream-renderer.js   流式增量渲染状态机
+                 └─ stream-renderer.js   共享 rAF 绘制/挂载生命周期
+                      └─ stream-playback.js  有界字素游标/真实时间缓冲追赶
       │  WebSocket JSON（command，src/protocol.js zod 校验）
       ▼
 scripts/install.mjs    一键安装：装依赖/注册自启/启动守护/健康检查/打开浏览器

@@ -31,7 +31,8 @@ test("one frame, shared Markdown for lazy thinking, final flush and switch cance
   const document = dom.window.document;
   let scheduled,
     count = 0,
-    writes = 0;
+    writes = 0,
+    time = 0;
   const renderer = createStreamRenderer(
     (el, text) => {
       writes++;
@@ -40,12 +41,12 @@ test("one frame, shared Markdown for lazy thinking, final flush and switch cance
     () => {},
     (fn) => {
       count++;
-      scheduled = fn;
+      scheduled = () => { time += 40; fn(); };
       return 1;
     },
     () => {
       scheduled = undefined;
-    },
+    }, 40, () => time,
   );
   const item = {
     text: document.createElement("div"),
@@ -278,7 +279,7 @@ test("突发 delta 合并为一次节流绘制，pending 预处理只做一次�
     let paints = 0, prepares = 0;
     const renderer = createStreamRenderer(
       (el, text) => { paints++; el.textContent = text; },
-      () => {}, timers.schedule, timers.cancel,
+      () => {}, timers.schedule, timers.cancel, 40, timers.now,
     );
     const item = streamItem(document);
     item.prepare = (self) => { prepares++; self.buffer = self.raw; };
@@ -308,7 +309,7 @@ test("持续输入按约 40ms 上限节流，不因重置计时被饿死", () =>
     const stamps = [];
     const renderer = createStreamRenderer(
       (el, text) => { stamps.push(timers.now()); el.textContent = text; },
-      () => {}, timers.schedule, timers.cancel,
+      () => {}, timers.schedule, timers.cancel, 40, timers.now,
     );
     const item = streamItem(document);
     item.prepare = (self) => { self.buffer = self.raw; };
@@ -336,7 +337,7 @@ test("flush 绕过节流并收口 pending；clear 取消挂起调度，旧回调
     let paints = 0;
     const renderer = createStreamRenderer(
       (el, text) => { paints++; el.textContent = text; },
-      () => {}, timers.schedule, timers.cancel,
+      () => {}, timers.schedule, timers.cancel, 40, timers.now,
     );
     const item = streamItem(document);
     item.prepare = (self) => { self.buffer = self.raw; };
@@ -392,7 +393,7 @@ test("折叠任务不调度不解析，展开时补画最新累计内容", () =>
     let paints = 0, prepares = 0;
     const renderer = createStreamRenderer(
       (el, text) => { paints++; el.textContent = text; },
-      () => {}, timers.schedule, timers.cancel,
+      () => {}, timers.schedule, timers.cancel, 40, timers.now,
     );
     const task = { node: { open: false } };
     const item = streamItem(document, { task });
@@ -417,11 +418,11 @@ test("折叠任务不调度不解析，展开时补画最新累计内容", () =>
   }
 });
 
-test("生产默认 setTimeout 路径在有界等待内完成绘制且 flush 后不再补画", async () => {
+test("无 rAF 的 Node 降级调度在有界等待内完成绘制且 flush 后不再补画", async () => {
   const dom = new JSDOM("");
   const document = dom.window.document;
   try {
-    // 不注入调度器：走 createStreamRenderer 的默认 setTimeout(fn, 40) 分支。
+    // Node 没有 rAF；浏览器生产 rAF 路径另由 smooth-stream-browser.py 实测。
     let paints = 0;
     const renderer = createStreamRenderer(
       (el, text) => { paints++; el.textContent = text; },

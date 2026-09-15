@@ -229,6 +229,7 @@ function forgetGrowth(el) { growthWatch.delete(el); growthObserver?.unobserve(el
 for (const event of ["wheel", "touchstart", "touchmove", "keydown", "pointerdown"])
   transcript.addEventListener(event, () => noteScrollIntent(transcript), { capture: true, passive: true });
 const renderer = createStreamRenderer(renderMarkdown, scrollLatest);
+window.addEventListener("pagehide", (event) => { if (!event.persisted) renderer.dispose(); });
 // 只监听用户意图，不监听程序触发的 scroll，以免贴底刷新自我延迟。
 for (const event of ["wheel", "touchstart", "touchmove", "pointerdown", "keydown", "input"])
   document.addEventListener(event, () => renderer.interact(), { capture: true, passive: true });
@@ -1154,6 +1155,7 @@ function stopActivity(agentId, label = "已停止") {
     item.active = false;
     // 落定停用态记在 item 上：挂起的流式帧/工具更新不得再把它回退成 done/connecting。
     item.stopped = label;
+    renderer.flush(item);
     updateActivity(item, label);
   }
   for (const tool of toolItems.values()) if (tool.agentId === agentId && ["running", "waiting"].includes(tool.node.dataset.state))
@@ -1361,6 +1363,7 @@ function card(title, task) {
   thinking.hidden = true;
   const text = document.createElement("div");
   text.className = "markdown";
+  text.setAttribute("aria-live", "off");
   const processText = document.createElement("div");
   processText.className = "markdown message-process";
   processText.hidden = true;
@@ -2063,6 +2066,8 @@ function applyEvent(message) {
   }
   if (type === "agent.message.start" && data.message.role === "assistant") {
     clearWaiting(agentId);
+    const previous = live.get(agentId);
+    if (previous) { renderer.flush(previous); renderer.disposeMessage(previous); }
     live.set(
       agentId,
       card(

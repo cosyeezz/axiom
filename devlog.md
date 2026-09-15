@@ -2045,3 +2045,12 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 决策：不加依赖、不加第二条业务连接、不加应用优先级队列，不改协议 seq 含义。归并失败停止后续事件并受控重快照，不再吞错推进；32 MiB 单帧上限会限制超大历史快照，明确留给 05 分页恢复，不用无限重下载掩盖限制。自动恢复上限 5 次，维护超过窗口后手动恢复。
 - 复核修复：断线作废旧渲染尾部；等待旧初始化退出再建新连接；重连坏会话回落初始化；跨工作空间打开后恢复本页订阅；bfcache pagehide 不销毁通信层；1009 清空队列。
 - 测试：新增 tests/realtime-transport.test.js，迁移 public-source 夹具与 app/goal/model/remote/snapshot 集成用例；全量 npm test 验证，未运行真实业务服务或模型，未安装依赖（仅 junction 复用已有 node_modules）。同步 README 与 codebase-map 架构/模块索引。
+
+
+## 2026-09-15 平滑流式显示（feat/smooth-stream）
+
+- 内容/原因：数据批到但文字按真实时间显示；单 rAF 接管旧 timeout 绘制，纯播放字素状态机与安全普通文本快路，保留权威数据即时性。
+- 文件：public/stream-playback.js、stream-renderer.js、markdown.js、app.js、src/server.js；新增纯时钟/DOM/浏览器测试，既有页面测试明确 reduced-motion 环境；README、索引及 docs/smooth-stream-delivery.md 同步。
+- 决策：当前 item 对象+generation 身份，不引入 messageId/seq/reducer；最多24K UTF-16全文分段，避免固定尾窗破坏旗帜/ZWJ；超长Markdown完整安全原文，复杂结构仍批量净化。
+- 验证：npm test 628项，626通过/2既有跳过/0失败；4倍CPU隔离浏览器普通50字40次显示、p95帧16.7ms、0长任务。复杂Markdown仍有同步长任务，预算仅消息间生效，明确不声称全场景达标。证据docs/perf-smooth-stream.json。
+- 收尾：按本轮例外只提交功能分支，保留worktree，不合并或推送master。
