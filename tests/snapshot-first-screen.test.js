@@ -5,6 +5,7 @@ import { JSDOM } from "jsdom";
 import { marked } from "marked";
 import createPurify from "dompurify";
 import { createStreamRenderer } from "../public/stream-renderer.js";
+import { publicSource } from "./helpers/public-source.js";
 
 // P1-2 首屏渐进显示：登录恢复在同步清理旧 DOM / 身份切换完成后、首个分片调度前就显示 workspace，
 // 但 connected 与发送能力必须等完整恢复才开放。这里跑真实登录入口 + 真实 app.js，用受控调度
@@ -16,14 +17,12 @@ const modelSources = await Promise.all(["model-picker", "model-auth", "model-man
   const exports = [...source.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
   return `Object.assign(window, (() => { ${source.replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`;
 })).then((parts) => parts.join("\n"));
-const serviceSource = (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^export /gm, "");
-const questionSource = (await readFile(new URL("../public/question.js", import.meta.url), "utf8")).replace(/^export /gm, "");
-const memorySource = (await readFile(new URL("../public/memory-tags.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+// 与 tests/app.test.js 同一套加载顺序：markdown-scan 是 memory-tags/goal-markers 的依赖。
+const pageSource = await publicSource("markdown-scan", "memory-tags", "goal-markers", "question", "service-settings", "app");
 // answer-tags 与 memory-tags 都有顶层常量，同处一段脚本会重复声明；包一层隔离作用域。
-const answerSource = `Object.assign(window, (() => { ${(await readFile(new URL("../public/answer-tags.js", import.meta.url), "utf8")).replace(/^export /gm, "")}\nreturn { splitAnswer }; })());`;
+const answerSource = `Object.assign(window, (() => { ${(await readFile(new URL("../public/answer-tags.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "")}\nreturn { splitAnswer }; })());`;
 const markdownSource = (await readFile(new URL("../public/markdown.js", import.meta.url), "utf8"))
   .replace(/^import .*;\r?\n/gm, "").replace("export function", "function");
-const appSource = (await readFile(new URL("../public/app.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "");
 
 const CONFIG = { model: "test/model", thinking: "off", levels: ["off"], skills: [] };
 const LONG_MESSAGES = 240;
@@ -92,7 +91,7 @@ function boot(state = longState()) {
   const chunks = [];
   window.scheduler = { postTask: (fn) => { chunks.push(fn); } };
   window.eval([
-    modelSources, pickerSource, serviceSource, questionSource, memorySource, answerSource, appSource,
+    modelSources, pickerSource, pageSource, answerSource,
     "window.__app = {" +
     " state: () => ({ connected, connecting, sessionId, queue: snapshotQueue })," +
     " views, snapshot," +

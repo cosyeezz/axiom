@@ -105,6 +105,98 @@ test("标记解析：四空格/Tab 缩进代码里的标记不算，strip 只删
   assert.equal(stripGoalMarkers(text), `说明\n    ${ROUND}`);
 });
 
+test("strip：模型补的闭合标签与空标签对都不留在展示文本里", () => {
+  // 空标签对不算信号（不放宽防伪造口径），但展示文本里不能留下标签原文
+  assert.deepEqual(parseGoalMarkers(`完成\n${ROUND}</axiom_round_finished>`), { roundFinished: false, goalFinished: false });
+  assert.equal(stripGoalMarkers(`完成\n${ROUND}</axiom_round_finished>`), "完成");
+  assert.equal(stripGoalMarkers(`完成\n${ROUND}\n</axiom_round_finished>`), "完成");
+  assert.equal(stripGoalMarkers(`完成\n</axiom_goal_finished>`), "完成");
+  assert.equal(stripGoalMarkers(`${ROUND}干完了`), "干完了");
+  // 行内代码里的标记是在讨论协议，原样保留
+  assert.equal(stripGoalMarkers(`结束时输出 \`${ROUND}\` 即可`), `结束时输出 \`${ROUND}\` 即可`);
+});
+
+test("轮次小结取正文首行：记忆标签、答复标签与完成标记都不落进小结", () => {
+  const { goal } = runningGoal();
+  const text = [
+    "<title>接口修复</title>",
+    "过程说明：先看日志，再改超时。",
+    "",
+    "<axiom_answer>",
+    "修好了，接口恢复 200",
+    "细节写进 devlog。",
+    "</axiom_answer>",
+    "",
+    ROUND,
+  ].join("\n");
+  goal.onReply(asst(text, 3));
+  assert.equal(goal.snapshot().rounds[0].summary, "修好了，接口恢复 200");
+  const plain = runningGoal();
+  plain.goal.onReply(asst(`修好了\n${ROUND}`, 3));
+  assert.equal(plain.goal.snapshot().rounds[0].summary, "修好了");
+});
+
+test("验证提示：还有未收尾的轮次时不要求整体完成标记", async () => {
+  const bash = (id) => ({ toolCallId: id, toolName: "bash", isError: false });
+  const { goal } = runningGoal({ plan: PLAN_MULTI });
+  goal.onReply(asst(`第 1 轮做完了\n${ROUND}`, 3));
+  assert.equal(goal.snapshot().phase, "verifying");
+  const outcome = await call(evidenceTool(goal, [bash("call_1"), bash("call_2")]), {
+    criteria: [
+      { criterion: "启动不再崩溃", toolCallId: "call_1" },
+      { criterion: "线上接口返回 200", toolCallId: "call_2" },
+    ],
+  });
+  assert.equal(outcome.ready, true);
+  assert.equal(outcome.completable, false); // 第 2 轮还没跑，轮次未收尾
+  const prompt = goal.context();
+  assert.doesNotMatch(prompt, /证据已齐：在回复最后单独一行输出 <axiom_goal_finished>/);
+  assert.match(prompt, /本轮证据已齐[\s\S]*<axiom_round_finished>/);
+});
+
+test("证据门：整体验收证据也要本轮新鲜，陈旧证据不算整体已齐", async () => {
+  const plan = {
+    objective: PLAN.objective,
+    constraints: [],
+    acceptance: ["线上接口返回 200"],
+    rounds: [
+      { title: "第一轮", objective: "修复崩溃", acceptance: ["启动不再崩溃"] },
+      { title: "第二轮", objective: "补监控", acceptance: ["监控面板可见 200 比例"] },
+    ],
+  };
+  const bash = (id) => ({ toolCallId: id, toolName: "bash", isError: false });
+  const { goal } = runningGoal({ plan });
+  goal.onReply(asst(`第 1 轮完成\n${ROUND}`, 3));
+  const first = await call(evidenceTool(goal, [bash("call_1"), bash("call_2")]), {
+    criteria: [
+      { criterion: "启动不再崩溃", toolCallId: "call_1" },
+      { criterion: "线上接口返回 200", toolCallId: "call_2" },
+    ],
+  });
+  assert.equal(first.accepted, true);
+  goal.onReply(asst(`进下一轮\n${ROUND}`, 4));
+  assert.equal(goal.snapshot().currentRound, 1);
+  goal.onReply(asst(`第 2 轮完成\n${ROUND}`, 5));
+  assert.equal(goal.snapshot().phase, "verifying");
+  // 本轮证据补齐，但整体验收的证据还是第 1 轮的 -> 整体不算已齐
+  const stale = await call(evidenceTool(goal, [bash("call_3")]), {
+    criteria: [{ criterion: "监控面板可见 200 比例", toolCallId: "call_3" }],
+  });
+  assert.equal(stale.ready, true);
+  assert.deepEqual(stale.missingGoal, ["线上接口返回 200"]);
+  assert.equal(stale.completable, false);
+  goal.onReply(asst(`整体完成\n${GOAL}`, 6));
+  assert.equal(goal.snapshot().phase, "verifying");
+  // 在最后一轮重新验证整体标准后才能完成
+  const fresh = await call(evidenceTool(goal, [bash("call_4")]), {
+    final: true,
+    criteria: [{ criterion: "线上接口返回 200", toolCallId: "call_4" }],
+  });
+  assert.equal(fresh.completable, true);
+  goal.onReply(asst(`整体完成\n${GOAL}`, 7));
+  assert.equal(goal.snapshot().phase, "completed");
+});
+
 test("无目标会话：snapshot/context 为 null，两个工具调用都被拒绝", async () => {
   const { goal, events } = make();
   assert.equal(goal.active, false);
@@ -187,6 +279,7 @@ test("证据门：伪造 toolCallId 被服务端拒绝", async () => {
 test("证据门：目标工具自身结果、失败调用、标准不匹配都被拒绝", async () => {
   const results = [
     { toolCallId: "self", toolName: "goal_evidence", isError: false },
+    { toolCallId: "cancel", toolName: "cancel_task", isError: false },
     { toolCallId: "bad", toolName: "bash", isError: true },
     { toolCallId: "ok", toolName: "bash", isError: false },
   ];
@@ -197,14 +290,16 @@ test("证据门：目标工具自身结果、失败调用、标准不匹配都�
       { criterion: "启动不再崩溃", toolCallId: "bad" },
       { criterion: "根本没这条标准", toolCallId: "ok" },
       { criterion: "启动不再崩溃", toolCallId: "ok", tool: "别名" },
+      { criterion: "启动不再崩溃", toolCallId: "cancel" },
     ],
   });
   assert.equal(outcome.accepted, false);
-  assert.equal(outcome.invalid.length, 4);
+  assert.equal(outcome.invalid.length, 5);
   assert.match(outcome.invalid[0].reason, /不能作为验收证据/);
   assert.match(outcome.invalid[1].reason, /失败/);
   assert.match(outcome.invalid[2].reason, /验收标准/);
   assert.match(outcome.invalid[3].reason, /工具名不符/);
+  assert.match(outcome.invalid[4].reason, /不能作为验收证据/);
 });
 
 test("证据门：工具只记录证据不推进状态，最终回复的轮次标记才进下一轮", async () => {

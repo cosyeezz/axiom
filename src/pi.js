@@ -6,7 +6,6 @@ import {
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { capabilityLoader, discoverCapabilities, refreshProjectSkills } from "./capabilities.js";
-import { stripMemoryTags } from "../public/memory-tags.js";
 import { createBackgroundCompaction, entryIdFor, normalizeCompaction, summarizedEntryIds } from "./compaction.js";
 import { WRAP_UP_PROMPT, budgetSystemPrompt } from "./task-budget.js";
 import { canResume, createAutoRetry, dropFailedAssistant } from "./retry.js";
@@ -217,27 +216,32 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
     let lastResult, reaskController;
     // 安全暂停：在轮次/工具批次边界（工具全部执行完并落盘后、下一个请求发出前）结束本次运行，
     // 不 abort、不丢已产出；队列中的 steering/follow-up 本轮不消费，留给下次 prompt/外层。
-    // 只有显式提供 shouldPause 的会话（goal 外层）才装；子代理不装，靠 executionContext 收尾提示自然结束。
-    let paused = false;
+    // 两个来源共用这条路径：goal 外层的安全暂停（requestPause）与用户的安全停止（requestSafeStop）。
+    // 都只请求边界即停，没有边界可等时（自动重试退避）由 retry.cancel() 取消等待。
+    let paused = false;          // goal 暂停：result()/paused() 据此不把收尾当失败
+    let safeStopPending = false; // 用户安全停止：前端据此显示等待提示条与停下提醒点
     const shouldPause = selection.shouldPause;
-    if (typeof shouldPause === "function") {
-      session.agent.shouldStopAfterTurn = () => {
-        if (paused) return true; // requestPause() 已请求：边界即停，不依赖闭包后续取值
-        try {
-          if (!shouldPause()) return false;
-        } catch {
-          return false; // 契约：不得抛错打断底层循环；钩子出错按“不暂停”继续
-        }
-        paused = true;
-        return true;
-      };
-    }
+    const stopping = () => paused || safeStopPending;
+    // 钩子所有会话（含子代理）一律安装：安全停止与 goal 无关，非 goal 会话没有 shouldPause，
+    // 于是它们在没人请求收工时就恒返回 false；原先只给 goal 外层装是当时只有暂停一个来源。
+    session.agent.shouldStopAfterTurn = () => {
+      if (stopping()) return true; // 已请求：边界即停，不依赖闭包后续取值
+      if (typeof shouldPause !== "function") return false;
+      try {
+        if (!shouldPause()) return false;
+      } catch {
+        return false; // 契约：不得抛错打断底层循环；钩子出错按“不暂停”继续
+      }
+      paused = true;
+      return true;
+    };
     // SDK 的 AgentSession 在内层循环停下后还会 `while (await _handlePostAgentRun()) await agent.continue()`
     // 继续抽干 steering/follow-up 队列，判断尽头就是 agent.hasQueuedMessages()。
-    // shouldStopAfterTurn 只终止内层循环，挡不住这层抽水：暂停期间让它报告“无排队消息”，
-    // 队列实体与展示原样保留，待下次 prompt 复位 paused 后恢复正常报告；不 abort、不丢消息。
+    // shouldStopAfterTurn 只终止内层循环，挡不住这层抽水：收工期间让它报告“无排队消息”，
+    // 队列实体与展示原样保留，待下次 prompt 复位标志后恢复正常报告；不 abort、不丢消息。
+    // 标志必须闩到下一次运行开始才复位，否则抽水那一次查询已经是 false，照样会被拉起来。
     const agentHasQueued = session.agent.hasQueuedMessages.bind(session.agent);
-    session.agent.hasQueuedMessages = () => !paused && agentHasQueued();
+    session.agent.hasQueuedMessages = () => !stopping() && agentHasQueued();
     const cancelledQuestion = () => {
       let messages = session.agent.state.messages;
       const tail = messages.at(-1);
@@ -272,7 +276,20 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       config: initialCompaction,
       onEvent: emitAxiom,
     });
-    const retry = createAutoRetry({ session, emit: emitAxiom, patterns: selection.retry });
+    const retry = createAutoRetry({
+      session,
+      emit: emitAxiom,
+      patterns: selection.retry,
+    });
+    // 安全停止：只翻标志，实际停在 SDK 的轮次边界（助手回答与本轮工具都正常跑完之后、
+    // 拉取 steer/followUp 队列与发起下一次请求之前）。因此不丢产出、不杀进程、不改 stopReason。
+    // 钩子已在上面的安全收工处一并安装；这里只做标记，标志复位统一走 beginRun/abort。
+    // 每次运行开始都清一次：被 abort 的运行不会走到轮次边界，残留标志会误停下一次运行的第一轮。
+    const beginRun = () => {
+      safeStopPending = false;
+      paused = false; // 复位 goal 暂停，否则暂停过一次就再也跑不动
+      lastResult = undefined;
+    };
     session.subscribe((event) => {
       if (event.type === "turn_end") void compactionCtrl.onTurnEnd();
       if (event.type === "compaction_end" && event.result && !event.aborted) {
@@ -374,17 +391,25 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         activeTools: session.getActiveToolNames(),
         compaction: compactionCtrl.getConfig(),
       }),
+      // 安全停止请求：幂等，只在运行中有意义（未运行时的残留标志由下一次 beginRun 清掉）。
+      // 没有轮次边界可等的场景也要能停：退避等待期由 retry.cancel() 取消等待（无等待时是 no-op，
+      // 在飞请求与正在跑的工具不受影响）。
+      requestSafeStop: () => {
+        safeStopPending = true;
+        retry.cancel();
+      },
+      safeStopPending: () => safeStopPending,
       prompt: async (text, options) => {
         if (await compactionCtrl.maybeApply()) emitAxiom({ type: "agent.runtime", data: agentRuntime(session) });
-        lastResult = undefined;
-        paused = false;
+        beginRun();
         // 背景由 context 钩子按请求实时取；这里只挂 titleRequest 的标题指令，消费一次即失效。
         if (memoryState) memoryState.pending = options?.titleRequest ? TITLE_INSTRUCTION : null;
         try {
           await retry.run(() => session.prompt(text, options?.images ? { images: options.images } : undefined));
         } catch (error) {
-          // 暂停会把等待中的退避取消，retry.run 以取消收尾并抛错：语义是暂停，不是运行失败，交 result()/paused() 表达。
-          if (!paused) throw error;
+          // 暂停/安全停止会把等待中的退避取消，retry.run 以取消收尾并抛错：语义是收工，不是运行失败，
+          // 交 result()/paused() 表达。
+          if (!stopping()) throw error;
         }
       },
       // 手动重试：不带新输入续跑上一次被中断/失败的运行（删掉末尾失败的 assistant 后 continue()，
@@ -395,6 +420,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         const original = cancelledQuestion();
         if (!original || reaskController) throw new Error('没有可重新提问的问题');
         const controller = reaskController = new AbortController();
+        beginRun();
         const call = { ...original.call, id: `question_${crypto.randomUUID()}` };
         const append = (message) => {
           const entryId = session.sessionManager.appendMessage(message);
@@ -402,8 +428,6 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
           emitAxiom({ type: 'agent.message.start', data: { message } });
           emitAxiom({ type: 'agent.message.end', data: { message, entryId } });
         };
-        lastResult = undefined;
-        paused = false;
         try {
           const assistant = { ...original.assistant, content: [call], stopReason: 'toolUse', timestamp: Date.now(),
             usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
@@ -421,8 +445,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       resumable: () => canResume(session),
       resume: async () => {
         if (!canResume(session)) throw new Error("没有可重试的请求：上一次运行已正常结束");
-        lastResult = undefined;
-        paused = false;
+        beginRun();
         await retry.run(() => {
           dropFailedAssistant(session);
           return session.agent.continue();
@@ -437,6 +460,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         retry.cancel();
       },
       async abort() {
+        safeStopPending = false; // 强制停止后不该留个待停标志误停下一次运行
         reaskController?.abort();
         retry.cancel(); // 先中断等待中的自动重试，避免 abort 后又发起 continue
         await Promise.all([compactionCtrl.cancel?.(), session.abort()]);
@@ -454,9 +478,9 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       result() {
         const last = lastResult;
         if (!last) return "指令已处理，未产生模型回答。";
-        // 用户主动暂停而收尾（退避被取消/边界停在 error·aborted·length 消息上）不算失败：
-        // 返回已有文本（可能为空），由 paused() 说明；未经暂停的真实失败照旧抛错并进一步暴露。
-        if (!paused && ["error", "aborted", "length"].includes(last.stopReason))
+        // 用户主动暂停/安全停止而收尾（退避被取消/边界停在 error·aborted·length 消息上）不算失败：
+        // 返回已有文本（可能为空），由 paused() 说明；未经收工请求的真实失败照旧抛错并进一步暴露。
+        if (!stopping() && ["error", "aborted", "length"].includes(last.stopReason))
           throw new Error(
             last?.errorMessage || last?.stopReason || "No assistant result",
           );
@@ -464,7 +488,9 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
           .filter((block) => block.type === "text")
           .map((block) => block.text)
           .join("\n");
-        return memoryState ? stripMemoryTags(text) : text;
+        // 不剥记忆标签：result() 是模型原文出口，落库与父代理 read_result 都要原文；
+        // 剥离只属于展示层（public/app.js 渲染前自己剥）。
+        return text;
       },
       subscribe(listener) {
         listeners.add(listener);

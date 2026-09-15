@@ -5,11 +5,11 @@
 - 修复：public/app.js 用编辑对象、加载序号及目录三重守卫；src/sessions.js 保存与删除共用串行链，先落库后更新内存，目录别名按真实路径归一化。
 - 防再犯：tests/defaults.test.js 覆盖目录独立模型、删除回落和写入失败；目录选择器的测试桩不能改变「打开工作空间」原有返回值。
 
-### 2026-09-14 Goal 安全暂停必须覆盖 SDK 外层队列续跑
+### 2026-09-14 Goal 安全暂停必须覆盖 SDK 外层队列续跑（同机制也覆盖用户安全停止）
 - 症状：工具批次已安全停止，但队列非空时仍发第二个模型请求。
 - 根因：SDK shouldStopAfterTurn 仅停止内层；AgentSession 的后处理仍根据 hasQueuedMessages 自动 continue。
-- 修复：src/pi.js 暂停期间禁止队列驱动自动续跑，真实队列和历史不动；下一次显式 prompt 复位。
-- 防再犯：tests/goal-pi.test.js 同时验证在飞工具完成、请求次数不增加、队列保留及显式恢复；升级 SDK 后重跑，不能只测空队列暂停。
+- 修复：src/pi.js 把 goal 暂停（requestPause）与用户安全停止（requestSafeStop）合为同一个 shouldStopAfterTurn 钩子，收工期间禁止队列驱动自动续跑，真实队列和历史不动；抽水循环会反复查 hasQueuedMessages，所以标志必须闩到下一次 beginRun/abort 才复位。二者若各自赋值同一个钩子，后建的会静默覆盖前一个。
+- 防再犯：tests/goal-pi.test.js 与 tests/safe-stop.test.js 都同时验证在飞工具完成、请求次数不增加、队列保留及显式恢复；升级 SDK 后重跑，不能只测空队列暂停。
 
 ### 2026-09-13 手机收起不等于只隐藏模型栏
 - 症状：真机收起后输入/进度/跳转仍占据屏幕下部，无法纯阅读。
@@ -583,3 +583,22 @@
 - 根因：取消已产生错误toolResult，continue不会直接重新执行question；SDK还可能在末尾附加空error assistant。
 - 修复：pi.js 识别尾部取消question，以新调用编号追加原题并直接执行，结果写入JSONL和内存并发出UI事件；Sessions.retry按canReask路由。
 - 防再犯：真实SDK测试确认重开不发模型请求、再次取消可恢复、回答才续跑；不得重复原toolCallId结果或回退丢其它工具记录。
+
+## 2026-09-14：工作空间技能勾选后没有保存
+
+- 症状：旧目录记录只含部分字段，新能力选择被忽略。
+- 根因：保存遍历已存对象的键，而非允许的 selection schema；项目技能另存旁路增加读写不一致。
+- 修复：sessions.js 按 schema 接收补丁、旧 projectSkills 合并到完整目录 selection，落盘后更新内存；capabilities.js/server.js 按来源隔离全局与项目资源，app.js 不把目录外能力补成选项。
+- 防回归：project-skills.test.js 覆盖缺字段记录、新勾选、重载、目录别名与跨目录拒绝；capabilities.test.js 验证 MCP/插件来源与目录刷新；默认配置生效无需重启。
+
+### 2026-09-14 前端公共模块漏注册导致永久连接中
+- 症状：health 正常，页面显示但一直连接中。
+- 根因：d99efdc 的 markdown-scan.js 被标签模块静态导入，server assets 未注册，404 阻断 app.js 执行；本地文件测试加载器绕过 HTTP 未发现。
+- 修复：src/server.js 补路由，tests/server.test.js 验证标签模块和扫描模块 HTTP 200、JavaScript MIME 及缓存。
+- 防再犯：新增或抽取浏览器模块时检查传递依赖路由，不以磁盘 import 成功替代 HTTP 验证。
+
+
+### 2026-09-15 单个子任务卡住缺少定点取消入口
+- 症状：无超时工具迟迟不返回，append 只能排队，主代理无法只中断该任务。
+- 修复：src/tools.js 注册 cancel_task，src/tasks.js 定点 abort 并沿用终态/通知流程；不设置整会话 cancelling，不回滚已发生副作用。
+- 防再犯：任务测试覆盖启动竞态、兄弟隔离、重复取消与未知ID，Sessions 集成验证终态先落库、主轮结束后通知可读。取消回执不得作为 Goal 验收证据；无默认超时和 Goal 强停退化为暂停另行处理。

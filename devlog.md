@@ -1,5 +1,45 @@
 # 开发记录
 
+## 2026-09-15 原文对照改为逐条阅读
+
+- 原因：JSON 日志弹窗无法与聊天对应，用户要求真正可读的原文模式。
+- 内容：入口移到主题旁；桌面左右分栏，窄屏切换；逐消息纯文本、双向定位高亮、逐条复制、思考/工具折叠；移除整屏事件 JSON 和截断日志，历史与实时按消息统一保留。
+- 设计：沿用 Linear 的 canvas/surface/raised、ink/muted、accent 与 mono token，8px 卡片圆角；没有新增依赖、后端接口或内容渲染器。
+- 文件：public/app.js、public/index.html、public/style.css、tests/app.test.js、README.md、代码索引。
+- 验证：真实 Chromium 1440px/390px 布局、无横向溢出、无页面异常；页面测试覆盖原文标签、流式、复制、会话隔离与开关，全量 npm test 验证。
+
+## 2026-09-15 独立鹈鹕自行车动画
+
+- 内容：新增 `pelican-bicycle.html`，以手绘 SVG 几何图形呈现自行车骑在鹈鹕背上，CSS 实现步态、颠簸、车轮旋转、围巾摆动和地面运动。
+- 原因与决策：按用户字面要求采用反转骑乘关系；单文件、零依赖、离线打开，以原生复选框暂停动画，并尊重减少动态效果设置。使用 Linear 的 canvas / ink / muted / surface / accent token。
+- 文件：`pelican-bicycle.html`、`README.md`、`devlog.md`。
+- 验证：按用户要求不添加、不运行测试；不使用子任务、不参考本地已完成项目。
+
+## 2026-09-14 原始输入输出诊断入口
+
+- 内容：右上角新增 `</>`，原生 dialog + 只读 textarea 展示当前会话消息快照、输入请求和实时事件，包含子代理，标签/Markdown/HTML 均不解析；关闭面板仍记录。
+- 原因：区分模型原文未包含标签与前端解析导致的内容不可见，在渲染前独立采集，不从渲染 DOM 反推。
+- 决策：复用既有消息通道，无新依赖与后端接口；不收集模型配置/服务凭据，不持久化诊断日志；限最近约 2M 字符并显式提示截断，切换/重连重建快照，注明非供应商 HTTP 报文。沿用 Linear 项目 surface/ink/line/mono token、8px 文本框圆角。
+- 文件：public/app.js、public/index.html、public/style.css、tests/app.test.js、README.md 与代码索引。
+- 验证：页面回归覆盖原文保留、无 HTML 执行、缺 message.start 仍记录、子代理、关闭后记录、输入请求、跨会话隔离与敏感服务配置不记录；运行全量 npm test。
+
+## 2026-09-14 更新后页面连接中：补齐标签扫描模块路由
+
+- 根因：d99efdc 新增 public/markdown-scan.js 并被前端标签模块静态导入，但 src/server.js 未注册路由；HTTP health 正常，浏览器模块 404 导致 app.js 不执行。
+- 修复：仅补静态资源路由，不改自启或 Node 支持范围；tests/server.test.js 补三个标签模块及扫描模块的 HTTP 状态、JavaScript MIME 与缓存验证。README.md 同步排障说明，knowledge.md 沉淀并重建 INDEX.md。
+- 验证：新增测试在修复前明确失败于 /markdown-scan.js 404，修复后通过；npm test 534 项，532 通过、2 跳过、0 失败。Windows 本地真实 HTTP 验证，Mac 待用户更新确认。合并 origin/master a568d0b 后再次全测：539 项，537 通过、2 跳过、0 失败。
+
+## 2026-09-14 安全点停止：两级停止 + 等待提示条 + 停下提醒点
+- 原因：只有硬停，一点就把本轮正在跑的工具和已写一半的回答丢了；需要一个「跑完这一步再停」的选项，同时把会丢产出的硬停降级为需要确认的强制停止。硬停保留为逃生门：安全点粒度是一个 turn，长命令可能等很久。
+- 后端：src/pi.js 在建会话时常驻安装 SDK 原生 `shouldStopAfterTurn` 钩子（loopConfig 在 run 开始就捕获该函数，运行中赋值对本轮无效），新增 `requestSafeStop()` / `safeStopPending()` 与 goal 暂停共用一个函数：先看 `safeStopPending`，再看 goal 的 `paused`，最后问 `shouldPause()`，三者都只请求「边界即停」。SDK 的 `AgentSession` 在轮次边界后还会按 `hasQueuedMessages()` 继续抽干 steer/followUp 队列，单靠 `shouldStopAfterTurn` 挡不住，因此把 `hasQueuedMessages` 一并门控为 `!stopping()`；标志因此必须闩到 `beginRun()`（prompt/reask/resume 入口）或 `abort()` 才复位，否则抽水那次查询就已经是 false。退避等待期没有 turn 边界，`requestSafeStop()` 顺手 `retry.cancel()`（无等待时 no-op，不影响在飞请求与工具）。prompt 的 catch 与 `result()` 同步改为按 `stopping()` 判定：收工导致的退避取消不当失败报错。
+- src/sessions.js 新增 `safeStop(id)`：不 abort、不杀工具，只置 `safeStopping` 并发 `session.state { status:"running", safeStop:true }`；同时 `notificationsPaused = true`，否则子任务完成通知会在 idle 时调 prompt 把会话重新拉起来（与 cancel 同手法，下一次运行开始时恢复）。goal 会话转交 `goalAction(id,"pause")`（master 已有「停=安全暂停目标」的专用路径），避免同一颗按钮两套语义。收尾 idle 带 `stopped:"safe"`，`snapshot()` 在 running 时带 `safeStop`，刷新/重连不丢状态；不新增状态值。
+- 协议：src/protocol.js 的 `cancel` 增加 `mode: "force" | "safe"`，缺省 `force` 保留旧客户端语义；src/server.js 按 mode 分发到 `safeStop` / `cancel`。
+- 前端：public/index.html 拆为 `#stop`（安全停止，文案仍 Stop ■）+ `#force-stop`（`button.danger`，Force ⚠，弹 `#force-stop-dialog` 确认，焦点默认在取消）；新增 `#safe-stop-progress` 绿色提示条（SVG 图标 + 跳动三点，纳入 prefers-reduced-motion）；标题前 `#session-alert` 复用 `.session-attention-dot`，点击清除并 `markSessionSeen`。双按 Esc 只走安全停止；两条停止路径都先 `withdrawQueue()`。样式只用现有 token（`--success` / `--danger` / `--accent-ink` / `--line` / `--surface`）。
+- 边界：主代理停下后子代理继续跑完自己（侧栏仍显示运行中）；暂停期内的子任务通知不补发；队列消息原样退回输入框；标题提醒点仅覆盖安全停止，不复用失败中断，且为页面内存态不跨标签页。goal 模式下两颗停止按钮都走 Goal 的安全暂停（保留目标进度、等子任务收尾），强停的「立即中断」语义仅对普通会话成立。
+- 验证：新增 tests/safe-stop.test.js 4 个用例（真实 Pi SDK + fake SSE 子进程：工具跑完、文本不丢、stopReason 仍可 resume、resume 后正常收尾、排队消息不被抽水循环消费；`sessions.safeStop` 不 abort / 暂停通知 / 快照标志 / idle 标记；idle 幂等与强停优先；cancel 缺省 mode）；tests/goal-sessions.test.js 补 goal 会话转交暂停的回归；tests/app.test.js 补两级停止 UI 回归。
+- 涉及文件：src/pi.js、src/sessions.js、src/server.js、src/protocol.js、public/index.html、public/style.css、public/app.js、tests/safe-stop.test.js、tests/goal-sessions.test.js、tests/app.test.js、README.md、devlog.md。
+- 合并：与 origin/master（2c8051b，含 Goal 模式）合并时，goal 的安全暂停与本功能共用同一个 `shouldStopAfterTurn`/`hasQueuedMessages` 钩子，需合为一个函数（否则后赋值的会覆盖 goal 的暂停）；冲突集中在 src/pi.js（三处 `beginRun()`）、src/sessions.js（startRun 通知复位）、devlog.md 与生成物 INDEX.md。随后又并入 b1cee83（SQLite 持久化排查修复、goal 完成标记展示层剥离、任务结果落库口径），唯一冲突同样是生成物 INDEX.md；重点复核了 `persist()/writeChange()` 改为支持增量数组后，本功能按单对象调用仍然有效。两次合并后 npm test：539 项，537 通过、2 跳过、0 失败。
+
 ## 2026-09-14 工作空间独立会话配置
 
 - 决策：移除具名预设；保留全局默认兜底，每个真实工作目录独立保存配置，下拉只切换编辑对象。删除配置不删除目录或会话，旧预设不迁移。
@@ -44,6 +84,7 @@
 - 边界：文档只写设计意图与安全边界，明确不做「绝对无漏洞」承诺，验收证据是可核对材料而非正确性证明；普通会话路径不变。
 - 未做/状态：本次只改 README.md 与 devlog.md，不碰实现文件；`src/goal.js`、`public/goal.*` 及前端按钮由并行的 runtime/UI 任务实现，尚无端到端验收，README 描述目标行为，不代表已实现或已测试通过。
 - 涉及：README.md、devlog.md。
+
 ## 2026-09-14 默认会话配置的后台自动压缩改为默认开启
 - 原因：新会话一律要手动去默认配置里勾选才能用上后台压缩，默认值偏保守。
 - src/protocol.js compactionDefaults 改为 enabled: true、percentThreshold: 50、keepRecentTokens: 5000（token 阈值仍 100000）；public/app.js 的同名前端默认值保持同源同步。
@@ -1347,6 +1388,12 @@
 - tests/snapshot-chunk.test.js 新增4项受控检查：片间事件顺序且恰好一次、水位去重、无seq放行、短快照异常解除排队。子代理4/4通过；主代理与stream-renderer合跑13/13通过。交互测试新增旁支mark/flush不重置首项1秒截止，渲染器9/9通过；独立交互复核尚待结果。
 - 快速切换/草稿/live恢复测试、浏览器实测和全量验证尚未完成；本条不代表五项优化已验收。
 
+### 2026-09-15 用户授权合并master并在4320预览
+- 用户明确改为提交到master，在现有4320预览，不另起4330。功能分支fetch origin并合并最新master，冲突在worktree内解决；主仓库未跟踪.playwright-mcp与历史stash不动，不重启服务。
+- master新增原始输入输出查看与Goal标记过滤，app.js冲突需保留raw绑定及流式过滤；委派9b1d0723独占产品整合，e7d966ea独占5个新增测试的真实模块依赖接线。devlog保留双方记录，INDEX重建而非手拼。
+- 合并后全量首次599项仅remote.test.js中文路径URL未解码失败；改用fileURLToPath后专项13/13，再全量599项597通过、0失败、2跳过（55.1秒，工具timeout=180）。5个新增测试加载器接入master真实markdown-scan/goal-markers，断言不变；INDEX重建165文件。
+- 功能分支先提交整合并推送，再以合并方式更新master；性能未达标说明不变，4320服务不重启。
+
 ### 2026-09-15 用户授权预览检查点
 - 用户同意先提交可预览版本，后续持续优化。此次仅功能分支检查点，不代表性能验收完成，不合并master、不push、不重启现有服务；保留worktree用于预览与后续优化。
 - 主代理重建INDEX（159文件、0未登记），npm test工具timeout=180：537项、535通过、0失败、2跳过，30.9秒。原生前端无额外构建步骤。
@@ -1483,3 +1530,473 @@
 - 新增 tests/perf-attach-ground-truth.test.js：node:vm 从脚本切出真实 attachGroundTruth/closeSocket/withLimit/sha256，注入假 WebSocket + 受控定时器（fireTimers 触发超时，不等真实 30s），5/5 通过（约 0.1 秒）：成功、畸形JSON与服务端ok:false、ws error/提前close（含结算后事件忽略）、超时清定时器+保登记+未确认保锁、内存删除 openSockets.add 行的承重变异。
 - 主代理 npm test（工具 timeout=180）：531 项、529 通过、0 失败、2 跳过，约 32.3 秒。
 - 遗留风险：closeSocket 只在真实服务/浏览器场景外验证（本机未跑采集）；登记表只覆盖本脚本自建 socket，不覆盖 Playwright/Chromium 内部连接；close 事件迟迟不来时每次清理最多多等 CLOSE_LIMIT_MS；仍未实测「服务端拒绝 attach」的真实报文形状。
+## 2026-09-14T13:06 SQLite 持久化排查清单逐条修复（第 2 轮 / 共 6 轮）
+
+- 原因：第 1 轮只读排查产出 33 条问题清单（跨类 P1-P2、会话 S1-S5、任务 T1-T3、事件 E1-E4、模型存储与配置 M1-M12、守护进程与维护状态 X1-X7）。本轮按「数据丢失/不一致 > 安全 > 性能 > 整洁」逐条修复，每点先写会失败的回归测试并记录失败输出，再改代码使其通过。
+- 结论：29 条已修复，4 条明确不修并给出技术理由（S5/E2/E3/X7）。表结构与字段一个未动，只新增一条幂等部分索引。
+
+### 已修复（29 条，均附修复前失败输出）
+
+跨三类基础设施
+- P1 落库队列队头阻塞（src/sessions.js persist）：按 SQLite 主结果码分类——环境性失败（忙/锁/只读/IO/磁盘满，errcode&0xff ∈ {5,6,7,8,10,13,14,15}）保留队头与增量顺序原样上抛，由下次写入或关闭重放；确定性失败（未知字段/缺 id/库内坏 JSON）每条增量给且只给一次机会，再撞见同一条即丢弃并 emit 上报，绝不让一条坏增量把该会话此后全部落盘永久堵死。修复前失败：`Error: updateSession：未知会话字段 taskBudgetTypo`，连 close() 的收尾落盘一起带崩。
+- P2 persist 裸写 SAVEPOINT：改为复用 SessionStore.change()（回滚自身异常在那里被吞，不掩盖原始错误）。
+
+会话（sessions 表）
+- S1 会话级 taskBudget 不落库：sessionData().selection 补 taskBudget。修复前 selection.taskBudget 为 undefined，重开旧会话被热更成当前全局值。不改表结构（selection 是 JSON 列）。
+- S2 JSONL 被外部删除后 session_file 被写回 NULL：改 `landedSessionFile(item) ?? item.sessionFile ?? null`，「从未生成」与「生成后丢失」不再混为一谈，历史缺失守卫继续生效。修复前 actual undefined。
+- S3 先删 goal 后删 session：新增 Sessions.deleteRecords()，会话行与 goal 记录同一 store.change 事务（goals 表无指向 sessions 的外键，两步分开做崩在中间会「会话还在、目标没了」）。修复前 `删库失败时目标记录必须仍在` actual null。
+- S4 标题落库不带 titleRequested：change.title 分支一并写。修复前 `false !== true`，重启会重复索要一次标题。
+
+任务（tasks 表）
+- T1 notified 先改内存后落库：换序为先落库成功再改内存。修复前 `true !== false`。
+- T2 listPendingSessionIds 全表扫描：新增部分索引 `tasks_pending ON tasks(session_id) WHERE COALESCE(notified,0)=0`（幂等 DDL，只加索引不动表结构；实测现有查询直接命中，无需改 SQL）。修复前 `SCAN tasks USING INDEX sqlite_autoindex_tasks_1`。
+- T3 Goal 阻塞态会话每次启动白拉 SDK：load() 先读 goalStore 持久化 phase，非 running/verifying 直接跳过，notified 原样保留等用户恢复 Goal 再投。修复前 `1 !== 0`。
+
+事件（session_events 表）
+- E1 无 id 事件纯追加致重放膨胀：saveEvent 对无 id 记录按 (session_id,type,agent_id,record) 内容判重，同代理同内容视为同一条，内容不同仍各自成行。修复前同一条写 3 次得 3 行。
+- E4 恢复对账逐条独立事务：整段合并成一次 persist 数组增量（同一 SAVEPOINT），写放大从 1+N 次事务压到 1 次。修复前 `actual 'cancelled' expected 'running'`（半截归一化）。
+
+模型存储与配置（src/pi-model-storage.js、src/model-config.js、src/protocol.js）
+- M1 auth 迁移窗口被 models/config 存在性提前关闭：改为每个来源只看自己的 migrated 标记，仍有告警的来源保持窗口开着。修复前 `config 存在不得推断 auth 已迁移完成`——models.json 合法 + auth.json 有坏条目时，坏条目修好也永不导入且告警被清空。
+- M2 importFavorites 结构非法不告警：与 importModels/importAuth 同口径 recordImportError。
+- M3 hidden 无 CAS：新增 hiddenState()/casHidden()，与 config/favorites/凭据同口径。修复前 Missing expected rejection（跨进程丢更新）。
+- M4 多语句写入未包 SAVEPOINT：新增本模块 change()（同 SessionStore #change 风格），包住 importAuth 循环、recordImportError/clearImportErrors 的读-改-写、importOnce 的 apply+打标记。修复前 `半截导入必须整体回滚` actual `{type:'api_key',key:'sk-a'}`。
+- M5 单行坏 JSON 阻断启动：新增 readRow() 容错读，所有 database.get 改走它；readState 返回 invalid 标志。读路径按未配置处理并在配置页给告警（启动与页面都打得开，用户有自愈入口），写路径明确拒绝。修复前 `store：命名空间 models 键 config 的值不是合法 JSON，读取中止` 直接抛出 init。
+- M6 credentials.modify 落库前不校形状：加 isCredential 校验，杜绝 read/list 看不见却占位阻断导入的幽灵行。
+- M7 favorites 三条写入口径 version 不一致：统一 `{...store, version:1}`（version 放 spread 之后，调用方不能覆盖字面量）。
+- M8 收藏超限静默截断后以截断值做 CAS 基线：normalizeFavorites 不再 slice，上限只拦新增。修复前库内 250 条读回 200、取消一条后只剩 199。
+- M9 saveProvider 放行内联 id：合并后强制 `entry.id = providerId`（与 renameProvider 同口径），原本无 id 的条目不凭空添加。修复前 `'other-id' !== 'key-a'`。
+- M10 顶层非对象配置不报错且指纹等于空配置：configState 返回 invalid，get() 报 parseError、mutate() 拒绝写入。修复前 parseError 为空且可静默覆盖原值。
+- M11 zod invalid_literal 回显原值：oauth 改 `z.string().refine(...)`，issue 不再带 received。修复前错误信息含 `"received": "leak-me-please"`（server.js 会把整条 message 原样回传客户端）。
+- M12 写路径每次重新 prepare：本模块按 SQL 文本缓存 prepared 语句（外部连接仍走各自 prepare）。修复前 5 次写入新 prepare 10 次。
+
+守护进程与维护状态（scripts/service.mjs、scripts/maint-state.mjs、src/main.js）
+- X1 homeDir 未 resolve：统一 resolve（与 src/main.js 同口径）。修复前 `homeDir 必须是绝对路径，实际 ./relhome`——相对 AXIOM_HOME 下 supervisor 与 worker 会写进两个库文件，且 sanitize 白名单失配导致 /status 泄漏本机路径。
+- X2 第二个守护进程启动失败后僵死：抢锁段包 try/catch，抛错前关 maint server、数据库与控制管道。修复前该进程 20s 未退出（actual 'HANG'），一直占着库连接与随机端口。
+- X3 维护状态坏行阻断启动：database.get 包 try/catch 按全新状态重建（与 Database.list 跳坏行、Sessions.loadTaskBudget 有 catch 同口径），restore 对非对象快照（JSON null/标量/数组）同样兜底。修复前 `Error: store：命名空间 maint 键 state-bad 的值不是合法 JSON，读取中止`。
+- X4 全局 taskBudget 读写口径不对称：读侧先按已知键挑取再 strict 校验（未知键不再连合法值一起丢），configureTaskBudget 无库时明确报错。修复前脏键让整条回落默认 {20,2}。
+- X5 main.js initRemote 未 await：记录 remoteReady 并在 stop() 里先等它落定，listen 回调加 `if (closing) return`。实测证据：spawn 真实 main.js + IPC service.stop，修复前 5/5 全部 remote/config 未落库，修复后 5/5 落库。
+- X6 service.log 权限未收紧且写入含 token：openSync 带 0o600 + chmodSync（Windows 按平台容错），worker 输出写盘前抹掉维护 token（只抹 token 不做整体脱敏——路径与栈不是秘密，且 sanitize 会按 16KB 截尾，用在追加日志上会吞内容）。修复前 service.log 含 token 明文。
+
+### 明确不修（4 条，附技术理由）
+
+- S5 改标题不刷新 updatedAt：不是缺陷。手工重命名走 rename() 本来就写 updatedAt；模型自报标题发生在 run 内，startRun 进入时已刷 updatedAt、收尾 persist 写全量快照。列表排序不受影响。
+- E2 子代理 compaction 不落库：public/app.js:1796 与 1910 两处 compaction 处理都硬编码 `agentId === "main"`，前端从未渲染子代理压缩卡片（运行期也不渲染，不只是重启后）；且 create() 恢复子任务历史时只取 message 条目。此刻落库等于写无人读的行。这是「子代理压缩折叠」这个功能缺失，不是持久化缺陷，已在代码注释里写明这是有意边界。
+- E3 compaction 记录不带 agentId：与 E2 同源。当前只有主代理记录会落库，saveEvent 的 `?? "main"` 兜底恒等于真实身份，不存在身份键撞车。E2 若实现，此条必须一起改。
+- X7 WAL 不 truncate：supervisor 全生命周期持连接，尾次 checkpoint 不发生是 SQLite 的正常语义（只要还有连接打开，WAL 就必须保留）。实测 `wal_autocheckpoint = 1000`（页）已给磁盘占用封顶，且不丢数据。为「清爽」而在 supervisor 空闲时强制 TRUNCATE 会与 worker 的写入抢锁，收益不抵风险。
+
+### 表结构影响
+
+未增删改任何表或字段。唯一 DDL 是新增部分索引 `tasks_pending`（CREATE INDEX IF NOT EXISTS，幂等，重复启动不重复执行），老库无需数据迁移，投影口径不变。
+
+### 涉及文件
+
+- 产品代码：src/sessions.js、src/session-store.js、src/main.js、src/model-config.js、src/pi-model-storage.js、src/protocol.js、scripts/service.mjs、scripts/maint-state.mjs
+- 测试：tests/session-persistence.test.js、tests/task-budget.test.js、tests/goal-sessions.test.js、tests/session-store.test.js、tests/model-config.test.js、tests/pi-model-storage.test.js、tests/remote.test.js、tests/service.test.js
+- 文档：README.md（会话级预算固定、service.log 权限与 token 脱敏、启动跳过 Goal 阻塞态会话、已落盘路径只增不抹、hidden 走 CAS、坏行读容错写拒绝、按来源独立的导入门闩、收藏上限只拦新增）、devlog.md、.pi/skills/codebase-map/INDEX.md
+
+### 验证
+
+- npm test 全量：516 项，514 通过，0 失败，2 跳过（`tests/database.test.js` 与 `tests/workspace-picker.test.js` 的 `skip: process.platform === "win32"` 平台条件跳过，master 上本来就有，非本轮新增）。
+- 连带回归：P1 的丢弃规则首版写成「只对本次调用者的增量给机会」，导致 tests/recall.test.js 的撤回清理重试失败（`Missing expected rejection`）。已改为「每条增量都有且只有一次确定性失败的机会」——可重试失败不消耗这次机会，撤回清理仍是短事务且能重放。
+- 临时验证脚本（probe.tmp.mjs、x5probe.tmp.mjs、wal.tmp.mjs）用完即删，无残留。
+
+## 2026-09-14T14:38 第 2 轮补修：X1 worker 环境变量与 X6 日志脱敏范围
+
+- 原因：第 2 轮 X1/X6 的首版修复只做了一半。复验守护进程组时发现两处仍不达标，按「先写会失败的测试 → 再改代码」补齐。这两条不是新问题，是同一条清单项没修到底，因此仍归第 2 轮。
+- X1 补修：`homeDir()` 已 resolve，但 `spawnWorker` 的 fork env 还在透传用户原样的 `AXIOM_HOME`。worker 以 `cwd: root` 启动，会把相对路径按 root 重新解析——只要守护进程的当前目录不是项目根，两端依旧各开一个库。首版测试只断言 `homeDir()` 返回绝对路径，抓不到这个分叉。现在 fork env 显式覆盖 `AXIOM_HOME: logDir`（已解析的绝对 home）。修复前失败输出：`AssertionError: worker 必须与 supervisor 打开同一个库目录 + actual '…\Temp\axiom-svc-p5axFP\relhome' - expected '…\Temp\relhome'`。
+- X6 口径反转：首版注释写的「只抹 token 不做整体脱敏——路径与栈不是秘密」站不住。同一批 `redactions` 白名单本来就把安装目录与用户目录换成 `<install>`/`<home>` 后才给 `/status`，同一份信息在 service.log 里原样落盘等于两套标准；日志又常被整份贴进 issue。现在 worker 输出写盘前一律过白名单。修复前失败输出：`AssertionError: 白名单路径必须替换为占位符，实际 "worker boot token=***\nworker home=C:\Users\dane\AppData\Local\Temp\axiom-svc-H2mHnp\home\n"`。
+- 首版顾虑的处理：`sanitize` 会按 16KB 尾截，直接用在追加日志上会吞正在写的内容。故拆成两个函数——`redact()` 只脱敏不截尾，给流式追加的 service.log；`sanitize()` = `redact()` + 16KB 尾截，有界语义只留给维护状态里的 `log` 字段。行为对既有调用方不变。
+- X2/X3 本次只复验，未再改代码：抢锁失败路径仍完整收摊（maint server + 数据库 + 控制管道），`.catch` 保持 `process.exitCode = 1` 而不加 `process.exit(1)`——句柄已释放，事件循环自然退出；显式 exit 反而可能在 stderr 未冲刷时截断报错文本，而该用例正断言 stderr 含「已有守护进程运行」。
+- X7 仍判不修，补一组实测数据：`page_size=4096`、`wal_autocheckpoint=1000` 页，写入约 12MB 期间 `-wal` 稳定在 4132392 字节（= 1000×4096）不再增长，长连接 close 后 `-wal` 消失。占用有硬上界且不丢数据，为「清爽」强制 TRUNCATE 需独占 checkpoint，会与 worker 抢锁。
+- 涉及文件：scripts/service.mjs（导入 redact、logLine 全白名单脱敏、fork env 覆盖 AXIOM_HOME）、scripts/maint-state.mjs（拆出 redact，sanitize 复用）、tests/service.test.js（新增「相对 AXIOM_HOME 两端同库」，加强 service.log 用例断言白名单路径落盘即脱敏）、README.md（AXIOM_HOME 相对路径解析语义、service.log 脱敏范围由「抹 token」改为「白名单」）、.pi/skills/codebase-map/INDEX.md。
+- 验证：修复前 `node --test tests/service.test.js` 为 22 项 20 通过 2 失败（正是上述两条）；修复后 22 项全通过。`npm test` 全量 518 项，516 通过，0 失败，2 跳过（`tests/database.test.js`、`tests/workspace-picker.test.js` 的 `skip: process.platform === "win32"` 平台条件跳过，master 上本来就有）。测试总数由 516 增至 518，增量为老库部分索引升级、相对 AXIOM_HOME 两条。
+
+## 2026-09-14T15:45 SQLite 收口复查（第 3 轮 / 共 6 轮）
+
+- 原因：第 2 轮把 33 条清单改完了，但 X1/X6 暴露出一种模式——「首版只修一半 + 测试断言过弱恰好放行」（当时只断言 `homeDir()` 的返回值，没断言两端实际打开的库文件）。本轮对 33 条逐条回头复查，并对每条追问一句「这条的测试断言的是真实可观察结果，还是只断言了中间量」；同时补第 2 轮改动的连带影响（兄弟调用点、投影口径、老库升级幂等），补齐跨重启读回这块测试缺口。
+- 结论：33 条全部复查完毕，无「待确认」条目——29 条确认实际生效，4 条不修的理由复核后仍然成立。本轮新发现 2 条遗漏（E5 老库 NULL key 事件行、S6 标题与 updatedAt 落库时机），均已修复并配回归测试。表结构与字段仍一个未动。
+
+### 本轮新发现并修复（2 条）
+
+**E5 老库无身份事件行：写得进、读不出、删不掉（src/session-store.js）**
+
+`session_events.key` 一直是可空列（`b95d36e 2026-09-12` 引入），导入侧的 `anon-<序号>` 兜底是其后才加的（`11b21c0`、`98e8ec4`）。那之前导入的老库里，无 id 的 retry/compaction 行 `key IS NULL`，于是同一行在三条链路上身份不一致：
+
+- 写：`saveEvent` 靠第 1 轮修的内容判重兜住，但只认「内容一字不差」。
+- 读：`listEvents` 读出来 `record.id === undefined`。
+- 删：`deleteEvents` 要求非空 id，直接抛「目标必须是 {agentId, id} 或含 id 的事件 record，拒绝裸 id」。
+
+用真实库跑六步探针确认了这不是理论问题：A 初始 1 行 `key=null`；B 读回 `retries[0].id === undefined`；C 原样回写仍 1 行（内容判重有效）；D 归一化后回写（`messageCount` 落在消息数之外被删掉）→ **2 行幽灵重复行**；E 再回写一次仍 2 行（新行有内容判重护着，老行永远留着）；F 撤回删除抛错。
+
+产品链路完全可达，不需要构造：`src/sessions.js:703` 把 `saved.retries` 映射进 item，`:968-1010` 的恢复对账归一化之后整段 persist 带 `{event:{type:"retry",record}}` 增量 → 必然产生幽灵行；用户撤回时走 `:1433-1448`，`deleteEvents` 抛的是确定性失败，按第 2 轮 P1 的规则整批增量（含同批的会话快照）被丢弃 → 界面上没了、库里永久残留。运行期不会新产生这种行（`src/retry.js:115` 用 `randomUUID()`，compaction 记录带 `entry.id`），纯粹是老库历史包袱，而 Axiom 的老库导入路径本来就是要长期支持的。
+
+修复取向选「开库补身份」而不是「让 deleteEvents 兼容无 id」：一条幂等 UPDATE 让写/读/删三路口径一致，顺带修掉 `compactionById` 用同一个 `undefined` 键互相覆盖的潜在缺陷；若改成删除侧兼容，读出来仍然没身份，前端按 id 归位的逻辑还是错的。
+
+```js
+const BACKFILL_EVENT_KEYS = "UPDATE OR IGNORE session_events SET key = 'legacy-' || rowid WHERE key IS NULL";
+```
+
+三个细节：**放在 `database.exec(INDEXES)` 之后**——`OR IGNORE` 要靠 `session_events_identity` 这条唯一部分索引才跳得过冲突行，也避开 `#normalizeSchema` 重建表引起的 rowid 变化（重建语句 `INSERT INTO session_events_new SELECT session_id, type, agent_id, key, record FROM session_events` 保留了 key 列，重建先于建索引与补 key）。**前缀选 `legacy-<rowid>`**：与导入侧的 `anon-<序号>` 区分来源，rowid 在表内唯一；万一撞上同组已有同名 key，`OR IGNORE` 跳过该行留 NULL，仍由内容判重兜住。**不把 `key` 列改成 NOT NULL**——那要重建表，收益只是形式上的严格。
+
+回归测试 `tests/session-store.test.js:534`「老库 NULL key 事件行开库补稳定身份…」，修复前失败：`✖ (39.8055ms)`、`pass 1 / fail 1`、`AssertionError [ERR_ASSERTION]: 老库无 id 行必须在开库时补上稳定 key`、`actual: null`。同一用例 `:583` 断言幂等：`assert.equal(rows(last)[0].key, keyBefore, "已有身份的行重开不得被改写")`。
+
+**S6 标题与 updatedAt 要等整轮跑完才落库（src/sessions.js:772-782）**
+
+用 `SESSION_FIELDS`（11 个字段）逐字段机械核对「每个内存态字段是否都有落库出口」时发现的：`prompt()`（`:1400`）由首条输入推导的临时标题、`startRun()`（`:1329`）刷新的 `item.updatedAt`，都只改内存，要等 `:1349` finally 里整轮结束的全量快照才落盘。长任务跑到一半进程被杀（崩溃、断电、Windows 强杀），重启后侧栏就是一排「新会话」配过期时间，而且下次 `prompt` 会从第二条消息重新推导标题——首条输入推导的那个标题永久丢失。
+
+修复折进已有的运行状态变化那一笔写，不额外增加落盘次数：
+
+```js
+if (wasRunning !== item.runningSince)
+  this.saveChange(item, { session: { title: item.title, updatedAt: item.updatedAt,
+    elapsedMs: item.elapsedMs, runningSince: item.runningSince } });
+```
+
+`runningSince` 从空变成有值正好发生在运行开始那一刻，而标题与 `updatedAt` 在这之前就已确定，同一笔写顺路带上即可。**故意不同时写 `titleRequested`**：模型此时还没自报标题，重启后必须再索要一次；提前写 true 会让自报请求永久失效。
+
+回归测试 `tests/session-persistence.test.js:291`「运行一开始就落库标题与 updatedAt：跑到一半被杀，侧栏不退回「新会话」与旧时间」，用挂住的 factory（`prompt: () => new Promise((resolve) => { release = resolve; })`）模拟运行中被杀。修复前失败：`AssertionError [ERR_ASSERTION]: 首条输入推导的标题必须随运行开始落库，否则崩溃后每个会话都叫「新会话」`、`'新会话' !== '查一下今天的天气'`、`at tests/session-persistence.test.js:311:12`。
+
+### 三类数据「确实落库且可恢复」的可执行证据
+
+新增 `tests/session-persistence.test.js`「跨重启读回：会话元数据、任务、事件三类原样恢复，撤回的事件不复活」。它不是 mock 断言，而是 `new Sessions(factory, undefined, storage)` 真实关库重开（第二个 Sessions 实例拿同一个库文件），逐类核对：
+
+- **会话**：`title` / `titleManual` / `titleRequested` / `elapsedMs` 4200 / `runningSince` 恢复为 `null`、`selection.taskBudget` deepEqual `{maxTurns:30,wrapUpWindow:3}`；`ensureLoaded` 之后全局 5/1 也不覆盖会话自己的 30/3（S1 的实际生效证据）；`restored.loaded === false` 确认只加载了元数据。
+- **任务**：`listTasks` deepEqual 原任务（含 runtime / parentContext / notified / createdAt / updatedAt）。
+- **事件**：retries / compactions 一致；撤回 `{deletedEvents:{type:"retry",records:[{id:"r2",agentId:"main"}]}}` 后兄弟事件保留，再 close + 开库读回 `retries.length === 2` —— 删掉的没复活、没删的没丢。
+
+顺带把 `running_since` 的语义用断言钉住：内存里恒为 `null`（重启即中断，未结算的运行段不补算），但 store 里保留崩溃瞬间的原值 999（`saved.runningSince === 999`）。这是既定语义而非缺陷，所以不删列也不特判，改用测试把它固定下来。
+
+`node --test --test-name-pattern="跨重启读回"` → `✔ (77.3635ms)`、`pass 1 / fail 0`。
+
+### 33 条逐条复查结论
+
+**跨类基础设施**
+- P1（队头阻塞按结果码分类）实际生效：确定性失败的一次机会机制由 `head.tried` 承载，`tests/recall.test.js` 的撤回清理仍能重放。E5 的分析正是踩在这条规则上——`deleteEvents` 抛错属确定性失败，整批增量被丢弃，因此 E5 必须在写入侧解决。
+- P2（裸写 SAVEPOINT）无遗留兄弟点：`grep -E "SAVEPOINT|RELEASE|ROLLBACK TO" src/ scripts/` 全仓只剩两处，都是有意的事务包装器——`src/session-store.js:140`（`session_change`）与 `src/pi-model-storage.js:63`（`model_storage`）；`src/sessions.js:996` 只是注释。
+
+**会话**
+- S1 已由跨重启用例证明（`selection.taskBudget` 读回 30/3，且 `ensureLoaded` 不被全局值热更）。顺手还清了一处文档债：`create()` 里「selection.taskBudget 仅供测试注入」的注释与实际行为不符，改为「恢复的会话从 selection 读回创建时的预算，全局值后来改了也不追认」。
+- S2 兄弟点口径一致：`landedSessionFile` 定义 `:181-185`，三个出口 `sessionData()` `:547`、`list()` `:622`、新落盘 `:761-764` 都是同一口径，「从未生成」与「生成后丢失」没有在任何出口被合并。
+- S3 `deleteRecords()` 是删除路径的唯一入口，会话行与 goal 记录同一 `store.change` 事务。
+- S4 判定成立，但生效点不在我以为的地方：`grep "session: {"` 只找到 3 处，都不含 `titleRequested`；真正写它的是 `writeChange` `:596-598` 的投影 `if (change.title) this.store.updateSession(item.id, { title, titleRequested })` —— 只要变更里带 `title`，两个字段就一起写。`src/session-memory.js:19-25` 的模型自报走的正是 `save({title:true})`。
+- S5（改标题不刷 updatedAt）复核后仍判不修，理由不变。
+
+**任务**
+- T1 顺序正确且三处一致：`:485` 注释、任务恢复映射 `:851`（`notified: resumable ? false : task.notified ?? false`）、恢复循环 `~:1024-1033` 先落库后置位、`:1151`。
+- T2 部分索引在老库升级用例里已验证自动补建且三处投影一致；本轮新增的 `BACKFILL_EVENT_KEYS` 排在 `INDEXES` 之后，不影响它的幂等性。
+- T3 启动跳过 Goal 阻塞态会话，notified 原样保留。
+
+**事件**
+- E1 内容判重实际生效（E5 探针 C 步：原样回写仍 1 行），但只兜住「内容一字不差」的回写，真正的收口是 E5 的开库补身份，已在 `INDEXES` 上方的注释里指明这层关系。
+- E4 恢复对账整段单事务；跨重启用例覆盖了「归一化后写回 + 撤回删除」的组合。
+- E2/E3（子代理 compaction）复核后仍判不修，理由不变（前端两处硬编码 `agentId === "main"`，落库等于写无人读的行）。
+
+**模型存储与配置**
+- M1 门闩按来源独立：`src/pi-model-storage.js:351-357` 每个来源只看自己的 `migrated/<source>` 标记，`pending` 集合由 `importErrors()` 的 source 构成。
+- M4 多语句写入的原子边界：`change()` `:59-71` 包住 importAuth 循环、`recordImportError`/`clearImportErrors` 的读-改-写、`importOnce` 的 apply+打标记。
+- M5 判定成立（不是残留）：`:90-97` 的 `readRow` 是容错读的唯一点，裸 `database.get` 只出现在它的 try 内，配 `recordImportError` 给用户自愈入口。
+- M7 三条 favorites 写入口 version 一致（`writeFavoritesRaw` `:346`、`casFavorites` `:170` 都是 `{...store, version:1}`，字面量在 spread 之后，调用方覆盖不了）；M3 hidden 同口径（`:337`、`:342`）。
+- M8 上限只拦新增（`src/model-config.js:246-249` 注释与 `:398` 实现一致，读路径不 slice）。
+- M12 判定成立，且 `:139` 的裸 `db.prepare` 不是残留：它在 `readRaw(db, namespace, key)` 内，`db` 是服务跨进程 CAS 传入的**另一条连接**，`db === database ? sql(text) : db.prepare(text)` 是有意分流（语句缓存只属于权威连接，不能拿别人的连接往自己缓存里塞），`compareAndSet` `:143-153` 同样分流。
+- M2/M6/M9/M10/M11 复查代码与测试断言均落在真实可观察结果上（库内原始值、`importErrors()` 文案、`assert.rejects` 的错误正则），无中间量断言。
+
+**守护进程与维护状态**
+- X1/X6 已在第 2 轮补修中修到底（fork env 显式覆盖 `AXIOM_HOME`、worker 输出写盘前一律过白名单），本轮不再改动。
+- X2/X3/X4/X5 复查结论不变；X7 仍判不修（实测 `wal_autocheckpoint=1000` 页已封顶）。
+
+**测试断言强度抽检**：按 X1 的教训抽查第 2 轮新增测试，均断言真实可观察结果而非中间量——`pi-model-storage.test.js` 断言 `database.get("models","favorites") === undefined` 加 `importErrors()` 含 `/结构无效/`；`credentials.modify` 非法值同时断言 `assert.rejects(/凭据格式无效/)`、库内 `database.get("auth","p") === undefined`、`read/list` 为空、合法值照写、返回 `undefined` 视为放弃变更；X1 断言 worker 实际打开的库目录；T2 断言 `EXPLAIN QUERY PLAN` 的实际计划；X5 断言 spawn 出的真实进程退出码与落库结果。
+
+### 复查中判定为「不是缺陷」的几处
+
+- `trackElapsed`（定义 `src/sessions.js:87-96`）**只有一个调用点** `:776`，在 `item.emit` 的 `session.state`/`task.state` 分支内。优雅关闭会经状态变化结算 `elapsedMs` 并把 `runningSince` 置空；硬杀留下未结算段，与「重启即中断，不补算」的既定语义一致，已在跨重启用例里显式断言。
+- `canRetry` 冗余落库不修：它是每次 `snapshot()` 重算的派生量，读回不权威，只在测试断言方式上规避。
+- `:764` 直写 `sessionFile` 不改成 `landedSessionFile`：这里是「JSONL 首次落盘」的检测点，SDK 在 message.end 之前已写出 JSONL（`node_modules/@earendil-works/pi-coding-agent/dist/core/*.js` 里搜不到 `agent.message.end` 字面量，无法直接证明 appendMessage 先于 message.end，但 `event.data.entryId` 的存在与既有子代理持久化测试都支持这个时序），非缺陷，不做无谓 churn。
+
+### 表结构影响
+
+未增删改任何表或字段。本轮唯一新增 DDL 之外的开库语句是 `BACKFILL_EVENT_KEYS`（一条 `UPDATE OR IGNORE`）：只给 `key IS NULL` 的行补值，已有身份的行不动（有断言），新库零行匹配，重复开库空转。
+
+### 涉及文件
+
+- 产品代码：src/session-store.js（BACKFILL_EVENT_KEYS + 构造函数顺序 + E1/E5 关系注释）、src/sessions.js（S6 运行开始那一笔写带上 title/updatedAt；taskBudget 注释纠正）
+- 测试：tests/session-store.test.js（老库 NULL key 补身份 + 幂等断言）、tests/session-persistence.test.js（S6 运行开始落标题、跨重启三类读回）
+- 文档：README.md（运行开始即落库标题与 updatedAt 的可观察行为；老库开库补事件身份）、devlog.md、.pi/skills/codebase-map/INDEX.md
+
+### 验证
+
+- 基线（第 2 轮 HEAD 22fc1b0）：518 项，516 通过，0 失败，2 平台跳过。
+- 本轮：**npm test 全量 521 项，519 通过，0 失败，2 跳过**（`tests/database.test.js`、`tests/workspace-picker.test.js` 的 `skip: process.platform === "win32"`，master 上本来就有），`duration_ms` 约 48.3 秒。增量 3 条正是 E5 补身份、S6 运行开始落标题、跨重启三类读回。
+- 临时探针 probe.tmp.mjs（E5 六步验证）用完即删，无残留。
+- 方法学记录，留给第 6 轮复用：(a) 复查看真实可观察结果，不看中间量；(b) 遇到「路径/栈不是秘密」这类为简化找的理由，回头核对同一份信息在其他出口是否已按敏感处理；(c) node TAP 汇总行前缀是 `ℹ` 不是 `#`，别用 `^# ` grep 基线日志；(d) 遇到「可写但不可读不可删」这类结构性不对称，优先让三条链路身份一致，而不是让其中一条容忍残缺；(e) 用字段白名单（这里是 `SESSION_FIELDS` 的 11 个字段）逐字段机械核对「每个内存态字段是否都有落库出口」——S6 就是这么翻出来的。
+
+## 2026-09-14T16:40 五套标签机制排查（第 4 轮 / 共 6 轮）
+
+只读排查，不改产品代码。方法沿用第 3 轮的「白名单逐格核对」：对五套标签各列出 **解析入口 / 剥离出口 / 落库口径** 三栏，逐格用临时探针脚本喂真实不守格式输入，只看可观察输出，不靠读代码推理。四个探针（probe-tags.tmp.mjs、probe-tags2.tmp.mjs、probe-tags3.tmp.mjs、probe-goal.tmp.mjs）用完即删。
+
+先扫旧分支：`git branch -a --no-merged master` 里没有任何分支碰过 memory-tags.js / answer-tags.js / compaction.js / goal.js / pi.js / tasks.js —— 本轮 26 条全是新报点，无重复覆盖。
+
+### 一、memory-tags（`public/memory-tags.js`；标签 `<title>` 与死标签 `<axiom_summary>` / `<summary>` / `<progress>`）
+
+- **M-T1 `summary` 与 markdown 折叠块 `<details><summary>` 撞名**（`:8` TAGS 含 "summary"）。可复现输入：`<details>\n<summary>点击展开细节</summary>\n\n正文\n</details>` → strip 后 `"<details>\n\n正文\n</details>"`，折叠块标题整行消失。`public/markdown.js:228-230` 用 DOMPurify `USE_PROFILES:{html:true}` 且未禁 details/summary，说明折叠块是能正常渲染的正经写法。影响：助手写折叠块，标题被吞；`src/pi.js:467`、`src/tasks.js:58` 也走同一函数，子代理结果同样被吞。修复方向：区分「提取标签」与「历史死标签兜底剥离」两张表，死标签只删独占一行的裸标签行，不吞跨行内容。
+- **M-T2 未闭合开启标签「截到段尾」吞掉后文与其他机制的标记**（`:84-88`）。可复现输入：`分析：模型应输出 <title>My Page</title> 这样的头部` 不受影响，但 `讨论 <summary> 的用法\n\n正文\n\n<axiom_round_finished>` → strip 后只剩 `"讨论 "`，`parseGoalMarkers` 全 false。影响：**最严重**。会话里只要谈到这几个标签名（本项目自己就天天谈），后文连轮次完成标记一起消失 → 轮次不结算、收到催促、前端答复被截断。修复方向：非流式输入不做截断，落单开启标签按落单闭合标签同样处理（只删标签本身）；截到行尾只保留给 streaming。
+- **M-T3 围栏规则不认 `~~~`、不记围栏长度**（`:15` `FENCE = /^\s*```/`）。可复现输入（探针 B4/B5）：`~~~\n<title>围栏内</title>\n~~~` → 仍提取 `{title:"围栏内"}`；`` ````\n```\n<title>嵌套围栏内</title>\n```\n```` `` → 围栏计数错乱同样误提取。同一段文本 goal.js 与 answer-tags.js 都判为代码。影响：文档/教学内容里写在围栏内的示范标签被当自报，会话标题被示范值覆盖，且该行从展示文本中消失（`public/memory-tags.js:15` 与 `src/goal.js:50` 两份规则对同一文本给出相反结论）。修复方向：与 `src/goal.js:50` 的 `FENCE = /^ {0,3}(`{3,}|~{3,})/` 对齐，抽一份共享围栏扫描。
+- **M-T4 不认缩进代码块，且 `^\s*` 把 6 空格缩进误当围栏**（`:15`、`:39-41`）。4 空格/Tab 缩进内的 `<title>` 被提取；反过来 6 空格缩进的 ``` 行被当围栏开关（CommonMark 里 4 空格以上缩进的 ``` 是代码内容，不是围栏）。可复现输入：4 空格缩进的 `<title>缩进内</title>` → 被提取；6 空格缩进的围栏行 → 被当围栏开关，其后真实标签反而漏提取。影响：与 M-T3 同类，`public/memory-tags.js:15` 两个方向都错（该当代码的当正文、该当正文的当代码）。修复方向同 M-T3，共享实现里按 0-3 空格判围栏、4 空格/Tab 判缩进代码。
+- **M-T5 行内 HTML `<title>` 被当自报标题**（`:50-62`）。可复现输入：`HTML 页头这样写：\n<title>示例站点</title>\n再配 meta 标签即可。` → `{title:"示例站点"}`，且该行被 strip 删除。影响：会话标题被示例内容覆盖（`titlePending` 为真的首轮命中），正文被吞。修复方向：自报标题只认独占一行的完整标签（提示词本来就要求独占一行），行内出现一概不提取。
+- **M-T6 死标签 `progress` 吞掉合法 HTML `<progress>`**（`public/memory-tags.js:8` TAGS 含 "progress"）。可复现输入：`进度条这样写：\n<progress value="70" max="100"></progress>\n即可。` → strip 后该行消失（探针 B6）。影响：与 M-T1 同源，正文里的合法 HTML 被当历史死标签剥离；`progress` 是早期版本用过、现已废弃的标签名，兜底剥离的代价却落在正文上。修复方向：与 M-T1 一起处理 —— 死标签只删独占一行的裸标签行，不删带属性的 HTML 元素、不吞行内内容。
+
+### 二、answer-tags（`public/answer-tags.js`；标记 `<axiom_answer>` / `</axiom_answer>`）
+
+- **A-T1 `inline` 反引号计数器跨行不重置**（`:8` 声明在循环外、`:25-28` 累计、`:15/:19/:21` 全靠 `!inline` 把门）。可复现输入：`路径 `src/a.js 写错了\n<axiom_answer>\n正式答复\n</axiom_answer>` → `{found:false}`，标签原文进 `answer` 直接显示到 UI；行中（非行首）出现 ``` 同样如此。影响：**最严重**。一个落单反引号让整条消息的答复折叠失效、裸标签泄漏；反向还会让围栏失效，围栏内的示范标记被当真协议。CommonMark 的行内代码不跨行，`public/memory-tags.js:17` 的 `INLINE_CODE` 已经是对的。修复方向：每行结束重置 inline，或直接复用 memory-tags 的行内代码遮罩。
+- **A-T2 缩进代码块内的标记被当协议**（`:18-19` 只 trim 不看缩进）。可复现输入：4 空格缩进的 `<axiom_answer>` / `</axiom_answer>` 包住 `例子` → `{found:true, answer:"例子"}`，教学示例被误折叠成答复。影响：`public/answer-tags.js:18-19` 把文档里的示范标记当真协议，示例正文被折进答复区、其余正文被划进过程区。修复方向同 A-T1，共享围栏/缩进判定。
+- **A-T3 `malformed` 产出但前端从不消费**（`:33-39` 三处 `fallback(true)`；`public/app.js:1290-1301`、`:1870-1885` 只用 `split.answer`/`process`）。可复现输入：两组标签或多余闭合标签 → `malformed:true` 且 `answer` 含标签原文 → 裸标签照样显示。影响：协议破损时 `public/answer-tags.js:33-39` 已经识别出异常，但这个信息在前端被丢弃，用户直接看到标签原文。修复方向：兜底路径先删掉独占一行的标记行再返回，丢协议不丢正文。
+
+### 三、compaction（`src/compaction.js`；标签 `<axiom_compact_title>` / `<axiom_compact_desc>`）
+
+- **C-T1 `parseSummaryOutput` 正则过严，兜底把标签原文当正文**（`:100` 正则 `[^<>]*` + 锚定 `$` + 要求换行前缀；`:105` 长度校验；`:108` `return { summary }`）。可复现输入 —— 八种实测触发（正则码在 `:100`，完整形式是 `\n[ \t]*<axiom_compact_title>([^<>]*)</axiom_compact_title>\s*<axiom_compact_desc>([^<>]*)</axiom_compact_desc>$`）：`<axiom_compact_title>` 或 `<axiom_compact_desc>` 内含 `>`（讲 HTML 的会话，被 `[^<>]*` 卡掉）、只有两个空标签无正文、标题超 30 字、描述超 200 字、标签间夹正文、两标签顺序颠倒、标签后多写一句、围栏内示范格式。全部返回含标签原文的 summary。影响：摘要卡片显示裸标签；更糟的是这份带标签的 summary 会作为 `previousSummary`（`:34`、`:236`）注入下一次摘要请求，坏格式自我强化。修复方向：先无条件剥离独占行的标签行（不论解析成败），再宽松解析元数据；解析失败只丢元数据不污染正文。
+- **C-T2 长度口径用 UTF-16 length**（`:105`）。16 个 emoji 的标题 `[...title].length === 16` 但 `title.length === 32` → 判超长 → 整段回落。`public/memory-tags.js:59` 用 `[...value].length`（码点）。可复现输入：标题写 16 个 emoji。影响：`src/compaction.js:105` 判超长 → 整段回落 → 摘要卡片显示裸标签，并经 previousSummary 回注（见 X5/X6）。修复方向：统一按码点计。
+
+### 四、goal（`src/goal.js`；标记 `<axiom_round_finished>` / `<axiom_goal_finished>`）
+
+- **G-T1 模型补了闭合标签 → 不算信号且原文泄漏**（`:74-84` 精确整行匹配、`:86-101` 只删信号集合内的行）。可复现输入：`<axiom_round_finished></axiom_round_finished>` → `roundFinished:false`，且 strip 不清该行 → 裸标签进 UI；分两行写时 `stripGoalMarkers` 留下 `"</axiom_round_finished>"`。影响：轮次不结算 + 收到催促 + 用户看到裸标签。修复方向：strip 与 parse 口径一致，`</marker>` 独占行按落单闭合标签删除；是否把空标签对认作信号需决策。**此条对 `<axiom_goal_finished>` 同样成立**：`:49` 的 `MARKERS = new Set([ROUND_MARKER, GOAL_MARKER])` 让两个标记共用同一条 parse/strip 路径，G-T1、G-T2、G-T4 三条缺陷对两者同时适用（探针只喂了轮次标记，但代码路径同一）。
+- **G-T2 奇数围栏（模型漏写闭合围栏）吞掉后续标记**（`:57-70` `outsideFences` 中 `if (match) { fence = match; continue; }` 后续全部 skip）。与 M-T2 同一类「未闭合视为代码到结尾」，两套机制会同时失效，造成同一个催促循环。可复现输入：正文写一个未闭合的代码围栏，其后再写 `<axiom_round_finished>` → `parseGoalMarkers` 返回 false（探针 D2）。影响：`src/goal.js:57-70` 让轮次标记失效 → 轮次不结算 + 收到催促；模型写代码漏写闭合围栏是常见情形。修复方向：扫到文本结尾仍在围栏内时，该未闭合围栏之后的内容不再当代码（更可能是漏写围栏或流式截断）；与 memory-tags 共享实现一起改。
+- **G-T3 轮次小结取到 `<axiom_answer>` 裸标签**（`:106` `firstLine`、`:589` `#closeRound(firstLine(text), at)`、`:620` 落库）。goal.js 不认识 answer-tags 的标记，模型按提示词把答复放进标签、标记独占一行时，首个非空行就是开启标签。可复现输入：回复首行独占一行写答复开启标记，后接正文。**有真实现场证据**：本 Goal 状态 JSON 里 `rounds[0].summary === "<axiom_answer>"`。影响：脏值落库进 goals 表、每轮回注进后续上下文（`:317`/`:339` 的计划渲染）、前端展示裸标签。修复方向：`firstLine` 先过共享展示层剥离（有 answer 取 answer 首行，否则取过程首行）。
+- **G-T4 严格解析的三种落空（记录，倾向不修）**：大写 `<AXIOM_ROUND_FINISHED>`、标记后紧跟句号、两个标记写在同一行 —— 均不算信号。这是防伪造的有意设计，提示词（`:317`/`:343`）已明确要求独占一行、无内文。可复现输入（探针 M1/M2/M3a）：大写标记、标记后紧跟句号、两个标记写在同一行 → 三种均返回 false。影响：`src/goal.js:74-84` 严格匹配导致模型稍不守格式即轮次不结算（属可接受代价，换来的是模型无法用变体写法伪造完成）。修复方向：如要改只改提示词措辞，不放宽解析。
+- **G-T5 验证阶段提示与证据门口径不一致：轮次未收尾就提示「证据已齐 → 输出整体完成标记」**（`:338-339` `#verifyingPrompt` 的分支条件只看 `gate.roundMissing.length === 0 && gate.goalMissing.length === 0`，**不含 `roundsSettled`**；而 `#gate()`（`:959-971`）的 `complete = s.claimed && roundsSettled && roundMissing.length === 0 && goalMissing.length === 0`）。可复现输入（探针 GP，三轮计划）：第一轮提交「轮内 + 全部整体」验收证据 → 第二轮只提交轮内证据 → 同一时刻两个出口互相矛盾：`goal_evidence` 返回 `{"ready":true,"completable":false}` 且指令「本轮证据已齐：…输出 `<axiom_round_finished>` 进入下一轮」，而 `context()` 的验证提示给的是「证据已齐：…输出 `<axiom_goal_finished>` 完成整体目标」。本会话第 4 轮现场同样触发（第 5、6 轮 `pending`，提示仍要求整体标记）。影响：模型若照提示只发整体标记，`onReply`（`:588` 置 `s.claimed = true`、`:606` 兜底 `phase = "verifying"`）既不完成也不推进轮次 —— 探针 GP 第 8 步实测 `phase=verifying currentRound=1`、第三轮仍 `pending`，白等一轮；下一回合提示不变会反复诱导同一错误，只有模型自行改发轮次标记才恢复（第 9 步 → `currentRound=2`）。附带：`:335` 的「本轮待补验收：」在无缺失时仍打印标题加空列表，与紧随其后的「证据已齐」自相矛盾（本会话现场提示原文即为「本轮待补验收：（无）」+「证据已齐」）。修复方向：该分支直接复用 `gate.complete`（或补 `roundsSettled` 条件），整体未收尾时只提示轮次标记；缺失列表为空时不打印那行标题。
+- **G-T6 整体验收证据不校验轮次，陈旧证据永久算齐**（`:963` `const missing = (criteria) => criteria.filter((c) => !s.evidence[normCriterion(c)])` 与 `:965` `goalMissing = missing(s.acceptance)` 只判「有没有这条证据」，不比对 `s.evidence[...].round`；对照 `:964` 的 `roundMissing` 明确要求 `?.round !== s.currentRound`）。可复现输入（探针 GP 第 7 步）：第一轮就为整体验收「npm test 全量通过」「合并回主干并清理工作区」提交证据 → 到第二轮，证据表里这两条仍是 `round=0`，`goalMissing` 恒为空，第三轮尚未开始就算整体验收已齐。影响：这是 G-T5 误报的直接成因；整体验收标准通常跨轮、且含多个分句（本会话整体验收第 8 条含「合并回 master 并推送、清理 worktree」，实际未做却已在册），一旦早期轮次登记过就再不复核 → 证据门对整体目标形同虚设，模型被诱导提前宣布完成。修复方向：整体验收证据同样按新鲜度校验（要求产生于当前轮，或至少产生于最后一个 settle 的轮次），或在 `complete` 里显式要求轮次全部收尾后整体证据重提一次。
+
+### 五、pi 内部标记（`src/pi.js`；`__axiom_checkpoint__` / `axiom_recall` / `axiom-memory`）—— 三条均判定无缺陷
+
+- **P-T1 `CHECKPOINT_BOUNDARY = "__axiom_checkpoint__"`（`:99`、`:329`）只作 id 哨兵**，从不与正文做文本匹配。判定：无缺陷。可复现输入（探针 J1）：正文里写这串字符 → `parseGoalMarkers` 与标签解析全不受影响；检查点条目的 `compactedMessageIds` 恒为 `[]`（`summarizedEntryIds` 的 `cut <= 0 → []`），前端不折叠任何消息，只多一张摘要卡，与「JSONL 与 getBranch 保留全文」的设计一致。影响：无（该常量只作条目 id 哨兵，不进任何文本匹配与 strip 路径）。
+- **P-T2 `appendCustomEntry("axiom_recall", …)`（`:83`）不进模型上下文**。SDK `session-manager.js:166-189` 的 `sessionEntryToContextMessages` 只处理 message / custom_message / branch_summary / compaction，`type:"custom"` 落到空返回 → 不与任何标签互撞。判定：无缺陷。可复现输入（探针 J2）：正文里写 `axiom_recall` 字样 → 标签解析与 goal 标记均不受影响。影响：无（不进请求上下文、不参与任何 strip）。正文出现 `axiom_recall` 字样也不被剥离。
+- **P-T3 `customType:"axiom-memory"`（`:120`）是 `display:false` 的请求副本消息**，不落 JSONL、不过 strip。判定：无缺陷。可复现输入：无 —— 此条未做探针实测，属语义推断，不冒充已验证事实。影响：无（只存在于单次请求副本，不落盘、不进任何标签解析路径）。此条为语义推断（context 钩子返回请求副本），未单独探针实测。
+
+### 六、跨机制冲突（独立于上面的单机制问题）
+
+- **X1 剥离顺序依赖：memory-tags 的截断吞掉另两套的标记**。链路 `src/pi.js:467` `result()` → `src/sessions.js:1102` `goal.onReply({text: reply.text})`，以及前端 `public/app.js:1870` strip → `:1875` split。memory-tags 先跑且会截到段尾，goal 标记与 answer 闭合标签一起没了。可复现输入：过程说明里提到死标签名且后文有轮次标记（探针 E1）。影响：三套机制串联失效（答复不折叠 + 轮次不结算 + 催促循环），单看任一文件都看不出问题。修复方向：归属 M-T2（非流式不截断），并固定「先剥离死标签、再解析协议标记」的顺序，不让前一道吃掉后一道的 payload。
+- **X2 三套围栏 + 行内代码规则互不一致（含前后端规则不一致）**。前后端规则不一致的具体形态：`public/memory-tags.js` 是前后端共享的（`src/pi.js:9`、`src/compaction.js`、`src/tasks.js:3` 都 import 它），而 `public/answer-tags.js` 只有前端 `public/app.js` 用、`src/goal.js:50` 又自带第三份 `FENCE` —— 同一份文本在「后端 goal 判定轮次」与「前端 answer 判定折叠」两侧走的是两份不同正则，规则漂移无人约束。可复现输入与实测对照（memory 提取 / goal 标记 / answer 识别）：``` 围栏内 = 全对；`~~~` 围栏内 = memory 误提取；4 空格缩进 = memory 误提取 + answer 误判协议；Tab 缩进 = 同上；嵌套 ````/``` = memory 误提取；6 空格缩进围栏 = memory 当代码（违反 CommonMark）。同一段文本在三处得三种结论。影响：前端显示、后端轮次判定、标题提取三者对同一段文本口径不一致，用户看到的与系统判定的不是同一件事。修复方向：归属 M-T3/M-T4/A-T1/A-T2，抽一份共享围栏/缩进/行内代码扫描（放 `public/` 便于前后端同 import），三处共用。
+- **X3 落库原文与展示口径混淆（落库存了展示文本）**：`src/tasks.js:58` `view()` 的 `text` 是 `stripMemoryTags(text)`，`snapshotJob` 展开 `view()` 写进 tasks.record → 子代理原文（含 details/summary）永久不可回读；`read_result` 返回同一份。且子代理本无标题机制（`src/session-memory.js` 里 `if (job || …) return`），`src/sessions.js:830` 给子代理挂 memoryHooks 使 `src/pi.js:467` 对子代理也剥离，纯副作用。违反第 5 轮既定原则「落库存原文、只在展示层剥离」。可复现输入：子代理答复内含 `<details><summary>标题</summary>` → 落库与 `read_result` 读回时该标题行已消失（与 M-T1 同一条剥离路径）。影响：子代理原文不可回读（数据永久损失，不是显示问题）。修复方向：落库与 `read_result` 存模型原文，剥离只留展示层；去掉子代理多余的 memoryHooks。（第 3 轮预记的线索，本轮确认成立并定位到具体行。）
+- **X4 goal 不认识 answer-tags 的展示协议**（`src/goal.js:106` 的 `firstLine` 不过 `public/answer-tags.js` 的 `splitAnswer`）。可复现输入：回复首行独占一行写答复开启标记。影响：轮次小结取到裸标签并落库、回注上下文、前端展示（现场证据见 G-T3）。修复方向：归属 G-T3，`firstLine` 先过共享展示层剥离。
+- **X5 compaction 兜底污染回注上下文**（`src/compaction.js:108` 兜底 → `:34`/`:236` 回注）。可复现输入：模型输出的摘要标题内含 `>`。影响：带标签的 summary 变成下一次的 previousSummary，坏格式自我强化，且污染是累积的。修复方向：归属 C-T1，解析失败也先剥离标签行，只丢元数据不污染正文。
+- **X6 长度计量口径不一致**：`src/compaction.js:105` 用 `String.length`（UTF-16），`public/memory-tags.js:59` 用码点，`src/goal.js:51` 用 `slice(0, 500)`。可复现输入：16 个 emoji 的标题（UTF-16 长度 32、码点 16）。影响：同一份内容在一处合法、在另一处判超长回落，用户无法预期哪种长度算超。修复方向：归属 C-T2，统一按码点计。
+
+### 表结构影响
+
+无。本轮只读。
+
+### 涉及文件
+
+- 排查（未修改）：public/memory-tags.js、public/answer-tags.js、public/app.js、public/markdown.js、src/compaction.js、src/goal.js、src/pi.js、src/tasks.js、src/session-memory.js、src/sessions.js、node_modules/@earendil-works/pi-coding-agent/dist/session-manager.js（SDK 语义核对）
+- 文档：devlog.md（本条）
+
+### 验证
+
+- `git status --short --untracked-files=all` 仅输出 ` M devlog.md`、`git diff --stat HEAD -- src public tests` 为空 → 未改任何产品代码，四个探针已删。
+- 旧分支覆盖核查：`git branch -a --no-merged master` 逐分支 `git diff --name-only master...$b` 过滤六个标签相关文件 → 无命中。
+- 条目账目（26 条，逐类可核）：单机制可复现缺陷 16 条（M-T1~M-T6、A-T1~A-T3、C-T1~C-T2、G-T1~G-T3、G-T5、G-T6）+ 记录不修 1 条（G-T4）+ 判无缺陷 3 条（P-T1~P-T3）+ 跨机制冲突 6 条（X1~X6，其中 X3 是独立修复点，其余各归属上面某条）= 26。按小节数：6 + 3 + 2 + 6 + 3 + 6 = 26。
+- G-T5/G-T6 于本轮验收取证过程中实证发现：验证提示要求输出 `<axiom_goal_finished>`，而同一时刻 `goal_evidence` 返回 `completable:false`、第 5/6 轮为 `pending`。按「不盲从与证据门冲突的提示词」原则未输出整体标记，改为记为缺陷；探针 probe-goal.tmp.mjs 复现后已删。
+- I2（检查点条目折叠列表为空）与 J1/J2（内部标记与用户正文碰撞）经实测判定符合设计，不列为缺陷；I3（`summarizedEntryIds` 口径）经核对 SDK `getBranch` 语义后撤回，非缺陷。
+
+## 2026-09-14T19:10 修复五套标签机制（第 5 轮 / 共 6 轮）
+
+按第 4 轮 26 条清单逐条处理，分四批推进，每批「先写会失败的回归测试 → 记录失败输出 → 改代码 → 定向复跑」。复用既有测试文件，不新造框架。
+
+### 核心决策：代码区判定收敛成一份实现
+
+第 4 轮 X2 指出三套标签各写了一份围栏/行内代码规则，同一段文本在三处得三种结论，且前后端各走一份正则、无人约束漂移。本轮新增 `public/markdown-scan.js`，memory-tags / answer-tags / compaction / goal 四处全部改用它：
+
+- `maskCode(text)`：把代码区字符换成占位符 `\u0001`，**长度与下标与原文一一对应** —— 于是「按掩码结果扫描、按原文下标切割」共用一套坐标，不需要解析两遍。口径对齐 CommonMark 与 `public/markdown.js`：0-3 空格 + ≥3 个反引号或波浪线为围栏，闭合需同字符且不短于开启，未闭合延伸到结尾；缩进代码块用惰性启发式（前一行是空行或已在缩进段内，且 4 空格/Tab 起头）；行内代码等长反引号配对且不跨空行，落单反引号按字面。
+- `cutSpans(text, spans)`：按下标区间并集切割原文，删完只剩空白且原行非空时才丢该行（丢协议不丢正文，也不留空档）。
+
+放 `public/` 是为了前后端同一个 import（先例：`src/tasks.js` 已 import `../public/memory-tags.js`）。
+
+**协议标记行的统一判据**：五套标签一律要求「缩进 0-3 空格 + 独占一行」，4 空格/Tab 缩进的同名行按 markdown 缩进代码块原样保留。这条同时约束 answer-tags 的 `<axiom_answer>` 与 goal 的两个完成标记，与前端渲染口径一致。
+
+### 批次 A：memory-tags（M-T1..M-T6）+ answer-tags（A-T1..A-T3）
+
+**修复前失败**：`node --test tests/memory-tags.test.js tests/answer-tags.test.js` → **19 tests / pass 10 / fail 9**。三条代表性失败输出原文：
+
+```
+actual:   '讨论 '
+expected: '讨论  的用法\n\n正文\n\n<axiom_round_finished>'   (memory-tags.test.js:56，M-T2/X1)
+actual:   '<details>\n\n正文\n</details>'                      (memory-tags.test.js:64，M-T1 吞掉 summary 行)
+actual:   { title: '围栏内' }    expected: {}                  (memory-tags.test.js:70，M-T3 波浪线围栏)
+```
+
+**改动**（`public/memory-tags.js`、`public/answer-tags.js` 均重写）：
+
+- **M-T1 已修复**：提取表（`LIVE = title`）与历史死标签表（`DEAD = axiom_summary/summary/progress`）分离，并加 `PARENT` 守卫 —— `<details>` 内的 `<summary>`、`<head>` 内的 `<title>` 不删，折叠块标题保住。
+- **M-T2 已修复**（最严重）：落单开启标签**非流式只删标签本身**，不再截到段尾。`讨论 <summary> 的用法` 后面的正文与另一套机制的标记都留住；只有流式尾部未完成时才裁残片。
+- **M-T3 已修复**：围栏改用共享 `FENCE`（记录围栏字符与长度），`~~~` 围栏、更长围栏、嵌套围栏都认。
+- **M-T4 已修复**：`maskCode` 认缩进代码块；同时 6 空格起头的行不再被误当围栏（原 `^\s*` 的错）。
+- **M-T5 已修复**：`<title>` 只在回复首个非空非代码行的窗口内**既提取又剥离**；正文中间讨论用的行内 `<title>` 不提取也不剥离（两侧同时收窄，不是只改一侧）。
+- **M-T6 已修复**：带属性的开启标签不当协议，`<progress value="70" max="100">` 原样保留。
+- **A-T1 已修复**：删掉跨行不重置的行内反引号计数器，改先 `maskCode`；落单反引号不再跨行配对吃掉后面的协议标记。
+- **A-T2 已修复**：标记只认 0-3 空格缩进独占行（原来只 trim 不看缩进），缩进代码块里的标记示例不再被当协议。
+- **A-T3 已修复**：malformed / legacy 回退时用 `cutSpans` 删掉裸标记行再返回 —— 原来前端从不消费 `malformed`，裸标签照样显示给用户。
+
+**修复后**：同命令 **19 / 19 / 0**。
+
+**连带影响：测试加载器（本轮必修，否则全量跑不起来）**。页面测试用「读 public 源码 → 剥 `export` → `window.eval`」加载，新增的跨模块 `import` 让整段 eval 报 `SyntaxError: Cannot use import statement outside a module`，全量一度 **527 / pass 491 / fail 34**。修法：新增 `tests/helpers/public-source.js`（按序读取、同时剥 `import` 与 `export`、拼接），统一替换 10 个加载点。**没有**选择「把扫描器塞回 memory-tags.js 内部以绕开加载器」—— 那是拿产品代码结构迁就测试基建，属「将就」。同时在 `.pi/skills/codebase-map/scripts/reindex.mjs` 登记两个新文件（`codebase-index.test.js` 要求未登记文件为 0）。
+
+### 批次 B：compaction（C-T1、C-T2）
+
+**修复前失败**：定向跑改写后的首例 → **tests 1 / pass 0 / fail 1**，位置 `tests/compaction.test.js:34:10`：
+
+```
+actual: { summary: 'Goal: 保留之前的约束\nProgress: 新发现\n<axiom_compact_title>...' }
+```
+
+即 X5 的兜底污染：解析失败时把标签原文当正文交回，经 `previousSummary` 回注后坏格式自我强化。
+
+**改动**（`src/compaction.js`）：`parseSummaryOutput` 先 `maskCode` 扫描（围栏内同名标签不算协议；整份被围栏包住时退回原文扫描），用 `matchAll` 记录 title/desc 开闭标签的 span（**含落单的闭合标签**），`cutSpans` 剥壳后得 `summary`，两个字段都合格才给 `progress`。
+
+- **C-T1 已修复**：解析放宽（不锚 `$`、允许顺序颠倒、允许标签前后夹正文与尾随句子），且**解析失败只丢元数据、不污染正文**。
+- **C-T2 已修复**：长度改 `[...s].length` 按码点计，16 个 emoji 的标题不再误判超长；上限集中为 `COMPACT_MAX = { title: 30, desc: 200 }`。
+- **X6 已解决**（归 C-T2）：三处长度口径统一按码点。
+
+**既有断言变更（必须写明）**：`tests/compaction.test.js` 首例原断言「纯标签输入原样返回全文」被改写（改名为 `增量展示与完整交接分离，格式异常只丢元数据不污染正文`）。**理由：属修缺陷，不是放宽。** 原断言把「标签原文回流进 summary」固定成了期望行为，而它正是 X5 的污染源。定案口径：纯标签输入返回 `{progress, summary:""}`，由调用方按既有语义处理 —— 已核实 `src/compaction.js:268` 空摘要 → `report("skipped","摘要为空，保留原文")`、`:300` `maybeApply` 空摘要 → `skip(...)`，即**空摘要 = 跳过压缩保留原文**，不是数据丢失。另：标题校验从「拒 `<` 和 `>`」放宽为只拒 `<`（`>` 是正常中文标题会用的字符，如 `A > B 的差异`），这一条是放宽，已加测试固定。
+
+**修复后**：`node --test tests/compaction.test.js` → **22 / 22 / 0**。
+
+### 批次 C+E：goal（G-T1..G-T6）
+
+**修复前失败**：`node --test tests/goal.test.js` → **tests 46 / pass 42 / fail 4**（用 `git stash push -- src/goal.js` 精确回到修复前状态采集，随后 `git stash pop` 恢复）：
+
+```
+✖ strip：模型补的闭合标签与空标签对都不留在展示文本里
+✖ 轮次小结取正文首行：记忆标签、答复标签与完成标记都不落进小结
+✖ 验证提示：还有未收尾的轮次时不要求整体完成标记
+✖ 证据门：整体验收证据也要本轮新鲜，陈旧证据不算整体已齐
+```
+
+具体断言：① `actual: '<title>接口修复</title>'` vs `expected: '修好了，接口恢复 200'`（小结取到裸标签）；② 提示文本**意外匹配** `/证据已齐：在回复最后单独一行输出 <axiom_goal_finished>/`（G-T5）；③ `actual: []` vs `expected: [ '线上接口返回 200' ]`（G-T6，陈旧证据被算作已齐）。
+
+**改动**（`src/goal.js`）：
+
+- **G-T1 已修复**：**「不认作信号」与「要清掉原文」分开处理**。空标签对（模型补的闭合形式）仍不算完成信号（不放宽防伪造口径），但 `stripGoalMarkers` 必须删掉它 —— 原来它既不算信号、又留在展示文本和落库小结里，两头都错。
+- **G-T2 明确不修语义，仅去重**：**保持「未闭合围栏视为代码延伸到结尾」**。理由：① CommonMark 如是规定；② 前端渲染是同一口径，后端单独放宽正是 X2 投诉的前后端漂移；③ 漏判完成标记可由催促恢复（false negative 可恢复），误判则不可逆地推进轮次（false positive 不可逆），保守方向更安全；④ 与 M-T2 情形不同 —— M-T2 的截断会**删掉可见正文**，围栏只改变分类、不删任何内容。本轮只把这份第三份正则换成共享 `maskCode`（行为等价），`tests/goal.test.js` 现有六类围栏断言即回归守卫，不新增测试。
+- **G-T3 + X4 已修复**：新增 `bodyText(text) = splitAnswer(stripMemoryTags(stripGoalMarkers(text))).answer`，`firstLine` 与 `pauseAtSafePoint` 的小结都走它，轮次小结不再落进裸标签（原来 `src/sessions.js:1085` 的 goalResult 会把标签原文写进小结并回注上下文）。
+- **G-T4 明确不修**：大写标记、标记后紧跟句号、两个标记同一行仍不算信号。这是防伪造的有意设计，提示词已要求独占一行无内文；放宽解析等于允许模型用变体写法伪造完成。代价（模型不守格式则该轮不结算）由催促恢复，方向上可接受。第 4 轮记为「倾向不修」，本轮确认不修。
+- **G-T5 已修复**：`#verifyingPrompt` 按 `gate.settled` 分流。这里**不能**直接用 `gate.complete` —— 它还要求 `s.claimed`，而提示词正是在模型尚未声明时要求它声明，用 `complete` 会死锁。因此 `#gate()` 新增 `settled`（证据门本身已满足，与 `claimed` 无关）：`settled` → 提示输出整体标记；`roundMissing` 空但还有剩余轮次 → 提示输出轮次标记；末轮但整体证据未齐 → 提示先补证据。缺失列表为空时不再打印「本轮待补验收：（无）」这行自相矛盾的标题。
+- **G-T6 已修复**：整体验收证据同样做轮次新鲜度校验。抽出 `stale = (criteria) => criteria.filter((c) => s.evidence[normCriterion(c)]?.round !== s.currentRound)`，`roundMissing` 与 `goalMissing` 共用同一判据。理由：`#lookupTool` 本来就只认当前轮的真实工具结果，「存了 round 却不比对」属内部不一致；末轮重新给出整体验收证据正是「整体验收」应有之义。**已知副作用（接受）**：本任务自身第 6 轮需重新提交全部整体验收证据。
+- 顺带去重：删掉 `MARKERS` 集合、独立 `FENCE` 正则与 `outsideFences`，改为 `signalLines(text)`（遍历 `maskCode` 结果，只有 `/^ {0,3}\S/` 的行算信号行，同时记录原文下标便于切割）。`stripGoalMarkers` 改为删**标记 token** 而非整行 —— `<axiom_round_finished>干完了` 现在留下 `干完了`；标记在渲染层本就当未知 HTML 被吞掉，删 token 才与用户所见一致。
+
+**修复后**：`node --test tests/goal.test.js` → **46 / 46 / 0**；三个 goal 文件合跑 → **71 / 71 / 0**（`completable` 仍返回含 `claimed` 的 `gate.complete`，语义未破）。
+
+### 批次 D：X3 落库原文
+
+**修复前失败**：`node --test tests/tasks.test.js` → **tests 5 / pass 3 / fail 2**：
+
+```
+actual:   '完成检查\n'
+expected: '完成检查<title>接口修复</title>\n\n<progress>进度说明</progress>'   (tasks.test.js:84)
+actual:   '完成'
+expected: '完成<progress>已完成检查</progress>'                              (tasks.test.js:99)
+```
+
+**改动**：`src/pi.js` 的 `result()` 不再剥离（删 `stripMemoryTags` import 与调用，`memoryState` 本身保留，另有用途）；`src/tasks.js` 的 `view()` 不再剥离（同样删 import），`snapshotJob` 因展开 `view()` 自动落原文。
+
+- **X3 已修复**：落库与 `read_result` 存模型原文，剥离只属于展示层。
+
+**依据（逐条核实，不是推理）**：① 前端**不渲染** task 的 `text` —— `public/app.js:1914-2010` 的 task 状态只用 heading/description/failure/retryButton/runtime，子代理正文走流式消息通道，展示层剥离已在 `public/app.js:1290`、`:1870` 独立完成；② 子代理没有标题自报协议 —— `src/session-memory.js:15` 的 `onReply` 开头即 `if (job || message.role !== "assistant") return;`，对子代理剥离是纯副作用；③ `historyResult()`（`src/tasks.js:7-14`）从不剥离，只有 prompt 路径剥离 —— 去掉后 resume 与首次执行的文本口径反而**一致**了；④ `read_result` 面向模型消费，给原文更忠实。
+
+**既有断言变更（必须写明）**：`tests/pi-memory.test.js:92`（原期望 `result()` 已去标签）与 `tests/tasks.test.js:88` 一例改为期望原文。**理由：属层次修正（剥离归展示层），不是放宽。** 这两条断言把「落库存展示文本」固定成了期望行为，而它导致子代理原文永久不可回读（数据损失，不是显示问题）；剥离能力没有减少，只是移到唯一该做剥离的地方。
+
+**修复后**：`node --test tests/tasks.test.js tests/pi-memory.test.js tests/task-resume.test.js tests/task-notifications.test.js` → **18 / 18 / 0**。
+
+### 跨机制冲突：处理顺序与归属结论
+
+| 冲突 | 归属 | 结论 |
+| --- | --- | --- |
+| X1 剥离顺序依赖 | M-T2 | 已修复。非流式不再截断，前一道不会吃掉后一道的 payload；顺序固定为「先剥死标签 → 再解析协议标记」。 |
+| X2 三套围栏规则不一致（含前后端漂移） | M-T3/M-T4/A-T1/A-T2 | 已修复。四处共用 `public/markdown-scan.js` 一份实现，goal 也换用（见 G-T2），前后端不再有两份正则。 |
+| X3 落库存了展示文本 | 独立修复点 | 已修复（批次 D）。 |
+| X4 goal 不认 answer-tags | G-T3 | 已修复。`bodyText` 串起三层展示剥离。 |
+| X5 compaction 兜底污染回注 | C-T1 | 已修复。解析失败只丢元数据。 |
+| X6 长度计量三处不一致 | C-T2 | 已修复。统一按码点。 |
+
+### pi 内部标记（P-T1..P-T3）
+
+三条均**判无缺陷、不修**。P-T3 第 4 轮标注为「语义推断、未实测」，本轮补成实测：`tests/pi-memory.test.js` 现有断言「标题指令只出现在请求 4、其余请求都不含它」即为证据 —— 若那条 `customType:"axiom-memory"` 的 `display:false` 条目落进消息历史，后续每次请求都会复现它。已在该处补注释说明这条断言承担 P-T3 的验证职责。（顺带发现：该 fixture 的 agent 不落盘，cwd 下只有 `models.json`，所以「查磁盘 JSONL」不是这条的有效证据路径，试过一版磁盘断言后撤回，改用请求序列断言。）
+
+### 表结构影响
+
+无。本轮未增删改任何表或字段；落库内容口径变化（X3）只影响新写入的值，旧记录照旧可读。
+
+### 涉及文件
+
+- 新增：`public/markdown-scan.js`（共享代码区扫描）、`tests/helpers/public-source.js`（页面测试源码加载）
+- 产品代码：`public/memory-tags.js`（重写）、`public/answer-tags.js`（重写）、`src/compaction.js`、`src/goal.js`、`src/pi.js`、`src/tasks.js`
+- 测试：`tests/memory-tags.test.js`、`tests/answer-tags.test.js`、`tests/compaction.test.js`、`tests/goal.test.js`、`tests/tasks.test.js`、`tests/pi-memory.test.js`；加载点统一 10 处（`app.test.js`×2、`compaction-ui`、`manual-retry`、`memory-ui`、`message-activity`、`model-onboarding-ui`、`model-thinking-favorites`、`remote-ui`、`workspace-tabs`）
+- 工具：`.pi/skills/codebase-map/scripts/reindex.mjs`（登记两个新文件）
+- 文档：`README.md`（memory-tags 与 answer-tags 行为、compaction 解析口径、goal 标记行规则与证据新鲜度、`read_result` 原文口径）、`devlog.md`（本条）
+
+### 验证
+
+- 分批「修复前失败 → 修复后通过」：批次 A 19/pass 10/**fail 9** → 19/19/0；批次 B 1/pass 0/**fail 1** → 22/22/0；批次 C+E 46/pass 42/**fail 4** → 46/46/0（三个 goal 文件 71/71/0）；批次 D 5/pass 3/**fail 2** → 18/18/0。
+- 全量：`npm test` → **tests 532 / pass 530 / fail 0 / skipped 2**。两条 skip 是既有的 `{ skip: process.platform === "win32" }`（`tests/database.test.js:103` POSIX 权限、`tests/workspace-picker.test.js:87` 平台揭示），非本轮新增，第 3 轮基线同为 2。
+- 26 条账目：**已修复 16 条**（M-T1..M-T6、A-T1..A-T3、C-T1、C-T2、G-T1、G-T3、G-T5、G-T6、X3）+ **明确不修 2 条**（G-T2 保持 CommonMark 口径、仅去重；G-T4 防伪造有意设计）+ **判无缺陷 3 条**（P-T1、P-T2、P-T3）+ **归属到上述修复的冲突 5 条**（X1→M-T2、X2→M-T3/M-T4/A-T1/A-T2、X4→G-T3、X5→C-T1、X6→C-T2）= 26。无「待确认」条目。
+- 既有断言变更 3 处，理由已逐条写明（compaction 首例：修缺陷；`pi-memory.test.js:92`、`tasks.test.js:88`：层次修正）；另有 1 处主动放宽（compaction 标题允许 `>`），已加测试固定。
+
+## 2026-09-14T19:42 收口复查与整体收尾（第 6 轮 / 共 6 轮）
+
+对第 4 轮 26 条清单逐条复查生效性，补查连带影响（前端展示路径、后端落库路径、goal/compaction 调用点）；发现并修复一处第 5 轮漏掉的前端展示缺陷；完成文档、索引、全量验证与合并收尾。
+
+### 复查结论（26 条，无「待确认」）
+
+用临时探针 `probe6.tmp.mjs` 原样重放第 4 轮的复现输入（纯函数、只看可观察输出），26 条全部符合第 5 轮既定结论，无回归：已修复 16 条维持生效、G-T2/G-T4 两条维持「不修」、P-T1..P-T3 三条维持「无缺陷」、X1..X6 六条维持既有归属（X1→M-T2、X2→M-T3/M-T4/A-T1/A-T2、X4→G-T3、X5→C-T1、X6→C-T2）。
+
+### 本轮新发现遗漏：前端展示路径从不剥 goal 完成标记（G-T1 的另一半）
+
+第 5 轮只修了后端（轮次小结不留标记原文），前端 `public/app.js` 的展示链路仍只有 `stripMemoryTags` → `splitAnswer`，没有剥离 goal 标记。用与 `tests/markdown.test.js` 相同的真实渲染管线（marked + DOMPurify + jsdom）探针 `probe6b.tmp.mjs` 实测：带闭合标签、流式半截（`<axiom_round_fin`）、未闭合围栏后等 4 类输入 × 流式/非流式 8 格，`textContent` 与 `innerHTML` 都出现 `&lt;axiom_round_finished&gt;`，用户可见。这是 G-T1「裸标签进 UI」的另一半，本轮修复。
+
+原因：标记解析逻辑只存在于 `src/goal.js`（后端私有），前端没有可复用的实现，只能完全不处理。
+
+### 修复：goal 标记解析/剥离抽成前后端唯一实现
+
+新增 `public/goal-markers.js`（与 `public/answer-tags.js` 同构），导出 `ROUND_MARKER`、`GOAL_MARKER`、`parseGoalMarkers`、`stripGoalMarkers(text, { streaming })`；内部 `signalLines` 基于第 5 轮的 `maskCode`，标记 token 大小写不敏感匹配开启与闭合写法，流式用后缀表隐藏半截。
+
+- `src/goal.js`：删除本文件的重复实现（`ROUND_MARKER`/`GOAL_MARKER`/`MARKER_TOKENS`/`signalLines`/`parseGoalMarkers`/`stripGoalMarkers`），改为 `import ... from "../public/goal-markers.js"` 并 `export {...}`，对外 API 与行为不变；不再 import 已无用的 `cutSpans`/`maskCode`。
+- `public/app.js`：新增 `import { stripGoalMarkers } from "./goal-markers.js"`；成稿路径（历史/快照）改为 `stripMemoryTags(stripGoalMarkers(raw))`，流式路径改为 `stripMemoryTags(stripGoalMarkers(item.raw, { streaming: true }), { streaming: true })`。顺序与后端 `bodyText` 一致：先剥协议标记 → 再剥记忆标签 → 再拆答复。
+- `src/server.js`：静态路由登记 `["/goal-markers.js", "public/goal-markers.js"]`。
+
+不把 goal 标记并入 `memory-tags.js`：两者语义不同（死标签 vs 协议标记），合并会破坏「先剥死标签 → 再解析协议标记」的既定顺序。
+
+### 回归测试
+
+新增 `tests/goal-markers.test.js`（5 条）：严格判定口径（围栏/波浪围栏/缩进/行内/大写变体/标记后有内文/两个标记同行/模型多写的闭合形式都不算信号）；剥离（含闭合写法、空标签对、代码区原样保留）；流式半截隐藏 vs 非流式按字面保留；前后端共用同一份实现（`src/goal.js` 导出的函数与模块同一引用 + app.js 源码级 import 断言）；页面集成（真实渲染管线：成稿、流式、代码区讲解、用户手写同名文本各就各位）。
+
+「修复前失败」证据：`git stash push -- public/app.js` 后跑该文件 → 展示层断言 `AssertionError: 成稿不显示完成标记原文 / actual: true, expected: false`（标记确实渲染给用户），共 2 条失败；`git stash pop` 后 5/5 通过。
+
+连带：8 个页面测试挂具的 publicSource 清单加入 `goal-markers`，`goal-ui`/`goal-command-ui` 加 `stripGoalMarkers` stub，`model-onboarding-ui` 的 memoryTagsSource 同步，共 11 处。
+
+### 涉及文件
+
+- 新增：`public/goal-markers.js`、`tests/goal-markers.test.js`
+- 产品代码：`src/goal.js`、`public/app.js`、`src/server.js`
+- 测试：`tests/goal-markers.test.js`（新）、`tests/app.test.js`、`tests/compaction-ui.test.js`、`tests/goal-command-ui.test.js`、`tests/goal-ui.test.js`、`tests/manual-retry.test.js`、`tests/memory-ui.test.js`、`tests/message-activity.test.js`、`tests/model-onboarding-ui.test.js`、`tests/model-thinking-favorites.test.js`、`tests/remote-ui.test.js`、`tests/workspace-tabs.test.js`
+- 工具：`.pi/skills/codebase-map/scripts/reindex.mjs`（登记两个新文件）、`.pi/skills/codebase-map/INDEX.md`（重建，155 文件 0 未登记）
+- 文档：`README.md`（goal 标记展示口径与共用实现）、`devlog.md`（本条）
+
+### 验证
+
+- 定向：`tests/goal-markers.test.js` 修复后 5/5 通过；索引一致性测试通过（含关键符号与横切常量断言）。
+- 全量：`npm test` → **tests 537 / pass 535 / fail 0 / skipped 2**（新增 5 条即本轮；两条 skip 为既有 win32 平台守卫，与第 3、5 轮基线同为 2）。
+- 表结构影响：无。本轮未增删改任何表或字段。
+- 临时文件：`probe6.tmp.mjs`、`probe6b.tmp.mjs` 已删除。
+
+## 2026-09-14 — 工作空间能力选择持久化与隔离
+
+- 修复旧目录记录缺字段导致新勾选未保存：按 selection schema 合并补丁，项目技能并入目录完整 selection；继续复用 SQLite store 表，每套配置一行，落盘成功才更新内存。
+- skills/MCP/插件按当前目录清单校验；全局编辑不列项目资源，前端不补外项目/不可用能力为可选项，补充来源标签。发现清单每次按目录刷新，默认选择热生效，不覆盖已有会话的能力配置。
+- 涉及 src/sessions.js、src/capabilities.js、src/server.js、public/app.js 及对应测试、README.md、代码索引与坑库。
+- 验证：npm test：536 项，534 通过、2 跳过、0 失败。
+
+
+## 2026-09-15 新增单子任务取消工具
+
+- 原因：子代理工具长时间不返回时，主代理缺少只中断该任务的工具，追加指令不能代替取消。
+- 决策：新增 cancel_task({taskId})，仅作用于当前会话指定任务，复用 agent.abort 与任务结果/通知流程；保留已有历史，不回滚外部副作用，不增加 UI 或默认超时。
+- 涉及：src/tasks.js、src/tools.js、src/prompts.js、src/goal.js、任务与目标相关测试、README.md 及代码索引/坑库。取消回执不作为 Goal 验收证据。
+- 验证：最终 npm test 共 547 项，545 通过、0 失败、2 项既有平台跳过；独立复核发现回执从 id 改为 taskId 后旧断言遗漏，已修正并补首个回执断言；集成测试验证工具注册、目标 abort、兄弟隔离、结果先落库后通知。node --check 与 git diff --check 通过。未新增依赖，未重启运行中的服务。

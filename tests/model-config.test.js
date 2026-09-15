@@ -1032,3 +1032,127 @@ test("models.model.override：内置模型写 thinkingLevelMap 到 modelOverride
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("provider.save：内联 id 强制与配置键一致，不留「库内键≠内联 id」的分叉", async () => {
+  const dir = await tempDir();
+  try {
+    const svc = makeService(dir);
+    await seed(svc, { providers: { "key-a": { id: "key-a", baseUrl: "https://a.example.com" } } });
+    const { models, database } = svc;
+    const before = (await models.handle({ type: "models.config.get" })).fingerprint;
+    // 前端把整条 provider 原样回传（含 id）是常见形态：id 不得被当普通未知字段原样写入。
+    await models.saveProvider({ providerId: "key-a", provider: { id: "other-id", name: "改名" }, baseFingerprint: before });
+    const raw = database.get("models", "config");
+    assert.equal(raw.providers["key-a"].id, "key-a", "内联 id 必须与配置键一致（与 renameProvider 同口径）");
+    assert.equal(raw.providers["key-a"].name, "改名");
+    assert.equal("other-id" in raw.providers, false, "不得凭空生成新条目");
+    // 原本没有内联 id 的条目不被凭空加上（保持合并语义：不造字段）。
+    await models.saveProvider({ providerId: "key-b", provider: { baseUrl: "https://b.example.com" },
+      baseFingerprint: (await models.handle({ type: "models.config.get" })).fingerprint });
+    assert.equal("id" in database.get("models", "config").providers["key-b"], false);
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("provider.save：非法 oauth 值被拒且错误信息不回显原值", async () => {
+  const dir = await tempDir();
+  try {
+    const svc = makeService(dir);
+    const { models, database } = svc;
+    let message = "";
+    try {
+      await models.saveProvider({ providerId: "p", provider: { oauth: "leak-me-please" }, baseFingerprint: EMPTY });
+      assert.fail("非法 oauth 值必须被拒绝");
+    } catch (error) { message = String(error.message ?? error); }
+    // 错误信息整条会被 server.js 原样回传客户端：绝不能携带用户原值片段。
+    assert.equal(message.includes("leak-me-please"), false, `错误信息不得携带原值：${message}`);
+    assert.equal(database.get("models", "config"), undefined, "被拒的保存不写盘");
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("收藏超限不静默截断：读取如实返回，取消收藏不得连带永久删除超限条目", async () => {
+  const dir = await tempDir();
+  try {
+    const { models, database } = makeService(dir);
+    // 旧 models-favorites.json 单组可能超过 200 条（导入路径不裁剪）：读时静默截断 + 写时以
+    // 截断值做 CAS 基线，会把用户从未见过的条目永久删掉。
+    database.set("models", "favorites", { version: 1, provider: Array.from({ length: 250 }, (_, i) => `p${i}`), model: [], thinking: [] });
+    assert.equal((await models.favorites()).provider.length, 250, "读取必须如实反映库内条目数");
+    await models.setFavorite({ kind: "provider", key: "p0", favorite: false });
+    assert.equal(database.get("models", "favorites").provider.length, 249, "取消一条只应少一条");
+    // 超限状态下仍不允许继续新增（上限是写侧闸门），但用户始终能往下减。
+    await assert.rejects(() => models.setFavorite({ kind: "provider", key: "brand-new", favorite: true }), /最多 200 条/);
+    assert.equal(database.get("models", "favorites").provider.length, 249);
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("顶层非对象的权威配置：报 parseError 且拒绝写入，不按空配置静默覆盖", async () => {
+  const dir = await tempDir();
+  try {
+    const { models, database } = makeService(dir);
+    database.set("models", "config", ["oops"]);
+    const view = await models.handle({ type: "models.config.get" });
+    assert.match(String(view.parseError ?? ""), /结构无效/, "行存在但结构非法必须报 parseError");
+    await assert.rejects(
+      () => models.saveProvider({ providerId: "p", provider: { name: "x" }, baseFingerprint: view.fingerprint }),
+      /结构无效/,
+      "写路径必须拒绝，不能按空配置覆盖原值",
+    );
+    assert.deepEqual(database.get("models", "config"), ["oops"], "被拒的保存不得改动权威");
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("单行坏 JSON 不阻断启动：init/配置页/收藏都能用，坏行以告警呈现", async () => {
+  const dir = await tempDir();
+  try {
+    const { models, storage, database } = makeService(dir);
+    // 外部篡改/半截迁移留下的非法 JSON 行：整库只坏一行，不该让进程起不来、配置页也打不开。
+    database.prepare("INSERT INTO store (namespace, key, value) VALUES ('models', 'config', '{oops')").run();
+    await storage.init();
+    const view = await models.handle({ type: "models.config.get" });
+    assert.ok(view.parseError, "坏行必须以用户可见告警呈现");
+    assert.equal(String(view.parseError).includes("oops"), false, "告警不得携带原文片段");
+    assert.deepEqual(await models.favorites(), { provider: [], model: [], thinking: [] });
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("hidden 跨进程 CAS：读-改-写之间被抢写时拒绝，不丢先写者的更新", async () => {
+  const dir = await tempDir();
+  try {
+    const catalog = [{ key: "a/one", provider: "a" }, { key: "a/two", provider: "a" }];
+    const { models, storage } = makeService(dir, catalog);
+    const other = new Database(join(dir, "axiom.db"));
+    openDatabases.push(other);
+    // 精确复刻跨进程交错：本进程读完之后、写入之前，另一进程抢先写入。
+    const inject = (name) => {
+      if (typeof storage[name] !== "function") return;
+      const original = storage[name].bind(storage);
+      storage[name] = (...args) => {
+        const value = original(...args);
+        other.set("models", "hidden", { version: 1, keys: ["a/two"] });
+        return value;
+      };
+    };
+    inject("hiddenState");
+    if (typeof storage.hiddenState !== "function") inject("getHidden");
+    await assert.rejects(() => models.handle({ type: "models.hidden.set", key: "a/one", hidden: true }), /修改|重试/);
+    assert.deepEqual(other.get("models", "hidden").keys, ["a/two"], "先写者的隐藏项不得被覆盖丢失");
+  } finally {
+    closeOpenDatabases();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

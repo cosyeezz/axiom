@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { stripMemoryTags } from "../public/memory-tags.js";
 
 const ACTIVE = ["starting", "running"];
 
@@ -53,9 +52,11 @@ export class Tasks {
     this.emit({ type: "task.state", taskId: job.id,
       data: { ...this.view(job), runtime: job.runtime }, saved: this.snapshotJob(job) });
   }
+  // 子代理输出保持模型原文：<title> 自报只是主代理协议（session-memory.js 的 onReply 对子任务
+  // 直接返回），剥离只会让原文永久不可回读；展示由前端流式消息通道负责（public/app.js 已剥）。
   view(job) {
     const { id, task, status, text, error } = job;
-    return { id, task, status, text: typeof text === "string" ? stripMemoryTags(text) : text, error,
+    return { id, task, status, text, error,
       canRetry: this.retryable(job) };
   }
   // 可重试 = 终态（运行中/已完成不可）且有可恢复依据：历史已落盘、已知 sessionFile，
@@ -133,17 +134,20 @@ export class Tasks {
         if (job.interrupted) {
           // 中断（重启前停机）：保持可重启状态，不发完成通知、不产生 resultId。
           job.notified = false;
-        } else {
-          job.resultId = randomUUID();
-          job.notified = false;
-        }
-        this.publish(job);
-        if (!job.interrupted) {
-          try { await this.onComplete(job); }
-          catch (error) { this.emit({ type: "error", data: { message: `子任务通知失败：${error.message}` } }); }
-        }
+          this.publish(job);
+        } else await this.finalize(job);
       }
     }
+  }
+
+  // 终态收尾：作废旧读取（换新 resultId）、落盘并触发完成通知。run 收尾与单任务取消共用，
+  // 保证取消与自然结束的终态、通知路径完全一致（resultId 只经通知下发，工具结果不带）。
+  async finalize(job) {
+    job.resultId = randomUUID();
+    job.notified = false;
+    this.publish(job);
+    try { await this.onComplete(job); }
+    catch (error) { this.emit({ type: "error", data: { message: `子任务通知失败：${error.message}` } }); }
   }
 
   read(id, resultId) {
@@ -181,6 +185,27 @@ export class Tasks {
       throw new Error("只能向运行中的子任务追加内容");
     await job.agent.enqueue(text.trim(), mode);
     return { taskId: id, accepted: true, mode };
+  }
+
+  // 单任务取消：只作用于指定 job，不置 cancelling（不阻塞新委派，也不改变整会话 cancel 语义）。
+  // 已结束（含已取消）时幂等返回当前终态与原结果，重复取消不换 resultId。
+  async cancelTask(id) {
+    const job = this.jobs.get(id);
+    if (!job) throw new Error("找不到该子任务");
+    // interrupted 是停机在飞的中间态，此时置取消无效（run 收尾只会退回 starting），幂等返回现状。
+    if (!ACTIVE.includes(job.status) || job.interrupted) return this.view(job);
+    const first = !job.cancelled; // 已有取消在飞（整会话 cancel 或并发单任务取消）时不重复 abort
+    job.cancelled = true; // 同步置位：run 的取消检查与并发的后续取消都据此收敛
+    // 重启恢复出来的 starting 没有在飞 run，没人替它收尾，这里自己走同一终态路径。
+    if (!job.done) {
+      job.status = "cancelled";
+      await this.finalize(job);
+      return this.view(job);
+    }
+    // 在飞（starting/running）：abort 只打这一个 agent，run 收尾后完成通知照常发出。
+    if (first) await job.agent?.abort();
+    await job.done;
+    return this.view(job);
   }
 
   async cancel() {

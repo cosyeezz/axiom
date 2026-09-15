@@ -2,6 +2,7 @@ import { renderMarkdown } from "./markdown.js";
 import { stripMemoryTags } from "./memory-tags.js";
 import { createStreamRenderer } from "./stream-renderer.js";
 import { splitAnswer } from "./answer-tags.js";
+import { stripGoalMarkers } from "./goal-markers.js";
 import { createFilePicker, fileIcon } from "./file-picker.js";
 import "./tooltip.js";
 import { createModelPicker } from "./model-picker.js";
@@ -20,6 +21,9 @@ let ws,
   runtime,
   activeTask,
   busy = false,
+  // safeStopping: 已请求安全停止、还在等轮次边界；stopAlert: 停住了但用户还没回来看。
+  safeStopping = false,
+  stopAlert = false,
   changing = false,
   connected = false,
   creation;
@@ -318,13 +322,125 @@ let requestSeq = 0;
 function error(e) {
   $("error").textContent = e.message || String(e);
 }
+// 消息原文独立于渲染 DOM，保留被标签解析隐藏的内容与压缩历史。
+let rawEntries = [], rawLive = new Map(), rawFrame;
+function rawMode(open) {
+  $("raw-io").hidden = !open;
+  $("workspace").classList.toggle("raw-open", open);
+  $("open-raw-io").setAttribute("aria-pressed", String(open));
+  if (open) paintRaw();
+}
+$("open-raw-io").onclick = () => {
+  const opening = $("raw-io").hidden;
+  rawMode(opening);
+  if (opening) {
+    const bounds = $("transcript").getBoundingClientRect();
+    const visible = rawEntries.find(entry => {
+      const rect = entry.item?.text.getBoundingClientRect();
+      return rect?.height > 0 && rect.bottom > bounds.top && rect.top < bounds.bottom;
+    });
+    selectRaw(visible || rawEntries.at(-1));
+  }
+};
+$("close-raw-io").onclick = () => { rawMode(false); $("open-raw-io").focus(); };
+function rawChanged() {
+  if (!$("raw-io").hidden && rawFrame === undefined) rawFrame = requestAnimationFrame(() => {
+    rawFrame = undefined;
+    paintRaw();
+  });
+}
+function rawEntry(message, agentId = "main") {
+  const entry = { message, agentId };
+  rawEntries.push(entry);
+  return entry;
+}
+function selectRaw(entry, source = false) {
+  if (!entry) return;
+  rawMode(true);
+  if (source && window.matchMedia?.("(max-width: 1000px)").matches) rawMode(false);
+  for (const record of rawEntries) {
+    record.node?.classList.toggle("raw-selected", record === entry);
+    record.item?.node.classList.toggle("raw-selected", record === entry);
+  }
+  const target = source ? entry.item?.node : entry.node;
+  if (source && target) {
+    for (let parent = target.parentElement; parent && parent !== $("output"); parent = parent.parentElement)
+      if (parent.tagName === "DETAILS") parent.open = true;
+    if (entry.item.task) entry.item.task.trigger.click();
+    follow = false;
+  }
+  target?.scrollIntoView?.({ block: "center" });
+}
+function bindRaw(item, entry) {
+  if (!entry) return;
+  entry.item = item;
+  item.node.addEventListener("click", (e) => {
+    if (!$("raw-io").hidden && !e.target.closest("button, a, input, textarea, summary") && !window.getSelection()?.toString()) selectRaw(entry);
+  });
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "raw-source-link secondary";
+  button.textContent = "对照原文";
+  button.onclick = () => selectRaw(entry);
+  item.node.append(button);
+}
+function paintRaw() {
+  const list = $("raw-io-list");
+  const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 80;
+  $("raw-io-empty").hidden = rawEntries.length > 0;
+  for (const [index, entry] of rawEntries.entries()) {
+    if (!entry.node) {
+      entry.node = document.createElement("article");
+      entry.node.className = "raw-message";
+      const bar = document.createElement("div");
+      bar.className = "raw-message-bar";
+      entry.label = document.createElement("span");
+      const locate = document.createElement("button");
+      locate.type = "button";
+      locate.className = "raw-locate secondary";
+      locate.textContent = "定位对话";
+      locate.onclick = () => selectRaw(entry, true);
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "raw-copy secondary";
+      copy.textContent = "复制原文";
+      copy.onclick = async () => {
+        try { await navigator.clipboard.writeText(entry.body.textContent); copy.textContent = "已复制"; }
+        catch { copy.textContent = "复制失败，请选中文字复制"; }
+      };
+      bar.append(entry.label, locate, copy);
+      entry.body = document.createElement("pre");
+      entry.extra = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = "思考 / 工具 / 附件信息";
+      entry.extraText = document.createElement("pre");
+      entry.extra.append(summary, entry.extraText);
+      entry.node.append(bar, entry.body, entry.extra);
+      $("raw-io-list").append(entry.node);
+    }
+    const { message, agentId } = entry;
+    entry.label.textContent = `${String(index + 1).padStart(2, "0")} · ${message.role === "user" ? "你的输入" : message.role === "toolResult" ? "工具结果" : "模型输出"}${agentId !== "main" ? " · 子代理" : ""}${rawLive.get(agentId) === entry ? " · 正在生成" : ""}`;
+    const blocks = typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content || [];
+    const text = blocks.filter(b => b?.type === "text").map(b => b.text).join("\n");
+    if (entry.body.textContent !== text) entry.body.textContent = text;
+    entry.body.hidden = !text;
+    entry.node.querySelector(".raw-copy").disabled = !text;
+    const extra = blocks.filter(b => b && b.type !== "text").map(b => b.type === "thinking" ? `思考\n${b.thinking || ""}` : b.type === "image" ? `图片附件 · ${b.mimeType || "image"}（不展开 base64）` : JSON.stringify(b, null, 2)).join("\n\n");
+    entry.extra.hidden = !extra && !!text;
+    entry.extraText.textContent = extra || "本条消息尚无文本输出。";
+    if (message.role === "user" && text.startsWith("[Axiom 子任务完成通知]")) entry.label.textContent = `${String(index + 1).padStart(2, "0")} · 内部任务通知`;
+    entry.node.querySelector(".raw-locate").hidden = !entry.item || entry.item.node.hidden;
+  }
+  if (atBottom) list.scrollTop = list.scrollHeight;
+}
 function request(type, data = {}) {
   return new Promise((resolve, reject) => {
     if (ws?.readyState !== WebSocket.OPEN)
       return reject(new Error("连接已断开，请重新连接"));
     const id = String(++requestSeq);
     pending.set(id, { resolve, reject });
-    ws.send(JSON.stringify({ id, type, ...data }));
+    const command = { id, type, ...data };
+    ws.send(JSON.stringify(command));
   });
 }
 function controls() {
@@ -359,8 +475,12 @@ function controls() {
   for (const id of ["send", "send-steer", "send-followup"])
     $(id).disabled = unavailable || !sessionId || sessionMissing || imageLoading || (!$("prompt").value.trim() && !selectedSkill && !images.length && !contextFiles.length);
   $("send-steer").hidden = $("send-followup").hidden = !busy;
-  $("stop").disabled = !busy || unavailable || sessionMissing;
-  $("stop").hidden = !busy;
+  $("stop").disabled = $("force-stop").disabled = !busy || unavailable || sessionMissing;
+  // 已经在等安全点了就只留强停：再点一次安全停止没任何效果，反而像没生效。
+  $("stop").hidden = !busy || safeStopping;
+  $("force-stop").hidden = !busy;
+  $("safe-stop-progress").hidden = !busy || !safeStopping;
+  $("session-alert").hidden = !stopAlert;
   $("send").hidden = busy;
   syncRetryPrompt();
   for (const task of tasks.values()) task.retryButton.disabled = unavailable || sessionMissing || task.retrying;
@@ -1286,7 +1406,8 @@ function prepareStream(item) {
   // 纯思考 delta 不改原文，未变化的 raw 不重复去标签/拆分。
   if (item.preparedRaw !== item.raw) {
     item.preparedRaw = item.raw;
-    item.buffer = stripMemoryTags(item.raw || "", { streaming: true });
+    // 与最终渲染同序：先剥 goal 完成标记，再剥记忆标签；半截标记由 streaming 模式暂存。
+    item.buffer = stripMemoryTags(stripGoalMarkers(item.raw || "", { streaming: true }), { streaming: true });
     // 累计解析：开标签到达即展示回答，半截标签暂存。
     item.processBuffer = "";
     if (!item.task) {
@@ -1350,8 +1471,9 @@ function renderMessage(item, message) {
     .filter((c) => c?.type === "text")
     .map((c) => c.text)
     .join("\n");
-  // 记忆标签只属于助手自报内容；用户手写同名标签原样保留。
-  item.buffer = message.role === "assistant" ? stripMemoryTags(raw) : raw;
+  // 记忆标签与 goal 完成标记只属于助手自报内容；用户手写同名标签原样保留。顺序与后端展示口径
+  // （src/goal.js 的 bodyText）一致：先去完成标记，再剥记忆标签，最后拆正式答复。
+  item.buffer = message.role === "assistant" ? stripMemoryTags(stripGoalMarkers(raw)) : raw;
   // 主会话解析 axiom_answer；未闭合回答仍展示，子任务透传。
   // 异常走原文回退，保证错误/中断始终可见。
   item.processBuffer = "";
@@ -1860,6 +1982,23 @@ function applyEvent(message) {
   }
   if (message.sessionId !== sessionId) return;
   const { type, agentId = "main", data } = message;
+  if (type === "agent.message.start" && data.message.role === "assistant") rawLive.set(agentId, rawEntry(JSON.parse(JSON.stringify(data.message)), agentId));
+  if (type === "agent.delta" && ["text_delta", "thinking_delta"].includes(data.type)) {
+    if (!rawLive.has(agentId)) rawLive.set(agentId, rawEntry({ role: "assistant", content: [] }, agentId));
+    const entry = rawLive.get(agentId);
+    const blocks = Array.isArray(entry.message.content) ? entry.message.content : (entry.message.content = []);
+    const kind = data.type === "text_delta" ? "text" : "thinking";
+    const index = data.contentIndex ?? 0;
+    blocks[index] ||= { type: kind, [kind]: "" };
+    blocks[index][kind] = (blocks[index][kind] || "") + data.delta;
+  }
+  let endedRaw;
+  if (type === "agent.message.end") {
+    endedRaw = rawLive.get(agentId) || rawEntry(data.message, agentId);
+    endedRaw.message = data.message;
+    rawLive.delete(agentId);
+  }
+  if (type.startsWith("agent.message.") || type === "agent.delta") rawChanged();
   if (type === "question.asked") questionUI.asked(message.sessionId, data);
   if (type === "question.closed") questionUI.closed(message.sessionId, data.toolCallId);
   if (type === "goal") {
@@ -1894,6 +2033,7 @@ function applyEvent(message) {
   if (type === "agent.message.end" && data.message.role === "user") {
     clearWaiting(agentId);
     const item = card("你", tasks.get(agentId));
+    bindRaw(item, endedRaw);
     renderMessage(item, data.message);
     if (agentId === "main") {
       mainItems.push({ item, entryId: data.entryId });
@@ -1913,10 +2053,15 @@ function applyEvent(message) {
     void refreshSessions().catch(error);
     busy = data.status !== "idle";
     canReask = !!data.canReask;
+    // 安全停止只在本次运行内有效：下一次 running 不带 safeStop 时就该恢复正常按钮。
+    safeStopping = busy && !!data.safeStop;
+    if (data.status === "running") stopAlert = false;
     if (data.status === "running") waiting("main");
     else stopActivity("main", data.status === "cancelling" ? "正在停止…" : "已结束");
     // 正在看的会话跑完就算已读；否则切走后会被错标成「待查看」。
-    if (data.status === "idle") markSessionSeen(sessionId);
+    // 例外：安全停止落地时不标已读 —— 用户可能早已去干别的事，靠红点提醒回来接着看。
+    if (data.status === "idle" && data.stopped === "safe") stopAlert = true;
+    else if (data.status === "idle") markSessionSeen(sessionId);
     // 停稳了才判断能不能续：message.end 总先于 idle 到达，此时 lastMainMessage 已是本轮结果。
     if (data.status === "running") interrupted = false;
     else if (data.status === "idle") interrupted = canReask || canResumeMessage(lastMainMessage);
@@ -1931,13 +2076,14 @@ function applyEvent(message) {
         tasks.get(agentId),
       ),
     );
+    bindRaw(live.get(agentId), rawLive.get(agentId));
     live.get(agentId).active = true;
     updateActivity(live.get(agentId));
   }
   if (type === "agent.delta") {
     const item = live.get(agentId);
     if (!item) return;
-    // 只累计并标待处理：stripMemoryTags/splitAnswer/活动状态都留到绘制前一次完成。
+    // 只累计并标待处理：stripGoalMarkers/stripMemoryTags/splitAnswer/活动状态都留到绘制前一次完成。
     if (data.type === "text_delta") {
       item.raw = (item.raw || "") + data.delta;
       item.pending = true;
@@ -1957,6 +2103,7 @@ function applyEvent(message) {
       live.get(agentId) ||
       card(agentId === "main" ? "AXIOM" : "子 Agent", tasks.get(agentId));
     clearWaiting(agentId);
+    if (!endedRaw.item) bindRaw(item, endedRaw);
     item.active = false;
     live.set(agentId, item);
     for (const call of Array.isArray(data.message.content) ? data.message.content : [])
@@ -2155,6 +2302,11 @@ function snapshot(state, onReady) {
 }
 // 同步重置 + 建索引：拿到 state 立即完成，后续分片只做消息落地。
 function beginSnapshot(state, target) {
+  // 原文对照的数据源与消息同一份快照：整表一次重建，分片期间只做逐条绑定。
+  rawEntries = state.messages.map(({ message, agentId }) => ({ message, agentId }));
+  rawLive.clear();
+  $("raw-io-list").replaceChildren();
+  rawChanged();
   locatedScroll = undefined;
   lastScrollTops.delete(transcript);
   clearTimeout(escapeTimer);
@@ -2180,6 +2332,8 @@ function beginSnapshot(state, target) {
   $("workspace-label").textContent = state.cwd;
   updatePageTitle();
   busy = state.status !== "idle";
+  safeStopping = busy && !!state.safeStop;
+  stopAlert = false;
   lastMainMessage = state.messages.findLast((entry) => entry.agentId === "main")?.message || null;
   canReask = !!state.canReask;
   interrupted = !busy && (canReask || canResumeMessage(lastMainMessage));
@@ -2269,6 +2423,8 @@ function placeSnapshotMessage(ctx, index, { agentId, message, entryId }) {
     for (const call of Array.isArray(message.content) ? message.content : [])
       if (call.type === "toolCall") toolState(agentId, { phase: "history", toolCallId: call.id, toolName: call.name, args: call.arguments });
     live.delete(agentId);
+    // 绑定与下标同构的原文条目：rawEntries 与 state.messages 顺序一致。
+    bindRaw(item, rawEntries[index]);
     renderMessage(item, message);
     if (agentId === "main") {
       mainItems.push({ item, entryId });
@@ -2293,6 +2449,10 @@ function finishSnapshot(job, ctx) {
       item.raw = typeof message.content === "string" ? message.content
         : (message.content || []).filter((block) => block?.type === "text")
           .map((block) => block.text).join("\n");
+      // 快照里的半成品流没有对应 state.messages 槽位，单独补一条原文条目并继续接收后续 delta。
+      const entry = rawEntry(JSON.parse(JSON.stringify(message)), agentId);
+      rawLive.set(agentId, entry);
+      bindRaw(item, entry);
       renderMessage(item, message);
       item.preparedRaw = undefined;
       live.set(agentId, item);
@@ -2803,7 +2963,8 @@ document.addEventListener("keydown", (e) => {
       clearTimeout(escapeTimer);
       escapeTimer = undefined;
       recallArmedUntil = Date.now() + 300;
-      if (busy) $("stop").click();
+      // 双按 Esc 只给安全停止：强停会丢产出，不能被一个快捷键误触。
+      if (busy) void stopSession("safe");
     } else {
       // 单按撤回队列；300ms 内连按三次（第二次起就在 300ms 窗口内）才连带撤回已进入上下文的输入。
       const recall = Date.now() < recallArmedUntil;
@@ -2812,15 +2973,33 @@ document.addEventListener("keydown", (e) => {
     }
   }
 });
-$("stop").onclick = async () => {
+$("session-alert").onclick = () => {
+  stopAlert = false;
+  markSessionSeen(sessionId); // 同一下点掉标题红点和侧栏「待查看」点，两处不至于分岔。
+  renderSessions();
+  controls();
+};
+$("stop").onclick = () => void stopSession("safe");
+$("force-stop").onclick = () => {
+  $("force-stop-dialog").showModal();
+  $("force-stop-cancel").focus(); // 默认落在取消上：回车不应该直接把本轮产出丢掉
+};
+$("force-stop-cancel").onclick = () => $("force-stop-dialog").close();
+$("force-stop-form").onsubmit = (e) => {
+  e.preventDefault();
+  $("force-stop-dialog").close();
+  void stopSession("force");
+};
+// 两种停止都先撤回队列：否则停下后排队的消息会在下一次运行开头被默默消化掉。
+async function stopSession(mode) {
   const target = sessionId;
   try {
     await withdrawQueue();
-    await request("cancel", { sessionId: target });
+    await request("cancel", { sessionId: target, mode });
   } catch (e) {
     error(e);
   }
-};
+}
 let refreshing;
 function refreshSessions() {
   if (refreshing) return refreshing;
@@ -3509,9 +3688,7 @@ function createAgentPicker(role, title, catalog, initial) {
   const pickers = document.createElement("div");
   pickers.hidden = mode.value !== "custom";
   for (const [kind, labelText] of [["skills", "Skills"], ["mcp", "MCP 服务"], ["plugins", "Extensions 扩展"]]) {
-    const entries = [...catalog[kind], ...(initial.capabilities?.[kind] || [])
-      .filter((id) => !catalog[kind].some((entry) => entry.id === id))
-      .map((id) => ({ id, name: `当前目录不可用 · ${capabilityName(id)}` }))];
+    const entries = catalog[kind];
     const details = document.createElement("details");
     details.className = "capability-picker";
     const heading = document.createElement("summary");
@@ -3527,7 +3704,7 @@ function createAgentPicker(role, title, catalog, initial) {
       checkbox.value = entry.id;
       checkbox.dataset.kind = kind;
       checkbox.onchange = update;
-      label.append(checkbox, document.createTextNode(kind === "skills" && entry.scope
+      label.append(checkbox, document.createTextNode(entry.scope
         ? `${entry.scope === "project" ? "[当前项目]" : "[全局]"} ${entry.name}` : entry.name));
       list.append(label);
     }

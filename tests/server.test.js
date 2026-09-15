@@ -58,9 +58,10 @@ test("local connection without token, foreign origin rejection, recovery and shu
   let ws;
   try {
     const http = `http://127.0.0.1:${app.server.address().port}`;
-    for (const path of ["/", "/app.js", "/style.css", "/file-picker.js", "/file-picker.css", "/memory-tags.js", "/vendor/marked.js"]) {
+    for (const path of ["/", "/app.js", "/style.css", "/file-picker.js", "/file-picker.css", "/memory-tags.js", "/answer-tags.js", "/goal-markers.js", "/markdown-scan.js", "/vendor/marked.js"]) {
       const first = await fetch(http + path);
-      assert.equal(first.status, 200);
+      assert.equal(first.status, 200, `静态资源不可用：${path}`);
+      if (path.endsWith(".js")) assert.match(first.headers.get("content-type"), /javascript/, path);
       assert.match(first.headers.get("cache-control"), /no-cache/);
       assert.match(
         first.headers.get("content-security-policy"),
@@ -87,6 +88,17 @@ test("local connection without token, foreign origin rejection, recovery and shu
     req.destroy();
     bad.terminate();
     ws = await connect();
+    sessions.createAgent.capabilities = async () => Object.fromEntries(["skills", "mcp", "plugins"].map((kind) =>
+      [kind, [{ id: "global", scope: "global" }, { id: "project", scope: "project" }]]));
+    const globalCatalog = await request(ws, { id: "global-catalog", type: "capabilities.list" });
+    const projectCatalog = await request(ws, { id: "project-catalog", type: "capabilities.list", cwd: process.cwd() });
+    assert.equal(globalCatalog.ok, true);
+    assert.equal(projectCatalog.ok, true);
+    for (const kind of ["skills", "mcp", "plugins"]) {
+      assert.deepEqual(globalCatalog.data[kind].map((entry) => entry.id), ["global"]);
+      assert.deepEqual(projectCatalog.data[kind].map((entry) => entry.id), ["global", "project"]);
+    }
+    delete sessions.createAgent.capabilities;
     const empty = { skills: [], mcp: [], plugins: [] };
     const defaults = await request(ws, { id: "defaults-save", type: "session.defaults.configure", capabilities: empty });
     assert.equal(defaults.ok, true);

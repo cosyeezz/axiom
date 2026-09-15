@@ -56,10 +56,49 @@ export function createPiModelStorage({ database, home, piDir = getAgentDir() }) 
     favorites: join(home, "models-favorites.json"),
   };
 
+  // 多语句写入的原子边界（与 SessionStore #change 同风格）：事务外自动开事务、RELEASE 提交；
+  // 事务内自动嵌套，同名保存点释放最近一层。失败时 ROLLBACK TO + RELEASE 自身的异常一并吞掉，
+  // 绝不用回滚错误掩盖原始错误。
+  const change = (work) => {
+    database.exec("SAVEPOINT model_storage");
+    try {
+      const result = work();
+      database.exec("RELEASE model_storage");
+      return result;
+    } catch (error) {
+      try {
+        database.exec("ROLLBACK TO model_storage");
+        database.exec("RELEASE model_storage");
+      } catch {}
+      throw error;
+    }
+  };
+
+  // prepared 语句按 SQL 文本复用：写路径（CAS、原文读取）每次重新 prepare 会让 importAuth
+  // 退化成 N+1 次编译。
+  const statements = new Map();
+  const sql = (text) => {
+    let statement = statements.get(text);
+    if (!statement) statements.set(text, (statement = database.prepare(text)));
+    return statement;
+  };
+
   // ---- 权威配置（models/config） -------------------------------------------------
+  // 单行坏 JSON 绝不能阻断启动：整库只坏一行时进程仍要起得来、配置页仍要打得开（否则用户
+  // 没有任何自愈入口）。行不存在 → undefined；行存在但不是合法 JSON → 记一条去重告警后按缺失
+  // 处理，坏行原样留在库里等写路径 CAS 自愈。告警只报 namespace/key，绝不带原文片段。
+  const readRow = (namespace, key) => {
+    try {
+      return database.get(namespace, key);
+    } catch {
+      recordImportError(`${namespace}/${key}`, "数据库记录不是合法 JSON，已按未配置处理；请在本页重新配置");
+      return undefined;
+    }
+  };
   const readConfig = () => {
-    const stored = database.get(NAMESPACE, CONFIG_KEY);
+    const stored = readRow(NAMESPACE, CONFIG_KEY);
     // 库内值只可能由本模块写入；外部篡改导致结构非法时按空配置兜底，不让进程崩溃。
+    // 「行存在但结构非法」由 configState().invalid 上报给写路径拒绝覆盖，这里只保证读不炸。
     return isPlainObject(stored) ? stored : { providers: {} };
   };
 
@@ -96,33 +135,42 @@ export function createPiModelStorage({ database, home, piDir = getAgentDir() }) 
   // ---- 跨进程 CAS：修同 HOME 多进程读-改-写丢更新 --------------------------------
   // 复用传入的权威连接，比较与写入在单条同步 SQL 内完成，不持锁跨异步操作。
   const readRaw = (db, namespace, key) =>
-    db.prepare("SELECT value FROM store WHERE namespace = ? AND key = ?").get(namespace, key)?.value;
+    (db === database ? sql("SELECT value FROM store WHERE namespace = ? AND key = ?") :
+      db.prepare("SELECT value FROM store WHERE namespace = ? AND key = ?")).get(namespace, key)?.value;
   // expectedRaw 为 undefined（行尚不存在）→ 仅当行仍不存在时插入；否则原文全等才覆盖。
   // 返回 false = 他人已抢先写入：调用方转为固定脱敏冲突错误，绝不自动重放（fn 可能有副作用）。
-  const compareAndSet = (db, namespace, key, expectedRaw, next) =>
-    expectedRaw === undefined
-      ? db
-          .prepare("INSERT INTO store (namespace, key, value) VALUES (?, ?, ?) ON CONFLICT(namespace, key) DO NOTHING")
-          .run(namespace, key, next).changes === 1
-      : db.prepare("UPDATE store SET value = ? WHERE namespace = ? AND key = ? AND value = ?").run(next, namespace, key, expectedRaw).changes === 1;
+  const compareAndSet = (db, namespace, key, expectedRaw, next) => {
+    const text = expectedRaw === undefined
+      ? "INSERT INTO store (namespace, key, value) VALUES (?, ?, ?) ON CONFLICT(namespace, key) DO NOTHING"
+      : "UPDATE store SET value = ? WHERE namespace = ? AND key = ? AND value = ?";
+    const statement = db === database ? sql(text) : db.prepare(text);
+    return expectedRaw === undefined
+      ? statement.run(namespace, key, next).changes === 1
+      : statement.run(next, namespace, key, expectedRaw).changes === 1;
+  };
 
-  // 写路径起点捕获：raw 为库内原文（CAS 期望值）；config 解析兜底与 readConfig 同语义。
+  // 写路径起点捕获：raw 为库内原文（CAS 期望值）；坏 JSON 不抛错（否则单行损坏会让配置页
+  // 与启动一起瘫掉），而是把 invalid 传给调用方，由写路径明确拒绝覆盖。
   const readState = (namespace, key) => {
     const raw = readRaw(database, namespace, key);
-    try { return { raw, value: raw === undefined ? undefined : JSON.parse(raw) }; }
-    catch { throw new Error(`数据库记录无效：${namespace}/${key}（不是有效 JSON）`); }
+    if (raw === undefined) return { raw, value: undefined };
+    try { return { raw, value: JSON.parse(raw) }; }
+    catch { return { raw, value: undefined, invalid: true }; }
   };
+  // invalid = 行存在但读不出可用配置（坏 JSON 或顶层非对象）。此时绝不能当空配置：
+  // 空配置指纹会与它相同，用户随手一存就把原值静默覆盖掉。
   const configState = () => {
-    const { raw, value } = readState(NAMESPACE, CONFIG_KEY);
-    return { raw, config: isPlainObject(value) ? value : { providers: {} } };
+    const { raw, value, invalid } = readState(NAMESPACE, CONFIG_KEY);
+    if (isPlainObject(value)) return { raw, config: value };
+    return { raw, config: { providers: {} }, invalid: raw !== undefined || !!invalid };
   };
   const casConfig = (raw, config) => compareAndSet(database, NAMESPACE, CONFIG_KEY, raw, JSON.stringify(config));
   const favoritesState = () => readState(NAMESPACE, FAVORITES_KEY);
   const casFavorites = (raw, store) =>
-    compareAndSet(database, NAMESPACE, FAVORITES_KEY, raw, JSON.stringify({ version: 1, ...store }));
+    compareAndSet(database, NAMESPACE, FAVORITES_KEY, raw, JSON.stringify({ ...store, version: 1 }));
   const credentialState = (providerId) => {
-    const { raw, value } = readState(AUTH_NAMESPACE, providerId);
-    return { raw, current: isCredential(value) ? value : undefined };
+    const { raw, value, invalid } = readState(AUTH_NAMESPACE, providerId);
+    return { raw, current: isCredential(value) ? value : undefined, invalid };
   };
 
   // ---- 凭据（auth/<providerId>）：pi-ai CredentialStore 实现 ---------------------
@@ -138,7 +186,7 @@ export function createPiModelStorage({ database, home, piDir = getAgentDir() }) 
     return task;
   };
   const rawCredential = (providerId) => {
-    const stored = database.get(AUTH_NAMESPACE, providerId);
+    const stored = readRow(AUTH_NAMESPACE, providerId);
     return isCredential(stored) ? stored : undefined;
   };
   // 与 SDK AuthStorage.read 完全一致：api_key 且非命令型时解析 $VAR/${VAR} 插值；
@@ -167,10 +215,16 @@ export function createPiModelStorage({ database, home, piDir = getAgentDir() }) 
     modify(providerId, fn, options) {
       return enqueue(async () => {
         options?.signal?.throwIfAborted();
-        const { raw: expectedRaw, current } = credentialState(providerId);
+        const { raw: expectedRaw, current, invalid } = credentialState(providerId);
+        // 坏 JSON 行绝不进回调、更不许被覆盖：不知道原值是什么就写新值等于静默丢弃用户凭据。
+        // 读路径（read/list）对它容错跳过，只有写路径拒绝，用户仍能删除该行后重新配置。
+        if (invalid) throw new Error(`provider「${providerId}」的凭据记录不是合法 JSON，已拒绝写入以避免覆盖`);
         const next = await fn(current ? structuredClone(current) : undefined);
         // 与 SDK AuthStorage.modify 一致：fn 返回 undefined 表示放弃变更，保留现值。
         if (next === undefined) return current;
+        // 落库前校形状：否则写出 read/list 都看不见的幽灵行，而该行又因「已存在」永久阻断
+        // auth.json 里同名的合法凭据导入。
+        if (!isCredential(next)) throw new Error(`provider「${providerId}」的凭据格式无效，已拒绝写入`);
         // 异步 fn 期间他人可能已写：CAS 原文比较失败即冲突——固定脱敏错误，不自动重放。
         if (!compareAndSet(database, AUTH_NAMESPACE, providerId, expectedRaw, JSON.stringify(next)))
           throw new Error("凭据已被其他进程修改，本次写入已取消，请重试");
@@ -187,17 +241,18 @@ export function createPiModelStorage({ database, home, piDir = getAgentDir() }) 
 
   // ---- 首次幂等导入 ----------------------------------------------------------------
   // 导入告警去重：坏文件在修复前每次 init 都会重读重报，同一来源同一消息只记一条。
-  const recordImportError = (source, error) => {
+  // 读整表 → 追加 → 整表回写是两条语句，包保存点：崩在中间不留半截告警列表。
+  const recordImportError = (source, error) => change(() => {
     const list = importErrors();
     if (list.some((item) => item.source === source && item.error === error)) return;
     database.set(NAMESPACE, IMPORT_ERROR_KEY, [...list, { source, error }]);
-  };
+  });
   // 来源修复后其历史告警已过时，全部清除（避免空权威页面上出现陈旧噪音）。
-  const clearImportErrors = (source) => {
+  const clearImportErrors = (source) => change(() => {
     const list = importErrors();
     const rest = list.filter((item) => item.source !== source);
     if (rest.length !== list.length) database.set(NAMESPACE, IMPORT_ERROR_KEY, rest);
-  };
+  });
 
   // 单文件导入门闩：仅成功导入后才打标记，此后不再读该源文件（旧配置此后只是历史，
   // 不再覆盖权威）。读失败/坏 JSON/结构拒绝：记录去重告警且不打标记——用户修好原文件后
@@ -205,7 +260,7 @@ export function createPiModelStorage({ database, home, piDir = getAgentDir() }) 
   // 每次重试只多读一个小文件，代价可忽略。JSON 解析错误不携带 error.message
   //（V8 SyntaxError 可能附带文件原文片段，有密钥泄露风险）。
   const importOnce = async (source, apply, { markMissing = false } = {}) => {
-    if (database.get(MIGRATED_NAMESPACE, source) !== undefined) return;
+    if (readRow(MIGRATED_NAMESPACE, source) !== undefined) return;
     let raw;
     try {
       raw = await readFile(source, "utf8");
@@ -226,9 +281,12 @@ export function createPiModelStorage({ database, home, piDir = getAgentDir() }) 
       recordImportError(source, "不是有效 JSON，已跳过导入；原文件未改动，可在本页重新配置");
       return;
     }
-    if (!(await apply(value))) return; // 部分拒绝：告警已记录，不打标记，修复后下次 init 重试
-    database.set(MIGRATED_NAMESPACE, source, true);
-    clearImportErrors(source);
+    // apply 与打标记必须同生共死：只 apply 没打标记会重复导入，只打标记没 apply 会永久丢数据。
+    if (!(await change(() => apply(value)))) return; // 部分拒绝：告警已记录，不打标记，修复后下次 init 重试
+    change(() => {
+      database.set(MIGRATED_NAMESPACE, source, true);
+      clearImportErrors(source);
+    });
   };
 
   // 已知损坏的结构不进权威（UI 是唯一修复入口，坏结构一旦入库将无法通过 UI 修复）。
@@ -238,7 +296,7 @@ export function createPiModelStorage({ database, home, piDir = getAgentDir() }) 
       recordImportError(sources.models, "结构无效（顶层/providers 必须是对象），已跳过导入；原文件未改动");
       return false;
     }
-    if (database.get(NAMESPACE, CONFIG_KEY) === undefined) database.set(NAMESPACE, CONFIG_KEY, value);
+    if (readRow(NAMESPACE, CONFIG_KEY) === undefined) database.set(NAMESPACE, CONFIG_KEY, value);
     return true;
   };
   const importAuth = (value) => {
@@ -246,53 +304,81 @@ export function createPiModelStorage({ database, home, piDir = getAgentDir() }) 
       recordImportError(sources.auth, "结构无效（顶层必须是对象），已跳过导入；原文件未改动");
       return false;
     }
-    let clean = true;
-    for (const [providerId, credential] of Object.entries(value)) {
-      if (!isCredential(credential)) {
-        recordImportError(sources.auth, `provider「${providerId}」的凭据格式无效，已跳过该条`);
-        clean = false;
-        continue;
+    // 逐 provider 写入包同一保存点：中途失败（磁盘满/SQL 异常）不留半截导入——半截既不完整，
+    // 又会因「行已存在」占位阻断下次重导。
+    return change(() => {
+      let clean = true;
+      for (const [providerId, credential] of Object.entries(value)) {
+        if (!isCredential(credential)) {
+          recordImportError(sources.auth, `provider「${providerId}」的凭据格式无效，已跳过该条`);
+          clean = false;
+          continue;
+        }
+        // 权威已有的 providerId 一律不覆盖：UI 新值 / 上次导入优先，旧文件只是历史。
+        if (readRow(AUTH_NAMESPACE, providerId) === undefined)
+          database.set(AUTH_NAMESPACE, providerId, credential);
       }
-      // 权威已有的 providerId 一律不覆盖：UI 新值 / 上次导入优先，旧文件只是历史。
-      if (database.get(AUTH_NAMESPACE, providerId) === undefined)
-        database.set(AUTH_NAMESPACE, providerId, credential);
-    }
-    return clean;
+      return clean;
+    });
   };
   const importFavorites = (value) => {
-    if (isPlainObject(value) && database.get(NAMESPACE, FAVORITES_KEY) === undefined)
-      database.set(NAMESPACE, FAVORITES_KEY, value);
-    return isPlainObject(value);
+    if (!isPlainObject(value)) {
+      // 与 importModels/importAuth 同口径：不导入就必须给用户可见告警，否则每次启动
+      // 默默重读同一个坏文件，用户永远不知道收藏为何没过来。
+      recordImportError(sources.favorites, "结构无效（顶层必须是对象），已跳过导入；原文件未改动");
+      return false;
+    }
+    // 走同一写入口：导入与 CAS 写的形状必须一致（都带 version）。
+    if (readRow(NAMESPACE, FAVORITES_KEY) === undefined) writeFavoritesRaw(value);
+    return true;
   };
 
-  const readHiddenRaw = () => database.get(NAMESPACE, HIDDEN_KEY);
-  const writeHiddenRaw = (keys) => database.set(NAMESPACE, HIDDEN_KEY, { version: 1, keys });
+  const readHiddenRaw = () => readRow(NAMESPACE, HIDDEN_KEY);
+  const writeHiddenRaw = (keys) => database.set(NAMESPACE, HIDDEN_KEY, { keys, version: 1 });
+  // hidden 与 config/favorites/凭据同口径用 CAS：本模块注释自陈要解决「同 HOME 多进程
+  // 读-改-写丢更新」，唯独 hidden 盲写就会让先写者的隐藏项复活。
+  const hiddenState = () => readState(NAMESPACE, HIDDEN_KEY);
+  const casHidden = (raw, keys) =>
+    compareAndSet(database, NAMESPACE, HIDDEN_KEY, raw, JSON.stringify({ keys, version: 1 }));
 
-  const readFavoritesRaw = () => database.get(NAMESPACE, FAVORITES_KEY);
-  const writeFavoritesRaw = (store) => database.set(NAMESPACE, FAVORITES_KEY, { version: 1, ...store });
+  const readFavoritesRaw = () => readRow(NAMESPACE, FAVORITES_KEY);
+  // version 由本模块定，必须放在 spread 之后：否则调用方传入的 store.version 能覆盖字面量。
+  const writeFavoritesRaw = (store) => database.set(NAMESPACE, FAVORITES_KEY, { ...store, version: 1 });
 
   // 启动装配：幂等导入 → 全量重建派生兼容文件（幂等：任意时刻删掉 compat 文件重启即恢复）。
   // 必须在 createPiFactory 之前 await 完成，SDK 首次读模型目录时兼容文件已就绪。
   const init = async () => {
-    // 导入门闩：模型权威一经存在（页面配置或既往导入），pi 旧文件永久退出导入来源——
-    // 不再读文件补新 provider/凭据，补打标记（此后即便清空权威也不复活）并清除陈旧告警。
-    // 尚未配置时才尝试导入（坏文件修复后仍可重试，README 承诺保留）；收藏导入不走此门闩。
-    if (database.get(NAMESPACE, CONFIG_KEY) === undefined) {
-      await importOnce(sources.models, importModels, { markMissing: true });
-      await importOnce(sources.auth, importAuth, { markMissing: true });
-    } else {
-      for (const source of [sources.models, sources.auth]) {
-        if (database.get(MIGRATED_NAMESPACE, source) === undefined)
+    // 导入门闩：每个来源只看自己的 migrated/<source> 标记，绝不用「另一个来源已导入」去推断。
+    // 权威已存在（页面配置或既往导入）时，没留告警的来源直接补打标记退出导入；仍有告警的来源
+    // 必须保持窗口开着——README 承诺「坏文件保留并警告，修复后可再次导入」，而 importModels/
+    // importAuth 都不覆盖已存在的权威行，重试只补缺失条目，绝不回退用户在页面上的新值。
+    // （旧实现以 models/config 是否存在作为两个来源的共用门闩：models.json 合法 + auth.json 有坏
+    // 条目时，第二次 init 就把 auth 的窗口永久关掉并清空告警，坏条目修好也永不导入。）
+    const pending = new Set(importErrors().map((item) => item.source));
+    // 必须在循环前一次捕获：否则 models 刚导入完写下 config，auth 就会被误判为「已配置」而直接退出导入。
+    const configured = readRow(NAMESPACE, CONFIG_KEY) !== undefined;
+    for (const [source, apply] of [[sources.models, importModels], [sources.auth, importAuth]]) {
+      if (configured && !pending.has(source)) {
+        if (readRow(MIGRATED_NAMESPACE, source) === undefined)
           database.set(MIGRATED_NAMESPACE, source, true);
         clearImportErrors(source);
+        continue;
       }
+      await importOnce(source, apply, { markMissing: true });
     }
     await importOnce(sources.favorites, importFavorites);
     await syncCompatFile(readConfig());
   };
 
   // 导入期告警（get() 在权威配置为空时转成 parseError 展示）。
-  const importErrors = () => database.get(NAMESPACE, IMPORT_ERROR_KEY) ?? [];
+  // 自身也可能是那行坏 JSON：这里必须裸 try/catch，不能再走 readRow（会递归回本函数）。
+  const importErrors = () => {
+    try {
+      return database.get(NAMESPACE, IMPORT_ERROR_KEY) ?? [];
+    } catch {
+      return [];
+    }
+  };
 
   // ModelRuntime.create 的注入参数：凭据走内存注入（零文件），模型目录走派生兼容文件。
   const runtimeOptions = () => ({ credentials, modelsPath: compatPath });
@@ -308,6 +394,8 @@ export function createPiModelStorage({ database, home, piDir = getAgentDir() }) 
     casConfig,
     favoritesState,
     casFavorites,
+    hiddenState,
+    casHidden,
     syncCompatFile,
     canonicalModelsJson,
     getFavorites: readFavoritesRaw,

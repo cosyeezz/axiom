@@ -78,11 +78,17 @@ const service = {
   }) : undefined,
 };
 const app = createServerApp(sessions, service);
+// 远程访问初始化必须等端口绑定（remote 要读 app.server.address().port），所以只能放在 listen 回调里；
+// 但它首次运行会往库里写 remote/config，必须让 stop() 能等到它落定再关库，
+// 否则启动即收 SIGTERM 时这笔写入会撞上已关闭的库，并被 .catch 吞掉（service.remoteShutdown
+// 也可能尚未赋值，app.close 里的可选调用被跳过）。
+let remoteReady = Promise.resolve();
 app.server.listen(port, "127.0.0.1", () => {
   console.log(`Axiom listening on http://127.0.0.1:${port}; workspace: ${cwd}`);
   process.send?.({ type: "service.ready", instanceId: process.env.AXIOM_INSTANCE_ID, version: service.version });
-  // 本地端口确定后再初始化远程访问：远程 server 与本地共用端口号（绑定 IP 不同不冲突）。
-  initRemote().catch((error) => console.error("远程访问初始化失败：", error));
+  // 已进入关闭流程就不再开远程访问：否则这笔初始化会排在关库之后。
+  if (closing) return;
+  remoteReady = initRemote().catch((error) => console.error("远程访问初始化失败：", error));
 });
 async function initRemote() {
   const remote = await createRemoteAccess({ home, app, database, tailscale: createTailscale() });
@@ -96,7 +102,9 @@ async function initRemote() {
 }
 let closing;
 function stop() {
-  closing ||= app.close()
+  closing ||= remoteReady
+    // 远程初始化的首次配置写入必须先落定，否则它会写到已关闭的库上（异常还会被吞）。
+    .then(() => app.close())
     // 关库必须排在 app.close 完全之后：会话/任务的最后一笔保存发生在关闭路径内。
     .then(() => database.close())
     .then(() => process.exit(0))

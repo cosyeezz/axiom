@@ -5,6 +5,7 @@ import { JSDOM } from "jsdom";
 import { marked } from "marked";
 import createPurify from "dompurify";
 import { createStreamRenderer } from "../public/stream-renderer.js";
+import { publicSource } from "./helpers/public-source.js";
 
 // 分片快照的切换语义：旧片 / 旧事件不得落到新会话，草稿不被尾部覆盖，live 前缀要接住后续 delta。
 // 与 tests/app.test.js 同一套 JSDOM 装配方式，但这里把分片调度换成受控队列，逐片推进。
@@ -15,14 +16,12 @@ const modelSources = await Promise.all(["model-picker", "model-auth", "model-man
   const exports = [...source.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
   return `Object.assign(window, (() => { ${source.replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`;
 })).then((parts) => parts.join("\n"));
-const serviceSource = (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+// 与 tests/app.test.js 同一套加载顺序：markdown-scan 是 memory-tags/goal-markers 的依赖。
+const pageSource = await publicSource("markdown-scan", "memory-tags", "goal-markers", "question", "service-settings", "app");
 const markdownSource = (await readFile(new URL("../public/markdown.js", import.meta.url), "utf8"))
   .replace(/^import .*;\r?\n/gm, "").replace("export function", "function");
-const questionSource = (await readFile(new URL("../public/question.js", import.meta.url), "utf8")).replace(/^export /gm, "");
-const memorySource = (await readFile(new URL("../public/memory-tags.js", import.meta.url), "utf8")).replace(/^export /gm, "");
 // answer-tags 与 memory-tags 都有顶层 OPEN/CLOSE 常量，同处一段脚本会重复声明；包一层隔离作用域。
-const answerSource = `Object.assign(window, (() => { ${(await readFile(new URL("../public/answer-tags.js", import.meta.url), "utf8")).replace(/^export /gm, "")}\nreturn { splitAnswer }; })());`;
-const appSource = (await readFile(new URL("../public/app.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "");
+const answerSource = `Object.assign(window, (() => { ${(await readFile(new URL("../public/answer-tags.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "")}\nreturn { splitAnswer }; })());`;
 
 const CONFIG = { model: "test/model", thinking: "off", levels: ["off"], skills: [] };
 
@@ -62,7 +61,7 @@ function boot() {
   const chunks = [];
   window.scheduler = { postTask: (fn) => { chunks.push(fn); } };
   window.eval([
-    modelSources, pickerSource, serviceSource, questionSource, memorySource, answerSource, appSource,
+    modelSources, pickerSource, pageSource, answerSource,
     "window.__app = { snapshot, event, saveView, live, views, appliedSeq, renderer," +
     " snapshotQueue: () => snapshotQueue, snapshotJob: () => snapshotJob, session: () => sessionId," +
     " withdrawQueue, switchSession, request: (type, data) => request(type, data), setRequest: (fn) => { request = fn; }," +

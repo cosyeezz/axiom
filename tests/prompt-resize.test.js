@@ -5,16 +5,14 @@ import { JSDOM } from "jsdom";
 import { marked } from "marked";
 import createPurify from "dompurify";
 import { createStreamRenderer } from "../public/stream-renderer.js";
+import { publicSource } from "./helpers/public-source.js";
 
 // 复用 tool-detail-reclaim 的页面 harness（真实 app.js，无模型无服务器）；
 // 拦 scrollHeight getter 数「读了几次」，验证复用键命中时不再强制同步布局。
 async function page(media = { matches: false }) {
   const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
-  const sources = await Promise.all(
-    ["memory-tags", "question", "service-settings", "app"].map(async (name) =>
-      (await readFile(new URL(`../public/${name}.js`, import.meta.url), "utf8"))
-        .replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "")),
-  );
+  // 与 tests/app.test.js、compaction-ui 同一套加载顺序：markdown-scan 是 memory-tags/goal-markers 的依赖。
+  const sources = await publicSource("markdown-scan", "memory-tags", "goal-markers", "question", "service-settings", "app");
   const picker = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
   const dom = new JSDOM(html, { url: "http://localhost", runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window;
@@ -37,7 +35,7 @@ async function page(media = { matches: false }) {
     w.eval(`Object.assign(window, (() => { ${module.replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`);
   }
   // mobile 是模块作用域的 const，测试里要改断点就得让同一个 MediaQueryList 进得来。
-  w.eval(`${picker}\n${sources.join("\n")}\nwindow.__promptEnv = { mobile };`);
+  w.eval(`${picker}\n${sources}\nwindow.__promptEnv = { mobile };`);
   const input = w.document.getElementById("prompt");
   const reads = { count: 0 };
   let measured = 0;

@@ -7,6 +7,7 @@ import { EventEmitter } from "node:events";
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { WebSocket } from "ws";
 import { createServerApp } from "../src/server.js";
 import {
@@ -717,4 +718,33 @@ test("createTailscale：whois 旗标在地址前、TAILSCALE_BE_CLI=1、ENOENT �
   // 全部候选都缺失 → bin() 报 ENOENT
   const ts2 = createTailscale("missing", run, []);
   await assert.rejects(() => ts2.bin(), /未找到|ENOENT/);
+});
+
+// 远程访问首次配置写入发生在 listen 之后（remote 要读已绑定端口），必须让 stop() 等它落定再关库。
+// 修复前实测：启动即停机 5/5 全部丢失 remote/config；修复后 5/5 落库。
+test("启动即停机：远程访问首次配置写入不得被关库抢先", async () => {
+  const { spawn } = await import("node:child_process");
+  const { Database } = await import("../src/database.js");
+  const root = await mkdtemp(join(tmpdir(), "axiom-remote-boot-"));
+  let database;
+  try {
+    const child = spawn(process.execPath, ["src/main.js"], {
+      cwd: fileURLToPath(new URL("..", import.meta.url)),
+      env: { ...process.env, AXIOM_PORT: "4387", AXIOM_CWD: process.cwd(), AXIOM_HOME: root, AXIOM_DEV: "1" },
+      stdio: ["ignore", "pipe", "pipe", "ipc"],
+    });
+    let out = "";
+    child.stdout.on("data", (chunk) => {
+      out += chunk;
+      // 一看到端口就绪立刻停机：这正是首次远程配置写入与关库抢跑的窗口。
+      if (out.includes("listening")) child.send({ type: "service.stop" });
+    });
+    const [code] = await once(child, "exit");
+    assert.equal(code, 0, "停机必须走完整关闭路径");
+    database = new Database(join(root, "axiom.db"));
+    assert.notEqual(database.get("remote", "config"), undefined, "首次远程配置写入必须已落库");
+  } finally {
+    database?.close();
+    await rm(root, { recursive: true, force: true });
+  }
 });

@@ -5,13 +5,13 @@ import { JSDOM } from "jsdom";
 import { marked } from "marked";
 import createPurify from "dompurify";
 import { createStreamRenderer } from "../public/stream-renderer.js";
+import { publicSource } from "./helpers/public-source.js";
 
 // Run the real page's snapshot/event handlers without a model or server.
 // defaultSchedule=true 时不注入 rAF，走产品默认的 setTimeout 定时器（配 paints 计数做有界等待）。
 async function page({ defaultSchedule = false } = {}) {
   const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
-  const memoryTags = (await readFile(new URL("../public/memory-tags.js", import.meta.url), "utf8")).replace(/^export /gm, "");
-  const source = memoryTags + "\n" + (await readFile(new URL("../public/question.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/app.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "");
+  const source = await publicSource("markdown-scan", "memory-tags", "goal-markers", "question", "service-settings", "app");
   const picker = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
   const dom = new JSDOM(html, { url: "http://localhost", runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window;

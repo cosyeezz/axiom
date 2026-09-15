@@ -184,11 +184,20 @@ function landedSessionFile(item) {
   return file && existsSync(file) ? file : null;
 }
 
+// SQLite 主结果码（扩展码低 8 位）里「重试有意义」的一组：忙、锁、内存不足、只读、
+// I/O、磁盘满、打不开、协议错。这些是环境状态，稍后重放同一增量可能成功。
+const RETRYABLE_SQLITE = new Set([5, 6, 7, 8, 10, 13, 14, 15]);
+const retryableWrite = (error) => error?.code === "ERR_SQLITE_ERROR" && RETRYABLE_SQLITE.has(error.errcode & 0xff);
+
 // 会话默认配置的库内布局：namespace "defaults" 下 "global" 是全局兜底，
-// 其余键 "workspace/<归一化cwd>" 是工作目录独立配置（含该目录的 projectSkills）。
+// 其余键 "workspace/<归一化cwd>" 是工作目录独立配置。每套配置一行，选择集完整落库
+// （项目技能就在 selection 里），不再有 selection 之外的旁路字段。
 const DEFAULTS_NS = "defaults";
 const WORKSPACE_PREFIX = "workspace/";
 const workspaceKeyOf = (cwd) => (process.platform === "win32" ? cwd.toLowerCase() : cwd);
+const CAPABILITY_KINDS = ["skills", "plugins", "mcp"];
+// 项目资源只认 catalog 给的 scope，绝不从路径猜（全局目录也可能落在 .agents/skills 之类路径下）。
+const catalogProjectsOf = (catalog, kind) => new Set(catalog[kind].filter((entry) => entry.scope === "project").map((entry) => entry.id));
 
 // projectSkills 结构自检：外层 {cwd: {角色: [字符串 id]}}，单目录项与整体都过一遍，坏数据不进入内存。
 function validateProjectSkills(projectSkills) {
@@ -200,6 +209,16 @@ function validateProjectSkillEntry(entry) {
   for (const [role, ids] of Object.entries(entry)) {
     if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) throw new Error("无效的项目技能选择");
   }
+}
+// 旧记录把项目技能存在 selection 之外的 projectSkills（{角色: [技能 id]}）：读入时并回完整 selection，
+// 此后只写完整 selection，该字段自然消亡。
+function mergeLegacyProjectSkills(selection, entry = {}) {
+  for (const [role, ids] of Object.entries(entry)) {
+    const selected = selection[role];
+    if (!selected || selected === "inherit") continue;
+    selected.skills = [...new Set([...selected.skills, ...ids])];
+  }
+  return selection;
 }
 
 export class Sessions {
@@ -217,7 +236,6 @@ export class Sessions {
     this.taskBudget = structuredClone(taskBudgetDefaults);
     this.loadTaskBudget();
     this.savingDefaults = Promise.resolve();
-    this.projectSkills = {};
     // 工作目录独立默认配置：归一化 cwd → { cwd, selection }；读取时优先目录，无目录回落全局。
     this.workspaceSelections = new Map();
     this.createAgent = createAgent;
@@ -230,7 +248,6 @@ export class Sessions {
   // 默认配置验证与装配：schema 校验后并入全局内存值；验证通过是写库与迁移标记的前提。
   applyDefaults(data) {
     const parsed = selectionSchema.strict().parse(data ?? {});
-    this.projectSkills = {};
     Object.assign(this.defaultSelection, parsed);
   }
 
@@ -260,8 +277,8 @@ export class Sessions {
     }
   }
 
-  // 旧版一条 defaults 记录 = 一份全局配置 + projectSkills 表。拆成「全局兜底 + 各工作目录独立配置」：
-  // 目录配置 = 旧全局配置合并该目录自己的项目技能，能力不多不少。
+  // 旧版一条 defaults 记录 = 一份全局配置 + projectSkills 表。拆成「全局兜底 + 各工作目录独立配置」，
+  // 目录记录沿用旧形态（旁人审计在读侧统一兼容），下次用户保存时升级成完整 selection。
   migrateLegacyStore(data) {
     const { projectSkills = {}, ...saved } = data ?? {};
     // 旧记录只存了用户改过的键：与内置默认合并后才是完整配置（目录配置不再依赖全局兜底）。
@@ -294,8 +311,8 @@ export class Sessions {
       try {
         const selection = selectionSchema.strict().parse(value.selection);
         validateProjectSkillEntry(value.projectSkills ?? {});
-        this.workspaceSelections.set(scope, { cwd: value.cwd ?? scope, selection });
-        this.projectSkills[scope] = value.projectSkills ?? {};
+        this.workspaceSelections.set(scope, { cwd: value.cwd ?? scope,
+          selection: mergeLegacyProjectSkills(selection, value.projectSkills) });
       } catch (error) {
         console.warn(`工作目录默认配置读取失败，已跳过 ${value.cwd || scope}：${error.message}`);
       }
@@ -310,7 +327,11 @@ export class Sessions {
     try {
       const saved = this.database.get("settings", "taskBudget");
       if (saved === undefined) return;
-      this.taskBudget = taskBudgetSchema.parse({ ...taskBudgetDefaults, ...saved });
+      // 只挑已知键再 strict 校验：旧版本/未来字段留下的未知键不得连合法值一起丢掉
+      // （strict 整条解析失败会静默回落默认，用户设过的预算凭空消失）。
+      const known = Object.fromEntries(Object.keys(taskBudgetDefaults)
+        .filter((key) => saved?.[key] !== undefined).map((key) => [key, saved[key]]));
+      this.taskBudget = taskBudgetSchema.parse({ ...taskBudgetDefaults, ...known });
     } catch (error) {
       console.warn(`轮次预算读取失败，使用默认值：${error.message}`);
     }
@@ -321,7 +342,9 @@ export class Sessions {
   }
 
   // 保存前 zod 校验（坏值直接抛给 WS 通用错误回执），先持久化再更新内存值。
+  // 无库实例时明确报错：读侧有空库判断，写侧也必须有，不能靠 TypeError 暴露。
   configureTaskBudget(value) {
+    if (!this.database) throw new Error("未启用轮次预算持久化");
     const next = taskBudgetSchema.parse(value);
     this.database.set("settings", "taskBudget", next);
     this.taskBudget = next;
@@ -352,26 +375,27 @@ export class Sessions {
     const scope = workspaceKeyOf(cwd || resolve(workspace));
     this.database?.delete(DEFAULTS_NS, WORKSPACE_PREFIX + scope);
     this.workspaceSelections.delete(scope);
-    delete this.projectSkills[scope];
     // 目录配置已删 → 该目录已加载会话立即回落全局压缩配置，别的目录的会话不动。
     await this.pushCompaction((itemScope) => itemScope === scope, this.defaultSelection.compaction ?? compactionDefaults);
     return { deleted: true, cwd };
   }
   async workspaceDefaults(workspace = this.createAgent.cwd || process.cwd()) {
     const cwd = await realpath(workspace);
-    const key = workspaceKeyOf(cwd);
-    const next = structuredClone(this.defaultsFor(cwd));
+    const scope = workspaceKeyOf(cwd);
+    const record = this.workspaceSelections.get(scope);
+    const next = structuredClone(record?.selection ?? this.defaultSelection);
     if (!this.createAgent.capabilities) return next;
     const catalog = await this.createAgent.capabilities(cwd);
     for (const role of ["capabilities", "subagentCapabilities"]) {
       const selection = next[role];
       if (!selection || selection === "inherit") continue;
+      // 别名目录的绝对路径先归一，才能与 catalog 的 id 对上。
       selection.skills = await Promise.all(selection.skills.map((id) => realpath(id).catch(() => id)));
-      const current = catalog.skills.filter((s) => s.scope === "project").map((s) => s.id);
-      // 旧版全局配置里的项目路径仅在所属项目保留，绝不按同名技能替换。
-      const globals = selection.skills.filter((id) => !current.includes(id) &&
-        (!/[/\\](?:\.pi|\.agents)[/\\]skills[/\\]/.test(id) || catalog.skills.some((s) => s.id === id && s.scope !== "project")));
-      selection.skills = [...globals, ...(this.projectSkills[key]?.[role] ?? selection.skills.filter((id) => current.includes(id)))];
+      for (const kind of CAPABILITY_KINDS) {
+        const available = new Set(catalog[kind].map((entry) => entry.id));
+        // 只过滤返回副本，不改库内选择；资源重新出现后无需重启即可恢复。
+        selection[kind] = selection[kind].filter((id) => available.has(id));
+      }
     }
     return next;
   }
@@ -386,27 +410,28 @@ export class Sessions {
     const cwd = await realpath(workspace || this.createAgent.cwd || process.cwd());
     const scope = workspaceKeyOf(cwd);
     const next = scoped ? await this.workspaceDefaults(cwd) : structuredClone(this.defaultSelection);
-    for (const key of Object.keys(next))
-      if (selection[key] !== undefined) next[key] = structuredClone(selection[key]);
-    const { catalog } = await this.validateSelection(cwd, next);
+    // 只认 selection schema 里的键：调用方会把整个 WS 请求传进来，未知键不能进库；
+    // 也不能按 next 已有键遍历——旧记录只存过用户改过的键，那样补丁会被整段丢掉。
+    const explicit = Object.keys(selectionSchema.shape).filter((key) => selection[key] !== undefined);
+    for (const key of explicit) next[key] = structuredClone(selection[key]);
+    // 显式提交的键严格过关（不能选别的目录的资源）；继承自旧记录的键允许已不可用（跳过并剔除），
+    // 否则一个被删掉的项目技能文件会让用户连 thinking 都改不了。
+    const inherited = Object.keys(selectionSchema.shape).filter((key) => selection[key] === undefined);
+    const { catalog } = await this.validateSelection(cwd, next, inherited);
+    // 全局兜底跨工作目录共用：显式提交的项目资源一律拒绝，否则会把服务目录的项目能力
+    // 写进全局再泄漏给别的目录；显式 null（=全部）保留运行时语义，不落库也不展开。
+    if (!scoped && catalog) {
+      for (const role of explicit.filter((key) => ["capabilities", "subagentCapabilities"].includes(key) && next[key] != null && next[key] !== "inherit")) {
+        for (const kind of CAPABILITY_KINDS) {
+          const leaked = next[role][kind].filter((id) => catalogProjectsOf(catalog, kind).has(id));
+          if (leaked.length) throw new Error(`全局默认配置不能包含项目${kind}：${leaked.join("、")}`);
+        }
+      }
+    }
     const result = structuredClone(next);
     if (scoped) {
-      // 项目技能属于目录：落库前从 selection 里摘出，改目录时不会把别的项目的路径带过去。
-      let projectSkills = this.projectSkills[scope] ?? {};
-      if (catalog) {
-        const entry = {};
-        for (const role of ["capabilities", "subagentCapabilities"]) {
-          const selected = next[role];
-          if (!selected || selected === "inherit") continue;
-          const projectIds = catalog.skills.filter((s) => s.scope === "project").map((s) => s.id);
-          entry[role] = selected.skills.filter((id) => projectIds.includes(id));
-          selected.skills = selected.skills.filter((id) => !projectIds.includes(id));
-        }
-        projectSkills = entry;
-      }
-      // 先成功落库再改内存：写失败不能让它实际生效。
-      this.database?.set(DEFAULTS_NS, WORKSPACE_PREFIX + scope, { cwd, selection: next, projectSkills });
-      this.projectSkills[scope] = projectSkills;
+      // 项目技能就在这份完整 selection 里：先成功落库再改内存，写失败不能让它实际生效。
+      this.database?.set(DEFAULTS_NS, WORKSPACE_PREFIX + scope, { cwd, selection: next });
       this.workspaceSelections.set(scope, { cwd, selection: next });
     } else {
       this.database?.set(DEFAULTS_NS, "global", next);
@@ -490,7 +515,13 @@ export class Sessions {
     }
     // 只有待通知会话需要主动恢复，串行启动避免历史任务同时唤醒大量 SDK。
     for (const id of this.store?.listPendingSessionIds() ?? []) {
-      try { await this.ensureLoaded(id); }
+      try {
+        // 暂停/等待确认的 Goal 会话投递必被拒（见 goalNotificationsBlocked），拉起 SDK 纯属白费；
+        // notified 仍留 0，等用户恢复 Goal 再投，不改「待通知」口径。
+        const phase = this.goalStore.load(id)?.phase;
+        if (phase && !["running", "verifying"].includes(phase)) continue;
+        await this.ensureLoaded(id);
+      }
       catch (error) { console.warn(`会话恢复失败 ${id}：${error.message}`); }
     }
   }
@@ -546,29 +577,46 @@ export class Sessions {
       titleManual: item.titleManual, titleRequested: item.titleRequested,
       createdAt: item.createdAt, updatedAt: item.updatedAt,
       elapsedMs: item.elapsedMs, runningSince: item.runningSince,
-      sessionFile: landedSessionFile(item),
+      // 已知真实路径优先取当前落盘结果，取不到则保留已知路径：JSONL 被外部删除时，库里
+      // 的路径是「历史丢失」的唯一证据，抹成 NULL 会让下次打开把它当全新会话静默重建。
+      sessionFile: landedSessionFile(item) ?? item.sessionFile ?? null,
       selection: item.agent ? { ...item.agent.config?.(), capabilities: item.capabilities,
         subagentCapabilities: item.subagentCapabilities, subagentModel: item.subagentModel,
         subagentThinking: item.subagentThinking, queueType: item.queueType, retry: item.retry,
+        // 轮次预算随会话创建定死（create 从 selection.taskBudget 读回）：不落进 selection
+        // 就无从区分「创建时的预算」与「当前全局值」，重开会话即被热更成新全局值。
+        taskBudget: item.taskBudget,
         trustProject: item.trustProject, useDefaults: false } : item.selection };
   }
 
   // 同步 SQL 在返回 Promise 前完成；调用方仍可 await/捕获，不排队复制整份历史。
+  // 事务边界复用存储层 change()（回滚自身的异常在那里被吞掉，不会掩盖原始错误）。
   async persist(item, change = { session: this.sessionData(item) }) {
     if (!this.store) return;
     // 失败的增量留待下次写入/关闭重试，不能指望全量快照偶然补救。
     item.pendingWrites ||= [];
-    item.pendingWrites.push(change);
+    item.pendingWrites.push({ change });
     while (item.pendingWrites.length) {
-      this.database.exec("SAVEPOINT session_change");
+      const head = item.pendingWrites[0];
       try {
-        this.writeChange(item, item.pendingWrites[0]);
-        this.database.exec("RELEASE session_change");
+        this.store.change(() => this.writeChange(item, head.change));
       } catch (error) {
-        this.database.exec("ROLLBACK TO session_change; RELEASE session_change");
-        throw error;
+        // 环境性失败（忙/锁/只读/磁盘满/IO）重试有意义：保留队头与增量顺序原样上抛，
+        // 由下次写入或关闭重放——顺序不能乱，否则旧快照会覆盖更新的字段值。
+        if (retryableWrite(error)) throw error;
+        // 确定性失败（未知字段、缺 id、库内坏 JSON）重试一万次也不会成功。每条增量给且只给
+        // 一次机会：首次确定性失败留队并上抛（调用方仍可修正后重来，整段增量不半途丢记录）；
+        // 再撞见同一条就丢弃并上报，绝不让一条坏增量把这个会话此后的全部落盘永久堵死。
+        if (!head.tried) {
+          head.tried = true;
+          throw error;
+        }
+        item.pendingWrites.shift();
+        const report = `会话保存失败，已丢弃无法写入的改动：${error.message}`;
+        if (item.emit) item.emit({ type: "error", data: { message: report } });
+        else console.warn(report);
       }
-      item.pendingWrites.shift();
+      if (item.pendingWrites[0] === head) item.pendingWrites.shift();
     }
   }
 
@@ -581,7 +629,8 @@ export class Sessions {
       const { id, ...patch } = change.session;
       this.store.updateSession(item.id, patch);
     }
-    if (change.title) this.store.updateSession(item.id, { title: item.title });
+    // 自报标题成功即固化「已索要过」：否则标题写库成功后崩溃，重启会再注入一次标题请求。
+    if (change.title) this.store.updateSession(item.id, { title: item.title, titleRequested: item.titleRequested });
     if (change.event) this.store.saveEvent(item.id, change.event.type, change.event.record);
     if (change.task) this.store.saveTask(item.id, change.task);
     if (change.deletedEvents) this.store.deleteEvents(item.id, change.deletedEvents.type, change.deletedEvents.records);
@@ -673,7 +722,7 @@ export class Sessions {
       titleRequested: saved?.titleRequested ?? !!saved,
       titlePending: false,
       // 轮次预算随会话创建定死：新会话取当前全局值（保存后新建即生效），运行中不热更；
-      // selection.taskBudget 仅供测试注入。
+      // 恢复的会话从 selection 读回创建时的预算，全局值后来改了也不追认。
       taskBudget: structuredClone(selection.taskBudget ?? this.taskBudget),
       // 老记录无 createdAt，回退 updatedAt 兜底（历史文件未存创建时间，无法还原真实值）。
       createdAt: saved?.createdAt || saved?.updatedAt || Date.now(),
@@ -761,8 +810,12 @@ export class Sessions {
         const wasRunning = item.runningSince;
         trackElapsed(item, pointStatus(item));
         envelope.data = { ...event.data, elapsedMs: item.elapsedMs, runningSince: item.runningSince };
+        // 顺路带上标题与 updatedAt：这两个字段在运行开始前就改好了（prompt 用首条输入推导标题、
+        // startRun 刷新时间），但原先要等整轮跑完的全量快照才落库。长任务跑到一半进程被杀，
+        // 重启后侧栏就是一排「新会话」加过期时间。搭已有的这一笔写，不多一次落盘。
         if (wasRunning !== item.runningSince)
-          this.saveChange(item, { session: { elapsedMs: item.elapsedMs, runningSince: item.runningSince } });
+          this.saveChange(item, { session: { title: item.title, updatedAt: item.updatedAt,
+            elapsedMs: item.elapsedMs, runningSince: item.runningSince } });
       }
       if (event.type === "agent.retry") {
         let record = item.retries.find((entry) => entry.agentId === agentId && entry.id === event.data.id);
@@ -979,10 +1032,14 @@ export class Sessions {
           retries: item.retries, tasks: item.tasks.snapshot() });
       } else if (this.store) {
         // 恢复时的中断状态与 JSONL 对账只写一次，不进入日常保存热路径。
-        await this.persist(item);
-        for (const task of item.tasks.snapshot()) this.store.saveTask(id, task);
-        for (const record of item.retries) this.store.saveEvent(id, "retry", record);
-        for (const record of item.compactions) this.store.saveEvent(id, "compaction", record);
+        // 整段一次 persist（数组增量走同一 SAVEPOINT）：逐条独立成事务时，中途失败会留下
+        // 半截归一化结果（任务已改写、事件没写）；同时把写放大从 1+N 次事务压到 1 次。
+        await this.persist(item, [
+          { session: this.sessionData(item) },
+          ...item.tasks.snapshot().map((task) => ({ task })),
+          ...item.retries.map((record) => ({ event: { type: "retry", record } })),
+          ...item.compactions.map((record) => ({ event: { type: "compaction", record } })),
+        ]);
       }
     } catch (error) {
       try { item.unsubscribe?.(); await item.agent?.dispose(); }
@@ -1009,8 +1066,10 @@ export class Sessions {
       // 顺序先于删目标：中途崩溃时目标还在（暂停态），不会出现无目标 + 未通知的自动唤醒窗口。
       for (const job of item.tasks.jobs.values()) {
         if (!job.resultId || job.notified) continue;
-        job.notified = true;
+        // 先落库再改内存：反了的话落库失败会留下「内存已通知、库里还是 0」，
+        // 本进程不再补发而重启又通知一遍。
         await this.persist(item, { task: { id: job.id, notified: true } });
+        job.notified = true;
       }
       item.goal.exit();
       item.agent.disableTools?.(GOAL_TOOL_NAMES);
@@ -1239,6 +1298,8 @@ export class Sessions {
       title: item.title,
       seq: item.seq,
       status: item.status,
+      // 刷新/重连后也要能看到「等待安全点」提示，所以跟快照一起下发。
+      safeStop: item.status !== "idle" && !!item.safeStopping,
       runtime: item.agent.runtime?.(),
       queue: item.agent.queue?.(),
       config: {
@@ -1305,7 +1366,9 @@ export class Sessions {
 
   // 运行骨架（prompt 与手动重试共用）：runId/status 广播 → result() 取错 → 收尾持久化与 idle 复位。
   startRun(item, run) {
+    // 通知在下一次运行开始时恢复：goal 被暂停/退出时仍要冻结，安全停止期间也暂停，防止通知把刚停下的会话又拉起来。
     item.notificationsPaused = this.goalNotificationsBlocked(item) || false;
+    item.safeStopping = false;
     item.updatedAt = Date.now();
     item.runId = randomUUID();
     item.status = "running";
@@ -1329,9 +1392,12 @@ export class Sessions {
         await this.persist(item).catch((error) => item.emit({ type: "error", data: { message: `会话保存失败：${error.message}` } }));
         if (item.status !== "cancelling") {
           item.status = "idle";
+          // stopped 让前端区分「跑完了」和「被安全停止」：后者要留红点提醒回来接着看。
+          const stopped = item.safeStopping ? "safe" : undefined;
+          item.safeStopping = false;
           item.emit({
             type: "session.state",
-            data: { status: "idle", runId: item.runId, canReask: !!item.agent.canReask?.() },
+            data: { status: "idle", runId: item.runId, canReask: !!item.agent.canReask?.(), stopped },
           });
           this.scheduleTaskNotifications(item);
           this.scheduleGoal(item);
@@ -1442,6 +1508,24 @@ export class Sessions {
     return item.questions.reply(toolCallId, answers);
   }
 
+  // 安全停止：不 abort、不杀工具，只请求 SDK 在下一个轮次边界收工，已完成的产出全部保留。
+  // 子任务不受影响（继续跑到自己结束）；期间暂停子任务完成通知，否则通知会立刻 prompt 把会话重新拉起来。
+  // goal 会话的“停”在 master 里已有专用路径（暂停并落定目标进度），复用同一入口，避免同一颗按钮两套语义。
+  async safeStop(id) {
+    const item = this.get(id);
+    if (item.loading) {
+      await item.loading.catch(() => {});
+      return this.safeStop(id);
+    }
+    if (item.goal?.active && !item.closing) return this.goalAction(id, "pause");
+    if (!item.loaded || item.cancelling || item.status === "idle") return;
+    item.notificationsPaused = true;
+    item.safeStopping = true;
+    item.agent.requestSafeStop?.();
+    // 状态仍是 running：不新增状态值，避免前端 busy 判定连带影响按钮与队列。
+    item.emit({ type: "session.state", data: { status: item.status, runId: item.runId, safeStop: true } });
+  }
+
   async cancel(id) {
     const item = this.get(id);
     if (item.loading) {
@@ -1476,6 +1560,20 @@ export class Sessions {
     item.notificationsPaused = false;
     return item.tasks.retry(taskId);
   }
+  // 删会话的库侧清理：会话行与 goal 记录同一事务。goals 表没有指向 sessions 的外键
+  // （createGoalStore 可脱离 SessionStore 单用），两步分开做时崩在中间就成了「会话还在、
+  // 目标没了」——活着的目标比一条无害孤儿行金贵得多，必须同生共死。
+  deleteRecords(id) {
+    if (!this.store) {
+      this.goalStore.remove(id);
+      return;
+    }
+    this.store.change(() => {
+      this.store.deleteSession(id); // 子表外键级联
+      this.goalStore.remove(id);
+    });
+  }
+
   async remove(id, deleting = true) {
     let item = this.get(id);
     if (item.loading) {
@@ -1483,12 +1581,11 @@ export class Sessions {
       item = this.get(id);
     }
     item.closing = true;
-    if (deleting) this.goalStore.remove(id);
-    else item.goal?.freeze();
+    if (!deleting) item.goal?.freeze();
     if (!item.loaded) {
       if (!deleting && item.pendingWrites?.length) await this.persist(item, {});
       if (deleting) {
-        this.store?.deleteSession(id);
+        this.deleteRecords(id);
         const storageDir = this.storagePath && join(this.storagePath, createHash("sha256").update(process.platform === "win32" ? item.cwd.toLowerCase() : item.cwd).digest("hex"));
         if (storageDir) {
           if (item.sessionFile) await rm(item.sessionFile, { force: true });
@@ -1514,7 +1611,7 @@ export class Sessions {
     await this.persist(item);
     if (deleting) {
       // 删除顺序：先删库记录再清理文件；若中途崩溃，标记过的旧 JSON 不会复活会话。
-      this.store?.deleteSession(id);
+      this.deleteRecords(id);
       if (item.storageDir) {
         if (item.agent.sessionFile?.()) await rm(item.agent.sessionFile(), { force: true });
         await rm(join(item.storageDir, `${id}-tasks`), { recursive: true, force: true });

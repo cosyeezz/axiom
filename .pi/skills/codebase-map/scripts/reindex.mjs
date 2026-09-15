@@ -17,6 +17,7 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  * 未登记的文件会在 INDEX.md 里标 ⚠ 提醒补充。
  */
 const MODULE_INFO = {
+  "tests/task-cancel-notifications.test.js": "单子任务取消工具注册、兄弟隔离与持久化完成通知集成回归",
   "src/questions.js": "主代理 question 工具、参数校验与可取消的回答等待",
   "tests/questions.test.js": "提问等待、校验、会话隔离、子代理不可用与取消回归",
   "tests/pi-question.test.js": "真实Pi SDK提问等待、工具答案续轮与取消回归",
@@ -32,6 +33,10 @@ const MODULE_INFO = {
   "public/answer-tags.js": "主代理回答标签解析、代码保护与流式容错",
   "src/prompts.js": "Axiom 自有提示词按 main/subagent/compaction 角色集中维护",
   "public/memory-tags.js": "主子代理共享简单标签提取与流式显示过滤",
+  "public/markdown-scan.js": "共享代码区扫描：围栏/缩进/行内代码掩码与区间切割",
+  "public/goal-markers.js": "前后端共享 goal 完成标记解析与展示层剥离（含流式半截）",
+  "tests/goal-markers.test.js": "完成标记严格口径、代码区保留、流式半截与页面展示回归",
+  "tests/helpers/public-source.js": "页面测试加载 public ESM 源码：按序拼接并剥模块语法",
   "tests/session-memory.test.js": "摘要时序、被动进度、标题保护与JSON恢复回归",
   "tests/memory-tags.test.js": "标签边界、代码块、流式前缀与合法性回归",
   "tests/pi-memory.test.js": "Pi事件接入、turn计数与请求前提示注入回归",

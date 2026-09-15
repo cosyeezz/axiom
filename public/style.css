@@ -121,6 +121,7 @@ button {
 button:hover:not(:disabled) {
   background: var(--accent-hover);
 }
+/* 安全停止是中性动作，只给图形一点警示色；真正会丢产出的强停用 button.danger 整体抢眼。 */
 #stop > span { color: var(--danger); }
 button.secondary {
   background: var(--surface);
@@ -277,6 +278,9 @@ header {
   gap: 2px;
 }
 .header-title h1 { line-height: 20px; }
+/* 标题前的提醒点要跟标题同行，又不能挤掉 h1 的省略号，所以单独包一层 min-width:0 的行。 */
+.title-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+#session-alert { padding: 0; margin: 0; min-height: 0; border: 0; cursor: pointer; }
 h1 {
   font-size: 14px;
   font-weight: 500;
@@ -797,6 +801,20 @@ body:has(#context-menu:popover-open) #add-context { background: var(--raised); }
 .compaction-tasks .task-card { margin: 0; }
 #compaction-progress { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 #compaction-progress[data-status="failed"] { color: var(--danger); }
+/* 安全停止提示条：结构跟压缩进度条一致，只把色调换成 --success 表示「在正常收尾」。 */
+#safe-stop-progress { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 7px 10px; border: 1px solid color-mix(in srgb, var(--success) 30%, var(--line)); border-radius: 8px; background: color-mix(in srgb, var(--success) 8%, var(--surface)); color: var(--success); font-size: 12px; }
+.safe-stop-icon { width: 14px; height: 14px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+  animation-name: safe-stop-pulse; animation-duration: 1.6s; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
+.safe-stop-dots { display: inline-flex; align-items: flex-end; gap: 2px; margin-left: 2px; height: 1em; }
+.safe-stop-dots i { width: 3px; height: 3px; border-radius: 50%; background: currentColor;
+  animation-name: safe-stop-bounce; animation-duration: 1.2s; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
+.safe-stop-dots i:nth-child(2) { animation-delay: 0.16s; }
+.safe-stop-dots i:nth-child(3) { animation-delay: 0.32s; }
+@keyframes safe-stop-pulse { 50% { opacity: 0.45; } }
+@keyframes safe-stop-bounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.45; } 30% { transform: translateY(-3px); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .safe-stop-icon, .safe-stop-dots i { animation-name: none; }
+}
 #compaction-progress .task-run-spin { flex-shrink: 0; }
 .compaction-settings .selectors { flex-wrap: wrap; overflow: visible; margin-top: 8px; }
 .compaction-settings input,
@@ -853,6 +871,34 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 16px;
   box-shadow: 0 24px 80px light-dark(#00000029, #0008);
+}
+.conversation-reading { display: flex; flex: 1; min-height: 0; min-width: 0; }
+.conversation-reading > #transcript { min-width: 0; }
+#open-raw-io { display: grid; place-items: center; }
+#open-raw-io svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+#open-raw-io[aria-pressed="true"] { color: var(--accent-ink); border-color: var(--accent); background: var(--raised); }
+#raw-io { flex: 1; min-width: 0; min-height: 0; border-left: 1px solid var(--line); background: var(--surface); }
+#raw-io:not([hidden]) { display: flex; flex-direction: column; }
+.raw-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; border-bottom: 1px solid var(--line); }
+#raw-io-title { margin: 0; font-size: 14px; font-weight: 600; }
+.raw-toolbar p, .raw-hint, #raw-io-empty { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+.raw-hint, #raw-io-empty { padding: 8px 16px; }
+#raw-io-list { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 0 16px 24px; }
+.raw-message { margin: 12px 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--canvas); }
+.raw-message-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; background: var(--raised); border-bottom: 1px solid var(--line); font-size: 12px; }
+.raw-message-bar span { flex: 1; color: var(--accent-ink); }
+.raw-message-bar button, #close-raw-io { min-height: 32px; padding: 4px 8px; font-size: 12px; white-space: nowrap; }
+.raw-message pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; padding: 16px; color: var(--ink); font: 13px/1.7 var(--mono); }
+.raw-message details { border-top: 1px solid var(--line); }
+.raw-message summary { padding: 12px 16px; color: var(--muted); font-size: 12px; cursor: pointer; }
+.raw-selected { outline: 2px solid var(--accent); outline-offset: -2px; }
+.raw-open #earliest { left: 25%; }
+.raw-source-link { display: none; }
+.raw-open .raw-source-link { display: inline-flex; min-height: 28px; padding: 4px 8px; font-size: 12px; }
+@media (max-width: 1000px) {
+  .raw-open .conversation-reading > #transcript { display: none; }
+  #raw-io { border-left: 0; }
+  .raw-toolbar p { display: none; }
 }
 #restart-dialog { width: min(460px, calc(100% - 32px)); }
 #restart-title { margin: 0; font-size: 18px; }

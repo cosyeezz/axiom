@@ -48,7 +48,7 @@ test("首次幂等导入：Pi 配置/凭据/收藏入库，源文件字节不变
 
     assert.deepEqual(database.get("models", "config"), modelsSource);
     assert.deepEqual(database.get("auth", "p"), { type: "api_key", key: "sk-import" });
-    assert.deepEqual(database.get("models", "favorites"), favoritesSource);
+    assert.deepEqual(database.get("models", "favorites"), { ...favoritesSource, version: 1 }, "导入与 CAS 写同形状（都带 version）");
     // 不修改用户原配置：字节级一致
     assert.equal(await readFile(join(dir, "pi", "models.json"), "utf8"), modelsBytes);
     assert.equal(await readFile(join(dir, "pi", "auth.json"), "utf8"), authBytes);
@@ -418,18 +418,31 @@ test("CAS 原语：期望原文不匹配拒绝写入，行缺失仅首次插入�
     assert.equal(database.get("models", "favorites").version, 1);
     await storage.credentials.modify("p", () => ({ type: "api_key", key: "test" }));
     assert.equal(database.get("auth", "p").key, "test");
-    for (const [namespace, key, read] of [
+    // 坏 JSON 行的口径：读路径容错（配置页与启动都必须打得开，否则用户没有任何自愈入口），
+    // 写路径拒绝（不知道原值是什么就写新值 = 静默丢弃用户数据）。两侧都不得回显原文片段。
+    for (const [namespace, key, state] of [
       ["models", "config", () => storage.configState()],
       ["models", "favorites", () => storage.favoritesState()],
-      ["auth", "p", () => storage.credentials.modify("p", () => assert.fail("坏值不能进入回调"))],
     ]) {
       database.prepare("UPDATE store SET value = ? WHERE namespace = ? AND key = ?").run('secret-must-not-leak{', namespace, key);
-      await assert.rejects(async () => read(), error => {
-        assert.match(error.message, /不是有效 JSON/);
+      const read = state();
+      assert.equal(read.invalid, true, `${namespace}/${key} 坏行必须标记 invalid 供写路径拒绝`);
+      assert.equal(read.raw, 'secret-must-not-leak{', "原文只作 CAS 期望值，不进任何错误信息");
+    }
+    // 权威坏行：读得出 invalid，写路径明确拒绝且不泄露原文。
+    assert.equal(storage.readConfig().providers.a, undefined, "坏行按未配置读，不炸");
+    database.prepare("UPDATE store SET value = ? WHERE namespace = ? AND key = ?").run('secret-must-not-leak{', "auth", "p");
+    await assert.rejects(
+      () => storage.credentials.modify("p", () => assert.fail("坏值不能进入回调")),
+      (error) => {
+        assert.match(error.message, /不是合法 JSON/);
         assert.doesNotMatch(error.message, /secret-must-not-leak/);
         return true;
-      });
-    }
+      },
+    );
+    // 读路径对坏凭据行容错跳过（不阻断 SDK 取凭据）。
+    assert.equal(await storage.credentials.read("p"), undefined);
+    assert.deepEqual(await storage.credentials.list(), []);
   } finally {
     database?.close();
     await rm(dir, { recursive: true, force: true });
@@ -453,6 +466,156 @@ test("两进程并发 credentials.modify：CAS 拒绝后写者，杜绝静默丢
       assert.match(outcome.message, /已被其他进程修改/);
       assert.equal((await storage.credentials.read("p")).key, "sk-parent");
     } finally { await opponent.close(); }
+  } finally {
+    database?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("auth 迁移窗口只看自己的标记：models.json 合法时坏 auth 条目修好后仍能补导入", async () => {
+  const dir = await tempDir();
+  let database;
+  try {
+    // 典型组合：models.json 合法 + auth.json 有坏条目。首次 init 后 models/config 已有值，
+    // 之后再 init 时门闩若按「config 是否存在」推断，就会把 auth 的窗口一起永久关掉。
+    await seedPiModels(dir, { providers: { p: { baseUrl: "https://p.example.com" } } });
+    await seedPiAuth(dir, { good: { type: "api_key", key: "sk-good" }, broken: { type: "wat" } });
+    const authSource = join(dir, "pi", "auth.json");
+    const { storage, database: db } = makeStorage(dir);
+    database = db;
+    await storage.init();
+    assert.deepEqual(database.get("auth", "good"), { type: "api_key", key: "sk-good" });
+    assert.equal(database.get("migrated", authSource), undefined, "坏条目未修好前不得打 auth 迁移标记");
+    assert.ok(storage.importErrors().some((item) => /broken/.test(item.error)), "坏条目必须有告警");
+
+    // 第二次 init：config 已有值，但 auth 自己的窗口必须还开着。
+    await storage.init();
+    assert.equal(database.get("migrated", authSource), undefined, "config 存在不得推断 auth 已迁移完成");
+    assert.ok(storage.importErrors().some((item) => /broken/.test(item.error)), "告警不得被清空");
+
+    // 用户修好坏条目 → 下次 init 补导入并收窗。
+    await seedPiAuth(dir, { good: { type: "api_key", key: "sk-good" }, broken: { type: "api_key", key: "sk-fix" } });
+    await storage.init();
+    assert.deepEqual(database.get("auth", "broken"), { type: "api_key", key: "sk-fix" }, "修复后必须补导入");
+    assert.equal(database.get("migrated", authSource), true);
+    assert.deepEqual(storage.importErrors(), []);
+  } finally {
+    database?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("收藏来源结构非法：与 models/auth 同口径记录告警，不静默跳过", async () => {
+  const dir = await tempDir();
+  let database;
+  try {
+    await writeFile(join(dir, "models-favorites.json"), JSON.stringify(["not", "an", "object"]));
+    const { storage, database: db } = makeStorage(dir);
+    database = db;
+    await storage.init();
+    assert.equal(database.get("models", "favorites"), undefined, "非法结构不入库");
+    const favoriteError = storage.importErrors().find((item) => item.source.endsWith("models-favorites.json"));
+    assert.ok(favoriteError, "结构非法必须有用户可见告警（与 importModels/importAuth 同口径）");
+    assert.match(favoriteError.error, /结构无效/);
+  } finally {
+    database?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("credentials.modify 落库前校验形状：非法值被拒，不留读不回的幽灵行", async () => {
+  const dir = await tempDir();
+  let database;
+  try {
+    const { storage, database: db } = makeStorage(dir);
+    database = db;
+    await storage.init();
+    await assert.rejects(storage.credentials.modify("p", () => ({ type: "wat", key: "sk-x" })), /凭据格式无效/);
+    // 幽灵行会让 read/list 都看不到它，却因为「行已存在」永久阻断 auth.json 里同名的合法凭据导入。
+    assert.equal(database.get("auth", "p"), undefined, "非法值不得落库");
+    assert.equal(await storage.credentials.read("p"), undefined);
+    assert.deepEqual(await storage.credentials.list(), []);
+    // 合法值照常写入；返回 undefined 仍表示放弃变更。
+    await storage.credentials.modify("p", () => ({ type: "api_key", key: "sk-ok" }));
+    assert.deepEqual(database.get("auth", "p"), { type: "api_key", key: "sk-ok" });
+    await storage.credentials.modify("p", () => undefined);
+    assert.deepEqual(database.get("auth", "p"), { type: "api_key", key: "sk-ok" });
+  } finally {
+    database?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("收藏写入形状统一：导入与 CAS 写都带 version，调用方不能覆盖字面量", async () => {
+  const dir = await tempDir();
+  let database;
+  try {
+    await writeFile(join(dir, "models-favorites.json"), JSON.stringify({ models: ["a/b"] }));
+    const { storage, database: db } = makeStorage(dir);
+    database = db;
+    await storage.init();
+    assert.equal(database.get("models", "favorites").version, 1, "导入路径也要写 version");
+    // version 必须由本模块定，不能被调用方传入的 store.version 覆盖。
+    storage.setFavorites({ models: ["a/b"], version: 99 });
+    assert.equal(database.get("models", "favorites").version, 1);
+    const { raw } = storage.favoritesState();
+    assert.equal(storage.casFavorites(raw, { models: ["c/d"], version: 99 }), true);
+    assert.equal(database.get("models", "favorites").version, 1);
+  } finally {
+    database?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("多语句写入原子：importAuth 中途失败不留半截导入", async () => {
+  const dir = await tempDir();
+  let database;
+  try {
+    await seedPiAuth(dir, { a: { type: "api_key", key: "sk-a" }, b: { type: "api_key", key: "sk-b" } });
+    const { storage, database: db } = makeStorage(dir);
+    database = db;
+    // 第二条写入失败（磁盘满/SQL 异常）：第一条不得留在库里，否则半截导入既不完整又占位阻断重导。
+    const set = db.set.bind(db);
+    let calls = 0;
+    db.set = (namespace, key, value) => {
+      if (namespace === "auth" && ++calls === 2) throw new Error("injected auth write failure");
+      return set(namespace, key, value);
+    };
+    await assert.rejects(storage.init(), /injected auth write failure/);
+    db.set = set;
+    assert.equal(database.get("auth", "a"), undefined, "半截导入必须整体回滚");
+    assert.equal(database.get("auth", "b"), undefined);
+    // 解除故障后重新导入，两条都在。
+    await storage.init();
+    assert.deepEqual(database.get("auth", "a"), { type: "api_key", key: "sk-a" });
+    assert.deepEqual(database.get("auth", "b"), { type: "api_key", key: "sk-b" });
+  } finally {
+    database?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("写路径 prepared 语句复用：反复 CAS 写不按次数增长 prepare 调用", async () => {
+  const dir = await tempDir();
+  let database;
+  try {
+    const { storage, database: db } = makeStorage(dir);
+    database = db;
+    await storage.init();
+    await storage.credentials.modify("p", () => ({ type: "api_key", key: "sk-0" }));
+    const prepare = db.prepare.bind(db);
+    let prepares = 0;
+    db.prepare = (sql) => { prepares += 1; return prepare(sql); };
+    // 第一批：首次用到 UPDATE 形式，允许编译一次。
+    for (let i = 1; i <= 5; i += 1) await storage.credentials.modify("p", () => ({ type: "api_key", key: `sk-${i}` }));
+    const warmed = prepares;
+    prepares = 0;
+    // 第二批：同形式语句已缓存，不得再编译——否则就是按调用次数线性增长。
+    for (let i = 6; i <= 15; i += 1) await storage.credentials.modify("p", () => ({ type: "api_key", key: `sk-${i}` }));
+    db.prepare = prepare;
+    assert.ok(warmed <= 2, `首次用到新语句形式最多编译两条，实际 ${warmed} 条`);
+    assert.equal(prepares, 0, `prepared 语句必须复用，第二批 10 次写入又新编译 ${prepares} 条`);
+    assert.equal(database.get("auth", "p").key, "sk-15");
   } finally {
     database?.close();
     await rm(dir, { recursive: true, force: true });

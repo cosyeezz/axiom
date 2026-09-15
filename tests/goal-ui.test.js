@@ -22,6 +22,7 @@ async function page() {
   w.cancelAnimationFrame = (id) => frames.delete(id);
   w.renderMarkdown = (node, text) => { node.textContent = text ?? ""; };
   w.stripMemoryTags = (text) => text;
+  w.stripGoalMarkers = (text) => text;
   w.createStreamRenderer = (render, after) => createStreamRenderer(render, after, w.requestAnimationFrame, w.cancelAnimationFrame);
   // 记录实例，测试才能像服务端断开那样触发 onclose（走 app.js 真实断线路径）。
   w.WebSocket = class { static OPEN = 1; readyState = 1; constructor() { w.__ws = this; } send() {} close() {} };

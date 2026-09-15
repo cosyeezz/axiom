@@ -5,6 +5,7 @@ import { JSDOM } from "jsdom";
 import { marked } from "marked";
 import createPurify from "dompurify";
 import { createStreamRenderer } from "../public/stream-renderer.js";
+import { publicSource } from "./helpers/public-source.js";
 
 const pickerSource = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
 const modelSources = await Promise.all(["model-picker", "model-auth", "model-manager"].map(async (name) => {
@@ -42,6 +43,13 @@ test("header path icons do not inherit the global button minimum height", async 
     assert.equal(computed(".task-run-text").textOverflow, "ellipsis", "run rows truncate long task text");
     assert.equal(computed(".task-run-text").whiteSpace, "nowrap");
     assert.equal(computed(".task-run-spin").animationName, "task-run-spin", "spinner is a CSS animation, no inline style");
+    // 安全停止提示条：图标与省略号都靠 CSS 动画，且不能把标题行撑高（全局 button 有 40px 最小高度）。
+    assert.equal(computed(".safe-stop-icon").animationName, "safe-stop-pulse");
+    assert.equal(computed(".safe-stop-dots i").animationName, "safe-stop-bounce");
+    assert.equal(computed("#session-alert").minHeight, "0px", "标题前提醒点不继承全局按钮高度");
+    assert.equal(computed("#session-alert").padding, "0px");
+    assert.equal(computed(".title-row").display, "flex", "提醒点与标题同行，且 h1 仍可省略");
+    assert.equal(computed(".title-row").minWidth, "0px");
     // 复选框不能吃到全局 input 的 40px 高度：否则控件顶在盒子上沿、同行文字落到下沿，看起来错行。
     // 复选框由脚本生成（能力选择、压缩开关），静态页面里没有，这里补一个再量。
     const box = dom.window.document.createElement("input");
@@ -60,9 +68,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     new URL("../public/index.html", import.meta.url),
     "utf8",
   );
-  const source = (await readFile(new URL("../public/memory-tags.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/question.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (
-    await readFile(new URL("../public/app.js", import.meta.url), "utf8")
-  ).replace(/^import .*;\r?\n/gm, "");
+  const source = await publicSource("markdown-scan", "memory-tags", "goal-markers", "question", "app");
   const dom = new JSDOM(html, {
     url: "http://localhost",
     runScripts: "outside-only",
@@ -355,6 +361,48 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     sockets[1].open();
     await settle();
     paint();
+    // 原文视图是并排面板（非 modal），按钮紧挨主题切换，用 aria-pressed 表示开合。
+    assert.equal($("open-raw-io").nextElementSibling, $("toggle-theme"), "原文按钮紧邻主题切换");
+    $("open-raw-io").click();
+    assert.equal($("raw-io").hidden, false);
+    assert.equal($("raw-io").tagName, "SECTION", "原文视图是面板不是 modal 对话框");
+    assert.equal(window.document.querySelector("dialog#raw-io"), null);
+    assert.equal($("open-raw-io").getAttribute("aria-pressed"), "true");
+    const rawRows = () => [...$("raw-io-list").querySelectorAll(".raw-message")];
+    assert.equal(rawRows().length, 0);
+    assert.equal($("raw-io-empty").hidden, false, "空会话给提示而不是伪造事件");
+    const rawSession = window.sessionStorage.getItem("axiom.session");
+    const rawTag = '<axiom_answer>**原文**<img src=x onerror=alert(1)></axiom_answer>';
+    // 没有 message.start 也必须记录增量：正文渲染器会忽略这种事件。
+    sockets[1].receive({ type: "agent.delta", sessionId: rawSession, data: { type: "text_delta", delta: rawTag } });
+    paint();
+    assert.equal(rawRows().length, 1);
+    const streamed = rawRows()[0];
+    assert.match(streamed.querySelector(".raw-message-bar").textContent, /模型输出/, "流式消息带标签");
+    assert.equal(streamed.querySelector("pre").textContent, rawTag, "标签按原文保留，不解析 Markdown/HTML");
+    assert.equal(streamed.querySelector("pre").children.length, 0, "原文只有文本节点");
+    assert.equal($("raw-io-list").querySelector("img"), null, "原文不执行 HTML");
+    sockets[1].receive({ type: "agent.delta", sessionId: "other-session", data: { type: "text_delta", delta: "不能串会话" } });
+    paint();
+    assert.equal(rawRows().length, 1, "其他会话的事件不进当前原文面板");
+    assert.doesNotMatch($("raw-io-list").textContent, /不能串会话/);
+    // 复制按钮沿用已有剪贴板 mock，取的是原文而不是渲染后的正文。
+    copiedPath = "unchanged";
+    streamed.querySelector(".raw-copy").click();
+    await settle();
+    assert.equal(copiedPath, rawTag, "复制的是逐字原文");
+    // 关闭后再来增量：重开时补画，不丢内容也不在隐藏时白白渲染 DOM。
+    $("close-raw-io").click();
+    assert.equal($("raw-io").hidden, true);
+    assert.equal($("open-raw-io").getAttribute("aria-pressed"), "false");
+    assert.equal(window.document.activeElement, $("open-raw-io"), "关闭后焦点回到开关按钮");
+    sockets[1].receive({ type: "agent.delta", sessionId: rawSession, agentId: "child", data: { type: "text_delta", delta: "关闭后仍记录子代理" } });
+    paint();
+    $("open-raw-io").click();
+    assert.equal(rawRows().length, 2);
+    assert.match(rawRows()[1].querySelector(".raw-message-bar").textContent, /模型输出 · 子代理/, "子代理原文单独标记");
+    assert.equal(rawRows()[1].querySelector("pre").textContent, "关闭后仍记录子代理");
+    $("close-raw-io").click();
     assert.equal($("service-dev").hidden, false);
     assert.doesNotMatch($("service-dev").outerHTML, /[DF]:[\\/]/, "dev badge must not expose the source path");
     assert.equal($("service-update-section").hidden, true, "dev hides the update group");
@@ -622,6 +670,29 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("composer").requestSubmit();
     await settle();
     assert.equal(requests.findLast((req) => req.type === "prompt").text, "/skill:codebase-map 检查代码");
+    $("open-raw-io").click();
+    const liveRows = [...$("raw-io-list").querySelectorAll(".raw-message")];
+    assert.ok(liveRows.length >= 1);
+    assert.match(liveRows.at(-1).querySelector(".raw-message-bar").textContent, /你的输入/, "用户输入带标签");
+    assert.equal(liveRows.at(-1).querySelector("pre").textContent, "/skill:codebase-map 检查代码", "输入请求按原文逐条展示");
+    assert.doesNotMatch($("raw-io-list").textContent, /关闭后仍记录子代理/, "切换快照清除旧会话事件");
+    // 点击左侧消息后可用「定位对话」从原文跳回正文消息（面板收起，对应行标记选中）。
+    assert.equal(liveRows.at(-1).querySelector(".raw-locate").hidden, false, "已绑定的消息可回跳");
+    liveRows.at(-1).querySelector(".raw-locate").click();
+    assert.equal($("raw-io").hidden, true, "定位后收起面板回到对话");
+    assert.equal(liveRows.at(-1).classList.contains("raw-selected"), true, "对应原文行被标记选中");
+    $("open-raw-io").click();
+    // 换会话后原文面板换成该会话的历史消息（来自快照），上一会话的残留不串台。
+    await window.eval('switchSession(() => request("session.attach", { sessionId: "b" }))');
+    paint();
+    const historyRows = [...$("raw-io-list").querySelectorAll(".raw-message")];
+    assert.deepEqual(historyRows.map((row) => row.querySelector("pre").textContent), ["historical prompt", "historical result"], "历史消息按原文逐条列出");
+    assert.match(historyRows[0].querySelector(".raw-message-bar").textContent, /你的输入/);
+    assert.match(historyRows[1].querySelector(".raw-message-bar").textContent, /模型输出 · 子代理/);
+    assert.doesNotMatch($("raw-io-list").textContent, /skill:codebase-map/, "会话隔离：另一会话的原文不串台");
+    await window.eval('switchSession(() => request("session.attach", { sessionId: "a" }))');
+    paint();
+    $("close-raw-io").click();
     assert.equal($("composer-skill").value, "");
     sockets[1].receive({ type: "session.status", sessionId: "a", data: { status: "idle" } });
     // 正在看的会话跑完即算已读：idle 事件要写回 seen，否则切走后会被错标成待查看。
@@ -750,8 +821,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     await settle();
     assert.equal($("create-main-model").value, "other/child");
     assert.equal($("create-main-mode").value, "custom");
-    assert.equal(window.document.querySelectorAll('.capability-agent:first-child input[data-kind="skills"]:checked').length, 2);
-    assert.match($("create-agents").textContent, /当前目录不可用 · missing-skill/, "unavailable defaults are not silently removed");
+    assert.equal(window.document.querySelectorAll('.capability-agent:first-child input[data-kind="skills"]:checked').length, 1);
+    assert.doesNotMatch($("create-agents").textContent, /missing-skill/, "不能把当前目录清单之外的能力补成可选项");
     assert.equal(window.document.querySelectorAll('.capability-agent:last-child input[data-kind]:checked').length, 0);
     needsTrust = false;
     defaults.capabilities.skills.pop();
@@ -955,6 +1026,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape" }));
     await settle();
     assert.equal(requests.filter((r) => r.type === "cancel").length, cancels + 1, "double Esc cancels");
+    assert.equal(requests.findLast((r) => r.type === "cancel").mode, "safe", "快捷键只给安全停止，不能误触丢产出的强停");
     // 三次 Esc：把已进入上下文的输入退回输入框（服务端回退分支，客户端按新快照重绘消息区）。
     states[0].messages = [{ agentId: "main", entryId: "u1", message: { role: "user", content: "撤回的输入" } }];
     emit("session.state", { status: "idle" });
@@ -981,6 +1053,50 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.match($("prompt").value, /撤回的输入/, "recalled input goes back into the box");
     assert.doesNotMatch($("output").textContent, /撤回的输入/, "the recalled message is gone from the transcript");
     input("");
+
+    // 两层停止：安全停止等轮次边界（结束前一直挂绿条），强停会丢产出所以要弹窗确认。
+    emit("session.state", { status: "running" });
+    await settle();
+    assert.equal($("stop").hidden, false);
+    assert.equal($("force-stop").hidden, false, "硬停始终是逃生门：长命令等不起安全点时还能立即停");
+    assert.equal($("force-stop").classList.contains("danger"), true, "会丢产出的动作用警示色");
+    assert.equal($("safe-stop-progress").hidden, true);
+    assert.equal($("session-alert").hidden, true);
+    $("stop").click();
+    await settle();
+    assert.equal(requests.findLast((r) => r.type === "cancel").mode, "safe");
+    assert.equal(requests.findLast((r) => r.type === "queue.withdraw").sessionId, "a", "停止前先撤回队列，不让排队消息在下一次运行开头被默默消化");
+    emit("session.state", { status: "running", safeStop: true });
+    await settle();
+    assert.equal($("safe-stop-progress").hidden, false, "等待期间给个看得见的交代");
+    assert.match($("safe-stop-progress").textContent, /安全停止中/);
+    assert.equal($("safe-stop-progress").getAttribute("role"), "status");
+    assert.equal($("stop").hidden, true, "已在等安全点：再点一次没效果，只留强停");
+    assert.equal($("force-stop").hidden, false);
+    emit("session.state", { status: "idle", stopped: "safe" });
+    await settle();
+    assert.equal($("safe-stop-progress").hidden, true);
+    assert.equal($("session-alert").hidden, false, "停住了就在标题前留点，用户回来才知道");
+    $("session-alert").click();
+    await settle();
+    assert.equal($("session-alert").hidden, true, "点一下就消");
+    emit("session.state", { status: "running" });
+    await settle();
+    const beforeForce = requests.filter((r) => r.type === "cancel").length;
+    $("force-stop").click();
+    assert.equal($("force-stop-dialog").open, true);
+    assert.equal(window.document.activeElement, $("force-stop-cancel"));
+    $("force-stop-cancel").click();
+    await settle();
+    assert.equal(requests.filter((r) => r.type === "cancel").length, beforeForce, "取消弹窗不停任务");
+    $("force-stop").click();
+    $("force-stop-form").requestSubmit();
+    await settle();
+    assert.equal($("force-stop-dialog").open, false);
+    assert.equal(requests.findLast((r) => r.type === "cancel").mode, "force", "确认后才真停");
+    emit("session.state", { status: "idle" });
+    await settle();
+    assert.equal($("session-alert").hidden, true, "正常跑完不留提醒点");
     emit(
       "task.state",
       { task: "Inspect code", status: "running" },
@@ -1331,9 +1447,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     new URL("../public/index.html", import.meta.url),
     "utf8",
   );
-  const source = (await readFile(new URL("../public/memory-tags.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (await readFile(new URL("../public/question.js", import.meta.url), "utf8")).replace(/^export /gm, "") + "\n" + (
-    await readFile(new URL("../public/app.js", import.meta.url), "utf8")
-  ).replace(/^import .*;\r?\n/gm, "");
+  const source = await publicSource("markdown-scan", "memory-tags", "goal-markers", "question", "app");
   const dom = new JSDOM(html, {
     url: "http://localhost",
     runScripts: "outside-only",

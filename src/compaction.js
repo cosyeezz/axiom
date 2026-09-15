@@ -16,6 +16,7 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { compaction, compactionDefaults } from "./protocol.js";
+import { cutSpans, maskCode } from "../public/markdown-scan.js";
 
 // SDK usage 未知（尤其刚压缩后）时只估算现有内容，不能重新信任旧 usage。
 function contextTokens(messages) {
@@ -94,18 +95,33 @@ export function summarizedEntryIds(branch, firstKeptEntryId) {
 // —— 后台摘要：独立内存 Pi 会话，无工具、不加载任何扩展/技能/提示词/主题/上下文文件 ——
 // 空临时 agentDir 只隔离全局发现；祖先 AGENTS/.agents 扫描（loadProjectContextFiles 沿 cwd 向上）
 // 与技能扫描由 noContextFiles/noSkills 等选项显式关闭。
-// 展示元数据只在格式有效时拆出；模型未遵守格式时保留全文，不丢交接内容。
+// 展示元数据只在格式有效时拆出；模型不守格式时只丢元数据，正文照旧完整。
+// 标签原文一律从正文里剥掉：兜底保留全文会让标签随 previousSummary 回注、自我强化，
+// 下一轮摘要把标签当交接内容再抄一遍。解析放宽到「标签不在结尾、顺序颠倒、后面还有正文」
+// 都能拆出，长度按码点算（emoji 不占两格）。
+const COMPACT_MAX = { title: 30, desc: 200 };
 export function parseSummaryOutput(text) {
-  const summary = text.trim();
-  const match = /\n[ \t]*<axiom_compact_title>([^<>]*)<\/axiom_compact_title>\s*<axiom_compact_desc>([^<>]*)<\/axiom_compact_desc>$/.exec(summary);
-  if (match) {
-    const body = summary.slice(0, match.index).trim();
-    const title = match[1].trim();
-    const description = match[2].trim();
-    if (body && title && title.length <= 30 && description && description.length <= 200)
-      return { summary: body, progress: { title, description } };
-  }
-  return { summary };
+  const raw = text.trim();
+  const masked = maskCode(raw);
+  // 围栏里的标签是讨论内容不是协议；整份输出被围栏包住时标签全被掩码，退回原文扫描
+  const scan = masked.includes("<axiom_compact_") ? masked : raw;
+  const spans = [];
+  const field = (name) => {
+    const open = `<axiom_compact_${name}>`;
+    const close = `</axiom_compact_${name}>`;
+    for (const hit of scan.matchAll(new RegExp(`</?axiom_compact_${name}>`, "g")))
+      spans.push([hit.index, hit.index + hit[0].length]); // 落单标记也剥掉，正文不留标签原文
+    const at = scan.indexOf(open);
+    const end = at < 0 ? -1 : scan.indexOf(close, at + open.length);
+    if (end < 0) return null; // 配不成对：闭合边界未知，只删标记本身，后面的内容当正文留着
+    spans.push([at, end + close.length]);
+    const value = raw.slice(at + open.length, end).trim();
+    return value && !value.includes("<") && [...value].length <= COMPACT_MAX[name] ? value : null;
+  };
+  const title = field("title");
+  const description = field("desc");
+  const summary = cutSpans(raw, spans).trim();
+  return title && description ? { summary, progress: { title, description } } : { summary };
 }
 
 function throwIfAborted(signal) {

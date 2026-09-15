@@ -8,12 +8,18 @@ import { readFile } from "node:fs/promises";
 const NAMESPACE = "maint";
 const LOG_LIMIT = 16 * 1024, PHASE_LIMIT = 200;
 
-// 有界脱敏：redactions 为 [原文, 替换] 对（长前缀优先），另打码鉴权头；证据够排障，凭证与路径不外泄。
-export function sanitize(text, redactions = []) {
+// 脱敏本体（不截尾）：redactions 为 [原文, 替换] 对（长前缀优先），另打码鉴权头。
+// 流式追加入文件的场景用它——按尾截断会吞掉正在写的内容。
+export function redact(text, redactions = []) {
   let out = String(text ?? "");
   const pairs = [...redactions].sort((a, b) => String(b[0]).length - String(a[0]).length);
   for (const [secret, replacement] of pairs) if (secret) out = out.split(secret).join(replacement);
-  out = out.replace(/(authorization|bearer)\s*[:=]?\s*["']?[^\s"',;]{8,}/gi, "$1 ***");
+  return out.replace(/(authorization|bearer)\s*[:=]?\s*["']?[^\s"',;]{8,}/gi, "$1 ***");
+}
+
+// 有界脱敏：证据够排障，凭证与路径不外泄。
+export function sanitize(text, redactions = []) {
+  const out = redact(text, redactions);
   return out.length > LOG_LIMIT ? out.slice(-LOG_LIMIT) : out;
 }
 
@@ -31,7 +37,13 @@ export async function createMaintState({ database, key, legacyFile, redactions =
   };
   // 恢复统一入口：结果字段全保留（读入即脱敏），只重置当前 worker 字段，
   // running 改判 interrupted（无保存原因时补固定说明），并追加本次 boot 阶段。
+  // 非对象快照（JSON null / 标量 / 数组）直接按全新状态处理：展开它会抛 TypeError，
+  // 单行脏数据不该让守护进程永久起不来。
   const restore = (saved) => {
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) {
+      pushPhase("boot");
+      return;
+    }
     const running = saved.status === "running";
     data = {
       ...data, ...saved,
@@ -50,7 +62,17 @@ export async function createMaintState({ database, key, legacyFile, redactions =
     delete data.persistenceError;
     pushPhase("boot");
   };
-  const stored = database.get(NAMESPACE, key);
+  // 坏行不阻断启动：database.get 对非法 JSON 按设计抛脱敏错误，这里必须接住——否则单行损坏
+  // 会让守护进程永久起不来且用户没有任何自愈入口（与 Database.list 跳坏行、Sessions.loadTaskBudget
+  // 有 catch 同口径）。坏行按全新状态重建，本次会话的首个 persist 即覆盖自愈。
+  // 告警只报 namespace/key，不带原文片段。
+  let stored;
+  try {
+    stored = database.get(NAMESPACE, key);
+  } catch {
+    console.error(`维护状态记录不是合法 JSON（${NAMESPACE}/${key}），已按全新状态重建`);
+    stored = undefined;
+  }
   if (stored !== undefined) restore(stored);
   else {
     let saved = null;
