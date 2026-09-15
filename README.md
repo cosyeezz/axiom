@@ -554,6 +554,21 @@ capabilities.js 原生能力发现、内存配置、MCP 快照与选择加载
 
 模型配置、收藏、内置模型隐藏清单与凭据的读改写使用同一权威数据库连接进行原文比较后原子写入（CAS）；其他进程已修改时明确拒绝，不覆盖、不自动重放凭据回调。数据库中某一行不是合法 JSON 或顶层结构非法时，读路径按未配置处理并在配置页给出告警（启动与页面都打得开，用户有自愈入口），写路径明确拒绝——不知道原值是什么就写新值等于静默丢弃用户数据。派生模型文件仍有跨进程陈旧窗口，不能把权威库防丢更新等同于各进程 SDK 实时同步。
 
+## 桌面稳定性与前端性能开发计划
+
+以下六份文档是**待实施方案，不代表当前已具备这些能力**。每份包含独立开发范围、接口契约、隔离测试和验收要求；共享入口由集成负责人统一接线，不允许多组同时编辑。当前仓库已确认的是 Pake 桌面壳，用户提及的 Electron 实现须先定位，不能据此另建第二套桌面端。
+
+| 文档 | 独立开发范围 |
+|---|---|
+| [01 完整桌面交付与手动更新](docs/development-plans/01-desktop-delivery-update.md) | 自包含安装包、统一版本、手动更新、数据安全 |
+| [02 启动与故障隔离](docs/development-plans/02-startup-fault-isolation.md) | 唯一进程管理、最小启动链、IPC 就绪、安全退出 |
+| [03 实时通信与事件分发](docs/development-plans/03-realtime-transport.md) | WebSocket 订阅、错误边界、优先级、有界缓冲 |
+| [04 前端分区与开发热加载](docs/development-plans/04-frontend-regions-dev.md) | 定向更新、模型菜单稳定、前端独立开发服务 |
+| [05 长会话与多会话性能](docs/development-plans/05-history-session-performance.md) | 历史分页、可视窗口渲染、有界缓存、切换一致性 |
+| [06 平滑流式显示](docs/development-plans/06-smooth-stream-display.md) | 接收与显示分离、缓冲播放、有界追赶、Markdown 调度 |
+
+并行方式：01/02 共用桌面生命周期契约，03/04 共用通信订阅契约，05/06 共用消息身份与可见消息挂载契约。各模块可先用替身独立验证；正式接入按“启动与通信 → 分区 → 历史与流式显示”的依赖顺序，由单一负责人整合共享文件。真实性能采集必须串行，不能用并发跑分或单测通过替代成品验收。
+
 ## 验证和运行边界
 
 项目级 skill `codebase-map`（.pi/skills/codebase-map/）：多级索引快速定位代码与排障。`node .pi/skills/codebase-map/scripts/reindex.mjs` 重建 INDEX.md（模块总览→符号行号→协议/路由/元素常量）；knowledge.md 沉淀历史 bug，改代码后重建索引并追加记录。
