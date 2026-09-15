@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-14 原始输入输出诊断入口
+
+- 内容：右上角新增 `</>`，原生 dialog + 只读 textarea 展示当前会话消息快照、输入请求和实时事件，包含子代理，标签/Markdown/HTML 均不解析；关闭面板仍记录。
+- 原因：区分模型原文未包含标签与前端解析导致的内容不可见，在渲染前独立采集，不从渲染 DOM 反推。
+- 决策：复用既有消息通道，无新依赖与后端接口；不收集模型配置/服务凭据，不持久化诊断日志；限最近约 2M 字符并显式提示截断，切换/重连重建快照，注明非供应商 HTTP 报文。沿用 Linear 项目 surface/ink/line/mono token、8px 文本框圆角。
+- 文件：public/app.js、public/index.html、public/style.css、tests/app.test.js、README.md 与代码索引。
+- 验证：页面回归覆盖原文保留、无 HTML 执行、缺 message.start 仍记录、子代理、关闭后记录、输入请求、跨会话隔离与敏感服务配置不记录；运行全量 npm test。
+
 ## 2026-09-14 更新后页面连接中：补齐标签扫描模块路由
 
 - 根因：d99efdc 新增 public/markdown-scan.js 并被前端标签模块静态导入，但 src/server.js 未注册路由；HTTP health 正常，浏览器模块 404 导致 app.js 不执行。

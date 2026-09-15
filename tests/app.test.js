@@ -361,6 +361,25 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     sockets[1].open();
     await settle();
     paint();
+    $("open-raw-io").click();
+    assert.equal($("raw-io").open, true);
+    assert.match($("raw-io-text").value, /会话快照/);
+    assert.doesNotMatch($("raw-io-text").value, /secret/, "服务凭据不进入原始会话面板");
+    const rawSession = window.sessionStorage.getItem("axiom.session");
+    const rawTag = '<axiom_answer>**原文**<img src=x onerror=alert(1)></axiom_answer>';
+    // 没有 message.start 也必须记录增量：正文渲染器会忽略这种事件。
+    sockets[1].receive({ type: "agent.delta", sessionId: rawSession, data: { type: "text_delta", delta: rawTag } });
+    paint();
+    assert.ok($("raw-io-text").value.includes(rawTag));
+    assert.equal($("raw-io").querySelector("img"), null);
+    sockets[1].receive({ type: "agent.delta", sessionId: "other-session", data: { type: "text_delta", delta: "不能串会话" } });
+    paint();
+    assert.doesNotMatch($("raw-io-text").value, /不能串会话/);
+    $("raw-io").close();
+    sockets[1].receive({ type: "agent.delta", sessionId: rawSession, agentId: "child", data: { type: "text_delta", delta: "关闭后仍记录子代理" } });
+    $("open-raw-io").click();
+    assert.match($("raw-io-text").value, /关闭后仍记录子代理/);
+    $("raw-io").close();
     assert.equal($("service-dev").hidden, false);
     assert.doesNotMatch($("service-dev").outerHTML, /[DF]:[\\/]/, "dev badge must not expose the source path");
     assert.equal($("service-update-section").hidden, true, "dev hides the update group");
@@ -628,6 +647,11 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("composer").requestSubmit();
     await settle();
     assert.equal(requests.findLast((req) => req.type === "prompt").text, "/skill:codebase-map 检查代码");
+    $("open-raw-io").click();
+    assert.match($("raw-io-text").value, /输入请求/);
+    assert.match($("raw-io-text").value, /\/skill:codebase-map 检查代码/);
+    assert.doesNotMatch($("raw-io-text").value, /关闭后仍记录子代理/, "切换快照清除旧会话事件");
+    $("raw-io").close();
     assert.equal($("composer-skill").value, "");
     sockets[1].receive({ type: "session.status", sessionId: "a", data: { status: "idle" } });
     // 正在看的会话跑完即算已读：idle 事件要写回 seen，否则切走后会被错标成待查看。

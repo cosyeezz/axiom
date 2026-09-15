@@ -859,6 +859,7 @@ textarea {
   line-height: 1.6;
 }
 #settings,
+#raw-io,
 #session-action,
 #restart-dialog,
 .mm-dialog,
@@ -872,6 +873,12 @@ textarea {
   border-radius: 16px;
   box-shadow: 0 24px 80px light-dark(#00000029, #0008);
 }
+#raw-io { width: min(1000px, calc(100% - 32px)); height: 80dvh; }
+#raw-io[open] { display: flex; flex-direction: column; }
+#raw-io > header { flex-shrink: 0; justify-content: space-between; }
+#raw-io-title { margin: 0; font-size: 18px; }
+#raw-io-help { margin: 12px 16px; color: var(--muted); font-size: 12px; }
+#raw-io-text { flex: 1; min-height: 0; width: calc(100% - 32px); margin: 0 16px 16px; padding: 12px; resize: none; background: var(--canvas); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; font: 13px/1.5 var(--mono); }
 #restart-dialog { width: min(460px, calc(100% - 32px)); }
 #restart-title { margin: 0; font-size: 18px; }
 #settings { width: min(1000px, calc(100% - 32px)); height: 80dvh; overflow: hidden; }
@@ -911,6 +918,7 @@ textarea {
   }
 }
 #settings::backdrop,
+#raw-io::backdrop,
 #session-action::backdrop,
 #restart-dialog::backdrop,
 .task-dialog::backdrop {

@@ -292,13 +292,42 @@ let requestSeq = 0;
 function error(e) {
   $("error").textContent = e.message || String(e);
 }
+// 独立于正文解析保存诊断文本；不存 localStorage，不记录模型设置/凭据请求。
+let rawRecords = [], rawSize = 0, rawDropped = false, rawFrame;
+function recordRaw(label, value) {
+  const text = `--- ${label} ---\n${JSON.stringify(value, null, 2)}\n\n`;
+  rawRecords.push(text);
+  rawSize += text.length;
+  // ponytail: 页内诊断最多保留约 2M 字符；更长历史需要时再做文件导出。
+  while (rawSize > 2_000_000 && rawRecords.length > 1) {
+    rawSize -= rawRecords.shift().length;
+    rawDropped = true;
+  }
+  if (rawSize > 2_000_000) {
+    rawRecords[0] = rawRecords[0].slice(-2_000_000);
+    rawSize = rawRecords[0].length;
+    rawDropped = true;
+  }
+  if ($("raw-io").open && rawFrame === undefined) rawFrame = requestAnimationFrame(() => {
+    rawFrame = undefined;
+    showRaw();
+  });
+}
+function showRaw() {
+  $("raw-io-text").value = (rawDropped ? "[部分较早内容已截断，仅保留最近约 2M 字符]\n" : "")
+    + (rawRecords.join("") || "尚无当前会话原始信息。");
+}
+$("open-raw-io").onclick = () => { showRaw(); $("raw-io").showModal(); };
 function request(type, data = {}) {
   return new Promise((resolve, reject) => {
     if (ws?.readyState !== WebSocket.OPEN)
       return reject(new Error("连接已断开，请重新连接"));
     const id = String(++requestSeq);
     pending.set(id, { resolve, reject });
-    ws.send(JSON.stringify({ id, type, ...data }));
+    const command = { id, type, ...data };
+    ws.send(JSON.stringify(command));
+    if (data.sessionId === sessionId && ["prompt", "question.reply", "goal.action"].includes(type))
+      recordRaw("输入请求（已发送，是否接受以服务端为准）", command);
   });
 }
 function controls() {
@@ -1795,6 +1824,8 @@ function event(message) {
   }
   if (message.sessionId !== sessionId) return;
   const { type, agentId = "main", data } = message;
+  if (["agent.message.start", "agent.delta", "agent.message.end", "tool.state", "session.queue", "session.state", "error"].includes(type))
+    recordRaw("收到事件", message);
   if (type === "question.asked") questionUI.asked(message.sessionId, data);
   if (type === "question.closed") questionUI.closed(message.sessionId, data.toolCallId);
   if (type === "goal") {
@@ -2013,6 +2044,12 @@ function event(message) {
   if (type === "error") error(data.message);
 }
 function snapshot(state) {
+  rawRecords = [];
+  rawSize = 0;
+  rawDropped = false;
+  recordRaw("会话快照（消息原文；不含供应商 HTTP 报文）", {
+    sessionId: state.sessionId, messages: state.messages, live: state.live, queue: state.queue,
+  });
   locatedScroll = undefined;
   lastScrollTops.delete(transcript);
   clearTimeout(escapeTimer);
