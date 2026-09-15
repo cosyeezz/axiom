@@ -1,5 +1,9 @@
 # Axiom
 
+## 独立 SVG 动画
+
+直接用浏览器打开 [`pelican-bicycle.html`](./pelican-bicycle.html)：自行车骑在鹈鹕背上的抽象 2D 循环动画，纯内联 SVG + CSS，无外部依赖，支持暂停和系统减少动态效果设置。
+
 Axiom 是独立开发、独立发布的项目，唯一代码仓库为 [`cosyeezz/axiom`](https://github.com/cosyeezz/axiom)。
 
 多智能体协作的可靠基础。独立 Node.js 服务，通过 Pi SDK 运行主 Agent，以 `delegate` 并行启动子 Agent、以 `read_result` 读取结果，通过 WebSocket 输出实时事件。
