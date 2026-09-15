@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-14 更新后页面连接中：补齐标签扫描模块路由
+
+- 根因：d99efdc 新增 public/markdown-scan.js 并被前端标签模块静态导入，但 src/server.js 未注册路由；HTTP health 正常，浏览器模块 404 导致 app.js 不执行。
+- 修复：仅补静态资源路由，不改自启或 Node 支持范围；tests/server.test.js 补三个标签模块及扫描模块的 HTTP 状态、JavaScript MIME 与缓存验证。README.md 同步排障说明，knowledge.md 沉淀并重建 INDEX.md。
+- 验证：新增测试在修复前明确失败于 /markdown-scan.js 404，修复后通过；npm test 534 项，532 通过、2 跳过、0 失败。Windows 本地真实 HTTP 验证，Mac 待用户更新确认。
+
 ## 2026-09-14 工作空间独立会话配置
 
 - 决策：移除具名预设；保留全局默认兜底，每个真实工作目录独立保存配置，下拉只切换编辑对象。删除配置不删除目录或会话，旧预设不迁移。

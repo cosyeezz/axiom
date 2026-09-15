@@ -58,9 +58,10 @@ test("local connection without token, foreign origin rejection, recovery and shu
   let ws;
   try {
     const http = `http://127.0.0.1:${app.server.address().port}`;
-    for (const path of ["/", "/app.js", "/style.css", "/file-picker.js", "/file-picker.css", "/memory-tags.js", "/vendor/marked.js"]) {
+    for (const path of ["/", "/app.js", "/style.css", "/file-picker.js", "/file-picker.css", "/memory-tags.js", "/answer-tags.js", "/goal-markers.js", "/markdown-scan.js", "/vendor/marked.js"]) {
       const first = await fetch(http + path);
-      assert.equal(first.status, 200);
+      assert.equal(first.status, 200, `静态资源不可用：${path}`);
+      if (path.endsWith(".js")) assert.match(first.headers.get("content-type"), /javascript/, path);
       assert.match(first.headers.get("cache-control"), /no-cache/);
       assert.match(
         first.headers.get("content-security-policy"),

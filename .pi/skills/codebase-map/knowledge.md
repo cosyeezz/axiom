@@ -583,3 +583,9 @@
 - 根因：取消已产生错误toolResult，continue不会直接重新执行question；SDK还可能在末尾附加空error assistant。
 - 修复：pi.js 识别尾部取消question，以新调用编号追加原题并直接执行，结果写入JSONL和内存并发出UI事件；Sessions.retry按canReask路由。
 - 防再犯：真实SDK测试确认重开不发模型请求、再次取消可恢复、回答才续跑；不得重复原toolCallId结果或回退丢其它工具记录。
+
+### 2026-09-14 前端公共模块漏注册导致永久连接中
+- 症状：health 正常，页面显示但一直连接中。
+- 根因：d99efdc 的 markdown-scan.js 被标签模块静态导入，server assets 未注册，404 阻断 app.js 执行；本地文件测试加载器绕过 HTTP 未发现。
+- 修复：src/server.js 补路由，tests/server.test.js 验证标签模块和扫描模块 HTTP 200、JavaScript MIME 及缓存。
+- 防再犯：新增或抽取浏览器模块时检查传递依赖路由，不以磁盘 import 成功替代 HTTP 验证。
