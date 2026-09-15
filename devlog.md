@@ -1639,3 +1639,50 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 全量：`npm test` → **tests 532 / pass 530 / fail 0 / skipped 2**。两条 skip 是既有的 `{ skip: process.platform === "win32" }`（`tests/database.test.js:103` POSIX 权限、`tests/workspace-picker.test.js:87` 平台揭示），非本轮新增，第 3 轮基线同为 2。
 - 26 条账目：**已修复 16 条**（M-T1..M-T6、A-T1..A-T3、C-T1、C-T2、G-T1、G-T3、G-T5、G-T6、X3）+ **明确不修 2 条**（G-T2 保持 CommonMark 口径、仅去重；G-T4 防伪造有意设计）+ **判无缺陷 3 条**（P-T1、P-T2、P-T3）+ **归属到上述修复的冲突 5 条**（X1→M-T2、X2→M-T3/M-T4/A-T1/A-T2、X4→G-T3、X5→C-T1、X6→C-T2）= 26。无「待确认」条目。
 - 既有断言变更 3 处，理由已逐条写明（compaction 首例：修缺陷；`pi-memory.test.js:92`、`tasks.test.js:88`：层次修正）；另有 1 处主动放宽（compaction 标题允许 `>`），已加测试固定。
+
+## 2026-09-14T19:42 收口复查与整体收尾（第 6 轮 / 共 6 轮）
+
+对第 4 轮 26 条清单逐条复查生效性，补查连带影响（前端展示路径、后端落库路径、goal/compaction 调用点）；发现并修复一处第 5 轮漏掉的前端展示缺陷；完成文档、索引、全量验证与合并收尾。
+
+### 复查结论（26 条，无「待确认」）
+
+用临时探针 `probe6.tmp.mjs` 原样重放第 4 轮的复现输入（纯函数、只看可观察输出），26 条全部符合第 5 轮既定结论，无回归：已修复 16 条维持生效、G-T2/G-T4 两条维持「不修」、P-T1..P-T3 三条维持「无缺陷」、X1..X6 六条维持既有归属（X1→M-T2、X2→M-T3/M-T4/A-T1/A-T2、X4→G-T3、X5→C-T1、X6→C-T2）。
+
+### 本轮新发现遗漏：前端展示路径从不剥 goal 完成标记（G-T1 的另一半）
+
+第 5 轮只修了后端（轮次小结不留标记原文），前端 `public/app.js` 的展示链路仍只有 `stripMemoryTags` → `splitAnswer`，没有剥离 goal 标记。用与 `tests/markdown.test.js` 相同的真实渲染管线（marked + DOMPurify + jsdom）探针 `probe6b.tmp.mjs` 实测：带闭合标签、流式半截（`<axiom_round_fin`）、未闭合围栏后等 4 类输入 × 流式/非流式 8 格，`textContent` 与 `innerHTML` 都出现 `&lt;axiom_round_finished&gt;`，用户可见。这是 G-T1「裸标签进 UI」的另一半，本轮修复。
+
+原因：标记解析逻辑只存在于 `src/goal.js`（后端私有），前端没有可复用的实现，只能完全不处理。
+
+### 修复：goal 标记解析/剥离抽成前后端唯一实现
+
+新增 `public/goal-markers.js`（与 `public/answer-tags.js` 同构），导出 `ROUND_MARKER`、`GOAL_MARKER`、`parseGoalMarkers`、`stripGoalMarkers(text, { streaming })`；内部 `signalLines` 基于第 5 轮的 `maskCode`，标记 token 大小写不敏感匹配开启与闭合写法，流式用后缀表隐藏半截。
+
+- `src/goal.js`：删除本文件的重复实现（`ROUND_MARKER`/`GOAL_MARKER`/`MARKER_TOKENS`/`signalLines`/`parseGoalMarkers`/`stripGoalMarkers`），改为 `import ... from "../public/goal-markers.js"` 并 `export {...}`，对外 API 与行为不变；不再 import 已无用的 `cutSpans`/`maskCode`。
+- `public/app.js`：新增 `import { stripGoalMarkers } from "./goal-markers.js"`；成稿路径（历史/快照）改为 `stripMemoryTags(stripGoalMarkers(raw))`，流式路径改为 `stripMemoryTags(stripGoalMarkers(item.raw, { streaming: true }), { streaming: true })`。顺序与后端 `bodyText` 一致：先剥协议标记 → 再剥记忆标签 → 再拆答复。
+- `src/server.js`：静态路由登记 `["/goal-markers.js", "public/goal-markers.js"]`。
+
+不把 goal 标记并入 `memory-tags.js`：两者语义不同（死标签 vs 协议标记），合并会破坏「先剥死标签 → 再解析协议标记」的既定顺序。
+
+### 回归测试
+
+新增 `tests/goal-markers.test.js`（5 条）：严格判定口径（围栏/波浪围栏/缩进/行内/大写变体/标记后有内文/两个标记同行/模型多写的闭合形式都不算信号）；剥离（含闭合写法、空标签对、代码区原样保留）；流式半截隐藏 vs 非流式按字面保留；前后端共用同一份实现（`src/goal.js` 导出的函数与模块同一引用 + app.js 源码级 import 断言）；页面集成（真实渲染管线：成稿、流式、代码区讲解、用户手写同名文本各就各位）。
+
+「修复前失败」证据：`git stash push -- public/app.js` 后跑该文件 → 展示层断言 `AssertionError: 成稿不显示完成标记原文 / actual: true, expected: false`（标记确实渲染给用户），共 2 条失败；`git stash pop` 后 5/5 通过。
+
+连带：8 个页面测试挂具的 publicSource 清单加入 `goal-markers`，`goal-ui`/`goal-command-ui` 加 `stripGoalMarkers` stub，`model-onboarding-ui` 的 memoryTagsSource 同步，共 11 处。
+
+### 涉及文件
+
+- 新增：`public/goal-markers.js`、`tests/goal-markers.test.js`
+- 产品代码：`src/goal.js`、`public/app.js`、`src/server.js`
+- 测试：`tests/goal-markers.test.js`（新）、`tests/app.test.js`、`tests/compaction-ui.test.js`、`tests/goal-command-ui.test.js`、`tests/goal-ui.test.js`、`tests/manual-retry.test.js`、`tests/memory-ui.test.js`、`tests/message-activity.test.js`、`tests/model-onboarding-ui.test.js`、`tests/model-thinking-favorites.test.js`、`tests/remote-ui.test.js`、`tests/workspace-tabs.test.js`
+- 工具：`.pi/skills/codebase-map/scripts/reindex.mjs`（登记两个新文件）、`.pi/skills/codebase-map/INDEX.md`（重建，155 文件 0 未登记）
+- 文档：`README.md`（goal 标记展示口径与共用实现）、`devlog.md`（本条）
+
+### 验证
+
+- 定向：`tests/goal-markers.test.js` 修复后 5/5 通过；索引一致性测试通过（含关键符号与横切常量断言）。
+- 全量：`npm test` → **tests 537 / pass 535 / fail 0 / skipped 2**（新增 5 条即本轮；两条 skip 为既有 win32 平台守卫，与第 3、5 轮基线同为 2）。
+- 表结构影响：无。本轮未增删改任何表或字段。
+- 临时文件：`probe6.tmp.mjs`、`probe6b.tmp.mjs` 已删除。
