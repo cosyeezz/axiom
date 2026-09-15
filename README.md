@@ -409,7 +409,11 @@ pi 会话 .jsonl（~/.pi/agent/sessions/...）
 
 工具详情关闭时释放已生成的详情 DOM，保留原始参数、结果与历史定位索引，重开按当前 diff 视图恢复；关闭期间新结果只更新数据，不生成详情节点。浏览器页内查找不会命中已释放的折叠详情，需先展开。
 
-首屏与会话切换的历史重建：超过 120 条消息时，每片按 8ms 预算、最多 40 条让出主线程，使用后台任务调度（无支持时退回定时器）；短快照仍同步处理。分片期间实时事件按序排队，按服务端快照序号去重，新快照取消旧片；草稿在起始阶段恢复，尾部不覆盖用户的新输入。单条巨块与重建尾部仍可能耗时，分片预算不等同于长任务实测上限，浏览器性能验收尚待完成。
+历史展示采用每页最多 60 条的原生页窗口：先打开最近页，上/下一页替换并卸载旧页，不再全量快照分片建 DOM。它不是动态高度虚拟列表，没有模拟整段历史的滚动条；页内图片、代码和折叠由浏览器自然布局。会话阅读位置按稳定消息身份按需恢复，可淘汰位置缓存保留 3 个，未保存草稿/附件不淘汰。隐藏页面暂停历史绘制，回前台重取一个最新页，不补播全部历史。
+
+`session.attach` 返回最近页及 seq/instanceId；`session.history` 接受 before/after 游标、target 消息身份或 edge(first/last)，默认 60、最大 200。游标绑定会话、服务实例、历史修订和消息边界；分页不带 seq、不推进实时水位。订阅缓冲先于首屏请求，撤回/压缩使旧游标失效。消息带 messageId（entryId 优先，否则 UUID），活动流另带 liveMessageIds，结束事件带最终身份。浏览器查找和选区复制仅覆盖当前页，折叠工具须展开；原文对照提供当前页逐条源码复制，不把 DOM 选区偏移当源码偏移。
+
+边界：SDK 与 Sessions 的权威历史仍全量驻留，分页只限制传输与展示；活动任务、未保存输入、单条巨大消息不是硬字节有界，尚不宣称整个链路内存有界。当前证据与复现见 [本轮性能采集](docs/perf-history-session/README.md)。
 
 自动滚动请求合并，只在贴底时执行，内容增高由内容观察器兜底补底，用户滚动意图（滚轮、触摸、键盘、拖动）才暂停跟随；切换会话清理待绘制任务；删除重复任务恢复、单连接多订阅容器和重命名时的整份历史复制。静态资源启动时读取并生成 ETag，浏览器刷新时重新校验，未变化返回 304，不重复传输正文；生产下更新或新增静态文件需快速重启服务载入。开发服务（`AXIOM_DEV=1`，即 `npm run dev`）按文件 mtime 惰性重读已注册的静态资源并重算 ETag，改完刷新页面即可，不必重启；新增文件仍需重启注册路由。`public/stream-renderer.js` 独立负责渲染调度，`markdown.js` 负责安全块渲染。
 
@@ -585,7 +589,7 @@ node tests/conversation-preview.mjs # 127.0.0.1:4321，无模型/用户数据的
 node tests/smoke.js  # 真实模型验证，会产生模型调用费用
 ```
 
-长对话前端渲染的性能基线、热点定位与分优先级方案见 [长对话渲染性能调研报告](docs/frontend-long-conversation-perf.md)，原始数值与采集口径在 `docs/perf-long-conversation/`（调研轮不改产品代码）。后续实施轮的性能目标尚未全部达成；缓存后 profile 的并发污染及旧报告差异见 [证据限制](docs/perf-long-conversation/profile-prompt-cache.md)。`profile-current-hotspots.mjs` 拒绝覆盖已有 JSON，采集须指定新的 `--json` 路径并串行执行；`node --test tests/perf-profile-cli.test.js` 可验证输出保护，不会启动浏览器或业务服务。测量共享锁模块 `measure-lock.mjs` 使用临时目录中的独占锁，拒绝其他输出路径的并发采集；未知或过期锁不自动删除，须人工核对其所属进程。模块回归为 `node --test tests/perf-measure-lock.test.js`；两份采集脚本已接入共享锁，浏览器关闭或服务退出确认失败时保留锁并报错。主代理复查补上了失败启动进程的提前登记，避免误放锁；失败启动专项回归已通过：`node --test tests/perf-startup-cleanup.test.js` 使用受控进程桩，不启动服务。WebSocket 异常清理与关闭确认已补齐，`tests/perf-attach-ground-truth.test.js` 覆盖成功、异常、超时及未确认关闭保留登记。profile 的交叉核对失败会保留诊断 JSON 并返回失败退出码，不再报告通过。首屏恢复在同步清场后渐进显示，完整连接前仍禁止发送；分片断线保存新草稿并保护既有阅读位置（`tests/snapshot-first-screen.test.js`）。最新单次诊断见 `docs/perf-long-conversation/profile-progressive-reveal-1.md`：未再出现原403ms任务，但仍有282ms任务及交叉核对不一致，尚未通过性能验收。清理失败保留隔离目录，不以强制退出掩盖残留。
+长对话前端渲染的性能基线、热点定位与分优先级方案见 [长对话渲染性能调研报告](docs/frontend-long-conversation-perf.md)，原始数值与采集口径在 `docs/perf-long-conversation/`（调研轮不改产品代码）。后续实施轮的性能目标尚未全部达成；缓存后 profile 的并发污染及旧报告差异见 [证据限制](docs/perf-long-conversation/profile-prompt-cache.md)。`profile-current-hotspots.mjs` 拒绝覆盖已有 JSON，采集须指定新的 `--json` 路径并串行执行；`node --test tests/perf-profile-cli.test.js` 可验证输出保护，不会启动浏览器或业务服务。测量共享锁模块 `measure-lock.mjs` 使用临时目录中的独占锁，拒绝其他输出路径的并发采集；未知或过期锁不自动删除，须人工核对其所属进程。模块回归为 `node --test tests/perf-measure-lock.test.js`；两份采集脚本已接入共享锁，浏览器关闭或服务退出确认失败时保留锁并报错。主代理复查补上了失败启动进程的提前登记，避免误放锁；失败启动专项回归已通过：`node --test tests/perf-startup-cleanup.test.js` 使用受控进程桩，不启动服务。WebSocket 异常清理与关闭确认已补齐，`tests/perf-attach-ground-truth.test.js` 覆盖成功、异常、超时及未确认关闭保留登记。profile 的交叉核对失败会保留诊断 JSON 并返回失败退出码，不再报告通过。该轮的渐进分片已被当前 60 条页窗口替代；完整连接前仍禁止发送，分页回包保留在飞期间的新草稿（`tests/snapshot-first-screen.test.js`、`tests/snapshot-switch.test.js`）。最新单次诊断见 `docs/perf-long-conversation/profile-progressive-reveal-1.md`：未再出现原403ms任务，但仍有282ms任务及交叉核对不一致，尚未通过性能验收。清理失败保留隔离目录，不以强制退出掩盖残留。
 
 默认新会话配置保存到 SQLite；迁移坏数据保留并报告，不静默覆盖源文件。会话历史、配置和子任务结果落盘，进程重启后恢复；主代理不自动续跑，未完成子代理自动续跑。启动只读取会话元数据；首次打开才恢复 SDK/历史，同一会话并发打开只恢复一次，仅待通知会话在启动时主动恢复。历史 ID 单向匹配，旧重试时间线一次建索引后查询，压缩记录按 ID 对账，避免逐条扫描全部历史。队列与未完成的流式片段仅在内存中，重启不恢复。已打开会话的历史与结果保留到显式关闭；长期服务需监测内存。发送缓冲过大时断开慢客户端，重新 attach 获取快照；不静默丢正文。单条 WebSocket 输入上限 1 MiB，属于网络输入保护，不是任务数量限制。
 

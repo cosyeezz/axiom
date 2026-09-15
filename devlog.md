@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-15 长会话阶段二：有界页窗口、缓存与功能接线
+
+- 决策：采用无新增依赖的原生 60 条页窗口，不冒充动态高度虚拟列表；页内自然布局、换页卸载。删除 120 条阈值/8ms/40 条全量分片调度。只持当前页消息引用，不维护全历史高度表；位置缓存 3 个，未保存输入例外不淘汰。
+- 接线：app.js 按会话/实例/修订/请求 token 拒绝旧回包；历史页不推进水位，最新 attach 才提交；翻页回包重新保存输入；后台只置更新标记，前台恢复一个快照。阅读锚点按 messageId 按需取页。跨页 toolResult 可独立展示；原文与选区复制仅当前页，明确限制。
+- 文件：public/app.js、transport.js、session-cache.js、stream-renderer.js、index.html、style.css；tests/helpers/history-page.js、public-source.js、snapshot 三测试、session-cache 与 stream-renderer 测试；README、导航技能、索引与知识库。
+- 验证：node --test --test-concurrency=1 --test-timeout=120000 tests/*.test.js：634 项，632 通过、2 跳过、0 失败、0 todo（158.8 秒）；git diff --check。新旧页水位、首屏缓冲、会话/epoch/revision 切换、在飞草稿、后台不绘制均有可运行检查。
+- 限制：未实现连续无限滚动，浏览器全历史查找须翻页；服务端全量历史/身份索引、活动业务和草稿仍非硬字节有界。单条巨块仍可造成长任务，需性能实测而非单测代替。
+
 ## 2026-09-15 长会话阶段一：身份与历史传输分页
 
 - 决策：不改 SDK 上下文/权威历史，不新增数据库历史副本；session.attach 最近 60 条，session.history 游标绑定 session/epoch/revision/消息边界，分页不提供 seq；订阅先于加载，活动流显式传身份，撤回/压缩换修订。

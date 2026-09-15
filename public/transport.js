@@ -28,6 +28,14 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
     clearTimer(entry.timer);
     entry.signal?.removeEventListener("abort", entry.abort);
     error ? entry.reject(error) : entry.resolve(data);
+    if (error && gate && ["session.attach", "session.create", "session.import"].includes(entry.command)) {
+      if (error.code === "response_error") {
+        const queued = gate;
+        clearGate();
+        try { for (const message of queued) deliver(message); }
+        catch { recover("merge_failed"); }
+      } else if (!["disconnected"].includes(error.code)) recover("snapshot_request_failed");
+    }
   };
   const disconnectPending = () => {
     for (const key of pending.keys()) settle(key, failure("disconnected", "连接断开，请求结果未知；请确认状态后再操作", true));
@@ -93,6 +101,8 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
     const raw = JSON.stringify({ ...command, id: key });
     if ((socket.bufferedAmount || 0) + new Blob([raw]).size > maxBytes)
       return Promise.reject(failure("send_limit", "发送缓冲超限，请稍后重试"));
+    // Buffer before sending attach; do not lose events emitted while the snapshot loads.
+    if (["session.attach", "session.create", "session.import"].includes(command.type)) beginSnapshot();
     return new Promise((resolve, reject) => {
       const abort = () => settle(key, failure("aborted", "已取消本地等待，服务端操作可能仍在执行", true));
       const entry = { resolve, reject, signal, abort, command: command.type,

@@ -69,6 +69,8 @@ const MODULE_INFO = {
   "tests/helpers/model-concurrency-child.mjs": "跨进程CAS回归：捕获旧权威后的确定性屏障与退出清理",
   "tests/sqlite-benchmark.mjs": "SQLite 新旧合成数据、写入/启动/锁等待性能验收",
   "src/database.js": "共享 SQLite 连接、小配置 KV、WAL 与一致性备份",
+  "src/session-history.js": "稳定消息身份、绑定会话/实例/修订的历史游标与有界传输页",
+  "public/session-cache.js": "可淘汰会话阅读位置缓存与未保存输入保护",
   "src/session-store.js": "会话三表、实体增量更新、逐会话事务与旧数据迁移",
   "src/pi-model-storage.js": "模型与凭据 SQLite 权威存储、Pi 派生兼容文件",
   "src/sessions.js": "Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复",
