@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { command, compactionDefaults } from "../src/protocol.js";
+import { command, compactionDefaults, resolveCompaction } from "../src/protocol.js";
 import { Sessions } from "../src/sessions.js";
 
 test("compaction config validates OR thresholds and rejects unsafe/unsupported settings", () => {
@@ -15,6 +15,18 @@ test("compaction config validates OR thresholds and rejects unsafe/unsupported s
     { tokenThreshold: 0 }, { tokenThreshold: 1.5 }, { percentThreshold: 101 },
     { percentThreshold: -1 }, { keepRecentTokens: 0 }, { thinking: "invalid" }, { tools: ["bash"] },
   ]) assert.equal(command.safeParse({ ...base, compaction: { ...compactionDefaults, ...patch } }).success, false);
+});
+
+test("compaction adapts valid preferences without mutating defaults or accepting invalid input", () => {
+  for (const [levels, expected] of [[["low", "high"], "low"], [["off"], "off"]]) {
+    const input = { ...compactionDefaults, thinking: "max" };
+    assert.equal(resolveCompaction(input, levels).thinking, expected);
+    assert.equal(input.thinking, "max");
+  }
+  assert.equal(resolveCompaction(undefined, ["low", "high"]).thinking, "low");
+  assert.equal(resolveCompaction({ ...compactionDefaults, thinking: "high" }, ["low", "high"]).thinking, "high");
+  assert.throws(() => resolveCompaction({ ...compactionDefaults, thinking: "invalid" }, ["off"]));
+  assert.throws(() => resolveCompaction(undefined, []), /没有可用/);
 });
 
 test("compaction settings, message IDs and successful records survive restart; failed config is atomic", async () => {
@@ -43,7 +55,8 @@ test("compaction settings, message IDs and successful records survive restart; f
     await sessions.configureDefaults(dir, { compaction: config });
     const id = await sessions.create(dir);
     assert.deepEqual(selections[0].compaction, config);
-    await assert.rejects(sessions.configure(id, { model: "p/main", compaction: { ...config, thinking: "high" } }), /thinking/);
+    assert.equal(sessions.validateCompaction({ ...config, thinking: "high" }, "p/main").thinking, "off");
+    await assert.rejects(sessions.configure(id, { model: "p/main", compaction: { ...config, thinking: "invalid" } }));
     assert.deepEqual(sessions.snapshot(id).config.compaction, config);
     await assert.rejects(sessions.configureDefaults(dir, { compaction: { ...config, model: "missing" } }), /compaction model/);
     const item = sessions.get(id);

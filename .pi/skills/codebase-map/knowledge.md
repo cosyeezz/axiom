@@ -602,3 +602,8 @@
 - 症状：无超时工具迟迟不返回，append 只能排队，主代理无法只中断该任务。
 - 修复：src/tools.js 注册 cancel_task，src/tasks.js 定点 abort 并沿用终态/通知流程；不设置整会话 cancelling，不回滚已发生副作用。
 - 防再犯：任务测试覆盖启动竞态、兄弟隔离、重复取消与未知ID，Sessions 集成验证终态先落库、主轮结束后通知可读。取消回执不得作为 Goal 验收证据；无默认超时和 Goal 强停退化为暂停另行处理。
+
+### 2026-09-15 安装健康不等于会话可用：压缩 off 阻断首次启动
+- 根因：部分推理模型 thinkingLevelMap.off=null，默认压缩 off 被严格模型校验拒绝；页面把 session.create 业务失败当断线循环。
+- 修复：protocol.resolveCompaction 统一保留合法偏好、不兼容取模型最低支持等级，pi/sessions 共用；页面保留连接、草稿与设置/更新入口。
+- 防再犯：model-onboarding.test.js 用真实 SDK 和隔离目录验证 reasoning-only 默认新建，不能只验证 /health；model-onboarding-ui.test.js 验证配置失败仍能进入和修复重试，真实网络断线仍重连。

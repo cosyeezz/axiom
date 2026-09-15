@@ -55,6 +55,17 @@ export const compaction = z.object({
   keepRecentTokens: z.number().int().positive().max(100000000),
 }).strict().refine((value) => !value.enabled || value.tokenThreshold !== null || value.percentThreshold !== null,
   "启用自动压缩时至少设置一个触发阈值");
+// 压缩等级是偏好，不应阻断首次建会话/恢复/换模型；不兼容时使用模型最低支持等级。
+// 仍严格校验输入，且不修改保存的默认值；返回本次实际配置。
+export function resolveCompaction(value, levels) {
+  const config = compaction.parse(value ?? compactionDefaults);
+  if (config.enabled && levels && !levels.includes(config.thinking)) {
+    if (!levels.length) throw new Error("压缩模型没有可用的思考等级，请检查模型配置");
+    config.thinking = levels[0];
+  }
+  return config;
+}
+
 // 重试错误词表：字符串子串匹配（大小写不敏感）。nonRetryable 优先于 retryable，二者都优先于内建判定。
 export const retryPatterns = z
   .object({

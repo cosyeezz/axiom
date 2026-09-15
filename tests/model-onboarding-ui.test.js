@@ -31,7 +31,7 @@ const harness = async () => {
   window.createStreamRenderer = (render, after) => createStreamRenderer(render, after, window.requestAnimationFrame, window.cancelAnimationFrame);
   const sockets = [], requests = [];
   let catalog = [];
-  let created = 0;
+  let created = 0, createError = "";
   const sessions = [];
   const newState = () => ({
     sessionId: `new${++created}`, title: `新会话${created}`, cwd: "C:\\work", status: "idle",
@@ -48,6 +48,8 @@ const harness = async () => {
       const req = JSON.parse(raw);
       requests.push(req);
       queueMicrotask(() => {
+        if (req.type === "session.create" && createError)
+          return this.receive({ type: "response", id: req.id, ok: false, error: createError });
         let data;
         switch (req.type) {
           case "service.status": data = { managed: true, error: "", version: "9.9.9", importDir: "", dev: false }; break;
@@ -73,10 +75,38 @@ const harness = async () => {
     window, $, sockets, requests, settle,
     open: async () => { await settle(); sockets.at(-1).open(); await settle(); },
     setCatalog: (items) => { catalog = items; },
+    setCreateError: (message) => { createError = message; },
     createdCount: () => requests.filter((req) => req.type === "session.create").length,
     push: () => sockets.at(-1).receive({ type: "models.config.changed" }),
   };
 };
+
+test("首次建会话配置失败仍能进入设置和更新，不关闭连接或丢草稿", async () => {
+  const t = await harness();
+  const { window, $, sockets, open, settle } = t;
+  try {
+    t.setCatalog([{ key: "test/model", provider: "test", levels: ["off"] }]);
+    t.setCreateError("Unsupported compaction thinking level");
+    $("prompt").value = "保留草稿";
+    await open();
+    assert.equal(sockets[0].readyState, 1);
+    assert.equal($("login").hidden, true);
+    assert.equal($("workspace").hidden, false);
+    assert.equal($("settings").open, true);
+    assert.equal($("open-settings").disabled, false);
+    assert.equal($("send").disabled, true);
+    assert.match($("error").textContent, /服务仍已连接/);
+    assert.equal($("prompt").value, "保留草稿");
+    $("settings-service-tab").click();
+    assert.equal($("service-panel").hidden, false);
+    t.setCreateError("");
+    $("settings").close();
+    $("new").click();
+    await settle();
+    assert.equal($("session-title").textContent, "新会话1");
+    assert.equal(sockets.length, 1);
+  } finally { window.close(); }
+});
 
 test("空模型目录：保持已连接并引导首次配置，不创建会话不断线重连", async () => {
   const t = await harness();
