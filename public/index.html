@@ -16,6 +16,7 @@
     <link rel="stylesheet" href="/model-manager.css" />
     <script type="module" src="/app.js"></script>
     <link rel="stylesheet" href="/question.css" />
+    <link rel="stylesheet" href="/goal.css" />
 </head>
   <body>
     <div class="shell">
@@ -23,10 +24,6 @@
         <div class="brand">A<span>XIOM</span></div>
         <button id="open-workspace" class="secondary workspace-open"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l3 3h9v4M3 7v13h16l3-9H7l-4 9"/></svg>打开工作空间</button>
         <button id="new" class="secondary" title="在当前工作空间新建会话，使用默认新会话配置">＋ 新会话</button>
-        <section class="preset-group" aria-label="预设会话">
-          <button id="custom-new" class="secondary" aria-haspopup="dialog" aria-controls="create-session">预设会话配置</button>
-          <div id="preset-list"></div>
-        </section>
         <button id="import-session" class="secondary" title="导入 pi 的 .jsonl 会话文件">导入 pi 会话…</button>
         <label class="sr-only" for="search">搜索当前工作空间会话</label
         ><input id="search" type="search" placeholder="搜索当前工作空间会话…" />
@@ -68,11 +65,13 @@
           <button id="connect" class="secondary">重新连接</button>
         </form>
         <section id="workspace" hidden>
+          <div id="goal-track" class="goal-track" aria-label="目标进度" hidden></div>
           <button id="earliest" class="secondary" type="button" aria-controls="transcript" hidden>回到最早消息 ↑</button>
           <div id="transcript" role="region" aria-label="对话记录" tabindex="0">
             <div id="output"></div>
           </div>
           <div class="composer-wrap">
+            <div id="goal-dock" class="goal-dock" aria-label="目标模式控制" hidden></div>
             <section id="question-dock" class="question-dock" aria-label="待回答的问题" hidden></section>
             <button id="latest" class="secondary" type="button" aria-controls="transcript" hidden>回到最新消息 ↓</button>
             <div id="message-queue" aria-label="待发送队列" aria-live="polite" hidden></div>
@@ -80,8 +79,11 @@
             <div id="compaction-progress" role="status" aria-live="polite" aria-atomic="true" aria-label="后台上下文压缩进度" hidden></div>
             <div id="safe-stop-progress" role="status" aria-live="polite" aria-atomic="true" aria-label="安全停止进度" hidden><svg class="safe-stop-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5h5v5h-5z"/></svg><span class="safe-stop-text">安全停止中，等待安全点<span class="safe-stop-dots" aria-hidden="true"><i></i><i></i><i></i></span></span></div>
             <div class="context-bar">
-              <button type="button" id="add-context" class="icon-button" popovertarget="context-menu" title="添加上下文" aria-label="添加 Skill、文件或文件夹"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
-              <button type="button" id="add-image" class="icon-button" title="上传图片，也可在输入框粘贴截图" aria-label="上传图片"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h18v18H3ZM3 17l6-6 4 4 3-3 5 5M15 7h2"/></svg></button>
+              <div class="icon-group" role="group" aria-label="输入区图标">
+                <button type="button" id="add-context" class="icon-button" popovertarget="context-menu" title="添加上下文" aria-label="添加 Skill、文件或文件夹"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+                <button type="button" id="add-image" class="icon-button" title="上传图片，也可在输入框粘贴截图" aria-label="上传图片"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h18v18H3ZM3 17l6-6 4 4 3-3 5 5M15 7h2"/></svg></button>
+                <button type="button" id="goal-enter" class="icon-button" title="进入目标模式：先澄清目标与验收标准，确认计划后多轮执行" aria-label="进入目标模式"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18ZM12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8ZM12 11.1a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z"/></svg></button>
+              </div>
               <input id="image-files" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
               <div id="context-chips" aria-label="待发送上下文"></div>
               <span id="task-timer" role="timer" aria-label="当前任务累计运行时间" hidden><span class="task-timer-dot" aria-hidden="true"></span><span id="task-timer-value">0s</span></span>
@@ -171,7 +173,7 @@
       <form id="force-stop-form" class="settings-body">
         <h2 id="force-stop-title">强制停止任务</h2>
         <p id="force-stop-description">立即中断当前会话：正在生成的回答会被截断，正在执行的命令与子任务会被杀掉，本轮未完成的产出丢失。</p>
-        <p id="force-stop-warning">不急的话选「安全停止」：等当前这一步跑完再停，已完成的内容全部保留。</p>
+        <p id="force-stop-warning">不急的话选「安全停止」：等当前这一步跑完再停，已完成的内容全部保留。目标模式下两种停止都会先保留目标进度（由 Goal 安全暂停落定）。</p>
         <div class="dialog-actions"><button type="button" id="force-stop-cancel" class="secondary" autofocus>取消</button><button id="force-stop-submit" class="danger">确认强停</button></div>
       </form>
     </dialog>
@@ -201,6 +203,32 @@
         </div>
       </dialog>
     </template>
+    <dialog id="goal-plan" aria-labelledby="goal-plan-title">
+      <div class="goal-plan-head">
+        <div>
+          <p class="goal-plan-eyebrow">目标计划 · 待确认</p>
+          <h2 id="goal-plan-title"></h2>
+        </div>
+        <form method="dialog"><button class="secondary" aria-label="关闭目标计划">✕</button></form>
+      </div>
+      <p id="goal-plan-meta" class="goal-plan-meta"></p>
+      <div class="goal-plan-body">
+        <section class="goal-plan-section" aria-labelledby="goal-plan-constraints-title">
+          <h3 id="goal-plan-constraints-title">约束</h3>
+          <ul id="goal-plan-constraints"></ul>
+        </section>
+        <section class="goal-plan-section" aria-labelledby="goal-plan-acceptance-title">
+          <h3 id="goal-plan-acceptance-title">验收标准</h3>
+          <ul id="goal-plan-acceptance"></ul>
+        </section>
+        <section class="goal-plan-section" id="goal-plan-rounds-section" aria-labelledby="goal-plan-rounds-title">
+          <h3 id="goal-plan-rounds-title">执行计划</h3>
+          <ul id="goal-plan-rounds"></ul>
+        </section>
+      </div>
+      <p class="goal-plan-note">有修改意见？直接在下方输入框描述并发送，模型会重新规划后再请你确认。</p>
+      <div class="dialog-actions"><button type="button" class="secondary" id="goal-plan-close">先不确认</button><button type="button" id="goal-plan-confirm">确认并开始执行</button></div>
+    </dialog>
     <dialog id="settings" aria-labelledby="settings-title">
       <header>
         <h2 id="settings-title">设置</h2>
@@ -253,8 +281,24 @@
         <p id="settings-feedback" role="status" aria-live="polite"></p>
         <section aria-labelledby="defaults-title">
           <h3 id="defaults-title">默认新会话设置</h3>
-          <p>选择后自动保存到本机，用于之后的普通新会话；自动压缩配置也会在服务重启后应用到已有会话，其他配置不变。</p>
-          <div id="defaults-editor"></div>
+          <p>每个工作目录可以保存一套独立配置，未单独配置的目录使用「全局默认」。选择后自动保存到本机，用于之后的新会话；自动压缩按配置范围应用，已在运行的会话保持自己的设置。</p>
+          <div class="selectors settings-selectors">
+            <label for="defaults-workspace"><span>配置范围</span><select id="defaults-workspace" aria-describedby="defaults-workspace-help"></select></label>
+            <button type="button" id="defaults-directory" class="secondary">选择目录…</button>
+            <button type="button" id="defaults-delete" class="secondary" hidden>删除此目录配置</button>
+          </div>
+          <p id="defaults-workspace-help">下拉只切换要编辑的配置，不切换当前会话。选择目录会从全局默认复制一份独立配置；删除后该目录回落全局默认。已有会话不会被改写。</p>
+          <div id="defaults-editor">
+            <form id="create-form" class="settings-body">
+              <p id="create-defaults-help">自动保存成功后，符合此配置范围的新会话使用这些设置。默认主代理模型沿用最近成功调整的主模型；能力清单按对应工作目录读取；自定义技能按来源保存：全局技能跨项目共用，项目技能仅用于当前工作目录。修改默认配置只影响新会话，不会自动改为全部能力，也不覆写已有会话。</p>
+              <p>复用本机 Pi 已启用的能力；Skills 按需读取，MCP 按配置连接。未选能力不会自动加载，但这不是权限沙箱。</p>
+              <div id="create-agents"></div>
+              <div id="create-compaction"></div>
+              <div id="create-retry"></div>
+              <p>网页支持插件的工具与指令逻辑，不提供终端专用组件；需要交互审批的操作不会自动放行。</p>
+              <p id="create-feedback" role="status" aria-live="polite"></p>
+            </form>
+          </div>
         </section>
       </div>
       <div class="settings-body" id="remote-panel" hidden>
@@ -303,31 +347,6 @@
         </section>
       </div>
       </div>
-    </dialog>
-    <dialog id="create-session" aria-labelledby="create-title">
-      <header>
-        <h2 id="create-title">预设会话配置</h2>
-        <form method="dialog"><button class="secondary" aria-label="关闭会话配置" autofocus>✕</button></form>
-      </header>
-      <form id="create-form" class="settings-body">
-        <div id="preset-fields" hidden>
-          <label>预设名称<input id="preset-name" maxlength="80" placeholder="例如：Axiom 开发"></label>
-          <label><input id="preset-fixed-cwd" type="checkbox">固定使用此工作目录（不勾选则使用当前目录）</label>
-          <button id="preset-directory" type="button" class="secondary">选择工作目录</button>
-          <button id="preset-delete" type="button" class="secondary" hidden>删除此预设</button>
-          <p class="settings-scope">预设只保存配置，不保存目录信任，也不会自动执行启动命令。</p>
-        </div>
-        <p id="create-workspace" class="settings-scope"></p>
-        <p id="create-defaults-help" hidden>自动保存成功后「新会话」使用此配置；默认主代理模型沿用最近成功调整的主模型。能力清单按当前目录读取，选择工作空间即信任其中的 Skills、插件和 MCP；自定义技能按来源保存：全局技能跨项目共用，项目技能仅用于当前工作空间；预设仍使用明确选择的路径。修改默认配置仅影响新会话，不会自动改为全部能力。</p>
-        <p>复用本机 Pi 已启用的能力；Skills 按需读取，MCP 按配置连接。未选能力不会自动加载，但这不是权限沙箱。</p>
-        <div id="create-agents"></div>
-        <div id="create-compaction"></div>
-        <div id="create-retry"></div>
-        <label id="create-trust-row" class="trust-row" hidden><input id="create-trust" type="checkbox">我信任此目录的 Pi / MCP 配置，允许其插件和服务在本机执行（仅本会话）</label>
-        <p>网页支持插件的工具与指令逻辑，不提供终端专用组件；需要交互审批的操作不会自动放行。</p>
-        <p id="create-feedback" role="status" aria-live="polite"></p>
-        <button id="create-submit" disabled>创建会话</button>
-      </form>
     </dialog>
   </body>
 </html>

@@ -22,6 +22,8 @@ const MODULE_INFO = {
   "tests/pi-question.test.js": "真实Pi SDK提问等待、工具答案续轮与取消回归",
   "tests/question-preview.mjs": "无模型提问UI验收服务：真实工具等待、网页回执与结果展示",
   "tests/question-ui.test.js": "提问面板多题键盘、自由输入与提交竞态回归",
+  "public/goal.js": "Goal 专属状态、操作与复用消息轮次分组",
+  "public/goal.css": "Goal 目标面板、轮次与控制样式",
   "public/question.js": "主代理提问选项卡、键盘交互与回答提交",
   "public/question.css": "提问面板样式、焦点与窄屏布局",
   "src/session-memory.js": "标题提取登记、轮次预算挂钩与委派背景",
@@ -69,6 +71,7 @@ const MODULE_INFO = {
   "src/protocol.js": "zod 协议：selection / command 判别联合（消息类型见 L3）",
   "src/update.js": "检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装",
   "src/capabilities.js": "模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities）",
+  "src/goal.js": "Goal：会话级目标状态、轮次计划、验收门与持久化",
   "src/tasks.js": "Tasks：子任务（委托）生命周期",
   "src/tools.js": "delegationTools：委托/凭证读取/追加工具定义（zod 入参）",
   "tests/compaction-ui.test.js": "压缩进度与任务归属：实时/快照/多轮摘要的 UI 回归",
@@ -104,7 +107,6 @@ const MODULE_INFO = {
   "tests/workspace-picker.test.js": "Windows 原生目录选择置顶 owner、取消/超时/失败释放锁回归",
   "tests/project-skills.test.js": "项目技能来源、工作空间默认隔离、旧配置迁移与目录链接加载回归",
   "tests/session-flow.test.js": "会话落盘/恢复/删除、历史索引与队列/模型切换回归",
-  "tests/presets.test.js": "具名预设协议、原子持久化与安全边界回归",
   "tests/": "node --test 测试（npm test）",
 };
 

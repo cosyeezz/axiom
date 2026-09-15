@@ -31,6 +31,8 @@ const assets = new Map(
     ["/style.css", "public/style.css", "text/css"],
     ["/theme.js", "public/theme.js"],
     ["/app.js", "public/app.js"],
+    ["/goal.js", "public/goal.js"],
+    ["/goal.css", "public/goal.css", "text/css"],
     ["/question.js", "public/question.js"],
     ["/question.css", "public/question.css", "text/css"],
     ["/service-settings.js", "public/service-settings.js"],
@@ -366,14 +368,11 @@ export function createServerApp(sessions, service = {}) {
             case "session.defaults.configure":
               data = await sessions.configureDefaults(request.cwd, request);
               break;
-            case "session.presets.list":
-              data = await sessions.listPresets();
+            case "session.defaults.list":
+              data = sessions.listDefaults();
               break;
-            case "session.presets.save":
-              data = await sessions.savePreset(request);
-              break;
-            case "session.presets.delete":
-              data = await sessions.deletePreset(request.presetId);
+            case "session.defaults.delete":
+              data = await sessions.deleteDefaults(request.cwd);
               break;
             case "session.create": {
               const id = await sessions.create(request.cwd, request);
@@ -404,6 +403,9 @@ export function createServerApp(sessions, service = {}) {
               for (const client of wss.clients)
                 if (client !== ws && client.readyState === WebSocket.OPEN)
                   client.send(JSON.stringify({ type: "session.deleted", sessionId: request.sessionId }));
+              break;
+            case "goal.action":
+              data = await sessions.goalAction(request.sessionId, request.action, request.text);
               break;
             case "prompt":
               data = {

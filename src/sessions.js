@@ -1,13 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { realpath, stat, readFile, mkdir, writeFile, rm, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { Database } from "./database.js";
 import { SessionStore } from "./session-store.js";
+import { Goal, createGoalStore } from "./goal.js";
 import { basename, dirname, join, relative, isAbsolute, resolve, sep, parse } from "node:path";
 
-import { selection as selectionSchema, presetStore, taskBudget as taskBudgetSchema, compaction as compactionSchema, compactionDefaults, assertPromptImages } from "./protocol.js";
+import { selection as selectionSchema, taskBudget as taskBudgetSchema, compaction as compactionSchema, compactionDefaults, assertPromptImages } from "./protocol.js";
 import { taskBudgetDefaults } from "./task-budget.js";
 import { Tasks } from "./tasks.js";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
@@ -15,6 +16,11 @@ import { delegationTools } from "./tools.js";
 import { createQuestions } from "./questions.js";
 import { resolveCapabilities } from "./capabilities.js";
 import { memoryHooks } from "./session-memory.js";
+
+// Goal 模式挂载的四个工具：普通会话初始即停用，退出 Goal 时统一停用。
+const GOAL_TOOL_NAMES = ["goal_plan", "goal_evidence", "goal_block", "goal_progress"];
+// 在飞子任务：状态在跑且真有运行 promise（恢复时被暂停的 starting 没有 done，不算在飞）。
+const hasRunningTasks = (item) => [...item.tasks.jobs.values()].some((job) => ["starting", "running"].includes(job.status) && job.done);
 
 // 统一目录浏览：目录优先排序后按服务端过滤结果分页；无搜索词时不递归、不逐项 stat、跳过符号链接。
 const BROWSE_PAGE = 200;
@@ -178,6 +184,24 @@ function landedSessionFile(item) {
   return file && existsSync(file) ? file : null;
 }
 
+// 会话默认配置的库内布局：namespace "defaults" 下 "global" 是全局兜底，
+// 其余键 "workspace/<归一化cwd>" 是工作目录独立配置（含该目录的 projectSkills）。
+const DEFAULTS_NS = "defaults";
+const WORKSPACE_PREFIX = "workspace/";
+const workspaceKeyOf = (cwd) => (process.platform === "win32" ? cwd.toLowerCase() : cwd);
+
+// projectSkills 结构自检：外层 {cwd: {角色: [字符串 id]}}，单目录项与整体都过一遍，坏数据不进入内存。
+function validateProjectSkills(projectSkills) {
+  if (!projectSkills || typeof projectSkills !== "object" || Array.isArray(projectSkills)) throw new Error("无效的项目技能配置");
+  for (const entry of Object.values(projectSkills)) validateProjectSkillEntry(entry);
+}
+function validateProjectSkillEntry(entry) {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("无效的项目技能配置");
+  for (const [role, ids] of Object.entries(entry)) {
+    if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) throw new Error("无效的项目技能选择");
+  }
+}
+
 export class Sessions {
   constructor(createAgent, defaultsPath, storagePath, database) {
     this.storagePath = storagePath;
@@ -189,65 +213,92 @@ export class Sessions {
     this.ownsDatabase = !database && !!sidecar;
     this.database = database || (sidecar ? new Database(sidecar) : null);
     this.store = this.database ? new SessionStore(this.database) : null;
+    this.goalStore = createGoalStore(this.database);
     this.taskBudget = structuredClone(taskBudgetDefaults);
     this.loadTaskBudget();
     this.savingDefaults = Promise.resolve();
     this.projectSkills = {};
-    this.savingPresets = Promise.resolve();
+    // 工作目录独立默认配置：归一化 cwd → { cwd, selection }；读取时优先目录，无目录回落全局。
+    this.workspaceSelections = new Map();
     this.createAgent = createAgent;
     this.items = new Map();
-    this.recentConfig = {};
+    // 每个工作目录记住自己最近用过的模型/思考等级（内存级），不跨目录污染。
+    this.recentConfig = new Map();
     this.defaultSelection = { compaction: { ...compactionDefaults }, retry: null, queueType: "steer", model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: { skills: [], mcp: [], plugins: [] }, subagentCapabilities: { skills: [], mcp: [], plugins: [] } };
   }
 
-  // 默认配置验证与装配：schema + projectSkills 结构；验证通过是写库与迁移标记的前提。
+  // 默认配置验证与装配：schema 校验后并入全局内存值；验证通过是写库与迁移标记的前提。
   applyDefaults(data) {
-    const { projectSkills = {}, ...saved } = data ?? {};
-    const parsed = selectionSchema.strict().parse(saved);
-    if (!projectSkills || typeof projectSkills !== "object" || Array.isArray(projectSkills)) throw new Error("无效的项目技能配置");
-    for (const entry of Object.values(projectSkills)) {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("无效的项目技能配置");
-      for (const [role, ids] of Object.entries(entry)) {
-        if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) throw new Error("无效的项目技能选择");
-      }
-    }
-    this.projectSkills = projectSkills;
+    const parsed = selectionSchema.strict().parse(data ?? {});
+    this.projectSkills = {};
     Object.assign(this.defaultSelection, parsed);
   }
 
-  // 默认新会话配置以 SQLite 为权威：优先读库；首次启动从旧 defaults.json 一次性迁移。
+  // 默认配置以 SQLite 为权威：全局兜底 + 各工作目录独立配置；首次启动从旧 defaults.json 一次性迁移。
   async loadDefaults() {
     if (!this.database) return;
-    const stored = this.database.get("defaults", "defaults");
+    const stored = this.database.get(DEFAULTS_NS, "global");
     if (stored !== undefined) this.applyDefaults(stored);
     else await this.migrateDefaults();
-    this.migratePresets();
+    this.loadWorkspaceDefaults();
+    // 具名预设已下线：清掉库里的旧记录（磁盘 presets.json 不动，留给用户自行处理）。
+    this.database.delete("presets", "store");
   }
 
-  // 旧 defaults.json 一次性迁入库：验证通过才写库并标记；此后 JSON 只是遗留文件，
+  // 旧 defaults.json（或旧版库内单条记录）一次性迁移：验证通过才写库并标记；此后 JSON 只是遗留文件，
   // 不再作为权威——坏 JSON 只警告不标记（保留重试机会），也绝不阻断启动。
   async migrateDefaults() {
+    const legacy = this.database.get(DEFAULTS_NS, "defaults");
+    if (legacy !== undefined) return this.migrateLegacyStore(legacy);
     if (!this.defaultsPath || this.database.get("migrated", this.defaultsPath)) return;
     try {
       const data = JSON.parse(await readFile(this.defaultsPath, "utf8"));
-      this.applyDefaults(data);
-      this.database.set("defaults", "defaults", data);
+      this.migrateLegacyStore(data);
       this.database.set("migrated", this.defaultsPath, true);
     } catch (error) {
       if (error.code !== "ENOENT") console.warn(`旧默认配置迁移失败，保留原文件 ${this.defaultsPath}：请检查数据格式及数据库读写权限`);
     }
   }
 
-  // 旧 presets.json 同样一次性迁入库；与 defaults 一样「验证成功才标记」，源文件保留。
-  migratePresets() {
-    const path = this.defaultsPath ? join(dirname(this.defaultsPath), "presets.json") : null;
-    if (!path || this.database.get("migrated", path)) return;
+  // 旧版一条 defaults 记录 = 一份全局配置 + projectSkills 表。拆成「全局兜底 + 各工作目录独立配置」：
+  // 目录配置 = 旧全局配置合并该目录自己的项目技能，能力不多不少。
+  migrateLegacyStore(data) {
+    const { projectSkills = {}, ...saved } = data ?? {};
+    // 旧记录只存了用户改过的键：与内置默认合并后才是完整配置（目录配置不再依赖全局兜底）。
+    const selection = { ...structuredClone(this.defaultSelection), ...selectionSchema.strict().parse(saved) };
+    validateProjectSkills(projectSkills);
+    // 全局与目录记录必须同一事务落地：中途失败若留下 global，下次启动就会跳过迁移，
+    // 目录配置将永久丢失。
+    this.database.exec("SAVEPOINT defaults_migration");
     try {
-      const store = presetStore.parse(JSON.parse(readFileSync(path, "utf8")));
-      if (this.database.get("presets", "store") === undefined) this.database.set("presets", "store", store);
-      this.database.set("migrated", path, true);
+      this.database.set(DEFAULTS_NS, "global", selection);
+      for (const [cwd, entry] of Object.entries(projectSkills)) {
+        const key = WORKSPACE_PREFIX + workspaceKeyOf(cwd);
+        if (this.database.get(DEFAULTS_NS, key) !== undefined) continue;
+        this.database.set(DEFAULTS_NS, key, { cwd, selection, projectSkills: entry });
+      }
+      this.database.exec("RELEASE defaults_migration");
     } catch (error) {
-      if (error.code !== "ENOENT") console.warn(`旧会话预设迁移失败，保留原文件 ${path}：请检查数据格式及数据库读写权限`);
+      this.database.exec("ROLLBACK TO defaults_migration; RELEASE defaults_migration");
+      throw error;
+    }
+    this.applyDefaults(selection);
+  }
+
+  // 目录配置逐条加载：单条坏记录只警告跳过，与全局配置一样不阻断启动。
+  loadWorkspaceDefaults() {
+    if (!this.database) return;
+    for (const { key, value } of this.database.list(DEFAULTS_NS)) {
+      if (!key.startsWith(WORKSPACE_PREFIX) || !value) continue;
+      const scope = key.slice(WORKSPACE_PREFIX.length);
+      try {
+        const selection = selectionSchema.strict().parse(value.selection);
+        validateProjectSkillEntry(value.projectSkills ?? {});
+        this.workspaceSelections.set(scope, { cwd: value.cwd ?? scope, selection });
+        this.projectSkills[scope] = value.projectSkills ?? {};
+      } catch (error) {
+        console.warn(`工作目录默认配置读取失败，已跳过 ${value.cwd || scope}：${error.message}`);
+      }
     }
   }
 
@@ -279,10 +330,37 @@ export class Sessions {
   getDefaults() {
     return structuredClone(this.defaultSelection);
   }
+  // 目录配置存在则用目录的，否则回落全局兜底（同步；压缩恢复与直推沿用同一归属判断）。
+  defaultsFor(cwd) {
+    return (cwd && this.workspaceSelections.get(workspaceKeyOf(cwd))?.selection) || this.defaultSelection;
+  }
+  // 已配置的工作目录路径列表（配置下拉用）；内存即库内快照。
+  listDefaults() {
+    return { workspaces: [...this.workspaceSelections.values()].map((record) => record.cwd).sort() };
+  }
+  // 删除目录配置：与保存共用同一串行链（避免并发的保存写在删除之后把配置复活）；
+  // 先成功删库再改内存，该目录立即回落全局兜底；目录已不在磁盘上也能清理。
+  // 返回简单回执：不再回头读该目录的能力目录，避免「删除已成功、却因目录读取失败报错」。
+  deleteDefaults(workspace) {
+    const work = this.savingDefaults.then(() => this.removeDefaults(workspace));
+    this.savingDefaults = work.catch(() => {});
+    return work;
+  }
+  async removeDefaults(workspace) {
+    if (!workspace) throw new Error("缺少工作目录");
+    const cwd = await realpath(workspace).catch(() => null);
+    const scope = workspaceKeyOf(cwd || resolve(workspace));
+    this.database?.delete(DEFAULTS_NS, WORKSPACE_PREFIX + scope);
+    this.workspaceSelections.delete(scope);
+    delete this.projectSkills[scope];
+    // 目录配置已删 → 该目录已加载会话立即回落全局压缩配置，别的目录的会话不动。
+    await this.pushCompaction((itemScope) => itemScope === scope, this.defaultSelection.compaction ?? compactionDefaults);
+    return { deleted: true, cwd };
+  }
   async workspaceDefaults(workspace = this.createAgent.cwd || process.cwd()) {
     const cwd = await realpath(workspace);
-    const key = process.platform === "win32" ? cwd.toLowerCase() : cwd;
-    const next = this.getDefaults();
+    const key = workspaceKeyOf(cwd);
+    const next = structuredClone(this.defaultsFor(cwd));
     if (!this.createAgent.capabilities) return next;
     const catalog = await this.createAgent.capabilities(cwd);
     for (const role of ["capabilities", "subagentCapabilities"]) {
@@ -302,55 +380,55 @@ export class Sessions {
     this.savingDefaults = save.catch(() => {});
     return save;
   }
+  // 带 cwd 写该目录的独立配置，不带 cwd 写全局兜底；目录配置读取时优先，删除后回落全局。
   async saveDefaults(workspace, selection) {
+    const scoped = !!workspace;
     const cwd = await realpath(workspace || this.createAgent.cwd || process.cwd());
-    const workspaceKey = process.platform === "win32" ? cwd.toLowerCase() : cwd;
-    const next = await this.workspaceDefaults(cwd);
+    const scope = workspaceKeyOf(cwd);
+    const next = scoped ? await this.workspaceDefaults(cwd) : structuredClone(this.defaultSelection);
     for (const key of Object.keys(next))
       if (selection[key] !== undefined) next[key] = structuredClone(selection[key]);
     const { catalog } = await this.validateSelection(cwd, next);
     const result = structuredClone(next);
-    const projectSkills = structuredClone(this.projectSkills);
-    // 首次写入新版配置前，保留旧版默认值中其他工作空间的项目技能。
-    for (const role of ["capabilities", "subagentCapabilities"]) {
-      for (const id of this.defaultSelection[role]?.skills || []) {
-        const match = /^(.*)[/\\](?:\.pi|\.agents)[/\\]skills[/\\]/.exec(id);
-        if (!match || catalog?.skills.some((s) => s.id === id && s.scope === "global")) continue;
-        const path = await realpath(match[1]).catch(() => resolve(match[1]));
-        const key = process.platform === "win32" ? path.toLowerCase() : path;
-        if (Object.hasOwn(this.projectSkills[key] || {}, role)) continue;
-        projectSkills[key] ||= {};
-        projectSkills[key][role] ||= [];
-        const skillPath = await realpath(id).catch(() => id);
-        if (!projectSkills[key][role].includes(skillPath)) projectSkills[key][role].push(skillPath);
+    if (scoped) {
+      // 项目技能属于目录：落库前从 selection 里摘出，改目录时不会把别的项目的路径带过去。
+      let projectSkills = this.projectSkills[scope] ?? {};
+      if (catalog) {
+        const entry = {};
+        for (const role of ["capabilities", "subagentCapabilities"]) {
+          const selected = next[role];
+          if (!selected || selected === "inherit") continue;
+          const projectIds = catalog.skills.filter((s) => s.scope === "project").map((s) => s.id);
+          entry[role] = selected.skills.filter((id) => projectIds.includes(id));
+          selected.skills = selected.skills.filter((id) => !projectIds.includes(id));
+        }
+        projectSkills = entry;
       }
+      // 先成功落库再改内存：写失败不能让它实际生效。
+      this.database?.set(DEFAULTS_NS, WORKSPACE_PREFIX + scope, { cwd, selection: next, projectSkills });
+      this.projectSkills[scope] = projectSkills;
+      this.workspaceSelections.set(scope, { cwd, selection: next });
+    } else {
+      this.database?.set(DEFAULTS_NS, "global", next);
+      this.defaultSelection = next;
     }
-    if (catalog) {
-      const entry = {};
-      for (const role of ["capabilities", "subagentCapabilities"]) {
-        const selected = next[role];
-        if (!selected || selected === "inherit") continue;
-        const projectIds = catalog.skills.filter((s) => s.scope === "project").map((s) => s.id);
-        entry[role] = selected.skills.filter((id) => projectIds.includes(id));
-        selected.skills = selected.skills.filter((id) => !projectIds.includes(id));
-      }
-      projectSkills[workspaceKey] = entry;
-    }
-    if (this.database) this.database.set("defaults", "defaults", { ...next, projectSkills });
-    this.defaultSelection = next;
-    this.projectSkills = projectSkills;
-    // 压缩配置是全局的（ensureLoaded 恢复会话时总以默认值覆盖），改完直推已加载会话，
-    // 不再等重启。模型不支持新思考等级的会话保留原配置，单会话失败不影响保存。
+    // 压缩配置按目录隔离：目录保存只推该目录的已加载会话，全局保存只推没目录配置的会话；
+    // 改完直推，不再等重启。
     if (selection.compaction)
-      for (const item of this.items.values()) {
-        if (!item.loaded || item.configuring) continue;
-        const model = item.agent?.config?.()?.model;
-        if (!model) continue;
-        try {
-          await item.agent.configure({ model, compaction: next.compaction });
-        } catch {}
-      }
+      await this.pushCompaction((itemScope) => scoped ? itemScope === scope : !this.workspaceSelections.has(itemScope), next.compaction);
     return result;
+  }
+  // 压缩配置直推：只改选中会话的压缩部分，模型不支持新思考等级的会话保留原配置，单会话失败不影响调用方。
+  async pushCompaction(match, compaction) {
+    for (const item of this.items.values()) {
+      if (!item.loaded || item.configuring) continue;
+      if (!match(item.cwd ? workspaceKeyOf(item.cwd) : null)) continue;
+      const model = item.agent?.config?.()?.model;
+      if (!model) continue;
+      try {
+        await item.agent.configure({ model, compaction });
+      } catch {}
+    }
   }
   async validateSelection(workspace = this.createAgent.cwd || process.cwd(), selection, inherited = []) {
     const cwd = await realpath(workspace);
@@ -398,56 +476,6 @@ export class Sessions {
     return config;
   }
 
-  // —— 具名会话预设：沿用 selection schema，整包存 SQLite（namespace "presets"）。
-  // 保存只做 schema 校验（selection.parse 剥离 trustProject/useDefaults）；目录或能力失效
-  // 留给会话创建时报错，不阻止保存与列表读取。
-  async listPresets() {
-    if (!this.database) return { presets: [] };
-    try {
-      const stored = this.database.get("presets", "store");
-      return stored === undefined ? { presets: [] } : presetStore.parse(stored);
-    } catch (error) {
-      throw new Error(`会话预设读取失败：${error.message}`);
-    }
-  }
-  // 串行读-改-写：并发保存走同一 promise 链避免相互覆盖；单条 UPSERT 由 SQLite 保证原子。
-  mutatePresets(mutate) {
-    if (!this.database) return Promise.reject(new Error("未启用会话预设持久化"));
-    const work = this.savingPresets.catch(() => {}).then(async () => {
-      const presets = (await this.listPresets()).presets;
-      const resultId = mutate(presets);
-      // 写前整包自检：不合规数据（含手工编辑的坏 name/selection）在落盘前拦截。
-      const store = presetStore.parse({ presets });
-      this.database.set("presets", "store", store);
-      return resultId ? store.presets.find((preset) => preset.id === resultId) : null;
-    });
-    this.savingPresets = work.catch(() => {});
-    return work;
-  }
-  savePreset({ presetId, name, cwd, selection }) {
-    return this.mutatePresets((presets) => {
-      const entry = {
-        id: presetId || randomUUID(),
-        name: name.trim(),
-        selection: selectionSchema.parse(selection ?? {}),
-        ...(cwd ? { cwd } : {}),
-      };
-      const index = presets.findIndex((preset) => preset.id === entry.id);
-      if (presetId && index < 0) throw new Error("Unknown preset");
-      if (index >= 0) presets[index] = entry;
-      else presets.push(entry);
-      return entry.id;
-    });
-  }
-  deletePreset(presetId) {
-    return this.mutatePresets((presets) => {
-      const index = presets.findIndex((preset) => preset.id === presetId);
-      if (index < 0) throw new Error("Unknown preset");
-      presets.splice(index, 1);
-      return null;
-    }).then(() => ({ deleted: presetId }));
-  }
-
   async load() {
     if (!this.store) return;
     this.store.migrateLegacy();
@@ -478,7 +506,7 @@ export class Sessions {
       if (saved.sessionFile && !existsSync(saved.sessionFile))
         throw new Error(`会话历史文件缺失，已保留数据库记录：${saved.sessionFile}`);
       saved.selection ??= {};
-      saved.selection.compaction = structuredClone(this.defaultSelection.compaction);
+      saved.selection.compaction = structuredClone(this.defaultsFor(saved.cwd).compaction ?? compactionDefaults);
       await this.create(saved.cwd, saved.selection, saved);
       return this.get(id);
     })().finally(() => { item.loading = null; });
@@ -765,6 +793,8 @@ export class Sessions {
       delete envelope.saved;
       for (const listener of item.listeners) listener(envelope);
     };
+    item.goal = new Goal({ sessionId: id, store: this.goalStore, emit: item.emit,
+      messageCount: () => item.messages.length });
     item.questions = createQuestions(item.emit);
     const saveMemory = (change) => this.saveChange(item, change);
     item.tasks = new Tasks(
@@ -780,6 +810,12 @@ export class Sessions {
           capabilities: item.subagentCapabilities === "inherit" ? item.agent.config?.().capabilities ?? item.capabilities : item.subagentCapabilities,
           trustProject: item.trustProject,
           memory: memoryHooks(item, saveMemory, job),
+          executionContext: () => {
+            const goal = item.goal.snapshot();
+            if (!goal) return null;
+            return `[Goal 所属子任务] 总体目标：${goal.objective}\n约束：${goal.constraints.join("；")}\n所属轮次：${goal.currentRound + 1}。只完成委派给你的具体任务，不负责推进总体目标。` +
+              (this.goalNotificationsBlocked(item) ? "\n用户已要求暂停：在当前工具完成后保存实际进度、未完成事项和产物位置，安全收尾，不启动新的工作。" : "");
+          },
           sessionDir: storageDir ? join(storageDir, `${id}-tasks`) : undefined,
           sessionFile: job.sessionFile,
         });
@@ -789,6 +825,7 @@ export class Sessions {
         // task.state 已同步提交终态；只重试失败队列，不再重写同一大结果。
         await this.persist(item, {});
         this.scheduleTaskNotifications(item);
+        this.scheduleGoal(item);
       },
     );
     for (const task of saved?.tasks || []) {
@@ -806,8 +843,12 @@ export class Sessions {
         lines[0] = JSON.stringify({ ...JSON.parse(lines[0]), id, cwd });
         await writeFile(importedFile, lines.join("\n"), { mode: 0o600 });
       }
-      item.agent = await this.createAgent([...delegationTools(item.tasks), item.questions.tool], {
-        ...this.recentConfig,
+      item.agent = await this.createAgent([...delegationTools(item.tasks), item.questions.tool, item.goal.planTool(), item.goal.blockTool(), item.goal.progressTool(), item.goal.verificationTool({ evidence: () => {
+        const start = item.goal.snapshot()?.rounds[item.goal.snapshot()?.currentRound]?.startMessage ?? item.messages.length;
+        return item.messages.slice(start).filter((entry) => entry.agentId === "main" && entry.message?.role === "toolResult")
+          .map((entry) => entry.message);
+      } })], {
+        ...(this.recentConfig.get(workspaceKeyOf(cwd)) ?? {}),
         ...(selection.model ? { model: selection.model } : {}),
         ...(selection.thinking ? { thinking: selection.thinking } : {}),
         capabilities: item.capabilities,
@@ -818,6 +859,9 @@ export class Sessions {
         sessionDir: storageDir,
         sessionFile: saved?.sessionFile ?? importedFile,
         memory: memoryHooks(item, saveMemory),
+        executionContext: () => item.goal.context(),
+        shouldPause: () => !!item.goal.snapshot()?.pendingAction || item.goal.snapshot()?.phase === "paused",
+        inactiveTools: item.goal.active ? [] : GOAL_TOOL_NAMES,
       });
     // 导入与库恢复的会话都没有完整消息快照（模型消息不再入库）：主代理历史从 Pi JSONL
     // 当前分支重建（撤回/压缩后的分支即真实历史），entryId 保留用于压缩折叠与撤回定位；
@@ -947,14 +991,115 @@ export class Sessions {
     }
     this.items.set(id, item);
     for (const job of item.tasks.jobs.values())
-      if (job.status === "starting" && (job.sessionFile || job.persistenceVersion === 1)) job.done = item.tasks.run(job, true);
+      if (job.status === "starting" && !this.goalNotificationsBlocked(item) && (job.sessionFile || job.persistenceVersion === 1)) job.done = item.tasks.run(job, true);
     this.scheduleTaskNotifications(item);
     return id;
   }
 
+  async goalAction(id, action, text) {
+    const item = await this.ensureLoaded(id);
+    if (item.closing || item.configuring || item.cancelling) throw new Error("会话正在切换状态");
+    // 退出目标模式：只允许在没有在飞工作时发生（UI 需先暂停并等安全点落定）。
+    // 清掉目标记录回到普通会话，历史与产物原样保留；goal_* 工具停用，通知冻结到用户下次显式输入。
+    if (action === "exit") {
+      if (item.status !== "idle" || hasRunningTasks(item)) throw new Error("Goal 仍在执行：请先暂停并在安全点落定后再退出");
+      // 先按「已通知」落盘未投递的结果（notified 是唯一持久化的待通知信号）：
+      // 否则重启时 listPendingSessionIds 会把已退出的会话重新拉起并自动唤醒。
+      // 只消费通知不删结果：任务记录、resultId 与正文照旧保留，用户仍可查看或 read_result。
+      // 顺序先于删目标：中途崩溃时目标还在（暂停态），不会出现无目标 + 未通知的自动唤醒窗口。
+      for (const job of item.tasks.jobs.values()) {
+        if (!job.resultId || job.notified) continue;
+        job.notified = true;
+        await this.persist(item, { task: { id: job.id, notified: true } });
+      }
+      item.goal.exit();
+      item.agent.disableTools?.(GOAL_TOOL_NAMES);
+      item.goalExited = true;
+      item.notificationsPaused = true;
+      return { goal: null, runId: item.runId };
+    }
+    if (["enter", "confirm", "resume"].includes(action) && (item.status !== "idle" || hasRunningTasks(item))) throw new Error("请等待当前执行与子任务安全收尾");
+    item.goalExited = false;
+    item.goal.action(action, text);
+    item.agent.enableTools?.(GOAL_TOOL_NAMES);
+    item.notificationsPaused = this.goalNotificationsBlocked(item) || false;
+    if (action === "enter" && !item.goal.snapshot().objective) return { goal: item.goal.snapshot(), runId: item.runId };
+    if (["enter", "confirm", "resume"].includes(action)) {
+      item.goalSegments = 0;
+      for (const job of item.tasks.jobs.values())
+        if (job.status === "starting" && !job.done) job.done = item.tasks.run(job, true);
+      this.startRun(item, () => item.agent.prompt(action === "enter"
+        ? "[Axiom Goal] 根据现有对话澄清目标并提交分轮计划，等待用户确认。"
+        : "[Axiom Goal] 按已确认目标继续。先核对实际产物和已保存进度，不盲目重放操作。"));
+    } else if (item.goal.snapshot()?.phase === "clarifying" && item.status === "idle") {
+      this.startRun(item, () => item.agent.prompt("[Axiom Goal 调整] 根据用户调整重新规划。先核对已保存产物，保留历史，提交计划等待确认。"));
+    } else {
+      item.agent.requestPause?.();
+      this.scheduleGoal(item);
+    }
+    return { goal: item.goal.snapshot(), runId: item.runId };
+  }
+
+  scheduleGoal(item) {
+    if (!item.goal?.active || item.goalScheduled || item.closing) return;
+    item.goalScheduled = true;
+    setImmediate(() => {
+      item.goalScheduled = false;
+      void this.advanceGoal(item).catch((error) => {
+        item.goal.fail(`Goal 调度失败：${error.message}`);
+        item.emit({ type: "error", data: { message: error.message } });
+      });
+    });
+  }
+
+  async advanceGoal(item) {
+    if (item.closing || item.cancelling || item.configuring || item.status !== "idle" || item.notifying) return;
+    if (hasRunningTasks(item)) return;
+    let goal = item.goal.snapshot();
+    if (!goal) return;
+    if (goal.pendingAction || goal.phase === "paused") {
+      item.goal.pauseAtSafePoint({ tasks: item.tasks.snapshot(), summary: item.goalResult?.text || "执行已到安全点；工具结果与子任务进度保留在会话历史。" });
+      item.goalResult = null;
+      item.notificationsPaused = true;
+      if (item.goal.snapshot()?.phase === "clarifying")
+        this.startRun(item, () => item.agent.prompt("[Axiom Goal 调整] 现有工作已安全保存。按用户调整重新规划，核对产物，保留历史，提交计划等待确认。"));
+      return;
+    }
+    if (!["running", "verifying"].includes(goal.phase)) return;
+    if ([...item.tasks.jobs.values()].some((job) => job.resultId && !job.notified)) {
+      this.scheduleTaskNotifications(item);
+      return;
+    }
+    const previousRound = goal.currentRound;
+    if (item.goalResult) {
+      const reply = item.goalResult;
+      item.goalResult = null;
+      const last = item.messages.findLastIndex((entry) => entry.agentId === "main" && entry.message?.role === "assistant");
+      item.goal.onReply({ message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: reply.text }] }, index: last >= 0 ? last : item.messages.length });
+    }
+    goal = item.goal.snapshot();
+    if (!["running", "verifying"].includes(goal.phase)) return;
+    if ((item.goalSegments = (item.goalSegments || 0) + 1) > 64) {
+      item.goal.fail("已达到本次自动执行的 64 段预算，进度已保存；请检查结果后手动恢复。");
+      return;
+    }
+    const queue = item.agent.queue?.();
+    if (goal.currentRound !== previousRound && item.agent.checkpoint && !queue?.steering?.length && !queue?.followUp?.length)
+      await item.agent.checkpoint(item.goal.context());
+    if (item.closing || item.status !== "idle" || this.goalNotificationsBlocked(item)) return;
+    this.startRun(item, () => item.agent.prompt("[Axiom Goal 自动续跑] 核对最新目标与本轮进度。未完成请继续修正；已完成请提交验收依据并在最终回复独立一行给出完成标记。"));
+  }
+
+  goalNotificationsBlocked(item) {
+    // 退出目标模式后冻结自动唤醒：排队中的子任务通知与续跑不得自行重启，直到用户显式输入。
+    if (item.goalExited) return true;
+    const phase = item.goal?.snapshot()?.phase;
+    return phase && !["running", "verifying"].includes(phase);
+  }
+
   scheduleTaskNotifications(item) {
     // ponytail: 通知等当前主运行结束再唤醒，不打断工具；需要轮次内低延迟时再接 SDK 自定义消息。
-    if (item.notificationScheduled || item.closing || item.notificationsPaused) return;
+    if (item.notificationScheduled || item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item)) return;
     item.notificationScheduled = true;
     setImmediate(() => {
       item.notificationScheduled = false;
@@ -965,7 +1110,7 @@ export class Sessions {
   }
 
   async deliverTaskNotifications(item) {
-    if (item.notifying || item.closing || item.notificationsPaused || item.configuring || item.status !== "idle") return;
+    if (item.notifying || item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item) || item.configuring || item.status !== "idle") return;
     const jobs = [...item.tasks.jobs.values()].filter((job) => job.resultId && !job.notified)
       .map(({ id, resultId, status }) => ({ id, resultId, status }));
     if (!jobs.length) return;
@@ -973,7 +1118,7 @@ export class Sessions {
     try {
       // 结果先落盘再触达；通知不放入可撤回的用户 steer/followUp 队列。
       await this.persist(item, {});
-      if (item.closing || item.notificationsPaused || item.configuring || item.status !== "idle") return;
+      if (item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item) || item.configuring || item.status !== "idle") return;
       const text = "[Axiom 子任务完成通知] 以下任务已结束。使用各自的 taskId 和 resultId 调用 read_result 获取结果；不要轮询。\n" +
         JSON.stringify(jobs.map((job) => ({ taskId: job.id, resultId: job.resultId, status: job.status })));
       await this.prompt(item.id, text);
@@ -989,6 +1134,7 @@ export class Sessions {
       item.notifying = false;
     }
     this.scheduleTaskNotifications(item);
+    this.scheduleGoal(item);
   }
 
   get(id) {
@@ -1115,6 +1261,7 @@ export class Sessions {
       questions: item.questions.snapshot(),
       canReask: item.status === 'idle' && !!item.agent.canReask?.(),
       tasks: item.tasks.snapshot(),
+      goal: item.goal?.snapshot() ?? null,
     });
   }
   subscribe(id, listener) {
@@ -1138,7 +1285,7 @@ export class Sessions {
       if (selection.compaction) this.validateCompaction(selection.compaction, model || previous?.model);
       const config = await item.agent.configure({ model, thinking, compaction: selection.compaction });
       if (config.model !== previous?.model || config.thinking !== previous?.thinking)
-        this.recentConfig = { model: config.model, thinking: config.thinking };
+        this.recentConfig.set(workspaceKeyOf(item.cwd), { model: config.model, thinking: config.thinking });
       item.subagentModel = subagentModel;
       item.subagentThinking = subagentThinking;
       item.queueType = selection.queueType || item.queueType;
@@ -1160,7 +1307,8 @@ export class Sessions {
 
   // 运行骨架（prompt 与手动重试共用）：runId/status 广播 → result() 取错 → 收尾持久化与 idle 复位。
   startRun(item, run) {
-    item.notificationsPaused = false;
+    // 通知在下一次运行开始时恢复：goal 被暂停/退出时仍要冻结，安全停止期间也暂停，防止通知把刚停下的会话又拉起来。
+    item.notificationsPaused = this.goalNotificationsBlocked(item) || false;
     item.safeStopping = false;
     item.updatedAt = Date.now();
     item.runId = randomUUID();
@@ -1172,8 +1320,10 @@ export class Sessions {
     item.work = (async () => {
       try {
         await run();
-        item.agent.result();
+        const text = item.agent.result();
+        if (item.goal.active) item.goalResult = { text, runId: item.runId };
       } catch (error) {
+        if (item.goal.active) item.goal.fail(String(error.message ?? error));
         item.emit({
           type: "error",
           data: { message: String(error.message ?? error) },
@@ -1191,6 +1341,7 @@ export class Sessions {
             data: { status: "idle", runId: item.runId, canReask: !!item.agent.canReask?.(), stopped },
           });
           this.scheduleTaskNotifications(item);
+          this.scheduleGoal(item);
         }
       }
     })();
@@ -1202,6 +1353,7 @@ export class Sessions {
   async retry(id) {
     const item = this.get(id).loaded ? this.get(id) : await this.ensureLoaded(id);
     if (item.status !== "idle" || item.configuring || item.closing) throw new Error("Session is busy");
+    if (item.goal.active && this.goalNotificationsBlocked(item)) throw new Error("Goal 已暂停或等待确认，请使用 Goal 恢复按钮");
     if (item.agent.canReask?.()) return this.startRun(item, () => item.agent.reask());
     if (!item.agent.resumable()) throw new Error("没有可重试的请求：上一次运行已正常结束");
     return this.startRun(item, () => item.agent.resume());
@@ -1210,6 +1362,12 @@ export class Sessions {
   async prompt(id, text, queueType, images) {
     if (!text.trim() && !images?.length) throw new Error("请求内容不能为空：请输入文本或附加图片");
     const item = this.get(id).loaded ? this.get(id) : await this.ensureLoaded(id);
+    if (/^\/goal(?:\s|$)/.test(text.trim())) {
+      const result = await this.goalAction(id, "enter", text.trim().replace(/^\/goal\s*/, ""));
+      return result.runId;
+    }
+    if (item.goal.active && ["paused", "pausing", "adjusting", "completed"].includes(item.goal.snapshot().phase))
+      throw new Error("Goal 已停止或正在安全收尾，请使用专用恢复、调整或重启按钮");
     if (images?.length) {
       // 必须在回执前拒绝：一旦入队或启动，SDK 会静默丢弃不支持模型的图片。
       assertPromptImages(images);
@@ -1222,6 +1380,10 @@ export class Sessions {
       return item.runId;
     }
     if (item.status !== "idle" || item.configuring || item.closing) throw new Error("Session is busy");
+    // 用户显式输入：退出目标模式后的通知/续跑冻结到此为止，恢复正常会话行为。
+    item.goalExited = false;
+    const goal = item.goal.snapshot();
+    if (goal?.phase === "clarifying" && !goal.objective && !goal.rounds.length) item.goal.supplyObjective(text);
     if (item.title === "新会话" && !item.titleManual) item.title = (text.trim() || "[图片]").slice(0, 60);
     const titleRequest = !item.titleRequested && !item.titleManual;
     item.titleRequested = true;
@@ -1289,12 +1451,14 @@ export class Sessions {
 
   // 安全停止：不 abort、不杀工具，只请求 SDK 在下一个轮次边界收工，已完成的产出全部保留。
   // 子任务不受影响（继续跑到自己结束）；期间暂停子任务完成通知，否则通知会立刻 prompt 把会话重新拉起来。
+  // goal 会话的“停”在 master 里已有专用路径（暂停并落定目标进度），复用同一入口，避免同一颗按钮两套语义。
   async safeStop(id) {
     const item = this.get(id);
     if (item.loading) {
       await item.loading.catch(() => {});
       return this.safeStop(id);
     }
+    if (item.goal?.active && !item.closing) return this.goalAction(id, "pause");
     if (!item.loaded || item.cancelling || item.status === "idle") return;
     item.notificationsPaused = true;
     item.safeStopping = true;
@@ -1310,6 +1474,7 @@ export class Sessions {
       return this.cancel(id);
     }
     if (!item.loaded) return;
+    if (item.goal?.active && !item.closing) return this.goalAction(id, "pause");
     if (item.cancelling) return item.cancelling;
     item.notificationsPaused = true;
     item.status = "cancelling";
@@ -1331,6 +1496,8 @@ export class Sessions {
   async retryTask(id, taskId) {
     const item = await this.ensureLoaded(id);
     if (item.closing || item.cancelling) throw new Error("会话正在停止，暂时无法重试子任务");
+    if (item.goal.active && this.goalNotificationsBlocked(item)) throw new Error("请先恢复 Goal，再重试子任务");
+    item.goalExited = false; // 显式重试子任务：退出 Goal 后的通知冻结到此解除
     item.notificationsPaused = false;
     return item.tasks.retry(taskId);
   }
@@ -1341,6 +1508,8 @@ export class Sessions {
       item = this.get(id);
     }
     item.closing = true;
+    if (deleting) this.goalStore.remove(id);
+    else item.goal?.freeze();
     if (!item.loaded) {
       if (!deleting && item.pendingWrites?.length) await this.persist(item, {});
       if (deleting) {

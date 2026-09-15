@@ -35,6 +35,7 @@ desktop/pake.json ── Pake 独立桌面壳（macOS Universal / Windows x64）
      .github/workflows/desktop.yml 分平台打包
 浏览器 public/
   index.html ── app.js（唯一入口：视图栈/WS客户端/会话设置UI）
+                 ├─ goal.js/css         Goal 目标面板与轮次分组（复用现有消息节点）
                  ├─ question.js/css     主代理多题回答卡、键盘操作与回执
                  ├─ service-settings.js  服务设置：更新确认、维护阶段与断线诊断
                  ├─ model-picker.js      共享供应商/模型/思考下拉，星标收藏与键盘操作
@@ -60,6 +61,7 @@ scripts/autostart.mjs  Windows/macOS/Linux 用户登录自动启动注册
   │    ├─ database.js SQLite 连接、小配置 store 表、WAL 与一致性备份
   │    ├─ session-memory.js  标题/逐回复摘要登记、最近32条背景与被动进度
   │    │    └─ public/memory-tags.js  标签提取与前端显示过滤（保留Pi原始消息）
+  │    ├─ goal.js       会话级目标状态/轮次/验收门（Sessions 外层调度，共用 Pi 执行）
   │    ├─ questions.js 主代理提问等待、答案校验、快照与取消
   │    └─ Tasks ── delegationTools（tools.js，注册给 pi 的委托工具）
   └─ pi.js createPiFactory → pi-coding-agent SDK（原生队列 + SessionManager JSONL）

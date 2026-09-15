@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { command, compactionDefaults } from "../src/protocol.js";
@@ -24,6 +24,8 @@ test("compaction settings, message IDs and successful records survive restart; f
     selections.push(selection);
     let config = { model: "p/main", thinking: "off", compaction: { ...compactionDefaults }, ...selection };
     delete config.memory;
+    delete config.executionContext;
+    delete config.shouldPause;
     return {
       config: () => config, configure: async (value) => (config = { ...config, ...value }),
       historyEntries: () => [{ id: "m1", type: "message", message: { role: "user", content: "old" } }],
@@ -54,7 +56,7 @@ test("compaction settings, message IDs and successful records survive restart; f
     await restored.loadDefaults();
     await restored.load();
     await restored.ensureLoaded(id);
-    assert.deepEqual(restored.getDefaults().compaction, config);
+    assert.deepEqual((await restored.workspaceDefaults(dir)).compaction, config);
     assert.deepEqual(restored.snapshot(id).compactions, [record]);
     assert.equal(restored.snapshot(id).messages[0].entryId, "m1");
     assert.deepEqual(restored.snapshot(id).config.compaction, config);
@@ -72,6 +74,8 @@ test("restored sessions pick up the latest default compaction; other selection s
     selections.push(selection);
     let config = { model: "p/main", thinking: "off", compaction: { ...compactionDefaults }, ...selection };
     delete config.memory;
+    delete config.executionContext;
+    delete config.shouldPause;
     return {
       config: () => config, configure: async (value) => (config = { ...config, ...value }),
       historyEntries: () => [], compactions: () => [],
@@ -103,6 +107,45 @@ test("restored sessions pick up the latest default compaction; other selection s
   } finally {
     await sessions.close();
     await restored?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("删除目录配置后该目录已加载会话立即回落全局压缩配置，其他目录不受影响", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "axiom-compaction-"));
+  const a = join(dir, "a"), b = join(dir, "b");
+  await mkdir(a);
+  await mkdir(b);
+  const factory = async (_tools, selection) => {
+    let config = { thinking: "off", compaction: { ...compactionDefaults }, ...selection };
+    delete config.memory;
+    delete config.executionContext;
+    delete config.shouldPause;
+    return {
+      config: () => config, configure: async (value) => (config = { ...config, ...value }),
+      historyEntries: () => [], compactions: () => [],
+      subscribe: () => () => {}, abort: async () => {}, dispose: async () => {},
+    };
+  };
+  factory.catalog = () => [{ key: "p/global" }, { key: "p/a" }, { key: "p/b" }, { key: "p/summary" }];
+  const sessions = new Sessions(factory, join(dir, "defaults.json"), join(dir, "sessions"));
+  const globalCompaction = { ...compactionDefaults, enabled: true, model: "p/summary", tokenThreshold: 30000 };
+  const compactionA = { ...compactionDefaults, enabled: true, tokenThreshold: 45000 };
+  const compactionB = { ...compactionDefaults, enabled: true, tokenThreshold: 90000 };
+  try {
+    await sessions.configureDefaults(undefined, { model: "p/global", compaction: globalCompaction });
+    await sessions.configureDefaults(a, { model: "p/a", compaction: compactionA });
+    await sessions.configureDefaults(b, { model: "p/b", compaction: compactionB });
+    const idA = await sessions.create(a), idB = await sessions.create(b);
+    assert.deepEqual(sessions.snapshot(idA).config.compaction, compactionA);
+    assert.deepEqual(sessions.snapshot(idB).config.compaction, compactionB);
+    // 删掉 a 的目录配置：a 的已加载会话立即回落全局压缩配置，其余配置与 b 的会话都不动
+    await sessions.deleteDefaults(a);
+    assert.deepEqual(sessions.snapshot(idA).config.compaction, globalCompaction);
+    assert.equal(sessions.snapshot(idA).config.model, "p/a");
+    assert.deepEqual(sessions.snapshot(idB).config.compaction, compactionB);
+  } finally {
+    await sessions.close();
     await rm(dir, { recursive: true, force: true });
   }
 });

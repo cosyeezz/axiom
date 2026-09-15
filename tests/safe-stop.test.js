@@ -61,21 +61,26 @@ test("safe stop ends the run at a turn boundary: tools finish, output is kept, r
         const factory = await createPiFactory({ cwd, model: 'fake/s' });
 
         // 第二轮的工具在执行中途请求安全停止：工具必须照常跑完，停止只发生在轮次结束后。
-        let requestSafeStop;
+        let armStop;
         const finished = [];
         const mark = {
           name: 'mark', label: 'Mark', description: '测试用工具：记录一次调用。',
           parameters: { type: 'object', additionalProperties: false, required: ['step'],
             properties: { step: { type: 'string', description: '步骤名' } } },
           async execute(_id, params) {
-            if (params.step === 'stop-here') requestSafeStop();
+            if (params.step === 'stop-here') await armStop();
             await new Promise((r) => setTimeout(r, 20));
             finished.push(params.step);
             return { content: [{ type: 'text', text: 'done ' + params.step }] };
           },
         };
         const agent = await factory([mark]);
-        requestSafeStop = () => agent.requestSafeStop();
+        // 同时排队一条 steer：SDK 在轮次边界后还会按 hasQueuedMessages 继续抽干队列，
+        // 只靠 shouldStopAfterTurn 停不住——这条排队消息必须留到下一次显式运行。
+        armStop = async () => {
+          await agent.enqueue('排队等待的消息', 'steer');
+          agent.requestSafeStop();
+        };
         try {
           script.push({ tool: 'mark', args: { step: 'first' }, text: '先做第一步' });
           script.push({ tool: 'mark', args: { step: 'stop-here' }, text: '再做第二步' });
@@ -96,9 +101,12 @@ test("safe stop ends the run at a turn boundary: tools finish, output is kept, r
             toolResults: messages.filter((m) => m.role === 'toolResult').length,
             resumable: agent.resumable(),
             pendingAfterStop: agent.safeStopPending(),
+            queueAfterStop: agent.queue().steering,
+            queuedInHistory: messages.some((m) => m.role === 'user' && JSON.stringify(m.content).includes('排队等待的消息')),
           }));
 
           // 停止是一次性的：续跑不该再被上一次的标志误停，第三轮正常收尾。
+          agent.withdraw(); // 排队消息不参与本次验证，避免抽水循环（复位后）把它带进第三次请求
           await agent.resume();
           agent.result();
           const after = agent.historyEntries().map((entry) => entry.message);
@@ -106,6 +114,7 @@ test("safe stop ends the run at a turn boundary: tools finish, output is kept, r
             requestsAfterResume: requests.length,
             lastStopAfterResume: after.filter((m) => m.role === 'assistant').at(-1).stopReason,
             resumableAfterResume: agent.resumable(),
+            pendingAfterResume: agent.safeStopPending(),
           }));
         } finally {
           await agent.dispose();
@@ -123,8 +132,11 @@ test("safe stop ends the run at a turn boundary: tools finish, output is kept, r
     assert.equal(stopped.lastRole, "toolResult", "停在工具结果之后，正好是下一次请求的起点");
     assert.equal(stopped.lastAssistantStop, "toolUse", "不改 stopReason：不伪装成正常收尾");
     assert.equal(stopped.resumable, true, "停下来的运行可以手动续跑");
-    assert.equal(stopped.pendingAfterStop, false, "标志用完即清，不会误停下一次运行");
+    assert.equal(stopped.pendingAfterStop, true, "标志闩到下一次运行开始才清：抽水循环每次都查它，早清等于没停");
+    assert.deepEqual(stopped.queueAfterStop, ["排队等待的消息"], "队列消息原样退回，不被停下的运行消费");
+    assert.equal(stopped.queuedInHistory, false, "排队消息没进上下文，下一次显式运行才轮到它");
     assert.equal(resumed.requestsAfterResume, 3, "续跑接着发第三次请求");
+    assert.equal(resumed.pendingAfterResume, false, "续跑开始时复位，不会误停下一次运行");
     assert.equal(resumed.lastStopAfterResume, "stop", "续跑正常收尾");
     assert.equal(resumed.resumableAfterResume, false, "正常收尾后没有可续的东西");
   } finally {
