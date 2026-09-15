@@ -23,13 +23,34 @@ import {
   DEFAULT_COMPACTION_CONFIG,
 } from "../src/compaction.js";
 
-test("增量展示与完整交接分离，格式异常保留原文", () => {
+test("增量展示与完整交接分离，格式异常只丢元数据不污染正文", () => {
   const progress = { title: "确认通知缺口", description: "发现已通知不等于已读，尚未修复。" };
   const tags = `<axiom_compact_title>\n${progress.title}\n</axiom_compact_title>\n<axiom_compact_desc>${progress.description}</axiom_compact_desc>`;
-  const text = `Goal: 保留之前的约束\nProgress: 新发现\n${tags}`;
-  assert.deepEqual(parseSummaryOutput(text), { progress, summary: "Goal: 保留之前的约束\nProgress: 新发现" });
-  assert.deepEqual(parseSummaryOutput(text.replaceAll("\n", "\r\n") + "\n"), { progress, summary: "Goal: 保留之前的约束\r\nProgress: 新发现" });
-  for (const value of ["旧摘要", tags, `${text}\n后续正文`, text.replace("</axiom_compact_desc>", ""), text.replace(progress.title, ""), text.replace(progress.title, "长".repeat(31)), text.replace(progress.description, "长".repeat(201)), text.replace(progress.title, "<nested>标题</nested>"), `AXIOM_PROGRESS ${JSON.stringify(progress)}\n旧格式摘要`])
+  const body = "Goal: 保留之前的约束\nProgress: 新发现";
+  const text = `${body}\n${tags}`;
+  assert.deepEqual(parseSummaryOutput(text), { progress, summary: body });
+  assert.deepEqual(parseSummaryOutput(text.replaceAll("\n", "\r\n") + "\n"), { progress, summary: body.replace("\n", "\r\n") });
+  // C-T1：标签不在结尾、顺序颠倒都照样拆元数据；正文里绝不留标签原文（否则会随 previousSummary 回注自我强化）
+  assert.deepEqual(parseSummaryOutput(`${text}\n后续正文`), { progress, summary: `${body}\n后续正文` });
+  assert.deepEqual(
+    parseSummaryOutput(`${body}\n<axiom_compact_desc>${progress.description}</axiom_compact_desc>\n<axiom_compact_title>${progress.title}</axiom_compact_title>`),
+    { progress, summary: body },
+  );
+  // 元数据不合格（空、超长、含嵌套标签）→ 只丢 progress，正文照旧干净
+  for (const value of [text.replace(progress.title, ""), text.replace(progress.title, "长".repeat(31)), text.replace(progress.description, "长".repeat(201)), text.replace(progress.title, "<nested>标题</nested>"), text.replace(progress.title, "🙂".repeat(31))])
+    assert.deepEqual(parseSummaryOutput(value), { summary: body });
+  // C-T2：长度按码点算，16 个 emoji 的标题不算超长；标题里的 > 是正常文字，不是嵌套标签
+  for (const title of ["🙂".repeat(16), "A > B 的差异"])
+    assert.deepEqual(parseSummaryOutput(text.replace(progress.title, title)), { progress: { ...progress, title }, summary: body });
+  // 落单标签只删标记本身：闭合边界未知，标记后的内容当正文留下，不误吞
+  assert.deepEqual(parseSummaryOutput(text.replace("</axiom_compact_desc>", "")), { summary: `${body}\n${progress.description}` });
+  // 只有标签没有正文 → 摘要为空，由调用方跳过压缩保留原文；不把标签原文当摘要
+  assert.deepEqual(parseSummaryOutput(tags), { progress, summary: "" });
+  // 代码围栏里的标签是讨论内容不是协议；整份输出被围栏包住时退回原文扫描，元数据照样拆出
+  const fenced = "```\n<axiom_compact_title>示例</axiom_compact_title>\n```";
+  assert.deepEqual(parseSummaryOutput(`${fenced}\n${tags}`), { progress, summary: fenced });
+  assert.deepEqual(parseSummaryOutput(`\`\`\`markdown\n${text}\n\`\`\``), { progress, summary: `\`\`\`markdown\n${body}\n\`\`\`` });
+  for (const value of ["旧摘要", `AXIOM_PROGRESS ${JSON.stringify(progress)}\n旧格式摘要`])
     assert.deepEqual(parseSummaryOutput(value), { summary: value });
   const request = summaryRequest("本次新增发现", "历史约束");
   assert.match(request, /ONLY progress/);
