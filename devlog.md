@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-15 长会话阶段一：身份与历史传输分页
+
+- 决策：不改 SDK 上下文/权威历史，不新增数据库历史副本；session.attach 最近 60 条，session.history 游标绑定 session/epoch/revision/消息边界，分页不提供 seq；订阅先于加载，活动流显式传身份，撤回/压缩换修订。
+- 文件：src/session-history.js、src/sessions.js、src/server.js、src/protocol.js、tests/session-history.test.js；README 与导航文档同步于后续展示提交。
+- 验证：session-history 与分页前端组合 30 项中 29 通过、1 在飞草稿缺陷已修复并单独复测 9/9；后端 SDK 假源测试确认翻页不调用上下文修改路径。服务端仍全量保留历史，未声称服务端内存有界。
+
 ## 2026-09-15 08:12 -0700 按用户要求移除旧回答标签兼容
 
 - 原因与决策：用户明确不需要历史兼容；展示解析仅识别 axiom_display，删除新旧标签配对表，恢复单组标签判定。旧 axiom_answer 不再作为展示协议解析，原始历史不改写。
