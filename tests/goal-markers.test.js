@@ -93,7 +93,7 @@ test("后端 goal.js 与前端 app.js 共用同一份实现", async () => {
 test("页面展示不出现完成标记原文：成稿、流式、代码区讲解与用户手写各就各位", async () => {
   const { dom, emit, paint, output } = await page();
   try {
-    emit("agent.message.end", { message: { role: "assistant", content: `<axiom_answer>\n本轮结论\n</axiom_answer>\n\n${ROUND_MARKER}` } });
+    emit("agent.message.end", { message: { role: "assistant", content: `<axiom_display>\n本轮结论\n</axiom_display>\n\n${ROUND_MARKER}` } });
     assert.equal(lastAssistant(output).textContent.includes(ROUND_MARKER), false, "成稿不显示完成标记原文");
     assert.match(lastAssistant(output).textContent, /本轮结论/);
 
