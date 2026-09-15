@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-15 修复新安装因压缩思考等级无法进入
+
+- 原因：默认自动压缩 thinking=off，但部分推理模型禁用 off；后端建会话校验抛错，页面将业务失败当断线重连，安装 HTTP 健康检查未覆盖真正创建会话。
+- 决策：协议共享 resolver 严格解析输入后将不兼容偏好适配到实际模型最低等级，新建/恢复/换模型/配置直推共用；不换模型、不关闭压缩、不修改保存偏好。页面初始化失败保留连接与设置/服务更新入口，不吞网络断线。
+- 文件：src/protocol.js、src/pi.js、src/sessions.js、public/app.js、tests/compaction-config.test.js、tests/model-onboarding.test.js、tests/model-onboarding-ui.test.js、README.md、代码索引与坑库。
+- 验证：隔离临时 Pi 目录、真实 SDK 复现 off 不受支持模型的默认和显式建会话、配置更新；前端错误保持设置可达及草稿保留；全量 npm test 599 通过、2 跳过。没有调用外部模型或改动本机用户配置。
+
 ## 2026-09-15 原文对照改为逐条阅读
 
 - 原因：JSON 日志弹窗无法与聊天对应，用户要求真正可读的原文模式。

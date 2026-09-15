@@ -8,7 +8,7 @@ import { SessionStore } from "./session-store.js";
 import { Goal, createGoalStore } from "./goal.js";
 import { basename, dirname, join, relative, isAbsolute, resolve, sep, parse } from "node:path";
 
-import { selection as selectionSchema, taskBudget as taskBudgetSchema, compaction as compactionSchema, compactionDefaults, assertPromptImages } from "./protocol.js";
+import { selection as selectionSchema, taskBudget as taskBudgetSchema, compaction as compactionSchema, compactionDefaults, resolveCompaction, assertPromptImages } from "./protocol.js";
 import { taskBudgetDefaults } from "./task-budget.js";
 import { Tasks } from "./tasks.js";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
@@ -443,7 +443,7 @@ export class Sessions {
       await this.pushCompaction((itemScope) => scoped ? itemScope === scope : !this.workspaceSelections.has(itemScope), next.compaction);
     return result;
   }
-  // 压缩配置直推：只改选中会话的压缩部分，模型不支持新思考等级的会话保留原配置，单会话失败不影响调用方。
+  // 压缩配置直推：只改选中会话的压缩部分，等级由实际模型适配，单会话失败不影响调用方。
   async pushCompaction(match, compaction) {
     for (const item of this.items.values()) {
       if (!item.loaded || item.configuring) continue;
@@ -495,8 +495,7 @@ export class Sessions {
         : this.createAgent.catalog?.();
       const model = models?.find((model) => model.key === key);
       if (!model) throw new Error("Unknown compaction model");
-      if (config.enabled && model.levels && !model.levels.includes(config.thinking))
-        throw new Error("Unsupported compaction thinking level");
+      return resolveCompaction(config, model.levels);
     }
     return config;
   }

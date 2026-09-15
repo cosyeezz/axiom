@@ -2523,6 +2523,7 @@ $("login").onsubmit = async (e) => {
   $("connect").disabled = true;
   $("status").textContent = "连接中";
   $("error").textContent = "";
+  let initializingSession = false;
   try {
     ws = new WebSocket(
       `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`,
@@ -2590,6 +2591,7 @@ $("login").onsubmit = async (e) => {
       return;
     }
     onboarding = false;
+    initializingSession = true;
     let state;
     if (sessionId) {
       try {
@@ -2622,6 +2624,7 @@ $("login").onsubmit = async (e) => {
       }
     }
     if (!state) state = await request("session.create");
+    initializingSession = false;
     if (!$("workspace").hidden) saveView();
     // 首屏渐进显示：身份切换同步完成后就让 workspace 可见，长快照的分片在可见容器里继续补齐，
     // 不再等全部分片建完 DOM 才做一次整体布局。connected 与发送能力保持未开放。
@@ -2635,9 +2638,21 @@ $("login").onsubmit = async (e) => {
     resizePrompt();
     controls();
   } catch (e) {
-    error(e);
-    $("login").hidden = false;
-    ws?.close();
+    if (initializingSession && ws?.readyState === WebSocket.OPEN) {
+      // 业务配置失败不等于断线：保留设置/更新入口，避免安装后陷入重连死循环。
+      sessionMissing = true;
+      connected = true;
+      $("login").hidden = true;
+      $("workspace").hidden = false;
+      controls();
+      $("open-settings").click();
+      error(`会话暂时无法打开：${e.message}。服务仍已连接，可在设置中修正配置或更新服务，然后点击「＋ 新会话」重试。`);
+      reconnectDelay = 1000;
+    } else {
+      error(e);
+      $("login").hidden = false;
+      ws?.close();
+    }
   } finally {
     connecting = false;
     $("connect").disabled = false;

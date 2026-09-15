@@ -42,6 +42,29 @@ test("empty Pi starts, then a configured model becomes usable without restarting
       const agent = await factory([], { capabilities: { skills: [], plugins: [], mcp: [] } });
       assert.equal(agent.config().model, 'onboarding/local-test');
       await agent.dispose();
+      // Fresh-install defaults must work for reasoning-only models that reject off.
+      const modelsPath = join(cwd, 'models.json');
+      await writeFile(modelsPath, JSON.stringify({ providers: {
+        onboarding: { baseUrl: 'http://127.0.0.1:1/v1', api: 'openai-completions',
+          apiKey: 'test-only-not-a-real-key', models: [{ id: 'reasoning-only', name: 'Reasoning only',
+            reasoning: true, thinkingLevelMap: { off: null, minimal: null },
+            input: ['text'], contextWindow: 8192, maxTokens: 1024,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] }
+      }}));
+      await factory.refreshModels();
+      assert(!factory.catalog()[0].levels.includes('off'));
+      const sessions = new Sessions(factory);
+      try {
+        const id = await sessions.create(cwd);
+        assert.equal(sessions.snapshot(id).config.compaction.thinking, 'low');
+        assert.equal(sessions.defaultSelection.compaction.thinking, 'off');
+        const selectedId = await sessions.create(cwd, { model: 'onboarding/reasoning-only' });
+        assert.equal(sessions.snapshot(selectedId).config.compaction.thinking, 'low');
+        const active = sessions.get(id).agent;
+        await active.configure({ model: 'onboarding/reasoning-only',
+          compaction: { ...active.config().compaction, thinking: 'off' } });
+        assert.equal(active.config().compaction.thinking, 'low');
+      } finally { await sessions.close(); }
       await explicit.refreshModels();
       await assert.rejects(explicit(), /missing\\/model/);
       await assert.rejects(factory([], { model: 'missing/model' }), /模型不可用/);

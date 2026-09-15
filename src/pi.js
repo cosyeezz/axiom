@@ -7,6 +7,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { capabilityLoader, discoverCapabilities, refreshProjectSkills } from "./capabilities.js";
 import { createBackgroundCompaction, entryIdFor, normalizeCompaction, summarizedEntryIds } from "./compaction.js";
+import { resolveCompaction } from "./protocol.js";
 import { WRAP_UP_PROMPT, budgetSystemPrompt } from "./task-budget.js";
 import { canResume, createAutoRetry, dropFailedAssistant } from "./retry.js";
 import { createJiti } from "jiti";
@@ -158,8 +159,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       const config = normalizeCompaction(value);
       const target = config.model ? available.find((m) => `${m.provider}/${m.id}` === config.model) : mainModel;
       if (!target) throw new Error("Unknown compaction model");
-      if (config.enabled && !getSupportedThinkingLevels(target).includes(config.thinking)) throw new Error("Unsupported compaction thinking level");
-      return config;
+      return resolveCompaction(config, getSupportedThinkingLevels(target));
     };
     const initialCompaction = validateCompaction(selection.compaction, selected);
     const resources = await discoverCapabilities(workspace, {
