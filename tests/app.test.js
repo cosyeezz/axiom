@@ -43,10 +43,14 @@ test("header path icons do not inherit the global button minimum height", async 
     assert.equal(computed(".task-run-text").whiteSpace, "nowrap");
     assert.equal(computed(".task-run-spin").animationName, "task-run-spin", "spinner is a CSS animation, no inline style");
     // 复选框不能吃到全局 input 的 40px 高度：否则控件顶在盒子上沿、同行文字落到下沿，看起来错行。
-    assert.equal(computed("#preset-fixed-cwd").minHeight, "0px", "复选框不继承输入框的 min-height");
-    assert.equal(computed("#preset-fixed-cwd").padding, "0px", "复选框不继承输入框的 padding");
-    assert.equal(computed("#preset-fixed-cwd").width, "auto");
-    assert.equal(computed("#preset-name").minHeight, "40px", "普通输入框尺寸不变");
+    // 复选框由脚本生成（能力选择、压缩开关），静态页面里没有，这里补一个再量。
+    const box = dom.window.document.createElement("input");
+    box.type = "checkbox";
+    dom.window.document.body.append(box);
+    assert.equal(dom.window.getComputedStyle(box).minHeight, "0px", "复选框不继承输入框的 min-height");
+    assert.equal(dom.window.getComputedStyle(box).padding, "0px", "复选框不继承输入框的 padding");
+    assert.equal(dom.window.getComputedStyle(box).width, "auto");
+    assert.equal(computed("#session-name").minHeight, "40px", "普通输入框尺寸不变");
   } finally { dom.window.close(); }
 });
 
@@ -135,14 +139,14 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
   let failDefaults = false, needsTrust = false;
   let withdrawnImages;
   let failList = false;
+  // 打开工作空间与新增目录配置都用 folder 模式的文件选择器，mock 无法区分；
+  // 只有新增目录配置用例前才开启目录分支，否则会把打开工作空间的结果顶掉。
+  let pickerRoot = false;
   let attachError;
   let failConfig = false, holdConfig = false, heldConfig;
-  let presets = [
-    { id: "p1", name: "审查预设", selection: { model: "test/model", thinking: "high", capabilities: null, subagentModel: null, subagentThinking: null, subagentCapabilities: null, compaction: null } },
-    { id: "p2", name: "沙盒预设", cwd: "C:\\untrusted", selection: { model: "test/model", thinking: null, capabilities: null, subagentModel: null, subagentThinking: null, subagentCapabilities: null, compaction: null } },
-    { id: "p3", name: "失效预设", selection: { model: "test/model", thinking: null, capabilities: { skills: ["gone-skill"], mcp: [], plugins: [] }, subagentModel: null, subagentThinking: null, subagentCapabilities: null, compaction: null } },
-  ];
-  let failPresetSave = false, lastPresetSave;
+  // 目录级默认配置：cwd -> selection；未配置的目录回落全局 defaults。
+  const directoryDefaults = new Map([["C:\\other", { ...defaults, model: "other/child", thinking: "high" }]]);
+  let lastDefaultsDelete;
   const requests = [];
   class Socket {
     static OPEN = 1;
@@ -168,6 +172,10 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
         let data;
         switch (req.type) {
           case "files.browse":
+            if (pickerRoot && req.directoriesOnly) { // 目录选择器：返回一份「当前目录 + 一个子目录」，用来测新增目录配置。
+              data = { path: req.path || "C:\\picked", parent: null, entries: [{ name: "picked", path: `${req.path || "C:\\work"}\\picked`, directory: true }], nextOffset: null, breadcrumbs: [], locations: [] };
+              break;
+            }
             data = { path: req.sessionId ? req.path : "C:\\other", parent: req.path ? "" : null,
               entries: req.sessionId ? (req.path ? [{ name: "app.js", path: "src/app.js", directory: false }] : [{ name: "src", path: "src", directory: true }]) : [{ name: "pi.jsonl", path: "C:\\pi\\sessions\\pi.jsonl", directory: false }],
               nextOffset: null, breadcrumbs: [], locations: [] };
@@ -185,25 +193,11 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
           case "capabilities.list":
             data = { needsTrust: req.trustProject ? false : needsTrust || req.cwd === "C:\\untrusted", warnings: [], skills: [{ id: "skill-a", name: "Skill A", scope: "global" }, { id: "skill-b", name: "Skill B", scope: "project" }], mcp: [{ id: "browser", name: "Browser" }], plugins: [{ id: "search", name: "Search" }] };
             break;
-          case "session.presets.list":
-            data = { presets };
-            break;
-          case "session.presets.save":
-            lastPresetSave = req;
-            if (failPresetSave) {
-              this.receive({ type: "response", id: req.id, ok: false, error: "preset unavailable" });
-              return;
-            }
-            if (req.presetId) Object.assign(presets.find((preset) => preset.id === req.presetId), { name: req.name, cwd: req.cwd, selection: req.selection });
-            else presets.push({ id: `p${presets.length + 1}`, name: req.name, ...(req.cwd ? { cwd: req.cwd } : {}), selection: req.selection });
-            data = {};
-            break;
-          case "session.presets.delete":
-            presets = presets.filter((preset) => preset.id !== req.presetId);
-            data = {};
+          case "session.defaults.list":
+            data = { workspaces: [...directoryDefaults.keys()].sort() };
             break;
           case "session.defaults.get":
-            data = defaults;
+            data = structuredClone(req.cwd ? directoryDefaults.get(req.cwd) ?? defaults : defaults);
             break;
           case "session.defaults.configure":
             lastDefaults = req;
@@ -211,8 +205,22 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
               this.receive({ type: "response", id: req.id, ok: false, error: "defaults unavailable" });
               return;
             }
-            defaults = Object.fromEntries(Object.keys(defaults).map((key) => [key, req[key]]));
-            data = defaults;
+            // 与后端一致：新目录从全局默认复制一份独立配置；无 cwd 写全局。
+            {
+              const base = req.cwd ? directoryDefaults.get(req.cwd) ?? defaults : defaults;
+              const next = Object.fromEntries(Object.keys(defaults).map((key) => [key, key in req ? req[key] : base[key]]));
+              if (req.cwd) directoryDefaults.set(req.cwd, next);
+              else defaults = next;
+              data = structuredClone(next);
+            }
+            break;
+          case "session.defaults.delete":
+            lastDefaultsDelete = req;
+            if (!directoryDefaults.delete(req.cwd)) {
+              this.receive({ type: "response", id: req.id, ok: false, error: "该目录没有独立配置" });
+              return;
+            }
+            data = structuredClone(defaults);
             break;
           case "session.create":
             lastCreation = req;
@@ -357,7 +365,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("defaults-panel").hidden, true);
     $("settings").close();
     assert.equal($("workspace").hidden, false);
-    assert.equal(requests.filter((req) => req.type === "session.presets.list").length, 1, "connect fetches the preset list");
+    assert.equal(requests.some((req) => req.type === "session.defaults.list"), false, "只看服务面板不拉取默认配置");
     assert.equal($("send").disabled, true);
     assert.equal($("send").textContent, "Send");
     assert.equal(window.document.querySelector("header .menu"), null);
@@ -460,7 +468,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("file-picker").open, true);
     $("file-picker-confirm").click(); await settle();
     assert.equal($("open-workspace").disabled, false);
-    assert.equal(requests.findLast((req) => req.type === "session.create").cwd, "C:\\other");
+    assert.equal(requests.findLast((req) => req.type === "session.create")?.cwd, "C:\\other", $("error").textContent);
     states.push({ ...states[0], sessionId: "other-workspace", cwd: "C:\\other" });
     await window.eval('switchSession(() => request("session.attach", { sessionId: "other-workspace" }))');
     assert.equal($("workspace-label").textContent, "C:\\work", "other workspaces never replace this tab");
@@ -698,14 +706,12 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("subagent-provider").dispatchEvent(new window.Event("change"));
     await settle();
     await settle();
+    assert.equal(requests.filter((req) => req.type === "session.defaults.list").length, 1, "打开设置面板拉取已配置目录");
     assert.equal($("defaults-editor").contains($("create-form")), true);
     assert.match($("create-agents").textContent, /\[全局\] Skill A/);
     assert.match($("create-agents").textContent, /\[当前项目\] Skill B/);
-    assert.equal($("create-session").open, false);
-    assert.equal($("create-title").textContent, "默认新会话配置");
-    assert.equal($("create-submit").textContent, "保存默认配置");
+    assert.equal($("defaults-workspace").value, "", "默认编辑全局默认配置");
     assert.equal($("create-main-provider").value, "", "defaults do not take the current model implicitly");
-    assert.equal($("create-trust-row").hidden, true);
     assert.equal(window.document.querySelectorAll('.settings-nav button').length, 4, "默认新会话设置 + 远程控制 + 模型与供应商 + 服务与更新");
     assert.equal($("create-subagent-mode").querySelector('option[value="inherit"]').textContent, "跟随主代理能力");
     assert.equal($("create-subagent-thinking").querySelector('option[value="max"]').textContent, "max");
@@ -722,14 +728,11 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     failDefaults = true;
     $("create-form").requestSubmit();
     await settle();
-    assert.equal($("create-session").open, false);
     assert.match($("create-feedback").textContent, /保存失败.*defaults unavailable/);
     assert.equal(defaults.capabilities, null);
-    assert.equal($("create-submit").disabled, false);
     failDefaults = false;
     $("create-form").requestSubmit();
     await settle();
-    assert.equal($("create-session").open, false);
     assert.equal($("settings").open, true);
     assert.equal(lastCreation, undefined, "saving defaults never creates or switches sessions");
     assert.equal(defaults.model, "other/child");
@@ -750,11 +753,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(window.document.querySelectorAll('.capability-agent:first-child input[data-kind="skills"]:checked').length, 2);
     assert.match($("create-agents").textContent, /当前目录不可用 · missing-skill/, "unavailable defaults are not silently removed");
     assert.equal(window.document.querySelectorAll('.capability-agent:last-child input[data-kind]:checked').length, 0);
-    assert.equal($("create-trust-row").hidden, true);
-    assert.equal($("create-submit").disabled, false, "defaults may save trusted global capabilities");
     needsTrust = false;
     defaults.capabilities.skills.pop();
-    $("create-session").close();
     $("settings").close();
     $("new").click();
     await settle();
@@ -763,128 +763,55 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("defaults-preview").compareDocumentPosition($("defaults-editor")) & window.Node.DOCUMENT_POSITION_FOLLOWING, window.Node.DOCUMENT_POSITION_FOLLOWING);
     row("a").querySelector(".session-item").click();
     await settle();
-    // 预设列表：connect 拉取，启动/编辑按钮共用 .preset-group。
-    assert.equal(window.document.querySelector(".preset-group").contains($("preset-list")), true);
-    const presetNames = () => [...window.document.querySelectorAll(".preset-group .preset-launch")].map((button) => button.textContent);
-    assert.deepEqual(presetNames(), ["审查预设", "沙盒预设", "失效预设"]);
-    assert.deepEqual([...window.document.querySelectorAll(".preset-group .preset-launch")].map((button) => button.title), ["使用当前工作目录", "C:\\untrusted", "使用当前工作目录"]);
-    assert.equal(window.document.querySelectorAll(".preset-group .preset-edit").length, 3);
-    // 保存预设：needsTrust 不阻止保存；未保存的预设没有删除按钮。
-    needsTrust = true;
-    $("custom-new").click();
+    // 配置范围下拉：只切换要编辑的默认配置，不切换当前会话；目录配置可增可删。
+    const configuredPaths = () => [...$("defaults-workspace").options].map((option) => option.value);
+    const sessionsSwitched = () => requests.filter((req) => ["session.attach", "session.create"].includes(req.type)).length;
+    $("open-settings").click();
     await settle();
-    assert.equal($("create-session").open, true);
-    assert.equal($("create-title").textContent, "预设会话配置");
-    assert.equal($("create-submit").textContent, "保存预设");
-    assert.equal($("preset-fields").hidden, false);
-    assert.equal($("preset-delete").hidden, true, "unsaved presets have nothing to delete");
-    assert.equal($("preset-name").required, true);
-    assert.equal($("create-submit").disabled, false, "saving presets is allowed even when the directory is untrusted");
-    assert.equal($("create-main-model").value, "test/model", "preset editor keeps current model instead of new defaults");
-    assert.equal($("create-main-mode").value, "all");
-    assert.equal($("create-subagent-mode").value, "all");
-    needsTrust = false;
-    $("create-main-mode").value = "custom";
-    $("create-main-mode").dispatchEvent(new window.Event("change"));
-    const checkboxes = window.document.querySelectorAll('.capability-agent:first-child input[data-kind="skills"]');
-    checkboxes[1].checked = false;
-    checkboxes[1].dispatchEvent(new window.Event("change"));
-    $("create-subagent-provider").value = "other";
-    $("create-subagent-provider").dispatchEvent(new window.Event("change"));
-    $("preset-name").value = "  评审工作台  ";
-    const presetSaves = () => requests.filter((req) => req.type === "session.presets.save").length;
-    lastCreation = undefined;
-    failPresetSave = true;
-    $("create-form").requestSubmit();
+    assert.equal($("defaults-panel").hidden, false, "设置默认打开默认新会话面板");
+    assert.deepEqual(configuredPaths(), ["", "C:\\other"], "下拉列出全局默认与已配置目录");
+    assert.equal($("defaults-delete").hidden, true, "全局默认没有可删除的目录配置");
+    const switchedBefore = sessionsSwitched();
+    $("defaults-workspace").value = "C:\\other";
+    $("defaults-workspace").dispatchEvent(new window.Event("change"));
     await settle();
-    assert.equal($("create-session").open, true, "failed saves keep the editor open");
-    assert.match($("create-feedback").textContent, /保存失败.*preset unavailable/);
-    assert.equal($("create-submit").disabled, false, "failed saves re-enable submit");
-    assert.equal(lastCreation, undefined, "saving a preset never creates a session");
-    failPresetSave = false;
-    $("create-form").requestSubmit();
+    assert.equal(sessionsSwitched(), switchedBefore, "切换配置范围不 attach、不新建会话");
+    assert.equal(window.sessionState().sessionId, "a", "当前会话不变");
+    assert.equal($("session-title").textContent, "a", "页头仍显示当前会话");
+    assert.equal($("create-main-model").value, "other/child", "编辑器加载该目录自己的配置");
+    assert.equal($("defaults-delete").hidden, false, "目录配置可以删除");
+    // 编辑目录配置：保存必须带 cwd，且不污染全局默认。
+    const globalDefaultsBefore = structuredClone(defaults);
+    $("create-main-thinking").value = "off";
+    $("create-main-thinking").dispatchEvent(new window.Event("change", { bubbles: true }));
     await settle();
-    assert.equal($("create-session").open, false);
-    assert.equal(lastPresetSave.name, "评审工作台", "preset names are trimmed");
-    assert.equal(Object.hasOwn(lastPresetSave, "presetId"), false);
-    assert.equal(Object.hasOwn(lastPresetSave, "cwd"), false, "cwd is only stored for fixed-directory presets");
-    assert.deepEqual(lastPresetSave.selection.capabilities.skills, ["skill-a"]);
-    assert.equal(lastPresetSave.selection.subagentModel, "other/child");
-    assert.equal(lastPresetSave.selection.compaction.enabled, true, "preset editor inherits the default compaction config");
-    assert.deepEqual(presetNames(), ["审查预设", "沙盒预设", "失效预设", "评审工作台"]);
-    // 直接启动：信任目录直接创建，不带 trustProject。
-    lastCreation = undefined;
-    window.document.querySelectorAll(".preset-group .preset-launch")[3].click();
+    assert.equal(lastDefaults.cwd, "C:\\other", "保存目录配置带上 cwd");
+    assert.equal(directoryDefaults.get("C:\\other").thinking, "off");
+    assert.deepEqual(defaults, globalDefaultsBefore, "目录配置不写全局默认");
+    assert.equal(window.sessionState().sessionId, "a", "保存目录配置不切换会话");
+    // 新增目录配置：选中的目录从全局默认复制一份独立配置后加入下拉。
+    pickerRoot = true;
+    $("defaults-directory").click();
     await settle();
-    assert.equal($("create-session").open, false, "trusted presets launch without a dialog");
-    assert.equal(lastCreation.useDefaults, false);
-    assert.equal(Object.hasOwn(lastCreation, "trustProject"), false, "direct launch never sends trust");
-    assert.equal(lastCreation.model, "test/model");
-    assert.equal(lastCreation.subagentModel, "other/child");
-    assert.equal(lastCreation.cwd, "C:\\work", "without a fixed cwd the preset uses the current directory");
-    // 编辑：重命名并固定目录。
-    window.document.querySelectorAll(".preset-group .preset-edit")[3].click();
+    assert.equal($("file-picker").open, true);
+    $("file-picker-results").querySelector(".fp-row").click();
     await settle();
-    assert.equal($("create-session").open, true);
-    assert.equal($("preset-name").value, "评审工作台");
-    assert.equal($("preset-delete").hidden, false);
-    assert.equal($("create-main-model").value, "test/model", "editing reloads the saved selection");
-    $("preset-name").value = "评审工作台 v2";
-    $("preset-fixed-cwd").checked = true;
-    $("create-form").requestSubmit();
+    $("file-picker-confirm").click();
     await settle();
-    assert.equal(lastPresetSave.presetId, "p4");
-    assert.equal(lastPresetSave.cwd, "C:\\work", "fixed-directory presets store their cwd");
-    assert.deepEqual(presetNames(), ["审查预设", "沙盒预设", "失效预设", "评审工作台 v2"]);
-    // 删除预设。
-    $("preset-delete").click();
+    assert.deepEqual(configuredPaths(), ["", "C:\\other", "C:\\other\\picked"], "新目录进入下拉");
+    assert.equal($("defaults-workspace").value, "C:\\other\\picked", "选完自动切到新目录配置");
+    assert.equal($("defaults-delete").hidden, false);
+    assert.equal(sessionsSwitched(), switchedBefore, "选择目录同样不切换会话");
+    // 删除目录配置：回落全局默认，当前会话不动。
+    $("defaults-delete").click();
     await settle();
-    assert.equal($("create-session").open, false);
-    assert.equal(requests.findLast((req) => req.type === "session.presets.delete").presetId, "p4");
-    assert.deepEqual(presetNames(), ["审查预设", "沙盒预设", "失效预设"]);
-    // 失效能力启动：launching 确认表单，修改仅本次有效，不回写预设。
-    lastCreation = undefined;
-    const savesAtLaunch = presetSaves();
-    window.document.querySelectorAll(".preset-group .preset-launch")[2].click();
-    await settle();
-    assert.equal($("create-session").open, true, "unavailable capabilities open the launch confirmation");
-    assert.equal($("create-title").textContent, "启动预设：失效预设");
-    assert.equal($("create-submit").textContent, "创建会话");
-    assert.equal($("preset-fields").hidden, true, "launching never edits the preset");
-    assert.equal($("create-submit").disabled, false, "launching submit is only blocked by needsTrust");
-    assert.match($("create-agents").textContent, /当前目录不可用 · gone-skill/);
-    const goneBox = [...window.document.querySelectorAll('.capability-agent:first-child input[data-kind="skills"]')].find((box) => box.checked);
-    assert.notEqual(goneBox, undefined, "unavailable selections survive into the confirmation");
-    goneBox.checked = false;
-    goneBox.dispatchEvent(new window.Event("change"));
-    $("create-form").requestSubmit();
-    await settle();
-    assert.equal($("create-session").open, false);
-    assert.equal(lastCreation.useDefaults, false);
-    assert.deepEqual(lastCreation.capabilities.skills, [], "launch-time edits apply to this run only");
-    assert.equal(lastCreation.trustProject, false);
-    assert.equal(lastCreation.cwd, "C:\\work");
-    assert.equal(presetSaves(), savesAtLaunch, "launching never rewrites the preset");
-    assert.deepEqual(presetNames(), ["审查预设", "沙盒预设", "失效预设"]);
-    // 未信任目录启动：确认信任后仅本次携带 trustProject。
-    lastCreation = undefined;
-    window.document.querySelectorAll(".preset-group .preset-launch")[1].click();
-    await settle();
-    assert.equal($("create-session").open, true, "untrusted presets open a trust confirmation");
-    assert.equal($("create-title").textContent, "启动预设：沙盒预设");
-    assert.equal($("preset-fields").hidden, true);
-    assert.equal($("create-submit").disabled, true, "creation waits for explicit trust while launching");
-    assert.equal(lastCreation, undefined);
-    $("create-trust").checked = true;
-    $("create-trust").dispatchEvent(new window.Event("change"));
-    await settle();
-    assert.equal($("create-submit").disabled, false);
-    $("create-form").requestSubmit();
-    await settle();
-    assert.equal($("create-session").open, false);
-    assert.equal(lastCreation.useDefaults, false);
-    assert.equal(lastCreation.trustProject, true, "trust is granted for this launch only");
-    assert.equal(lastCreation.cwd, "C:\\untrusted");
+    assert.equal(lastDefaultsDelete.cwd, "C:\\other\\picked", "删除的是当前下拉选中的目录");
+    assert.deepEqual(configuredPaths(), ["", "C:\\other"]);
+    assert.equal($("defaults-workspace").value, "", "删除后回到全局默认");
+    assert.equal($("create-main-model").value, "other/child", "编辑器回到全局默认配置");
+    assert.equal($("defaults-delete").hidden, true);
+    assert.equal(sessionsSwitched(), switchedBefore, "删除目录配置不切换会话");
+    $("settings").close();
     input("first draft\nsecond line");
     assert.equal($("send").disabled, false);
     row("b").querySelector(".session-item").click();
@@ -942,7 +869,6 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("create-form").requestSubmit();
     await settle();
     assert.equal(defaults.subagentCapabilities, "inherit");
-    assert.equal($("create-submit").hidden, true);
     $("create-subagent-mode").value = "all";
     $("create-subagent-mode").dispatchEvent(new window.Event("change", { bubbles: true }));
     await settle();
@@ -950,8 +876,6 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.match($("create-feedback").textContent, /已保存到本机/);
     assert.match($("defaults-preview").textContent, /Skills：skill-a/);
     assert.equal($("settings").open, true);
-    assert.equal($("create-session").open, false);
-    $("create-session").close();
     $("settings").close();
     input("  accepted task \n");
     failList = true;
@@ -1453,7 +1377,9 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     compactions: [],
   };
   let defaults = { compaction: { ...compactionDefaults, tokenThreshold: 50000 }, retry: null, model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
-  let lastDefaults, lastCreation, lastPresetSave;
+  // 目录级默认配置：cwd -> selection；未配置的目录回落全局 defaults。
+  const directoryDefaults = new Map([["C:\\other", { ...defaults, compaction: { ...compactionDefaults, enabled: true, tokenThreshold: 30000 } }]]);
+  let lastDefaults, lastCreation, lastDefaultsDelete;
   const requests = [];
   const sockets = [];
   class Socket {
@@ -1513,22 +1439,33 @@ test("compaction settings edit per scope and fold transcripts in place", async (
             if (req.compaction) state.config = { ...state.config, compaction: req.compaction };
             data = { ...state.config, model: req.model, subagentModel: null };
             break;
+          case "session.defaults.list":
+            data = { workspaces: [...directoryDefaults.keys()].sort() };
+            break;
           case "session.defaults.get":
-            data = defaults;
+            data = structuredClone(req.cwd ? directoryDefaults.get(req.cwd) ?? defaults : defaults);
             break;
           case "session.defaults.configure":
             lastDefaults = req;
-            data = defaults = { ...defaults, ...Object.fromEntries(Object.keys(defaults).map((key) => [key, req[key]])) };
+            // 与后端一致：新目录从全局默认复制一份独立配置；无 cwd 写全局。
+            {
+              const base = req.cwd ? directoryDefaults.get(req.cwd) ?? defaults : defaults;
+              const next = Object.fromEntries(Object.keys(defaults).map((key) => [key, key in req ? req[key] : base[key]]));
+              if (req.cwd) directoryDefaults.set(req.cwd, next);
+              else defaults = next;
+              data = structuredClone(next);
+            }
+            break;
+          case "session.defaults.delete":
+            lastDefaultsDelete = req;
+            if (!directoryDefaults.delete(req.cwd)) {
+              this.receive({ type: "response", id: req.id, ok: false, error: "该目录没有独立配置" });
+              return;
+            }
+            data = structuredClone(defaults);
             break;
           case "capabilities.list":
             data = { needsTrust: false, warnings: [], skills: [], mcp: [], plugins: [] };
-            break;
-          case "session.presets.list":
-            data = { presets: [] };
-            break;
-          case "session.presets.save":
-            lastPresetSave = req;
-            data = {};
             break;
           case "prompt": {
             const entryId = `m${state.messages.length + 1}`;
@@ -1774,27 +1711,35 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     await settle();
     assert.deepEqual([...$("create-retry").querySelectorAll(".retry-chip > span")].map((node) => node.textContent), ["stream error"], "重复输入已有词后标签仍可见");
 
-    // 预设保存：压缩配置随 selection 保存，保存预设不再直接创建会话。
+    // 目录配置：压缩设置按目录独立保存，删除目录配置后回落全局默认。
     $("settings").close();
-    $("custom-new").click();
+    $("open-settings").click();
     await settle();
-    assert.equal($("create-session").open, true);
-    assert.equal($("create-submit").textContent, "保存预设");
-    const customEditor = $("create-compaction");
-    assert.equal(customEditor.querySelector("input[type=checkbox]").checked, true, "预设编辑器使用会话配置（或应用默认值），不受默认配置编辑影响");
-    assert.equal(customEditor.querySelectorAll("input[type=number]")[0].value, "100000", "defaults edits do not change the running session");
-    customEditor.querySelector("input[type=checkbox]").checked = true;
-    customEditor.querySelectorAll("input[type=number]")[0].value = "70000";
-    customEditor.querySelectorAll("input[type=number]")[0].dispatchEvent(new window.Event("change", { bubbles: true }));
-    $("preset-name").value = "压缩预设";
-    $("create-form").requestSubmit();
+    const workspacePaths = () => [...$("defaults-workspace").options].map((option) => option.value);
+    assert.deepEqual(workspacePaths(), ["", "C:\\other"], "下拉列出全局默认与已配置目录");
+    assert.equal($("defaults-delete").hidden, true, "全局默认没有可删除的目录配置");
+    $("defaults-workspace").value = "C:\\other";
+    $("defaults-workspace").dispatchEvent(new window.Event("change"));
     await settle();
-    assert.equal($("create-session").open, false);
-    assert.equal(lastPresetSave.name, "压缩预设");
-    assert.equal(Object.hasOwn(lastPresetSave, "cwd"), false);
-    assert.equal(lastPresetSave.selection.compaction.enabled, true, "compaction edits travel with the saved selection");
-    assert.equal(lastPresetSave.selection.compaction.tokenThreshold, 70000);
-    assert.equal(lastCreation, undefined, "saving a preset never creates a session");
+    const scopedCompaction = () => $("create-compaction");
+    assert.equal(scopedCompaction().querySelector("input[type=checkbox]").checked, true, "目录配置加载自己的压缩开关");
+    assert.equal(scopedCompaction().querySelectorAll("input[type=number]")[0].value, "30000", "目录配置加载自己的压缩阈值");
+    assert.equal($("defaults-delete").hidden, false, "目录配置可以删除");
+    const globalCompaction = structuredClone(defaults.compaction);
+    scopedCompaction().querySelectorAll("input[type=number]")[0].value = "40000";
+    scopedCompaction().querySelectorAll("input[type=number]")[0].dispatchEvent(new window.Event("change", { bubbles: true }));
+    await settle();
+    assert.equal(lastDefaults.cwd, "C:\\other", "目录配置保存带上 cwd");
+    assert.equal(directoryDefaults.get("C:\\other").compaction.tokenThreshold, 40000);
+    assert.deepEqual(defaults.compaction, globalCompaction, "目录配置不污染全局默认");
+    $("defaults-delete").click();
+    await settle();
+    assert.equal(lastDefaultsDelete.cwd, "C:\\other", "删除的是当前下拉选中的目录配置");
+    assert.deepEqual(workspacePaths(), [""], "删除后目录从下拉移除");
+    assert.equal($("defaults-workspace").value, "", "删除后回到全局默认");
+    assert.equal($("create-compaction").querySelectorAll("input[type=number]")[0].value, "60000", "编辑器回落全局压缩阈值");
+    assert.equal($("defaults-delete").hidden, true);
+    $("settings").close();
 
     // 任务计时：与「+」同行最右端，运行中累计、停止后定格、再次运行继续累加。
     assert.equal($("task-timer").hidden, true, "没有运行记录时不占位");

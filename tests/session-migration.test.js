@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile, rm, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, rm, mkdir, realpath } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,34 +19,30 @@ factory.catalog = () => [{ key: "test/one" }];
 
 const workspaceHash = (cwd) => createHash("sha256").update(process.platform === "win32" ? cwd.toLowerCase() : cwd).digest("hex");
 
-test("旧 defaults.json / presets.json 一次性迁入库：验证成功才标记，源文件保留，此后 JSON 非权威", async () => {
+test("旧 defaults.json 一次性迁入库：验证成功才标记，源文件保留，此后 JSON 非权威", async () => {
   const dir = await mkdtemp(join(tmpdir(), "axiom-migrate-"));
   const defaultsPath = join(dir, "defaults.json");
   const presetsPath = join(dir, "presets.json");
   let first, second;
   try {
     await writeFile(defaultsPath, JSON.stringify({ model: "a/b", projectSkills: {} }));
-    const preset = { id: randomUUID(), name: "旧预设", selection: { model: "a/b" } };
-    await writeFile(presetsPath, JSON.stringify({ presets: [preset] }));
+    // 旧预设不迁移：留在磁盘上，不阻断启动。
+    await writeFile(presetsPath, JSON.stringify({ presets: [{ id: randomUUID(), name: "旧预设", selection: {} }] }));
 
     first = new Sessions(factory, defaultsPath);
     await first.loadDefaults();
     // 迁移结果生效 + 源文件保留 + 标记写入
     assert.equal(first.getDefaults().model, "a/b");
-    assert.deepEqual(await first.listPresets(), { presets: [preset] });
     assert.equal(JSON.parse(await readFile(defaultsPath, "utf8")).model, "a/b");
-    assert.equal(JSON.parse(await readFile(presetsPath, "utf8")).presets.length, 1);
     assert.equal(first.database.get("migrated", defaultsPath), true);
-    assert.equal(first.database.get("migrated", presetsPath), true);
+    assert.equal(first.database.get("migrated", presetsPath), undefined);
     await first.close();
 
     // 此后改 JSON 不再生效：库是唯一权威，源文件永不复活旧值
     await writeFile(defaultsPath, JSON.stringify({ model: "c/d", projectSkills: {} }));
-    await writeFile(presetsPath, "{broken");
     second = new Sessions(factory, defaultsPath);
     await second.loadDefaults();
     assert.equal(second.getDefaults().model, "a/b");
-    assert.deepEqual(await second.listPresets(), { presets: [preset] });
     await second.close();
   } finally {
     await second?.close(); await first?.close();
@@ -54,16 +50,36 @@ test("旧 defaults.json / presets.json 一次性迁入库：验证成功才标�
   }
 });
 
-test("库已有defaults仍迁移presets，两种迁移互不阻断", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "axiom-independent-presets-"));
-  const sessions = new Sessions(factory, join(dir, "defaults.json"));
+test("旧版单条 defaults 记录按新布局拆分：全局兜底 + 各工作目录独立配置", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "axiom-split-defaults-"));
+  const a = await realpath(await mkdir(join(dir, "a"), { recursive: true }) || dir);
+  const b = join(dir, "b");
+  await mkdir(b);
+  // 带能力目录的桩，才走项目技能合并分支（与旧版 workspaceDefaults 一致）。
+  const capabilityFactory = Object.assign(async () => ({}), factory, { capabilities: async () => ({ skills: [], mcp: [], plugins: [] }) });
+  const sessions = new Sessions(capabilityFactory, join(dir, "defaults.json"));
   try {
-    sessions.database.set("defaults", "defaults", { model: "test/one" });
-    const preset = { id: randomUUID(), name: "独立迁移", selection: {} };
-    await writeFile(join(dir, "presets.json"), JSON.stringify({ presets: [preset] }));
+    // 旧记录：一份全局配置 + A 目录的项目技能表（键是 realpath，旧版就如此），B 从未配置过
+    sessions.database.set("defaults", "defaults", {
+      model: "test/one",
+      projectSkills: { [a]: { capabilities: ["a-skill"] } },
+    });
     await sessions.loadDefaults();
-    assert.deepEqual(await sessions.listPresets(), { presets: [preset] });
+
+    // 全局兜底保留旧配置；A 得到独立配置，B 回落全局
     assert.equal(sessions.getDefaults().model, "test/one");
+    assert.deepEqual(sessions.listDefaults(), { workspaces: [a] });
+    assert.deepEqual((await sessions.workspaceDefaults(a)).capabilities.skills, ["a-skill"]);
+    assert.deepEqual((await sessions.workspaceDefaults(b)).capabilities.skills, []);
+    // 迁移后的目录配置写进库（重启后仍生效）
+    await sessions.close();
+    const restored = new Sessions(capabilityFactory, join(dir, "defaults.json"));
+    try {
+      await restored.loadDefaults();
+      assert.equal(restored.getDefaults().model, "test/one");
+      assert.deepEqual((await restored.workspaceDefaults(a)).capabilities.skills, ["a-skill"]);
+      assert.deepEqual((await restored.workspaceDefaults(b)).capabilities.skills, []);
+    } finally { await restored.close(); }
   } finally { await sessions.close(); await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -208,7 +224,7 @@ test("旧文件迁移告警保留路径，但不带坏JSON原文", async () => {
   const original = console.warn;
   try {
     await mkdir(directory, { recursive: true });
-    const paths = [join(root, "defaults.json"), join(root, "presets.json"), join(directory, "broken.json")];
+    const paths = [join(root, "defaults.json"), join(directory, "broken.json")];
     for (const path of paths) await writeFile(path, 'secret-content-not-json');
     console.warn = message => warnings.push(message);
     await sessions.loadDefaults();
