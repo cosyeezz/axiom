@@ -1,5 +1,9 @@
 # 开发记录
 
+## 2026-09-16 禁止构建器隐式发布
+
+- 第二次云端运行两平台测试通过并完成打包，但electron-builder因CI环境自动尝试发布而缺GH_TOKEN失败。desktop.yml显式--publish never，保持构建权限只读，发布仍由人工核验后执行。不通过给构建器写权限绕过此问题。
+
 ## 2026-09-16 云端跨平台测试修正
 
 - 首次macOS/Windows云端构建均在测试阶段失败，未产出Mac包。原因：测试假目录未canonicalize（macOS /var与/private/var、Windows短路径与长路径）；macOS并发测试同步管道读返回EAGAIN。

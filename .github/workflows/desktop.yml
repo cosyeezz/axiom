@@ -27,7 +27,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run desktop:stage
-      - run: npm run desktop:build
+      - run: npm run desktop:build -- --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - name: Verify bundled Windows startup
