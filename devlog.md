@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-16 Mac arm64 dev包发布
+
+- CI运行35049501362两平台成功，Mac通过自动测试、随包后端隔离启动/健康身份/安全退出和hdiutil verify。下载首次180秒超时，重试600秒上限内成功。
+- 基于551d914产出的Axiom-0.1.7-arm64.dmg及SHA256SUMS-macOS.txt补充至desktop-v0.1.7-dev.1，GitHub digest与本地b37c8798782cf93009ef83837b20592ffb31cad3d0a727d7c682b6b9d9e83016一致。
+- README与发布说明注明仅Apple Silicon、无Developer ID/公证、未完成实机窗口安装验收；master未合并，未更改Windows资产。
+
 ## 2026-09-16 禁止构建器隐式发布
 
 - 第二次云端运行两平台测试通过并完成打包，但electron-builder因CI环境自动尝试发布而缺GH_TOKEN失败。desktop.yml显式--publish never，保持构建权限只读，发布仍由人工核验后执行。不通过给构建器写权限绕过此问题。
