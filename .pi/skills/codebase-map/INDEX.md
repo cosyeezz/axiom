@@ -1,12 +1,12 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/16 02:54:54）
+# Axiom 多级代码索引（生成于 2026/9/16 02:55:55）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
 | public/answer-tags.js | 48 | 主代理回答标签解析、代码保护与流式容错 | OPEN, CLOSE, MARKS, isMark |
-| public/app.js | 4209 | 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度 | questionUI, filePicker, $, sessionId |
+| public/app.js | 4222 | 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度 | questionUI, filePicker, $, sessionId |
 | public/file-picker.css | 276 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 355 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/goal-markers.js | 60 | 前后端共享 goal 完成标记解析与展示层剥离（含流式半截） | ROUND_MARKER, GOAL_MARKER, MARKER_TOKENS, SUFFIXES |
@@ -27,7 +27,7 @@
 | public/session-cache.js | 53 | 可淘汰会话阅读位置缓存与未保存输入保护 | EVICTABLE_VIEWS, hasUnsavedInput, createSessionCache |
 | public/stream-playback.js | 165 | 有界字素播放游标与真实时间缓冲追赶 | BUFFER_MS, BASE_RATE, CATCHUP_S, MAX_RATE |
 | public/stream-renderer.js | 168 | 共享 rAF 流式绘制、交互让路与挂载生命周期 | createStreamRenderer |
-| public/style.css | 1519 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1566 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | public/theme.js | 11 | 首帧前阻塞应用明/暗主题（localStorage axiom.theme，默认深色） | - |
 | public/tooltip.css | 50 | 共享悬停说明样式（浅色主题下反色） | - |
 | public/tooltip.js | 225 | 共享悬停说明：动态 title、键盘、定位与无障碍 | SHOW_DELAY, HIDE_DELAY, GAP, EDGE |
@@ -211,7 +211,7 @@
 | isMark | const | 10 |
 | splitAnswer | function | 12 |
 
-### public/app.js（4209 行） — 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度
+### public/app.js（4222 行） — 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -516,53 +516,53 @@
 | normalizeCwd | function | 3321 |
 | renderSessions | function | 3325 |
 | renderSessionTabs | method | 3326 |
-| sessionAction | const | 3605 |
-| openSessionAction | function | 3607 |
-| contextIcon | function | 3648 |
-| renderContextChips | function | 3651 |
-| fuzzyHit | function | 3670 |
-| renderContextResults | function | 3677 |
-| showContextSkills | function | 3697 |
-| positionContextSkills | function | 3702 |
-| showContextSkills | method | 3714 |
-| region | method | 3749 |
-| skillTrigger | const | 3751 |
-| showContextSkills | method | 3767 |
-| resizePrompt | method | 3776 |
-| region | method | 3777 |
-| SLASH_COMMANDS | const | 3782 |
-| closeCompletion | function | 3785 |
-| highlightCompletion | function | 3793 |
-| chooseCompletion | function | 3802 |
-| closeCompletion | method | 3814 |
-| updateCompletion | function | 3817 |
-| closeCompletion | method | 3818 |
-| resizePrompt | method | 3877 |
-| region | method | 3878 |
-| switchSession | method | 3918 |
-| creationLoad | const | 3929 |
-| defaultsScope | const | 3931 |
-| renderDefaultsScope | function | 3932 |
-| options | method | 3933 |
-| refreshDefaultsScope | function | 3936 |
-| renderDefaultsScope | method | 3942 |
-| createAgentPicker | function | 3945 |
-| options | method | 3971 |
-| fill | method | 3978 |
-| fillThinking | method | 3986 |
-| options | method | 3988 |
-| defaultsSelection | const | 4034 |
-| defaultsSaving | const | 4047 |
-| loadCreation | function | 4049 |
-| disposePickers | method | 4056 |
-| disposePickers | method | 4057 |
-| disposePickers | function | 4086 |
-| openDefaults | function | 4089 |
-| disposePickers | method | 4094 |
-| updateAvailability | method | 4140 |
-| updateDefaultsPreview | function | 4153 |
-| updateDefaultsPreview | method | 4177 |
-| updateAvailability | method | 4193 |
+| sessionAction | const | 3618 |
+| openSessionAction | function | 3620 |
+| contextIcon | function | 3661 |
+| renderContextChips | function | 3664 |
+| fuzzyHit | function | 3683 |
+| renderContextResults | function | 3690 |
+| showContextSkills | function | 3710 |
+| positionContextSkills | function | 3715 |
+| showContextSkills | method | 3727 |
+| region | method | 3762 |
+| skillTrigger | const | 3764 |
+| showContextSkills | method | 3780 |
+| resizePrompt | method | 3789 |
+| region | method | 3790 |
+| SLASH_COMMANDS | const | 3795 |
+| closeCompletion | function | 3798 |
+| highlightCompletion | function | 3806 |
+| chooseCompletion | function | 3815 |
+| closeCompletion | method | 3827 |
+| updateCompletion | function | 3830 |
+| closeCompletion | method | 3831 |
+| resizePrompt | method | 3890 |
+| region | method | 3891 |
+| switchSession | method | 3931 |
+| creationLoad | const | 3942 |
+| defaultsScope | const | 3944 |
+| renderDefaultsScope | function | 3945 |
+| options | method | 3946 |
+| refreshDefaultsScope | function | 3949 |
+| renderDefaultsScope | method | 3955 |
+| createAgentPicker | function | 3958 |
+| options | method | 3984 |
+| fill | method | 3991 |
+| fillThinking | method | 3999 |
+| options | method | 4001 |
+| defaultsSelection | const | 4047 |
+| defaultsSaving | const | 4060 |
+| loadCreation | function | 4062 |
+| disposePickers | method | 4069 |
+| disposePickers | method | 4070 |
+| disposePickers | function | 4099 |
+| openDefaults | function | 4102 |
+| disposePickers | method | 4107 |
+| updateAvailability | method | 4153 |
+| updateDefaultsPreview | function | 4166 |
+| updateDefaultsPreview | method | 4190 |
+| updateAvailability | method | 4206 |
 
 ### public/file-picker.js（355 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 
