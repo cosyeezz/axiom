@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-16 改用云端构建验证后直接发布
+
+- 用户要求不经本地下载中转，自己下载到Mac验证。核对命令行后停止本次后台发布PID82788及其子进程；确认dev.2尚未发布，旧Mac失效资产已撤回。
+- desktop.yml新增显式publish_mac输入和独立发布job，needs两平台build成功后下载同一次运行的Mac artifact、计算SHA256、直接创建dev.2预发布，拒绝覆盖既有版本；构建保留contents:read，仅发布job授予contents:write。job/发布步骤分别10/8分钟超时。
+- README同步直发入口。用户机带下载隔离标记的Gatekeeper检查仍需实测，不宣称已通过。
+
 ## 2026-09-16 Mac签名修正版验证与异步发布
 
 - CI 35063188663成功：Mac测试618/618，codesign报告valid on disk / satisfies its Designated Requirement，真实Electron窗口、后端保存退出、DMG CRC均通过；Windows616通过2跳过。

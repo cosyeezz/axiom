@@ -2,6 +2,11 @@ name: Build Axiom Desktop Test Packages
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_mac:
+        description: '验证成功后直接发布 Mac dev.2（已存在则拒绝覆盖）'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -56,3 +61,40 @@ jobs:
             dist/*.dmg
           if-no-files-found: error
           retention-days: 14
+
+  publish-mac:
+    if: inputs.publish_mac
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Axiom-macOS-arm64-unsigned
+          path: release
+      - name: Publish verified Mac prerelease
+        timeout-minutes: 8
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BUILD_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release
+          sha256sum Axiom-0.1.7-arm64.dmg > SHA256SUMS-macOS.txt
+          cat > notes.md <<EOF
+          macOS Apple Silicon（M 系列）开发测试修正版，替代已撤回的 dev.1 Mac 包。Windows 用户仍使用 dev.1 Windows 安装包。
+
+          修复资源签名错误。采用 ad-hoc 签名，未取得 Developer ID 签名或 Apple 公证，Gatekeeper 仍可能拦截；请勿关闭系统安全检查。
+
+          发布前已通过自动测试、codesign 深度严格校验、真实 Electron 窗口启动及安全退出、随包后端隔离启动和 DMG 完整性检查。用户 Mac 上的下载安装验证尚待完成。
+
+          来源提交：${BUILD_SHA}。校验和仅检查文件完整性，不是身份签名。可信整包更新与旧安装迁移尚未完整交付；不要新旧服务同时操作真实数据。
+          EOF
+          gh release create desktop-v0.1.7-dev.2 Axiom-0.1.7-arm64.dmg SHA256SUMS-macOS.txt \
+            --target "$BUILD_SHA" --prerelease --latest=false \
+            --title 'Axiom Desktop 0.1.7 dev.2 (macOS arm64 signature fix)' --notes-file notes.md
+          gh release view desktop-v0.1.7-dev.2 --json assets,isPrerelease,url
