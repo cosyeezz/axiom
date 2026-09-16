@@ -30,9 +30,9 @@ INDEX.md 是生成物（勿手改）；knowledge.md 是人工沉淀物（勿删�
 ## 架构图（L0）
 
 ```
-desktop/pake.json ── Pake 独立桌面壳（macOS Universal / Windows x64）
-  └─ 打开 http://127.0.0.1:4319（不内置/启动后端，复用以下网页）
-     .github/workflows/desktop.yml 分平台打包
+desktop/main.mjs ── Electron 桌面入口（Windows x64 已冒烟，macOS 待验）
+  └─ backend-lifecycle.mjs → 随包独立Node → src/main.js（不叠加 supervisor）
+     scripts/stage-desktop.mjs 暂存；.github/workflows/desktop.yml 手动构建测试包
 浏览器 public/
   index.html ── app.js（唯一入口：视图栈/权威归并/会话设置UI）
                  ├─ transport.js        唯一业务连接、请求回执、逻辑订阅与快照闸门

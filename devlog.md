@@ -1,5 +1,21 @@
 # 开发记录
 
+## 2026-09-15 Electron自包含Windows测试包与真实启动验证
+
+- 删除 `desktop/pake.json`，将 `.github/workflows/desktop.yml` 替换为仅手动触发的 Electron 未签名测试包构建（不发布 Release，macOS arm64 待CI验收）。
+- 新增 `desktop/main.mjs`、`scripts/stage-desktop.mjs`、两份 `scripts/smoke-*.mjs`；固定 Electron 44.4.1、独立 Node 24.19.0、私有生产依赖，更新 package/lock、README 与忽略目录。镜像解除 Electron/NSIS 官方下载超时，不关闭校验。
+- 实测发现 Electron ESM 顶层 await app.whenReady() 阻塞 ready；改为注册 then 后完成模块评估，真实开发壳与打包壳均完成窗口加载和退出。前两次超时仅清理本次隔离进程树，记失败，不视作安全退出。
+- 产物 `dist/Axiom Setup 0.1.7.exe`；Authenticode 查询为 NotSigned。打包目录随包 Node 在空 PATH 启动、health身份核对、安全退出通过；实际 Electron 窗口隔离数据验证通过。全量测试612通过、2跳过、0失败（614项）。尚未运行安装向导、macOS、签名、公证、更新替换、旧安装迁移、空闲释放与应用内标签，不能称完整成品。
+
+
+## 2026-09-15 生命周期审查修正与数据保护基础（进行中）
+
+- 修正：等待退出允许明确取消升级；停止后清除 ready，拒绝复用过期启动结果；删除对数组 pendingWrites.size 的无效检测，保存失败由 close 流程上报，不能靠排队长度永久阻塞退出。
+- 数据：main.js 写库前取得数据根独占；Windows 使用命名管道、Linux 抽象 socket、macOS loopback 端口（碰撞保守拒绝）。Database 在权限/WAL/迁移前只读检查 dataVersion，拒绝更新数据被旧构建改写；旧无守卫程序仍需显式迁移门禁。
+- 文件：src/data-owner.js、src/main.js、src/server.js、src/database.js、desktop/backend-lifecycle.mjs、tests/backend-lifecycle.test.js、tests/data-owner.test.js、tests/data-version.test.js、README.md、代码索引。
+- 验证：生命周期/归属/API 五项通过；版本与数据库七项通过、一项 POSIX 权限测试在 Windows 跳过。所有命令有超时，未操作用户数据。尚未完成 Electron 成品接线和全量回归。
+
+
 ## 2026-09-15 09:43 -0700 桌面重构：授权与生命周期首段
 
 - 决策：用户明确授权在 feat/desktop-runtime 新增精简 Electron 主进程替换 Pake；不再等待外部 Electron 仓库。此提交仅为阶段一的生命周期基础，不代表桌面交付完成。

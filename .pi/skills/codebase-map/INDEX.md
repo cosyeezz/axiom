@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/15 09:45:01）
+# Axiom 多级代码索引（生成于 2026/9/15 18:27:27）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -36,13 +36,17 @@
 | scripts/maint-server.mjs | 86 | loopback维护HTTP：来源校验、随机凭证、状态与离线恢复 | MAX_BODY, hash, json, startMaintServer |
 | scripts/maint-state.mjs | 138 | 守护维护状态：持久化阶段、最近结果与有界脱敏证据 | NAMESPACE, LOG_LIMIT, redact, sanitize |
 | scripts/service.mjs | 619 | 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道 | root, output, run, npmRun |
+| scripts/smoke-desktop.mjs | 38 | 随包Node空PATH隔离数据冒烟验证 | root, temp, probe, port |
+| scripts/smoke-shell.mjs | 31 | Electron真实窗口与安全退出隔离冒烟验证 | temp, probe, port, env |
+| scripts/stage-desktop.mjs | 28 | 暂存固定Node与完整后端依赖 | root, stage, app, npm |
 | scripts/uninstall.mjs | 18 | 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据 | uninstall |
 | src/capabilities.js | 144 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
 | src/compaction.js | 391 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
-| src/database.js | 103 | 共享 SQLite 连接、小配置 KV、WAL 与一致性备份 | nodeOk, Database |
+| src/data-owner.js | 23 | 写库前数据根独占：内核管道或socket持有，禁止同根双写 | claimDataRoot |
+| src/database.js | 122 | 共享 SQLite 连接、小配置 KV、WAL 与一致性备份 | nodeOk, DATA_VERSION, assertDataVersion, Database |
 | src/goal.js | 988 | Goal：会话级目标状态、轮次计划、验收门与持久化 | GOAL_PHASES, GOAL_ACTIONS, ROUND_STATUSES, GOAL_MAX_SEGMENTS |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
-| src/main.js | 129 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, home, database |
+| src/main.js | 133 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, home, releaseDataRoot |
 | src/model-auth.js | 89 | SDK 登录桥：连接隔离、超时取消与安全事件投影 | safeUrl, text, eventView, createModelAuthService |
 | src/model-config.js | 619 | Pi models.json 无损配置读写与共享收藏持久化 | sdkModelConfig, sdkResolveConfigValue, digest, LEVELS |
 | src/pi-model-storage.js | 409 | 模型与凭据 SQLite 权威存储、Pi 派生兼容文件 | sdkResolveConfigValue, sdkIsCommandConfigValue, NAMESPACE, AUTH_NAMESPACE |
@@ -67,7 +71,7 @@
 | tests/app.test.js | 1895 | node --test 测试（npm test） | pickerSource, modelSources, serviceSource |
 | tests/autoscroll-ui.py | 99 | node --test 测试（npm test） | - |
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
-| tests/backend-lifecycle.test.js | 60 | node --test 测试（npm test） | fixture |
+| tests/backend-lifecycle.test.js | 64 | node --test 测试（npm test） | fixture |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
 | tests/capabilities.test.js | 289 | node --test 测试（npm test） | - |
 | tests/cli-help.test.js | 46 | node --test 测试（npm test） | cli |
@@ -81,6 +85,8 @@
 | tests/conversation-font-ui.py | 43 | node --test 测试（npm test） | - |
 | tests/conversation-preview.mjs | 124 | node --test 测试（npm test） | markdown, message, thinking, state |
 | tests/conversation-ui.py | 254 | node --test 测试（npm test） | - |
+| tests/data-owner.test.js | 24 | node --test 测试（npm test） | - |
+| tests/data-version.test.js | 25 | node --test 测试（npm test） | - |
 | tests/database.test.js | 149 | node --test 测试（npm test） | - |
 | tests/defaults.test.js | 185 | node --test 测试（npm test） | - |
 | tests/dev-assets.test.js | 46 | node --test 测试（npm test） | - |
@@ -819,6 +825,43 @@
 | FORE | const | 604 |
 | COMMANDS | const | 605 |
 
+### scripts/smoke-desktop.mjs（38 行） — 随包Node空PATH隔离数据冒烟验证
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| root | const | 8 |
+| temp | const | 9 |
+| probe | const | 10 |
+| port | const | 12 |
+| child | const | 14 |
+| backend | const | 16 |
+
+### scripts/smoke-shell.mjs（31 行） — Electron真实窗口与安全退出隔离冒烟验证
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| temp | const | 6 |
+| probe | const | 7 |
+| port | const | 9 |
+| env | const | 11 |
+| executable | const | 14 |
+| child | const | 15 |
+| timedOut | const | 16 |
+| timer | const | 17 |
+| clearTimeout | method | 28 |
+
+### scripts/stage-desktop.mjs（28 行） — 暂存固定Node与完整后端依赖
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| root | const | 7 |
+| stage | const | 8 |
+| app | const | 9 |
+| npm | const | 16 |
+| result | const | 17 |
+| response | const | 21 |
+| pkg | const | 24 |
+
 ### scripts/uninstall.mjs（18 行） — 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据
 
 | 符号 | 类型 | 行 |
@@ -857,19 +900,27 @@
 | throwIfAborted | method | 132 |
 | createBackgroundCompaction | function | 205 |
 
-### src/database.js（103 行） — 共享 SQLite 连接、小配置 KV、WAL 与一致性备份
+### src/data-owner.js（23 行） — 写库前数据根独占：内核管道或socket持有，禁止同根双写
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| claimDataRoot | function | 6 |
+
+### src/database.js（122 行） — 共享 SQLite 连接、小配置 KV、WAL 与一致性备份
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | nodeOk | const | 5 |
-| Database | class | 19 |
-| constructor | method | 23 |
-| get | method | 53 |
-| set | method | 63 |
-| list | method | 78 |
-| prepare | method | 91 |
-| exec | method | 95 |
-| close | method | 99 |
+| DATA_VERSION | const | 14 |
+| assertDataVersion | function | 17 |
+| Database | class | 36 |
+| constructor | method | 40 |
+| get | method | 72 |
+| set | method | 82 |
+| list | method | 97 |
+| prepare | method | 110 |
+| exec | method | 114 |
+| close | method | 118 |
 
 ### src/goal.js（988 行） — Goal：会话级目标状态、轮次计划、验收门与持久化
 
@@ -935,24 +986,25 @@
 | inlineImages | function | 2 |
 | inlineImagesExtension | function | 29 |
 
-### src/main.js（129 行） — 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理
+### src/main.js（133 行） — 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| port | const | 18 |
-| cwd | const | 21 |
-| home | const | 26 |
-| database | const | 35 |
-| modelStorage | const | 36 |
-| factory | const | 38 |
-| sessions | const | 43 |
-| models | const | 45 |
-| service | const | 48 |
-| app | const | 81 |
-| remoteReady | const | 86 |
-| initRemote | function | 96 |
-| closing | const | 106 |
-| stop | function | 107 |
+| port | const | 19 |
+| cwd | const | 22 |
+| home | const | 27 |
+| releaseDataRoot | const | 29 |
+| database | const | 37 |
+| modelStorage | const | 38 |
+| factory | const | 40 |
+| sessions | const | 45 |
+| models | const | 47 |
+| service | const | 50 |
+| app | const | 83 |
+| remoteReady | const | 88 |
+| initRemote | function | 98 |
+| closing | const | 108 |
+| stop | function | 109 |
 
 ### src/model-auth.js（89 行） — SDK 登录桥：连接隔离、超时取消与安全事件投影
 
@@ -1347,7 +1399,7 @@
 | cwd | const | 17 |
 | service | const | 18 |
 
-### tests/backend-lifecycle.test.js（60 行） — node --test 测试（npm test）
+### tests/backend-lifecycle.test.js（64 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|

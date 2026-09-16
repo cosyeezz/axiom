@@ -1,12 +1,7 @@
-name: Build Axiom Desktop
+name: Build Axiom Desktop Test Packages
 
 on:
   workflow_dispatch:
-  push:
-    branches: [master, feat/pake-desktop]
-    paths:
-      - '.github/workflows/desktop.yml'
-      - 'desktop/**'
 
 permissions:
   contents: read
@@ -18,41 +13,33 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            target: x64
-            artifact: Axiom-Windows-x64
-            output: Axiom.msi
-          - os: macos-latest
-            target: universal
-            artifact: Axiom-macOS-universal
-            output: Axiom.dmg
+            artifact: Axiom-Windows-x64-unsigned
+          - os: macos-15
+            artifact: Axiom-macOS-arm64-unsigned
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install macOS cross-compilation targets
-        if: runner.os == 'macOS'
-        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
-      - name: Install Pake (independent of Axiom dependencies)
-        run: npm install --global pake-cli@3.16.2
-      - name: Build desktop shell
-        run: pake --config desktop/pake.json --targets ${{ matrix.target }}
-      - name: Verify macOS installer and both architectures
-        if: runner.os == 'macOS'
-        shell: bash
+          node-version: '24.19.0'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run desktop:stage
+      - run: npm run desktop:build
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Verify bundled Windows startup
+        if: runner.os == 'Windows'
         run: |
-          hdiutil verify Axiom.dmg
-          hdiutil attach Axiom.dmg -nobrowse -mountpoint "$RUNNER_TEMP/axiom-dmg"
-          trap 'hdiutil detach "$RUNNER_TEMP/axiom-dmg"' EXIT
-          APP="$RUNNER_TEMP/axiom-dmg/Axiom.app"
-          EXEC=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$APP/Contents/Info.plist")
-          lipo "$APP/Contents/MacOS/$EXEC" -verify_arch arm64 x86_64
+          node scripts/smoke-desktop.mjs
+          node scripts/smoke-shell.mjs dist/win-unpacked/Axiom.exe
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: ${{ matrix.output }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 14

@@ -1,6 +1,8 @@
 # Axiom
 
-> 桌面重构进度（功能分支）：已确认以精简 Electron 替换 Pake；当前仅落地可独立测试的 `desktop/backend-lifecycle.mjs` 与 worker 就绪/等待退出契约，尚未接入 Electron 或产出自包含安装包。生命周期测试：`node --test tests/backend-lifecycle.test.js`。超时不强杀、不视为保存成功、不允许启动第二个未确认归属的 worker。签名、数据归属锁、安装更新、会话空闲释放和应用内标签仍待实施。
+> 桌面重构进度（功能分支）：精简 Electron 已接入随包独立 Node 24.19.0，Windows x64 自包含测试安装包已构建；实际打包目录已通过隔离数据的窗口加载与后端安全退出测试。安装包 **未签名，非完整交付版**；旧安装迁移门禁、安装更新、会话空闲释放和应用内标签仍待实施。超时不强杀、不视为保存成功。数据根独占和写前版本检查只保护新版本，不能阻止旧程序写库，勿在旧服务未退出时使用真实数据。
+
+桌面构建：使用固定 Node 后执行 `npm run desktop:stage` → `npm run desktop:build`。产物在 `dist/`；本机测试：`node scripts/smoke-desktop.mjs`、`node scripts/smoke-shell.mjs dist/win-unpacked/Axiom.exe`（Windows）。测试创建临时数据，不读取原有用户凭据。GitHub 下载不可达时可显式设置 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 和 `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`；镜像不替代平台签名。
 
 
 ## 独立 SVG 动画
@@ -152,13 +154,13 @@ npm uninstall -g <包名>
 
 `~/.axiom` 会话数据与 `~/.pi` 配置跨更名保留，无需搬移。迁移期间及之后都不要同时运行新旧两个服务：两者默认占用同一端口并读写同一数据目录，同时启动会端口冲突或互相干扰；先确认旧服务已完全停止，再启动新服务。
 
-### 独立桌面壳（Pake / macOS + Windows）
+### 旧版 Pake 桌面壳（历史说明，已停止维护）
 
 ```text
 Axiom（npm 安装、独立更新） <-- http://127.0.0.1:4319 -- Pake 桌面窗口
 ```
 
-桌面壳只打开本地正式服务，不内置 Node.js、Pi、网页副本或后端，不启动/停止服务。Axiom 更新后刷新窗口即可，通常无需重打壳；关闭窗口不停止后台任务。壳的版本在 `desktop/pake.json` 独立维护，不跟随 npm 包版本。
+以下仅描述已发布的旧版 v0.1.0，不适用于当前 Electron 构建；当前仓库已移除 Pake 配置与构建入口，请使用本文顶部的桌面构建说明。旧桌面壳只打开本地正式服务，不内置 Node.js、Pi、网页副本或后端，不启动/停止服务。Axiom 更新后刷新窗口即可，通常无需重打壳；关闭窗口不停止后台任务。壳的版本在 `desktop/pake.json` 独立维护，不跟随 npm 包版本。
 
 使用：先按上文 `npm install -g github:cosyeezz/axiom` 安装本体，再运行 `axiom-setup --no-browser`（可注册登录自启），最后安装并打开桌面壳。服务未启动时窗口无法加载，先运行 `axiom`，再重新打开窗口。桌面窗口与浏览器的 localStorage 不共享，但会话仍由同一本地服务保存。
 
@@ -561,7 +563,7 @@ capabilities.js 原生能力发现、内存配置、MCP 快照与选择加载
 
 ## 桌面稳定性与前端性能开发计划
 
-以下六份文档是**待实施方案，不代表当前已具备这些能力**。每份包含独立开发范围、接口契约、隔离测试和验收要求；共享入口由集成负责人统一接线，不允许多组同时编辑。当前仓库已确认的是 Pake 桌面壳，用户提及的 Electron 实现须先定位，不能据此另建第二套桌面端。
+以下六份文档是**待实施方案，不代表当前已具备这些能力**。每份包含独立开发范围、接口契约、隔离测试和验收要求；共享入口由集成负责人统一接线，不允许多组同时编辑。用户已明确授权以精简 Electron 替换 Pake；当前实现与尚未验收项见本文顶部，不再等待外部 Electron 仓库。
 
 | 文档 | 独立开发范围 |
 |---|---|

@@ -17,7 +17,14 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  * 未登记的文件会在 INDEX.md 里标 ⚠ 提醒补充。
  */
 const MODULE_INFO = {
-  "desktop/backend-lifecycle.mjs": "桌面直接管理随包Node worker：身份绑定就绪与真实退出确认（待Electron入口接线）",
+  "src/data-owner.js": "写库前数据根独占：内核管道或socket持有，禁止同根双写",
+  "tests/data-owner.test.js": "数据根独占、路径别名和释放重开回归",
+  "tests/data-version.test.js": "数据版本超限写前拒绝与文件不变回归",
+  "desktop/backend-lifecycle.mjs": "桌面直接管理随包Node worker：身份绑定就绪与真实退出确认",
+  "desktop/main.mjs": "Electron唯一桌面入口、隔离窗口与安全退出",
+  "scripts/stage-desktop.mjs": "暂存固定Node与完整后端依赖",
+  "scripts/smoke-desktop.mjs": "随包Node空PATH隔离数据冒烟验证",
+  "scripts/smoke-shell.mjs": "Electron真实窗口与安全退出隔离冒烟验证",
   "tests/backend-lifecycle.test.js": "假进程与可控时钟验证并发启动、伪就绪、超时及退出竞态",
   "tests/task-cancel-notifications.test.js": "单子任务取消工具注册、兄弟隔离与持久化完成通知集成回归",
   "src/questions.js": "主代理 question 工具、参数校验与可取消的回答等待",
