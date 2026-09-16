@@ -31,6 +31,10 @@ test("并发启动共用 worker，伪 ready 无效，绝对数据路径不随安
   const stop = f.lifecycle.requestStop({ mode: "wait", reason: "update" });
   assert.equal(f.lifecycle.requestStop(), stop);
   assert.deepEqual(f.sent, [{ type: "service.stop", mode: "wait", reason: "update" }]);
+  assert.equal(f.lifecycle.getBackendState().ready, undefined);
+  assert.equal(f.lifecycle.requestStop({ mode: "cancel" }), stop);
+  assert.equal(f.sent.at(-1).mode, "cancel");
+  await assert.rejects(f.lifecycle.startBackend(), /尚未确认停止/);
   f.child.emit("exit", 0);
   assert.deepEqual(await stop, { stopped: true, exitCode: 0 });
 });
@@ -39,7 +43,7 @@ test("启动超时不允许拉起第二写入者，停止超时不能冒充 stop
   const f = fixture(), start = f.lifecycle.startBackend();
   const rejected = assert.rejects(start, /启动超时/);
   [...f.timers][0](); await rejected;
-  assert.equal(f.lifecycle.startBackend(), start); assert.equal(f.calls(), 1);
+  await assert.rejects(f.lifecycle.startBackend(), /尚未确认停止/); assert.equal(f.calls(), 1);
   const stop = f.lifecycle.requestStop({ mode: "cancel" });
   const stopped = assert.rejects(stop, /不会强杀/);
   [...f.timers][0](); await stopped;

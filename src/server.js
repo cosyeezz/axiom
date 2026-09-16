@@ -79,7 +79,7 @@ export function createServerApp(sessions, service = {}) {
   const remoteClients = new Set();
   const hasActiveWork = () => sessions.list().some((item) => item.status !== "idle") ||
     [...(sessions.items?.values() || [])].some((item) => item.configuring || item.loading ||
-      item.notifying || item.goalScheduled || item.notificationScheduled || item.pendingWrites?.size ||
+      item.notifying || item.goalScheduled || item.notificationScheduled ||
       [...(item.tasks?.jobs.values() || [])].some((task) => ["starting", "running"].includes(task.status)));
   const handleRequest = (req, res, isLocal) => {
     if (req.url === "/service/stop") {

@@ -4,7 +4,7 @@ import { isAbsolute, join, resolve } from "node:path";
 
 // 桌面只直接管理 worker；禁止回退 PATH Node 或再启动旧 supervisor。
 export function createBackendLifecycle({ bundleRoot, bundleVersion, dataRoot, cwd = process.cwd(),
-  nodePath, spawn = fork, timeout = 60_000, setTimer = setTimeout, clearTimer = clearTimeout }) {
+  nodePath, onShutdown = () => {}, spawn = fork, timeout = 60_000, setTimer = setTimeout, clearTimer = clearTimeout }) {
   if (!isAbsolute(bundleRoot) || !isAbsolute(nodePath)) throw new Error("安装目录和随包 Node 必须是绝对路径");
   dataRoot = resolve(cwd, dataRoot);
   let child, startWork, stopWork, ready, state = "stopped";
@@ -17,7 +17,8 @@ export function createBackendLifecycle({ bundleRoot, bundleVersion, dataRoot, cw
   return {
     getBackendState: () => ({ state, ...(ready || {}) }),
     startBackend() {
-      if (child) return startWork;
+      if (child) return ["starting", "ready"].includes(state) ? startWork
+        : Promise.reject(new Error("后端尚未确认停止，不能重新启动"));
       ready = undefined;
       state = "starting";
       const token = randomUUID(), instanceId = randomUUID();
@@ -33,6 +34,12 @@ export function createBackendLifecycle({ bundleRoot, bundleVersion, dataRoot, cw
           });
           startTimer = setTimer(() => failStart(new Error("后端启动超时；进程未确认退出，禁止再次启动")), timeout);
           child.on("message", (message) => {
+            if (message?.type === "service.shutdown") { onShutdown(); return; }
+            if (message?.type === "service.restart") {
+              child.send({ type: "service.rejected", requestId: message.requestId,
+                error: "桌面版不使用 npm 重启或更新；请退出应用后重新启动或安装完整新版本" }, () => {});
+              return;
+            }
             if (message?.type !== "service.ready" || state !== "starting") return;
             if (message.token !== token || message.instanceId !== instanceId ||
                 message.bundleVersion !== bundleVersion || message.pid !== child.pid ||
@@ -63,12 +70,18 @@ export function createBackendLifecycle({ bundleRoot, bundleVersion, dataRoot, cw
     requestStop({ mode = "wait", reason = "quit" } = {}) {
       if (!["wait", "cancel"].includes(mode) || !["quit", "update", "dev"].includes(reason))
         return Promise.reject(new Error("无效的退出请求"));
-      if (stopWork) return stopWork;
+      if (stopWork) {
+        if (mode === "cancel") child?.send({ type: "service.stop", mode, reason }, (error) => {
+          if (error) rejectStop?.(error);
+        });
+        return stopWork;
+      }
       if (!child) return state === "stopped" ? Promise.resolve({ stopped: true, exitCode: 0 })
         : Promise.reject(new Error("后端异常退出，不能视为保存成功"));
       clearTimer(startTimer);
       if (state === "starting") rejectStart(new Error("启动已被退出请求中止"));
       state = "stopping";
+      ready = undefined;
       stopWork = new Promise((resolve, reject) => {
         resolveStop = resolve; rejectStop = reject;
         stopTimer = setTimer(() => {

@@ -6,6 +6,7 @@ import { stat, mkdir, copyFile } from "node:fs/promises";
 import { constants, readFileSync } from "node:fs";
 import { createPiFactory } from "./pi.js";
 import { Database } from "./database.js";
+import { claimDataRoot } from "./data-owner.js";
 import { createPiModelStorage } from "./pi-model-storage.js";
 import { Sessions } from "./sessions.js";
 import { createModelsService } from "./model-config.js";
@@ -25,6 +26,7 @@ if (!(await stat(cwd)).isDirectory())
 // 重建派生兼容文件，SDK 首次读模型目录（factory 内 ModelRuntime.create）时数据已就绪。
 const home = resolve(process.env.AXIOM_HOME || join(homedir(), ".axiom"));
 await mkdir(home, { recursive: true });
+const releaseDataRoot = await claimDataRoot(home);
 try {
   await copyFile(join(getAgentDir(), "axiom", "defaults.json"), join(home, "defaults.json"), constants.COPYFILE_EXCL);
 } catch (error) {
@@ -103,17 +105,19 @@ async function initRemote() {
   if (status.enabled && !status.active)
     console.error(`Tailscale 远程访问未启动：${status.error || "原因未知"}`);
 }
-let closing;
+let closing, cancelOnExit = false;
 function stop(mode = "cancel") {
+  if (mode === "cancel") cancelOnExit = true;
   app.prepareStop();
   closing ||= remoteReady
     .then(async () => {
-      if (mode === "wait") while (app.hasActiveWork()) await delay(100);
+      if (mode === "wait") while (!cancelOnExit && app.hasActiveWork()) await delay(100);
     })
     // 远程初始化的首次配置写入必须先落定，否则它会写到已关闭的库上（异常还会被吞）。
     .then(() => app.close())
     // 关库必须排在 app.close 完全之后：会话/任务的最后一笔保存发生在关闭路径内。
     .then(() => database.close())
+    .then(() => releaseDataRoot())
     .then(() => process.exit(0))
     .catch((error) => {
       console.error(error);
