@@ -1,0 +1,335 @@
+{
+  "cpuThrottle": 4,
+  "rounds": 20,
+  "specs": [
+    {
+      "name": "plain-10cps-5batches",
+      "kind": "stream",
+      "charsPerBatch": 10,
+      "batches": 5,
+      "intervalMs": 1000
+    },
+    {
+      "name": "burst-complex-markdown",
+      "kind": "burst",
+      "sections": 12,
+      "bursts": 8,
+      "burstMs": 90,
+      "markers": [
+        "M001",
+        "M002",
+        "M003",
+        "M004",
+        "M005",
+        "M006",
+        "M007",
+        "M008",
+        "M009",
+        "M010",
+        "M011",
+        "M012"
+      ]
+    },
+    {
+      "name": "literal-over-24000",
+      "kind": "long",
+      "chars": 30000,
+      "bursts": 6,
+      "burstMs": 120
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "plain-10cps-5batches",
+      "kind": "stream",
+      "spec": {
+        "name": "plain-10cps-5batches",
+        "kind": "stream",
+        "charsPerBatch": 10,
+        "batches": 5,
+        "intervalMs": 1000
+      },
+      "chars": 50,
+      "chunks": 5,
+      "delayMs": 1000,
+      "durationMs": 4094.8,
+      "settled": true,
+      "frames": {
+        "jankOver33ms": 0,
+        "n": 246,
+        "mean": 16.67,
+        "p50": 16.7,
+        "p95": 16.7,
+        "max": 16.8
+      },
+      "pendingUtf16": {
+        "peak": 12,
+        "atFlush": 11,
+        "n": 247,
+        "mean": 6.49,
+        "p50": 7,
+        "p95": 11,
+        "max": 12
+      },
+      "renderCalls": 40,
+      "lexes": 0,
+      "paints": 40,
+      "longtasks": {
+        "supported": true,
+        "count": 0,
+        "totalMs": 0,
+        "maxMs": 0
+      },
+      "finalRenderChars": 50,
+      "finalTextComplete": true,
+      "domTextComplete": true,
+      "domTags": {
+        "pre": 0,
+        "p": 1,
+        "table": 0,
+        "code": 0,
+        "h2": 0,
+        "li": 0
+      },
+      "missingMarkers": [],
+      "literalNotice": false,
+      "sockets": 0,
+      "isPlainTextPreserved": true
+    },
+    {
+      "name": "burst-complex-markdown",
+      "kind": "burst",
+      "spec": {
+        "name": "burst-complex-markdown",
+        "kind": "burst",
+        "sections": 12,
+        "bursts": 8,
+        "burstMs": 90,
+        "markers": [
+          "M001",
+          "M002",
+          "M003",
+          "M004",
+          "M005",
+          "M006",
+          "M007",
+          "M008",
+          "M009",
+          "M010",
+          "M011",
+          "M012"
+        ]
+      },
+      "chars": 3444,
+      "chunks": 8,
+      "delayMs": 90,
+      "durationMs": 952.2,
+      "settled": true,
+      "frames": {
+        "jankOver33ms": 2,
+        "n": 38,
+        "mean": 25,
+        "p50": 16.7,
+        "p95": 49.9,
+        "max": 266.7
+      },
+      "pendingUtf16": {
+        "peak": 1293,
+        "atFlush": 427,
+        "n": 39,
+        "mean": 464.15,
+        "p50": 431,
+        "p95": 1293,
+        "max": 1293
+      },
+      "renderCalls": 5,
+      "lexes": 5,
+      "paints": 5,
+      "longtasks": {
+        "supported": true,
+        "count": 2,
+        "totalMs": 342,
+        "maxMs": 275
+      },
+      "finalRenderChars": 3444,
+      "finalTextComplete": true,
+      "domTextComplete": null,
+      "domTags": {
+        "pre": 12,
+        "p": 24,
+        "table": 12,
+        "code": 24,
+        "h2": 12,
+        "li": 24
+      },
+      "missingMarkers": [],
+      "literalNotice": false,
+      "sockets": 0,
+      "isPlainTextPreserved": true
+    },
+    {
+      "name": "literal-over-24000",
+      "kind": "long",
+      "spec": {
+        "name": "literal-over-24000",
+        "kind": "long",
+        "chars": 30000,
+        "bursts": 6,
+        "burstMs": 120
+      },
+      "chars": 30000,
+      "chunks": 6,
+      "delayMs": 120,
+      "durationMs": 706.4,
+      "settled": true,
+      "frames": {
+        "jankOver33ms": 2,
+        "n": 38,
+        "mean": 18.42,
+        "p50": 16.7,
+        "p95": 33.4,
+        "max": 50
+      },
+      "pendingUtf16": {
+        "peak": 5000,
+        "atFlush": 5000,
+        "n": 39,
+        "mean": 641.03,
+        "p50": 0,
+        "p95": 5000,
+        "max": 5000
+      },
+      "renderCalls": 6,
+      "lexes": 0,
+      "paints": 6,
+      "longtasks": {
+        "supported": true,
+        "count": 1,
+        "totalMs": 54,
+        "maxMs": 54
+      },
+      "finalRenderChars": 30000,
+      "finalTextComplete": true,
+      "domTextComplete": true,
+      "domTags": {
+        "pre": 1,
+        "p": 1,
+        "table": 0,
+        "code": 0,
+        "h2": 0,
+        "li": 0
+      },
+      "missingMarkers": [],
+      "literalNotice": true,
+      "sockets": 0,
+      "isPlainTextPreserved": true
+    }
+  ],
+  "responsiveness": {
+    "rounds": 20,
+    "scrollEvents": 20,
+    "scrolled": 20,
+    "keyHandled": 20,
+    "scrollHeight": 9247,
+    "clientHeight": 720,
+    "paintedComplete": true,
+    "scrollLatency": {
+      "n": 20,
+      "mean": 16.66,
+      "p50": 16.7,
+      "p95": 18.7,
+      "max": 18.7
+    },
+    "keyLatency": {
+      "n": 20,
+      "mean": 16.3,
+      "p50": 16.3,
+      "p95": 17.9,
+      "max": 17.9
+    }
+  },
+  "errors": [],
+  "checks": [
+    {
+      "name": "页面无脚本错误",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "isPlainText 属性保留",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "未创建任何 WebSocket",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "plain-10cps-5batches：末文完整",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "plain-10cps-5batches：flush 后无残留 pending",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "plain-10cps-5batches：DOM 文本与原文一致",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "burst-complex-markdown：末文完整",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "burst-complex-markdown：flush 后无残留 pending",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "literal-over-24000：末文完整",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "literal-over-24000：flush 后无残留 pending",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "literal-over-24000：DOM 文本与原文一致",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "复杂 Markdown：标记齐全",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "复杂 Markdown：表格与代码块已渲染",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "超长原文：literal 提示与 pre 容器",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "交互：滚动与按键均有响应",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "交互：flush 后内容已完整绘制",
+      "pass": true,
+      "detail": ""
+    }
+  ],
+  "url": "http://127.0.0.1:55110/smooth-stream.html"
+}

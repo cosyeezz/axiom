@@ -18,7 +18,8 @@ async function page() {
   const dom = new JSDOM(html, { url: "http://localhost", runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window;
   w.splitAnswer = splitAnswer;
-  w.matchMedia = () => ({ matches: false });
+  // 只对 reduced-motion 打开对齐（正文整批显示）；其余查询保持原语义（false）。
+  w.matchMedia = (query) => ({ matches: query.includes("prefers-reduced-motion: reduce"), media: query });
   w.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
   w.HTMLDialogElement.prototype.close = function () { this.open = false; };
   const frames = new Map();

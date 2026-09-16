@@ -92,7 +92,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     for (const fn of batch) fn();
   };
   const media = { matches: true };
-  window.matchMedia = () => media;
+  // 只对 reduced-motion 明确对齐（正文整批显示）；其余查询保持原有语义（true）。
+  window.matchMedia = (query) =>
+    query.includes("prefers-reduced-motion: reduce") ? { matches: true } : media;
   const markdownSource = (await readFile(new URL("../public/markdown.js", import.meta.url), "utf8"))
     .replace(/^import .*;\r?\n/gm, "").replace("export function", "function");
   const renderMarkdown = new Function("marked", "DOMPurify", `${markdownSource}; return renderMarkdown;`)(marked, createPurify(window));

@@ -611,3 +611,9 @@
 ### 2026-06-01：快照回执到渲染间的事件空窗
 - 症状：快照覆盖先到的实时正文；归并失败后水位提前推进。根因：旧 app.js 仅在渲染时建闸、先记 seq 后归并。
 - 修复：public/transport.js 在快照回执时建闸、成功归并后记水位；失败受控恢复；public/app.js 在断线时作废旧分片。tests/realtime-transport.test.js 与 snapshot-first-screen.test.js 防回归。
+
+
+### 2026-09-15 平滑显示不能把批量节流当逐字播放
+- 根因：旧40ms合并仍整批更新；固定字素尾窗无法覆盖RI奇偶/任意组合序列；每字Markdown全文lex会放大卡顿。
+- 修复：stream-playback纯游标真实时间推进、输入变化时有界全文Segmenter；stream-renderer共享rAF与代际守卫，markdown普通Text节点快路，复杂与超长明确降级。
+- 防再犯：tests/stream-playback.test.js与smooth-stream.test.js覆盖跨批代理对/ZWJ/RI、hidden/reduced-motion/卸载/选区及权威数据；浏览器复杂Markdown仍见长任务，不能把消息间预算说成单任务硬预算。

@@ -44,6 +44,7 @@ const assets = new Map(
     ["/file-picker.css", "public/file-picker.css", "text/css"],
     ["/markdown.js", "public/markdown.js"],
     ["/stream-renderer.js", "public/stream-renderer.js"],
+    ["/stream-playback.js", "public/stream-playback.js"],
     ["/markdown-scan.js", "public/markdown-scan.js"],
     ["/memory-tags.js", "public/memory-tags.js"],
     ["/answer-tags.js", "public/answer-tags.js"],
