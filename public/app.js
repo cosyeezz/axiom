@@ -114,6 +114,12 @@ try {
   const saved = JSON.parse(localStorage.getItem("axiom.hiddenSessions") || "[]");
   if (Array.isArray(saved)) hiddenSessions = new Set(saved.filter((id) => typeof id === "string"));
 } catch {}
+// 工作区展开状态：normalized cwd 的展开集合（默认当前展开、其他折叠）
+let openCwds = new Set();
+try {
+  const saved = JSON.parse(localStorage.getItem("axiom.openCwds") || "[]");
+  if (Array.isArray(saved)) openCwds = new Set(saved);
+} catch {}
 // 已读时间戳：AI 跑完、用户还没打开过的会话在侧栏标主题色点。没有记录的一律视为已读，
 // 否则首次加载会把全部历史会话标成未读。
 let seenSessions = {};
@@ -466,8 +472,8 @@ function region(name, update) {
   catch (e) { error(`${name}显示失败：${e.message || e}`); }
 }
 function updateAvailability() {
+  updateNavigation();
   region("连接状态", updateConnection);
-  region("会话导航", updateNavigation);
   region("输入操作", updateComposer);
   region("模型配置", updateModelAvailability);
   region("设置与详情", updateSettingsAvailability);
@@ -568,11 +574,11 @@ async function refreshModelCatalog() {
     const levels = models.find((entry) => entry.key === model?.value)?.levels;
     if (levels) refill(select, levels.map((level) => [level, level]));
   }
-  region("会话导航", updateNavigation);
+  updateNavigation();
   // 首次配置保存模型后解除引导态（并发重复刷新只在状态变化时执行一次）。
   if (onboarding && models.length) {
     onboarding = false;
-    region("会话导航", updateNavigation);
+    updateNavigation();
     error("模型已保存：点击「＋ 新会话」即可开始对话。");
   }
 }
@@ -2382,7 +2388,7 @@ function receiveHistoryEvent(message) {
         busy = data.status !== "idle";
         safeStopping = busy && !!data.safeStop;
         canReask = !!data.canReask;
-        updateAvailability();
+        region("输入操作", updateComposer);
       }
       if (type === "session.queue") renderQueue(data);
       if (type === "question.asked") questionUI.asked(message.sessionId, data);
@@ -3293,23 +3299,54 @@ function renderSessionTabs() {
     bar.append(group);
   }
 }
+function normalizeCwd(cwd) {
+  return (cwd || "").replaceAll("\\", "/").replace(/\/$/, "").toLowerCase();
+}
+
 function renderSessions() {
   renderSessionTabs();
-  const completedOpen = $("sessions").querySelector(".session-completed")?.open ?? false;
   const fragment = document.createDocumentFragment();
   const query = $("search").value.trim().toLowerCase();
   const running = (s) => s.status !== "idle";
   // 未读 = 打开过它之后又跑完了一轮（updatedAt 是这一轮的开始时刻）。
   const unread = (s) => !hiddenSessions.has(s.id) && s.status === "idle" && s.id !== sessionId && seenSessions[s.id] != null && s.updatedAt > seenSessions[s.id];
-  // 运行中永远置顶，其次是跑完待看的，最后是看过闲着的；段内都按最后活动时间倒序。
-  const rank = (s) => (running(s) ? 0 : unread(s) ? 1 : 2);
-  const matched = allSessions.filter((s) => s.cwd === currentCwd && s.title.toLowerCase().includes(query))
-    .sort((a, b) => rank(a) - rank(b) || b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
-  const groups = [
-    ["进行中", matched.filter((s) => running(s) || !hiddenSessions.has(s.id))],
-    ["已完成", matched.filter((s) => !running(s) && hiddenSessions.has(s.id))],
-  ];
-  const addRow = (s) => {
+
+  // 保存当前 DOM 中各工作区状态
+  const completedOpenByCwd = new Map();
+  for (const el of $("sessions").querySelectorAll(".workspace-group")) {
+    const cwd = el.dataset.cwd;
+    if (cwd) {
+      if (el.open) openCwds.add(cwd);
+      else openCwds.delete(cwd);
+      const completed = el.querySelector(".session-completed");
+      if (completed) completedOpenByCwd.set(cwd, completed.open);
+    }
+  }
+
+  // 按工作空间分组
+  const currentNcwd = normalizeCwd(currentCwd);
+  const wsMap = new Map(); // normalized cwd → sessions[]
+  for (const s of allSessions) {
+    if (!s.title.toLowerCase().includes(query)) continue;
+    const key = normalizeCwd(s.cwd);
+    if (!wsMap.has(key)) wsMap.set(key, []);
+    wsMap.get(key).push(s);
+  }
+
+  // 工作区排序：当前第一，其余按最新会话时间倒序
+  const sortedCwds = [...wsMap.keys()].sort((a, b) => {
+    if (a === currentNcwd) return -1;
+    if (b === currentNcwd) return 1;
+    const aLatest = Math.max(...wsMap.get(a).map((s) => s.updatedAt));
+    const bLatest = Math.max(...wsMap.get(b).map((s) => s.updatedAt));
+    return bLatest - aLatest;
+  });
+  // 当前工作空间即使无会话也显示占位（搜索时则跳过，避免空组干扰）
+  if (!query && currentNcwd && !sortedCwds.includes(currentNcwd)) {
+    sortedCwds.unshift(currentNcwd);
+  }
+
+  const addRow = (s) => { // ponytail: keep identical
     const hidden = hiddenSessions.has(s.id);
     const button = document.createElement("button");
     button.className = "session-item";
@@ -3414,38 +3451,121 @@ function renderSessions() {
     row.append(button, menu);
     return row;
   };
-  for (const [name, sessions] of groups) {
-    const completed = name === "已完成";
-    const section = document.createElement(completed ? "details" : "section");
-    section.className = `session-section${completed ? " session-completed" : ""}`;
-    if (completed) section.open = completedOpen;
-    section.setAttribute("aria-label", name);
-    const heading = document.createElement(completed ? "summary" : "h2");
-    heading.className = "session-group";
-    heading.textContent = name;
-    const content = document.createElement("div");
-    content.className = "session-section-content";
-    section.append(heading, content);
-    let day;
-    for (const s of sessions) {
-      const date = new Date(s.updatedAt);
-      const label = Number.isNaN(+date) ? "日期未知" : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-      if (day !== label) {
-        day = label;
-        const divider = document.createElement("p");
-        divider.className = "session-day";
-        divider.textContent = label;
-        content.append(divider);
-      }
-      content.append(addRow(s));
+
+  for (const ncwd of sortedCwds) {
+    const sessions = wsMap.get(ncwd) || [];
+    const isCurrent = ncwd === currentNcwd;
+    const wsDetail = document.createElement("details");
+    wsDetail.className = "workspace-group";
+    wsDetail.dataset.cwd = ncwd;
+    // 默认：当前展开，其他折叠（除非有保存的状态）
+    wsDetail.open = openCwds.has(ncwd) || (isCurrent && openCwds.size === 0);
+
+    // 工作区头
+    const displayName = ncwd.split("/").filter(Boolean).pop() || ncwd;
+    const wsHeader = document.createElement("summary");
+    wsHeader.className = "workspace-header";
+    wsHeader.title = ncwd;
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "workspace-name";
+    nameSpan.textContent = displayName;
+    wsHeader.append(nameSpan);
+    // 运行中计数
+    const runningCount = sessions.filter((s) => running(s)).length;
+    if (runningCount > 0) {
+      const badge = document.createElement("span");
+      badge.className = "workspace-badge ws-badge-running";
+      badge.textContent = `◉ ${runningCount}`;
+      wsHeader.append(badge);
     }
-    if (!sessions.length) {
+    // 待查看计数
+    const unreadCount = sessions.filter((s) => unread(s)).length;
+    if (unreadCount > 0) {
+      const badge = document.createElement("span");
+      badge.className = "workspace-badge ws-badge-attention";
+      badge.textContent = `• ${unreadCount}`;
+      wsHeader.append(badge);
+    }
+    // + 按钮：在该工作区新建会话
+    const newBtn = document.createElement("button");
+    newBtn.type = "button";
+    newBtn.className = "workspace-new-btn icon-button";
+    newBtn.title = `在「${displayName}」新建会话`;
+    newBtn.setAttribute("aria-label", newBtn.title);
+    newBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+    newBtn.onclick = (e) => {
+      e.stopPropagation();
+      if (!connected || changing) return;
+      switchSession(() => request("session.create", { cwd: ncwd }));
+    };
+    wsHeader.append(newBtn);
+    wsDetail.append(wsHeader);
+
+    // 展开/折叠状态持久化
+    wsDetail.addEventListener("toggle", () => {
+      if (wsDetail.open) openCwds.add(ncwd);
+      else openCwds.delete(ncwd);
+      try { localStorage.setItem("axiom.openCwds", JSON.stringify([...openCwds])); } catch {}
+    });
+
+    // 内层会话列表（完全复用现有结构）
+    const wsContent = document.createElement("div");
+    wsContent.className = "workspace-content";
+    if (sessions.length > 0) {
+      const rank = (s) => (running(s) ? 0 : unread(s) ? 1 : 2);
+      const sorted = [...sessions].sort((a, b) => rank(a) - rank(b) || b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+      const groups = [
+        ["进行中", sorted.filter((s) => running(s) || !hiddenSessions.has(s.id))],
+        ["已完成", sorted.filter((s) => !running(s) && hiddenSessions.has(s.id))],
+      ];
+      for (const [name, groupSessions] of groups) {
+        const completed = name === "已完成";
+        const section = document.createElement(completed ? "details" : "section");
+        section.className = `session-section${completed ? " session-completed" : ""}`;
+        if (completed) section.open = completedOpenByCwd.get(ncwd) ?? false;
+        section.setAttribute("aria-label", name);
+        const heading = document.createElement(completed ? "summary" : "h2");
+        heading.className = "session-group";
+        heading.textContent = name;
+        const content = document.createElement("div");
+        content.className = "session-section-content";
+        section.append(heading, content);
+        let day;
+        for (const s of groupSessions) {
+          const date = new Date(s.updatedAt);
+          const label = Number.isNaN(+date) ? "日期未知" : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+          if (day !== label) {
+            day = label;
+            const divider = document.createElement("p");
+            divider.className = "session-day";
+            divider.textContent = label;
+            content.append(divider);
+          }
+          content.append(addRow(s));
+        }
+        if (!groupSessions.length) {
+          const empty = document.createElement("p");
+          empty.className = "session-empty";
+          empty.textContent = query ? "没有匹配的会话" : "暂无会话";
+          content.append(empty);
+        }
+        wsContent.append(section);
+      }
+    } else {
       const empty = document.createElement("p");
       empty.className = "session-empty";
-      empty.textContent = query ? "没有匹配的会话" : "暂无会话";
-      content.append(empty);
+      empty.textContent = "暂无会话";
+      wsContent.append(empty);
     }
-    fragment.append(section);
+    wsDetail.append(wsContent);
+    fragment.append(wsDetail);
+  }
+
+  if (!sortedCwds.length) {
+    const empty = document.createElement("p");
+    empty.className = "session-empty";
+    empty.textContent = query ? "没有匹配的会话" : "暂无会话";
+    fragment.append(empty);
   }
   $("sessions").replaceChildren(fragment);
 }
@@ -3730,7 +3850,7 @@ $("prompt").oninput = (e) => {
 $("prompt").oncompositionend = () => { void updateCompletion(); };
 $("open-workspace").onclick = async () => {
   const original = sessionId;
-  pickingWorkspace = true; region("会话导航", updateNavigation);
+  pickingWorkspace = true; updateNavigation();
   try {
     const entry = await filePicker.open({ title: "打开工作空间", mode: "folder", path: currentCwd });
     if (!entry || original !== sessionId || !connected || changing) return;
@@ -3748,7 +3868,7 @@ $("open-workspace").onclick = async () => {
         : request("session.create", { cwd: path });
     });
   } catch (e) { error(e); }
-  finally { pickingWorkspace = false; region("会话导航", updateNavigation); }
+  finally { pickingWorkspace = false; updateNavigation(); }
 };
 $("copy-workspace").onclick = async () => {
   try {

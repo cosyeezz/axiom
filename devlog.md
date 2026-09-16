@@ -2172,3 +2172,11 @@ expected: '完成<progress>已完成检查</progress>'                          
 - README、六份计划及集成指南同步实现状态，索引重建。文档子任务未完成编辑，主代理完成补写。
 - npm test 689项：687通过、2既有跳过、0失败；三个浏览器脚本通过。Windows NSIS 构建及随包 Node/真实窗口隔离冒烟通过。构建默认源超时，镜像成功；一次 stage LICENSE 网络重置后重试成功。
 - 未完成发布门禁：正式签名/公证、成套备份与安装回退、macOS本轮构建和实机验收；不宣称正式稳定发行。产物和日志归档到 F:/deliveries/Axiom-runtime-integration。
+
+## 2026-09-16 工作区折叠分组侧栏
+- 侧栏会话列表改为按工作区分组折叠展示。包装一层现有的 renderSessions 逻辑（进行中/已完成分组、日期分隔、排序、状态点、操作菜单完全不变），外层加可折叠的 `<details>` 工作区头。
+- 当前工作区默认展开、其他折叠；折叠状态持久化到 localStorage `axiom.openCwds`。
+- 工作区头显示目录 basename、完整路径 tooltip、运行中 ◉ 徽章、待查看 • 徽章、hover 出现的 ＋ 新建按钮。
+- 搜索跨全部工作空间（匹配会话标题），搜索时不显示空工作区组。
+- 已完成（hiddenSessions）保留在每个工作区内部的折叠区域，状态按工作区独立持久化。
+- 涉及文件：public/app.js（renderSessions 重构、normalizeCwd 工具函数、openCwds 状态）、public/style.css（workspace-group/workspace-header/workspace-badge/workspace-new-btn 样式）、public/index.html（搜索占位文本）、tests/app.test.js（其他工作区会话可见性断言调整）、tests/workspace-tabs.test.js（同）、tests/session-sidebar-ui.py（全面适配新 DOM 结构：工作区分组断言、折叠展开测试、内部列表范围限定）。
