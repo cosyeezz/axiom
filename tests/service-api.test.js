@@ -4,14 +4,14 @@ import { once } from "node:events";
 import { WebSocket } from "ws";
 import { createServerApp } from "../src/server.js";
 
-test("并发打开按最新请求订阅，加载中的会话阻止服务维护", async () => {
+test("打开历史不等待SDK加载，最新请求订阅生效且加载仍阻止维护", async () => {
   let release;
   const loading = new Promise(resolve => { release = resolve; });
   const subscriptions = new Set();
   const sessions = {
     items: new Map([["old", { loading, tasks: { jobs: new Map() } }]]),
     list: () => [], close: async () => {},
-    ensureLoaded: async id => { if (id === "old") await loading; },
+    ensureLoaded: async () => assert.fail("打开历史不能加载SDK"),
     snapshot: id => ({ sessionId: id }),
     subscribe: id => { subscriptions.add(id); return () => subscriptions.delete(id); },
   };
@@ -23,13 +23,13 @@ test("并发打开按最新请求订阅，加载中的会话阻止服务维护",
   await once(ws, "open");
   try {
     assert.equal((await fetch(url + "/service/stop", { method: "POST" })).status, 409);
-    const response = once(ws, "message");
+    let response = once(ws, "message");
     ws.send(JSON.stringify({ id: "1", type: "session.attach", sessionId: "old" }));
+    assert.equal(JSON.parse((await response)[0]).id, "1");
+    response = once(ws, "message");
     ws.send(JSON.stringify({ id: "2", type: "session.attach", sessionId: "latest" }));
     assert.equal(JSON.parse((await response)[0]).id, "2");
-    const earlier = once(ws, "message");
     release();
-    assert.equal(JSON.parse((await earlier)[0]).id, "1");
     assert.deepEqual([...subscriptions], ["latest"], "慢旧请求不能切走新订阅");
   } finally { release(); ws.terminate(); await app.close(); }
 });

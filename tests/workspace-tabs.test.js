@@ -83,6 +83,28 @@ async function bootPage(url, { hash, session, local } = {}) {
 
 const attachCalls = (requests) => requests.filter((r) => r.type === "session.attach").map((r) => r.sessionId);
 
+test("应用内标签切换保留草稿，关闭只移除标签不删除或取消会话", async () => {
+  const page = await bootPage("http://localhost/", { hash: "session=s-a" });
+  const other = state("s-tab", "同目录标签", "C:\\wa");
+  STATES.set("s-tab", other);
+  try {
+    await page.connect();
+    page.$("prompt").value = "A的草稿";
+    await page.window.eval('switchSession(() => request("session.attach", { sessionId: "s-tab" }))');
+    assert.equal(page.$("session-tabs").children.length, 2);
+    page.$("prompt").value = "B的草稿";
+    page.$("session-tabs").firstElementChild.firstElementChild.click();
+    await page.drain();
+    assert.equal(page.$("prompt").value, "A的草稿");
+    page.$("session-tabs").lastElementChild.lastElementChild.click();
+    await page.drain();
+    assert.equal(page.$("session-tabs").children.length, 1);
+    assert.equal(page.requests.some(r => ["session.delete", "session.cancel"].includes(r.type)), false);
+    await page.window.eval('switchSession(() => request("session.attach", { sessionId: "s-tab" }))');
+    assert.equal(page.$("prompt").value, "B的草稿");
+  } finally { STATES.delete("s-tab"); page.dom.window.close(); }
+});
+
 test("快照只在会话 hash 变化时更新 History，不重复触发同文档导航", async () => {
   const page = await bootPage("http://localhost/", { hash: "session=s-a" });
   try {

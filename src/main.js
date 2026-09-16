@@ -47,6 +47,10 @@ const sessions = new Sessions(factory, join(home, "defaults.json"), join(home, "
 const models = createModelsService({ factory, storage: modelStorage });
 await sessions.loadDefaults();
 await sessions.load();
+const idleTimer = setInterval(() => {
+  void sessions.releaseIdle().catch(error => console.warn(`空闲释放失败：${error.message}`));
+}, 60_000);
+idleTimer.unref();
 const service = {
   supervisorPid: process.ppid,
   instanceId: process.env.AXIOM_INSTANCE_ID,
@@ -107,6 +111,7 @@ async function initRemote() {
 }
 let closing, cancelOnExit = false;
 function stop(mode = "cancel") {
+  clearInterval(idleTimer);
   if (mode === "cancel") cancelOnExit = true;
   app.prepareStop();
   closing ||= remoteReady

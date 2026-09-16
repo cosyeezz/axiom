@@ -253,12 +253,12 @@ export function createServerApp(sessions, service = {}) {
     const send = (message) => sender.send(ws, message);
     const attach = async (id) => {
       const sequence = ++attachSequence;
-      await sessions.ensureLoaded(id);
+      const snapshot = sessions.snapshot(id);
       if (ws.readyState !== WebSocket.OPEN) return;
       if (sequence !== attachSequence) throw new Error("会话切换已被后续请求替代");
       unsubscribe?.();
       unsubscribe = sessions.subscribe(id, send);
-      return { ...sessions.snapshot(id), instanceId };
+      return { ...snapshot, instanceId };
     };
     ws.on("error", () => {});
     ws.on("close", () => {

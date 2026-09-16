@@ -528,7 +528,9 @@ export class Sessions {
 
   async ensureLoaded(id) {
     const item = this.get(id);
+    if (item.releasing) { await item.releasing; return this.ensureLoaded(id); }
     if (item.closing) throw new Error("Session is closing");
+    item.lastUsedAt = Date.now();
     if (item.loaded) return item;
     if (!item.loading) item.loading = (async () => {
       // 元数据会话也可能有改名失败；换成 SDK 实例前先清空旧对象的失败队列。
@@ -730,9 +732,9 @@ export class Sessions {
       // 重启即中断：上次未结算的运行段不补算，只保留已结算的累计用时。
       elapsedMs: saved?.elapsedMs || 0,
       runningSince: null,
-      seq: 0,
+      seq: this.items.get(id)?.seq ?? 0,
       status: "idle",
-      listeners: new Set(),
+      listeners: this.items.get(id)?.listeners ?? new Set(),
       messages: saved?.messages || [],
       compactions: saved?.compactions || [],
       retries: (saved?.retries || []).map((savedRecord) => {
@@ -1295,7 +1297,27 @@ export class Sessions {
 
   snapshot(id) {
     const item = this.get(id);
-    if (!item.loaded) throw new Error("会话尚未加载，请先打开会话");
+    if (!item.loaded) {
+      const saved = this.store.getSession(id);
+      const messages = [];
+      const tasks = structuredClone(saved.tasks ?? []);
+      if (saved.sessionFile)
+        messages.push(...readSessionHistory(saved.sessionFile, saved.cwd).map(entry => ({ agentId: "main", entryId: entry.id, message: entry.message })));
+      for (const task of tasks) {
+        if (!task.sessionFile) continue;
+        try {
+          messages.push(...readSessionHistory(task.sessionFile, saved.cwd).map(entry => ({ agentId: task.id, entryId: entry.id, message: entry.message })));
+        } catch (error) { task.error = `子任务历史读取失败：${error.message}`; }
+      }
+      // Goal恢复仅在内存投影；浏览历史不得持久化恢复状态或启动任务。
+      const goal = new Goal({ sessionId: id, store: {
+        load: () => structuredClone(this.goalStore.load(id)), save: () => {},
+      } });
+      return structuredClone({ sessionId: id, cwd: item.cwd, title: item.title, seq: item.seq ?? 0,
+        status: "idle", safeStop: false, config: saved.selection ?? {}, messages,
+        compactions: saved.compactions ?? [], retries: saved.retries ?? [], live: {}, tools: {},
+        questions: [], tasks, goal: goal.snapshot(), canReask: false, compactionStatus: null });
+    }
     return structuredClone({
       sessionId: id,
       cwd: item.cwd,
@@ -1578,8 +1600,32 @@ export class Sessions {
     });
   }
 
+  async releaseIdle(now = Date.now(), idleMs = 5 * 60_000) {
+    if (!this.store) return;
+    for (const item of this.items.values()) {
+      const queue = item.agent?.queue?.();
+      if (!item.loaded || item.loading || item.releasing || item.closing || item.cancelling || item.configuring ||
+          item.status !== "idle" || item.notifying || item.goalScheduled || item.notificationScheduled ||
+          hasRunningTasks(item) || item.questions.snapshot().length || item.pendingWrites?.length ||
+          queue?.steering?.length || queue?.followUp?.length ||
+          [...item.tasks.jobs.values()].some(task => !task.notified) ||
+          item.goal?.active || now - Math.max(item.lastUsedAt ?? 0, item.updatedAt ?? 0) < idleMs) continue;
+      item.releasing = (async () => {
+        await this.persist(item);
+        await item.agent.dispose();
+        item.unsubscribe();
+        const saved = this.store.getSession(item.id);
+        this.items.set(item.id, { ...saved, loaded: false, status: "idle", runningSince: null,
+          seq: item.seq, tasks: { jobs: new Map() }, listeners: item.listeners });
+      })();
+      try { await item.releasing; }
+      finally { item.releasing = null; }
+    }
+  }
+
   async remove(id, deleting = true) {
     let item = this.get(id);
+    if (item.releasing) { await item.releasing; item = this.get(id); }
     if (item.loading) {
       await item.loading.catch(() => {});
       item = this.get(id);

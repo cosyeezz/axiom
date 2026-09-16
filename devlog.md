@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-15 冷会话历史、空闲释放和应用内标签接线
+
+- sessions/server：attach不再ensureLoaded，历史只读；恢复共享监听集合和seq，避免冷订阅丢失；每分钟释放空闲5分钟的持久化SDK，保护任务/通知/保存/队列/Goal；释放与加载、关闭串行。
+- public/app.js/index.html/style.css：复用views实现顶部会话标签、切换和关闭，不触发删除或取消；使用Linear既有surface/line/accent token。跨目录首次打开暂留原浏览器路径。
+- tests/session-persistence、service-api、workspace-tabs覆盖冷读取零SDK初始化、释放保护、监听水位、关闭标签不删任务与草稿恢复；阶段全量615通过2跳过，新增标签测试10项通过。不是更新安装完成声明。
+
 ## 2026-09-15 后端失败不应锁死桌面退出
 
 - `desktop/backend-lifecycle.mjs` 显式提供 processPresent，运行就绪后异常退出通知 onCrash；`desktop/main.mjs` 在已无后端进程时允许关闭窗口，但不授予安全保存或更新许可。超时仍有进程时继续阻止退出，不强杀。

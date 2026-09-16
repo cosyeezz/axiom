@@ -2312,6 +2312,8 @@ function beginSnapshot(state, target) {
   markSessionSeen(sessionId);
   $("session-title").textContent = state.title || "新会话";
   currentCwd = state.cwd;
+  openSessionTabs.set(target, { id: target, title: state.title, cwd: state.cwd, status: state.status });
+  renderSessionTabs();
   $("workspace-label").textContent = state.cwd;
   updatePageTitle();
   busy = state.status !== "idle";
@@ -3085,7 +3087,7 @@ async function switchSession(action) {
   controls();
   try {
     const state = await action();
-    if (currentCwd && state.cwd !== currentCwd) {
+    if (currentCwd && state.cwd !== currentCwd && !openSessionTabs.has(state.sessionId)) {
       const url = `/#${new URLSearchParams({ session: state.sessionId })}`;
       window.open(url, "_blank", "noopener");
       $("error").textContent = "其他工作空间已请求在新页签打开。若被浏览器拦截，请点击：";
@@ -3129,7 +3131,43 @@ function positionSessionMenu(trigger, panel) {
   panel.style.left = `${left}px`;
   panel.style.top = `${Math.max(8, Math.min(anchor.top, innerHeight - box.height - 8))}px`;
 }
+const openSessionTabs = new Map();
+function renderSessionTabs() {
+  const bar = $("session-tabs");
+  if (!bar) return;
+  bar.replaceChildren();
+  for (const [id, remembered] of openSessionTabs) {
+    const item = allSessions.find(s => s.id === id) ?? remembered;
+    const group = document.createElement("span");
+    group.className = "session-tab";
+    const button = document.createElement("button");
+    const unread = id !== sessionId && seenSessions[id] != null && item.updatedAt > seenSessions[id];
+    button.textContent = `${item.status !== "idle" ? "◌ " : unread ? "• " : ""}${item.title || "新会话"}`;
+    button.title = item.cwd || "";
+    button.setAttribute("aria-current", id === sessionId ? "page" : "false");
+    button.onclick = () => switchSession(() => request("session.attach", { sessionId: id }));
+    const close = document.createElement("button");
+    close.textContent = "×";
+    close.setAttribute("aria-label", `关闭标签：${item.title || "新会话"}（不停止任务）`);
+    close.onclick = async () => {
+      if (changing) return;
+      if (id === sessionId) {
+        saveView();
+        const next = [...openSessionTabs.keys()].find(key => key !== id);
+        // 最后一页保留当前会话，避免关闭标签创建或删除业务会话。
+        if (!next) { openSessionTabs.delete(id); renderSessionTabs(); return; }
+        await switchSession(() => request("session.attach", { sessionId: next }));
+        if (sessionId === id) return;
+      }
+      openSessionTabs.delete(id);
+      renderSessionTabs();
+    };
+    group.append(button, close);
+    bar.append(group);
+  }
+}
 function renderSessions() {
+  renderSessionTabs();
   const completedOpen = $("sessions").querySelector(".session-completed")?.open ?? false;
   const fragment = document.createDocumentFragment();
   const query = $("search").value.trim().toLowerCase();
