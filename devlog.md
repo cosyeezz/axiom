@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-16 发布未签名 Windows dev 预发布包
+
+- 用户授权发布到其cosyeezz/axiom仓库；以bbb4e32为目标发布desktop-v0.1.7-dev.1，prerelease=true，非Latest；未合并master。功能分支已推送。
+- 安装包250331447字节，SHA256为4c161c1926c4c83ee3bd5c2a087daa83a948f9d2f6db0cb1c2e2e1ad0bbadc39；GitHub资产digest与本地一致。发布附SHA256SUMS.txt（使用GitHub规范化后的点分文件名），不冒充签名；Authenticode核查NotSigned。
+- 重建包真实隔离启动、窗口加载、安全退出通过；618项测试616通过2跳过。发布说明明确更新链路/迁移/安装器覆盖升级/macOS尚未完整验收。README更新下载入口与进度。
+- 用户要求停止子代理，已取消剩余任务和自动重试；此后仅主代理执行。
+
 ## 2026-09-15 应用内跨目录标签与桌面端口隔离
 
 - public/app.js 删除跨目录window.open旧分支，侧栏打开同样使用switchSession，避免Electron拒绝同源新窗口后看不到会话；tests/app.test.js、workspace-tabs.test.js验证跨目录切回草稿、不取消任务。

@@ -1,6 +1,8 @@
 # Axiom
 
-> 桌面重构进度（功能分支）：精简 Electron 已接入随包独立 Node 24.19.0，Windows x64 自包含测试安装包已构建；实际打包目录已通过隔离数据的窗口加载与后端安全退出测试。安装包 **未签名，非完整交付版**；旧安装迁移门禁、安装更新、会话空闲释放和应用内标签仍待实施。超时不强杀、不视为保存成功。数据根独占和写前版本检查只保护新版本，不能阻止旧程序写库，勿在旧服务未退出时使用真实数据。
+Windows x64 **未签名 dev 预发布版**：[desktop-v0.1.7-dev.1](https://github.com/cosyeezz/axiom/releases/tag/desktop-v0.1.7-dev.1)。这是开发测试包，不是完整稳定版；安装/覆盖升级尚未完整验收。校验文件仅用于下载完整性检查，不是签名。
+
+> 桌面重构进度（功能分支）：精简 Electron 已接入随包独立 Node 24.19.0，Windows x64 自包含测试安装包已构建；实际打包目录已通过隔离数据的窗口加载与后端安全退出测试。安装包 **未签名，非完整交付版**；会话空闲释放和应用内标签已接入；旧安装迁移门禁与可信整包更新仍待完成。超时不强杀、不视为保存成功。数据根独占和写前版本检查只保护新版本，不能阻止旧程序写库，勿在旧服务未退出时使用真实数据。
 
 桌面构建：使用固定 Node 后执行 `npm run desktop:stage` → `npm run desktop:build`。产物在 `dist/`；本机测试：`node scripts/smoke-desktop.mjs`、`node scripts/smoke-shell.mjs dist/win-unpacked/Axiom.exe`（Windows）。测试创建临时数据，不读取原有用户凭据。GitHub 下载不可达时可显式设置 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 和 `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`；镜像不替代平台签名。
 
