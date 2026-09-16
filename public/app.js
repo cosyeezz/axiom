@@ -3326,10 +3326,14 @@ function renderSessions() {
   // 按工作空间分组
   const currentNcwd = normalizeCwd(currentCwd);
   const wsMap = new Map(); // normalized cwd → sessions[]
+  const wsOriginalCwd = new Map(); // normalized cwd → original cwd (for display)
   for (const s of allSessions) {
     if (!s.title.toLowerCase().includes(query)) continue;
     const key = normalizeCwd(s.cwd);
-    if (!wsMap.has(key)) wsMap.set(key, []);
+    if (!wsMap.has(key)) {
+      wsMap.set(key, []);
+      wsOriginalCwd.set(key, s.cwd);
+    }
     wsMap.get(key).push(s);
   }
 
@@ -3461,22 +3465,24 @@ function renderSessions() {
     // 默认：当前展开，其他折叠（除非有保存的状态）
     wsDetail.open = openCwds.has(ncwd) || (isCurrent && openCwds.size === 0);
 
-    // 工作区头
+    // 工作区头 — 两行：名称 + 路径
     const displayName = ncwd.split("/").filter(Boolean).pop() || ncwd;
+    const origCwd = wsOriginalCwd.get(ncwd) || (isCurrent ? currentCwd : ncwd);
     const wsHeader = document.createElement("summary");
     wsHeader.className = "workspace-header";
-    wsHeader.title = ncwd;
+    const headerTop = document.createElement("span");
+    headerTop.className = "workspace-header-top";
     const nameSpan = document.createElement("span");
     nameSpan.className = "workspace-name";
     nameSpan.textContent = displayName;
-    wsHeader.append(nameSpan);
+    headerTop.append(nameSpan);
     // 运行中计数
     const runningCount = sessions.filter((s) => running(s)).length;
     if (runningCount > 0) {
       const badge = document.createElement("span");
       badge.className = "workspace-badge ws-badge-running";
       badge.textContent = `◉ ${runningCount}`;
-      wsHeader.append(badge);
+      headerTop.append(badge);
     }
     // 待查看计数
     const unreadCount = sessions.filter((s) => unread(s)).length;
@@ -3484,7 +3490,7 @@ function renderSessions() {
       const badge = document.createElement("span");
       badge.className = "workspace-badge ws-badge-attention";
       badge.textContent = `• ${unreadCount}`;
-      wsHeader.append(badge);
+      headerTop.append(badge);
     }
     // + 按钮：在该工作区新建会话
     const newBtn = document.createElement("button");
@@ -3498,7 +3504,14 @@ function renderSessions() {
       if (!connected || changing) return;
       switchSession(() => request("session.create", { cwd: ncwd }));
     };
-    wsHeader.append(newBtn);
+    headerTop.append(newBtn);
+    wsHeader.append(headerTop);
+    // 第二行：完整路径
+    const pathSpan = document.createElement("span");
+    pathSpan.className = "workspace-path";
+    pathSpan.textContent = origCwd;
+    pathSpan.title = origCwd;
+    wsHeader.append(pathSpan);
     wsDetail.append(wsHeader);
 
     // 展开/折叠状态持久化
