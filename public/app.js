@@ -466,8 +466,8 @@ function region(name, update) {
   catch (e) { error(`${name}显示失败：${e.message || e}`); }
 }
 function updateAvailability() {
+  updateNavigation();
   region("连接状态", updateConnection);
-  region("会话导航", updateNavigation);
   region("输入操作", updateComposer);
   region("模型配置", updateModelAvailability);
   region("设置与详情", updateSettingsAvailability);
@@ -568,11 +568,11 @@ async function refreshModelCatalog() {
     const levels = models.find((entry) => entry.key === model?.value)?.levels;
     if (levels) refill(select, levels.map((level) => [level, level]));
   }
-  region("会话导航", updateNavigation);
+  updateNavigation();
   // 首次配置保存模型后解除引导态（并发重复刷新只在状态变化时执行一次）。
   if (onboarding && models.length) {
     onboarding = false;
-    region("会话导航", updateNavigation);
+    updateNavigation();
     error("模型已保存：点击「＋ 新会话」即可开始对话。");
   }
 }
@@ -2382,7 +2382,7 @@ function receiveHistoryEvent(message) {
         busy = data.status !== "idle";
         safeStopping = busy && !!data.safeStop;
         canReask = !!data.canReask;
-        updateAvailability();
+        region("输入操作", updateComposer);
       }
       if (type === "session.queue") renderQueue(data);
       if (type === "question.asked") questionUI.asked(message.sessionId, data);
@@ -3730,7 +3730,7 @@ $("prompt").oninput = (e) => {
 $("prompt").oncompositionend = () => { void updateCompletion(); };
 $("open-workspace").onclick = async () => {
   const original = sessionId;
-  pickingWorkspace = true; region("会话导航", updateNavigation);
+  pickingWorkspace = true; updateNavigation();
   try {
     const entry = await filePicker.open({ title: "打开工作空间", mode: "folder", path: currentCwd });
     if (!entry || original !== sessionId || !connected || changing) return;
@@ -3748,7 +3748,7 @@ $("open-workspace").onclick = async () => {
         : request("session.create", { cwd: path });
     });
   } catch (e) { error(e); }
-  finally { pickingWorkspace = false; region("会话导航", updateNavigation); }
+  finally { pickingWorkspace = false; updateNavigation(); }
 };
 $("copy-workspace").onclick = async () => {
   try {
