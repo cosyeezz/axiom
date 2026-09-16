@@ -554,7 +554,11 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("workspace-label").textContent, "C:\\other", "other workspaces open inside the application");
     await window.eval('switchSession(() => request("session.attach", { sessionId: "a" }))');
     assert.ok(rowTitles().includes("a"));
-    assert.equal($("sessions").querySelector('[data-session-id="other-workspace"]'), null);
+    const otherRow = $("sessions").querySelector('[data-session-id="other-workspace"]');
+    assert.ok(otherRow, "other workspace session appears in its own workspace group");
+    const wsGroup = otherRow.closest('.workspace-group');
+    assert.ok(wsGroup, "session is inside a workspace-group");
+    assert.equal(wsGroup.open, false, "other workspace is collapsed by default");
     assert.equal(window.sessionStorage.getItem("axiom.session"), "a", "selection is tab-local");
     assert.equal(window.localStorage.getItem("axiom.session"), null, "switching does not overwrite other tabs' selection");
     assert.equal(new window.URLSearchParams(window.location.hash.slice(1)).get("session"), "a");
@@ -572,7 +576,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("prompt").value, "current workspace draft", "opening another tab preserves this draft");
     $("prompt").value = "";
     $("search").value = "C:\\other"; $("search").oninput();
-    assert.equal($("sessions").querySelectorAll(".session-row").length, 0, "search never exposes other workspaces");
+    // 搜索是全局的，但 "C:\\other" 不匹配任何会话标题，也不匹配工作区名
+    // 工作区名 "C:\work" 和 "C:\other" 都不在会话标题中，所以 0 行
+    assert.equal($("sessions").querySelectorAll(".session-row").length, 0, "non-matching search shows no rows");
     $("search").value = ""; $("search").oninput();
     assert.equal(requests.some((req) => req.type === "cancel"), false, "opening and switching workspaces never cancels background work");
     await window.eval('switchSession(() => request("session.attach", { sessionId: "a" }))');

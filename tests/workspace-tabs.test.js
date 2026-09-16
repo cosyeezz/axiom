@@ -254,7 +254,10 @@ test("storage 同步完成标记且只显示当前工作空间；忽略旧排序
       page.window.dispatchEvent(new page.window.StorageEvent("storage", { key }));
     };
     emit("axiom.hiddenSessions", ["s-b"]);
-    assert.doesNotMatch(page.$("sessions").textContent, /会话B/);
+    // 其他工作空间会话在折叠组中出现（可见仅在展开后）
+    const sB = page.$("sessions").querySelector('[data-session-id="s-b"]');
+    assert.ok(sB, "会话B exists in DOM (collapsed workspace group)");
+    assert.equal(sB.closest('.workspace-group').open, false, 'wb workspace is collapsed');
     assert.equal(page.window.location.hash, "#session=s-a");
     // 未收到另一页的 storage 事件时，写入也必须读取最新状态。
     page.window.localStorage.setItem("axiom.hiddenSessions", JSON.stringify(["s-b", "s-legacy"]));
@@ -262,7 +265,10 @@ test("storage 同步完成标记且只显示当前工作空间；忽略旧排序
     assert.deepEqual(JSON.parse(page.window.localStorage.getItem("axiom.hiddenSessions")), ["s-b", "s-legacy", "s-a"]);
     emit("axiom.hiddenSessions", []);
     emit("axiom.sessionOrder", ["s-b", "s-a"]);
-    assert.deepEqual([...page.$("sessions").querySelectorAll(".session-item span")].map((n) => n.textContent), ["会话A"]);
+    // 当前工作空间只显示自己的会话
+    const curWs = page.$("sessions").querySelector('.workspace-group[open]');
+    assert.ok(curWs, 'current workspace is open');
+    assert.deepEqual([...curWs.querySelectorAll(".session-item span")].map((n) => n.textContent), ["会话A"]);
     page.window.localStorage.clear();
     page.window.dispatchEvent(new page.window.StorageEvent("storage", { key: null }));
     assert.equal(page.$("sessions").querySelector('[aria-label="已完成"]').querySelectorAll('.session-row').length, 0);

@@ -1,12 +1,12 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/16 02:32:32）
+# Axiom 多级代码索引（生成于 2026/9/16 02:54:54）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
 | public/answer-tags.js | 48 | 主代理回答标签解析、代码保护与流式容错 | OPEN, CLOSE, MARKS, isMark |
-| public/app.js | 4088 | 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度 | questionUI, filePicker, $, sessionId |
+| public/app.js | 4209 | 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度 | questionUI, filePicker, $, sessionId |
 | public/file-picker.css | 276 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 355 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/goal-markers.js | 60 | 前后端共享 goal 完成标记解析与展示层剥离（含流式半截） | ROUND_MARKER, GOAL_MARKER, MARKER_TOKENS, SUFFIXES |
@@ -27,7 +27,7 @@
 | public/session-cache.js | 53 | 可淘汰会话阅读位置缓存与未保存输入保护 | EVICTABLE_VIEWS, hasUnsavedInput, createSessionCache |
 | public/stream-playback.js | 165 | 有界字素播放游标与真实时间缓冲追赶 | BUFFER_MS, BASE_RATE, CATCHUP_S, MAX_RATE |
 | public/stream-renderer.js | 168 | 共享 rAF 流式绘制、交互让路与挂载生命周期 | createStreamRenderer |
-| public/style.css | 1497 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1519 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | public/theme.js | 11 | 首帧前阻塞应用明/暗主题（localStorage axiom.theme，默认深色） | - |
 | public/tooltip.css | 50 | 共享悬停说明样式（浅色主题下反色） | - |
 | public/tooltip.js | 225 | 共享悬停说明：动态 title、键盘、定位与无障碍 | SHOW_DELAY, HIDE_DELAY, GAP, EDGE |
@@ -72,7 +72,7 @@
 | tests/__pycache__/goal-ui.cpython-312.pyc | 165 | node --test 测试（npm test） | - |
 | tests/activity-groups-ui.py | 201 | node --test 测试（npm test） | activityHistory, sessions |
 | tests/answer-tags.test.js | 56 | node --test 测试（npm test） | open |
-| tests/app.test.js | 1921 | node --test 测试（npm test） | pickerSource, modelSources, serviceSource |
+| tests/app.test.js | 1927 | node --test 测试（npm test） | pickerSource, modelSources, serviceSource |
 | tests/autoscroll-ui.py | 99 | node --test 测试（npm test） | - |
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
 | tests/backend-lifecycle.test.js | 76 | node --test 测试（npm test） | fixture |
@@ -169,7 +169,7 @@
 | tests/session-migration.test.js | 282 | node --test 测试（npm test） | factory, workspaceHash |
 | tests/session-model-restore.test.js | 61 | node --test 测试（npm test） | stubFactory, cleanup |
 | tests/session-persistence.test.js | 460 | node --test 测试（npm test） | factory |
-| tests/session-sidebar-ui.py | 112 | node --test 测试（npm test） | - |
+| tests/session-sidebar-ui.py | 138 | node --test 测试（npm test） | - |
 | tests/session-store.test.js | 640 | node --test 测试（npm test） | withStore, fullSaved, LEGACY_DDL |
 | tests/smoke.js | 67 | node --test 测试（npm test） | TIMEOUT, sessions |
 | tests/smooth-stream-browser.py | 179 | node --test 测试（npm test） | - |
@@ -197,7 +197,7 @@
 | tests/update.test.js | 111 | node --test 测试（npm test） | old, URL_BASE, lm, mkRelease |
 | tests/workspace-isolation.test.js | 80 | node --test 测试（npm test） | - |
 | tests/workspace-picker.test.js | 99 | node --test 测试（npm test） | - |
-| tests/workspace-tabs.test.js | 280 | node --test 测试（npm test） | appSource, pickerSource, modelSources, html |
+| tests/workspace-tabs.test.js | 286 | node --test 测试（npm test） | appSource, pickerSource, modelSources, html |
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
@@ -211,7 +211,7 @@
 | isMark | const | 10 |
 | splitAnswer | function | 12 |
 
-### public/app.js（4088 行） — 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度
+### public/app.js（4209 行） — 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -248,319 +248,321 @@
 | selectedSkill | const | 108 |
 | hiddenSessions | const | 112 |
 | pinnedSessions | const | 118 |
-| seenSessions | const | 125 |
-| markSessionSeen | function | 130 |
-| readSessionPreference | function | 137 |
-| changeSessionPreference | function | 141 |
-| setSessionHidden | function | 156 |
-| setSessionPinned | function | 164 |
-| focusSessionMore | function | 172 |
-| saveView | function | 185 |
-| promptLayout | const | 204 |
-| promptFit | const | 205 |
-| resizePrompt | function | 206 |
-| invalidatePrompt | function | 215 |
-| scrollFrame | const | 216 |
-| FOLLOW_GAP | const | 217 |
-| scrollIntent | const | 218 |
-| lastScrollTops | const | 219 |
-| noteScrollIntent | const | 221 |
-| atLatest | const | 223 |
-| readFollow | function | 226 |
-| scrollToLatest | const | 235 |
-| scrollLatest | function | 236 |
-| scheduleCallGroups | method | 237 |
-| transcript | const | 246 |
-| growthWatch | const | 248 |
-| growthObserver | function | 249 |
-| watchGrowth | function | 252 |
-| forgetGrowth | function | 253 |
-| renderer | const | 256 |
-| scrollLatest | method | 289 |
-| mobile | const | 291 |
-| sidebar | function | 292 |
-| sidebar | method | 307 |
-| sidebar | method | 310 |
-| invalidatePrompt | method | 311 |
-| promptResizeFrame | const | 316 |
-| fontScale | const | 325 |
-| applyConversationFontScale | function | 326 |
-| savedFontScale | const | 331 |
-| applyConversationFontScale | method | 335 |
-| themeColors | const | 341 |
-| applyTheme | function | 342 |
-| applyTheme | method | 353 |
-| live | const | 362 |
-| error | function | 363 |
-| rawEntries | const | 367 |
-| rawMode | function | 368 |
-| rawMode | method | 376 |
-| rawChanged | function | 387 |
-| rawEntry | function | 393 |
-| selectRaw | function | 398 |
-| rawMode | method | 400 |
-| bindRaw | function | 415 |
-| paintRaw | function | 429 |
-| request | function | 478 |
-| region | function | 483 |
-| updateAvailability | function | 487 |
-| region | method | 488 |
-| region | method | 489 |
-| region | method | 490 |
-| region | method | 491 |
-| region | method | 492 |
-| updateConnection | function | 494 |
-| updateModelAvailability | function | 499 |
-| updateSettingsAvailability | function | 507 |
-| updateNavigation | function | 520 |
-| updateComposer | function | 528 |
-| renderContextChips | method | 539 |
-| syncRetryPrompt | method | 550 |
-| options | function | 552 |
-| providerEntries | const | 563 |
-| modelEntries | const | 564 |
-| catalogRequest | const | 566 |
-| refreshModelCatalog | function | 567 |
-| region | method | 590 |
-| fillModels | function | 598 |
-| options | method | 600 |
-| renderAgentConfig | function | 602 |
+| openCwds | const | 124 |
+| seenSessions | const | 131 |
+| markSessionSeen | function | 136 |
+| readSessionPreference | function | 143 |
+| changeSessionPreference | function | 147 |
+| setSessionHidden | function | 162 |
+| setSessionPinned | function | 170 |
+| focusSessionMore | function | 178 |
+| saveView | function | 191 |
+| promptLayout | const | 210 |
+| promptFit | const | 211 |
+| resizePrompt | function | 212 |
+| invalidatePrompt | function | 221 |
+| scrollFrame | const | 222 |
+| FOLLOW_GAP | const | 223 |
+| scrollIntent | const | 224 |
+| lastScrollTops | const | 225 |
+| noteScrollIntent | const | 227 |
+| atLatest | const | 229 |
+| readFollow | function | 232 |
+| scrollToLatest | const | 241 |
+| scrollLatest | function | 242 |
+| scheduleCallGroups | method | 243 |
+| transcript | const | 252 |
+| growthWatch | const | 254 |
+| growthObserver | function | 255 |
+| watchGrowth | function | 258 |
+| forgetGrowth | function | 259 |
+| renderer | const | 262 |
+| scrollLatest | method | 295 |
+| mobile | const | 297 |
+| sidebar | function | 298 |
+| sidebar | method | 313 |
+| sidebar | method | 316 |
+| invalidatePrompt | method | 317 |
+| promptResizeFrame | const | 322 |
+| fontScale | const | 331 |
+| applyConversationFontScale | function | 332 |
+| savedFontScale | const | 337 |
+| applyConversationFontScale | method | 341 |
+| themeColors | const | 347 |
+| applyTheme | function | 348 |
+| applyTheme | method | 359 |
+| live | const | 368 |
+| error | function | 369 |
+| rawEntries | const | 373 |
+| rawMode | function | 374 |
+| rawMode | method | 382 |
+| rawChanged | function | 393 |
+| rawEntry | function | 399 |
+| selectRaw | function | 404 |
+| rawMode | method | 406 |
+| bindRaw | function | 421 |
+| paintRaw | function | 435 |
+| request | function | 484 |
+| region | function | 489 |
+| updateAvailability | function | 493 |
+| updateNavigation | method | 494 |
+| region | method | 495 |
+| region | method | 496 |
+| region | method | 497 |
+| region | method | 498 |
+| updateConnection | function | 500 |
+| updateModelAvailability | function | 505 |
+| updateSettingsAvailability | function | 513 |
+| updateNavigation | function | 526 |
+| updateComposer | function | 534 |
+| renderContextChips | method | 545 |
+| syncRetryPrompt | method | 556 |
+| options | function | 558 |
+| providerEntries | const | 569 |
+| modelEntries | const | 570 |
+| catalogRequest | const | 572 |
+| refreshModelCatalog | function | 573 |
+| updateNavigation | method | 596 |
+| fillModels | function | 604 |
 | options | method | 606 |
-| fillModels | method | 607 |
-| options | method | 609 |
-| fillSubagentModels | function | 613 |
+| renderAgentConfig | function | 608 |
+| options | method | 612 |
+| fillModels | method | 613 |
 | options | method | 615 |
-| capabilityName | function | 623 |
-| runtimeSummary | function | 633 |
-| renderRuntime | function | 646 |
-| updateTaskRuntime | function | 663 |
-| renderRuntime | method | 665 |
-| applyConfig | function | 668 |
-| region | method | 671 |
-| region | method | 672 |
-| region | method | 673 |
-| renderComposerConfig | function | 675 |
-| options | method | 676 |
-| renderModelConfig | function | 682 |
-| options | method | 683 |
-| fillSubagentModels | method | 688 |
-| renderAgentConfig | method | 689 |
-| configureSeq | const | 692 |
-| configure | function | 693 |
-| updateAvailability | method | 704 |
-| taskBudgetInputs | const | 727 |
-| settingsGeneration | const | 728 |
-| budgetRequest | const | 729 |
-| settingsTicket | const | 730 |
-| loadTaskBudget | function | 740 |
-| saveTaskBudget | function | 751 |
-| showSettingsPanel | function | 767 |
-| showSettingsPanel | method | 784 |
-| showSettingsPanel | method | 788 |
-| region | method | 789 |
-| remoteView | const | 801 |
-| remoteLoaded | const | 802 |
-| remoteAnchor | function | 803 |
-| remoteRender | function | 811 |
-| region | method | 857 |
-| remoteLoad | function | 859 |
-| remoteAuthUrl | function | 879 |
-| remoteLogin | function | 887 |
-| remoteOnReconnect | function | 913 |
-| updateAvailability | method | 927 |
-| messageItems | const | 940 |
-| activityPaths | const | 942 |
-| setActivityIcon | function | 959 |
-| callGroupsFrame | const | 969 |
-| scheduleCallGroups | function | 970 |
-| createCallGroup | function | 980 |
-| paintCallGroup | function | 994 |
-| refreshCallGroups | function | 1036 |
-| foldCallsBeforeMessage | function | 1167 |
-| paintCallGroup | method | 1171 |
-| disclosureHint | function | 1173 |
-| activityLine | function | 1193 |
-| setActivity | method | 1203 |
-| setActivity | function | 1206 |
-| scheduleCallGroups | method | 1207 |
-| setActivityIcon | method | 1209 |
-| waiting | function | 1220 |
-| scheduleCallGroups | method | 1222 |
-| scrollLatest | method | 1228 |
-| clearWaiting | function | 1230 |
-| stopActivity | function | 1234 |
-| scheduleCallGroups | method | 1236 |
-| clearWaiting | method | 1237 |
-| updateActivity | function | 1249 |
-| setActivity | method | 1264 |
-| setActivity | method | 1265 |
-| mergeThoughts | function | 1269 |
-| diffView | const | 1287 |
-| renderToolDetail | function | 1292 |
-| section | method | 1380 |
-| toolState | function | 1382 |
-| clearWaiting | method | 1384 |
-| setActivity | method | 1428 |
-| renderToolDetail | method | 1429 |
-| scrollLatest | method | 1430 |
-| card | function | 1432 |
-| prepareStream | function | 1496 |
-| updateActivity | method | 1515 |
-| renderMessage | function | 1517 |
-| updateActivity | method | 1630 |
-| renderCompactionStatus | function | 1633 |
-| trackTaskEntries | function | 1650 |
-| placeCompactedTasks | function | 1661 |
-| placeCompactedRetries | method | 1662 |
-| compactionCard | function | 1691 |
-| renderMarkdown | method | 1711 |
-| foldCompaction | function | 1714 |
-| placeCompactedTasks | method | 1736 |
-| mergeThoughts | method | 1737 |
-| compactionEditor | function | 1744 |
-| options | method | 1782 |
-| fillThinking | method | 1812 |
-| retryChipList | function | 1823 |
-| render | method | 1872 |
-| retryEditor | function | 1876 |
-| renderTaskRuns | function | 1896 |
-| renderQueue | function | 1924 |
-| canResumeMessage | const | 1943 |
-| retryPrompt | const | 1945 |
-| syncRetryPrompt | function | 1946 |
-| scrollLatest | method | 1975 |
-| retryCards | const | 1977 |
-| placeCompactedRetries | function | 1978 |
-| retryArchive | function | 2002 |
-| renderRetry | function | 2015 |
-| placeCompactedRetries | method | 2051 |
-| scrollLatest | method | 2052 |
-| applyEvent | function | 2054 |
-| snapshotJob | const | 2300 |
-| snapshot | function | 2301 |
-| mountHistory | function | 2319 |
-| finishSnapshot | method | 2325 |
-| paintHistoryControls | method | 2326 |
-| paintHistoryControls | function | 2328 |
-| loadHistory | function | 2338 |
-| saveView | method | 2340 |
-| paintHistoryControls | method | 2344 |
-| latestHistory | function | 2365 |
-| saveView | method | 2367 |
-| receiveHistoryEvent | function | 2380 |
-| applyEvent | method | 2413 |
-| beginSnapshot | function | 2434 |
-| rawChanged | method | 2441 |
-| clearTimeout | method | 2444 |
-| markSessionSeen | method | 2461 |
-| renderSessionTabs | method | 2465 |
-| updatePageTitle | method | 2467 |
-| renderTaskRuns | method | 2480 |
-| renderCompactionStatus | method | 2485 |
-| renderImages | method | 2522 |
-| closeCompletion | method | 2525 |
-| placeSnapshotMessage | function | 2531 |
-| finishSnapshot | function | 2571 |
-| mergeThoughts | method | 2598 |
-| placeCompactedTasks | method | 2612 |
-| renderQueue | method | 2631 |
-| applyConfig | method | 2633 |
-| updateAvailability | method | 2635 |
-| region | method | 2636 |
-| transport | const | 2638 |
-| onState | method | 2642 |
-| initialized | const | 2678 |
-| initializeConnection | function | 2679 |
-| importDir | const | 2796 |
-| fillModels | method | 2801 |
-| fillSubagentModels | method | 2808 |
-| closeCompletion | method | 2825 |
-| region | method | 2830 |
-| scrollLatest | method | 2835 |
-| enableImagePreview | function | 2867 |
-| renderImages | function | 2888 |
-| addImages | function | 2913 |
-| loadImages | function | 2934 |
-| renderImages | method | 2943 |
-| selectionCopy | const | 2966 |
-| copySelection | function | 2978 |
-| escapeTimer | const | 3041 |
-| withdrawQueue | function | 3042 |
-| markSessionSeen | method | 3120 |
-| renderSessions | method | 3121 |
-| region | method | 3122 |
-| stopSession | function | 3136 |
-| refreshing | const | 3145 |
-| refreshSessions | function | 3146 |
-| timerText | function | 3162 |
-| renderTaskTimer | function | 3169 |
-| applyElapsed | function | 3182 |
-| renderTaskTimer | method | 3188 |
-| updatePageTitle | function | 3190 |
-| updateSessions | function | 3194 |
-| renderTaskTimer | method | 3196 |
-| updatePageTitle | method | 3208 |
-| renderSessions | method | 3209 |
-| recoverMissingSession | function | 3211 |
-| region | method | 3213 |
-| saveView | method | 3220 |
-| updateAvailability | method | 3224 |
-| switchSession | function | 3240 |
-| saveView | method | 3242 |
-| updateAvailability | method | 3245 |
-| copySessionFile | function | 3261 |
-| positionSessionMenu | function | 3274 |
-| openSessionTabs | const | 3280 |
-| renderSessionTabs | function | 3281 |
-| renderSessions | function | 3315 |
-| renderSessionTabs | method | 3316 |
-| sessionAction | const | 3484 |
-| openSessionAction | function | 3486 |
-| contextIcon | function | 3527 |
-| renderContextChips | function | 3530 |
-| fuzzyHit | function | 3549 |
-| renderContextResults | function | 3556 |
-| showContextSkills | function | 3576 |
-| positionContextSkills | function | 3581 |
-| showContextSkills | method | 3593 |
-| region | method | 3628 |
-| skillTrigger | const | 3630 |
-| showContextSkills | method | 3646 |
-| resizePrompt | method | 3655 |
-| region | method | 3656 |
-| SLASH_COMMANDS | const | 3661 |
-| closeCompletion | function | 3664 |
-| highlightCompletion | function | 3672 |
-| chooseCompletion | function | 3681 |
-| closeCompletion | method | 3693 |
-| updateCompletion | function | 3696 |
-| closeCompletion | method | 3697 |
-| resizePrompt | method | 3756 |
-| region | method | 3757 |
-| switchSession | method | 3797 |
-| creationLoad | const | 3808 |
-| defaultsScope | const | 3810 |
-| renderDefaultsScope | function | 3811 |
-| options | method | 3812 |
-| refreshDefaultsScope | function | 3815 |
-| renderDefaultsScope | method | 3821 |
-| createAgentPicker | function | 3824 |
-| options | method | 3850 |
-| fill | method | 3857 |
-| fillThinking | method | 3865 |
-| options | method | 3867 |
-| defaultsSelection | const | 3913 |
-| defaultsSaving | const | 3926 |
-| loadCreation | function | 3928 |
-| disposePickers | method | 3935 |
-| disposePickers | method | 3936 |
-| disposePickers | function | 3965 |
-| openDefaults | function | 3968 |
-| disposePickers | method | 3973 |
-| updateAvailability | method | 4019 |
-| updateDefaultsPreview | function | 4032 |
-| updateDefaultsPreview | method | 4056 |
-| updateAvailability | method | 4072 |
+| fillSubagentModels | function | 619 |
+| options | method | 621 |
+| capabilityName | function | 629 |
+| runtimeSummary | function | 639 |
+| renderRuntime | function | 652 |
+| updateTaskRuntime | function | 669 |
+| renderRuntime | method | 671 |
+| applyConfig | function | 674 |
+| region | method | 677 |
+| region | method | 678 |
+| region | method | 679 |
+| renderComposerConfig | function | 681 |
+| options | method | 682 |
+| renderModelConfig | function | 688 |
+| options | method | 689 |
+| fillSubagentModels | method | 694 |
+| renderAgentConfig | method | 695 |
+| configureSeq | const | 698 |
+| configure | function | 699 |
+| updateAvailability | method | 710 |
+| taskBudgetInputs | const | 733 |
+| settingsGeneration | const | 734 |
+| budgetRequest | const | 735 |
+| settingsTicket | const | 736 |
+| loadTaskBudget | function | 746 |
+| saveTaskBudget | function | 757 |
+| showSettingsPanel | function | 773 |
+| showSettingsPanel | method | 790 |
+| showSettingsPanel | method | 794 |
+| region | method | 795 |
+| remoteView | const | 807 |
+| remoteLoaded | const | 808 |
+| remoteAnchor | function | 809 |
+| remoteRender | function | 817 |
+| region | method | 863 |
+| remoteLoad | function | 865 |
+| remoteAuthUrl | function | 885 |
+| remoteLogin | function | 893 |
+| remoteOnReconnect | function | 919 |
+| updateAvailability | method | 933 |
+| messageItems | const | 946 |
+| activityPaths | const | 948 |
+| setActivityIcon | function | 965 |
+| callGroupsFrame | const | 975 |
+| scheduleCallGroups | function | 976 |
+| createCallGroup | function | 986 |
+| paintCallGroup | function | 1000 |
+| refreshCallGroups | function | 1042 |
+| foldCallsBeforeMessage | function | 1173 |
+| paintCallGroup | method | 1177 |
+| disclosureHint | function | 1179 |
+| activityLine | function | 1199 |
+| setActivity | method | 1209 |
+| setActivity | function | 1212 |
+| scheduleCallGroups | method | 1213 |
+| setActivityIcon | method | 1215 |
+| waiting | function | 1226 |
+| scheduleCallGroups | method | 1228 |
+| scrollLatest | method | 1234 |
+| clearWaiting | function | 1236 |
+| stopActivity | function | 1240 |
+| scheduleCallGroups | method | 1242 |
+| clearWaiting | method | 1243 |
+| updateActivity | function | 1255 |
+| setActivity | method | 1270 |
+| setActivity | method | 1271 |
+| mergeThoughts | function | 1275 |
+| diffView | const | 1293 |
+| renderToolDetail | function | 1298 |
+| section | method | 1386 |
+| toolState | function | 1388 |
+| clearWaiting | method | 1390 |
+| setActivity | method | 1434 |
+| renderToolDetail | method | 1435 |
+| scrollLatest | method | 1436 |
+| card | function | 1438 |
+| prepareStream | function | 1502 |
+| updateActivity | method | 1521 |
+| renderMessage | function | 1523 |
+| updateActivity | method | 1636 |
+| renderCompactionStatus | function | 1639 |
+| trackTaskEntries | function | 1656 |
+| placeCompactedTasks | function | 1667 |
+| placeCompactedRetries | method | 1668 |
+| compactionCard | function | 1697 |
+| renderMarkdown | method | 1717 |
+| foldCompaction | function | 1720 |
+| placeCompactedTasks | method | 1742 |
+| mergeThoughts | method | 1743 |
+| compactionEditor | function | 1750 |
+| options | method | 1788 |
+| fillThinking | method | 1818 |
+| retryChipList | function | 1829 |
+| render | method | 1878 |
+| retryEditor | function | 1882 |
+| renderTaskRuns | function | 1902 |
+| renderQueue | function | 1930 |
+| canResumeMessage | const | 1949 |
+| retryPrompt | const | 1951 |
+| syncRetryPrompt | function | 1952 |
+| scrollLatest | method | 1981 |
+| retryCards | const | 1983 |
+| placeCompactedRetries | function | 1984 |
+| retryArchive | function | 2008 |
+| renderRetry | function | 2021 |
+| placeCompactedRetries | method | 2057 |
+| scrollLatest | method | 2058 |
+| applyEvent | function | 2060 |
+| snapshotJob | const | 2306 |
+| snapshot | function | 2307 |
+| mountHistory | function | 2325 |
+| finishSnapshot | method | 2331 |
+| paintHistoryControls | method | 2332 |
+| paintHistoryControls | function | 2334 |
+| loadHistory | function | 2344 |
+| saveView | method | 2346 |
+| paintHistoryControls | method | 2350 |
+| latestHistory | function | 2371 |
+| saveView | method | 2373 |
+| receiveHistoryEvent | function | 2386 |
+| applyEvent | method | 2419 |
+| beginSnapshot | function | 2440 |
+| rawChanged | method | 2447 |
+| clearTimeout | method | 2450 |
+| markSessionSeen | method | 2467 |
+| renderSessionTabs | method | 2471 |
+| updatePageTitle | method | 2473 |
+| renderTaskRuns | method | 2486 |
+| renderCompactionStatus | method | 2491 |
+| renderImages | method | 2528 |
+| closeCompletion | method | 2531 |
+| placeSnapshotMessage | function | 2537 |
+| finishSnapshot | function | 2577 |
+| mergeThoughts | method | 2604 |
+| placeCompactedTasks | method | 2618 |
+| renderQueue | method | 2637 |
+| applyConfig | method | 2639 |
+| updateAvailability | method | 2641 |
+| region | method | 2642 |
+| transport | const | 2644 |
+| onState | method | 2648 |
+| initialized | const | 2684 |
+| initializeConnection | function | 2685 |
+| importDir | const | 2802 |
+| fillModels | method | 2807 |
+| fillSubagentModels | method | 2814 |
+| closeCompletion | method | 2831 |
+| region | method | 2836 |
+| scrollLatest | method | 2841 |
+| enableImagePreview | function | 2873 |
+| renderImages | function | 2894 |
+| addImages | function | 2919 |
+| loadImages | function | 2940 |
+| renderImages | method | 2949 |
+| selectionCopy | const | 2972 |
+| copySelection | function | 2984 |
+| escapeTimer | const | 3047 |
+| withdrawQueue | function | 3048 |
+| markSessionSeen | method | 3126 |
+| renderSessions | method | 3127 |
+| region | method | 3128 |
+| stopSession | function | 3142 |
+| refreshing | const | 3151 |
+| refreshSessions | function | 3152 |
+| timerText | function | 3168 |
+| renderTaskTimer | function | 3175 |
+| applyElapsed | function | 3188 |
+| renderTaskTimer | method | 3194 |
+| updatePageTitle | function | 3196 |
+| updateSessions | function | 3200 |
+| renderTaskTimer | method | 3202 |
+| updatePageTitle | method | 3214 |
+| renderSessions | method | 3215 |
+| recoverMissingSession | function | 3217 |
+| region | method | 3219 |
+| saveView | method | 3226 |
+| updateAvailability | method | 3230 |
+| switchSession | function | 3246 |
+| saveView | method | 3248 |
+| updateAvailability | method | 3251 |
+| copySessionFile | function | 3267 |
+| positionSessionMenu | function | 3280 |
+| openSessionTabs | const | 3286 |
+| renderSessionTabs | function | 3287 |
+| normalizeCwd | function | 3321 |
+| renderSessions | function | 3325 |
+| renderSessionTabs | method | 3326 |
+| sessionAction | const | 3605 |
+| openSessionAction | function | 3607 |
+| contextIcon | function | 3648 |
+| renderContextChips | function | 3651 |
+| fuzzyHit | function | 3670 |
+| renderContextResults | function | 3677 |
+| showContextSkills | function | 3697 |
+| positionContextSkills | function | 3702 |
+| showContextSkills | method | 3714 |
+| region | method | 3749 |
+| skillTrigger | const | 3751 |
+| showContextSkills | method | 3767 |
+| resizePrompt | method | 3776 |
+| region | method | 3777 |
+| SLASH_COMMANDS | const | 3782 |
+| closeCompletion | function | 3785 |
+| highlightCompletion | function | 3793 |
+| chooseCompletion | function | 3802 |
+| closeCompletion | method | 3814 |
+| updateCompletion | function | 3817 |
+| closeCompletion | method | 3818 |
+| resizePrompt | method | 3877 |
+| region | method | 3878 |
+| switchSession | method | 3918 |
+| creationLoad | const | 3929 |
+| defaultsScope | const | 3931 |
+| renderDefaultsScope | function | 3932 |
+| options | method | 3933 |
+| refreshDefaultsScope | function | 3936 |
+| renderDefaultsScope | method | 3942 |
+| createAgentPicker | function | 3945 |
+| options | method | 3971 |
+| fill | method | 3978 |
+| fillThinking | method | 3986 |
+| options | method | 3988 |
+| defaultsSelection | const | 4034 |
+| defaultsSaving | const | 4047 |
+| loadCreation | function | 4049 |
+| disposePickers | method | 4056 |
+| disposePickers | method | 4057 |
+| disposePickers | function | 4086 |
+| openDefaults | function | 4089 |
+| disposePickers | method | 4094 |
+| updateAvailability | method | 4140 |
+| updateDefaultsPreview | function | 4153 |
+| updateDefaultsPreview | method | 4177 |
+| updateAvailability | method | 4193 |
 
 ### public/file-picker.js（355 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 
@@ -1509,7 +1511,7 @@
 |---|---|---|
 | open | const | 5 |
 
-### tests/app.test.js（1921 行） — node --test 测试（npm test）
+### tests/app.test.js（1927 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -2574,7 +2576,7 @@
 | req | const | 49 |
 | fields | const | 51 |
 
-### tests/workspace-tabs.test.js（280 行） — node --test 测试（npm test）
+### tests/workspace-tabs.test.js（286 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|

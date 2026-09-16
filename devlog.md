@@ -2,11 +2,11 @@
 
 ## 2026-09-16 侧栏会话置顶
 
-- 内容：侧栏「⋯」菜单新增「置顶/取消置顶」；置顶会话统一进新的「置顶」分组（排在「进行中」之前，运行中会话也排在其后），行底色用 `--raised` 加深、强调色左键 + 图钉图标突出（置顶且当前打开时两套高亮叠加）。「置顶」分组仅在该工作空间有置顶会话时出现。
+- 内容：侧栏「⋯」菜单新增「置顶/取消置顶」；置顶会话在每个工作区分组内单独进「置顶」子组（排在「进行中」之前，运行中会话也排在其后），行底色用 `--raised` 加深、强调色左键 + 图钉图标突出（置顶且当前打开时两套高亮叠加）。「置顶」子组仅在该工作区有置顶会话时出现。
 - 原因：用户需要把长期关注的会话固定在侧栏最上方，并与运行中/待查看的自动排序区分开；加深底色与当前页高亮（浅主题色底）可同时区分。
-- 实现：`axiom.pinnedSessions` 本地偏好（与 `axiom.hiddenSessions` 共用 `changeSessionPreference` 的 Web Locks 串行读改写、storage 跨标签页同步，断连可用）；`renderSessions` 排序 rank 改为置顶 0 → 运行中 1 → 待查看 2 → 已读 3。
+- 实现：`axiom.pinnedSessions` 本地偏好（与 `axiom.hiddenSessions` 共用 `changeSessionPreference` 的 Web Locks 串行读改写、storage 跨标签页同步，断连可用）；`renderSessions` 每个工作区内的排序 rank 改为置顶 0 → 运行中 1 → 待查看 2 → 已读 3。
 - 文件：public/app.js、public/style.css、tests/app.test.js（置顶/取消置顶、排序、分组、持久化、不触碰服务端断言；菜单索引断言更新）、README.md。
-- 验证：`node --test --test-timeout=120000 tests/app.test.js` 3/3 通过；全量 `npm test` 689 项，687 通过、2 跳过、0 失败。
+- 验证：`node --test --test-timeout=120000 tests/app.test.js` 3/3 通过；全量 `npm test` 689 项，687 通过、2 跳过、0 失败。合并 master 的「工作区折叠分组侧栏」（a4b7cbe）后置顶逻辑改为每组内生效，重跑上述测试与浏览器验收（多工作区脚本）均通过。
 
 ## 2026-09-15 长会话阶段三：功能验证与性能证据
 
@@ -2180,3 +2180,11 @@ expected: '完成<progress>已完成检查</progress>'                          
 - README、六份计划及集成指南同步实现状态，索引重建。文档子任务未完成编辑，主代理完成补写。
 - npm test 689项：687通过、2既有跳过、0失败；三个浏览器脚本通过。Windows NSIS 构建及随包 Node/真实窗口隔离冒烟通过。构建默认源超时，镜像成功；一次 stage LICENSE 网络重置后重试成功。
 - 未完成发布门禁：正式签名/公证、成套备份与安装回退、macOS本轮构建和实机验收；不宣称正式稳定发行。产物和日志归档到 F:/deliveries/Axiom-runtime-integration。
+
+## 2026-09-16 工作区折叠分组侧栏
+- 侧栏会话列表改为按工作区分组折叠展示。包装一层现有的 renderSessions 逻辑（进行中/已完成分组、日期分隔、排序、状态点、操作菜单完全不变），外层加可折叠的 `<details>` 工作区头。
+- 当前工作区默认展开、其他折叠；折叠状态持久化到 localStorage `axiom.openCwds`。
+- 工作区头显示目录 basename、完整路径 tooltip、运行中 ◉ 徽章、待查看 • 徽章、hover 出现的 ＋ 新建按钮。
+- 搜索跨全部工作空间（匹配会话标题），搜索时不显示空工作区组。
+- 已完成（hiddenSessions）保留在每个工作区内部的折叠区域，状态按工作区独立持久化。
+- 涉及文件：public/app.js（renderSessions 重构、normalizeCwd 工具函数、openCwds 状态）、public/style.css（workspace-group/workspace-header/workspace-badge/workspace-new-btn 样式）、public/index.html（搜索占位文本）、tests/app.test.js（其他工作区会话可见性断言调整）、tests/workspace-tabs.test.js（同）、tests/session-sidebar-ui.py（全面适配新 DOM 结构：工作区分组断言、折叠展开测试、内部列表范围限定）。
