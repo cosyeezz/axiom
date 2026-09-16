@@ -2188,3 +2188,4 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 搜索跨全部工作空间（匹配会话标题），搜索时不显示空工作区组。
 - 已完成（hiddenSessions）保留在每个工作区内部的折叠区域，状态按工作区独立持久化。
 - 涉及文件：public/app.js（renderSessions 重构、normalizeCwd 工具函数、openCwds 状态）、public/style.css（workspace-group/workspace-header/workspace-badge/workspace-new-btn 样式）、public/index.html（搜索占位文本）、tests/app.test.js（其他工作区会话可见性断言调整）、tests/workspace-tabs.test.js（同）、tests/session-sidebar-ui.py（全面适配新 DOM 结构：工作区分组断言、折叠展开测试、内部列表范围限定）。
+- 优化：工作区头改为两行布局 — 顶行 13px 加粗名称 + 徽章 + 新建按钮，第二行 11px 等宽字体显示完整原始路径（muted 色），遵循 Linear 设计风格（-0.2px letter-spacing、6px 圆角、紧凑间距）。app.js 新增 wsOriginalCwd Map 保留原始路径用于展示。
