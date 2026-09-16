@@ -75,12 +75,20 @@ export function delegationTools(tasks) {
       name: "read_result",
       label: "Read result",
       description:
-        "Read one finished task's result. Requires the taskId and the resultId from its completion notification; fails if the notification has not arrived yet. Never poll.",
+        "Read the result of a finished subtask started by delegate. Call only after receiving that subtask's completion notification. The taskId and resultId must come from the same notification. Calls made before the notification arrives fail. This tool retrieves results, not task progress. Do not poll.",
       parameters: {
         type: "object",
         properties: {
-          taskId: { type: "string", minLength: 1 },
-          resultId: { type: "string", format: "uuid" },
+          taskId: {
+            type: "string",
+            minLength: 1,
+            description: "The taskId from the subtask's completion notification.",
+          },
+          resultId: {
+            type: "string",
+            format: "uuid",
+            description: "The resultId from the same completion notification.",
+          },
         },
         required: ["taskId", "resultId"],
         additionalProperties: false,
