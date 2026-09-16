@@ -1,5 +1,10 @@
 # 开发记录
 
+## 2026-09-15 后端失败不应锁死桌面退出
+
+- `desktop/backend-lifecycle.mjs` 显式提供 processPresent，运行就绪后异常退出通知 onCrash；`desktop/main.mjs` 在已无后端进程时允许关闭窗口，但不授予安全保存或更新许可。超时仍有进程时继续阻止退出，不强杀。
+- `tests/backend-lifecycle.test.js` 新增崩溃通知、进程存在状态及更新拒绝断言，四项通过；README同步。尚未重建安装包，旧产物不含此修正。
+
 ## 2026-09-15 只读历史基础
 
 - `src/session-history.js` 复用SDK公开 parseSessionEntries + SessionManager.inMemory，避免 open() 在读取空文件/旧格式时改写历史；接入 sessions 子任务历史路径。

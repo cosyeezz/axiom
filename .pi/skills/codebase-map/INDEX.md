@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/15 18:33:24）
+# Axiom 多级代码索引（生成于 2026/9/15 18:51:47）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -72,7 +72,7 @@
 | tests/app.test.js | 1895 | node --test 测试（npm test） | pickerSource, modelSources, serviceSource |
 | tests/autoscroll-ui.py | 99 | node --test 测试（npm test） | - |
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
-| tests/backend-lifecycle.test.js | 64 | node --test 测试（npm test） | fixture |
+| tests/backend-lifecycle.test.js | 76 | node --test 测试（npm test） | fixture |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
 | tests/capabilities.test.js | 289 | node --test 测试（npm test） | - |
 | tests/cli-help.test.js | 46 | node --test 测试（npm test） | cli |
@@ -1407,7 +1407,7 @@
 | cwd | const | 17 |
 | service | const | 18 |
 
-### tests/backend-lifecycle.test.js（64 行） — node --test 测试（npm test）
+### tests/backend-lifecycle.test.js（76 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|

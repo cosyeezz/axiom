@@ -20,7 +20,10 @@ else {
   backend = createBackendLifecycle({ bundleRoot: root, bundleVersion: app.getVersion(), dataRoot,
     cwd: resolve(process.env.AXIOM_CWD || homedir()),
     nodePath: join(root, "runtime", process.platform === "win32" ? "node.exe" : "node"),
-    onShutdown: () => { void quitSafely(); } });
+    onShutdown: () => { void quitSafely(); },
+    onCrash: ({ exitCode }) => {
+      dialog.showErrorBox("Axiom 后端已退出", `后端异常退出（${exitCode ?? "信号终止"}），当前任务的保存结果未确认。请退出应用后重新打开；不会自动重放任务或安装更新。`);
+    } });
   try {
     const ready = await backend.startBackend();
     window = new BrowserWindow({ width: 1440, height: 900, title: "Axiom",
@@ -58,6 +61,12 @@ async function quitSafely() {
   if (asking || quitting) return;
   asking = true;
   try {
+    // 只允许已无子进程时关闭桌面；不把失败态或超时当作安全停止。
+    if (!backend.getBackendState().processPresent) {
+      quitting = true;
+      app.quit();
+      return;
+    }
     const { response } = await dialog.showMessageBox({ type: "question", title: "退出 Axiom",
       message: "退出前必须等待后端保存完成。", detail: "可等待任务完成，或明确取消任务后保存退出。超时不会强杀进程。",
       buttons: ["返回应用", "等待任务并退出", "取消任务并退出"], defaultId: 0, cancelId: 0 });
@@ -65,6 +74,12 @@ async function quitSafely() {
     await backend.requestStop({ mode: response === 2 ? "cancel" : "wait", reason: "quit" });
     quitting = true;
     app.quit();
-  } catch (error) { dialog.showErrorBox("尚未安全退出", error.message); }
+  } catch (error) {
+    dialog.showErrorBox("尚未安全退出", error.message);
+    if (!backend.getBackendState().processPresent) {
+      quitting = true;
+      app.quit();
+    }
+  }
   finally { asking = false; }
 }

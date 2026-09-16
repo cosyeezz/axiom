@@ -4,7 +4,7 @@ import { isAbsolute, join, resolve } from "node:path";
 
 // 桌面只直接管理 worker；禁止回退 PATH Node 或再启动旧 supervisor。
 export function createBackendLifecycle({ bundleRoot, bundleVersion, dataRoot, cwd = process.cwd(),
-  nodePath, onShutdown = () => {}, spawn = fork, timeout = 60_000, setTimer = setTimeout, clearTimer = clearTimeout }) {
+  nodePath, onShutdown = () => {}, onCrash = () => {}, spawn = fork, timeout = 60_000, setTimer = setTimeout, clearTimer = clearTimeout }) {
   if (!isAbsolute(bundleRoot) || !isAbsolute(nodePath)) throw new Error("安装目录和随包 Node 必须是绝对路径");
   dataRoot = resolve(cwd, dataRoot);
   let child, startWork, stopWork, ready, state = "stopped";
@@ -15,7 +15,7 @@ export function createBackendLifecycle({ bundleRoot, bundleVersion, dataRoot, cw
     rejectStart?.(error);
   };
   return {
-    getBackendState: () => ({ state, ...(ready || {}) }),
+    getBackendState: () => ({ state, processPresent: !!child, ...(ready || {}) }),
     startBackend() {
       if (child) return ["starting", "ready"].includes(state) ? startWork
         : Promise.reject(new Error("后端尚未确认停止，不能重新启动"));
@@ -52,6 +52,7 @@ export function createBackendLifecycle({ bundleRoot, bundleVersion, dataRoot, cw
           });
           child.on("error", failStart);
           child.once("exit", (code) => {
+            const wasReady = state === "ready";
             clearTimer(startTimer);
             clearTimer(stopTimer);
             child = undefined;
@@ -62,6 +63,7 @@ export function createBackendLifecycle({ bundleRoot, bundleVersion, dataRoot, cw
             if (clean) resolveStop?.({ stopped: true, exitCode: code });
             else rejectStop?.(new Error("后端未确认安全退出"));
             stopWork = undefined;
+            if (wasReady) onCrash({ exitCode: code });
           });
         } catch (error) { failStart(error); }
       });

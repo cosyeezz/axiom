@@ -6,17 +6,18 @@ import { createBackendLifecycle } from "../desktop/backend-lifecycle.mjs";
 
 function fixture() {
   const child = new EventEmitter(); child.pid = 42;
-  const timers = new Set(); const sent = [];
+  const timers = new Set(); const sent = []; const crashes = [];
   child.send = (message, callback) => { sent.push(message); callback(); };
   let calls = 0, options;
   const lifecycle = createBackendLifecycle({ bundleRoot: resolve("bundle"), nodePath: resolve("bundle/runtime/node"),
     bundleVersion: "0.1.7", dataRoot: "data", cwd: resolve("workspace"),
+    onCrash: (event) => crashes.push(event),
     spawn: (_file, _args, opts) => { calls++; options = opts; return child; },
     setTimer: (fn) => { timers.add(fn); return fn; }, clearTimer: (fn) => timers.delete(fn) });
   const ready = (extra = {}) => child.emit("message", { type: "service.ready", protocol: 1,
     token: options.env.AXIOM_START_TOKEN, instanceId: options.env.AXIOM_INSTANCE_ID,
     bundleVersion: "0.1.7", pid: 42, url: "http://127.0.0.1:4319", ...extra });
-  return { lifecycle, child, timers, sent, ready, calls: () => calls, options: () => options };
+  return { lifecycle, child, timers, sent, crashes, ready, calls: () => calls, options: () => options };
 }
 
 test("并发启动共用 worker，伪 ready 无效，绝对数据路径不随安装目录变化", async () => {
@@ -48,7 +49,18 @@ test("启动超时不允许拉起第二写入者，停止超时不能冒充 stop
   const stopped = assert.rejects(stop, /不会强杀/);
   [...f.timers][0](); await stopped;
   assert.equal(f.lifecycle.getBackendState().state, "failed");
+  assert.equal(f.lifecycle.getBackendState().processPresent, true);
   f.child.emit("exit", 0);
+  assert.equal(f.lifecycle.getBackendState().processPresent, false);
+  await assert.rejects(f.lifecycle.requestStop(), /异常退出/);
+});
+
+test("运行后异常退出通知桌面且不构成保存或更新许可", async () => {
+  const f = fixture(), start = f.lifecycle.startBackend();
+  f.ready(); await start;
+  f.child.emit("exit", 1);
+  assert.deepEqual(f.crashes, [{ exitCode: 1 }]);
+  assert.equal(f.lifecycle.getBackendState().processPresent, false);
   await assert.rejects(f.lifecycle.requestStop(), /异常退出/);
 });
 

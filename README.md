@@ -5,6 +5,8 @@
 桌面构建：使用固定 Node 后执行 `npm run desktop:stage` → `npm run desktop:build`。产物在 `dist/`；本机测试：`node scripts/smoke-desktop.mjs`、`node scripts/smoke-shell.mjs dist/win-unpacked/Axiom.exe`（Windows）。测试创建临时数据，不读取原有用户凭据。GitHub 下载不可达时可显式设置 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 和 `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`；镜像不替代平台签名。
 
 
+桌面异常退出：后端崩溃会明确提示；确认后端已不存在时可正常关闭桌面，但不代表任务已保存或允许安装更新。停止超时且进程仍存在时不绕过保护。
+
 历史读取基础：子任务 JSONL 通过内存 SessionManager 读取当前分支，旧格式迁移不会回写原文件；主会话打开时不加载 SDK 与空闲释放仍待接线。
 
 ## 独立 SVG 动画
