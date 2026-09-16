@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-16 Mac签名修正版验证与异步发布
+
+- CI 35063188663成功：Mac测试618/618，codesign报告valid on disk / satisfies its Designated Requirement，真实Electron窗口、后端保存退出、DMG CRC均通过；Windows616通过2跳过。
+- 用户授权发布dev.2。使用仓库忽略目录dist内的一次性后台脚本下载并上传独立预发布版，每个网络步骤有超时（查询25秒，下载/上传600秒），不使用阻塞watch；完成前不报告发布成功。旧版Mac故障说明随发布结果更新。
+- knowledge.md追加根因与发布门禁，强调ad-hoc不等于开发者认证或公证。
+
 ## 2026-09-16 修复Mac测试包无效资源签名
 
 - 用户实机codesign/spctl均报code has no resources but signature indicates they must be present；旧流程禁用自动证书发现且未指定identity，跳过签名，DMG完整性和后端测试无法检测.app签名问题。

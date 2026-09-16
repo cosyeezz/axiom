@@ -617,3 +617,9 @@
 ### 2026-06-01：快照回执到渲染间的事件空窗
 - 症状：快照覆盖先到的实时正文；归并失败后水位提前推进。根因：旧 app.js 仅在渲染时建闸、先记 seq 后归并。
 - 修复：public/transport.js 在快照回执时建闸、成功归并后记水位；失败受控恢复；public/app.js 在断线时作废旧分片。tests/realtime-transport.test.js 与 snapshot-first-screen.test.js 防回归。
+
+## 2026-09-16 macOS 跳过签名导致资源封印失效
+- 症状：Gatekeeper提示已损坏，codesign报code has no resources but signature indicates they must be present。
+- 原因：electron-builder禁用自动证书发现后跳过签名，重打包的应用不能沿用原Electron签名；DMG校验与独立后端测试不覆盖.app资源签名。
+- 修复：dev构建显式identity=-，用打包器完成ad-hoc签名；发布门禁加入codesign --verify --deep --strict和真实Electron窗口冒烟。
+- 边界：ad-hoc仅保证包内一致性，不等于Developer ID或公证，不保证带下载隔离标记的Gatekeeper放行。CI 35063188663已验证严格签名、窗口启动与安全退出。
