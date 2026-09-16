@@ -643,3 +643,9 @@
 - 根因：自动合并丢失 loaded snapshot 的 sessionId；历史分支残留 controls()，分区分支已删除该函数。
 - 修复：src/sessions.js 恢复身份；public/app.js 调用 updateAvailability。未加载只读历史也遵循分页和页外元数据裁剪，server attach 不初始化SDK。
 - 防再犯：tests/history-reading.test.js、session-history.test.js 增加跨功能回归；合并完成须跑全量而非仅各分支测试。
+
+### 2026-09-16 展示页预算阻断实时事件并关闭子代理弹窗
+- 症状：发送不显示、需刷新、60条后全量重建、子代理弹窗消失。
+- 根因：receiveHistoryEvent 把 historyLoading 和60条预算当作停绘条件，latestHistory 重建了所有节点。
+- 修复：public/app.js 实时持续追加，before游标前插历史且保留节点/草稿/锚点；跨页结果先到时将已有工具详情移回调用位置；public/stream-renderer.js 折叠过程按需绘制。
+- 防再犯：continuous-history 回归覆盖80条实时消息、打开弹窗、在飞历史期间输入和首屏补齐；continuous-ui.py 实测Chromium滚动补偿。历史响应不得提交实时seq。

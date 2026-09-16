@@ -33,8 +33,8 @@ test("登录首屏：同步清场后只挂最近一页（60 条），分页控�
   assert.equal(page.count("历史180"), 1, "本页从第 181 条开始");
   assert.equal(page.count("历史239"), 1, "本页到最新一条结束");
   assert.equal(page.count("历史179"), 0, "更早的一页不在首屏");
-  assert.equal(page.pageText(), "181–240 / 240 条");
-  assert.equal($("history-pages").hidden, false);
+  assert.equal(page.pageText(), "");
+  assert.equal($("history-pages").hidden, true);
   assert.equal($("history-before").disabled, false, "有更旧历史，可翻页");
   assert.equal($("history-after").disabled, true, "已在最新页，无更新页");
   assert.equal(app.watermark("long"), 500, "attach 快照提交 seq 水位");
@@ -47,31 +47,29 @@ test("登录首屏：同步清场后只挂最近一页（60 条），分页控�
   assert.equal($("send").disabled, false, "完整恢复后开放发送");
 });
 
-test("翻页走真实游标：上一页/下一页/最新页替换当前页，DOM 有界且不推进水位", async (t) => {
+test("上滚走真实游标：前插历史保留旧节点且不推进水位", async (t) => {
   const page = await login(bootHistoryPage());
   t.after(page.close);
   const { $, app } = page;
-  const click = async (id, expected) => {
-    page.$(id).click();
-    await until(() => page.pageText().startsWith(expected), `${id} → ${expected}`);
+  const tail = $("output").lastElementChild;
+  const click = async (start) => {
+    await app.loadHistory({ before: app.historyState().history.prevCursor });
+    assert.equal(app.historyState().history.start, start);
   };
 
-  await click("history-before", "121–180");
-  assert.equal(page.messages(), PAGE_SIZE, "每一页都是定长窗口");
+  await click(120);
+  assert.equal(page.messages(), PAGE_SIZE * 2);
   assert.equal(page.count("历史120"), 1);
   assert.equal(page.count("历史179"), 1);
-  assert.equal(page.count("历史180"), 0, "上一页替换当前页，不追加");
-  assert.equal(page.count("历史239"), 0, "旧页不再留在 DOM");
+  assert.equal(page.count("历史180"), 1);
+  assert.equal(page.count("历史239"), 1);
+  assert.equal($("output").lastElementChild, tail, "已有节点不重建");
   assert.equal(app.watermark("long"), 500, "页响应不是实时快照，不提交水位");
 
-  await click("history-before", "61–120");
-  await click("history-before", "1–60");
-  assert.equal($("history-before").disabled, true, "最早页没有更旧");
-  assert.equal($("history-after").disabled, false, "最早页有更新");
-  await click("history-after", "61–120");
-
-  await click("history-newest", "181–240");
-  assert.equal($("history-before").disabled, false);
+  await click(60);
+  await click(0);
+  assert.equal(page.messages(), TOTAL);
+  assert.equal($("history-before").disabled, true, "全部历史加载完成");
   assert.equal($("history-after").disabled, true, "回到最新页");
   assert.equal(app.watermark("long"), 500, "一轮翻页后水位仍未变");
 });

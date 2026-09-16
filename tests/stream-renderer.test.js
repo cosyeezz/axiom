@@ -12,7 +12,7 @@ test("user input stays plain text with newlines; process uses Markdown", () => {
   const item = {
     node: document.querySelector('article'), text: document.querySelector('div'),
     thinking: document.createElement('details'), thought: document.createElement('div'),
-    processText: document.createElement('div'), processBuffer: '**进度**',
+    processText: document.createElement('div'), processBuffer: '**进度**', processGroup: { open: true },
     buffer: '第一行\n\n  第二行 <img src=x onerror=alert(1)>', reasoning: '',
   };
   const renderer = createStreamRenderer((el, text) => { el.textContent = text; }, () => {}, () => 1, () => {});

@@ -86,7 +86,13 @@ test("正式回答与过程分离，流式和历史均可独立阅读", async ()
       { agentId: 'main', message: { role: 'assistant', content: '检查中\n' + answer } },
     ] }); paint(); paint();
     assert.match(output.textContent, /完成修复/);
-    assert.ok([...output.querySelectorAll('.call-group')].some(g => !g.open && g.textContent.includes('检查中')));
+    const process = output.querySelector('[data-process-marker]');
+    assert.ok(process && !process.open);
+    assert.equal(process.querySelector('.message-process').textContent, '', '折叠过程不解析');
+    process.open = true;
+    process.dispatchEvent(new dom.window.Event('toggle'));
+    paint(); paint();
+    assert.match(process.textContent, /检查中/);
   } finally { dom.window.close(); }
 });
 

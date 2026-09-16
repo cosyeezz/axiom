@@ -2226,3 +2226,10 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 已完成（hiddenSessions）保留在每个工作区内部的折叠区域，状态按工作区独立持久化。
 - 涉及文件：public/app.js（renderSessions 重构、normalizeCwd 工具函数、openCwds 状态）、public/style.css（workspace-group/workspace-header/workspace-badge/workspace-new-btn 样式）、public/index.html（搜索占位文本）、tests/app.test.js（其他工作区会话可见性断言调整）、tests/workspace-tabs.test.js（同）、tests/session-sidebar-ui.py（全面适配新 DOM 结构：工作区分组断言、折叠展开测试、内部列表范围限定）。
 - 优化：工作区头改为两行布局 — 顶行 13px 加粗名称 + 徽章 + 新建按钮，第二行 11px 等宽字体显示完整原始路径（muted 色），遵循 Linear 设计风格（-0.2px letter-spacing、6px 圆角、紧凑间距）。app.js 新增 wsOriginalCwd Map 保留原始路径用于展示。
+
+## 2026-09-16 连续会话与实时渲染修复
+
+- 原因：60条展示预算使实时事件停绘并触发整页 attach；historyLoading 期间吞掉展示更新，重建同时关闭子代理弹窗。
+- 改动：app.js/index.html 改连续上滚预取、首屏补齐、历史前插保持节点与滚动锚点；移除实时预算和加载期间停绘；跨窗口工具结果节点回归调用位置；stream-renderer.js 折叠过程懒渲染；style.css 屏外 content-visibility。
+- 决策：不缓存派生HTML文件，保留服务端原文为权威；已加载DOM会随上滚增长，不宣称硬上限虚拟化。复用现有主题、字号和间距，不新增视觉主题。
+- 验证：新增 continuous-history.test.js / continuous-preview.mjs / continuous-ui.py；更新 snapshot、memory、stream-renderer 回归。全量 694 项，692通过、2跳过；Chromium 桌面/390px手机通过连续前插、节点保留、滚动补偿与无页面错误检查。README、索引与坑库同步。

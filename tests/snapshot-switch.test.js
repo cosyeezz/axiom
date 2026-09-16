@@ -56,7 +56,7 @@ test("翻页在飞时历史修订变化：旧响应作废并按新修订重取�
   page.release();
   await settle();
   await settle();
-  assert.equal(page.pageText(), "181–240 / 240 条", "失效的旧页不得替换修订号更新后的页面");
+  assert.equal(app.historyState().history.start, 180, "失效的旧页不得替换修订号更新后的页面");
   assert.equal(page.count("历史120"), 0, "旧页消息不得重绘");
   assert.equal(page.count("历史239"), 1);
 });
@@ -91,7 +91,7 @@ test("翻页在飞时输入的草稿不被回包重置", async (t) => {
   $("prompt").dispatchEvent(new page.window.Event("input"));
 
   page.release();
-  await until(() => page.pageText().startsWith("121–180"), "旧页落地");
+  await until(() => page.app.historyState().history.start === 120, "旧页落地");
   assert.equal($("prompt").value, draft, "翻页回包不得用发起时读到的旧视图覆盖新草稿");
 });
 
@@ -158,7 +158,7 @@ test("后台标签页翻页与实时事件零 DOM 绘制，回前台收口到最
 
   observer.disconnect();
   page.setHidden(false);
-  await until(() => page.pageText().startsWith("181–240"), "回前台收口到最新页");
+  await until(() => !app.historyFlags().hiddenDirty && !app.historyFlags().loading, "回前台收口到最新页");
   assert.equal(app.historyFlags().hiddenDirty, false);
   assert.equal(page.messages(), PAGE_SIZE, "收口后仍是定长一页");
   assert.equal(page.count("历史120"), 0, "后台翻到的旧页从未作画");

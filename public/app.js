@@ -272,6 +272,7 @@ transcript.onscroll = () => {
   locatedScroll = undefined;
   follow = readFollow(transcript, follow);
   $("latest").hidden = follow;
+  prefetchHistory();
 };
 $("history-before").onclick = () => void loadHistory({ before: historyState.history.prevCursor });
 $("history-after").onclick = () => historyDirty ? void latestHistory() : void loadHistory({ after: historyState.history.nextCursor });
@@ -1138,6 +1139,7 @@ function refreshCallGroups(output) {
           item.processGroup.dataset.processMarker = "true";
           item.node.before(item.processGroup);
           item.processGroup.open = false;
+          item.processGroup.addEventListener("toggle", () => { if (item.processGroup?.open) renderer.mark(item); });
           item.processGroup.firstElementChild.firstElementChild.replaceChildren(marker);
           item.processGroup.lastElementChild.append(item.processText);
         }
@@ -2305,8 +2307,42 @@ function applyEvent(message) {
   }
   if (type === "error") error(data.message);
 }
-// A bounded native page replaces the previous page, never a growing list of chunks.
-// No synthetic full-history scrollbar or height cache: the browser owns dynamic layout.
+// History extends the mounted timeline; fetching older records never gates live events.
+function prefetchHistory() {
+  if (!connected || changing || historyLoading || document.hidden || !historyState?.history?.prevCursor) return;
+  if (transcript.clientHeight > 0 && (transcript.scrollHeight <= transcript.clientHeight + 80 || transcript.scrollTop < transcript.clientHeight))
+    void loadHistory({ before: historyState.history.prevCursor });
+}
+function prependHistory(state) {
+  const output = $("output");
+  const anchor = [...output.children].find(node => node.getBoundingClientRect().bottom > transcript.getBoundingClientRect().top);
+  const top = anchor?.getBoundingClientRect().top;
+  const previous = new Set(output.children);
+  const ids = new Set(rawEntries.map(entry => entry.messageId || entry.entryId));
+  const entries = state.messages.filter(entry => !ids.has(entry.messageId || entry.entryId));
+  const savedLive = new Map(live);
+  live.clear();
+  rawEntries = [...entries, ...rawEntries];
+  historyState.messages = rawEntries;
+  historyState.history = { ...historyState.history, start: state.history.start, prevCursor: state.history.prevCursor };
+  const folded = new Map();
+  for (const record of compactions) for (const id of record.compactedMessageIds || []) folded.set(id, record);
+  const ctx = { state, folded, placed: new Set(compactionNodes.keys()), foldedTools: new Set(), restoreRetries() {} };
+  for (const task of state.tasks || []) if (!tasks.has(task.id))
+    applyEvent({ type: "task.state", sessionId, taskId: task.id, data: task });
+  for (const entry of entries) if (entry.agentId === "main") trackTaskEntries(entry.message, entry.entryId);
+  for (let index = 0; index < entries.length; index++) placeSnapshotMessage(ctx, index, entries[index]);
+  live.clear();
+  for (const [id, item] of savedLive) live.set(id, item);
+  const added = [...output.children].filter(node => !previous.has(node));
+  output.prepend(...added);
+  mergeThoughts(output);
+  placeCompactedTasks();
+  rawChanged();
+  goalUI.anchors(goalAnchors);
+  if (anchor?.isConnected) transcript.scrollTop += anchor.getBoundingClientRect().top - top;
+  lastScrollTops.set(transcript, transcript.scrollTop);
+}
 let snapshotJob = 0;
 function snapshot(state, onReady) {
   ++historyRequest;
@@ -2339,11 +2375,14 @@ function paintHistoryControls() {
   const page = historyState?.history;
   const bar = $("history-pages");
   if (!bar) return;
-  bar.hidden = !page;
+  bar.hidden = !page || (!historyLoading && !historyDirty);
+  $("history-before").hidden = true;
+  $("history-after").hidden = true;
+  $("history-newest").hidden = !historyDirty;
   $("history-before").disabled = historyLoading || !page?.prevCursor;
   $("history-after").disabled = historyLoading || (!page?.nextCursor && !historyDirty);
   $("history-position").textContent = page
-    ? `${page.total ? page.start + 1 : 0}–${Math.min(page.total, page.start + historyState.messages.length)} / ${page.total} 条${historyDirty ? " · 有新消息" : ""}` : "";
+    ? (historyLoading ? "正在加载更早消息…" : historyDirty ? "有新消息 · 回到最新查看" : "") : "";
 }
 async function loadHistory(options = {}, reading) {
   if (historyLoading || !historyState?.history || changing) return;
@@ -2358,6 +2397,11 @@ async function loadHistory(options = {}, reading) {
     // Preserve input typed while the page request was in flight.
     saveView();
     // A page is not a realtime snapshot: never commit its seq to transport.
+    if (options.before) {
+      if (!document.hidden) prependHistory(state);
+      else hiddenDirty = true;
+      return;
+    }
     historyState = state;
     historyDirty = historyEvents !== events;
     if (historyDirty && !state.history.nextCursor) state.history.nextCursor = "pending";
@@ -2369,7 +2413,7 @@ async function loadHistory(options = {}, reading) {
   } catch (e) {
     if (token === historyRequest && target === sessionId) error(`历史页读取失败，请返回最新重试：${e.message}`);
   } finally {
-    if (token === historyRequest) { historyLoading = false; paintHistoryControls(); }
+    if (token === historyRequest) { historyLoading = false; paintHistoryControls(); requestAnimationFrame(prefetchHistory); }
   }
 }
 async function latestHistory() {
@@ -2393,7 +2437,7 @@ function receiveHistoryEvent(message) {
   ++historyEvents;
   // Old-page and hidden views don't accumulate events or create background history DOM.
   // Server history is authoritative; returning to latest fetches one bounded snapshot.
-  const parked = document.hidden || !!historyState.history.nextCursor || historyLoading;
+  const parked = document.hidden || !!historyState.history.nextCursor;
   if (type === "session.history.changed" && data.revision !== historyState.history.revision) {
     historyState.history.revision = data.revision;
     ++historyRequest;
@@ -2424,13 +2468,6 @@ function receiveHistoryEvent(message) {
   if (type === "agent.message.end") {
     historyState.messages = rawEntries;
     historyState.history.total++;
-    // Keep the current reading page intact until explicit navigation. Stop adding DOM
-    // when its fixed budget is used, even if a single run emits thousands of tools.
-    if (rawEntries.length >= HISTORY_LIMIT) {
-      historyState.history.nextCursor = "pending";
-      historyDirty = true;
-      if (follow) queueMicrotask(() => { if (historyDirty && follow) void latestHistory(); });
-    }
     paintHistoryControls();
   }
 }
@@ -2567,7 +2604,13 @@ function placeSnapshotMessage(ctx, index, { agentId, message, entryId }) {
     clearWaiting(agentId);
     live.set(agentId, item);
     for (const call of Array.isArray(message.content) ? message.content : [])
-      if (call.type === "toolCall") toolState(agentId, { phase: "history", toolCallId: call.id, toolName: call.name, args: call.arguments });
+      if (call.type === "toolCall") {
+        const existing = toolItems.get(`${agentId}:${call.id}`);
+        // The result may have been loaded first at the window boundary. Rehome its
+        // existing detail node rather than leaving the delegate anchor at the tail.
+        if (existing) { existing.args ||= call.arguments; item.tools.append(existing.container); }
+        else toolState(agentId, { phase: "history", toolCallId: call.id, toolName: call.name, args: call.arguments });
+      }
     live.delete(agentId);
     // 绑定与下标同构的原文条目：rawEntries 与 state.messages 顺序一致。
     bindRaw(item, rawEntries[index]);
@@ -2637,6 +2680,7 @@ function finishSnapshot(job, ctx) {
     const anchor = !follow && view?.anchor && rawEntries.find(entry => entry.messageId === view.anchor)?.item?.node;
     if (anchor) transcript.scrollTop += anchor.getBoundingClientRect().top - transcript.getBoundingClientRect().top - (view.anchorOffset || 0);
     lastScrollTops.set(transcript, transcript.scrollTop);
+    prefetchHistory();
   });
   renderQueue(state.queue);
   runtime = state.runtime;
@@ -2844,6 +2888,7 @@ $("composer").onsubmit = async (e) => {
   follow = true;
   scrollLatest();
   try {
+    if (historyState?.history?.nextCursor) await latestHistory();
     await request("prompt", { sessionId: sendingSession, text, ...(sentImages.length ? { images: sentImages } : {}), ...(wasBusy ? { queueType } : {}) });
     if (sessionId === sendingSession) {
       images = images.filter((image) => !sentImages.includes(image));

@@ -84,24 +84,22 @@ test("快照渲染抛错：解阀、水位不前进，随后事件不再归并",
   restore();
 });
 
-test("翻页响应不推进水位；旧页期间的实时事件不绘制，回到最新才落地", async (t) => {
+test("前插历史不推进水位，浏览期间实时消息仍追加",  async (t) => {
   const page = await login(bootHistoryPage());
   t.after(page.close);
   const { app, $ } = page;
   $("history-before").click();
-  await until(() => page.pageText().startsWith("121–180"), "翻到更旧一页");
-  assert.equal(page.messages(), PAGE_SIZE);
+  await until(() => app.historyState().history.start === 120, "载入更早消息");
+  assert.equal(page.messages(), PAGE_SIZE * 2);
   assert.equal(app.watermark("long"), 500, "页响应不是实时快照，不提交水位");
 
   // 浏览旧页期间服务端又追加了一条消息，实时事件到达。
   page.records.push({ agentId: "main", entryId: "历史-新消息", message: { role: "user", content: "历史-新消息" } });
   app.event(messageEvent("新消息", 501));
-  assert.equal(page.count("新消息"), 0, "旧页不为后台事件累积 DOM");
-  assert.match(page.pageText(), /有新消息/, "旧页只给出有新消息提示");
+  assert.equal(page.count("新消息"), 1, "浏览历史不阻断实时消息");
   assert.equal(app.watermark("long"), 501, "实时事件本身照常推进水位");
 
-  $("history-newest").click();
-  await until(() => page.pageText().startsWith("182–241"), "回到最新页");
+  $("latest").click();
   assert.equal(page.count("新消息"), 1, "回到最新后才绘制新消息");
   assert.equal(page.count("历史239"), 1, "最新页仍是定长窗口");
 });

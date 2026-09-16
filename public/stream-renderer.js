@@ -105,7 +105,7 @@ export function createStreamRenderer(
       state.nextMarkdown = time + Math.max(100, (now() - time) * 4);
       changed = true;
     }
-    if (item.processText && item.paintedProcess !== item.processBuffer) {
+    if (item.processText && item.processGroup?.open && item.paintedProcess !== item.processBuffer) {
       renderMarkdown(item.processText, item.processBuffer || "");
       item.paintedProcess = item.processBuffer;
       changed = true;
