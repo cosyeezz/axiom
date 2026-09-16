@@ -133,6 +133,8 @@ test("远程控制：断线反馈、保存成功与失败、local false 表单�
   const { w, $ } = await page();
   try {
     const { calls, respond } = stubRequest(w);
+    // 测试真实打开的设置弹窗；关闭后重连/focus 不应读取隐藏面板。
+    $("settings").showModal();
     // 断线：读取失败反馈
     respond.throw = new Error("连接已断开，请重新连接");
     $("settings-remote-tab").click();

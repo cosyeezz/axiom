@@ -1,5 +1,107 @@
 # 开发记录
 
+## 2026-09-15 长会话阶段三：功能验证与性能证据
+
+- 新增 tests/history-reading.test.js：未挂载阅读锚点按 messageId 获取一页且不推进水位；跨页工具结果不依赖上一页 DOM 仍可展开。2/2 通过。
+- 性能脚本与数据：docs/perf-history-session/，ab52936 假历史基线与当前分支，20/1831 条，各 3 次串行、独立临时实例、真实 Chromium、禁真实模型。基线长会话输出节点 45351；当前页约 1930。当前仅证明传输/DOM 分页收益，不证明 SDK 全历史内存有界。
+- 最终全量串行验证：636 项，634 通过、2 跳过、0 失败、0 todo（148.7 秒）。长会话首输出均值约 485→152ms，文档节点 45351→1930，GC 后前端堆 15.4→3.9MB；有限切换堆 4.8→5.0MB，小幅增长不能证明无泄漏。图片/折叠/流式锚点未完成真实浏览器验收，不宣称整个任务所有性能指标达标。
+- 最终数字与未覆盖场景以该目录 README 和 JSON 为准；不使用旧调研分支的数据冒充本轮基线。新增文件后重建索引，保留 worktree 供统一集成，不合并 master。
+
+## 2026-09-15 长会话阶段二：有界页窗口、缓存与功能接线
+
+- 决策：采用无新增依赖的原生 60 条页窗口，不冒充动态高度虚拟列表；页内自然布局、换页卸载。删除 120 条阈值/8ms/40 条全量分片调度。只持当前页消息引用，不维护全历史高度表；位置缓存 3 个，未保存输入例外不淘汰。
+- 接线：app.js 按会话/实例/修订/请求 token 拒绝旧回包；历史页不推进水位，最新 attach 才提交；翻页回包重新保存输入；后台只置更新标记，前台恢复一个快照。阅读锚点按 messageId 按需取页。跨页 toolResult 可独立展示；原文与选区复制仅当前页，明确限制。
+- 文件：public/app.js、transport.js、session-cache.js、stream-renderer.js、index.html、style.css；tests/helpers/history-page.js、public-source.js、snapshot 三测试、session-cache 与 stream-renderer 测试；README、导航技能、索引与知识库。
+- 验证：node --test --test-concurrency=1 --test-timeout=120000 tests/*.test.js：634 项，632 通过、2 跳过、0 失败、0 todo（158.8 秒）；git diff --check。新旧页水位、首屏缓冲、会话/epoch/revision 切换、在飞草稿、后台不绘制均有可运行检查。
+- 限制：未实现连续无限滚动，浏览器全历史查找须翻页；服务端全量历史/身份索引、活动业务和草稿仍非硬字节有界。单条巨块仍可造成长任务，需性能实测而非单测代替。
+
+## 2026-09-15 长会话阶段一：身份与历史传输分页
+
+- 决策：不改 SDK 上下文/权威历史，不新增数据库历史副本；session.attach 最近 60 条，session.history 游标绑定 session/epoch/revision/消息边界，分页不提供 seq；订阅先于加载，活动流显式传身份，撤回/压缩换修订。
+- 文件：src/session-history.js、src/sessions.js、src/server.js、src/protocol.js、tests/session-history.test.js；README 与导航文档同步于后续展示提交。
+- 验证：session-history 与分页前端组合 30 项中 29 通过、1 在飞草稿缺陷已修复并单独复测 9/9；后端 SDK 假源测试确认翻页不调用上下文修改路径。服务端仍全量保留历史，未声称服务端内存有界。
+## 2026-09-16 Mac签名修正版验证与异步发布
+
+- CI 35063188663成功：Mac测试618/618，codesign报告valid on disk / satisfies its Designated Requirement，真实Electron窗口、后端保存退出、DMG CRC均通过；Windows616通过2跳过。
+- 用户授权发布dev.2。使用仓库忽略目录dist内的一次性后台脚本下载并上传独立预发布版，每个网络步骤有超时（查询25秒，下载/上传600秒），不使用阻塞watch；完成前不报告发布成功。旧版Mac故障说明随发布结果更新。
+- knowledge.md追加根因与发布门禁，强调ad-hoc不等于开发者认证或公证。
+
+## 2026-09-16 修复Mac测试包无效资源签名
+
+- 用户实机codesign/spctl均报code has no resources but signature indicates they must be present；旧流程禁用自动证书发现且未指定identity，跳过签名，DMG完整性和后端测试无法检测.app签名问题。
+- desktop.yml Mac构建显式使用electron-builder内置ad-hoc identity=-，让打包器完成嵌套签名；加入codesign深度严格校验及真实Electron窗口冒烟。无需证书，但不是Developer ID认证或公证，不能承诺Gatekeeper放行。
+- README标记旧Mac包故障；待云端验证后发布独立修正版，不静默覆盖旧资产。
+
+## 2026-09-16 Mac arm64 dev包发布
+
+- CI运行35049501362两平台成功，Mac通过自动测试、随包后端隔离启动/健康身份/安全退出和hdiutil verify。下载首次180秒超时，重试600秒上限内成功。
+- 基于551d914产出的Axiom-0.1.7-arm64.dmg及SHA256SUMS-macOS.txt补充至desktop-v0.1.7-dev.1，GitHub digest与本地b37c8798782cf93009ef83837b20592ffb31cad3d0a727d7c682b6b9d9e83016一致。
+- README与发布说明注明仅Apple Silicon、无Developer ID/公证、未完成实机窗口安装验收；master未合并，未更改Windows资产。
+
+## 2026-09-16 禁止构建器隐式发布
+
+- 第二次云端运行两平台测试通过并完成打包，但electron-builder因CI环境自动尝试发布而缺GH_TOKEN失败。desktop.yml显式--publish never，保持构建权限只读，发布仍由人工核验后执行。不通过给构建器写权限绕过此问题。
+
+## 2026-09-16 云端跨平台测试修正
+
+- 首次macOS/Windows云端构建均在测试阶段失败，未产出Mac包。原因：测试假目录未canonicalize（macOS /var与/private/var、Windows短路径与长路径）；macOS并发测试同步管道读返回EAGAIN。
+- tests/defaults、project-skills、session-flow、workspace-picker、service将相关临时目录realpath后作为测试基准，不改业务路径规则；tests/helpers/model-concurrency-child.mjs仅对EAGAIN进行10秒有界重试，父进程字节屏障仍决定放行，不放宽CAS断言。
+- 本地相关测试通过；desktop.yml加入Mac随包独立Node后端冒烟及DMG校验。README记录云端验证范围。Mac实机窗口和安装验收不冒充已通过。
+
+## 2026-09-16 发布未签名 Windows dev 预发布包
+
+- 用户授权发布到其cosyeezz/axiom仓库；以bbb4e32为目标发布desktop-v0.1.7-dev.1，prerelease=true，非Latest；未合并master。功能分支已推送。
+- 安装包250331447字节，SHA256为4c161c1926c4c83ee3bd5c2a087daa83a948f9d2f6db0cb1c2e2e1ad0bbadc39；GitHub资产digest与本地一致。发布附SHA256SUMS.txt（使用GitHub规范化后的点分文件名），不冒充签名；Authenticode核查NotSigned。
+- 重建包真实隔离启动、窗口加载、安全退出通过；618项测试616通过2跳过。发布说明明确更新链路/迁移/安装器覆盖升级/macOS尚未完整验收。README更新下载入口与进度。
+- 用户要求停止子代理，已取消剩余任务和自动重试；此后仅主代理执行。
+
+## 2026-09-15 应用内跨目录标签与桌面端口隔离
+
+- public/app.js 删除跨目录window.open旧分支，侧栏打开同样使用switchSession，避免Electron拒绝同源新窗口后看不到会话；tests/app.test.js、workspace-tabs.test.js验证跨目录切回草稿、不取消任务。
+- src/main.js：桌面绑定port=0，握手回传实际端口；CLI端口规则不变。scripts/smoke-desktop.mjs保持配置端口被占用，真实随包Node仍启动成功，健康身份与保存退出均通过。
+- 全量测试618项：616通过、2跳过、0失败；README同步行为。尚未声明整包更新完成。
+
+## 2026-09-15 冷会话历史、空闲释放和应用内标签接线
+
+- sessions/server：attach不再ensureLoaded，历史只读；恢复共享监听集合和seq，避免冷订阅丢失；每分钟释放空闲5分钟的持久化SDK，保护任务/通知/保存/队列/Goal；释放与加载、关闭串行。
+- public/app.js/index.html/style.css：复用views实现顶部会话标签、切换和关闭，不触发删除或取消；使用Linear既有surface/line/accent token。跨目录首次打开暂留原浏览器路径。
+- tests/session-persistence、service-api、workspace-tabs覆盖冷读取零SDK初始化、释放保护、监听水位、关闭标签不删任务与草稿恢复；阶段全量615通过2跳过，新增标签测试10项通过。不是更新安装完成声明。
+
+## 2026-09-15 后端失败不应锁死桌面退出
+
+- `desktop/backend-lifecycle.mjs` 显式提供 processPresent，运行就绪后异常退出通知 onCrash；`desktop/main.mjs` 在已无后端进程时允许关闭窗口，但不授予安全保存或更新许可。超时仍有进程时继续阻止退出，不强杀。
+- `tests/backend-lifecycle.test.js` 新增崩溃通知、进程存在状态及更新拒绝断言，四项通过；README同步。尚未重建安装包，旧产物不含此修正。
+
+## 2026-09-15 只读历史基础
+
+- `src/session-history.js` 复用SDK公开 parseSessionEntries + SessionManager.inMemory，避免 open() 在读取空文件/旧格式时改写历史；接入 sessions 子任务历史路径。
+- `tests/session-history.test.js` 覆盖分支选择、旧格式与空文件原字节不变；连同持久化测试16项通过。未宣称主会话 attach 已惰性化。
+- README补充历史读取说明并明确旧Pake命令不可用于当前分支；索引同步。
+
+## 2026-09-15 Electron自包含Windows测试包与真实启动验证
+
+- 删除 `desktop/pake.json`，将 `.github/workflows/desktop.yml` 替换为仅手动触发的 Electron 未签名测试包构建（不发布 Release，macOS arm64 待CI验收）。
+- 新增 `desktop/main.mjs`、`scripts/stage-desktop.mjs`、两份 `scripts/smoke-*.mjs`；固定 Electron 44.4.1、独立 Node 24.19.0、私有生产依赖，更新 package/lock、README 与忽略目录。镜像解除 Electron/NSIS 官方下载超时，不关闭校验。
+- 实测发现 Electron ESM 顶层 await app.whenReady() 阻塞 ready；改为注册 then 后完成模块评估，真实开发壳与打包壳均完成窗口加载和退出。前两次超时仅清理本次隔离进程树，记失败，不视作安全退出。
+- 产物 `dist/Axiom Setup 0.1.7.exe`；Authenticode 查询为 NotSigned。打包目录随包 Node 在空 PATH 启动、health身份核对、安全退出通过；实际 Electron 窗口隔离数据验证通过。全量测试612通过、2跳过、0失败（614项）。尚未运行安装向导、macOS、签名、公证、更新替换、旧安装迁移、空闲释放与应用内标签，不能称完整成品。
+
+
+## 2026-09-15 生命周期审查修正与数据保护基础（进行中）
+
+- 修正：等待退出允许明确取消升级；停止后清除 ready，拒绝复用过期启动结果；删除对数组 pendingWrites.size 的无效检测，保存失败由 close 流程上报，不能靠排队长度永久阻塞退出。
+- 数据：main.js 写库前取得数据根独占；Windows 使用命名管道、Linux 抽象 socket、macOS loopback 端口（碰撞保守拒绝）。Database 在权限/WAL/迁移前只读检查 dataVersion，拒绝更新数据被旧构建改写；旧无守卫程序仍需显式迁移门禁。
+- 文件：src/data-owner.js、src/main.js、src/server.js、src/database.js、desktop/backend-lifecycle.mjs、tests/backend-lifecycle.test.js、tests/data-owner.test.js、tests/data-version.test.js、README.md、代码索引。
+- 验证：生命周期/归属/API 五项通过；版本与数据库七项通过、一项 POSIX 权限测试在 Windows 跳过。所有命令有超时，未操作用户数据。尚未完成 Electron 成品接线和全量回归。
+
+
+## 2026-09-15 09:43 -0700 桌面重构：授权与生命周期首段
+
+- 决策：用户明确授权在 feat/desktop-runtime 新增精简 Electron 主进程替换 Pake；不再等待外部 Electron 仓库。此提交仅为阶段一的生命周期基础，不代表桌面交付完成。
+- 内容：随包独立 Node 路径、绝对数据路径、并发启动去重、令牌/实例/版本/PID/地址就绪核对；停止超时保留失败且不强杀。worker 支持等待任务完成后保存退出，服务器关闭新写请求入口但保留状态读取。
+- 文件：desktop/backend-lifecycle.mjs、src/main.js、src/server.js、tests/backend-lifecycle.test.js、README.md、devlog.md、索引。
+- 验证：假进程/可控时钟三项及现有 service-settings-api 测试通过，git diff --check 通过；完整 npm test：610 通过、2 跳过、0 失败。尚未接入 Electron，未实现数据根归属锁、崩溃重试、安装包、签名或更新，不把替身验证当成成品验收。
+
+
 ## 2026-09-15 08:12 -0700 按用户要求移除旧回答标签兼容
 
 - 原因与决策：用户明确不需要历史兼容；展示解析仅识别 axiom_display，删除新旧标签配对表，恢复单组标签判定。旧 axiom_answer 不再作为展示协议解析，原始历史不改写。
@@ -2037,6 +2139,18 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 涉及：src/tasks.js、src/tools.js、src/prompts.js、src/goal.js、任务与目标相关测试、README.md 及代码索引/坑库。取消回执不作为 Goal 验收证据。
 - 验证：最终 npm test 共 547 项，545 通过、0 失败、2 项既有平台跳过；独立复核发现回执从 id 改为 taskId 后旧断言遗漏，已修正并补首个回执断言；集成测试验证工具注册、目标 abort、兄弟隔离、结果先落库后通知。node --check 与 git diff --check 通过。未新增依赖，未重启运行中的服务。
 
+## 2026-09-15 前端区域边界与稳定模型菜单
+- 文件：public/app.js、public/model-picker.js、tests/frontend-regions*、tests/model-picker.test.js 及引用旧 controls 的测试。
+- 原因：无关输入/输出触发全区同步重建菜单；正文滚动旧监听关闭模型菜单；设置迟到回执可能覆盖新面板。
+- 改动：拆 controls、去掉无关 syncAll；选项比较与缺失占位、稳定键焦点/滚动恢复、完整 picker dispose；请求代次守卫；权威归并成功才推进 seq。保留共享收藏 syncAll 和连接可用性扇出，不新建状态框架。
+- 验证：浏览器 41 项通过；专项 19 项通过。首轮全量604通过/1失败/2跳过，失败来自远程设置测试未真实打开 dialog，已修正测试场景并保留原断言，等待最终全量复跑。
+- 限制：03订阅接线、05/06算法及Electron成品不在本次实现；热加载单独接线/提交。两项追加委派因宿主插件加载失败，由主任务补测。
+
+## 2026-09-15 独立 Vite 开发入口
+- 文件：scripts/dev-vite.mjs、scripts/service.mjs、package*.json、tests/dev-vite*、README、索引。
+- 决策：Vite 8.3.0 仅devDependency，独立5173代理隔离4320；业务WS和开发WS分离，前端不管理后端进程。先校验同源再改写代理头；正式CSP不动，开发限定样式注入与loopback维护访问。
+- 有意阶段性收窄：草稿、附件、阅读锚点尚无可靠跨刷新保存，暂停JS/HTML整页自动刷新并明确提示，未冒称无损HMR。保留CSS热替换，不额外造保存框架或业务reload协议。
+- 验证：分区提交全量608通过/0失败/2跳过；Vite专项通过，真实Chromium验证CSS保留草稿和页面、JS刷新暂停、后端身份不变。最终全量另行复跑。
 ## 2026-06-01 — WebSocket 基础设施收口
 
 - 原因：app.js 的 socket/pending/重连/事件水位分散，回执到快照渲染有空窗；广播与删除通知绕过缓冲限制，监听异常能冒泡进业务。
@@ -2045,3 +2159,16 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 决策：不加依赖、不加第二条业务连接、不加应用优先级队列，不改协议 seq 含义。归并失败停止后续事件并受控重快照，不再吞错推进；32 MiB 单帧上限会限制超大历史快照，明确留给 05 分页恢复，不用无限重下载掩盖限制。自动恢复上限 5 次，维护超过窗口后手动恢复。
 - 复核修复：断线作废旧渲染尾部；等待旧初始化退出再建新连接；重连坏会话回落初始化；跨工作空间打开后恢复本页订阅；bfcache pagehide 不销毁通信层；1009 清空队列。
 - 测试：新增 tests/realtime-transport.test.js，迁移 public-source 夹具与 app/goal/model/remote/snapshot 集成用例；全量 npm test 验证，未运行真实业务服务或模型，未安装依赖（仅 junction 复用已有 node_modules）。同步 README 与 codebase-map 架构/模块索引。
+
+## 2026-09-15 功能分支同步最新 master 与最终复验
+- 合入 origin/master 的03连接基础设施；冲突保留 createTransport 唯一连接/水位/快照队列，删除本分支被替代的 appliedSeq/acceptEventSeq/旧WS监听，区域可用性接 onState；非bfcache离页释放 modelPicker。
+- 最终合并后全量616通过、0失败、2跳过；两组真实Chromium专项均通过。仅推送 feat/frontend-regions，按统一集成例外保留 worktree，不改动/推送 master。
+- 未完成：JS/HTML自动刷新与跨刷新完整保存（当前明确暂停）；Electron成品验收和真实模型长流性能采集。
+
+## 2026-09-16 运行时集成最终接线
+- 按接线指南依序合并 smooth-stream、history-performance、frontend-regions、desktop-runtime；共享渲染以 06 为准，历史只读读取与 05 分页合一，保留应用内标签。
+- 修复自动合并遗漏的 snapshot.sessionId 与旧页状态 controls 调用；只读分页裁剪任务/压缩/重试并补回归测试。
+- src/update.js/main.js/server.js 与 public/service-settings.js 接入稳定 Release 手动检查和可信下载链接；缺平台安装包必须报错而非最新，禁止桌面 npm 重启/更新。package.json 产物名称包含平台架构。
+- README、六份计划及集成指南同步实现状态，索引重建。文档子任务未完成编辑，主代理完成补写。
+- npm test 689项：687通过、2既有跳过、0失败；三个浏览器脚本通过。Windows NSIS 构建及随包 Node/真实窗口隔离冒烟通过。构建默认源超时，镜像成功；一次 stage LICENSE 网络重置后重试成功。
+- 未完成发布门禁：正式签名/公证、成套备份与安装回退、macOS本轮构建和实机验收；不宣称正式稳定发行。产物和日志归档到 F:/deliveries/Axiom-runtime-integration。

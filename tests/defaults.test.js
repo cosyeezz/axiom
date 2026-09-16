@@ -7,7 +7,7 @@ import { compactionDefaults } from "../src/protocol.js";
 import { Sessions } from "../src/sessions.js";
 
 test("保存默认压缩配置只直推同一工作目录的已加载会话，不等重启；单会话失败不影响保存", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "axiom-compaction-push-"));
+  const dir = await realpath(await mkdtemp(join(tmpdir(), "axiom-compaction-push-")));
   const factory = () => {};
   factory.catalog = () => [{ key: "p/main", levels: ["off", "high"] }, { key: "p/summary", levels: ["off"] }];
   const sessions = new Sessions(factory, join(dir, "defaults.json"));

@@ -12,19 +12,23 @@
 //   });
 //   picker.enhance($("provider"), "provider");  // kind: provider | model | thinking，同 kind 共享收藏
 //   picker.enhance($("model"), "model");        // （composer、subagent、createAgentPicker、compaction 同理）
-//   options(...) 末尾 picker.sync(select)；controls() 末尾 picker.syncAll()。
+//   options(...) 末尾 picker.sync(select)；仅共享收藏变化调用 picker.syncAll()。
+//   picker.dispose(select) 只释放这一个 select（还原成原生 select）；picker.dispose() 收尾整个实例。
 // 触发器就是原生 select：不新增箭头（.selectors label::after 原样复用）、不占布局，宽度/禁用等规则全部沿用。
 // 行为：拦截原生下拉，点击/Enter/↑↓ 打开自绘菜单；select 的 value/onchange 行为不变
 //       （选中经 select.value + change 事件回流）；星标只切收藏，点击不选中不关闭；
 //       收藏稳定置顶（仅菜单内排序，不改 select 顺序与选中值）；
 //       键盘 ↑↓Home/End 移动、Tab 到星、Enter/Space 经原生 button 激活选中、Esc 关闭、字符查找；
 //       禁用实时禁开/收起（MutationObserver 监听 disabled 反射）。
+// sync 语义（选项列表被重建是常态，菜单必须扛得住）：选项值/文本与收藏命中都没变 → 一个 DOM 都不动；
+//       只有选中值变了 → 就地翻 aria-checked；真有变化才重建，并按选项值（稳定键）恢复焦点与滚动位置。
 // CSP：无 inline style；动态 left/top 经 CSSOM 写入外部 model-picker.css（同 tooltip.js）；
 //       有 Popover API 时菜单进 top layer（<dialog> 内不裁切），否则回退挂入打开的 dialog 或 body。
 
 const GAP = 6;
 const EDGE = 8;
 const TYPEAHEAD_MS = 500;
+let instanceSeq = 0; // 实例序号：定位规则按实例共享，dispose 时按标记精确删除
 
 // ---------- 微型 DOM 辅助（全部 textContent/setAttribute，绝不 innerHTML） ----------
 
@@ -43,6 +47,9 @@ export function createModelPicker({ getFavorites, onToggle, onError, favKey } = 
   const all = new Set(); // 已增强的 select，syncAll 用
   let opened = null; // 当前打开的菜单状态
   let counter = 0;
+  let gone = false; // 实例已 dispose：不再接新 select
+  let posRule = null; // 实例共享的定位规则（任一刻只有一个菜单打开）
+  const mark = `ax-mp-i${++instanceSeq}`; // 定位规则选择器用的实例标记
 
   const fail = (err) => (onError ? onError(err) : console.error(err));
   const favSet = (kind) => new Set(getFavorites?.()?.[kind] ?? []); // 每次渲染现读：后端数据到达即生效
@@ -55,48 +62,81 @@ export function createModelPicker({ getFavorites, onToggle, onError, favKey } = 
   // ---------- 对外接口 ----------
 
   function enhance(select, kind) {
-    if (meta.has(select)) return; // 幂等
+    if (gone || meta.has(select)) return; // 幂等；实例已 dispose 则不再接新 select
     const menu = el("div", {
-      id: `ax-mp-${++counter}`, class: "ax-mp-menu", role: "menu", "aria-label": labelOf(select),
+      id: `ax-mp-${++counter}`, class: "ax-mp-menu", role: "menu", "data-ax-mp": mark, "aria-label": labelOf(select),
     });
     if (typeof menu.showPopover === "function") menu.setAttribute("popover", "manual");
-    const state = { select, kind, menu, open: false, popped: false, pos: null, typeahead: "", timer: 0, seen: select.isConnected, pending: null, flight: null };
+    const state = { select, kind, menu, open: false, popped: false, sig: "", value: null, typeahead: "", timer: 0, seen: select.isConnected, pending: null, flight: null };
+    // 监听器一律留名存进 state：dispose/断连释放时要能一对一摘干净
+    state.onMouseDown = (e) => e.preventDefault(); // 拦掉原生下拉面板
+    state.onClick = () => (state.open ? close(state, false) : open(state));
+    state.onKeyDown = (e) => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+      e.preventDefault(); // 原生方向键会直接改值；值只经菜单改动
+      open(state);
+    };
+    state.onMenuKey = (e) => onMenuKey(state, e);
+    state.obs = new MutationObserver(() => { if (select.disabled && state.open) close(state, false); });
     meta.set(select, state);
     all.add(select);
 
     select.setAttribute("aria-haspopup", "menu");
     select.setAttribute("aria-expanded", "false");
-    select.addEventListener("mousedown", (e) => e.preventDefault()); // 拦掉原生下拉面板
-    select.addEventListener("click", () => (state.open ? close(state, false) : open(state)));
-    select.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter" && e.key !== " " && e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-      e.preventDefault(); // 原生方向键会直接改值；值只经菜单改动
-      open(state);
-    });
-    menu.addEventListener("keydown", (e) => onMenuKey(state, e));
+    select.addEventListener("mousedown", state.onMouseDown);
+    select.addEventListener("click", state.onClick);
+    select.addEventListener("keydown", state.onKeyDown);
+    menu.addEventListener("keydown", state.onMenuKey);
     // 被禁用时立即收起：app 经 .disabled 属性切换，反射成 attribute 才能被观察到
-    new MutationObserver(() => { if (select.disabled && state.open) close(state, false); })
-      .observe(select, { attributes: true, attributeFilter: ["disabled"] });
+    state.obs.observe(select, { attributes: true, attributeFilter: ["disabled"] });
   }
 
   function sync(select) {
     const state = meta.get(select);
     if (!state) return; // 未增强的 select（如 queue-type）安全跳过
     if (select.isConnected) state.seen = true;
-    else if (state.seen) {
-      // 曾挂载后断连：settings 重建丢弃的旧 select，摘除跟踪防泄漏
-      // （enhance 时暂未挂 DOM 的 seen=false，不误删）
-      if (state.open) close(state, false);
-      all.delete(select);
-      meta.delete(select);
-      return;
-    }
-    state.menu.setAttribute("aria-label", labelOf(select));
-    if (state.open) rerender(state);
+    else if (state.seen) return release(select); // 曾挂载后断连：settings 重建丢弃的旧 select，彻底摘除防泄漏
+    // （enhance 时暂未挂 DOM 的 seen=false，不误删）
+    const label = labelOf(select);
+    if (state.menu.getAttribute("aria-label") !== label) state.menu.setAttribute("aria-label", label);
+    if (state.open) syncMenu(state);
   }
 
   function syncAll() {
     for (const select of [...all]) sync(select);
+  }
+
+  // 只释放这一个 select（含 Observer/定时器/监听器），还原成原生 select；不动实例共享的定位规则
+  function release(select) {
+    const state = meta.get(select);
+    if (!state) return;
+    if (state.open) close(state, false);
+    meta.delete(select);
+    all.delete(select);
+    state.obs.disconnect();
+    clearTimeout(state.timer);
+    select.removeEventListener("mousedown", state.onMouseDown);
+    select.removeEventListener("click", state.onClick);
+    select.removeEventListener("keydown", state.onKeyDown);
+    state.menu.removeEventListener("keydown", state.onMenuKey);
+    state.menu.remove();
+    select.removeAttribute("aria-haspopup");
+    select.removeAttribute("aria-expanded");
+  }
+
+  function dispose(select) {
+    if (select) return release(select); // 单 select 释放
+    gone = true;
+    for (const s of [...all]) release(s);
+    document.removeEventListener("pointerdown", onPointerDown);
+    document.removeEventListener("keydown", onDocKeyDown);
+    removeEventListener("scroll", onScroll, true);
+    removeEventListener("resize", onResize);
+    document.removeEventListener("close", onDialogClose, true);
+    if (posRule) {
+      try { posRule.sheet.deleteRule(posRule.index); } catch {} // 规则是本实例插的，跟着实例走
+      posRule = null;
+    }
   }
 
   // ---------- 开关与渲染 ----------
@@ -137,38 +177,70 @@ export function createModelPicker({ getFavorites, onToggle, onError, favKey } = 
     }
   }
 
-  function render(state, favOverride) {
-    const { select, menu } = state;
-    const fav = favOverride ?? state.pending ?? favSet(state.kind); // toggle 传入乐观集 / 保存飞行中沿用乐观集，避免被陈旧 store 盖掉
-    const opts = [...select.options]
-      .filter((o) => !o.disabled)
-      .sort((a, b) => Number(fav.has(keyOf(state, b.value))) - Number(fav.has(keyOf(state, a.value)))); // 稳定排序：收藏置顶，组内保持原序
-    menu.replaceChildren(...opts.map((o) => entry(state, o, fav.has(keyOf(state, o.value)))));
+  // 菜单开着时的原地刷新：无实质变化 → 一个 DOM 都不动（不打断滚动与焦点）
+  function syncMenu(state) {
+    if (state.select.disabled) return close(state, false);
+    const list = rows(state);
+    if (sigOf(list) !== state.sig) return render(state, list); // 真变化：重建（内部恢复焦点与滚动）
+    if (state.select.value !== state.value) {
+      state.value = state.select.value;
+      updateChecked(state); // 只有选中值变了：就地翻 aria-checked，不重建
+    }
   }
 
-  function entry(state, opt, faved) {
+  // 过滤 + 收藏置顶（稳定排序：收藏在前，组内保持原序）。pending=乐观集，避免被陈旧 store 盖掉
+  function rows(state, favOverride) {
+    const fav = favOverride ?? state.pending ?? favSet(state.kind);
+    const list = [];
+    for (const option of state.select.options) {
+      if (option.disabled) continue;
+      const key = keyOf(state, option.value);
+      list.push({ value: option.value, text: option.text, starred: Boolean(option.value && key) && fav.has(key) });
+    }
+    list.sort((a, b) => b.starred - a.starred);
+    return list;
+  }
+
+  // 渲染签名：值/文本/星标三样齐了才是「实质变化」；选中态不参与（它走局部更新）
+  const sigOf = (list) => list.map((r) => `${r.starred ? 1 : 0}\u0000${r.value}\u0000${r.text}`).join("\u0001");
+
+  function render(state, list = rows(state)) {
+    const { menu } = state;
+    const at = document.activeElement;
+    // 只认本菜单内的焦点（菜单外/别的菜单重建时不留残影）；data-value 是恢复用的稳定键
+    const keep = at && menu.contains(at) && at.dataset.value !== undefined
+      ? { value: at.dataset.value, star: at.classList.contains("ax-mp-star") }
+      : null;
+    const scroll = menu.isConnected ? menu.scrollTop : 0; // 重建前先记：菜单还挂着才有位置可恢复
+    state.sig = sigOf(list);
+    state.value = state.select.value;
+    menu.replaceChildren(...list.map((row) => entry(state, row)));
+    menu.scrollTop = scroll; // 项少了由浏览器钳制
+    if (!keep) return;
+    // 按选项值（稳定键）恢复焦点：原项没了退回当前选中项，再没了退回首项
+    if (!focusValue(state, keep.value, keep.star) && !focusValue(state, keep.value, false)
+      && !focusValue(state, state.select.value, false)) menu.querySelector(".ax-mp-opt")?.focus();
+  }
+
+  function updateChecked(state) {
+    const value = state.select.value;
+    for (const pick of state.menu.querySelectorAll(".ax-mp-opt")) pick.setAttribute("aria-checked", String(pick.dataset.value === value));
+  }
+
+  function entry(state, row) {
     const pick = el("button", {
       type: "button", class: "ax-mp-opt", role: "menuitemradio", tabindex: "-1",
-      "aria-checked": String(state.select.value === opt.value), "data-value": opt.value,
-    }, opt.text);
-    pick.addEventListener("click", () => choose(state, opt.value));
-    if (!opt.value || !keyOf(state, opt.value)) return el("div", { role: "none", class: "ax-mp-entry" }, pick); // 空 value（如“默认主代理模型”）或无收藏键：不提供收藏
+      "aria-checked": String(state.select.value === row.value), "data-value": row.value,
+    }, row.text);
+    pick.addEventListener("click", () => choose(state, row.value));
+    if (!row.value || !keyOf(state, row.value)) return el("div", { role: "none", class: "ax-mp-entry" }, pick); // 空 value（如“默认主代理模型”）或无收藏键：不提供收藏
     const star = el("button", {
       type: "button", class: "ax-mp-star", role: "menuitemcheckbox", tabindex: "-1",
-      "aria-checked": String(faved), "aria-label": `${faved ? "取消收藏" : "收藏"}：${opt.text}`,
-      "data-value": opt.value,
-    }, faved ? "★" : "☆");
-    star.addEventListener("click", () => toggle(state, opt.value));
+      "aria-checked": String(row.starred), "aria-label": `${row.starred ? "取消收藏" : "收藏"}：${row.text}`,
+      "data-value": row.value,
+    }, row.starred ? "★" : "☆");
+    star.addEventListener("click", () => toggle(state, row.value));
     return el("div", { role: "none", class: "ax-mp-entry" }, pick, star); // role=none 包装：menu 合法子结构，星与选项平级不嵌套
-  }
-
-  function rerender(state) { // options/收藏/值外部变化后的原地刷新，焦点跟住原项
-    if (state.select.disabled) return close(state, false);
-    const at = document.activeElement;
-    const value = at?.dataset?.value;
-    render(state);
-    position(state);
-    if (value != null) focusValue(state, value, at.classList.contains("ax-mp-star"));
   }
 
   function choose(state, value) {
@@ -194,7 +266,7 @@ export function createModelPicker({ getFavorites, onToggle, onError, favKey } = 
       (err) => { fail(err); settle(state, tail); }, // 保存失败：进 onError 并回落真实状态
     );
     state.flight = tail;
-    render(state, fav); // 置顶重排只发生在菜单里，select 顺序与选中值不动
+    render(state, rows(state, fav)); // 置顶重排只发生在菜单里，select 顺序与选中值不动
     focusValue(state, value, starWas);
   }
 
@@ -202,7 +274,7 @@ export function createModelPicker({ getFavorites, onToggle, onError, favKey } = 
     if (state.flight !== tail) return; // 已有更晚点击在飞行：由链尾统一回落
     state.pending = null;
     state.flight = null;
-    if (state.open) rerender(state); // 菜单开着才对齐 store；已关则下次打开现读
+    if (state.open) syncMenu(state); // 菜单开着才对齐 store（状态已被乐观集渲染过则不重建）；已关则下次打开现读
   }
 
   function focusValue(state, value, star) {
@@ -249,7 +321,7 @@ export function createModelPicker({ getFavorites, onToggle, onError, favKey } = 
   // ---------- 定位（CSSOM，CSP 禁 inline style） ----------
 
   function position(state) {
-    const p = cssPos(state);
+    const p = cssPos();
     if (!p) return;
     const r = state.select.getBoundingClientRect();
     const t = state.menu.getBoundingClientRect();
@@ -262,38 +334,47 @@ export function createModelPicker({ getFavorites, onToggle, onError, favKey } = 
     p.top = `${Math.round(y)}px`;
   }
 
-  function cssPos(state) {
-    if (state.pos) return state.pos;
+  // 每个实例一条规则（同一刻只开一个菜单，菜单按 data-ax-mp 标记共享），dispose 时整条删除；
+  // 选择器带上 .ax-mp-menu：比基础规则更具体，外部后加载的样式表也盖不掉坐标
+  function cssPos() {
+    if (posRule) return posRule.style;
     const sheets = document.styleSheets; // 按需取：link 样式表可能晚于本模块就绪
     for (let i = 0; i < sheets.length; i++) {
       const s = sheets[i];
       const href = s.href || (s.ownerNode && s.ownerNode.getAttribute && s.ownerNode.getAttribute("href")) || "";
       if (!/model-picker\.css/.test(href)) continue;
       try {
-        s.insertRule(`#${state.menu.id}{}`, s.cssRules.length); // 追加到末尾，覆盖 left:0/top:0
-        state.pos = s.cssRules[s.cssRules.length - 1].style;
+        s.insertRule(`[data-ax-mp="${mark}"].ax-mp-menu{}`, s.cssRules.length); // 追加到末尾，覆盖 left:0/top:0
+        posRule = { sheet: s, index: s.cssRules.length - 1, style: s.cssRules[s.cssRules.length - 1].style };
       } catch {} // ponytail: 跨域 stylesheet 写不进则退化为不定位；本仓库同源不会发生
       break;
     }
-    return state.pos;
+    return posRule ? posRule.style : null;
   }
 
-  // ---------- 全局收尾（外点关闭 / Esc / 滚动缩放） ----------
+  // ---------- 全局收尾（外点关闭 / Esc / 滚动缩放），监听器留名供 dispose 摘除 ----------
 
-  document.addEventListener("pointerdown", (e) => {
+  const onPointerDown = (e) => {
     if (!opened || opened.menu.contains(e.target) || e.target === opened.select) return;
     close(opened, false);
-  });
-  document.addEventListener("keydown", (e) => {
+  };
+  const onDocKeyDown = (e) => {
     if (opened && e.key === "Escape") { e.preventDefault(); close(opened, true); } // 焦点在菜单内时已被上面拦截，此处兜底
-  });
-  addEventListener("scroll", (e) => {
-    if (opened && !opened.menu.contains(e.target)) close(opened, false); // 菜单自身滚动不关闭
-  }, true);
-  addEventListener("resize", () => opened && close(opened, false));
-  document.addEventListener("close", (e) => { // 宿主 dialog 关闭时收起挂在里面的菜单（close 不冒泡，捕获接）
+  };
+  const onScroll = (e) => {
+    // 只有触发器的滚动祖先会改变菜单锚点；正文/后台面板的滚动与模型区无关。
+    if (opened && (e.target === document || e.target?.contains?.(opened.select))) close(opened, false);
+  };
+  const onResize = () => opened && close(opened, false);
+  const onDialogClose = (e) => { // 宿主 dialog 关闭时收起挂在里面的菜单（close 不冒泡，捕获接）
     if (opened && opened.menu.parentElement === e.target) close(opened, false);
-  }, true);
+  };
 
-  return { enhance, sync, syncAll };
+  document.addEventListener("pointerdown", onPointerDown);
+  document.addEventListener("keydown", onDocKeyDown);
+  addEventListener("scroll", onScroll, true);
+  addEventListener("resize", onResize);
+  document.addEventListener("close", onDialogClose, true);
+
+  return { enhance, sync, syncAll, dispose };
 }

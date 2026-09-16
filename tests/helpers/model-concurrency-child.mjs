@@ -11,7 +11,18 @@ import { createModelsService } from "../../src/model-config.js";
 const barrier = () => {
   writeSync(1, '{"ready":true}\n');
   const byte = Buffer.alloc(1);
-  if (readSync(0, byte, 0, 1, null) !== 1) throw new Error("并发测试屏障提前关闭");
+  // macOS 的子进程管道可能为非阻塞；只重试 EAGAIN，屏障仍由父进程字节放行。
+  const deadline = Date.now() + 10_000;
+  const sleeper = new Int32Array(new SharedArrayBuffer(4));
+  for (;;) {
+    try {
+      if (readSync(0, byte, 0, 1, null) !== 1) throw new Error("并发测试屏障提前关闭");
+      return;
+    } catch (error) {
+      if (error.code !== "EAGAIN" || Date.now() >= deadline) throw error;
+      Atomics.wait(sleeper, 0, 0, 10);
+    }
+  }
 };
 
 export function runOpponent(payload) {

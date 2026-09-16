@@ -6,16 +6,19 @@ import { stat, mkdir, copyFile } from "node:fs/promises";
 import { constants, readFileSync } from "node:fs";
 import { createPiFactory } from "./pi.js";
 import { Database } from "./database.js";
+import { claimDataRoot } from "./data-owner.js";
 import { createPiModelStorage } from "./pi-model-storage.js";
 import { Sessions } from "./sessions.js";
 import { createModelsService } from "./model-config.js";
 import { createServerApp } from "./server.js";
 import { createRemoteAccess, createTailscale } from "./remote.js";
-import { checkUpdate, validateCommit } from "./update.js";
+import { checkUpdate, checkDesktopUpdate, validateCommit } from "./update.js";
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 
-const port = Number(process.env.AXIOM_PORT || 4319);
-if (!Number.isInteger(port) || port < 1 || port > 65535)
+const desktop = process.env.AXIOM_DESKTOP === "1";
+const port = desktop ? 0 : Number(process.env.AXIOM_PORT || 4319);
+if (!Number.isInteger(port) || port < (desktop ? 0 : 1) || port > 65535)
   throw new Error("Invalid AXIOM_PORT");
 const cwd = resolve(process.env.AXIOM_CWD || process.cwd());
 if (!(await stat(cwd)).isDirectory())
@@ -24,6 +27,7 @@ if (!(await stat(cwd)).isDirectory())
 // 重建派生兼容文件，SDK 首次读模型目录（factory 内 ModelRuntime.create）时数据已就绪。
 const home = resolve(process.env.AXIOM_HOME || join(homedir(), ".axiom"));
 await mkdir(home, { recursive: true });
+const releaseDataRoot = await claimDataRoot(home);
 try {
   await copyFile(join(getAgentDir(), "axiom", "defaults.json"), join(home, "defaults.json"), constants.COPYFILE_EXCL);
 } catch (error) {
@@ -44,6 +48,10 @@ const sessions = new Sessions(factory, join(home, "defaults.json"), join(home, "
 const models = createModelsService({ factory, storage: modelStorage });
 await sessions.loadDefaults();
 await sessions.load();
+const idleTimer = setInterval(() => {
+  void sessions.releaseIdle().catch(error => console.warn(`空闲释放失败：${error.message}`));
+}, 60_000);
+idleTimer.unref();
 const service = {
   supervisorPid: process.ppid,
   instanceId: process.env.AXIOM_INSTANCE_ID,
@@ -52,7 +60,8 @@ const service = {
   dev: process.env.AXIOM_DEV === "1",
   maintenance: process.env.AXIOM_MAINTENANCE_URL && process.env.AXIOM_MAINTENANCE_TOKEN
     ? { url: process.env.AXIOM_MAINTENANCE_URL, token: process.env.AXIOM_MAINTENANCE_TOKEN } : undefined,
-  checkUpdate,
+  desktop,
+  checkUpdate: desktop ? () => checkDesktopUpdate({ version: service.version }) : checkUpdate,
   // pi 的会话目录：网页「导入 pi 会话」的默认浏览位置。
   importDir: join(getAgentDir(), "sessions"),
   models,
@@ -84,8 +93,11 @@ const app = createServerApp(sessions, service);
 // 也可能尚未赋值，app.close 里的可选调用被跳过）。
 let remoteReady = Promise.resolve();
 app.server.listen(port, "127.0.0.1", () => {
+  const port = app.server.address().port;
   console.log(`Axiom listening on http://127.0.0.1:${port}; workspace: ${cwd}`);
-  process.send?.({ type: "service.ready", instanceId: process.env.AXIOM_INSTANCE_ID, version: service.version });
+  process.send?.({ type: "service.ready", instanceId: process.env.AXIOM_INSTANCE_ID, version: service.version,
+    ...(process.env.AXIOM_DESKTOP === "1" ? { protocol: 1, token: process.env.AXIOM_START_TOKEN,
+      pid: process.pid, bundleVersion: process.env.AXIOM_BUNDLE_VERSION, url: `http://127.0.0.1:${port}` } : {}) });
   // 已进入关闭流程就不再开远程访问：否则这笔初始化会排在关库之后。
   if (closing) return;
   remoteReady = initRemote().catch((error) => console.error("远程访问初始化失败：", error));
@@ -100,22 +112,29 @@ async function initRemote() {
   if (status.enabled && !status.active)
     console.error(`Tailscale 远程访问未启动：${status.error || "原因未知"}`);
 }
-let closing;
-function stop() {
+let closing, cancelOnExit = false;
+function stop(mode = "cancel") {
+  clearInterval(idleTimer);
+  if (mode === "cancel") cancelOnExit = true;
+  app.prepareStop();
   closing ||= remoteReady
+    .then(async () => {
+      if (mode === "wait") while (!cancelOnExit && app.hasActiveWork()) await delay(100);
+    })
     // 远程初始化的首次配置写入必须先落定，否则它会写到已关闭的库上（异常还会被吞）。
     .then(() => app.close())
     // 关库必须排在 app.close 完全之后：会话/任务的最后一笔保存发生在关闭路径内。
     .then(() => database.close())
+    .then(() => releaseDataRoot())
     .then(() => process.exit(0))
     .catch((error) => {
       console.error(error);
       process.exit(1);
     });
 }
-for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, stop);
+for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => stop());
 process.on("message", (message) => {
-  if (message?.type === "service.stop") stop();
+  if (message?.type === "service.stop") stop(message.mode === "wait" ? "wait" : "cancel");
   if (message?.type === "service.resume" && !closing) app.resume();
 });
 if (process.send) process.once("disconnect", stop);

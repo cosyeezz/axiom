@@ -31,7 +31,8 @@ test("one frame, shared Markdown for lazy thinking, final flush and switch cance
   const document = dom.window.document;
   let scheduled,
     count = 0,
-    writes = 0;
+    writes = 0,
+    time = 0;
   const renderer = createStreamRenderer(
     (el, text) => {
       writes++;
@@ -40,12 +41,12 @@ test("one frame, shared Markdown for lazy thinking, final flush and switch cance
     () => {},
     (fn) => {
       count++;
-      scheduled = fn;
+      scheduled = () => { time += 40; fn(); };
       return 1;
     },
     () => {
       scheduled = undefined;
-    },
+    }, 40, () => time,
   );
   const item = {
     text: document.createElement("div"),
@@ -233,6 +234,85 @@ test("让路定时器顺延后 flush 与 clear 仍取消补画", () => {
   }
 });
 
+test("隐藏 document 时零 Markdown 绘制，恢复前台一次收口当前 dirty", () => {
+  const dom = new JSDOM("");
+  const document = dom.window.document;
+  const timers = virtualTimers();
+  let paints = 0, afters = 0;
+  const renderer = createStreamRenderer(
+    (el, text) => { paints++; el.textContent = text; },
+    () => { afters++; },
+    timers.schedule, timers.cancel, 40, timers.now, document,
+  );
+  const first = streamItem(document, { buffer: "一" });
+  const second = streamItem(document, { buffer: "二" });
+  try {
+    setVisibility(document, "hidden");
+    first.buffer = "一改"; renderer.mark(first);
+    second.buffer = "二改"; renderer.mark(second);
+    first.buffer = "一改二"; renderer.mark(first);
+    second.buffer = "二终"; renderer.flush(second);
+    assert.equal(timers.pending(), 0, "隐藏时不排帧");
+    assert.equal(paints, 0, "隐藏时 mark 与 flush 都不解析 Markdown");
+    assert.equal(afters, 0, "隐藏时不贴底");
+    timers.advance(2000);
+    assert.equal(paints, 0, "隐藏期间不补画");
+
+    setVisibility(document, "visible");
+    timers.advance(0); // 恢复由统一帧调度器收口，不在 visibilitychange 内写 DOM。
+    assert.equal(paints, 2, "恢复时一次收口，每项只画一次");
+    assert.equal(first.text.textContent, "一改二");
+    assert.equal(second.text.textContent, "二终", "隐藏期 flush 的最新正文在恢复后落地");
+    assert.equal(afters, 1, "恢复只贴底一次");
+    assert.equal(timers.pending(), 0);
+
+    setVisibility(document, "hidden");
+    first.buffer = "会话残留"; renderer.mark(first);
+    renderer.clear();
+    setVisibility(document, "visible");
+    assert.equal(paints, 2, "clear 释放 dirty，恢复不画");
+    assert.equal(afters, 1);
+  } finally {
+    renderer.clear();
+    dom.window.close();
+  }
+});
+
+test("隐藏前排入的帧到期不绘制，恢复可见后才收口最新内容", () => {
+  const dom = new JSDOM("");
+  const document = dom.window.document;
+  const timers = virtualTimers();
+  let paints = 0;
+  const renderer = createStreamRenderer(
+    (el, text) => { paints++; el.textContent = text; },
+    () => {}, timers.schedule, timers.cancel, 40, timers.now, document,
+  );
+  const item = streamItem(document, { buffer: "开始" });
+  try {
+    renderer.mark(item);
+    assert.equal(timers.pending(), 1);
+    setVisibility(document, "hidden");
+    item.buffer = "隐藏中";
+    renderer.mark(item);
+    timers.advance(40);
+    assert.equal(paints, 0, "隐藏期间到期帧不绘制");
+    assert.equal(timers.pending(), 0, "隐藏期间不残留定时器");
+    setVisibility(document, "visible");
+    timers.advance(0);
+    assert.equal(item.text.textContent, "隐藏中", "恢复后收口最新正文");
+    assert.equal(paints, 1);
+    assert.equal(timers.pending(), 0);
+  } finally {
+    renderer.clear();
+    dom.window.close();
+  }
+});
+
+function setVisibility(document, state) {
+  Object.defineProperty(document, "visibilityState", { value: state, configurable: true });
+  document.dispatchEvent(new document.defaultView.Event("visibilitychange"));
+}
+
 // 受控时钟 + 定时器：节流测试不依赖真实时间。
 function virtualTimers() {
   let time = 0, nextId = 0;
@@ -278,7 +358,7 @@ test("突发 delta 合并为一次节流绘制，pending 预处理只做一次�
     let paints = 0, prepares = 0;
     const renderer = createStreamRenderer(
       (el, text) => { paints++; el.textContent = text; },
-      () => {}, timers.schedule, timers.cancel,
+      () => {}, timers.schedule, timers.cancel, 40, timers.now,
     );
     const item = streamItem(document);
     item.prepare = (self) => { prepares++; self.buffer = self.raw; };
@@ -308,7 +388,7 @@ test("持续输入按约 40ms 上限节流，不因重置计时被饿死", () =>
     const stamps = [];
     const renderer = createStreamRenderer(
       (el, text) => { stamps.push(timers.now()); el.textContent = text; },
-      () => {}, timers.schedule, timers.cancel,
+      () => {}, timers.schedule, timers.cancel, 40, timers.now,
     );
     const item = streamItem(document);
     item.prepare = (self) => { self.buffer = self.raw; };
@@ -336,7 +416,7 @@ test("flush 绕过节流并收口 pending；clear 取消挂起调度，旧回调
     let paints = 0;
     const renderer = createStreamRenderer(
       (el, text) => { paints++; el.textContent = text; },
-      () => {}, timers.schedule, timers.cancel,
+      () => {}, timers.schedule, timers.cancel, 40, timers.now,
     );
     const item = streamItem(document);
     item.prepare = (self) => { self.buffer = self.raw; };
@@ -392,7 +472,7 @@ test("折叠任务不调度不解析，展开时补画最新累计内容", () =>
     let paints = 0, prepares = 0;
     const renderer = createStreamRenderer(
       (el, text) => { paints++; el.textContent = text; },
-      () => {}, timers.schedule, timers.cancel,
+      () => {}, timers.schedule, timers.cancel, 40, timers.now,
     );
     const task = { node: { open: false } };
     const item = streamItem(document, { task });
@@ -417,11 +497,11 @@ test("折叠任务不调度不解析，展开时补画最新累计内容", () =>
   }
 });
 
-test("生产默认 setTimeout 路径在有界等待内完成绘制且 flush 后不再补画", async () => {
+test("无 rAF 的 Node 降级调度在有界等待内完成绘制且 flush 后不再补画", async () => {
   const dom = new JSDOM("");
   const document = dom.window.document;
   try {
-    // 不注入调度器：走 createStreamRenderer 的默认 setTimeout(fn, 40) 分支。
+    // Node 没有 rAF；浏览器生产 rAF 路径另由 smooth-stream-browser.py 实测。
     let paints = 0;
     const renderer = createStreamRenderer(
       (el, text) => { paints++; el.textContent = text; },

@@ -324,6 +324,19 @@ export const command = z.discriminatedUnion("type", [
   // 导入 pi 的 .jsonl 会话文件：服务端路径，复制进本实例存储后作为新会话打开。
   z.object({ id, type: z.literal("session.import"), path: z.string().trim().min(1).max(4096), cwd: z.string().trim().min(1).max(4096).optional() }).strict(),
   z.object({ id, type: z.literal("session.attach"), sessionId: id }).strict(),
+  // 历史分页：attach 只下最近一页，更早/更新按不透明游标取；before/after/target/edge 互斥（服务端 pageOf 校验）。
+  z
+    .object({
+      id,
+      type: z.literal("session.history"),
+      sessionId: id,
+      edge: z.enum(["first", "last"]).optional(),
+      before: z.string().min(1).max(4096).optional(),
+      after: z.string().min(1).max(4096).optional(),
+      target: z.string().min(1).max(256).optional(),
+      limit: z.number().int().min(1).max(200).optional(),
+    })
+    .strict(),
   // 运行中重新发现项目技能（composer 打开技能列表时调用）；返回 { skills: [{name, description}] }。
   z.object({ id, type: z.literal("session.skills.refresh"), sessionId: id }).strict(),
   z.object({ id, type: z.literal("session.close"), sessionId: id }).strict(),

@@ -1,5 +1,15 @@
 # 坑与 bug 知识库（自成长：只追加，不删改历史）
 
+### 2026-09-15 历史分页不能复用实时快照水位与发起时草稿
+- 根因：历史页不包含水位后的全部事件，提交 seq 会吞掉实时消息；回包使用请求发起时的视图会覆盖期间新输入。
+- 修复：session.history 不带 seq，loadHistory 只换页不 commitSnapshot，按会话/实例/修订/请求序号作废迟到响应；挂载前重新 saveView 保留草稿。仅 attach 提交实时快照。
+- 防再犯：snapshot-switch、snapshot-chunk、session-history 测试验证在飞草稿、旧页不推进水位与游标失效。分页不等于 SDK 历史内存有界，必须分别说明。
+### 2026-09-15 Electron ESM 顶层等待 ready 导致不开窗口
+- 症状：主进程存活但不启动 worker、不弹窗；隔离冒烟30秒超时。
+- 根因：ESM 主入口顶层 await app.whenReady() 阻止模块完成评估，与应用就绪互相等待。
+- 修复：desktop/main.mjs 注册 app.whenReady().then(async ...) 后立即完成模块评估。
+- 防再犯：scripts/smoke-shell.mjs 在隔离目录实际启动 Electron，校验窗口加载和退出码；超时清理本次进程树并按失败处理。
+
 ### 2026-09-14 默认配置按工作目录隔离
 - 症状：目录选择编辑可能被慢响应覆盖，目录配置保存或删除失败可能让内存先于数据库生效。
 - 修复：public/app.js 用编辑对象、加载序号及目录三重守卫；src/sessions.js 保存与删除共用串行链，先落库后更新内存，目录别名按真实路径归一化。
@@ -608,6 +618,28 @@
 - 修复：protocol.resolveCompaction 统一保留合法偏好、不兼容取模型最低支持等级，pi/sessions 共用；页面保留连接、草稿与设置/更新入口。
 - 防再犯：model-onboarding.test.js 用真实 SDK 和隔离目录验证 reasoning-only 默认新建，不能只验证 /health；model-onboarding-ui.test.js 验证配置失败仍能进入和修复重试，真实网络断线仍重连。
 
+### 2026-09-15 正文滚动不应收起模型菜单
+- 症状：无关输入触发菜单重建，正文滚动关闭已打开菜单。
+- 根因：controls 全量同步和 model-picker 捕获所有外部 scroll。
+- 修复：app 按区更新；picker 比较目录/收藏签名，仅触发器滚动祖先滚动才关闭。
+- 防再犯：frontend-regions-ui.py 要求菜单一直打开且节点/焦点/scrollTop 不变，不允许关后重开替代；迟到设置预算及权威归并失败不推进 seq 另有可运行断言。
 ### 2026-06-01：快照回执到渲染间的事件空窗
 - 症状：快照覆盖先到的实时正文；归并失败后水位提前推进。根因：旧 app.js 仅在渲染时建闸、先记 seq 后归并。
 - 修复：public/transport.js 在快照回执时建闸、成功归并后记水位；失败受控恢复；public/app.js 在断线时作废旧分片。tests/realtime-transport.test.js 与 snapshot-first-screen.test.js 防回归。
+
+
+### 2026-09-15 页窗口的附属记录必须保留身份和生命周期
+- 症状：工具结束覆盖调用参数、旧页冒出重试入口、页外旧子代理追加到尾部、压缩消息没有阅读锚点。
+- 修复：sessions.js 合并 tool.state；app.js 只在最新页给末尾重试入口，仅追加未落位的活动子代理，折叠消息绑定压缩卡片节点。
+- 防再犯：session-history 与 history-reading 回归覆盖跨页工具参数、旧页重试、子代理状态和压缩卡片锚点。
+## 2026-09-16 macOS 跳过签名导致资源封印失效
+- 症状：Gatekeeper提示已损坏，codesign报code has no resources but signature indicates they must be present。
+- 原因：electron-builder禁用自动证书发现后跳过签名，重打包的应用不能沿用原Electron签名；DMG校验与独立后端测试不覆盖.app资源签名。
+- 修复：dev构建显式identity=-，用打包器完成ad-hoc签名；发布门禁加入codesign --verify --deep --strict和真实Electron窗口冒烟。
+- 边界：ad-hoc仅保证包内一致性，不等于Developer ID或公证，不保证带下载隔离标记的Gatekeeper放行。CI 35063188663已验证严格签名、窗口启动与安全退出。
+
+## 2026-09-16 多分支接线的静默自动合并
+- 症状：WS 图片请求超时、旧历史页收到运行状态时归并失败。
+- 根因：自动合并丢失 loaded snapshot 的 sessionId；历史分支残留 controls()，分区分支已删除该函数。
+- 修复：src/sessions.js 恢复身份；public/app.js 调用 updateAvailability。未加载只读历史也遵循分页和页外元数据裁剪，server attach 不初始化SDK。
+- 防再犯：tests/history-reading.test.js、session-history.test.js 增加跨功能回归；合并完成须跑全量而非仅各分支测试。

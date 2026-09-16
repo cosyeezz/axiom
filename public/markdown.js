@@ -11,7 +11,7 @@ const policy = {
 const textLanguages = new Set(["纯文本", "text", "txt", "plaintext", "ascii", "diagram", "tree"]);
 const isText = (language) => textLanguages.has(language.toLowerCase());
 const wideCharacter = /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff01-\uff60\uffe0-\uffe6\u{20000}-\u{3fffd}]|\p{Emoji_Presentation}|\uFE0F/u;
-const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+const graphemes = typeof Intl.Segmenter === "function" ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
 const numericCell = /^[+-]?[\d,]+(?:\.\d+)?%?$/;
 const placeholderCell = /^[-\u2013\u2014]$/;
 const ruleLine = /^[\s|+]*[-\u2013\u2014=_\u2500\u2501\u2550]{3,}[\s|+\-\u2013\u2014=_\u2500\u2501\u2550]*$/;
@@ -37,6 +37,7 @@ function borderedRows(text) {
 // Space-aligned tables without borders: a column break is a gap blank in every line.
 // ponytail: purely positional, no semantic guesses; "原文" restores the source on misreads.
 function alignedRows(text) {
+  if (!graphemes) return null;
   const rules = new Set();
   const kept = [];
   for (const line of text.split(/\r?\n/).map((raw) => raw.replace(/\s+$/, ""))) {
@@ -121,7 +122,7 @@ function looksLikeDiagram(text) {
 }
 
 function layoutDiagram(code, language) {
-  if (code.textContent.length > 20000 || !isText(language)) return false;
+  if (!graphemes || code.textContent.length > 20000 || !isText(language)) return false;
   // ponytail: 1/2-cell widths, max 20K chars to bound DOM size; incorrect source padding stays unchanged.
   const segments = graphemes.segment(code.textContent);
   const fragment = code.ownerDocument.createDocumentFragment();
@@ -225,6 +226,35 @@ function linksSignature(links) {
 export function renderMarkdown(element, text = "") {
   const previous = cache.get(element);
   if (previous?.text === text) return;
+  // Conservative single-paragraph whitelist: no Markdown/HTML/autolink syntax.
+  // Retain the Text node so ordinary playback never re-lexes or destroys a selection.
+  const plain = renderMarkdown.isPlainText(text);
+  const literal = text.length > 24000;
+  if (plain || literal) {
+    if (previous?.literal === literal && previous?.plain === plain && previous.textNode) {
+      previous.textNode.replaceData(0, previous.textNode.length, text);
+      previous.text = text;
+      return;
+    }
+    const block = element.ownerDocument.createElement("div");
+    block.className = "markdown-block";
+    const body = element.ownerDocument.createElement(literal ? "pre" : "p");
+    const textNode = element.ownerDocument.createTextNode(text);
+    body.append(textNode);
+    if (literal) {
+      // ponytail: >24K UTF-16 units stay complete safe source, not an unbounded final Markdown parse.
+      const notice = element.ownerDocument.createElement("p");
+      notice.textContent = "长内容以原文展示（超过 24,000 字符），复制保留完整内容。";
+      body.tabIndex = 0;
+      body.setAttribute("role", "region");
+      body.setAttribute("aria-label", "完整原文，可横向滚动");
+      block.append(notice);
+    }
+    block.append(body);
+    element.replaceChildren(block);
+    cache.set(element, { text, plain, literal, textNode, blocks: [{ node: block }] });
+    return;
+  }
   // Lex the whole document: late reference definitions can change earlier blocks.
   // Only parse/sanitize/replace changed blocks, preserving completed DOM and selection.
   // Bare JSON objects/arrays are data, not Markdown; never interpret their contents as HTML.
@@ -334,3 +364,6 @@ export function renderMarkdown(element, text = "") {
     block.node.remove();
   cache.set(element, { text, blocks, linksKey });
 }
+
+renderMarkdown.isPlainText = (text = "") => text.length <= 24000 &&
+  !/^\s/.test(text) && /^[\p{L}\p{M}\p{N}\p{Zs}\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\u200d\ufe0f\ud800-\udfff，。！？；：“”‘’、（）…]*$/u.test(text);

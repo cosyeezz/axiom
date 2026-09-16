@@ -5,6 +5,7 @@ import { realpath, stat, readFile, mkdir, writeFile, rm, readdir } from "node:fs
 import { homedir } from "node:os";
 import { Database } from "./database.js";
 import { SessionStore } from "./session-store.js";
+import { readSessionHistory } from "./session-history.js";
 import { Goal, createGoalStore } from "./goal.js";
 import { basename, dirname, join, relative, isAbsolute, resolve, sep, parse } from "node:path";
 
@@ -16,11 +17,68 @@ import { delegationTools } from "./tools.js";
 import { createQuestions } from "./questions.js";
 import { resolveCapabilities } from "./capabilities.js";
 import { memoryHooks } from "./session-memory.js";
+import { createHistory, pageOf, toPageRecord, touchHistory } from "./session-history.js";
 
 // Goal 模式挂载的四个工具：普通会话初始即停用，退出 Goal 时统一停用。
 const GOAL_TOOL_NAMES = ["goal_plan", "goal_evidence", "goal_block", "goal_progress"];
 // 在飞子任务：状态在跑且真有运行 promise（恢复时被暂停的 starting 没有 done，不算在飞）。
 const hasRunningTasks = (item) => [...item.tasks.jobs.values()].some((job) => ["starting", "running"].includes(job.status) && job.done);
+
+// 薄投影只带本页消息引用到的工具与仍在跑的工具：整张工具表全量下发会在分页窗口外画出幽灵条目。
+function relevantTools(item, records) {
+  const owned = new Set();
+  for (const record of records) {
+    const owner = record.agentId ?? "main";
+    if (Array.isArray(record.message?.content))
+      for (const block of record.message.content)
+        if (block?.type === "toolCall" && block.id) owned.add(`${owner}:${block.id}`);
+    if (record.message?.toolCallId) owned.add(`${owner}:${record.message.toolCallId}`);
+  }
+  const tools = {};
+  for (const [key, tool] of Object.entries(item.tools))
+    if (tool?.phase !== "end" || owned.has(`${tool.agentId ?? "main"}:${tool.toolCallId}`)) tools[key] = tool;
+  return tools;
+}
+
+// 分页窗口的「已完成元数据」逐类按本页引用裁剪：整表下发会为窗口外的历史建 DOM。
+// 本页 entryId 集合供 compaction/retry 交集判定；任务多一路「页内 delegate 结果声明的 taskId」——
+// 与前端 trackTaskEntries 同一套解析，否则子任务入口接不回执行段。
+const delegateTaskIds = (message, into) => {
+  if (message?.isError || message?.role !== "toolResult" ||
+      message.toolName?.replace(/^functions\./, "") !== "delegate") return;
+  for (const block of Array.isArray(message.content) ? message.content : []) {
+    if (block?.type !== "text") continue;
+    try {
+      for (const id of JSON.parse(block.text).taskIds ?? []) if (typeof id === "string") into.add(id);
+    } catch {}
+  }
+};
+
+function pageTasks(item, records) {
+  const referenced = new Set();
+  const spawned = new Set();
+  for (const record of records) {
+    referenced.add(record.agentId ?? "main");
+    if ((record.agentId ?? "main") === "main") delegateTaskIds(record.message, spawned);
+  }
+  // 在跑的任务属于活业务，窗口外也留着（状态条/等待动画靠它）。
+  return item.tasks.snapshot().filter((task) =>
+    ["starting", "running"].includes(task.status) || referenced.has(task.id) || spawned.has(task.id));
+}
+
+function pageRetries(records, entryIds, start, end) {
+  return records.flatMap((record) => {
+    // messageCount 是「下发的 messages 数组内的下标」：换页时改成页内相对值，前端才能摆对位置。
+    if (Number.isInteger(record.messageCount) && record.messageCount >= start && record.messageCount < end)
+      return [{ ...record, messageCount: record.messageCount - start }];
+    if (record.anchorEntryId && entryIds.has(record.anchorEntryId)) {
+      const copy = { ...record };
+      delete copy.messageCount;
+      return [copy];
+    }
+    return [];
+  });
+}
 
 // 统一目录浏览：目录优先排序后按服务端过滤结果分页；无搜索词时不递归、不逐项 stat、跳过符号链接。
 const BROWSE_PAGE = 200;
@@ -527,7 +585,9 @@ export class Sessions {
 
   async ensureLoaded(id) {
     const item = this.get(id);
+    if (item.releasing) { await item.releasing; return this.ensureLoaded(id); }
     if (item.closing) throw new Error("Session is closing");
+    item.lastUsedAt = Date.now();
     if (item.loaded) return item;
     if (!item.loading) item.loading = (async () => {
       // 元数据会话也可能有改名失败；换成 SDK 实例前先清空旧对象的失败队列。
@@ -729,9 +789,9 @@ export class Sessions {
       // 重启即中断：上次未结算的运行段不补算，只保留已结算的累计用时。
       elapsedMs: saved?.elapsedMs || 0,
       runningSince: null,
-      seq: 0,
+      seq: this.items.get(id)?.seq ?? 0,
       status: "idle",
-      listeners: new Set(),
+      listeners: this.items.get(id)?.listeners ?? new Set(),
       messages: saved?.messages || [],
       compactions: saved?.compactions || [],
       retries: (saved?.retries || []).map((savedRecord) => {
@@ -744,6 +804,9 @@ export class Sessions {
         return record;
       }),
       live: {},
+      // 流式消息的临时身份（agentId → uuid）与历史修订号；两者都不落盘。
+      liveIds: new Map(),
+      history: createHistory(id),
       tools: {},
       subagentModel: selection.subagentModel ?? null,
       subagentThinking: selection.subagentThinking ?? null,
@@ -755,8 +818,12 @@ export class Sessions {
     };
     item.emit = (event) => {
       const agentId = event.agentId ?? "main";
-      if (event.type === "agent.message.start")
+      let endIdentity;
+      let historyRevision;
+      if (event.type === "agent.message.start") {
         item.live[agentId] = structuredClone(event.data.message);
+        item.liveIds.set(agentId, randomUUID());
+      }
       if (event.type === "agent.delta") {
         const delta = event.data;
         const message = item.live[agentId];
@@ -789,7 +856,13 @@ export class Sessions {
         }
       }
       if (event.type === "agent.message.end") {
-        item.messages.push({ agentId, message: event.data.message, ...(event.data.entryId ? { entryId: event.data.entryId } : {}) });
+        // entryId 是身份首选（跨重启稳定）；没有就沿用流式临时 id，保证 live→end 同一条消息同一个 id。
+        const liveId = item.liveIds.get(agentId);
+        item.liveIds.delete(agentId);
+        const entryId = event.data.entryId;
+        const messageId = entryId ?? liveId ?? randomUUID();
+        item.messages.push({ agentId, message: event.data.message, messageId, ...(entryId ? { entryId } : {}) });
+        endIdentity = { messageId, ...(entryId ? { entryId } : {}), ...(liveId && liveId !== messageId ? { liveId } : {}) };
         delete item.live[agentId];
         if (agentId === "main") {
           const sessionFile = item.agent?.sessionFile?.();
@@ -801,9 +874,14 @@ export class Sessions {
       }
       if (event.type === "agent.compaction" && agentId === "main") {
         if (!item.compactions.some((entry) => entry.id === event.data.id)) item.compactions.push(event.data);
+        // 压缩会重写历史：换修订号，旧游标作废。
+        historyRevision = touchHistory(item.history);
         this.saveChange(item, { event: { type: "compaction", record: event.data } });
       }
       const envelope = { ...event, sessionId: id, seq: ++item.seq };
+      if (endIdentity) envelope.data = { ...envelope.data, ...endIdentity };
+      if (event.type === "agent.message.start") envelope.data = { ...envelope.data, messageId: item.liveIds.get(agentId) };
+      if (historyRevision !== undefined) envelope.data = { ...envelope.data, revision: historyRevision };
       if (event.type === "session.state" || event.type === "task.state") {
         // 绿点开始/结束才需要落盘：累计值变了，重启恢复才算得准。
         const wasRunning = item.runningSince;
@@ -836,18 +914,21 @@ export class Sessions {
         this.saveChange(item, { event: { type: "retry", record } });
       }
       if (event.type === "tool.state")
-        item.tools[`${agentId}:${event.data.toolCallId}`] = {
-          agentId,
-          ...event.data,
-        };
+        Object.assign(item.tools[`${agentId}:${event.data.toolCallId}`] ??= { agentId }, event.data);
       if (event.type === "task.state") this.saveChange(item, { task: event.saved ?? event.data });
       // 持久化专用字段不进入 WebSocket 广播。
       delete envelope.saved;
-      for (const listener of item.listeners) {
-        try {
-          Promise.resolve(listener(envelope)).catch(() => console.warn("[sessions] listener_failed"));
-        } catch { console.warn("[sessions] listener_failed"); }
-      }
+      const envelopes = [envelope];
+      // 换号单独广播：客户端可以只认这一种事件来丢弃旧页并重取首屏，不必解析每种历史变更。
+      if (historyRevision !== undefined)
+        envelopes.push({ type: "session.history.changed", sessionId: id, seq: ++item.seq,
+          data: { revision: historyRevision, total: item.messages.length, reason: "compaction" } });
+      for (const outgoing of envelopes)
+        for (const listener of item.listeners) {
+          try {
+            Promise.resolve(listener(outgoing)).catch(() => console.warn("[sessions] listener_failed"));
+          } catch { console.warn("[sessions] listener_failed"); }
+        }
     };
     item.goal = new Goal({ sessionId: id, store: this.goalStore, emit: item.emit,
       messageCount: () => item.messages.length });
@@ -927,7 +1008,7 @@ export class Sessions {
     for (const job of item.tasks.jobs.values()) {
       if (!job.sessionFile || !existsSync(job.sessionFile)) continue;
       try {
-        const entries = SessionManager.open(job.sessionFile).getBranch().filter(entry => entry.type === "message");
+        const entries = readSessionHistory(job.sessionFile, item.cwd);
         item.messages.push(...entries.map(entry => ({ agentId: job.id, entryId: entry.id, message: entry.message })));
       } catch (error) {
         job.status = "failed";
@@ -1292,10 +1373,50 @@ export class Sessions {
     return item.agent.refreshSkills();
   }
 
-  snapshot(id) {
+  // options.window 存在 = 网络薄投影：先切页再 clone，历史全量永远不进内存拷贝。
+  // 不带 options 时保持内部全量契约不变。未加载时按数据库元数据 + JSONL 构建只读投影：
+  // 浏览历史不得持久化恢复状态或启动任务（Goal 恢复仅在内存投影）。
+  snapshot(id, options = {}) {
     const item = this.get(id);
-    if (!item.loaded) throw new Error("会话尚未加载，请先打开会话");
-    return structuredClone({
+    if (!item.loaded) {
+      const saved = this.store.getSession(id);
+      const messages = [];
+      const tasks = structuredClone(saved.tasks ?? []);
+      if (saved.sessionFile)
+        messages.push(...readSessionHistory(saved.sessionFile, saved.cwd).map(entry => ({ agentId: "main", entryId: entry.id, message: entry.message })));
+      for (const task of tasks) {
+        if (!task.sessionFile) continue;
+        try {
+          messages.push(...readSessionHistory(task.sessionFile, saved.cwd).map(entry => ({ agentId: task.id, entryId: entry.id, message: entry.message })));
+        } catch (error) { task.error = `子任务历史读取失败：${error.message}`; }
+      }
+      // 无 SessionManager 实例：JSONL 只读投影。history 缓存在 stub 上，同进程内 revision 稳定，游标才可用。
+      const history = item.history ??= createHistory(id);
+      const page = options.window ? pageOf(messages, history, { sessionId: id, epoch: options.epoch, ...options.window }) : null;
+      const goal = new Goal({ sessionId: id, store: {
+        load: () => structuredClone(this.goalStore.load(id)), save: () => {},
+      } });
+      const base = { sessionId: id, cwd: item.cwd, title: item.title, seq: item.seq ?? 0,
+        status: "idle", safeStop: false, config: saved.selection ?? {}, messages: page ? page.records.map(toPageRecord) : messages,
+        compactions: saved.compactions ?? [], retries: saved.retries ?? [], live: {}, tools: {},
+        questions: [], tasks, goal: goal.snapshot(), canReask: false, compactionStatus: null };
+      if (page) {
+        const entryIds = new Set(page.records.map(record => record.entryId).filter(Boolean));
+        Object.assign(base, { instanceId: options.epoch ?? null, revision: history.revision, history: page.meta, liveMessageIds: {},
+          compactions: base.compactions.filter(record => record.compactedMessageIds?.some(entryId => entryIds.has(entryId))),
+          retries: pageRetries(base.retries, entryIds, page.meta.start, page.meta.end),
+          tasks: pageTasks({ tasks: { snapshot: () => tasks } }, page.records) });
+      }
+      const cloned = structuredClone(base);
+      if (options.includeSeq === false) delete cloned.seq;
+      return cloned;
+    }
+    const page = options.window ? pageOf(item.messages, item.history, { sessionId: id, epoch: options.epoch, ...options.window }) : null;
+    // live 只在最新页：旧页没有正在流的消息，带上只会画出幽灵半成品。
+    const atLatest = !page || page.meta.end === page.meta.total;
+    const pageEntryIds = page ? new Set(page.records.map((record) => record.entryId).filter(Boolean)) : null;
+    const state = {
+      // 会话身份：前端按 sessionId 路由消息与持久化键，必须带出。
       sessionId: id,
       cwd: item.cwd,
       title: item.title,
@@ -1314,19 +1435,43 @@ export class Sessions {
         subagentCapabilities: item.subagentCapabilities,
       },
       runId: item.runId,
-      messages: item.messages,
-      compactions: item.compactions,
+      messages: page ? page.records.map(toPageRecord) : item.messages,
+      // 换过历史的压缩卡只留给「被压缩消息真在本页」的那页；页内引用不到就与本页无关。
+      compactions: page ? item.compactions.filter((record) => record.compactedMessageIds?.some((entryId) => pageEntryIds.has(entryId))) : item.compactions,
       compactionStatus: item.agent.compactionStatus?.() ?? null,
-      retries: item.retries,
-      live: item.live,
-      tools: item.tools,
+      retries: page ? pageRetries(item.retries, pageEntryIds, page.meta.start, page.meta.end) : item.retries,
+      live: atLatest ? item.live : {},
+      tools: page ? relevantTools(item, page.records) : item.tools,
       questions: item.questions.snapshot(),
       canReask: item.status === 'idle' && !!item.agent.canReask?.(),
-      tasks: item.tasks.snapshot(),
+      tasks: page ? pageTasks(item, page.records) : item.tasks.snapshot(),
       goal: item.goal?.snapshot() ?? null,
+    };
+    if (page)
+      Object.assign(state, { instanceId: options.epoch ?? null, revision: item.history.revision, history: page.meta,
+        // 活动流的身份：前端要按 agent.message.end 带的 messageId 把半成品原文接到正确槽位。
+        liveMessageIds: atLatest ? Object.fromEntries(item.liveIds) : {} });
+    const cloned = structuredClone(state);
+    // 分页响应不带 seq：客户端拿不到水位就不会 commitSnapshot（游标全由 history 自己管）。
+    if (options.includeSeq === false) delete cloned.seq;
+    return cloned;
+  }
+
+  // 历史分页：请求不信任，游标/limit/互斥在 pageOf 里逐项显式校验（越界、换号、跨实例直接报错）。
+  // 未加载会话走 snapshot 的 JSONL 只读分支（不创建 SDK 实例）；已加载会话从内存切页。
+  async history(id, request = {}, epoch) {
+    return this.snapshot(id, {
+      epoch,
+      includeSeq: false,
+      window: {
+        edge: request.edge, before: request.before, after: request.after,
+        target: request.target, limit: request.limit,
+      },
     });
   }
   subscribe(id, listener) {
+    // 允许在 ensureLoaded 之前订阅：元数据条目（load 建的 stub）已经在 items 里，事件一个不漏；
+    // create() 替换条目时沿用同一个 listener 集合（见 create 的 listeners 初始化）。
     const item = this.get(id);
     item.listeners.add(listener);
     return () => item.listeners.delete(listener);
@@ -1461,6 +1606,7 @@ export class Sessions {
     if (!recall) return item.agent.withdraw();
     if (item.status !== "idle" || item.cancelling) await this.cancel(id);
     const recalled = await item.agent.recall();
+    let revision;
     if (recalled) {
       const changes = [];
       // 网页历史跟着回退：否则重新 attach 仍会画出被撤回的输入和被打断的半截回答。
@@ -1495,14 +1641,20 @@ export class Sessions {
           changes.push({ event: { type: "retry", record: retry } });
         }
         changes.push({ deletedEvents: { type: "retry", records: previousRetries.filter((entry) => !item.retries.includes(entry)) } });
+        // 历史真被截断：换修订号，旧游标作废。
+        revision = touchHistory(item.history);
       }
       delete item.live.main;
+      item.liveIds.delete("main");
       changes.push({ session: this.sessionData(item) });
       // SDK分支已经回退：写库失败也必须同步网页并交还输入。整组短事务，
       // 错误由既有error事件报告，失败增量留到下次保存/关闭重试。
       this.saveChange(item, changes);
     }
-    return { ...item.agent.withdraw(), recalled };
+    if (revision !== undefined) {
+      item.emit({ type: "session.history.changed", data: { revision, total: item.messages.length, reason: "recall" } });
+    }
+    return { ...item.agent.withdraw(), recalled, ...(revision !== undefined ? { revision } : {}) };
   }
 
   replyQuestion(id, toolCallId, answers) {
@@ -1577,8 +1729,32 @@ export class Sessions {
     });
   }
 
+  async releaseIdle(now = Date.now(), idleMs = 5 * 60_000) {
+    if (!this.store) return;
+    for (const item of this.items.values()) {
+      const queue = item.agent?.queue?.();
+      if (!item.loaded || item.loading || item.releasing || item.closing || item.cancelling || item.configuring ||
+          item.status !== "idle" || item.notifying || item.goalScheduled || item.notificationScheduled ||
+          hasRunningTasks(item) || item.questions.snapshot().length || item.pendingWrites?.length ||
+          queue?.steering?.length || queue?.followUp?.length ||
+          [...item.tasks.jobs.values()].some(task => !task.notified) ||
+          item.goal?.active || now - Math.max(item.lastUsedAt ?? 0, item.updatedAt ?? 0) < idleMs) continue;
+      item.releasing = (async () => {
+        await this.persist(item);
+        await item.agent.dispose();
+        item.unsubscribe();
+        const saved = this.store.getSession(item.id);
+        this.items.set(item.id, { ...saved, loaded: false, status: "idle", runningSince: null,
+          seq: item.seq, tasks: { jobs: new Map() }, listeners: item.listeners });
+      })();
+      try { await item.releasing; }
+      finally { item.releasing = null; }
+    }
+  }
+
   async remove(id, deleting = true) {
     let item = this.get(id);
+    if (item.releasing) { await item.releasing; item = this.get(id); }
     if (item.loading) {
       await item.loading.catch(() => {});
       item = this.get(id);

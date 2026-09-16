@@ -1,5 +1,19 @@
 # Axiom 六个工作包现状汇总与集成接线指南（2026-09-15 晚）
 
+## 本轮集成交付记录（2026-09-16）
+
+**以下原指南是合并前的历史记录；本节是当前状态，优先于下文“未合并/未实现”的旧描述。**
+
+- 已在 `feat/runtime-integration` 合入 06、05、04、desktop 四个分支，保留唯一 transport、分页接口与流式调度器。
+- 只读 JSONL 与分页合一：打开历史不初始化代理 SDK，attach 返回最近 60 条；翻页不推进事件水位，页外任务/压缩/重试裁剪。应用内标签消费同一接口。
+- 桌面手动更新已接线：用户检查 GitHub 稳定 Release，按版本和平台架构提供可信仓库下载链接；无稳定发布、网络错误或缺匹配安装包明确报错。下载与安装由用户完成，先安全退出，不执行 npm 更新。
+- 全量 `npm test`：689 项，687 通过、0 失败、2 项既有跳过。前端分区、Vite 热替换和平滑流式三个 Python 浏览器脚本通过。
+- Windows x64 NSIS 构建成功；隔离数据下随包 Node（空 PATH）启动、健康检查、安全退出和真实 Electron 窗口冒烟通过。默认构建下载源超时后使用 README 中的镜像。
+- 产物归档：`F:/deliveries/Axiom-runtime-integration/Axiom-0.1.7-win-x64.exe`，同目录提供 SHA256 与验证日志。
+- **仍不是正式签名稳定发行版**：Windows 正式签名、macOS Developer ID/公证、更新前成套备份、覆盖安装与回退验收未完成；本轮未构建/实机验证 macOS。旧程序没有数据版本守卫，不能与新程序共用数据并发运行。
+
+---
+
 > 用途：给接手“接线并交付最终产品”的 Agent 阅读。本文只陈述当前事实，不含未执行的推测。
 > 所有 worktree 均以 `ab52936`（chore: synchronize merged code index）为 merge-base；`origin/master` 当前为 `ab52936`。
 

@@ -308,7 +308,7 @@ export async function supervise() {
   }
   const maintenance = await startMaintServer({
     state, token,
-    origins: [`http://127.0.0.1:${port}`, `http://localhost:${port}`],
+    origins: [`http://127.0.0.1:${port}`, `http://localhost:${port}`, ...(process.env.AXIOM_DEV === "1" ? ["http://127.0.0.1:5173"] : [])],
     recover, redactions,
   });
   // 只在 worker 已退出时提供兜底停止；健康 worker 仍走 HTTP 的任务/保存检查。

@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { createSender } from "./transport.js";
 import { WebSocketServer, WebSocket } from "ws";
 import { command } from "./protocol.js";
+import { HISTORY_PAGE_DEFAULT } from "./session-history.js";
 import { createModelAuthService } from "./model-auth.js";
 
 // 开发模式下前端资源按 mtime 惰性重读（改完刷新页面即可，不必重启服务）；
@@ -32,6 +33,7 @@ const assets = new Map(
     ["/style.css", "public/style.css", "text/css"],
     ["/theme.js", "public/theme.js"],
     ["/app.js", "public/app.js"],
+    ["/session-cache.js", "public/session-cache.js"],
     ["/transport.js", "public/transport.js"],
     ["/goal.js", "public/goal.js"],
     ["/goal.css", "public/goal.css", "text/css"],
@@ -44,6 +46,7 @@ const assets = new Map(
     ["/file-picker.css", "public/file-picker.css", "text/css"],
     ["/markdown.js", "public/markdown.js"],
     ["/stream-renderer.js", "public/stream-renderer.js"],
+    ["/stream-playback.js", "public/stream-playback.js"],
     ["/markdown-scan.js", "public/markdown-scan.js"],
     ["/memory-tags.js", "public/memory-tags.js"],
     ["/answer-tags.js", "public/answer-tags.js"],
@@ -79,7 +82,8 @@ export function createServerApp(sessions, service = {}) {
   const remoteClients = new Set();
   const hasActiveWork = () => sessions.list().some((item) => item.status !== "idle") ||
     [...(sessions.items?.values() || [])].some((item) => item.configuring || item.loading ||
-      [...item.tasks.jobs.values()].some((task) => ["starting", "running"].includes(task.status)));
+      item.notifying || item.goalScheduled || item.notificationScheduled ||
+      [...(item.tasks?.jobs.values() || [])].some((task) => ["starting", "running"].includes(task.status)));
   const handleRequest = (req, res, isLocal) => {
     if (req.url === "/service/stop") {
       if (!isLocal) {
@@ -252,12 +256,13 @@ export function createServerApp(sessions, service = {}) {
     const send = (message) => sender.send(ws, message);
     const attach = async (id) => {
       const sequence = ++attachSequence;
-      await sessions.ensureLoaded(id);
-      if (ws.readyState !== WebSocket.OPEN) return;
-      if (sequence !== attachSequence) throw new Error("会话切换已被后续请求替代");
+      // 先订阅再取页；未加载会话只读 JSONL，不为浏览历史恢复 SDK 或唤醒任务。
+      // create() 后续恢复时沿用 stub 的 listener 集合。
       unsubscribe?.();
       unsubscribe = sessions.subscribe(id, send);
-      return { ...sessions.snapshot(id), instanceId };
+      if (ws.readyState !== WebSocket.OPEN) return;
+      if (sequence !== attachSequence) throw new Error("会话切换已被后续请求替代");
+      return sessions.snapshot(id, { epoch: instanceId, includeSeq: true, window: { edge: "last", limit: HISTORY_PAGE_DEFAULT } });
     };
     ws.on("error", () => {});
     ws.on("close", () => {
@@ -279,7 +284,7 @@ export function createServerApp(sessions, service = {}) {
           let data;
           switch (request.type) {
             case "service.status":
-              data = { managed: Boolean(service.restart) && !ws.isRemote, error: service.error || "", version: service.version || "", importDir: service.importDir || "", dev: Boolean(service.dev), ...(!ws.isRemote && service.maintenance ? { maintenance: service.maintenance } : {}) };
+              data = { managed: Boolean(service.restart) && !ws.isRemote, error: service.error || "", version: service.version || "", importDir: service.importDir || "", dev: Boolean(service.dev), desktop: Boolean(service.desktop), ...(!ws.isRemote && service.maintenance ? { maintenance: service.maintenance } : {}) };
               break;
             case "service.update.check":
               if (ws.isRemote) throw new Error("请在本机检查服务更新");
@@ -393,6 +398,9 @@ export function createServerApp(sessions, service = {}) {
             case "session.attach":
               data = await attach(request.sessionId);
               break;
+            case "session.history":
+              data = await sessions.history(request.sessionId, request, instanceId);
+              break;
             case "session.skills.refresh":
               data = { skills: await sessions.refreshSkills(request.sessionId) };
               break;
@@ -477,6 +485,9 @@ export function createServerApp(sessions, service = {}) {
     createRemoteServer,
     dropRemote,
     resume() { stopping = false; },
+    // 先关闭新写请求入口，再等已接受请求及任务收尾；状态读取仍可用。
+    prepareStop() { stopping = true; },
+    hasActiveWork: () => pending.size > 0 || hasActiveWork(),
     async close() {
       closing = true;
       stopping = true;

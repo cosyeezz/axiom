@@ -92,7 +92,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     for (const fn of batch) fn();
   };
   const media = { matches: true };
-  window.matchMedia = () => media;
+  // 只对 reduced-motion 明确对齐（正文整批显示）；其余查询保持原有语义（true）。
+  window.matchMedia = (query) =>
+    query.includes("prefers-reduced-motion: reduce") ? { matches: true } : media;
   const markdownSource = (await readFile(new URL("../public/markdown.js", import.meta.url), "utf8"))
     .replace(/^import .*;\r?\n/gm, "").replace("export function", "function");
   const renderMarkdown = new Function("marked", "DOMPurify", `${markdownSource}; return renderMarkdown;`)(marked, createPurify(window));
@@ -321,7 +323,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       await updateSessions();
       return allSessions.find((s) => s.id === 'b').sessionFile;
     };
-    window.sidebarConnected = (value) => { connected = value; controls(); };
+    window.sidebarConnected = (value) => { connected = value; updateAvailability(); };
     window.sessionState = () => ({ connected, sessionId, error: document.getElementById("error").textContent });
     window.openPageAs = (value) => { sessionId = value; };
     // seenSessions 是模块作用域的 let，后续 window.eval 访问不到，必须由同一段代码暴露写入口。
@@ -529,7 +531,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(requests.findLast((req) => req.type === "session.create")?.cwd, "C:\\other", $("error").textContent);
     states.push({ ...states[0], sessionId: "other-workspace", cwd: "C:\\other" });
     await window.eval('switchSession(() => request("session.attach", { sessionId: "other-workspace" }))');
-    assert.equal($("workspace-label").textContent, "C:\\work", "other workspaces never replace this tab");
+    assert.equal($("workspace-label").textContent, "C:\\other", "other workspaces open inside the application");
+    await window.eval('switchSession(() => request("session.attach", { sessionId: "a" }))');
     assert.ok(rowTitles().includes("a"));
     assert.equal($("sessions").querySelector('[data-session-id="other-workspace"]'), null);
     assert.equal(window.sessionStorage.getItem("axiom.session"), "a", "selection is tab-local");
@@ -538,10 +541,13 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     let opened;
     window.open = (...args) => { opened = args; };
     row("a").querySelector(".session-open").click();
-    assert.deepEqual(opened, ["/#session=a", "_blank", "noopener"]);
+    await settle();
+    assert.equal(opened, undefined);
     $("prompt").value = "current workspace draft";
     await window.eval('switchSession(() => request("session.attach", { sessionId: "other-workspace" }))');
-    assert.deepEqual(opened, ["/#session=other-workspace", "_blank", "noopener"]);
+    assert.equal(opened, undefined);
+    assert.equal($("workspace-label").textContent, "C:\\other");
+    await window.eval('switchSession(() => request("session.attach", { sessionId: "a" }))');
     assert.equal($("workspace-label").textContent, "C:\\work");
     assert.equal($("prompt").value, "current workspace draft", "opening another tab preserves this draft");
     $("prompt").value = "";
