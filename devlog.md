@@ -2233,3 +2233,8 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 改动：app.js/index.html 改连续上滚预取、首屏补齐、历史前插保持节点与滚动锚点；移除实时预算和加载期间停绘；跨窗口工具结果节点回归调用位置；stream-renderer.js 折叠过程懒渲染；style.css 屏外 content-visibility。
 - 决策：不缓存派生HTML文件，保留服务端原文为权威；已加载DOM会随上滚增长，不宣称硬上限虚拟化。复用现有主题、字号和间距，不新增视觉主题。
 - 验证：新增 continuous-history.test.js / continuous-preview.mjs / continuous-ui.py；更新 snapshot、memory、stream-renderer 回归。全量 694 项，692通过、2跳过；Chromium 桌面/390px手机通过连续前插、节点保留、滚动补偿与无页面错误检查。README、索引与坑库同步。
+
+## 2026-09-16 连续历史补充审查
+- 修复 public/app.js 前插历史后 mainItems 顺序、旧页压缩摘要和重试卡遗漏；恢复子代理正文分组。新增 history-prepend-records.test.js，扩展测试 helper。
+- 全量695项：693通过、2跳过。README/索引/坑库同步。
+- 清理前一worktree时 Windows junction 被递归处理导致主目录部分依赖缺失；已通过独立 npm ci 安装并 robocopy 仅补缺失文件恢复，不终止在用进程。后续不使用 git worktree remove 清理含联接目录。

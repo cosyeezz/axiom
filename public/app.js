@@ -2321,22 +2321,37 @@ function prependHistory(state) {
   const ids = new Set(rawEntries.map(entry => entry.messageId || entry.entryId));
   const entries = state.messages.filter(entry => !ids.has(entry.messageId || entry.entryId));
   const savedLive = new Map(live);
+  const savedMainItems = mainItems;
+  mainItems = [];
   live.clear();
   rawEntries = [...entries, ...rawEntries];
   historyState.messages = rawEntries;
   historyState.history = { ...historyState.history, start: state.history.start, prevCursor: state.history.prevCursor };
+  for (const record of state.compactions || [])
+    if (!compactions.some(existing => existing.id === record.id)) compactions.push(record);
   const folded = new Map();
   for (const record of compactions) for (const id of record.compactedMessageIds || []) folded.set(id, record);
-  const ctx = { state, folded, placed: new Set(compactionNodes.keys()), foldedTools: new Set(), restoreRetries() {} };
+  const restoreRetries = (index) => {
+    for (const record of state.retries || []) {
+      const boundary = Number.isInteger(record.messageCount) ? record.messageCount : entries.length;
+      if (boundary !== index || retryCards.has(`${record.agentId || "main"}:${record.id}`)) continue;
+      const anchor = entries.slice(0, index).findLast(entry => entry.agentId === (record.agentId || "main"))?.entryId;
+      renderRetry(record.agentId, { ...record, anchorEntryId: record.anchorEntryId || anchor }, true);
+    }
+  };
+  const ctx = { state, folded, placed: new Set(compactionNodes.keys()), foldedTools: new Set(), restoreRetries };
   for (const task of state.tasks || []) if (!tasks.has(task.id))
     applyEvent({ type: "task.state", sessionId, taskId: task.id, data: task });
   for (const entry of entries) if (entry.agentId === "main") trackTaskEntries(entry.message, entry.entryId);
   for (let index = 0; index < entries.length; index++) placeSnapshotMessage(ctx, index, entries[index]);
+  restoreRetries(entries.length);
+  mainItems.push(...savedMainItems);
   live.clear();
   for (const [id, item] of savedLive) live.set(id, item);
   const added = [...output.children].filter(node => !previous.has(node));
   output.prepend(...added);
   mergeThoughts(output);
+  for (const task of tasks.values()) mergeThoughts(task.output);
   placeCompactedTasks();
   rawChanged();
   goalUI.anchors(goalAnchors);

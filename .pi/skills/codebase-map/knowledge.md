@@ -649,3 +649,7 @@
 - 根因：receiveHistoryEvent 把 historyLoading 和60条预算当作停绘条件，latestHistory 重建了所有节点。
 - 修复：public/app.js 实时持续追加，before游标前插历史且保留节点/草稿/锚点；跨页结果先到时将已有工具详情移回调用位置；public/stream-renderer.js 折叠过程按需绘制。
 - 防再犯：continuous-history 回归覆盖80条实时消息、打开弹窗、在飞历史期间输入和首屏补齐；continuous-ui.py 实测Chromium滚动补偿。历史响应不得提交实时seq。
+
+### 2026-09-16 前插历史必须同步辅助记录与锚点顺序
+- 原因：只前插DOM但 mainItems 仍push到尾，重试取at(-1)错位；ctx.restoreRetries为空且未合并历史compactions。
+- 修复：新历史主消息数组放在已有数组前，合并压缩记录并按页内边界恢复重试；history-prepend-records回归。
