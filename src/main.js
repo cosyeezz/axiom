@@ -16,8 +16,9 @@ import { checkUpdate, validateCommit } from "./update.js";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 
-const port = Number(process.env.AXIOM_PORT || 4319);
-if (!Number.isInteger(port) || port < 1 || port > 65535)
+const desktop = process.env.AXIOM_DESKTOP === "1";
+const port = desktop ? 0 : Number(process.env.AXIOM_PORT || 4319);
+if (!Number.isInteger(port) || port < (desktop ? 0 : 1) || port > 65535)
   throw new Error("Invalid AXIOM_PORT");
 const cwd = resolve(process.env.AXIOM_CWD || process.cwd());
 if (!(await stat(cwd)).isDirectory())
@@ -91,6 +92,7 @@ const app = createServerApp(sessions, service);
 // 也可能尚未赋值，app.close 里的可选调用被跳过）。
 let remoteReady = Promise.resolve();
 app.server.listen(port, "127.0.0.1", () => {
+  const port = app.server.address().port;
   console.log(`Axiom listening on http://127.0.0.1:${port}; workspace: ${cwd}`);
   process.send?.({ type: "service.ready", instanceId: process.env.AXIOM_INSTANCE_ID, version: service.version,
     ...(process.env.AXIOM_DESKTOP === "1" ? { protocol: 1, token: process.env.AXIOM_START_TOKEN,

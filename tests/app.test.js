@@ -529,7 +529,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(requests.findLast((req) => req.type === "session.create")?.cwd, "C:\\other", $("error").textContent);
     states.push({ ...states[0], sessionId: "other-workspace", cwd: "C:\\other" });
     await window.eval('switchSession(() => request("session.attach", { sessionId: "other-workspace" }))');
-    assert.equal($("workspace-label").textContent, "C:\\work", "other workspaces never replace this tab");
+    assert.equal($("workspace-label").textContent, "C:\\other", "other workspaces open inside the application");
+    await window.eval('switchSession(() => request("session.attach", { sessionId: "a" }))');
     assert.ok(rowTitles().includes("a"));
     assert.equal($("sessions").querySelector('[data-session-id="other-workspace"]'), null);
     assert.equal(window.sessionStorage.getItem("axiom.session"), "a", "selection is tab-local");
@@ -538,10 +539,13 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     let opened;
     window.open = (...args) => { opened = args; };
     row("a").querySelector(".session-open").click();
-    assert.deepEqual(opened, ["/#session=a", "_blank", "noopener"]);
+    await settle();
+    assert.equal(opened, undefined);
     $("prompt").value = "current workspace draft";
     await window.eval('switchSession(() => request("session.attach", { sessionId: "other-workspace" }))');
-    assert.deepEqual(opened, ["/#session=other-workspace", "_blank", "noopener"]);
+    assert.equal(opened, undefined);
+    assert.equal($("workspace-label").textContent, "C:\\other");
+    await window.eval('switchSession(() => request("session.attach", { sessionId: "a" }))');
     assert.equal($("workspace-label").textContent, "C:\\work");
     assert.equal($("prompt").value, "current workspace draft", "opening another tab preserves this draft");
     $("prompt").value = "";

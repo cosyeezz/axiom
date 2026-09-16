@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-15 应用内跨目录标签与桌面端口隔离
+
+- public/app.js 删除跨目录window.open旧分支，侧栏打开同样使用switchSession，避免Electron拒绝同源新窗口后看不到会话；tests/app.test.js、workspace-tabs.test.js验证跨目录切回草稿、不取消任务。
+- src/main.js：桌面绑定port=0，握手回传实际端口；CLI端口规则不变。scripts/smoke-desktop.mjs保持配置端口被占用，真实随包Node仍启动成功，健康身份与保存退出均通过。
+- 全量测试618项：616通过、2跳过、0失败；README同步行为。尚未声明整包更新完成。
+
 ## 2026-09-15 冷会话历史、空闲释放和应用内标签接线
 
 - sessions/server：attach不再ensureLoaded，历史只读；恢复共享监听集合和seq，避免冷订阅丢失；每分钟释放空闲5分钟的持久化SDK，保护任务/通知/保存/队列/Goal；释放与加载、关闭串行。

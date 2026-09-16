@@ -3087,20 +3087,8 @@ async function switchSession(action) {
   controls();
   try {
     const state = await action();
-    if (currentCwd && state.cwd !== currentCwd && !openSessionTabs.has(state.sessionId)) {
-      const url = `/#${new URLSearchParams({ session: state.sessionId })}`;
-      window.open(url, "_blank", "noopener");
-      $("error").textContent = "其他工作空间已请求在新页签打开。若被浏览器拦截，请点击：";
-      const link = document.createElement("a");
-      link.href = url; link.target = "_blank"; link.rel = "noopener";
-      link.textContent = "打开工作空间";
-      $("error").append(link);
-      // attach changed the server subscription too: restore this tab, not just its event gate.
-      await snapshot(await request("session.attach", { sessionId }));
-    } else {
-      if (sessionMissing) views.set(state.sessionId, { draft: $("prompt").value, contextFiles: [...contextFiles], images: [...images], selectedSkill, follow: true, scroll: 0 });
-      await snapshot(state);
-    }
+    if (sessionMissing) views.set(state.sessionId, { draft: $("prompt").value, contextFiles: [...contextFiles], images: [...images], selectedSkill, follow: true, scroll: 0 });
+    await snapshot(state);
     renderSessions();
     if (mobile.matches) sidebar(false);
     await refreshSessions();
@@ -3277,7 +3265,7 @@ function renderSessions() {
         menu.open = false;
         actions.hidePopover?.();
         more.focus();
-        if (kind === "open") window.open(`/#${new URLSearchParams({ session: s.id })}`, "_blank", "noopener");
+        if (kind === "open") void switchSession(() => request("session.attach", { sessionId: s.id }));
         else if (kind === "hide") void setSessionHidden(s.id, !hidden);
         else openSessionAction(kind, s);
       };

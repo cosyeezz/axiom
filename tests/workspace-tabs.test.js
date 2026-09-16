@@ -126,7 +126,7 @@ test("快照只在会话 hash 变化时更新 History，不重复触发同文档
   } finally { page.dom.window.close(); }
 });
 
-test("跨目录操作在新页签打开，保留当前会话和草稿，提供拦截后的打开链接", async () => {
+test("跨目录操作在应用内标签打开，切回保留原草稿", async () => {
   const page = await bootPage("http://localhost/", { hash: "session=s-a" });
   try {
     await page.connect();
@@ -134,12 +134,14 @@ test("跨目录操作在新页签打开，保留当前会话和草稿，提供�
     page.window.open = (...args) => { opened.push(args); return null; };
     page.$("prompt").value = "保留草稿";
     await page.window.eval('switchSession(() => request("session.attach", { sessionId: "s-b" }))');
-    assert.deepEqual(opened, [["/#session=s-b", "_blank", "noopener"]]);
+    assert.deepEqual(opened, []);
+    assert.equal(page.$("workspace-label").textContent, "C:\\wb");
+    assert.equal(page.window.location.hash, "#session=s-b");
+    assert.equal(page.$("session-tabs").children.length, 2);
+    page.$("session-tabs").firstElementChild.firstElementChild.click();
+    await page.drain();
     assert.equal(page.$("workspace-label").textContent, "C:\\wa");
     assert.equal(page.$("prompt").value, "保留草稿");
-    assert.equal(page.window.location.hash, "#session=s-a");
-    assert.equal(page.$("error").querySelector("a").hash, "#session=s-b");
-    assert.doesNotMatch(page.$("sessions").textContent, /会话B/);
   } finally { page.dom.window.close(); }
 });
 

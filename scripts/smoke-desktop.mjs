@@ -10,7 +10,7 @@ const temp = await mkdtemp(join(tmpdir(), "axiom-desktop-smoke-"));
 const probe = createServer();
 await new Promise((done) => probe.listen(0, "127.0.0.1", done));
 const port = probe.address().port;
-await new Promise((done) => probe.close(done));
+// 保持配置端口被占用，桌面应使用操作系统分配的独立端口。
 let child, exited;
 const { bundleVersion } = JSON.parse(await readFile(join(root, "manifest.json"), "utf8"));
 const backend = createBackendLifecycle({ bundleRoot: root, bundleVersion, dataRoot: join(temp, "data"),
@@ -23,6 +23,7 @@ const backend = createBackendLifecycle({ bundleRoot: root, bundleVersion, dataRo
   } });
 try {
   const ready = await backend.startBackend();
+  if (new URL(ready.url).port === String(port)) throw new Error("桌面错误复用了已占用端口");
   const health = await fetch(ready.url + "/health", { signal: AbortSignal.timeout(5000) }).then(r => r.json());
   if (health.instanceId !== ready.instanceId) throw new Error("健康检查身份不一致");
   await backend.requestStop({ mode: "cancel" });
@@ -33,5 +34,6 @@ try {
     child.kill();
     await Promise.race([exited, new Promise(done => setTimeout(done, 3000))]);
   }
+  await new Promise((done) => probe.close(done));
   await rm(temp, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }

@@ -1,12 +1,12 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/15 19:03:45）
+# Axiom 多级代码索引（生成于 2026/9/15 19:10:06）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
 | public/answer-tags.js | 48 | 主代理回答标签解析、代码保护与流式容错 | OPEN, CLOSE, MARKS, isMark |
-| public/app.js | 3921 | 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度 | questionUI, filePicker, $, sessionId |
+| public/app.js | 3909 | 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度 | questionUI, filePicker, $, sessionId |
 | public/file-picker.css | 276 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 355 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/goal-markers.js | 60 | 前后端共享 goal 完成标记解析与展示层剥离（含流式半截） | ROUND_MARKER, GOAL_MARKER, MARKER_TOKENS, SUFFIXES |
@@ -36,7 +36,7 @@
 | scripts/maint-server.mjs | 86 | loopback维护HTTP：来源校验、随机凭证、状态与离线恢复 | MAX_BODY, hash, json, startMaintServer |
 | scripts/maint-state.mjs | 138 | 守护维护状态：持久化阶段、最近结果与有界脱敏证据 | NAMESPACE, LOG_LIMIT, redact, sanitize |
 | scripts/service.mjs | 619 | 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道 | root, output, run, npmRun |
-| scripts/smoke-desktop.mjs | 38 | 随包Node空PATH隔离数据冒烟验证 | root, temp, probe, port |
+| scripts/smoke-desktop.mjs | 40 | 随包Node空PATH隔离数据冒烟验证 | root, temp, probe, port |
 | scripts/smoke-shell.mjs | 31 | Electron真实窗口与安全退出隔离冒烟验证 | temp, probe, port, env |
 | scripts/stage-desktop.mjs | 28 | 暂存固定Node与完整后端依赖 | root, stage, app, npm |
 | scripts/uninstall.mjs | 18 | 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据 | uninstall |
@@ -46,7 +46,7 @@
 | src/database.js | 122 | 共享 SQLite 连接、小配置 KV、WAL 与一致性备份 | nodeOk, DATA_VERSION, assertDataVersion, Database |
 | src/goal.js | 988 | Goal：会话级目标状态、轮次计划、验收门与持久化 | GOAL_PHASES, GOAL_ACTIONS, ROUND_STATUSES, GOAL_MAX_SEGMENTS |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
-| src/main.js | 138 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, cwd, home, releaseDataRoot |
+| src/main.js | 140 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | desktop, port, cwd, home |
 | src/model-auth.js | 89 | SDK 登录桥：连接隔离、超时取消与安全事件投影 | safeUrl, text, eventView, createModelAuthService |
 | src/model-config.js | 619 | Pi models.json 无损配置读写与共享收藏持久化 | sdkModelConfig, sdkResolveConfigValue, digest, LEVELS |
 | src/pi-model-storage.js | 409 | 模型与凭据 SQLite 权威存储、Pi 派生兼容文件 | sdkResolveConfigValue, sdkIsCommandConfigValue, NAMESPACE, AUTH_NAMESPACE |
@@ -69,7 +69,7 @@
 | tests/__pycache__/goal-ui.cpython-312.pyc | 165 | node --test 测试（npm test） | - |
 | tests/activity-groups-ui.py | 201 | node --test 测试（npm test） | activityHistory, sessions |
 | tests/answer-tags.test.js | 56 | node --test 测试（npm test） | open |
-| tests/app.test.js | 1895 | node --test 测试（npm test） | pickerSource, modelSources, serviceSource |
+| tests/app.test.js | 1899 | node --test 测试（npm test） | pickerSource, modelSources, serviceSource |
 | tests/autoscroll-ui.py | 99 | node --test 测试（npm test） | - |
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
 | tests/backend-lifecycle.test.js | 76 | node --test 测试（npm test） | fixture |
@@ -182,7 +182,7 @@
 | tests/update.test.js | 38 | node --test 测试（npm test） | old |
 | tests/workspace-isolation.test.js | 80 | node --test 测试（npm test） | - |
 | tests/workspace-picker.test.js | 99 | node --test 测试（npm test） | - |
-| tests/workspace-tabs.test.js | 278 | node --test 测试（npm test） | appSource, pickerSource, modelSources, html |
+| tests/workspace-tabs.test.js | 280 | node --test 测试（npm test） | appSource, pickerSource, modelSources, html |
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
@@ -196,7 +196,7 @@
 | isMark | const | 10 |
 | splitAnswer | function | 12 |
 
-### public/app.js（3921 行） — 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度
+### public/app.js（3909 行） — 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -460,55 +460,55 @@
 | switchSession | function | 3082 |
 | saveView | method | 3084 |
 | controls | method | 3087 |
-| copySessionFile | function | 3115 |
-| positionSessionMenu | function | 3128 |
-| openSessionTabs | const | 3134 |
-| renderSessionTabs | function | 3135 |
-| renderSessions | function | 3169 |
-| renderSessionTabs | method | 3170 |
-| sessionAction | const | 3326 |
-| openSessionAction | function | 3328 |
-| contextIcon | function | 3369 |
-| renderContextChips | function | 3372 |
-| fuzzyHit | function | 3391 |
-| renderContextResults | function | 3398 |
-| showContextSkills | function | 3418 |
-| positionContextSkills | function | 3423 |
-| showContextSkills | method | 3435 |
-| controls | method | 3470 |
-| skillTrigger | const | 3472 |
-| showContextSkills | method | 3488 |
-| resizePrompt | method | 3497 |
-| controls | method | 3498 |
-| SLASH_COMMANDS | const | 3503 |
-| closeCompletion | function | 3506 |
-| highlightCompletion | function | 3514 |
-| chooseCompletion | function | 3523 |
-| closeCompletion | method | 3535 |
-| updateCompletion | function | 3538 |
-| closeCompletion | method | 3539 |
-| resizePrompt | method | 3598 |
-| controls | method | 3599 |
-| switchSession | method | 3639 |
-| creationLoad | const | 3650 |
-| defaultsScope | const | 3652 |
-| renderDefaultsScope | function | 3653 |
-| options | method | 3654 |
-| refreshDefaultsScope | function | 3657 |
-| renderDefaultsScope | method | 3661 |
-| createAgentPicker | function | 3664 |
-| options | method | 3690 |
-| fill | method | 3698 |
-| fillThinking | method | 3706 |
-| options | method | 3708 |
-| defaultsSelection | const | 3754 |
-| defaultsSaving | const | 3767 |
-| loadCreation | function | 3769 |
-| openDefaults | function | 3803 |
-| controls | method | 3852 |
-| updateDefaultsPreview | function | 3865 |
-| updateDefaultsPreview | method | 3889 |
-| controls | method | 3905 |
+| copySessionFile | function | 3103 |
+| positionSessionMenu | function | 3116 |
+| openSessionTabs | const | 3122 |
+| renderSessionTabs | function | 3123 |
+| renderSessions | function | 3157 |
+| renderSessionTabs | method | 3158 |
+| sessionAction | const | 3314 |
+| openSessionAction | function | 3316 |
+| contextIcon | function | 3357 |
+| renderContextChips | function | 3360 |
+| fuzzyHit | function | 3379 |
+| renderContextResults | function | 3386 |
+| showContextSkills | function | 3406 |
+| positionContextSkills | function | 3411 |
+| showContextSkills | method | 3423 |
+| controls | method | 3458 |
+| skillTrigger | const | 3460 |
+| showContextSkills | method | 3476 |
+| resizePrompt | method | 3485 |
+| controls | method | 3486 |
+| SLASH_COMMANDS | const | 3491 |
+| closeCompletion | function | 3494 |
+| highlightCompletion | function | 3502 |
+| chooseCompletion | function | 3511 |
+| closeCompletion | method | 3523 |
+| updateCompletion | function | 3526 |
+| closeCompletion | method | 3527 |
+| resizePrompt | method | 3586 |
+| controls | method | 3587 |
+| switchSession | method | 3627 |
+| creationLoad | const | 3638 |
+| defaultsScope | const | 3640 |
+| renderDefaultsScope | function | 3641 |
+| options | method | 3642 |
+| refreshDefaultsScope | function | 3645 |
+| renderDefaultsScope | method | 3649 |
+| createAgentPicker | function | 3652 |
+| options | method | 3678 |
+| fill | method | 3686 |
+| fillThinking | method | 3694 |
+| options | method | 3696 |
+| defaultsSelection | const | 3742 |
+| defaultsSaving | const | 3755 |
+| loadCreation | function | 3757 |
+| openDefaults | function | 3791 |
+| controls | method | 3840 |
+| updateDefaultsPreview | function | 3853 |
+| updateDefaultsPreview | method | 3877 |
+| controls | method | 3893 |
 
 ### public/file-picker.js（355 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 
@@ -831,7 +831,7 @@
 | FORE | const | 604 |
 | COMMANDS | const | 605 |
 
-### scripts/smoke-desktop.mjs（38 行） — 随包Node空PATH隔离数据冒烟验证
+### scripts/smoke-desktop.mjs（40 行） — 随包Node空PATH隔离数据冒烟验证
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -992,27 +992,28 @@
 | inlineImages | function | 2 |
 | inlineImagesExtension | function | 29 |
 
-### src/main.js（138 行） — 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理
+### src/main.js（140 行） — 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| port | const | 19 |
-| cwd | const | 22 |
-| home | const | 27 |
-| releaseDataRoot | const | 29 |
-| database | const | 37 |
-| modelStorage | const | 38 |
-| factory | const | 40 |
-| sessions | const | 45 |
-| models | const | 47 |
-| idleTimer | const | 50 |
-| service | const | 54 |
-| app | const | 87 |
-| remoteReady | const | 92 |
-| initRemote | function | 102 |
-| closing | const | 112 |
-| stop | function | 113 |
-| clearInterval | method | 114 |
+| desktop | const | 19 |
+| port | const | 20 |
+| cwd | const | 23 |
+| home | const | 28 |
+| releaseDataRoot | const | 30 |
+| database | const | 38 |
+| modelStorage | const | 39 |
+| factory | const | 41 |
+| sessions | const | 46 |
+| models | const | 48 |
+| idleTimer | const | 51 |
+| service | const | 55 |
+| app | const | 88 |
+| remoteReady | const | 93 |
+| initRemote | function | 104 |
+| closing | const | 114 |
+| stop | function | 115 |
+| clearInterval | method | 116 |
 
 ### src/model-auth.js（89 行） — SDK 登录桥：连接隔离、超时取消与安全事件投影
 
@@ -1398,7 +1399,7 @@
 |---|---|---|
 | open | const | 5 |
 
-### tests/app.test.js（1895 行） — node --test 测试（npm test）
+### tests/app.test.js（1899 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -2357,7 +2358,7 @@
 |---|---|---|
 | old | const | 8 |
 
-### tests/workspace-tabs.test.js（278 行） — node --test 测试（npm test）
+### tests/workspace-tabs.test.js（280 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
