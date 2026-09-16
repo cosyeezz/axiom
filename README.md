@@ -4,7 +4,7 @@ Windows x64 / macOS Apple Silicon **未签名 dev 预发布版**：[desktop-v0.1
 
 > 桌面重构进度（功能分支）：精简 Electron 已接入随包独立 Node 24.19.0，Windows x64 自包含测试安装包已构建；实际打包目录已通过隔离数据的窗口加载与后端安全退出测试。安装包 **未签名，非完整交付版**；会话空闲释放和应用内标签已接入；旧安装迁移门禁与可信整包更新仍待完成。超时不强杀、不视为保存成功。数据根独占和写前版本检查只保护新版本，不能阻止旧程序写库，勿在旧服务未退出时使用真实数据。
 
-macOS 云端构建：功能分支的手动 desktop 工作流包含测试、Apple Silicon 打包、随包后端隔离启动和 DMG 校验；这些检查不替代实机安装与窗口验收。
+macOS 云端构建：dev 包使用 `--config.mac.identity=-` 做 ad-hoc 本地签名（不代表开发者认证或公证），避免改包后残留 Electron 原始签名。工作流检查 `codesign --verify --deep --strict`、真实窗口启动/安全退出、随包后端及 DMG 完整性；仍不替代带下载隔离标记的 Gatekeeper 和用户实机安装验收。首版 dev.1 Mac 包已发现无效资源签名，修正版验证完成前勿使用。
 
 桌面构建：使用固定 Node 后执行 `npm run desktop:stage` → `npm run desktop:build`。产物在 `dist/`；本机测试：`node scripts/smoke-desktop.mjs`、`node scripts/smoke-shell.mjs dist/win-unpacked/Axiom.exe`（Windows）。测试创建临时数据，不读取原有用户凭据。GitHub 下载不可达时可显式设置 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 和 `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`；镜像不替代平台签名。
 

@@ -28,6 +28,12 @@ jobs:
       - run: npm test
       - run: npm run desktop:stage
       - run: npm run desktop:build -- --publish never
+        if: runner.os == 'Windows'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Build macOS ad-hoc signed test package
+        if: runner.os == 'macOS'
+        run: npm run desktop:build -- --publish never --config.mac.identity=-
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - name: Verify bundled Windows startup
@@ -38,6 +44,8 @@ jobs:
       - name: Verify bundled macOS backend and disk image
         if: runner.os == 'macOS'
         run: |
+          codesign --verify --deep --strict --verbose=2 dist/mac-arm64/Axiom.app
+          node scripts/smoke-shell.mjs dist/mac-arm64/Axiom.app/Contents/MacOS/Axiom
           node scripts/smoke-desktop.mjs dist/mac-arm64/Axiom.app/Contents/Resources
           hdiutil verify dist/*.dmg
       - uses: actions/upload-artifact@v4

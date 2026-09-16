@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-16 修复Mac测试包无效资源签名
+
+- 用户实机codesign/spctl均报code has no resources but signature indicates they must be present；旧流程禁用自动证书发现且未指定identity，跳过签名，DMG完整性和后端测试无法检测.app签名问题。
+- desktop.yml Mac构建显式使用electron-builder内置ad-hoc identity=-，让打包器完成嵌套签名；加入codesign深度严格校验及真实Electron窗口冒烟。无需证书，但不是Developer ID认证或公证，不能承诺Gatekeeper放行。
+- README标记旧Mac包故障；待云端验证后发布独立修正版，不静默覆盖旧资产。
+
 ## 2026-09-16 Mac arm64 dev包发布
 
 - CI运行35049501362两平台成功，Mac通过自动测试、随包后端隔离启动/健康身份/安全退出和hdiutil verify。下载首次180秒超时，重试600秒上限内成功。
