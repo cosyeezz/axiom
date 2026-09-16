@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-15 只读历史基础
+
+- `src/session-history.js` 复用SDK公开 parseSessionEntries + SessionManager.inMemory，避免 open() 在读取空文件/旧格式时改写历史；接入 sessions 子任务历史路径。
+- `tests/session-history.test.js` 覆盖分支选择、旧格式与空文件原字节不变；连同持久化测试16项通过。未宣称主会话 attach 已惰性化。
+- README补充历史读取说明并明确旧Pake命令不可用于当前分支；索引同步。
+
 ## 2026-09-15 Electron自包含Windows测试包与真实启动验证
 
 - 删除 `desktop/pake.json`，将 `.github/workflows/desktop.yml` 替换为仅手动触发的 Electron 未签名测试包构建（不发布 Release，macOS arm64 待CI验收）。

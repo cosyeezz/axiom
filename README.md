@@ -5,6 +5,8 @@
 桌面构建：使用固定 Node 后执行 `npm run desktop:stage` → `npm run desktop:build`。产物在 `dist/`；本机测试：`node scripts/smoke-desktop.mjs`、`node scripts/smoke-shell.mjs dist/win-unpacked/Axiom.exe`（Windows）。测试创建临时数据，不读取原有用户凭据。GitHub 下载不可达时可显式设置 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 和 `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`；镜像不替代平台签名。
 
 
+历史读取基础：子任务 JSONL 通过内存 SessionManager 读取当前分支，旧格式迁移不会回写原文件；主会话打开时不加载 SDK 与空闲释放仍待接线。
+
 ## 独立 SVG 动画
 
 直接用浏览器打开 [`pelican-bicycle.html`](./pelican-bicycle.html)：自行车骑在鹈鹕背上的抽象 2D 循环动画，纯内联 SVG + CSS，无外部依赖，支持暂停和系统减少动态效果设置。

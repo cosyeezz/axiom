@@ -25,6 +25,7 @@ const MODULE_INFO = {
   "scripts/stage-desktop.mjs": "暂存固定Node与完整后端依赖",
   "scripts/smoke-desktop.mjs": "随包Node空PATH隔离数据冒烟验证",
   "scripts/smoke-shell.mjs": "Electron真实窗口与安全退出隔离冒烟验证",
+  "src/session-history.js": "JSONL当前分支纯读取：内存迁移不回写历史",
   "tests/backend-lifecycle.test.js": "假进程与可控时钟验证并发启动、伪就绪、超时及退出竞态",
   "tests/task-cancel-notifications.test.js": "单子任务取消工具注册、兄弟隔离与持久化完成通知集成回归",
   "src/questions.js": "主代理 question 工具、参数校验与可取消的回答等待",

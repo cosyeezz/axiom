@@ -5,6 +5,7 @@ import { realpath, stat, readFile, mkdir, writeFile, rm, readdir } from "node:fs
 import { homedir } from "node:os";
 import { Database } from "./database.js";
 import { SessionStore } from "./session-store.js";
+import { readSessionHistory } from "./session-history.js";
 import { Goal, createGoalStore } from "./goal.js";
 import { basename, dirname, join, relative, isAbsolute, resolve, sep, parse } from "node:path";
 
@@ -927,7 +928,7 @@ export class Sessions {
     for (const job of item.tasks.jobs.values()) {
       if (!job.sessionFile || !existsSync(job.sessionFile)) continue;
       try {
-        const entries = SessionManager.open(job.sessionFile).getBranch().filter(entry => entry.type === "message");
+        const entries = readSessionHistory(job.sessionFile, item.cwd);
         item.messages.push(...entries.map(entry => ({ agentId: job.id, entryId: entry.id, message: entry.message })));
       } catch (error) {
         job.status = "failed";

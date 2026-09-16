@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/15 18:27:27）
+# Axiom 多级代码索引（生成于 2026/9/15 18:33:24）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -57,9 +57,10 @@
 | src/remote.js | 547 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
 | src/retry.js | 196 | 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_DELAY_MS, MAX_RETRIES, RECOVERY_PROMPT |
 | src/server.js | 505 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | dev, digest, load, freshen |
+| src/session-history.js | 12 | JSONL当前分支纯读取：内存迁移不回写历史 | readSessionHistory |
 | src/session-memory.js | 29 | 标题提取登记、轮次预算挂钩与委派背景 | textOf, memoryHooks |
 | src/session-store.js | 479 | 会话三表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, TABLES, INDEXES |
-| src/sessions.js | 1638 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | GOAL_TOOL_NAMES, hasRunningTasks, BROWSE_PAGE, SEARCH_LIMIT |
+| src/sessions.js | 1639 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | GOAL_TOOL_NAMES, hasRunningTasks, BROWSE_PAGE, SEARCH_LIMIT |
 | src/task-budget.js | 35 | 主子代理轮次预算规则、收尾提示词与配置页参数校验 | TASK_BUDGET_LIMITS, taskBudgetDefaults, within, taskBudgetPolicy |
 | src/tasks.js | 234 | Tasks：子任务（委托）生命周期 | ACTIVE, historyResult, Tasks |
 | src/tools.js | 131 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
@@ -152,6 +153,7 @@
 | tests/service.test.js | 684 | node --test 测试（npm test） | until, readMaybe, killTree, buildWorkspace |
 | tests/session-created-at.test.js | 44 | node --test 测试（npm test） | factory |
 | tests/session-flow.test.js | 451 | node --test 测试（npm test） | flowFactory, jsonlFactory |
+| tests/session-history.test.js | 29 | node --test 测试（npm test） | - |
 | tests/session-memory.test.js | 110 | node --test 测试（npm test） | reply |
 | tests/session-migration.test.js | 282 | node --test 测试（npm test） | factory, workspaceHash |
 | tests/session-model-restore.test.js | 61 | node --test 测试（npm test） | stubFactory, cleanup |
@@ -1186,6 +1188,12 @@
 | assets | const | 28 |
 | createServerApp | function | 69 |
 
+### src/session-history.js（12 行） — JSONL当前分支纯读取：内存迁移不回写历史
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| readSessionHistory | function | 5 |
+
 ### src/session-memory.js（29 行） — 标题提取登记、轮次预算挂钩与委派背景
 
 | 符号 | 类型 | 行 |
@@ -1222,94 +1230,94 @@
 | saveTask | method | 450 |
 | listTasks | method | 473 |
 
-### src/sessions.js（1638 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
+### src/sessions.js（1639 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| GOAL_TOOL_NAMES | const | 21 |
-| hasRunningTasks | const | 23 |
-| BROWSE_PAGE | const | 26 |
-| SEARCH_LIMIT | const | 28 |
-| SEARCH_DIR_LIMIT | const | 29 |
-| IGNORED_ENTRIES | const | 31 |
-| fuzzyHit | function | 34 |
-| matchRank | function | 45 |
-| searchEntries | function | 54 |
-| pointStatus | function | 82 |
-| trackElapsed | function | 89 |
-| resolveDir | function | 99 |
-| parentOf | function | 110 |
-| absoluteCrumbs | function | 119 |
-| importedTitle | function | 141 |
-| hostLocations | function | 163 |
-| landedSessionFile | function | 182 |
-| RETRYABLE_SQLITE | const | 189 |
-| retryableWrite | const | 190 |
-| DEFAULTS_NS | const | 195 |
-| WORKSPACE_PREFIX | const | 196 |
-| workspaceKeyOf | const | 197 |
-| CAPABILITY_KINDS | const | 198 |
-| catalogProjectsOf | const | 200 |
-| validateProjectSkills | function | 203 |
-| validateProjectSkillEntry | function | 207 |
-| mergeLegacyProjectSkills | function | 215 |
-| Sessions | class | 224 |
-| constructor | method | 225 |
-| applyDefaults | method | 249 |
-| loadDefaults | method | 255 |
-| migrateDefaults | method | 267 |
-| migrateLegacyStore | method | 282 |
-| loadWorkspaceDefaults | method | 306 |
-| loadTaskBudget | method | 325 |
-| getTaskBudget | method | 340 |
-| configureTaskBudget | method | 346 |
-| getDefaults | method | 353 |
-| defaultsFor | method | 357 |
-| listDefaults | method | 361 |
-| deleteDefaults | method | 367 |
-| removeDefaults | method | 372 |
-| workspaceDefaults | method | 382 |
-| configureDefaults | method | 402 |
-| saveDefaults | method | 408 |
-| pushCompaction | method | 447 |
-| validateSelection | method | 458 |
-| validateCompaction | method | 489 |
-| load | method | 503 |
-| ensureLoaded | method | 528 |
-| migrateLegacySessions | method | 550 |
-| sessionData | method | 574 |
-| persist | method | 593 |
-| writeChange | method | 622 |
-| saveChange | method | 638 |
-| list | method | 643 |
-| rename | method | 660 |
-| importSession | method | 673 |
-| create | method | 700 |
-| goalAction | method | 1059 |
-| scheduleGoal | method | 1105 |
-| advanceGoal | method | 1117 |
-| goalNotificationsBlocked | method | 1155 |
-| scheduleTaskNotifications | method | 1162 |
-| deliverTaskNotifications | method | 1174 |
-| get | method | 1202 |
-| revealWorkspace | method | 1207 |
-| browse | method | 1221 |
-| listFiles | method | 1227 |
-| refreshSkills | method | 1289 |
-| snapshot | method | 1295 |
-| subscribe | method | 1329 |
-| configure | method | 1335 |
-| startRun | method | 1371 |
-| retry | method | 1415 |
-| prompt | method | 1424 |
-| withdraw | method | 1459 |
-| replyQuestion | method | 1508 |
-| safeStop | method | 1517 |
-| cancel | method | 1532 |
-| retryTask | method | 1558 |
-| deleteRecords | method | 1569 |
-| remove | method | 1580 |
-| close | method | 1628 |
+| GOAL_TOOL_NAMES | const | 22 |
+| hasRunningTasks | const | 24 |
+| BROWSE_PAGE | const | 27 |
+| SEARCH_LIMIT | const | 29 |
+| SEARCH_DIR_LIMIT | const | 30 |
+| IGNORED_ENTRIES | const | 32 |
+| fuzzyHit | function | 35 |
+| matchRank | function | 46 |
+| searchEntries | function | 55 |
+| pointStatus | function | 83 |
+| trackElapsed | function | 90 |
+| resolveDir | function | 100 |
+| parentOf | function | 111 |
+| absoluteCrumbs | function | 120 |
+| importedTitle | function | 142 |
+| hostLocations | function | 164 |
+| landedSessionFile | function | 183 |
+| RETRYABLE_SQLITE | const | 190 |
+| retryableWrite | const | 191 |
+| DEFAULTS_NS | const | 196 |
+| WORKSPACE_PREFIX | const | 197 |
+| workspaceKeyOf | const | 198 |
+| CAPABILITY_KINDS | const | 199 |
+| catalogProjectsOf | const | 201 |
+| validateProjectSkills | function | 204 |
+| validateProjectSkillEntry | function | 208 |
+| mergeLegacyProjectSkills | function | 216 |
+| Sessions | class | 225 |
+| constructor | method | 226 |
+| applyDefaults | method | 250 |
+| loadDefaults | method | 256 |
+| migrateDefaults | method | 268 |
+| migrateLegacyStore | method | 283 |
+| loadWorkspaceDefaults | method | 307 |
+| loadTaskBudget | method | 326 |
+| getTaskBudget | method | 341 |
+| configureTaskBudget | method | 347 |
+| getDefaults | method | 354 |
+| defaultsFor | method | 358 |
+| listDefaults | method | 362 |
+| deleteDefaults | method | 368 |
+| removeDefaults | method | 373 |
+| workspaceDefaults | method | 383 |
+| configureDefaults | method | 403 |
+| saveDefaults | method | 409 |
+| pushCompaction | method | 448 |
+| validateSelection | method | 459 |
+| validateCompaction | method | 490 |
+| load | method | 504 |
+| ensureLoaded | method | 529 |
+| migrateLegacySessions | method | 551 |
+| sessionData | method | 575 |
+| persist | method | 594 |
+| writeChange | method | 623 |
+| saveChange | method | 639 |
+| list | method | 644 |
+| rename | method | 661 |
+| importSession | method | 674 |
+| create | method | 701 |
+| goalAction | method | 1060 |
+| scheduleGoal | method | 1106 |
+| advanceGoal | method | 1118 |
+| goalNotificationsBlocked | method | 1156 |
+| scheduleTaskNotifications | method | 1163 |
+| deliverTaskNotifications | method | 1175 |
+| get | method | 1203 |
+| revealWorkspace | method | 1208 |
+| browse | method | 1222 |
+| listFiles | method | 1228 |
+| refreshSkills | method | 1290 |
+| snapshot | method | 1296 |
+| subscribe | method | 1330 |
+| configure | method | 1336 |
+| startRun | method | 1372 |
+| retry | method | 1416 |
+| prompt | method | 1425 |
+| withdraw | method | 1460 |
+| replyQuestion | method | 1509 |
+| safeStop | method | 1518 |
+| cancel | method | 1533 |
+| retryTask | method | 1559 |
+| deleteRecords | method | 1570 |
+| remove | method | 1581 |
+| close | method | 1629 |
 
 ### src/task-budget.js（35 行） — 主子代理轮次预算规则、收尾提示词与配置页参数校验
 
