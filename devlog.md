@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-16 更新 delegate 描述与 schema
+
+- 内容与原因：按用户提供的原文更新 `delegate` 工具描述、`context` / `tasks[].task` 字段描述，补充 `tasks` 数组描述；明确研究分析用途、共享背景与任务专属信息分工，以及通知后择时读取一次、禁止轮询。
+- 决策：保留必填字段、非空与额外字段限制、执行逻辑及其他委派工具不变，不新增只读限制；README 同步修正 context 为调用级批内共享字段。
+- 文件：`src/tools.js`、`tests/tasks.test.js`、`README.md`、`devlog.md`、`.pi/skills/codebase-map/INDEX.md`。
+- 验证：新增 schema 文案与结构回归；worktree 初次测试缺少依赖，链接现有 node_modules 后 `npm test` 共 690 项，688 通过、2 跳过、0 失败。未发起真实模型请求。
+
 ## 2026-09-16 主代理提示词与激活工具查看
 
 - 内容：输入区新增默认折叠的主代理运行态查看，纯文本展示系统提示词与激活工具名称、描述、参数；复用既有 runtime 通路，不增加 endpoint 或模型请求。

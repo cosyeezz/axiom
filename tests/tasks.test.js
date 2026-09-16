@@ -23,6 +23,26 @@ function fixture() {
   return { tasks, agents, events, notifications };
 }
 
+test("delegate schema describes independent research with shared background and task-specific requirements", () => {
+  const [delegate] = delegationTools({});
+  assert.match(delegate.description, /^Asynchronously start research and analysis subagents\./);
+  assert.match(delegate.description, /Only after receiving that notification, call read_result/);
+  assert.match(delegate.description, /read the result once\. You may choose when to read it; do not poll\.$/);
+  const schema = delegate.parameters;
+  assert.deepEqual(schema.required, ["context", "tasks"]);
+  assert.equal(schema.additionalProperties, false);
+  assert.equal(schema.properties.context.minLength, 1);
+  assert.match(schema.properties.context.description, /why the work is being delegated/);
+  assert.equal(schema.properties.tasks.minItems, 1);
+  assert.equal(schema.properties.tasks.description, "A non-empty array of subtasks, each defining a specific research or analysis task.");
+  const item = schema.properties.tasks.items;
+  assert.deepEqual(item.required, ["task"]);
+  assert.equal(item.additionalProperties, false);
+  assert.equal(item.properties.task.minLength, 1);
+  assert.match(item.properties.task.description, /specify the evidence needed/);
+  assert.match(item.properties.task.description, /Do not repeat background already provided in context\.$/);
+});
+
 test("results require completion notification IDs, never wait or poll", async () => {
   const { tasks, agents, notifications } = fixture();
   const [delegate, read] = delegationTools(tasks);

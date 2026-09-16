@@ -31,7 +31,7 @@ export function delegationTools(tasks) {
       name: "delegate",
       label: "Delegate",
       description:
-        "Start independent subagent tasks in the background and return task IDs immediately. Subagents start with no knowledge of this conversation: context is the only background they get. Split work into small tasks, each one concrete goal finishable in a handful of turns. Results are not available here: when a task finishes, a proactive notification reports its taskId and resultId; use read_result with those IDs then.",
+        "Asynchronously start research and analysis subagents. Each subtask has an independent context and does not inherit the current conversation. Provide shared background through context and task-specific instructions through tasks[].task.\n\nBefore delegating, identify the question to resolve, how the findings will be used, and the deliverable requirements. Provide enough information for each subagent to work independently. Each subtask must have one concrete, independently verifiable goal that can be completed in a handful of turns; split larger work into smaller tasks.\n\nOn success, immediately returns a taskId for each subtask, not its results. When a subtask finishes, a proactive notification provides its taskId and resultId. Only after receiving that notification, call read_result with those fields to read the result once. You may choose when to read it; do not poll.",
       parameters: {
         type: "object",
         properties: {
@@ -39,11 +39,13 @@ export function delegationTools(tasks) {
             type: "string",
             minLength: 1,
             description:
-              "Shared background for every task in this call: what is being built, conclusions already established, constraints and what not to touch. Write it for a reader who has seen none of this conversation.",
+              "Background shared by all subtasks, including why the work is being delegated, current progress, relevant known information, and common constraints. Include what is needed to understand the overall work; omit unrelated details. Put information specific to one subtask in its tasks[].task.",
           },
           tasks: {
             type: "array",
             minItems: 1,
+            description:
+              "A non-empty array of subtasks, each defining a specific research or analysis task.",
             items: {
               type: "object",
               properties: {
@@ -51,7 +53,7 @@ export function delegationTools(tasks) {
                   type: "string",
                   minLength: 1,
                   description:
-                    "One concrete, independently verifiable goal. If it needs more than a handful of turns, split it into several tasks.",
+                    "Task-specific instructions covering the question to resolve, scope, necessary task-specific information, and deliverable requirements. When key conclusions need verification, specify the evidence needed. Do not repeat background already provided in context.",
                 },
               },
               required: ["task"],
