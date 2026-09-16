@@ -18,6 +18,18 @@ test('未挂载阅读锚点按身份取一页，不全量恢复', async t => {
   assert.equal(page.app.watermark('long'), 500);
 });
 
+test('阅读旧页收到运行状态仍更新分区控件，不触发快照恢复', async t => {
+  const page = bootHistoryPage();
+  t.after(page.close);
+  page.open();
+  await until(() => page.app.connected(), '连接');
+  await page.app.loadHistory({ edge: 'first' });
+  const before = page.requests.length;
+  page.app.event({ sessionId: 'long', type: 'session.state', seq: 501, data: { status: 'running' } });
+  assert.equal(page.app.watermark('long'), 501);
+  assert.equal(page.requests.length, before, '控件归并不应失败并重新 attach');
+});
+
 test('工具结果独占页时仍可查看详情，不依赖前页调用 DOM', async t => {
   const page = bootHistoryPage();
   t.after(page.close);

@@ -2382,7 +2382,7 @@ function receiveHistoryEvent(message) {
         busy = data.status !== "idle";
         safeStopping = busy && !!data.safeStop;
         canReask = !!data.canReask;
-        controls();
+        updateAvailability();
       }
       if (type === "session.queue") renderQueue(data);
       if (type === "question.asked") questionUI.asked(message.sessionId, data);
@@ -2442,6 +2442,8 @@ function beginSnapshot(state, target) {
   markSessionSeen(sessionId);
   $("session-title").textContent = state.title || "新会话";
   currentCwd = state.cwd;
+  openSessionTabs.set(target, { id: target, title: state.title, cwd: state.cwd, status: state.status });
+  renderSessionTabs();
   $("workspace-label").textContent = state.cwd;
   updatePageTitle();
   busy = state.status !== "idle";
@@ -3224,20 +3226,8 @@ async function switchSession(action) {
   updateAvailability();
   try {
     const state = await action();
-    if (currentCwd && state.cwd !== currentCwd) {
-      const url = `/#${new URLSearchParams({ session: state.sessionId })}`;
-      window.open(url, "_blank", "noopener");
-      $("error").textContent = "其他工作空间已请求在新页签打开。若被浏览器拦截，请点击：";
-      const link = document.createElement("a");
-      link.href = url; link.target = "_blank"; link.rel = "noopener";
-      link.textContent = "打开工作空间";
-      $("error").append(link);
-      // attach changed the server subscription too: restore this tab, not just its event gate.
-      await snapshot(await request("session.attach", { sessionId }));
-    } else {
-      if (sessionMissing) views.set(state.sessionId, { draft: $("prompt").value, contextFiles: [...contextFiles], images: [...images], selectedSkill, follow: true, scroll: 0 });
-      await snapshot(state);
-    }
+    if (sessionMissing) views.set(state.sessionId, { draft: $("prompt").value, contextFiles: [...contextFiles], images: [...images], selectedSkill, follow: true, scroll: 0 });
+    await snapshot(state);
     renderSessions();
     if (mobile.matches) sidebar(false);
     await refreshSessions();
@@ -3268,7 +3258,43 @@ function positionSessionMenu(trigger, panel) {
   panel.style.left = `${left}px`;
   panel.style.top = `${Math.max(8, Math.min(anchor.top, innerHeight - box.height - 8))}px`;
 }
+const openSessionTabs = new Map();
+function renderSessionTabs() {
+  const bar = $("session-tabs");
+  if (!bar) return;
+  bar.replaceChildren();
+  for (const [id, remembered] of openSessionTabs) {
+    const item = allSessions.find(s => s.id === id) ?? remembered;
+    const group = document.createElement("span");
+    group.className = "session-tab";
+    const button = document.createElement("button");
+    const unread = id !== sessionId && seenSessions[id] != null && item.updatedAt > seenSessions[id];
+    button.textContent = `${item.status !== "idle" ? "◌ " : unread ? "• " : ""}${item.title || "新会话"}`;
+    button.title = item.cwd || "";
+    button.setAttribute("aria-current", id === sessionId ? "page" : "false");
+    button.onclick = () => switchSession(() => request("session.attach", { sessionId: id }));
+    const close = document.createElement("button");
+    close.textContent = "×";
+    close.setAttribute("aria-label", `关闭标签：${item.title || "新会话"}（不停止任务）`);
+    close.onclick = async () => {
+      if (changing) return;
+      if (id === sessionId) {
+        saveView();
+        const next = [...openSessionTabs.keys()].find(key => key !== id);
+        // 最后一页保留当前会话，避免关闭标签创建或删除业务会话。
+        if (!next) { openSessionTabs.delete(id); renderSessionTabs(); return; }
+        await switchSession(() => request("session.attach", { sessionId: next }));
+        if (sessionId === id) return;
+      }
+      openSessionTabs.delete(id);
+      renderSessionTabs();
+    };
+    group.append(button, close);
+    bar.append(group);
+  }
+}
 function renderSessions() {
+  renderSessionTabs();
   const completedOpen = $("sessions").querySelector(".session-completed")?.open ?? false;
   const fragment = document.createDocumentFragment();
   const query = $("search").value.trim().toLowerCase();
@@ -3378,7 +3404,7 @@ function renderSessions() {
         menu.open = false;
         actions.hidePopover?.();
         more.focus();
-        if (kind === "open") window.open(`/#${new URLSearchParams({ session: s.id })}`, "_blank", "noopener");
+        if (kind === "open") void switchSession(() => request("session.attach", { sessionId: s.id }));
         else if (kind === "hide") void setSessionHidden(s.id, !hidden);
         else openSessionAction(kind, s);
       };

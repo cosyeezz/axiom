@@ -4,6 +4,11 @@
 - 根因：历史页不包含水位后的全部事件，提交 seq 会吞掉实时消息；回包使用请求发起时的视图会覆盖期间新输入。
 - 修复：session.history 不带 seq，loadHistory 只换页不 commitSnapshot，按会话/实例/修订/请求序号作废迟到响应；挂载前重新 saveView 保留草稿。仅 attach 提交实时快照。
 - 防再犯：snapshot-switch、snapshot-chunk、session-history 测试验证在飞草稿、旧页不推进水位与游标失效。分页不等于 SDK 历史内存有界，必须分别说明。
+### 2026-09-15 Electron ESM 顶层等待 ready 导致不开窗口
+- 症状：主进程存活但不启动 worker、不弹窗；隔离冒烟30秒超时。
+- 根因：ESM 主入口顶层 await app.whenReady() 阻止模块完成评估，与应用就绪互相等待。
+- 修复：desktop/main.mjs 注册 app.whenReady().then(async ...) 后立即完成模块评估。
+- 防再犯：scripts/smoke-shell.mjs 在隔离目录实际启动 Electron，校验窗口加载和退出码；超时清理本次进程树并按失败处理。
 
 ### 2026-09-14 默认配置按工作目录隔离
 - 症状：目录选择编辑可能被慢响应覆盖，目录配置保存或删除失败可能让内存先于数据库生效。
@@ -627,3 +632,14 @@
 - 症状：工具结束覆盖调用参数、旧页冒出重试入口、页外旧子代理追加到尾部、压缩消息没有阅读锚点。
 - 修复：sessions.js 合并 tool.state；app.js 只在最新页给末尾重试入口，仅追加未落位的活动子代理，折叠消息绑定压缩卡片节点。
 - 防再犯：session-history 与 history-reading 回归覆盖跨页工具参数、旧页重试、子代理状态和压缩卡片锚点。
+## 2026-09-16 macOS 跳过签名导致资源封印失效
+- 症状：Gatekeeper提示已损坏，codesign报code has no resources but signature indicates they must be present。
+- 原因：electron-builder禁用自动证书发现后跳过签名，重打包的应用不能沿用原Electron签名；DMG校验与独立后端测试不覆盖.app资源签名。
+- 修复：dev构建显式identity=-，用打包器完成ad-hoc签名；发布门禁加入codesign --verify --deep --strict和真实Electron窗口冒烟。
+- 边界：ad-hoc仅保证包内一致性，不等于Developer ID或公证，不保证带下载隔离标记的Gatekeeper放行。CI 35063188663已验证严格签名、窗口启动与安全退出。
+
+## 2026-09-16 多分支接线的静默自动合并
+- 症状：WS 图片请求超时、旧历史页收到运行状态时归并失败。
+- 根因：自动合并丢失 loaded snapshot 的 sessionId；历史分支残留 controls()，分区分支已删除该函数。
+- 修复：src/sessions.js 恢复身份；public/app.js 调用 updateAvailability。未加载只读历史也遵循分页和页外元数据裁剪，server attach 不初始化SDK。
+- 防再犯：tests/history-reading.test.js、session-history.test.js 增加跨功能回归；合并完成须跑全量而非仅各分支测试。

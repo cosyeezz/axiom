@@ -74,6 +74,30 @@ test("检查更新与安装分离：结果确认后才出现安装，提交携�
   } finally { dom.window.close(); }
 });
 
+test("桌面更新只提供可信手动下载链接，不调用 npm 安装或重启", async () => {
+  const { dom, ui, $, calls, tick } = await setup();
+  try {
+    ui.apply({ managed: true, desktop: true, version: "1.0.0" });
+    assert.equal($("restart-quick").hidden, true);
+    assert.equal($("restart-rebuild").disabled, true);
+    $("update-check").click();
+    calls[0].resolve({ available: true, manual: true, local: "1.0.0", remote: "1.1.0",
+      downloadUrl: "https://github.com/cosyeezz/axiom/releases/download/v1.1.0/Axiom-x64.exe" });
+    await tick();
+    assert.equal($("update-install").hidden, true);
+    assert.match($("update-result").textContent, /等待保存完成/);
+    assert.equal($("update-result").querySelector("a").rel, "noopener noreferrer");
+    $("update-install").click();
+    assert.equal($("restart-dialog").open, false);
+    assert.equal(calls.length, 1);
+    $("update-check").click();
+    calls[1].resolve({ available: true, manual: true, downloadUrl: "https://evil.example/setup.exe" });
+    await tick();
+    assert.equal($("update-result").querySelector("a"), null);
+    assert.match($("update-result").textContent, /检查失败/);
+  } finally { dom.window.close(); }
+});
+
 test("重启对话框：quick/rebuild 不带 sha，拒绝时反馈且解锁，取消不发送", async () => {
   const { dom, ui, $, calls, tick } = await setup();
   try {

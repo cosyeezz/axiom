@@ -354,3 +354,57 @@ test("跨页遍历经由 session.history 不重不漏，追加后仍稳定", asy
     assert.equal(again.history.nextCursor !== null, true, "原最新页变成中间页后才有更新方向");
   } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
 });
+
+// —— Desktop 只读历史：从 JSONL 文件构建，不触磁盘（含空文件与旧版本迁移）。——
+// 复用顶部已导入的 tmpdir/join；只补 fs 同步版与只读函数。
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { readSessionHistory } from "../src/session-history.js";
+
+test("未加载历史分页不创建 SDK，身份/水位/页外元数据遵守同一协议", async () => {
+  const root = mkdtempSync(join(tmpdir(), "axiom-history-page-")), file = join(root, "history.jsonl");
+  try {
+    const text = [{ type: "session", version: 3, id: "s", cwd: root, timestamp: new Date().toISOString() },
+      ...build(120).map((record, index) => ({ type: "message", id: record.entryId,
+        parentId: index ? `e${index - 1}` : null, message: record.message }))].map(JSON.stringify).join("\n");
+    writeFileSync(file, text);
+    const item = { loaded: false, cwd: root, title: "历史", seq: 7 };
+    const sessions = Object.create(Sessions.prototype);
+    sessions.get = () => item;
+    sessions.ensureLoaded = () => { throw new Error("不得初始化 SDK"); };
+    sessions.goalStore = { load: () => null };
+    sessions.store = { getSession: () => ({ sessionFile: file, cwd: root, tasks: [{ id: "outside", status: "completed" }],
+      compactions: [{ compactedMessageIds: ["e1"] }], retries: [{ messageCount: 1 }] }) };
+    const page = sessions.snapshot("s", { epoch: "inst", includeSeq: true, window: { edge: "last", limit: 60 } });
+    assert.equal(page.sessionId, "s");
+    assert.equal(page.seq, 7);
+    assert.equal(page.messages.length, 60);
+    assert.deepEqual([page.tasks, page.compactions, page.retries], [[], [], []]);
+    const earlier = await sessions.history("s", { before: page.history.prevCursor, limit: 60 }, "inst");
+    assert.equal(earlier.messages[0].messageId, "e0");
+    assert.equal(Object.hasOwn(earlier, "seq"), false);
+    assert.equal(item.loaded, false);
+    assert.equal(readFileSync(file, "utf8"), text);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("历史只读：当前分支、空文件和旧版本不改写磁盘", () => {
+  const root = mkdtempSync(join(tmpdir(), "axiom-history-")), file = join(root, "history.jsonl");
+  try {
+    const text = [
+      { type: "session", version: 3, id: "test", cwd: root, timestamp: new Date().toISOString() },
+      { type: "message", id: "a", parentId: null, message: { role: "user", content: "hello" } },
+      { type: "message", id: "b", parentId: "a", message: { role: "assistant", content: [] } },
+      { type: "message", id: "c", parentId: "a", message: { role: "user", content: "branch" } },
+    ].map(JSON.stringify).join("\n");
+    writeFileSync(file, text);
+    assert.deepEqual(readSessionHistory(file, root).map(entry => entry.id), ["a", "c"]);
+    assert.equal(readFileSync(file, "utf8"), text);
+    const legacy = text.replace('"version":3', '"version":2');
+    writeFileSync(file, legacy);
+    readSessionHistory(file, root);
+    assert.equal(readFileSync(file, "utf8"), legacy);
+    writeFileSync(file, "");
+    assert.throws(() => readSessionHistory(file, root), /头部/);
+    assert.equal(readFileSync(file, "utf8"), "");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

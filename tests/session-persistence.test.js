@@ -14,6 +14,44 @@ const factory = async () => ({
 });
 factory.catalog = () => [{ key: "test/one" }];
 
+test("打开冷会话只读历史；显式加载保留订阅与事件水位", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-cold-"));
+  let calls = 0;
+  const create = async () => { calls++; return factory(); };
+  create.catalog = factory.catalog;
+  let sessions = new Sessions(create, undefined, join(root, "storage"));
+  try {
+    const id = await sessions.create(root);
+    await sessions.close();
+    sessions = new Sessions(create, undefined, join(root, "storage"));
+    await sessions.load();
+    const before = calls, events = [];
+    const unsubscribe = sessions.subscribe(id, event => events.push(event));
+    sessions.get(id).seq = 7;
+    assert.equal(sessions.snapshot(id).seq, 7);
+    assert.equal(calls, before);
+    assert.equal(sessions.get(id).loaded, false);
+    await sessions.ensureLoaded(id);
+    sessions.get(id).emit({ type: "test", data: {} });
+    assert.equal(events.length, 1);
+    assert.ok(events[0].seq > 7);
+    await new Promise(setImmediate);
+    sessions.get(id).lastUsedAt = 0;
+    sessions.get(id).updatedAt = 0;
+    sessions.get(id).notifying = true;
+    await sessions.releaseIdle(600_000);
+    assert.equal(sessions.get(id).loaded, true, "通知处理中不可释放");
+    sessions.get(id).notifying = false;
+    await sessions.releaseIdle(600_000);
+    assert.equal(sessions.get(id).loaded, false);
+    assert.ok(sessions.store.getSession(id), "释放不能删除会话");
+    await sessions.ensureLoaded(id);
+    unsubscribe();
+    sessions.get(id).emit({ type: "test", data: {} });
+    assert.equal(events.length, 1);
+  } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test("事件按条保存；改标题和通知标志不重写历史任务，原始消息不入库", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-persist-"));
   const sessions = new Sessions(factory, undefined, join(root, "storage"));

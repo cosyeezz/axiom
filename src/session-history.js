@@ -150,3 +150,19 @@ export function pageOf(records, history, { sessionId, epoch, edge, before, after
     },
   };
 }
+
+// —— Desktop 运行时只读浏览：不持有 SessionManager 实例时的被动快照。——
+
+//（桌面运行时无 SessionManager 实例，按文件路径只读；新增 import 放底部是为了读代码时
+// 先看到分页核心。样式无碍，Node ESM 会提升 import。）
+import { readFileSync } from "node:fs";
+import { SessionManager, parseSessionEntries } from "@earendil-works/pi-coding-agent";
+
+// 禁止 SessionManager.open：旧格式迁移或空文件初始化会改写磁盘。
+export function readSessionHistory(file, cwd) {
+  const entries = parseSessionEntries(readFileSync(file, "utf8"));
+  if (!entries.some(entry => entry?.type === "session" && typeof entry.id === "string"))
+    throw new Error("会话历史缺少有效头部，已保留原文件");
+  const manager = SessionManager.inMemory(cwd, undefined, entries);
+  return manager.getBranch().filter(entry => entry.type === "message");
+}

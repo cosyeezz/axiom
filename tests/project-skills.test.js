@@ -14,7 +14,7 @@ const scopeKey = async (dir) => {
 // 共用目录布局：agent 全局技能 1 个，每个工作目录各 1 个项目技能；alias 是指向 a 的连接。
 // 桩工厂带 catalog/capabilities，才能走默认配置里的能力解析路径。
 async function setup() {
-  const root = await mkdtemp(join(tmpdir(), "axiom-project-skills-"));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "axiom-project-skills-")));
   const a = join(root, "a"), b = join(root, "b"), alias = join(root, "alias"), agentDir = join(root, "agent");
   for (const base of [join(a, ".pi"), join(b, ".pi"), agentDir]) {
     await mkdir(join(base, "skills", "sample"), { recursive: true });

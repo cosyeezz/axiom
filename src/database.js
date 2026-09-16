@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { chmodSync, closeSync, mkdirSync, openSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from "node:fs";
 import { dirname } from "node:path";
 
 export const nodeOk = (version = process.versions.node) => {
@@ -11,6 +11,23 @@ export const nodeOk = (version = process.versions.node) => {
 if (!nodeOk()) throw new Error(`需要 Node.js 22.13+（22.x）或 24+，当前 ${process.versions.node}，请升级后重试`);
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite");
 
+export const DATA_VERSION = 1;
+
+// 必须在 chmod、WAL 或任何迁移之前只读检查；无守卫的历史程序仍需迁移门禁阻止。
+export function assertDataVersion(path) {
+  if (!existsSync(path)) return;
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='store'").get()) return;
+    const row = db.prepare("SELECT value FROM store WHERE namespace='meta' AND key='dataVersion'").get();
+    if (!row) return;
+    let version;
+    try { version = JSON.parse(row.value); } catch { throw new Error("数据版本标记损坏，拒绝写入"); }
+    if (!Number.isSafeInteger(version) || version < 0) throw new Error("数据版本标记无效，拒绝写入");
+    if (version > DATA_VERSION) throw new Error(`数据版本 ${version} 高于当前支持的 ${DATA_VERSION}，请安装较新版本或从完整备份恢复`);
+  } finally { db.close(); }
+}
+
 // Axiom 共享 SQLite 存储：namespace + key 两级 KV，值以 JSON 文本存单表。
 // 单写者进程 + WAL + busy_timeout；set 是单条 UPSERT 语句，由 SQLite 语句级事务保证原子，
 // 进程崩溃只会「整条旧值或整条新值」，绝不出现半截数据。
@@ -21,6 +38,7 @@ export class Database {
   #path;
 
   constructor(path) {
+    assertDataVersion(path);
     // 父目录不存在则逐级创建（与旧 storagePath/defaultsPath 行为一致）。
     mkdirSync(dirname(path), { recursive: true });
     // WAL/SHM 继承主库权限：必须先收紧主库，再打开连接创建 sidecar；不修改共享父目录。
@@ -40,6 +58,7 @@ export class Database {
     this.#db.exec(
       "CREATE TABLE IF NOT EXISTS store (namespace TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (namespace, key))",
     );
+    this.set("meta", "dataVersion", DATA_VERSION);
   }
 
   // 主库文件路径（供迁移前 VACUUM INTO 一致性备份等使用）。

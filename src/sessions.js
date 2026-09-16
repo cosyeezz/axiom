@@ -5,6 +5,7 @@ import { realpath, stat, readFile, mkdir, writeFile, rm, readdir } from "node:fs
 import { homedir } from "node:os";
 import { Database } from "./database.js";
 import { SessionStore } from "./session-store.js";
+import { readSessionHistory } from "./session-history.js";
 import { Goal, createGoalStore } from "./goal.js";
 import { basename, dirname, join, relative, isAbsolute, resolve, sep, parse } from "node:path";
 
@@ -584,7 +585,9 @@ export class Sessions {
 
   async ensureLoaded(id) {
     const item = this.get(id);
+    if (item.releasing) { await item.releasing; return this.ensureLoaded(id); }
     if (item.closing) throw new Error("Session is closing");
+    item.lastUsedAt = Date.now();
     if (item.loaded) return item;
     if (!item.loading) item.loading = (async () => {
       // 元数据会话也可能有改名失败；换成 SDK 实例前先清空旧对象的失败队列。
@@ -786,7 +789,7 @@ export class Sessions {
       // 重启即中断：上次未结算的运行段不补算，只保留已结算的累计用时。
       elapsedMs: saved?.elapsedMs || 0,
       runningSince: null,
-      seq: 0,
+      seq: this.items.get(id)?.seq ?? 0,
       status: "idle",
       listeners: this.items.get(id)?.listeners ?? new Set(),
       messages: saved?.messages || [],
@@ -1005,7 +1008,7 @@ export class Sessions {
     for (const job of item.tasks.jobs.values()) {
       if (!job.sessionFile || !existsSync(job.sessionFile)) continue;
       try {
-        const entries = SessionManager.open(job.sessionFile).getBranch().filter(entry => entry.type === "message");
+        const entries = readSessionHistory(job.sessionFile, item.cwd);
         item.messages.push(...entries.map(entry => ({ agentId: job.id, entryId: entry.id, message: entry.message })));
       } catch (error) {
         job.status = "failed";
@@ -1371,15 +1374,49 @@ export class Sessions {
   }
 
   // options.window 存在 = 网络薄投影：先切页再 clone，历史全量永远不进内存拷贝。
-  // 不带 options 时保持内部全量契约不变。
+  // 不带 options 时保持内部全量契约不变。未加载时按数据库元数据 + JSONL 构建只读投影：
+  // 浏览历史不得持久化恢复状态或启动任务（Goal 恢复仅在内存投影）。
   snapshot(id, options = {}) {
     const item = this.get(id);
-    if (!item.loaded) throw new Error("会话尚未加载，请先打开会话");
+    if (!item.loaded) {
+      const saved = this.store.getSession(id);
+      const messages = [];
+      const tasks = structuredClone(saved.tasks ?? []);
+      if (saved.sessionFile)
+        messages.push(...readSessionHistory(saved.sessionFile, saved.cwd).map(entry => ({ agentId: "main", entryId: entry.id, message: entry.message })));
+      for (const task of tasks) {
+        if (!task.sessionFile) continue;
+        try {
+          messages.push(...readSessionHistory(task.sessionFile, saved.cwd).map(entry => ({ agentId: task.id, entryId: entry.id, message: entry.message })));
+        } catch (error) { task.error = `子任务历史读取失败：${error.message}`; }
+      }
+      // 无 SessionManager 实例：JSONL 只读投影。history 缓存在 stub 上，同进程内 revision 稳定，游标才可用。
+      const history = item.history ??= createHistory(id);
+      const page = options.window ? pageOf(messages, history, { sessionId: id, epoch: options.epoch, ...options.window }) : null;
+      const goal = new Goal({ sessionId: id, store: {
+        load: () => structuredClone(this.goalStore.load(id)), save: () => {},
+      } });
+      const base = { sessionId: id, cwd: item.cwd, title: item.title, seq: item.seq ?? 0,
+        status: "idle", safeStop: false, config: saved.selection ?? {}, messages: page ? page.records.map(toPageRecord) : messages,
+        compactions: saved.compactions ?? [], retries: saved.retries ?? [], live: {}, tools: {},
+        questions: [], tasks, goal: goal.snapshot(), canReask: false, compactionStatus: null };
+      if (page) {
+        const entryIds = new Set(page.records.map(record => record.entryId).filter(Boolean));
+        Object.assign(base, { instanceId: options.epoch ?? null, revision: history.revision, history: page.meta, liveMessageIds: {},
+          compactions: base.compactions.filter(record => record.compactedMessageIds?.some(entryId => entryIds.has(entryId))),
+          retries: pageRetries(base.retries, entryIds, page.meta.start, page.meta.end),
+          tasks: pageTasks({ tasks: { snapshot: () => tasks } }, page.records) });
+      }
+      const cloned = structuredClone(base);
+      if (options.includeSeq === false) delete cloned.seq;
+      return cloned;
+    }
     const page = options.window ? pageOf(item.messages, item.history, { sessionId: id, epoch: options.epoch, ...options.window }) : null;
     // live 只在最新页：旧页没有正在流的消息，带上只会画出幽灵半成品。
     const atLatest = !page || page.meta.end === page.meta.total;
     const pageEntryIds = page ? new Set(page.records.map((record) => record.entryId).filter(Boolean)) : null;
     const state = {
+      // 会话身份：前端按 sessionId 路由消息与持久化键，必须带出。
       sessionId: id,
       cwd: item.cwd,
       title: item.title,
@@ -1421,8 +1458,8 @@ export class Sessions {
   }
 
   // 历史分页：请求不信任，游标/limit/互斥在 pageOf 里逐项显式校验（越界、换号、跨实例直接报错）。
+  // 未加载会话走 snapshot 的 JSONL 只读分支（不创建 SDK 实例）；已加载会话从内存切页。
   async history(id, request = {}, epoch) {
-    await this.ensureLoaded(id);
     return this.snapshot(id, {
       epoch,
       includeSeq: false,
@@ -1692,8 +1729,32 @@ export class Sessions {
     });
   }
 
+  async releaseIdle(now = Date.now(), idleMs = 5 * 60_000) {
+    if (!this.store) return;
+    for (const item of this.items.values()) {
+      const queue = item.agent?.queue?.();
+      if (!item.loaded || item.loading || item.releasing || item.closing || item.cancelling || item.configuring ||
+          item.status !== "idle" || item.notifying || item.goalScheduled || item.notificationScheduled ||
+          hasRunningTasks(item) || item.questions.snapshot().length || item.pendingWrites?.length ||
+          queue?.steering?.length || queue?.followUp?.length ||
+          [...item.tasks.jobs.values()].some(task => !task.notified) ||
+          item.goal?.active || now - Math.max(item.lastUsedAt ?? 0, item.updatedAt ?? 0) < idleMs) continue;
+      item.releasing = (async () => {
+        await this.persist(item);
+        await item.agent.dispose();
+        item.unsubscribe();
+        const saved = this.store.getSession(item.id);
+        this.items.set(item.id, { ...saved, loaded: false, status: "idle", runningSince: null,
+          seq: item.seq, tasks: { jobs: new Map() }, listeners: item.listeners });
+      })();
+      try { await item.releasing; }
+      finally { item.releasing = null; }
+    }
+  }
+
   async remove(id, deleting = true) {
     let item = this.get(id);
+    if (item.releasing) { await item.releasing; item = this.get(id); }
     if (item.loading) {
       await item.loading.catch(() => {});
       item = this.get(id);

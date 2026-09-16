@@ -1,13 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, rm, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, symlink, realpath } from "node:fs/promises";
 import { tmpdir, homedir } from "node:os";
 import { basename, join, sep } from "node:path";
 import { Sessions } from "../src/sessions.js";
 
 // 全局模式（无 sessionId）files.browse：主机目录浏览、递归模糊搜索、分页、面包屑与快速位置。
 test("files.browse global mode lists host directories with filter, pagination and locations", async () => {
-  const root = await mkdtemp(join(tmpdir(), "axiom-picker-"));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "axiom-picker-")));
   const factory = () => ({});
   factory.catalog = () => [];
   factory.cwd = root;

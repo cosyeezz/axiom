@@ -82,7 +82,8 @@ export function createServerApp(sessions, service = {}) {
   const remoteClients = new Set();
   const hasActiveWork = () => sessions.list().some((item) => item.status !== "idle") ||
     [...(sessions.items?.values() || [])].some((item) => item.configuring || item.loading ||
-      [...item.tasks.jobs.values()].some((task) => ["starting", "running"].includes(task.status)));
+      item.notifying || item.goalScheduled || item.notificationScheduled ||
+      [...(item.tasks?.jobs.values() || [])].some((task) => ["starting", "running"].includes(task.status)));
   const handleRequest = (req, res, isLocal) => {
     if (req.url === "/service/stop") {
       if (!isLocal) {
@@ -255,11 +256,10 @@ export function createServerApp(sessions, service = {}) {
     const send = (message) => sender.send(ws, message);
     const attach = async (id) => {
       const sequence = ++attachSequence;
-      // 订阅先于加载：ensureLoaded 期间（恢复、对账）产生的事件不能丢；stub 已可被 get 拿到，
-      // 且 create() 替换条目时沿用同一 listener 集合。
+      // 先订阅再取页；未加载会话只读 JSONL，不为浏览历史恢复 SDK 或唤醒任务。
+      // create() 后续恢复时沿用 stub 的 listener 集合。
       unsubscribe?.();
       unsubscribe = sessions.subscribe(id, send);
-      await sessions.ensureLoaded(id);
       if (ws.readyState !== WebSocket.OPEN) return;
       if (sequence !== attachSequence) throw new Error("会话切换已被后续请求替代");
       return sessions.snapshot(id, { epoch: instanceId, includeSeq: true, window: { edge: "last", limit: HISTORY_PAGE_DEFAULT } });
@@ -284,7 +284,7 @@ export function createServerApp(sessions, service = {}) {
           let data;
           switch (request.type) {
             case "service.status":
-              data = { managed: Boolean(service.restart) && !ws.isRemote, error: service.error || "", version: service.version || "", importDir: service.importDir || "", dev: Boolean(service.dev), ...(!ws.isRemote && service.maintenance ? { maintenance: service.maintenance } : {}) };
+              data = { managed: Boolean(service.restart) && !ws.isRemote, error: service.error || "", version: service.version || "", importDir: service.importDir || "", dev: Boolean(service.dev), desktop: Boolean(service.desktop), ...(!ws.isRemote && service.maintenance ? { maintenance: service.maintenance } : {}) };
               break;
             case "service.update.check":
               if (ws.isRemote) throw new Error("请在本机检查服务更新");
@@ -485,6 +485,9 @@ export function createServerApp(sessions, service = {}) {
     createRemoteServer,
     dropRemote,
     resume() { stopping = false; },
+    // 先关闭新写请求入口，再等已接受请求及任务收尾；状态读取仍可用。
+    prepareStop() { stopping = true; },
+    hasActiveWork: () => pending.size > 0 || hasActiveWork(),
     async close() {
       closing = true;
       stopping = true;
