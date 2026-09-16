@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/15 19:10:06）
+# Axiom 多级代码索引（生成于 2026/9/15 19:44:17）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -101,7 +101,7 @@
 | tests/goal-ui.py | 488 | node --test 测试（npm test） | - |
 | tests/goal-ui.test.js | 431 | node --test 测试（npm test） | page, $, labels, messages |
 | tests/goal.test.js | 856 | node --test 测试（npm test） | ROUND, GOAL, PLAN, PLAN2 |
-| tests/helpers/model-concurrency-child.mjs | 82 | node --test 测试（npm test） | barrier, runOpponent |
+| tests/helpers/model-concurrency-child.mjs | 93 | node --test 测试（npm test） | barrier, runOpponent |
 | tests/helpers/public-source.js | 14 | node --test 测试（npm test） | publicSource, event, appliedSeq |
 | tests/image-input.test.js | 169 | node --test 测试（npm test） | pngBase64, jpegBase64, image, parsePrompt |
 | tests/inline-images.test.js | 42 | node --test 测试（npm test） | text, a, b, user |
@@ -1602,14 +1602,14 @@
 | verifyingGoal | const | 54 |
 | evidenceTool | const | 60 |
 
-### tests/helpers/model-concurrency-child.mjs（82 行） — node --test 测试（npm test）
+### tests/helpers/model-concurrency-child.mjs（93 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | barrier | const | 11 |
 | writeSync | method | 12 |
-| runOpponent | function | 17 |
-| createInterface | method | 29 |
+| runOpponent | function | 28 |
+| createInterface | method | 40 |
 
 ### tests/helpers/public-source.js（14 行） — node --test 测试（npm test）
 

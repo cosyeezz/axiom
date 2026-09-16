@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-16 云端跨平台测试修正
+
+- 首次macOS/Windows云端构建均在测试阶段失败，未产出Mac包。原因：测试假目录未canonicalize（macOS /var与/private/var、Windows短路径与长路径）；macOS并发测试同步管道读返回EAGAIN。
+- tests/defaults、project-skills、session-flow、workspace-picker、service将相关临时目录realpath后作为测试基准，不改业务路径规则；tests/helpers/model-concurrency-child.mjs仅对EAGAIN进行10秒有界重试，父进程字节屏障仍决定放行，不放宽CAS断言。
+- 本地相关测试通过；desktop.yml加入Mac随包独立Node后端冒烟及DMG校验。README记录云端验证范围。Mac实机窗口和安装验收不冒充已通过。
+
 ## 2026-09-16 发布未签名 Windows dev 预发布包
 
 - 用户授权发布到其cosyeezz/axiom仓库；以bbb4e32为目标发布desktop-v0.1.7-dev.1，prerelease=true，非Latest；未合并master。功能分支已推送。

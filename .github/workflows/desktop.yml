@@ -35,6 +35,11 @@ jobs:
         run: |
           node scripts/smoke-desktop.mjs
           node scripts/smoke-shell.mjs dist/win-unpacked/Axiom.exe
+      - name: Verify bundled macOS backend and disk image
+        if: runner.os == 'macOS'
+        run: |
+          node scripts/smoke-desktop.mjs dist/mac-arm64/Axiom.app/Contents/Resources
+          hdiutil verify dist/*.dmg
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}

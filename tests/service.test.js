@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, chmod, stat } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, chmod, stat, realpath } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, isAbsolute, resolve } from "node:path";
@@ -32,7 +32,7 @@ const killTree = (pid) => pid && new Promise((done) => {
 });
 // 更新测试要求 daemon root === npm 全局包目录，因此 npm 布局把工作区建为 base/@cosyeezz/axiom。
 const buildWorkspace = async (npm = false) => {
-  const base = await mkdtemp(join(tmpdir(), "axiom-svc-"));
+  const base = await realpath(await mkdtemp(join(tmpdir(), "axiom-svc-")));
   const root = npm ? join(base, "@cosyeezz", "axiom") : base;
   await mkdir(join(root, "scripts"), { recursive: true });
   await mkdir(join(root, "src"), { recursive: true });

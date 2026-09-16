@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, readdir, mkdir, writeFile, symlink, readFile } from "node:fs/promises";
+import { mkdtemp, rm, readdir, mkdir, writeFile, symlink, readFile, realpath } from "node:fs/promises";
 import { existsSync, appendFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -346,7 +346,7 @@ test("files.browse session mode stays inside the workspace and pages filtered en
 
 // 导入 pi JSONL：复制进本实例存储、重建网页历史与标题，删除会话不触碰原文件。
 test("session.import copies a pi jsonl session, rebuilds history and protects the original", async () => {
-  const root = await mkdtemp(join(tmpdir(), "axiom-import-"));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "axiom-import-")));
   const storage = join(root, "storage");
   const workspace = join(root, "workspace");
   const target = join(root, "target");
