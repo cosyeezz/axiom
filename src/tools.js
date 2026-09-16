@@ -102,13 +102,28 @@ export function delegationTools(tasks) {
       name: "append",
       label: "Append",
       description:
-        "Append an instruction to a running subtask. mode=steer (default) redirects its current activity; mode=followUp queues the text to run after it.",
+        "Send additional instructions to a running subtask started by delegate. Use steer to adjust the direction or requirements of its current work. Use followUp to queue instructions for execution after its current work finishes. Defaults to steer.",
       parameters: {
         type: "object",
         properties: {
-          taskId: { type: "string", minLength: 1 },
-          text: { type: "string", minLength: 1 },
-          mode: { type: "string", enum: ["steer", "followUp"], default: "steer" },
+          taskId: {
+            type: "string",
+            minLength: 1,
+            description: "The taskId of the subtask that should receive the instructions.",
+          },
+          text: {
+            type: "string",
+            minLength: 1,
+            description:
+              "Additional instructions and any new information needed to understand them. Specify the requirements to change or the work to add; do not repeat background the subtask already has.",
+          },
+          mode: {
+            type: "string",
+            enum: ["steer", "followUp"],
+            default: "steer",
+            description:
+              "How to handle the instructions: steer adjusts the current work; followUp queues them for execution after the current work finishes. Defaults to steer when omitted.",
+          },
         },
         required: ["taskId", "text"],
         additionalProperties: false,

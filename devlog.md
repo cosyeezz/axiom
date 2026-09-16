@@ -1,5 +1,10 @@
 # 开发记录
 
+## 2026-09-16 更新 append 描述与参数说明
+
+- 按用户原文更新 `src/tools.js` 的 append description，以及 `taskId`、`text`、`mode` 字段描述；明确 steer 调整当前工作，followUp 排队等待当前工作完成，补充指令不重复已有背景。
+- 参数约束、默认模式及执行逻辑不变；同步 `README.md` 和代码索引。沿用本轮要求，由主代理直接执行，不运行验证或测试。
+
 ## 2026-09-16 更新 read_result 描述与参数说明
 
 - 按用户原文更新 `src/tools.js` 的 read_result description，并为 `taskId`、`resultId` 添加描述：必须取自同一条完成通知，仅获取结果、不查询进度、禁止轮询。

@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/16 10:15:46）
+# Axiom 多级代码索引（生成于 2026/9/16 10:18:29）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -66,7 +66,7 @@
 | src/sessions.js | 1814 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | GOAL_TOOL_NAMES, hasRunningTasks, relevantTools, delegateTaskIds |
 | src/task-budget.js | 35 | 主子代理轮次预算规则、收尾提示词与配置页参数校验 | TASK_BUDGET_LIMITS, taskBudgetDefaults, within, taskBudgetPolicy |
 | src/tasks.js | 234 | Tasks：子任务（委托）生命周期 | ACTIVE, historyResult, Tasks |
-| src/tools.js | 141 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
+| src/tools.js | 156 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/transport.js | 37 | 统一有界 WS 发送：回执、广播、删除通知与慢客户端隔离 | createSender |
 | src/update.js | 107 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
 | tests/__pycache__/goal-ui.cpython-312.pyc | 165 | node --test 测试（npm test） | - |
@@ -1464,7 +1464,7 @@
 | cancel | method | 211 |
 | interrupt | method | 227 |
 
-### src/tools.js（141 行） — delegationTools：委托/凭证读取/追加工具定义（zod 入参）
+### src/tools.js（156 行） — delegationTools：委托/凭证读取/追加工具定义（zod 入参）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
