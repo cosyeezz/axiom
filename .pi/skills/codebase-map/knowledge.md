@@ -1,5 +1,10 @@
 # 坑与 bug 知识库（自成长：只追加，不删改历史）
 
+### 2026-09-15 历史分页不能复用实时快照水位与发起时草稿
+- 根因：历史页不包含水位后的全部事件，提交 seq 会吞掉实时消息；回包使用请求发起时的视图会覆盖期间新输入。
+- 修复：session.history 不带 seq，loadHistory 只换页不 commitSnapshot，按会话/实例/修订/请求序号作废迟到响应；挂载前重新 saveView 保留草稿。仅 attach 提交实时快照。
+- 防再犯：snapshot-switch、snapshot-chunk、session-history 测试验证在飞草稿、旧页不推进水位与游标失效。分页不等于 SDK 历史内存有界，必须分别说明。
+
 ### 2026-09-14 默认配置按工作目录隔离
 - 症状：目录选择编辑可能被慢响应覆盖，目录配置保存或删除失败可能让内存先于数据库生效。
 - 修复：public/app.js 用编辑对象、加载序号及目录三重守卫；src/sessions.js 保存与删除共用串行链，先落库后更新内存，目录别名按真实路径归一化。
@@ -613,7 +618,7 @@
 - 修复：public/transport.js 在快照回执时建闸、成功归并后记水位；失败受控恢复；public/app.js 在断线时作废旧分片。tests/realtime-transport.test.js 与 snapshot-first-screen.test.js 防回归。
 
 
-### 2026-09-15 平滑显示不能把批量节流当逐字播放
-- 根因：旧40ms合并仍整批更新；固定字素尾窗无法覆盖RI奇偶/任意组合序列；每字Markdown全文lex会放大卡顿。
-- 修复：stream-playback纯游标真实时间推进、输入变化时有界全文Segmenter；stream-renderer共享rAF与代际守卫，markdown普通Text节点快路，复杂与超长明确降级。
-- 防再犯：tests/stream-playback.test.js与smooth-stream.test.js覆盖跨批代理对/ZWJ/RI、hidden/reduced-motion/卸载/选区及权威数据；浏览器复杂Markdown仍见长任务，不能把消息间预算说成单任务硬预算。
+### 2026-09-15 页窗口的附属记录必须保留身份和生命周期
+- 症状：工具结束覆盖调用参数、旧页冒出重试入口、页外旧子代理追加到尾部、压缩消息没有阅读锚点。
+- 修复：sessions.js 合并 tool.state；app.js 只在最新页给末尾重试入口，仅追加未落位的活动子代理，折叠消息绑定压缩卡片节点。
+- 防再犯：session-history 与 history-reading 回归覆盖跨页工具参数、旧页重试、子代理状态和压缩卡片锚点。

@@ -1,5 +1,26 @@
 # 开发记录
 
+## 2026-09-15 长会话阶段三：功能验证与性能证据
+
+- 新增 tests/history-reading.test.js：未挂载阅读锚点按 messageId 获取一页且不推进水位；跨页工具结果不依赖上一页 DOM 仍可展开。2/2 通过。
+- 性能脚本与数据：docs/perf-history-session/，ab52936 假历史基线与当前分支，20/1831 条，各 3 次串行、独立临时实例、真实 Chromium、禁真实模型。基线长会话输出节点 45351；当前页约 1930。当前仅证明传输/DOM 分页收益，不证明 SDK 全历史内存有界。
+- 最终全量串行验证：636 项，634 通过、2 跳过、0 失败、0 todo（148.7 秒）。长会话首输出均值约 485→152ms，文档节点 45351→1930，GC 后前端堆 15.4→3.9MB；有限切换堆 4.8→5.0MB，小幅增长不能证明无泄漏。图片/折叠/流式锚点未完成真实浏览器验收，不宣称整个任务所有性能指标达标。
+- 最终数字与未覆盖场景以该目录 README 和 JSON 为准；不使用旧调研分支的数据冒充本轮基线。新增文件后重建索引，保留 worktree 供统一集成，不合并 master。
+
+## 2026-09-15 长会话阶段二：有界页窗口、缓存与功能接线
+
+- 决策：采用无新增依赖的原生 60 条页窗口，不冒充动态高度虚拟列表；页内自然布局、换页卸载。删除 120 条阈值/8ms/40 条全量分片调度。只持当前页消息引用，不维护全历史高度表；位置缓存 3 个，未保存输入例外不淘汰。
+- 接线：app.js 按会话/实例/修订/请求 token 拒绝旧回包；历史页不推进水位，最新 attach 才提交；翻页回包重新保存输入；后台只置更新标记，前台恢复一个快照。阅读锚点按 messageId 按需取页。跨页 toolResult 可独立展示；原文与选区复制仅当前页，明确限制。
+- 文件：public/app.js、transport.js、session-cache.js、stream-renderer.js、index.html、style.css；tests/helpers/history-page.js、public-source.js、snapshot 三测试、session-cache 与 stream-renderer 测试；README、导航技能、索引与知识库。
+- 验证：node --test --test-concurrency=1 --test-timeout=120000 tests/*.test.js：634 项，632 通过、2 跳过、0 失败、0 todo（158.8 秒）；git diff --check。新旧页水位、首屏缓冲、会话/epoch/revision 切换、在飞草稿、后台不绘制均有可运行检查。
+- 限制：未实现连续无限滚动，浏览器全历史查找须翻页；服务端全量历史/身份索引、活动业务和草稿仍非硬字节有界。单条巨块仍可造成长任务，需性能实测而非单测代替。
+
+## 2026-09-15 长会话阶段一：身份与历史传输分页
+
+- 决策：不改 SDK 上下文/权威历史，不新增数据库历史副本；session.attach 最近 60 条，session.history 游标绑定 session/epoch/revision/消息边界，分页不提供 seq；订阅先于加载，活动流显式传身份，撤回/压缩换修订。
+- 文件：src/session-history.js、src/sessions.js、src/server.js、src/protocol.js、tests/session-history.test.js；README 与导航文档同步于后续展示提交。
+- 验证：session-history 与分页前端组合 30 项中 29 通过、1 在飞草稿缺陷已修复并单独复测 9/9；后端 SDK 假源测试确认翻页不调用上下文修改路径。服务端仍全量保留历史，未声称服务端内存有界。
+
 ## 2026-09-15 08:12 -0700 按用户要求移除旧回答标签兼容
 
 - 原因与决策：用户明确不需要历史兼容；展示解析仅识别 axiom_display，删除新旧标签配对表，恢复单组标签判定。旧 axiom_answer 不再作为展示协议解析，原始历史不改写。
@@ -2047,10 +2068,9 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 测试：新增 tests/realtime-transport.test.js，迁移 public-source 夹具与 app/goal/model/remote/snapshot 集成用例；全量 npm test 验证，未运行真实业务服务或模型，未安装依赖（仅 junction 复用已有 node_modules）。同步 README 与 codebase-map 架构/模块索引。
 
 
-## 2026-09-15 平滑流式显示（feat/smooth-stream）
-
-- 内容/原因：数据批到但文字按真实时间显示；单 rAF 接管旧 timeout 绘制，纯播放字素状态机与安全普通文本快路，保留权威数据即时性。
-- 文件：public/stream-playback.js、stream-renderer.js、markdown.js、app.js、src/server.js；新增纯时钟/DOM/浏览器测试，既有页面测试明确 reduced-motion 环境；README、索引及 docs/smooth-stream-delivery.md 同步。
-- 决策：当前 item 对象+generation 身份，不引入 messageId/seq/reducer；最多24K UTF-16全文分段，避免固定尾窗破坏旗帜/ZWJ；超长Markdown完整安全原文，复杂结构仍批量净化。
-- 验证：npm test 628项，626通过/2既有跳过/0失败；4倍CPU隔离浏览器普通50字40次显示、p95帧16.7ms、0长任务。复杂Markdown仍有同步长任务，预算仅消息间生效，明确不声称全场景达标。证据docs/perf-smooth-stream.json。
-- 收尾：按本轮例外只提交功能分支，保留worktree，不合并或推送master。
+### 2026-09-15 历史页复核补修与再次验证
+- 原因：分页后附属记录不能继续按全量历史假设展示；工具结束事件通常不重复携带参数。
+- 内容：src/sessions.js 按字段合并工具状态；public/app.js 禁止旧页末尾重试、只追加未落位的活动子代理、压缩消息锚点绑定摘要卡片。未改模型上下文、协议排序或流式播放算法。
+- 回归：tests/history-reading.test.js 新增旧页/最新页重试、页外子代理、压缩锚点；tests/session-history.test.js 新增 start→end 参数及窗口快照保真。全量串行 640 项，638 通过、2 跳过、0 失败（143.2 秒），git diff --check 通过。
+- 实测：docs/perf-history-session/followup.json 独立采集 3 轮（不覆盖旧 after.json），1831 条首输出 148–163ms、节点 1930、GC 后堆 3.9MB；6 次切换节点稳定，翻页断言全部通过。图片/流式布局锚点与长时泄漏尚未验收。
+- 同步文件：README.md、docs/perf-history-session/README.md、.pi/skills/codebase-map/{INDEX.md,knowledge.md}。本次只提交/推送功能分支，不集成 master，不清理 worktree。

@@ -1,4 +1,5 @@
 import { createTransport } from "./transport.js";
+import { createSessionCache } from "./session-cache.js";
 import { renderMarkdown } from "./markdown.js";
 import { stripMemoryTags } from "./memory-tags.js";
 import { createStreamRenderer } from "./stream-renderer.js";
@@ -31,7 +32,10 @@ let sessionMissing = false;
 let onboarding = false;
 let allSessions = [],
   follow = true;
-const views = new Map();
+const views = createSessionCache();
+const HISTORY_LIMIT = 60;
+let historyState, historyRequest = 0, historyLoading = false, historyDirty = false;
+let hiddenDirty = false, historyEvents = 0;
 // 目标模式：只消费 snapshot.goal 与 goal 事件，消息仍由本文件渲染；
 // 回执/事件里的 goal 由后端给出，前端对字段缺失完整容错。
 // （去掉 import 行单独跑 app.js 的测试环境里没有该模块，降级为空实现。）
@@ -161,9 +165,9 @@ window.addEventListener("storage", (event) => {
 });
 function saveView() {
   if (!sessionId) return;
-  // 分片在飞时 DOM 只是过渡态：scrollTop 是半截布局值，沿用已存滚动，别让中间值覆盖既有阅读位置。
-  // 只护 scroll：草稿/附件/选中技能/跟随仍要实存，分片中断线时不能把整段视图保存跳过。
+  // 快照同步中保留原阅读位置，草稿仍保存。
   const previous = views.get(sessionId)?.scroll;
+  const anchor = !follow && rawEntries.find(entry => entry.item?.node?.getBoundingClientRect().bottom > transcript.getBoundingClientRect().top);
   views.set(sessionId, {
     draft: $("prompt").value,
     contextFiles: [...contextFiles],
@@ -171,6 +175,8 @@ function saveView() {
     selectedSkill,
     scroll: transport.getSnapshotQueue() ? (previous ?? 0) : $("transcript").scrollTop,
     follow,
+    anchor: anchor?.messageId,
+    anchorOffset: anchor ? anchor.item.node.getBoundingClientRect().top - transcript.getBoundingClientRect().top : 0,
   });
 }
 // 高度只在「内容」或「可用宽度」变化时重算，缓存键全部由不触发布局的信号拼成，键没变直接返回。
@@ -242,7 +248,11 @@ transcript.onscroll = () => {
   follow = readFollow(transcript, follow);
   $("latest").hidden = follow;
 };
+$("history-before").onclick = () => void loadHistory({ before: historyState.history.prevCursor });
+$("history-after").onclick = () => historyDirty ? void latestHistory() : void loadHistory({ after: historyState.history.nextCursor });
+$("history-newest").onclick = () => void latestHistory();
 $("earliest").onclick = () => {
+  if (historyState?.history?.prevCursor) { void loadHistory({ edge: "first" }); return; }
   follow = false;
   transcript.scrollTop = 0;
   locatedScroll = transcript.scrollTop;
@@ -252,6 +262,7 @@ $("earliest").onclick = () => {
   transcript.focus({ preventScroll: true });
 };
 $("latest").onclick = () => {
+  if (historyDirty || historyState?.history?.nextCursor) { void latestHistory(); return; }
   locatedScroll = undefined;
   follow = true;
   lastScrollTops.set(transcript, transcript.scrollTop);
@@ -360,8 +371,8 @@ function rawChanged() {
     paintRaw();
   });
 }
-function rawEntry(message, agentId = "main") {
-  const entry = { message, agentId };
+function rawEntry(message, agentId = "main", identity = {}) {
+  const entry = { message, agentId, ...identity };
   rawEntries.push(entry);
   return entry;
 }
@@ -385,6 +396,7 @@ function selectRaw(entry, source = false) {
 function bindRaw(item, entry) {
   if (!entry) return;
   entry.item = item;
+  if (entry.messageId || entry.entryId) item.node.dataset.messageKey = JSON.stringify([sessionId, entry.agentId, entry.messageId || entry.entryId]);
   item.node.addEventListener("click", (e) => {
     if (!$("raw-io").hidden && !e.target.closest("button, a, input, textarea, summary") && !window.getSelection()?.toString()) selectRaw(entry);
   });
@@ -1859,7 +1871,7 @@ const canResumeMessage = (message) =>
   !!message && (message.role !== "assistant" || ["error", "aborted", "length", "toolUse"].includes(message.stopReason));
 let retryPrompt;
 function syncRetryPrompt() {
-  if (!(interrupted && !busy && connected && !changing && sessionId && !sessionMissing)) return void retryPrompt?.remove();
+  if (historyState?.history?.nextCursor || !(interrupted && !busy && connected && !changing && sessionId && !sessionMissing)) return void retryPrompt?.remove();
   if (!retryPrompt) {
     retryPrompt = document.createElement("div");
     retryPrompt.className = "retry-prompt";
@@ -1979,7 +1991,7 @@ function applyEvent(message) {
   }
   if (message.sessionId !== sessionId) return;
   const { type, agentId = "main", data } = message;
-  if (type === "agent.message.start" && data.message.role === "assistant") rawLive.set(agentId, rawEntry(JSON.parse(JSON.stringify(data.message)), agentId));
+  if (type === "agent.message.start" && data.message.role === "assistant") rawLive.set(agentId, rawEntry(JSON.parse(JSON.stringify(data.message)), agentId, { messageId: data.messageId }));
   if (type === "agent.delta" && ["text_delta", "thinking_delta"].includes(data.type)) {
     if (!rawLive.has(agentId)) rawLive.set(agentId, rawEntry({ role: "assistant", content: [] }, agentId));
     const entry = rawLive.get(agentId);
@@ -1993,6 +2005,8 @@ function applyEvent(message) {
   if (type === "agent.message.end") {
     endedRaw = rawLive.get(agentId) || rawEntry(data.message, agentId);
     endedRaw.message = data.message;
+    endedRaw.messageId = data.messageId || endedRaw.messageId;
+    endedRaw.entryId = data.entryId;
     rawLive.delete(agentId);
   }
   if (type.startsWith("agent.message.") || type === "agent.delta") rawChanged();
@@ -2208,90 +2222,147 @@ function applyEvent(message) {
   }
   if (type === "error") error(data.message);
 }
-// 首屏/切换分片：超过阈值的快照按「时间预算 + 条数上限」切片，短快照仍一次同步完成。
-// 调度用后台也能推进的 setTimeout/postTask（隐藏标签页里 rAF 会暂停），
-// 共享 job 身份递增即取消旧片；分片期间外部事件按到达顺序排队，尾部排空并按真实 seq 水位去重。
-const SNAPSHOT_SYNC_MESSAGES = 120;
-const SNAPSHOT_CHUNK_MS = 8;
-const SNAPSHOT_CHUNK_ITEMS = 40;
+// A bounded native page replaces the previous page, never a growing list of chunks.
+// No synthetic full-history scrollbar or height cache: the browser owns dynamic layout.
 let snapshotJob = 0;
-function scheduleSnapshotChunk(fn) {
-  if (typeof scheduler === "object" && scheduler?.postTask) {
-    scheduler.postTask(fn, { priority: "background" });
-    return;
-  }
-  setTimeout(fn, 0);
-}
-// onReady 是可选首屏钩子：同步清理旧 DOM、恢复草稿与身份切换完成后、首个分片调度前调用。
-// 长会话的调用方借此提前显示 workspace，让消息边补齐边展示；连接与发送能力仍由调用方
-// 在完整恢复后开放，所以这里只负责“此刻 DOM 已经属于目标会话”这个事实。
 function snapshot(state, onReady) {
-  const job = ++snapshotJob;
-  const target = state.sessionId;
+  ++historyRequest;
+  historyLoading = false;
+  historyDirty = false;
+  historyState = state = { ...state, messages: [...state.messages] };
+  hiddenDirty = document.hidden;
   transport.beginSnapshot();
-  let ctx;
   try {
-    ctx = beginSnapshot(state, target);
-    // 首屏钩子与 beginSnapshot 同路：它抛错也不能留下半成品首屏和锁死的事件阀。
-    // beginSnapshot 抛错时此行不执行：半成品状态不暴露为首屏。
-    onReady?.();
+    if (!document.hidden) mountHistory(state, onReady);
+    else { sessionId = state.sessionId; onReady?.(); }
+    transport.commitSnapshot(state);
+    const view = views.get(state.sessionId);
+    if (!document.hidden && state.history && !view?.follow && view?.anchor && !state.messages.some(entry => entry.messageId === view.anchor)) {
+      const saved = { ...view };
+      queueMicrotask(() => { if (sessionId === state.sessionId) void loadHistory({ target: saved.anchor }, saved); });
+    }
+  } catch (e) { transport.failSnapshot(); throw e; }
+}
+function mountHistory(state, onReady) {
+  const job = ++snapshotJob;
+  const ctx = beginSnapshot(state, state.sessionId);
+  onReady?.();
+  for (let index = 0; index < state.messages.length; index++)
+    placeSnapshotMessage(ctx, index, state.messages[index]);
+  finishSnapshot(job, ctx);
+  paintHistoryControls();
+}
+function paintHistoryControls() {
+  const page = historyState?.history;
+  const bar = $("history-pages");
+  if (!bar) return;
+  bar.hidden = !page;
+  $("history-before").disabled = historyLoading || !page?.prevCursor;
+  $("history-after").disabled = historyLoading || (!page?.nextCursor && !historyDirty);
+  $("history-position").textContent = page
+    ? `${page.total ? page.start + 1 : 0}–${Math.min(page.total, page.start + historyState.messages.length)} / ${page.total} 条${historyDirty ? " · 有新消息" : ""}` : "";
+}
+async function loadHistory(options = {}, reading) {
+  if (historyLoading || !historyState?.history || changing) return;
+  saveView();
+  const target = sessionId, revision = historyState.history.revision;
+  const instance = historyState.instanceId, token = ++historyRequest, events = historyEvents;
+  historyLoading = true;
+  paintHistoryControls();
+  try {
+    const state = await request("session.history", { sessionId: target, limit: HISTORY_LIMIT, ...options });
+    if (token !== historyRequest || target !== sessionId || instance !== historyState?.instanceId || revision !== historyState?.history.revision) return;
+    // Preserve input typed while the page request was in flight.
+    saveView();
+    // A page is not a realtime snapshot: never commit its seq to transport.
+    historyState = state;
+    historyDirty = historyEvents !== events;
+    if (historyDirty && !state.history.nextCursor) state.history.nextCursor = "pending";
+    // Explicit page navigation starts at its top, not at an unrelated old scroll offset.
+    const view = views.get(target);
+    if (view) { view.follow = false; view.scroll = 0; view.anchor = reading?.anchor; view.anchorOffset = reading?.anchorOffset || 0; }
+    if (!document.hidden) mountHistory(state);
+    else hiddenDirty = true;
   } catch (e) {
-    transport.failSnapshot();
-    throw e;
+    if (token === historyRequest && target === sessionId) error(`历史页读取失败，请返回最新重试：${e.message}`);
+  } finally {
+    if (token === historyRequest) { historyLoading = false; paintHistoryControls(); }
   }
-  if (state.messages.length <= SNAPSHOT_SYNC_MESSAGES) {
-    try {
-      for (let index = 0; index < state.messages.length; index++)
-        placeSnapshotMessage(ctx, index, state.messages[index]);
-      finishSnapshot(job, ctx);
-      transport.commitSnapshot(state);
-    } catch (e) {
-      if (job === snapshotJob) transport.failSnapshot();
-      throw e;
+}
+async function latestHistory() {
+  if (historyLoading || changing || !connected) return;
+  saveView();
+  const target = sessionId, token = ++historyRequest;
+  historyLoading = true;
+  try {
+    const state = await request("session.attach", { sessionId: target });
+    if (token !== historyRequest || target !== sessionId) return;
+    saveView();
+    const view = views.get(target);
+    if (view) { view.follow = true; view.anchor = undefined; }
+    snapshot(state);
+  } catch (e) { if (target === sessionId) { transport.failSnapshot(); error(e); } }
+  finally { if (target === sessionId) { historyLoading = false; paintHistoryControls(); } }
+}
+function receiveHistoryEvent(message) {
+  if (message.type === "session.deleted" || message.sessionId !== sessionId || !historyState?.history) return applyEvent(message);
+  const { type, data } = message;
+  ++historyEvents;
+  // Old-page and hidden views don't accumulate events or create background history DOM.
+  // Server history is authoritative; returning to latest fetches one bounded snapshot.
+  const parked = document.hidden || !!historyState.history.nextCursor || historyLoading;
+  if (type === "session.history.changed" && data.revision !== historyState.history.revision) {
+    historyState.history.revision = data.revision;
+    ++historyRequest;
+    historyLoading = false;
+    historyDirty = true;
+    if (!document.hidden) void latestHistory();
+    return;
+  }
+  if (parked) {
+    historyDirty = true;
+    hiddenDirty ||= document.hidden;
+    if (!document.hidden) {
+      // Business controls still reflect real status; only history drawing is parked.
+      if (type === "session.state") {
+        busy = data.status !== "idle";
+        safeStopping = busy && !!data.safeStop;
+        canReask = !!data.canReask;
+        controls();
+      }
+      if (type === "session.queue") renderQueue(data);
+      if (type === "question.asked") questionUI.asked(message.sessionId, data);
+      if (type === "question.closed") questionUI.closed(message.sessionId, data.toolCallId);
+      paintHistoryControls();
     }
     return;
   }
-  return new Promise((resolve, reject) => {
-    let index = 0;
-    const step = () => {
-      // 已被更新的快照取代：静默退场，不碰新快照的 DOM 与事件队列。
-      if (job !== snapshotJob) {
-        resolve();
-        return;
-      }
-      try {
-        const deadline = performance.now() + SNAPSHOT_CHUNK_MS;
-        let count = 0;
-        do {
-          placeSnapshotMessage(ctx, index, state.messages[index]);
-          index++;
-          count++;
-        } while (index < state.messages.length && count < SNAPSHOT_CHUNK_ITEMS && performance.now() < deadline);
-        if (index < state.messages.length) {
-          scheduleSnapshotChunk(step);
-          return;
-        }
-        finishSnapshot(job, ctx);
-        transport.commitSnapshot(state);
-        resolve();
-      } catch (e) {
-        // 失败半成品不做成功排空：丢弃排队事件，错误由调用方现有入口报告并解除忙态。
-        if (job === snapshotJob) transport.failSnapshot();
-        reject(e);
-      }
-    };
-    try {
-      scheduleSnapshotChunk(step);
-    } catch (e) {
-      if (job === snapshotJob) transport.failSnapshot();
-      reject(e);
+  applyEvent(message);
+  if (type === "agent.message.end") {
+    historyState.messages = rawEntries;
+    historyState.history.total++;
+    // Keep the current reading page intact until explicit navigation. Stop adding DOM
+    // when its fixed budget is used, even if a single run emits thousands of tools.
+    if (rawEntries.length >= HISTORY_LIMIT) {
+      historyState.history.nextCursor = "pending";
+      historyDirty = true;
+      if (follow) queueMicrotask(() => { if (historyDirty && follow) void latestHistory(); });
     }
-  });
+    paintHistoryControls();
+  }
 }
-// 同步重置 + 建索引：拿到 state 立即完成，后续分片只做消息落地。
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && hiddenDirty) {
+    hiddenDirty = false;
+    void latestHistory();
+  }
+});
+// 换页时卸载旧页，只建立当前页的索引。
 function beginSnapshot(state, target) {
-  // 原文对照的数据源与消息同一份快照：整表一次重建，分片期间只做逐条绑定。
-  rawEntries = state.messages.map(({ message, agentId }) => ({ message, agentId }));
+  // 原文对照与当前页共用消息，不维护另一份历史副本。
+  rawEntries = state.messages;
+  // View handles belong only to this mounted page; message objects remain authoritative.
+  for (const entry of rawEntries) { delete entry.item; delete entry.node; }
   rawLive.clear();
   $("raw-io-list").replaceChildren();
   rawChanged();
@@ -2324,7 +2395,7 @@ function beginSnapshot(state, target) {
   stopAlert = false;
   lastMainMessage = state.messages.findLast((entry) => entry.agentId === "main")?.message || null;
   canReask = !!state.canReask;
-  interrupted = !busy && (canReask || canResumeMessage(lastMainMessage));
+  interrupted = !state.history?.nextCursor && !busy && (canReask || canResumeMessage(lastMainMessage));
   $("output").replaceChildren();
   live.clear();
   toolItems.clear();
@@ -2343,7 +2414,7 @@ function beginSnapshot(state, target) {
   goalAnchors = new Map();
   goalAnchorCount = 0;
   for (const task of state.tasks) {
-    // 内部 task 恢复直接应用事件，不能进入自己的分片事件队列。
+    // 页内 task 恢复不进入实时事件归并。
     applyEvent({ type: "task.state", sessionId, taskId: task.id, data: task });
     tasks.get(task.id).trigger.remove();
   }
@@ -2355,8 +2426,9 @@ function beginSnapshot(state, target) {
   const retriesAt = new Map();
   for (const record of state.retries || []) {
     // 无可靠边界的旧记录单独归档，不伪装成任务结束后的事件。
-    const valid = Number.isInteger(record.messageCount) && record.messageCount >= 0 && record.messageCount <= state.messages.length;
-    const index = valid ? record.messageCount : state.messages.length;
+    const localIndex = record.messageCount;
+    const valid = Number.isInteger(localIndex) && localIndex >= 0 && localIndex <= state.messages.length;
+    const index = valid ? localIndex : state.messages.length;
     if (!retriesAt.has(index)) retriesAt.set(index, []);
     retriesAt.get(index).push(valid ? record : { ...record, messageCount: undefined });
   }
@@ -2367,7 +2439,7 @@ function beginSnapshot(state, target) {
       renderRetry(record.agentId, { ...record, anchorEntryId: record.anchorEntryId || anchor }, true);
     }
   };
-  // 视图状态（草稿/附件/跟随）在同步阶段落地：分片期间用户的新输入不会被尾部旧视图覆盖。
+  // 草稿/附件独立于可丢弃的历史页恢复。
   const view = views.get(sessionId);
   $("prompt").value = view?.draft || "";
   contextFiles = [...(view?.contextFiles || [])];
@@ -2384,7 +2456,7 @@ function beginSnapshot(state, target) {
 function placeSnapshotMessage(ctx, index, { agentId, message, entryId }) {
   ctx.restoreRetries(index);
   if (message.role === "toolResult") {
-    if (toolItems.has(`${agentId}:${message.toolCallId}`)) toolState(agentId, { ...message, phase: "end" });
+    toolState(agentId, { ...message, phase: "end" });
     if (agentId === "main") placeCompactedTasks();
   }
   if (["assistant", "user"].includes(message.role)) {
@@ -2396,6 +2468,7 @@ function placeSnapshotMessage(ctx, index, { agentId, message, entryId }) {
         ctx.placed.add(record.id);
         $("output").append(compactionCard(record));
       }
+      rawEntries[index].item = { node: compactionNodes.get(record.id) };
       return;
     }
     const item = card(
@@ -2416,14 +2489,14 @@ function placeSnapshotMessage(ctx, index, { agentId, message, entryId }) {
     renderMessage(item, message);
     if (agentId === "main") {
       mainItems.push({ item, entryId });
-      anchorGoal(index, item, entryId);
+      anchorGoal((ctx.state.history?.start || 0) + index, item, entryId);
     }
   }
 }
 function finishSnapshot(job, ctx) {
   if (job !== snapshotJob) return;
   const { state, view } = ctx;
-  goalAnchorCount = state.messages.length;
+  goalAnchorCount = state.history?.total ?? state.messages.length;
   ctx.restoreRetries(state.messages.length);
   for (const [agentId, message] of Object.entries(state.live))
     if (message.role === "assistant") {
@@ -2438,7 +2511,7 @@ function finishSnapshot(job, ctx) {
         : (message.content || []).filter((block) => block?.type === "text")
           .map((block) => block.text).join("\n");
       // 快照里的半成品流没有对应 state.messages 槽位，单独补一条原文条目并继续接收后续 delta。
-      const entry = rawEntry(JSON.parse(JSON.stringify(message)), agentId);
+      const entry = rawEntry(JSON.parse(JSON.stringify(message)), agentId, { messageId: state.liveMessageIds?.[agentId] });
       rawLive.set(agentId, entry);
       bindRaw(item, entry);
       renderMessage(item, message);
@@ -2456,7 +2529,7 @@ function finishSnapshot(job, ctx) {
   if (state.status === "running") waiting("main");
   else stopActivity("main", "已结束");
   for (const task of tasks.values())
-    if (!task.trigger.isConnected) $("output").append(task.trigger);
+    if (["starting", "running"].includes(task.trigger.dataset.status) && !task.trigger.isConnected) $("output").append(task.trigger);
   for (const record of compactions)
     if (!compactionNodes.has(record.id)) $("output").prepend(compactionCard(record));
   // 摘要按记录顺序集中在历史顶部；原任务入口移动而非复制，弹窗与状态保持不变。
@@ -2476,6 +2549,8 @@ function finishSnapshot(job, ctx) {
     scrollFrame = undefined;
     resizePrompt();
     transcript.scrollTop = follow ? transcript.scrollHeight : (view?.scroll ?? 0);
+    const anchor = !follow && view?.anchor && rawEntries.find(entry => entry.messageId === view.anchor)?.item?.node;
+    if (anchor) transcript.scrollTop += anchor.getBoundingClientRect().top - transcript.getBoundingClientRect().top - (view.anchorOffset || 0);
     lastScrollTops.set(transcript, transcript.scrollTop);
   });
   renderQueue(state.queue);
@@ -2487,7 +2562,7 @@ function finishSnapshot(job, ctx) {
 }
 const transport = createTransport({
   url: () => `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`,
-  reduce: applyEvent,
+  reduce: receiveHistoryEvent,
   initialize: initializeConnection,
   onState(state) {
     if (["connecting", "restoring"].includes(state)) {

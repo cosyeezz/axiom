@@ -36,6 +36,7 @@ desktop/pake.json ── Pake 独立桌面壳（macOS Universal / Windows x64）
 浏览器 public/
   index.html ── app.js（唯一入口：视图栈/权威归并/会话设置UI）
                  ├─ transport.js        唯一业务连接、请求回执、逻辑订阅与快照闸门
+                 ├─ session-cache.js     可淘汰阅读位置与未保存输入保护
                  ├─ goal.js/css         Goal 目标面板与轮次分组（复用现有消息节点）
                  ├─ question.js/css     主代理多题回答卡、键盘操作与回执
                  ├─ service-settings.js  服务设置：更新确认、维护阶段与断线诊断
@@ -60,6 +61,7 @@ scripts/autostart.mjs  Windows/macOS/Linux 用户登录自动启动注册
   │    └─ remote.js  可选 Tailscale 独立监听、同账号 whois 验证、本机远程配置
   ├─ model-config.js SQLite 模型配置、版本冲突保护与全局收藏（pi-model-storage.js 自动派生 SDK 兼容文件）
   ├─ Sessions        会话生命周期/队列、元数据启动与 SDK 按需恢复；Pi JSONL 为历史权威
+  │    ├─ session-history.js 稳定身份与历史页游标（不裁剪 SDK 上下文）
   │    ├─ session-store.js 会话/摘要/事件/任务四表、实体增量与旧数据迁移
   │    ├─ database.js SQLite 连接、小配置 store 表、WAL 与一致性备份
   │    ├─ session-memory.js  标题/逐回复摘要登记、最近32条背景与被动进度

@@ -1,0 +1,900 @@
+{
+ "scene": "ab52936 基线 × 假源隔离夹具：短会话（20 条）/ 长会话（1831 条）首屏",
+ "generatedAt": "2026-09-15T16:05:41.746Z",
+ "completionCriterion": {
+  "rule": "#output 子树静默 700ms 无任何 DOM 变更 = 首屏完成；硬超时 60000ms 抛错",
+  "postCheck": "完成后追加 1500ms 静默，复核全量快照（节点数/子节点数/消息数/末次变更时刻）不漂移",
+  "probes": [
+   "PerformanceObserver longtask",
+   "MutationObserver #output(childList/subtree)",
+   "performance.memory.usedJSHeapSize（含 window.gc() 后采样）",
+   "navigation timing"
+  ]
+ },
+ "provenance": {
+  "repo": "F:\\worktrees\\Axiom-history-performance",
+  "baselineCommit": "ab52936",
+  "baselineCodeFiles": 51,
+  "baselineCodeSha256": {
+   "appJs": "808c66e566fff8a8ae1be74fc2418ef3d694d98838d96a6303c80c78ff64d37d"
+  },
+  "workingTreeUsed": false,
+  "fixture": {
+   "generator": "make-fake-home.mjs",
+   "home": "C:\\Users\\dane\\AppData\\Local\\Temp\\axiom-perf-history-QLJcbJ\\fake-home",
+   "longId": "fake1ong00000000000000000000000001",
+   "shortId": "fake5hort0000000000000000000000001",
+   "files": {
+    "fake1ong00000000000000000000000001": {
+     "bytes": 9978411,
+     "sha256": "a007974e0376cc8b121f64c51e4709824781e770bd8bdbdb71df195bfc424275"
+    },
+    "fake5hort0000000000000000000000001": {
+     "bytes": 105822,
+     "sha256": "d2aa63d80142d27e7341691c17dafd4ec1304deab341d8b379bf4f583a92e3a7"
+    }
+   }
+  },
+  "isolation": "独立 AXIOM_HOME/AXIOM_PORT/AXIOM_CWD/PI_CODING_AGENT_DIR 临时实例；不连网、不调用模型、不读写 ~/.axiom",
+  "playwright": "C:\\Users\\dane\\AppData\\Roaming\\npm\\node_modules\\@playwright\\mcp\\node_modules\\playwright\\index.js"
+ },
+ "runs": [
+  {
+   "sessionId": "fake5hort0000000000000000000000001",
+   "wallMs": 2536,
+   "externalRequests": [
+    "http://127.0.0.1:64671/status"
+   ],
+   "scene": "short-firstScreen#1",
+   "firstOutputMs": 170,
+   "lastOutputMs": 175,
+   "lastDomMutationMs": 273,
+   "settledAtMs": 973,
+   "mutations": 260,
+   "addedNodes": 17,
+   "nodes": 1008,
+   "outputChildren": 17,
+   "messages": 9,
+   "toolRecords": 12,
+   "callGroups": 9,
+   "heapMB": 3.6,
+   "heapMBSampled": 3.6,
+   "longTaskEntries": [
+    {
+     "start": 40,
+     "dur": 58
+    }
+   ],
+   "longTasks": [
+    58
+   ],
+   "phaseStartMs": 0,
+   "nav": {
+    "responseEnd": 4,
+    "dcl": 94,
+    "load": 97
+   },
+   "stableRecheck": {
+    "nodes": 1008,
+    "heapMB": 3.6,
+    "mutations": 260
+   }
+  },
+  {
+   "sessionId": "fake1ong00000000000000000000000001",
+   "wallMs": 7382,
+   "externalRequests": [
+    "http://127.0.0.1:64671/status"
+   ],
+   "scene": "long-firstScreen#1",
+   "firstOutputMs": 473,
+   "lastOutputMs": 4599,
+   "lastDomMutationMs": 4806,
+   "settledAtMs": 5522,
+   "mutations": 77246,
+   "addedNodes": 1625,
+   "nodes": 45351,
+   "outputChildren": 1625,
+   "messages": 821,
+   "toolRecords": 1010,
+   "callGroups": 821,
+   "heapMB": 15.4,
+   "heapMBSampled": 15.4,
+   "longTaskEntries": [
+    {
+     "start": 187,
+     "dur": 115
+    },
+    {
+     "start": 303,
+     "dur": 147
+    },
+    {
+     "start": 1066,
+     "dur": 52
+    },
+    {
+     "start": 1252,
+     "dur": 57
+    },
+    {
+     "start": 1502,
+     "dur": 55
+    },
+    {
+     "start": 1596,
+     "dur": 50
+    },
+    {
+     "start": 1690,
+     "dur": 63
+    },
+    {
+     "start": 1817,
+     "dur": 70
+    },
+    {
+     "start": 1938,
+     "dur": 64
+    },
+    {
+     "start": 2069,
+     "dur": 88
+    },
+    {
+     "start": 2220,
+     "dur": 77
+    },
+    {
+     "start": 2357,
+     "dur": 75
+    },
+    {
+     "start": 2503,
+     "dur": 77
+    },
+    {
+     "start": 2632,
+     "dur": 59
+    },
+    {
+     "start": 2756,
+     "dur": 86
+    },
+    {
+     "start": 2910,
+     "dur": 85
+    },
+    {
+     "start": 2996,
+     "dur": 50
+    },
+    {
+     "start": 3064,
+     "dur": 88
+    },
+    {
+     "start": 3154,
+     "dur": 57
+    },
+    {
+     "start": 3238,
+     "dur": 96
+    },
+    {
+     "start": 3335,
+     "dur": 58
+    },
+    {
+     "start": 3420,
+     "dur": 101
+    },
+    {
+     "start": 3522,
+     "dur": 56
+    },
+    {
+     "start": 3606,
+     "dur": 98
+    },
+    {
+     "start": 3706,
+     "dur": 61
+    },
+    {
+     "start": 3793,
+     "dur": 117
+    },
+    {
+     "start": 3911,
+     "dur": 71
+    },
+    {
+     "start": 4018,
+     "dur": 130
+    },
+    {
+     "start": 4150,
+     "dur": 65
+    },
+    {
+     "start": 4225,
+     "dur": 120
+    },
+    {
+     "start": 4347,
+     "dur": 71
+    },
+    {
+     "start": 4480,
+     "dur": 108
+    },
+    {
+     "start": 4603,
+     "dur": 147
+    },
+    {
+     "start": 4756,
+     "dur": 77
+    }
+   ],
+   "longTasks": [
+    115,
+    147,
+    52,
+    57,
+    55,
+    50,
+    63,
+    70,
+    64,
+    88,
+    77,
+    75,
+    77,
+    59,
+    86,
+    85,
+    50,
+    88,
+    57,
+    96,
+    58,
+    101,
+    56,
+    98,
+    61,
+    117,
+    71,
+    130,
+    65,
+    120,
+    71,
+    108,
+    147,
+    77
+   ],
+   "phaseStartMs": 0,
+   "nav": {
+    "responseEnd": 2,
+    "dcl": 85,
+    "load": 87
+   },
+   "stableRecheck": {
+    "nodes": 45351,
+    "heapMB": 15.3,
+    "mutations": 77246
+   }
+  },
+  {
+   "sessionId": "fake5hort0000000000000000000000001",
+   "wallMs": 2444,
+   "externalRequests": [
+    "http://127.0.0.1:64671/status"
+   ],
+   "scene": "short-firstScreen#2",
+   "firstOutputMs": 153,
+   "lastOutputMs": 157,
+   "lastDomMutationMs": 202,
+   "settledAtMs": 913,
+   "mutations": 260,
+   "addedNodes": 17,
+   "nodes": 1008,
+   "outputChildren": 17,
+   "messages": 9,
+   "toolRecords": 12,
+   "callGroups": 9,
+   "heapMB": 3.5,
+   "heapMBSampled": 3.5,
+   "longTaskEntries": [],
+   "longTasks": [],
+   "phaseStartMs": 0,
+   "nav": {
+    "responseEnd": 2,
+    "dcl": 83,
+    "load": 85
+   },
+   "stableRecheck": {
+    "nodes": 1008,
+    "heapMB": 3.6,
+    "mutations": 260
+   }
+  },
+  {
+   "sessionId": "fake1ong00000000000000000000000001",
+   "wallMs": 7331,
+   "externalRequests": [
+    "http://127.0.0.1:64671/status"
+   ],
+   "scene": "long-firstScreen#2",
+   "firstOutputMs": 490,
+   "lastOutputMs": 4614,
+   "lastDomMutationMs": 4769,
+   "settledAtMs": 5470,
+   "mutations": 76760,
+   "addedNodes": 1625,
+   "nodes": 45351,
+   "outputChildren": 1625,
+   "messages": 821,
+   "toolRecords": 1010,
+   "callGroups": 821,
+   "heapMB": 15.4,
+   "heapMBSampled": 15.4,
+   "longTaskEntries": [
+    {
+     "start": 200,
+     "dur": 116
+    },
+    {
+     "start": 317,
+     "dur": 149
+    },
+    {
+     "start": 1223,
+     "dur": 66
+    },
+    {
+     "start": 1342,
+     "dur": 56
+    },
+    {
+     "start": 1443,
+     "dur": 54
+    },
+    {
+     "start": 1534,
+     "dur": 50
+    },
+    {
+     "start": 1628,
+     "dur": 67
+    },
+    {
+     "start": 1751,
+     "dur": 64
+    },
+    {
+     "start": 1874,
+     "dur": 64
+    },
+    {
+     "start": 2000,
+     "dur": 75
+    },
+    {
+     "start": 2131,
+     "dur": 76
+    },
+    {
+     "start": 2283,
+     "dur": 70
+    },
+    {
+     "start": 2406,
+     "dur": 80
+    },
+    {
+     "start": 2536,
+     "dur": 82
+    },
+    {
+     "start": 2692,
+     "dur": 79
+    },
+    {
+     "start": 2849,
+     "dur": 108
+    },
+    {
+     "start": 2958,
+     "dur": 54
+    },
+    {
+     "start": 3031,
+     "dur": 101
+    },
+    {
+     "start": 3133,
+     "dur": 53
+    },
+    {
+     "start": 3223,
+     "dur": 114
+    },
+    {
+     "start": 3338,
+     "dur": 51
+    },
+    {
+     "start": 3407,
+     "dur": 98
+    },
+    {
+     "start": 3507,
+     "dur": 64
+    },
+    {
+     "start": 3592,
+     "dur": 93
+    },
+    {
+     "start": 3687,
+     "dur": 52
+    },
+    {
+     "start": 3757,
+     "dur": 100
+    },
+    {
+     "start": 3858,
+     "dur": 62
+    },
+    {
+     "start": 3940,
+     "dur": 110
+    },
+    {
+     "start": 4051,
+     "dur": 67
+    },
+    {
+     "start": 4128,
+     "dur": 107
+    },
+    {
+     "start": 4236,
+     "dur": 65
+    },
+    {
+     "start": 4311,
+     "dur": 103
+    },
+    {
+     "start": 4416,
+     "dur": 64
+    },
+    {
+     "start": 4564,
+     "dur": 125
+    },
+    {
+     "start": 4695,
+     "dur": 110
+    }
+   ],
+   "longTasks": [
+    116,
+    149,
+    66,
+    56,
+    54,
+    50,
+    67,
+    64,
+    64,
+    75,
+    76,
+    70,
+    80,
+    82,
+    79,
+    108,
+    54,
+    101,
+    53,
+    114,
+    51,
+    98,
+    64,
+    93,
+    52,
+    100,
+    62,
+    110,
+    67,
+    107,
+    65,
+    103,
+    64,
+    125,
+    110
+   ],
+   "phaseStartMs": 0,
+   "nav": {
+    "responseEnd": 2,
+    "dcl": 84,
+    "load": 86
+   },
+   "stableRecheck": {
+    "nodes": 45351,
+    "heapMB": 15.3,
+    "mutations": 76760
+   }
+  },
+  {
+   "sessionId": "fake5hort0000000000000000000000001",
+   "wallMs": 2453,
+   "externalRequests": [
+    "http://127.0.0.1:64671/status"
+   ],
+   "scene": "short-firstScreen#3",
+   "firstOutputMs": 150,
+   "lastOutputMs": 154,
+   "lastDomMutationMs": 197,
+   "settledAtMs": 900,
+   "mutations": 260,
+   "addedNodes": 17,
+   "nodes": 1008,
+   "outputChildren": 17,
+   "messages": 9,
+   "toolRecords": 12,
+   "callGroups": 9,
+   "heapMB": 3.5,
+   "heapMBSampled": 3.5,
+   "longTaskEntries": [],
+   "longTasks": [],
+   "phaseStartMs": 0,
+   "nav": {
+    "responseEnd": 2,
+    "dcl": 83,
+    "load": 85
+   },
+   "stableRecheck": {
+    "nodes": 1008,
+    "heapMB": 3.6,
+    "mutations": 260
+   }
+  },
+  {
+   "sessionId": "fake1ong00000000000000000000000001",
+   "wallMs": 7106,
+   "externalRequests": [
+    "http://127.0.0.1:64671/status"
+   ],
+   "scene": "long-firstScreen#3",
+   "firstOutputMs": 491,
+   "lastOutputMs": 4349,
+   "lastDomMutationMs": 4549,
+   "settledAtMs": 5252,
+   "mutations": 72293,
+   "addedNodes": 1625,
+   "nodes": 45351,
+   "outputChildren": 1625,
+   "messages": 821,
+   "toolRecords": 1010,
+   "callGroups": 821,
+   "heapMB": 15.4,
+   "heapMBSampled": 15.4,
+   "longTaskEntries": [
+    {
+     "start": 194,
+     "dur": 116
+    },
+    {
+     "start": 311,
+     "dur": 155
+    },
+    {
+     "start": 1284,
+     "dur": 55
+    },
+    {
+     "start": 1381,
+     "dur": 55
+    },
+    {
+     "start": 1572,
+     "dur": 60
+    },
+    {
+     "start": 1690,
+     "dur": 62
+    },
+    {
+     "start": 1790,
+     "dur": 60
+    },
+    {
+     "start": 1914,
+     "dur": 78
+    },
+    {
+     "start": 1994,
+     "dur": 69
+    },
+    {
+     "start": 2100,
+     "dur": 78
+    },
+    {
+     "start": 2253,
+     "dur": 87
+    },
+    {
+     "start": 2411,
+     "dur": 85
+    },
+    {
+     "start": 2568,
+     "dur": 92
+    },
+    {
+     "start": 2726,
+     "dur": 90
+    },
+    {
+     "start": 2818,
+     "dur": 56
+    },
+    {
+     "start": 2884,
+     "dur": 79
+    },
+    {
+     "start": 2965,
+     "dur": 51
+    },
+    {
+     "start": 3034,
+     "dur": 99
+    },
+    {
+     "start": 3134,
+     "dur": 57
+    },
+    {
+     "start": 3228,
+     "dur": 116
+    },
+    {
+     "start": 3346,
+     "dur": 55
+    },
+    {
+     "start": 3419,
+     "dur": 106
+    },
+    {
+     "start": 3527,
+     "dur": 77
+    },
+    {
+     "start": 3615,
+     "dur": 91
+    },
+    {
+     "start": 3707,
+     "dur": 61
+    },
+    {
+     "start": 3796,
+     "dur": 116
+    },
+    {
+     "start": 3913,
+     "dur": 64
+    },
+    {
+     "start": 4005,
+     "dur": 120
+    },
+    {
+     "start": 4127,
+     "dur": 74
+    },
+    {
+     "start": 4223,
+     "dur": 113
+    },
+    {
+     "start": 4352,
+     "dur": 146
+    },
+    {
+     "start": 4505,
+     "dur": 76
+    }
+   ],
+   "longTasks": [
+    116,
+    155,
+    55,
+    55,
+    60,
+    62,
+    60,
+    78,
+    69,
+    78,
+    87,
+    85,
+    92,
+    90,
+    56,
+    79,
+    51,
+    99,
+    57,
+    116,
+    55,
+    106,
+    77,
+    91,
+    61,
+    116,
+    64,
+    120,
+    74,
+    113,
+    146,
+    76
+   ],
+   "phaseStartMs": 0,
+   "nav": {
+    "responseEnd": 2,
+    "dcl": 82,
+    "load": 84
+   },
+   "stableRecheck": {
+    "nodes": 45351,
+    "heapMB": 15.3,
+    "mutations": 72293
+   }
+  }
+ ],
+ "summary": {
+  "short": {
+   "runs": 3,
+   "firstOutputMs": [
+    170,
+    153,
+    150
+   ],
+   "firstOutputMsAvg": 158,
+   "lastOutputMsAvg": 162,
+   "settledAtMsAvg": 929,
+   "maxLongTaskMs": [
+    58,
+    0,
+    0
+   ],
+   "maxLongTaskRenderMs": [
+    58,
+    0,
+    0
+   ],
+   "longTasksOver50Ms": [
+    1,
+    0,
+    0
+   ],
+   "nodes": 1008,
+   "outputChildren": 17,
+   "messages": 9,
+   "toolRecords": 12,
+   "callGroups": 9,
+   "heapMB": [
+    3.6,
+    3.5,
+    3.5
+   ],
+   "heapMBAvg": 3.5,
+   "heapBeforeGcMB": [
+    3.6,
+    3.5,
+    3.5
+   ],
+   "wallMs": [
+    2536,
+    2444,
+    2453
+   ]
+  },
+  "long": {
+   "runs": 3,
+   "firstOutputMs": [
+    473,
+    490,
+    491
+   ],
+   "firstOutputMsAvg": 485,
+   "lastOutputMsAvg": 4521,
+   "settledAtMsAvg": 5415,
+   "maxLongTaskMs": [
+    147,
+    149,
+    155
+   ],
+   "maxLongTaskRenderMs": [
+    147,
+    149,
+    155
+   ],
+   "longTasksOver50Ms": [
+    34,
+    35,
+    32
+   ],
+   "nodes": 45351,
+   "outputChildren": 1625,
+   "messages": 821,
+   "toolRecords": 1010,
+   "callGroups": 821,
+   "heapMB": [
+    15.4,
+    15.4,
+    15.4
+   ],
+   "heapMBAvg": 15.4,
+   "heapBeforeGcMB": [
+    15.4,
+    15.4,
+    15.4
+   ],
+   "wallMs": [
+    7382,
+    7331,
+    7106
+   ]
+  }
+ },
+ "browser": {
+  "launch": "headless=true, executablePath=C:\\Users\\dane\\AppData\\Local\\ms-playwright\\chromium-1223\\chrome-win64\\chrome.exe",
+  "args": [
+   "--js-flags=--expose-gc"
+  ]
+ },
+ "env": {
+  "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.0.0 Safari/537.36",
+  "hw": 16,
+  "deviceMemory": 32,
+  "gcExposed": true,
+  "viewport": [
+   1280,
+   720
+  ]
+ },
+ "groundTruth": {
+  "serverMessages": {
+   "long": {
+    "messages": 1831,
+    "roles": {
+     "user": 18,
+     "assistant": 803,
+     "toolResult": 1010
+    }
+   },
+   "short": {
+    "messages": 20,
+    "roles": {
+     "user": 1,
+     "assistant": 8,
+     "toolResult": 11
+    }
+   }
+  },
+  "domMessageCardsMatch": "run counts differ",
+  "semanticCountsStableAcrossRuns": false,
+  "expectedFixtureMessages": 1831
+ }
+}
