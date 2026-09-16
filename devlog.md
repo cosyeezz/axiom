@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-16 侧栏会话置顶
+
+- 内容：侧栏「⋯」菜单新增「置顶/取消置顶」；置顶会话统一进新的「置顶」分组（排在「进行中」之前，运行中会话也排在其后），行底色用 `--raised` 加深、强调色左键 + 图钉图标突出（置顶且当前打开时两套高亮叠加）。「置顶」分组仅在该工作空间有置顶会话时出现。
+- 原因：用户需要把长期关注的会话固定在侧栏最上方，并与运行中/待查看的自动排序区分开；加深底色与当前页高亮（浅主题色底）可同时区分。
+- 实现：`axiom.pinnedSessions` 本地偏好（与 `axiom.hiddenSessions` 共用 `changeSessionPreference` 的 Web Locks 串行读改写、storage 跨标签页同步，断连可用）；`renderSessions` 排序 rank 改为置顶 0 → 运行中 1 → 待查看 2 → 已读 3。
+- 文件：public/app.js、public/style.css、tests/app.test.js（置顶/取消置顶、排序、分组、持久化、不触碰服务端断言；菜单索引断言更新）、README.md。
+- 验证：`node --test --test-timeout=120000 tests/app.test.js` 3/3 通过；全量 `npm test` 689 项，687 通过、2 跳过、0 失败。
+
 ## 2026-09-15 长会话阶段三：功能验证与性能证据
 
 - 新增 tests/history-reading.test.js：未挂载阅读锚点按 messageId 获取一页且不推进水位；跨页工具结果不依赖上一页 DOM 仍可展开。2/2 通过。

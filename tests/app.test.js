@@ -431,12 +431,15 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(window.document.querySelector("header .menu"), null);
     const firstActions = $("sessions").querySelector(".session-actions");
     assert.deepEqual([...$("sessions").querySelectorAll(".session-group")].map((n) => n.textContent), ["进行中", "已完成"]);
-    assert.equal(firstActions.children[0].title, "标记已完成");
-    assert.equal(firstActions.children[1].className, "session-open");
-    assert.equal(firstActions.children[2].className, "session-copy");
+    assert.equal(firstActions.children[0].className, "session-pin");
+    assert.equal(firstActions.children[0].title, "置顶");
+    assert.equal(firstActions.children[1].className, "session-hide");
+    assert.equal(firstActions.children[1].title, "标记已完成");
+    assert.equal(firstActions.children[2].className, "session-open");
+    assert.equal(firstActions.children[3].className, "session-copy");
     assert.equal(firstActions.querySelector(".session-rename").title, "重命名");
     assert.equal($("sessions").querySelector(".session-completed").open, false);
-    assert.equal(firstActions.children[0].querySelector("path").getAttribute("d"), "M5 12l4 4L19 6");
+    assert.equal(firstActions.children[1].querySelector("path").getAttribute("d"), "M5 12l4 4L19 6");
     const beforeHide = requests.length;
     const row = (id) => $("sessions").querySelector(`[data-session-id="${id}"]`);
     row("a").querySelector(".session-hide").click();
@@ -463,6 +466,23 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     window.localStorage.setItem("axiom.sessionOrder", '["b","a","c"]');
     window.eval("renderSessions()");
     assert.deepEqual(rowTitles(), ["c", "a", "b"], "legacy custom order is ignored");
+    // 置顶：纯本地偏好，排到运行中之前，并在自己的分组里加深底色；取消后恢复原序且持久化。
+    row("b").querySelector(".session-more").click();
+    row("b").querySelector(".session-pin").click();
+    await settle();
+    assert.deepEqual(JSON.parse(window.localStorage.getItem("axiom.pinnedSessions")), ["b"]);
+    assert.deepEqual(rowTitles(), ["b", "c", "a"], "pinned session sorts above a running one");
+    assert.deepEqual([...$("sessions").querySelectorAll(".session-group")].map((n) => n.textContent), ["置顶", "进行中", "已完成"]);
+    assert.ok(row("b").classList.contains("pinned"), "pinned row gets the highlighted class");
+    assert.equal(row("b").querySelector(".session-pin-icon").getAttribute("aria-label"), "已置顶");
+    assert.equal(row("b").querySelector(".session-more").title, "会话操作：b");
+    assert.equal(requests.length, beforeHide, "pinning never talks to the server");
+    row("b").querySelector(".session-more").click();
+    row("b").querySelector(".session-pin").click();
+    await settle();
+    assert.deepEqual(JSON.parse(window.localStorage.getItem("axiom.pinnedSessions")), []);
+    assert.deepEqual([...$("sessions").querySelectorAll(".session-group")].map((n) => n.textContent), ["进行中", "已完成"], "empty pinned group disappears");
+    assert.deepEqual(rowTitles(), ["c", "a", "b"], "unpinning restores the normal order");
     // 跑完待查看：seen 记在打开之前 → 标主题色点；打开会话即写回时间戳并落盘。
     window.setSeenSessions({ a: 1, b: 1 });
     const attention = row("b").querySelector(".session-attention-dot");

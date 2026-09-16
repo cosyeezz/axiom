@@ -114,6 +114,12 @@ try {
   const saved = JSON.parse(localStorage.getItem("axiom.hiddenSessions") || "[]");
   if (Array.isArray(saved)) hiddenSessions = new Set(saved.filter((id) => typeof id === "string"));
 } catch {}
+// 置顶会话：本地偏好，只影响侧栏排序与高亮，不动服务端数据。
+let pinnedSessions = new Set();
+try {
+  const saved = JSON.parse(localStorage.getItem("axiom.pinnedSessions") || "[]");
+  if (Array.isArray(saved)) pinnedSessions = new Set(saved.filter((id) => typeof id === "string"));
+} catch {}
 // 已读时间戳：AI 跑完、用户还没打开过的会话在侧栏标主题色点。没有记录的一律视为已读，
 // 否则首次加载会把全部历史会话标成未读。
 let seenSessions = {};
@@ -137,6 +143,7 @@ async function changeSessionPreference(key, change) {
     const next = change(readSessionPreference(key));
     localStorage.setItem(key, JSON.stringify(next));
     if (key === "axiom.hiddenSessions") hiddenSessions = new Set(next);
+    if (key === "axiom.pinnedSessions") pinnedSessions = new Set(next);
     renderSessions();
   };
   try {
@@ -152,12 +159,24 @@ function setSessionHidden(id, hidden) {
     const next = new Set(saved);
     hidden ? next.add(id) : next.delete(id);
     return [...next];
-  }).then(() => [...document.querySelectorAll(".session-row")].find((row) => row.dataset.sessionId === id)?.querySelector(".session-more").focus());
+  }).then(() => focusSessionMore(id));
+}
+function setSessionPinned(id, pinned) {
+  if (!allSessions.some((s) => s.id === id)) return;
+  return changeSessionPreference("axiom.pinnedSessions", (saved) => {
+    const next = new Set(saved);
+    pinned ? next.add(id) : next.delete(id);
+    return [...next];
+  }).then(() => focusSessionMore(id));
+}
+function focusSessionMore(id) {
+  return [...document.querySelectorAll(".session-row")].find((row) => row.dataset.sessionId === id)?.querySelector(".session-more").focus();
 }
 window.addEventListener("storage", (event) => {
-  if (event.key !== null && !["axiom.hiddenSessions", "axiom.sessionSeen"].includes(event.key)) return;
+  if (event.key !== null && !["axiom.hiddenSessions", "axiom.pinnedSessions", "axiom.sessionSeen"].includes(event.key)) return;
   try {
     hiddenSessions = new Set(readSessionPreference("axiom.hiddenSessions"));
+    pinnedSessions = new Set(readSessionPreference("axiom.pinnedSessions"));
     const saved = JSON.parse(localStorage.getItem("axiom.sessionSeen") || "{}");
     seenSessions = saved && typeof saved === "object" ? saved : {};
     renderSessions();
@@ -3301,13 +3320,16 @@ function renderSessions() {
   const running = (s) => s.status !== "idle";
   // 未读 = 打开过它之后又跑完了一轮（updatedAt 是这一轮的开始时刻）。
   const unread = (s) => !hiddenSessions.has(s.id) && s.status === "idle" && s.id !== sessionId && seenSessions[s.id] != null && s.updatedAt > seenSessions[s.id];
-  // 运行中永远置顶，其次是跑完待看的，最后是看过闲着的；段内都按最后活动时间倒序。
-  const rank = (s) => (running(s) ? 0 : unread(s) ? 1 : 2);
+  // 用户置顶的排最前，其次是运行中，再次是跑完待看的，最后是看过闲着的；段内都按最后活动时间倒序。
+  const pinned = (s) => pinnedSessions.has(s.id);
+  const rank = (s) => (pinned(s) ? 0 : running(s) ? 1 : unread(s) ? 2 : 3);
   const matched = allSessions.filter((s) => s.cwd === currentCwd && s.title.toLowerCase().includes(query))
     .sort((a, b) => rank(a) - rank(b) || b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+  const hasPinned = matched.some(pinned);
   const groups = [
-    ["进行中", matched.filter((s) => running(s) || !hiddenSessions.has(s.id))],
-    ["已完成", matched.filter((s) => !running(s) && hiddenSessions.has(s.id))],
+    ...(hasPinned ? [["置顶", matched.filter(pinned)]] : []),
+    ["进行中", matched.filter((s) => !pinned(s) && (running(s) || !hiddenSessions.has(s.id)))],
+    ["已完成", matched.filter((s) => !pinned(s) && !running(s) && hiddenSessions.has(s.id))],
   ];
   const addRow = (s) => {
     const hidden = hiddenSessions.has(s.id);
@@ -3323,10 +3345,17 @@ function renderSessions() {
     status.hidden = !running(s) && !attention;
     status.setAttribute("aria-label", running(s) ? "执行中" : "有待查看的结果");
     button.append(status, title);
+    if (pinned(s)) {
+      const pin = document.createElement("small");
+      pin.className = "session-pin-icon";
+      pin.setAttribute("aria-label", "已置顶");
+      pin.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5v6h2v-6h5v-2l-2-2z"/></svg>';
+      button.append(pin);
+    }
     button.onclick = () =>
       switchSession(() => request("session.attach", { sessionId: s.id }));
     const row = document.createElement("div");
-    row.className = "session-row";
+    row.className = `session-row${pinned(s) ? " pinned" : ""}`;
     row.dataset.sessionId = s.id;
     const menu = document.createElement("details");
     menu.className = "session-options";
@@ -3352,6 +3381,7 @@ function renderSessions() {
     actions.setAttribute("popover", "manual");
     actions.setAttribute("aria-label", `会话操作：${s.title}`);
     for (const [kind, label, path] of [
+      ["pin", pinned(s) ? "取消置顶" : "置顶", 'M16 12V4h1V2H7v2h1v8l-2 2v2h5v6h2v-6h5v-2l-2-2z'],
       ["hide", hidden ? "移回进行中" : "标记已完成", hidden ? 'M12 20V4M5 11l7-7 7 7' : 'M5 12l4 4L19 6'],
       ["open", "在新标签页打开", 'M14 3h7v7M21 3l-10 10M10 3H3v18h18v-7'],
       ["copy", "复制", 'M9 9h11v12H9ZM15 9V3H4v12h5'],
@@ -3364,8 +3394,8 @@ function renderSessions() {
       action.title = label;
       action.setAttribute("aria-label", `${label}：${s.title}`);
       if (["rename", "delete"].includes(kind)) action.setAttribute("aria-haspopup", "dialog");
-      // 复制路径纯前端操作，不依赖连接，断连时也保持可用。
-      action.disabled = !["hide", "copy"].includes(kind) && (!connected || changing);
+      // 复制路径与置顶是纯前端偏好，不依赖连接，断连时也保持可用。
+      action.disabled = !["hide", "copy", "pin"].includes(kind) && (!connected || changing);
       action.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
       action.append(document.createTextNode(label));
       if (kind === "copy") {
@@ -3406,6 +3436,7 @@ function renderSessions() {
         more.focus();
         if (kind === "open") void switchSession(() => request("session.attach", { sessionId: s.id }));
         else if (kind === "hide") void setSessionHidden(s.id, !hidden);
+        else if (kind === "pin") void setSessionPinned(s.id, !pinned(s));
         else openSessionAction(kind, s);
       };
       actions.append(action);
@@ -3439,7 +3470,7 @@ function renderSessions() {
       }
       content.append(addRow(s));
     }
-    if (!sessions.length) {
+    if (!sessions.length && !hasPinned) {
       const empty = document.createElement("p");
       empty.className = "session-empty";
       empty.textContent = query ? "没有匹配的会话" : "暂无会话";

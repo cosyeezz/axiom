@@ -235,6 +235,22 @@ summary {
   border-color: color-mix(in srgb, var(--accent) 17%, transparent);
   box-shadow: inset 2px 0 var(--accent);
 }
+/* 置顶会话：底色从侧栏表面加深一层，配一条强调色左键，比普通行更重、与“当前页”高亮也能区分。 */
+.session-row.pinned {
+  background: var(--raised);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+  box-shadow: inset 3px 0 color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.session-row.pinned:hover,
+.session-row.pinned:focus-within { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); }
+/* 置顶 + 正在看的会话：两套高亮叠加，比单纯“当前页”更重，保留加深的底和更实的左键。 */
+.session-row.pinned:has(.session-item[aria-current="page"]) {
+  background: color-mix(in srgb, var(--accent) 14%, var(--raised));
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  box-shadow: inset 3px 0 var(--accent);
+}
+.session-pin-icon { flex-shrink: 0; display: grid; place-items: center; color: var(--accent-ink); }
+.session-pin-icon svg { width: 12px; height: 12px; fill: currentColor; }
 .session-item span {
   flex: 1;
   min-width: 0;
