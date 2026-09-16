@@ -6,6 +6,31 @@ import { tmpdir } from "node:os";
 import { discoverCapabilities, capabilityLoader, resolveCapabilities, refreshProjectSkills } from "../src/capabilities.js";
 import { command } from "../src/protocol.js";
 import { Sessions } from "../src/sessions.js";
+import { MAIN_AGENT_PROMPT, SUBAGENT_PROMPT } from "../src/prompts.js";
+
+test("main policy is appended without replacing Pi defaults or leaking to subagents", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-prompts-"));
+  const agentDir = join(root, "agent"), cwd = join(root, "project");
+  try {
+    await mkdir(agentDir);
+    await mkdir(cwd);
+    await writeFile(join(agentDir, "APPEND_SYSTEM.md"), "Existing user instructions");
+    const resources = await discoverCapabilities(cwd, { agentDir, loadAdapter: false });
+    for (const main of [true, false]) {
+      const { loader } = capabilityLoader(resources, { skills: [], plugins: [], mcp: [] }, main ? [{}] : []);
+      try {
+        await loader.reload();
+        assert.equal(loader.getSystemPrompt(), undefined, "leave Pi's default prompt intact");
+        assert.deepEqual(loader.getAppendSystemPrompt(), ["Existing user instructions", main ? MAIN_AGENT_PROMPT : SUBAGENT_PROMPT]);
+      } finally { loader.getExtensions().runtime.invalidate(); }
+    }
+    for (const section of ["Communication:", "Delegation:", "Environment:", "Git and worktrees:", "Response format and execution:"])
+      assert.ok(MAIN_AGENT_PROMPT.includes(section));
+    assert.ok(MAIN_AGENT_PROMPT.includes("<axiom_display>...</axiom_display>"));
+    assert.ok(MAIN_AGENT_PROMPT.includes("not to modify files or change external state"));
+    assert.ok(MAIN_AGENT_PROMPT.includes("not authorize automatic commits, pushes, or merges"));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
 
 test("selected workspaces load project skills by default, filter plugins and leave Pi settings unchanged", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-capabilities-"));

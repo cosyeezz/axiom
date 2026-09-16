@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/16 10:18:29）
+# Axiom 多级代码索引（生成于 2026/9/16 10:56:58）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -54,7 +54,7 @@
 | src/model-config.js | 619 | Pi models.json 无损配置读写与共享收藏持久化 | sdkModelConfig, sdkResolveConfigValue, digest, LEVELS |
 | src/pi-model-storage.js | 409 | 模型与凭据 SQLite 权威存储、Pi 派生兼容文件 | sdkResolveConfigValue, sdkIsCommandConfigValue, NAMESPACE, AUTH_NAMESPACE |
 | src/pi.js | 542 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, queueStateOf, hasModelOutput, withdrawQueue |
-| src/prompts.js | 36 | Axiom 自有提示词按 main/subagent/compaction 角色集中维护 | USER_COMMUNICATION, DELEGATION_PROMPT, TITLE_INSTRUCTION, SUBAGENT_PROMPT |
+| src/prompts.js | 60 | Axiom 自有提示词按 main/subagent/compaction 角色集中维护 | MAIN_AGENT_PROMPT, TITLE_INSTRUCTION, SUBAGENT_PROMPT, WRAP_UP_PROMPT |
 | src/protocol.js | 371 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/questions.js | 86 | 主代理 question 工具、参数校验与可取消的回答等待 | text, option, input, questionAnswers |
 | src/remote.js | 547 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
@@ -77,7 +77,7 @@
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
 | tests/backend-lifecycle.test.js | 76 | node --test 测试（npm test） | fixture |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
-| tests/capabilities.test.js | 289 | node --test 测试（npm test） | - |
+| tests/capabilities.test.js | 314 | node --test 测试（npm test） | - |
 | tests/cli-help.test.js | 46 | node --test 测试（npm test） | cli |
 | tests/codebase-index.test.js | 20 | node --test 测试（npm test） | ROOT, SKILL |
 | tests/compaction-config.test.js | 165 | node --test 测试（npm test） | - |
@@ -1173,18 +1173,17 @@
 | memoryExtension | function | 110 |
 | createPiFactory | function | 135 |
 
-### src/prompts.js（36 行） — Axiom 自有提示词按 main/subagent/compaction 角色集中维护
+### src/prompts.js（60 行） — Axiom 自有提示词按 main/subagent/compaction 角色集中维护
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| USER_COMMUNICATION | const | 2 |
-| DELEGATION_PROMPT | const | 9 |
-| TITLE_INSTRUCTION | const | 10 |
-| SUBAGENT_PROMPT | const | 13 |
-| WRAP_UP_PROMPT | const | 14 |
-| budgetSystemPrompt | const | 15 |
-| SUMMARY_SYSTEM_PROMPT | const | 19 |
-| summaryRequest | function | 22 |
+| MAIN_AGENT_PROMPT | const | 3 |
+| TITLE_INSTRUCTION | const | 34 |
+| SUBAGENT_PROMPT | const | 37 |
+| WRAP_UP_PROMPT | const | 38 |
+| budgetSystemPrompt | const | 39 |
+| SUMMARY_SYSTEM_PROMPT | const | 43 |
+| summaryRequest | function | 46 |
 
 ### src/protocol.js（371 行） — zod 协议：selection / command 判别联合（消息类型见 L3）
 

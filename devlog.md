@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-16 统一主代理追加提示词与项目交付规范
+
+- 内容与原因：将已确认的交流、只读调研委派、跨平台、Git/worktree 和 `<axiom_display>` 协议整理为 Pi 风格英文指令列表，仅追加到主代理，不替换默认提示词或扩散至子代理。
+- 涉及文件：`src/prompts.js`、`src/capabilities.js`、`tests/capabilities.test.js`、`AGENTS.md`、`README.md` 和代码索引；本机 `C:/Users/dane/.pi/agent/AGENTS.md` 的唯一重复交流规则已移除（保留空文件，不纳入 Git）。
+- 决策：项目文件保留分支、README/devlog 与 conventional commits 约定，明确授权每次改动验证通过后主动提交、合并并推送 master；通用提示词仍不自行授权合并。同步或验证失败时停止交付，不覆盖已有工作。
+- 验证：提示词加载回归 7/7 通过；`npm test` 共 691 项，689 通过、2 跳过、0 失败；`git diff --check` 通过。
+
 ## 2026-09-16 更新 append 描述与参数说明
 
 - 按用户原文更新 `src/tools.js` 的 append description，以及 `taskId`、`text`、`mode` 字段描述；明确 steer 调整当前工作，followUp 排队等待当前工作完成，补充指令不重复已有背景。
