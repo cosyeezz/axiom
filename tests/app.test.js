@@ -1205,6 +1205,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("transcript").scrollTop = 0;
     const runtime = {
       model: "other/child", thinking: "high", systemPrompt: '<img src=x onerror="alert(1)">\nSystem instructions',
+      tools: [{ name: "read", description: "<img src=x onerror=alert(1)>", parameters: { type: "object" } }],
       usage: { input: 100, cacheRead: 800, cacheWrite: 100 },
       context: { tokens: 1200, contextWindow: 10000, percent: 12 },
     };
@@ -1212,6 +1213,15 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.match($("session-runtime").textContent, /暂无数据/);
     emit("agent.runtime", { ...runtime, model: "test/model" });
     assert.match($("session-runtime").textContent, /80.0%.*test · model · high/);
+    assert.equal($("session-system-prompt").textContent, runtime.systemPrompt);
+    assert.deepEqual(JSON.parse($("session-active-tools").textContent), runtime.tools);
+    assert.equal($("session-inspector").querySelector("img"), null, "prompt and tool definitions are plain text");
+    emit("agent.runtime", { ...runtime, systemPrompt: "child only" }, { agentId: "child" });
+    assert.equal($("session-system-prompt").textContent, runtime.systemPrompt, "child runtime cannot overwrite main inspector");
+    emit("agent.runtime", { ...runtime, tools: [] });
+    assert.equal($("session-active-tools").textContent, "当前没有激活工具。");
+    emit("agent.runtime", runtime);
+    emit("agent.runtime", runtime, { agentId: "child" });
     emit("agent.runtime", { ...runtime, model: "unrelated/model" }, { sessionId: "b" });
     assert.doesNotMatch($("session-runtime").textContent, /unrelated/, "ignore events belonging to a different session");
     emit(
@@ -1327,6 +1337,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     row("b").querySelector(".session-item").click();
     await settle();
     assert.match($("session-runtime").textContent, /暂无数据/, "switching sessions clears previous usage");
+    assert.doesNotMatch($("session-system-prompt").textContent, /System instructions/, "switching sessions clears previous prompt");
+    assert.equal($("session-active-tools").textContent, "工具信息尚未加载。");
     assert.equal($("task-runs").hidden, true, "switching sessions resets the run summary");
     assert.equal($("task-runs").children.length, 0, "restored completed history never enters the summary");
     $("toggle-sidebar").click();

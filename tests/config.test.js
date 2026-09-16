@@ -9,6 +9,7 @@ test("runtime snapshots use actual agent state, survive disposal and stay out of
     const state = {
       model: { provider: "test", id: "model" }, thinkingLevel: "off", systemPrompt: "Initial prompt",
       messages: [], getContextUsage: () => ({ tokens: null, contextWindow: 10000, percent: null }),
+      agent: { state: { tools: [{ name: "read", description: "Read", parameters: { type: "object" }, execute: () => {} }] } },
     };
     let listener;
     return {
@@ -32,6 +33,8 @@ test("runtime snapshots use actual agent state, survive disposal and stay out of
     assert.equal(initial.usage, null);
     assert.equal(initial.context.tokens, null);
     assert.equal(initial.systemPrompt, "Initial prompt");
+    assert.deepEqual(initial.tools, [{ name: "read", description: "Read", parameters: { type: "object" } }]);
+    assert.equal(Object.hasOwn(initial.tools[0], "execute"), false, "only serializable tool definitions are exposed");
     const configured = await sessions.configure(id, { model: "test/model" });
     assert.equal(configured.runtime.thinking, "high");
     const events = [];

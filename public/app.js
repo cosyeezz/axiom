@@ -651,6 +651,10 @@ function runtimeSummary(value = {}) {
 }
 function renderRuntime(node, value) {
   if (node.id === "session-runtime") {
+    $("session-system-prompt").textContent = value?.systemPrompt ?? "系统提示词尚未加载；会话启动后可查看。";
+    $("session-active-tools").textContent = Array.isArray(value?.tools)
+      ? value.tools.length ? JSON.stringify(value.tools, null, 2) : "当前没有激活工具。"
+      : "工具信息尚未加载。";
     const { usage, context } = value || {};
     const input = (usage?.input ?? 0) + (usage?.cacheRead ?? 0) + (usage?.cacheWrite ?? 0);
     const cache = input > 0 && Number.isFinite(usage?.cacheRead) ? `${(usage.cacheRead / input * 100).toFixed(1)}%` : "—";

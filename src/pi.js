@@ -19,6 +19,7 @@ export function agentRuntime(session) {
     model: `${session.model.provider}/${session.model.id}`,
     thinking: session.thinkingLevel,
     systemPrompt: session.systemPrompt,
+    tools: session.agent?.state.tools?.map(({ name, description, parameters }) => ({ name, description, parameters })) ?? null,
     context: session.getContextUsage() ?? null,
     usage: last?.usage ?? null,
   };
@@ -377,9 +378,15 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         return refreshProjectSkills(loader, capabilities, fresh.catalog, selection.capabilities == null);
       },
       // 激活已注册工具（如进入 Goal 模式启用 goal_*）：与当前激活集合并，未知名称由 SDK 忽略。
-      enableTools: (names) => session.setActiveToolsByName([...new Set([...session.getActiveToolNames(), ...names])]),
+      enableTools: (names) => {
+        session.setActiveToolsByName([...new Set([...session.getActiveToolNames(), ...names])]);
+        emitAxiom({ type: "agent.runtime", data: agentRuntime(session) });
+      },
       // 停用已激活工具（如退出 Goal 模式禁用 goal_*）：与当前激活集求差，未知名称无副作用。
-      disableTools: (names) => session.setActiveToolsByName(session.getActiveToolNames().filter((name) => !names.includes(name))),
+      disableTools: (names) => {
+        session.setActiveToolsByName(session.getActiveToolNames().filter((name) => !names.includes(name)));
+        emitAxiom({ type: "agent.runtime", data: agentRuntime(session) });
+      },
       config: () => ({
         model: `${session.model.provider}/${session.model.id}`,
         thinking: session.thinkingLevel,

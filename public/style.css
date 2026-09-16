@@ -726,6 +726,12 @@ button.danger:hover:not(:disabled) { background: light-dark(#a92f41, #c13e50); }
   border-radius: 8px;
 }
 .task-system-prompt pre { overflow: visible; }
+#session-inspector { margin: 0 12px 8px; }
+#session-inspector > summary { cursor: pointer; }
+.session-inspector-body { max-height: min(45vh, 480px); overflow: auto; }
+.session-inspector-body > p { color: var(--muted); font-size: 12px; }
+.session-inspector-body h3 { font-size: 14px; }
+.session-inspector-body pre { user-select: text; }
 .task-error { color: var(--danger); white-space: pre-wrap; overflow-wrap: anywhere; }
 .task-card[data-status="running"] .task-status,
 .task-card[data-status="starting"] .task-status { color: var(--subagent); }

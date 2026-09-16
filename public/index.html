@@ -157,6 +157,16 @@
                 ><button type="submit" class="secondary" id="send-steer" data-queue="steer" title="在下一个可介入节点补充指令，不中断正在运行的工具" hidden>Steer</button><button type="submit" class="secondary" id="send-followup" data-queue="followUp" title="等待当前这一轮结束后发送，不影响当前执行" hidden>Follow-up</button><button id="send">Send</button>
               </div>
               <div id="session-runtime" class="runtime-summary" role="status" aria-live="polite"></div>
+              <details id="session-inspector" class="task-system-prompt">
+                <summary>主代理系统提示词与工具</summary>
+                <div class="session-inspector-body">
+                  <p>当前运行态快照，不是最后一次完整请求。运行结束后扩展提示可能复位；不含动态用户消息或供应商内部指令。分享前请检查隐私内容。</p>
+                  <h3>系统提示词</h3>
+                  <pre id="session-system-prompt">系统提示词尚未加载；会话启动后可查看。</pre>
+                  <h3>当前激活工具（名称、描述与参数）</h3>
+                  <pre id="session-active-tools">工具信息尚未加载。</pre>
+                </div>
+              </details>
               <div class="mobile-controls">
                 <span id="mobile-runtime" aria-live="polite"></span>
                 <button type="button" id="mobile-expand" class="secondary" aria-expanded="false" aria-controls="composer earliest session-title">展开</button>
