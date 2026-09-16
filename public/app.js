@@ -98,7 +98,7 @@ function clearGoalPrompt(text) {
   const view = views.get(sessionId);
   if (view?.draft === text) view.draft = "";
   resizePrompt();
-  controls();
+  region("输入操作", updateComposer);
 }
 // 手动重试靠主代理末尾消息判定：与服务端 canResume 同一条规则，避免两边判断不一致。
 let lastMainMessage = null, interrupted = false, canReask = false;
@@ -459,34 +459,64 @@ function paintRaw() {
 function request(type, data = {}) {
   return transport.request({ type, ...data });
 }
-function controls() {
-  questionUI.setConnected(connected && !changing && !sessionMissing);
-  goalUI.setConnected(connected && !changing && !sessionMissing);
+// 区域只持有 DOM 更新职责，业务数据仍由 sessionId/config/models 等现有来源提供。
+// 仅包 UI 更新，不包事件归并/快照：权威数据失败必须继续向调用方传播。
+function region(name, update) {
+  try { update(); }
+  catch (e) { error(`${name}显示失败：${e.message || e}`); }
+}
+function updateAvailability() {
+  region("连接状态", updateConnection);
+  region("会话导航", updateNavigation);
+  region("输入操作", updateComposer);
+  region("模型配置", updateModelAvailability);
+  region("设置与详情", updateSettingsAvailability);
+}
+function updateConnection() {
+  $("status").dataset.connected = String(connected);
+  $("status").textContent = serviceUi.restarting ? "正在重启…" : connected ? "已连接" : "连接断开";
+  serviceUi.sync();
+}
+function updateModelAvailability() {
   const unavailable = !connected || changing;
   for (const id of ["provider", "model", "thinking", "subagent-provider", "subagent-model"])
     $(id).disabled = unavailable;
   $("agent-role").disabled = unavailable || !config;
   $("model").disabled ||= $("agent-role").value === "subagent" && !$("provider").value;
   $("subagent-model").disabled ||= !$("subagent-provider").value;
+}
+function updateSettingsAvailability() {
+  const unavailable = !connected || changing;
   $("settings-feedback").textContent = unavailable
     ? (changing ? "正在保存或切换配置…" : "连接断开，暂时无法修改配置")
     : "更改自动保存，模型在下一次请求生效";
   for (const fieldset of $("create-agents").children) fieldset.disabled = unavailable;
   for (const id of ["defaults-workspace", "defaults-directory", "defaults-delete"]) $(id).disabled = unavailable;
-  $("queue-type").disabled = unavailable;
   const remoteLocked = remoteView.local === false;
   for (const id of ["remote-enabled", "remote-email", "remote-save"])
     $(id).disabled = unavailable || remoteLocked;
   $("remote-refresh").disabled = unavailable;
+  for (const task of tasks.values()) task.retryButton.disabled = unavailable || sessionMissing || task.retrying;
+}
+function updateNavigation() {
+  const unavailable = !connected || changing;
+  $("open-workspace").disabled = unavailable || pickingWorkspace;
+  $("reveal-workspace").disabled = unavailable;
+  $("copy-workspace").disabled = !$("workspace-label").textContent;
+  $("new").disabled = unavailable || !models.length;
+  for (const button of $("sessions").querySelectorAll(".session-actions button")) button.disabled = !button.closest(".session-copy-menu") && !button.matches(".session-copy, .session-hide") && unavailable;
+}
+function updateComposer() {
+  const unavailable = !connected || changing;
+  questionUI.setConnected(!unavailable && !sessionMissing);
+  goalUI.setConnected(!unavailable && !sessionMissing);
+  $("queue-type").disabled = unavailable;
   $("composer-skill").disabled = unavailable || !config?.skills?.length;
   $("composer-skill").value = selectedSkill;
   if (unavailable) closeCompletion();
   $("prompt").required = !selectedSkill && !images.length && !contextFiles.length;
   $("add-image").disabled = unavailable || imageLoading;
   $("add-context").disabled = unavailable;
-  $("open-workspace").disabled = unavailable || pickingWorkspace;
-  $("reveal-workspace").disabled = unavailable;
-  $("copy-workspace").disabled = !$("workspace-label").textContent;
   renderContextChips();
   for (const id of ["send", "send-steer", "send-followup"])
     $(id).disabled = unavailable || !sessionId || sessionMissing || imageLoading || (!$("prompt").value.trim() && !selectedSkill && !images.length && !contextFiles.length);
@@ -499,28 +529,27 @@ function controls() {
   $("session-alert").hidden = !stopAlert;
   $("send").hidden = busy;
   syncRetryPrompt();
-  for (const task of tasks.values()) task.retryButton.disabled = unavailable || sessionMissing || task.retrying;
-  $("new").disabled = unavailable || !models.length;
-  for (const button of document.querySelectorAll(".session-actions button")) button.disabled = !button.closest(".session-copy-menu") && !button.matches(".session-copy, .session-hide") && unavailable;
-  $("status").dataset.connected = String(connected);
-  $("status").textContent = serviceUi.restarting ? "正在重启…" : connected ? "已连接" : "连接断开";
-  serviceUi.sync();
-  modelPicker.syncAll();
 }
 function options(select, entries, selected) {
-  select.replaceChildren(
-    ...entries.map(
-      ([value, text]) => new Option(text, value, false, value === selected),
-    ),
-  );
+  if (selected && !entries.some(([value]) => value === selected))
+    entries = [...entries, [selected, `${selected}（当前不可用）`]];
+  // 比较原生目录而非每次新建 Option；选择变化只写 value，不破坏打开菜单。
+  const current = [...select.options];
+  if (current.length !== entries.length || entries.some(([value, text], i) => current[i].value !== value || current[i].text !== text))
+    select.replaceChildren(...entries.map(([value, text]) => new Option(text, value)));
+  if (selected !== undefined) select.value = selected;
   modelPicker.sync(select);
 }
 // 所有入口共用同一份模型目录；收藏只改变展示顺序，不改变会话选择。
 const providerEntries = () => [...new Set(models.map((m) => m.provider))].map((p) => [p, p]);
 const modelEntries = (provider) => models.filter((m) => provider === undefined || m.provider === provider)
   .map((m) => [m.key, m.name || m.id]);
+let catalogRequest = 0;
 async function refreshModelCatalog() {
-  models = await request("models.list");
+  const ticket = ++catalogRequest;
+  const catalog = await request("models.list");
+  if (ticket !== catalogRequest) return;
+  models = catalog;
   // 原选择失效时保留并标明；刷新目录不能悄悄切换用户的模型或触发自动保存。
   const refill = (select, entries) => {
     const value = select.value;
@@ -539,18 +568,17 @@ async function refreshModelCatalog() {
     const levels = models.find((entry) => entry.key === model?.value)?.levels;
     if (levels) refill(select, levels.map((level) => [level, level]));
   }
-  modelPicker.syncAll();
+  region("会话导航", updateNavigation);
   // 首次配置保存模型后解除引导态（并发重复刷新只在状态变化时执行一次）。
   if (onboarding && models.length) {
     onboarding = false;
-    controls();
+    region("会话导航", updateNavigation);
     error("模型已保存：点击「＋ 新会话」即可开始对话。");
   }
 }
-function fillModels() {
+function fillModels(selected = $("agent-role").value === "subagent" ? config?.subagentModel || "" : config?.model) {
   const child = $("agent-role").value === "subagent";
-  options($("model"), child && !$("provider").value ? [["", "跟随主代理模型"]] : modelEntries($("provider").value),
-    child ? config?.subagentModel || "" : config?.model);
+  options($("model"), child && !$("provider").value ? [["", "跟随主代理模型"]] : modelEntries($("provider").value), selected);
 }
 function renderAgentConfig() {
   const child = $("agent-role").value === "subagent";
@@ -558,20 +586,19 @@ function renderAgentConfig() {
   const current = models.find((m) => m.key === key);
   options($("provider"), [...(child ? [["", "跟随主代理"]] : []), ...providerEntries()], current?.provider || "");
   fillModels();
-  if (key && !current) $("model").add(new Option(`${key}（当前不可选）`, key, true, true));
   const levels = child ? (current?.levels || config.levels) : config.levels;
   options($("thinking"), [...(child ? [["", "跟随主代理思考等级"]] : []), ...(levels || []).map((v) => [v, v])],
     child ? config.subagentThinking || "" : config.thinking);
-  modelPicker.syncAll();
+  modelPicker.sync($("model"));
 }
-function fillSubagentModels() {
+function fillSubagentModels(selected = config?.subagentModel || "") {
   const provider = $("subagent-provider").value;
   options(
     $("subagent-model"),
     provider
       ? modelEntries(provider)
       : [["", "跟随主代理模型"]],
-    config?.subagentModel || "",
+    selected,
   );
 }
 function capabilityName(id) {
@@ -621,13 +648,19 @@ function updateTaskRuntime(task, value) {
 }
 function applyConfig(value) {
   config = value;
+  runtime = value.runtime ?? { ...runtime, model: value.model, thinking: value.thinking };
+  region("输入操作", () => renderComposerConfig(value));
+  region("模型配置", () => renderModelConfig(value));
+  region("设置与详情", () => renderRuntime($("session-runtime"), runtime));
+}
+function renderComposerConfig(value) {
   options($("composer-skill"), [["", value.skills?.length ? "选择 Skill（本次发送加载）" : "此会话无可用 Skill"],
     ...(value.skills || []).map((skill) => [skill.name, skill.name])]);
   for (const option of $("composer-skill").options)
     option.title = value.skills?.find((skill) => skill.name === option.value)?.description || "";
   $("queue-type").value = value.queueType || "steer";
-  runtime = value.runtime ?? { ...runtime, model: value.model, thinking: value.thinking };
-  renderRuntime($("session-runtime"), runtime);
+}
+function renderModelConfig(value) {
   options(
     $("subagent-provider"),
     [["", "跟随主代理"], ...providerEntries()],
@@ -649,7 +682,7 @@ async function configure(thinking, source = "composer") {
     : { model: config.model, ...(source === "subagent" ? { subagentModel: $("subagent-model").value || null } : {}) };
   let failure;
   changing = true;
-  controls();
+  updateAvailability();
   $("error").textContent = "";
   try {
     const value = await request("session.configure", {
@@ -667,36 +700,53 @@ async function configure(thinking, source = "composer") {
   } finally {
     if (seq !== configureSeq) return; // 已有更新一次的配置请求，由它负责收尾
     changing = false;
-    controls();
+    updateAvailability();
     if (sessionId === target && failure) $("settings-feedback").textContent = `保存失败：${failure}`;
   }
 }
 // 摘要记忆参数：设置页「默认新会话设置」独立小节，get 填充、change 即存（服务端持久化并校验边界）。
 const taskBudgetInputs = ["task-max-turns", "task-wrap-up-window"];
+let settingsGeneration = 0;
+let budgetRequest = 0, remoteRequest = 0;
+const settingsTicket = () => {
+  const generation = settingsGeneration, target = sessionId;
+  return () => generation === settingsGeneration && target === sessionId;
+};
+$("settings").addEventListener("close", () => {
+  if ($("settings").open) return;
+  settingsGeneration++;
+  creationLoad++;
+
+});
 async function loadTaskBudget() {
+  const current = settingsTicket(), ticket = ++budgetRequest;
   try {
     const budget = await request("task.budget.get");
+    if (!current() || ticket !== budgetRequest) return;
     $("task-max-turns").value = budget.maxTurns ?? taskBudgetDefaults.maxTurns;
     $("task-wrap-up-window").value = budget.wrapUpWindow ?? taskBudgetDefaults.wrapUpWindow;
   } catch (e) {
-    $("settings-feedback").textContent = `轮次预算加载失败：${e.message}`;
+    if (current() && ticket === budgetRequest) $("settings-feedback").textContent = `轮次预算加载失败：${e.message}`;
   }
 }
 async function saveTaskBudget() {
+  const current = settingsTicket(), ticket = ++budgetRequest;
   try {
     const budget = await request("task.budget.configure", { budget: Object.fromEntries(
       [["task-max-turns", "maxTurns"], ["task-wrap-up-window", "wrapUpWindow"]]
         .map(([id, key]) => [key, Number($(id).value)]),
     ) });
+    if (!current() || ticket !== budgetRequest) return;
     $("task-max-turns").value = budget.maxTurns;
     $("task-wrap-up-window").value = budget.wrapUpWindow;
     $("settings-feedback").textContent = "轮次预算已保存 · 新建任务生效";
   } catch (e) {
-    $("settings-feedback").textContent = `轮次预算保存失败：${e.message}`;
+    if (current() && ticket === budgetRequest) $("settings-feedback").textContent = `轮次预算保存失败：${e.message}`;
   }
 }
 for (const id of taskBudgetInputs) $(id).addEventListener("change", () => void saveTaskBudget());
 function showSettingsPanel(panel) {
+  settingsGeneration++;
   for (const name of ["defaults", "remote", "models", "service"]) {
     $(`${name}-panel`).hidden = name !== panel;
     const button = $(`settings-${name}-tab`);
@@ -717,7 +767,7 @@ $("status").onclick = () => {
 };
 $("open-settings").onclick = () => {
   showSettingsPanel(models.length ? "defaults" : "models");
-  controls();
+  region("设置与详情", updateSettingsAvailability);
   if (!$("settings").open) $("settings").showModal();
   if (models.length) void openDefaults();
   void loadTaskBudget();
@@ -785,21 +835,25 @@ function remoteRender(data) {
   const auth = remoteAuthUrl(data.authUrl);
   if (!data.loginEmail && auth && data.local === true)
     $("remote-auth").replaceChildren(remoteAnchor(auth, "打开 Tailscale 登录授权"));
-  controls();
+  region("设置与详情", updateSettingsAvailability);
 }
 async function remoteLoad() {
   if (!connected) return;
+  const current = settingsTicket(), ticket = ++remoteRequest;
   remoteLoaded = true;
   $("remote-feedback").textContent = "";
   $("remote-status").textContent = "正在读取远程访问状态…";
   $("remote-refresh").disabled = true;
   try {
-    remoteRender(await request("remote.get"));
+    const data = await request("remote.get");
+    if (!current() || ticket !== remoteRequest) return;
+    remoteRender(data);
   } catch (e) {
+    if (!current() || ticket !== remoteRequest) return;
     $("remote-status").textContent = "状态读取失败";
     $("remote-feedback").textContent = `读取失败：${e.message}`;
   } finally {
-    controls();
+    region("设置与详情", updateSettingsAvailability);
   }
 }
 // 授权链接只信 https://login.tailscale.com/a/…（默认 443、无凭据），其余一律不渲染。
@@ -836,9 +890,9 @@ async function remoteLogin() {
   }
 }
 // 无轮询：回到页面 focus 或手动刷新时更新账号。
-window.addEventListener("focus", () => { if (remoteLoaded) void remoteLoad(); });
+window.addEventListener("focus", () => { if (remoteLoaded && $("settings").open && !$("remote-panel").hidden) void remoteLoad(); });
 function remoteOnReconnect() {
-  if (remoteLoaded) void remoteLoad();
+  if (remoteLoaded && $("settings").open && !$("remote-panel").hidden) void remoteLoad();
 }
 $("remote-refresh").onclick = () => void remoteLoad();
 $("remote-form").onsubmit = async (e) => {
@@ -851,7 +905,7 @@ $("remote-form").onsubmit = async (e) => {
     return;
   }
   changing = true;
-  controls();
+  updateAvailability();
   $("remote-feedback").textContent = "正在保存…";
   try {
     const data = await request("remote.configure", { enabled, email });
@@ -861,7 +915,7 @@ $("remote-form").onsubmit = async (e) => {
     $("remote-feedback").textContent = `保存失败：${e2.message}`;
   } finally {
     changing = false;
-    controls();
+    updateAvailability();
   }
 };
 const messageItems = new WeakMap(), toolItems = new Map(), waitingItems = new Map();
@@ -1983,7 +2037,7 @@ function applyEvent(message) {
     if (message.sessionId === sessionId) {
       sessionMissing = true;
       saveView();
-      controls();
+      region("输入操作", updateComposer);
       if (connected && !changing) void recoverMissingSession();
     }
     void refreshSessions().catch(error);
@@ -2010,10 +2064,10 @@ function applyEvent(message) {
     rawLive.delete(agentId);
   }
   if (type.startsWith("agent.message.") || type === "agent.delta") rawChanged();
-  if (type === "question.asked") questionUI.asked(message.sessionId, data);
-  if (type === "question.closed") questionUI.closed(message.sessionId, data.toolCallId);
+  if (type === "question.asked") region("输入操作", () => questionUI.asked(message.sessionId, data));
+  if (type === "question.closed") region("输入操作", () => questionUI.closed(message.sessionId, data.toolCallId));
   if (type === "goal") {
-    goalUI.show(sessionId, data?.goal ?? message.goal, goalAnchors);
+    region("对话展示", () => goalUI.show(sessionId, data?.goal ?? message.goal, goalAnchors));
     return;
   }
   if (type === "agent.compaction.status" && agentId === "main") renderCompactionStatus(data);
@@ -2056,8 +2110,8 @@ function applyEvent(message) {
   if (type === "agent.runtime") {
     if (agentId === "main") {
       runtime = data;
-      renderRuntime($("session-runtime"), runtime);
-    } else updateTaskRuntime(tasks.get(agentId), data);
+      region("设置与详情", () => renderRuntime($("session-runtime"), runtime));
+    } else region("设置与详情", () => updateTaskRuntime(tasks.get(agentId), data));
   }
   if (type === "session.state") {
     applyElapsed(data);
@@ -2076,7 +2130,7 @@ function applyEvent(message) {
     // 停稳了才判断能不能续：message.end 总先于 idle 到达，此时 lastMainMessage 已是本轮结果。
     if (data.status === "running") interrupted = false;
     else if (data.status === "idle") interrupted = canReask || canResumeMessage(lastMainMessage);
-    controls();
+    region("输入操作", updateComposer);
   }
   if (type === "agent.message.start" && data.message.role === "assistant") {
     clearWaiting(agentId);
@@ -2557,8 +2611,8 @@ function finishSnapshot(job, ctx) {
   runtime = state.runtime;
   applyConfig(state.config);
   config.compaction = state.config.compaction || compactionDefaults;
-  controls();
-  goalUI.show(sessionId, state.goal, goalAnchors);
+  updateAvailability();
+  region("对话展示", () => goalUI.show(sessionId, state.goal, goalAnchors));
 }
 const transport = createTransport({
   url: () => `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`,
@@ -2568,6 +2622,7 @@ const transport = createTransport({
     if (["connecting", "restoring"].includes(state)) {
       connected = false;
     } else if (["disconnected", "closed", "recovering", "limited"].includes(state)) {
+      configureSeq++;
       connected = false;
       for (const id of new Set(["main", ...tasks.keys(), ...waitingItems.keys()])) stopActivity(id, "连接断开，等待恢复");
       if (!$("workspace").hidden) saveView();
@@ -2578,7 +2633,7 @@ const transport = createTransport({
       $("connect").disabled = false;
       if (state === "limited") error("自动恢复已暂停：快照过大或连续恢复失败。请确认服务状态后手动连接。");
     }
-    controls();
+    updateAvailability();
     if (["connecting", "restoring"].includes(state)) $("status").textContent = "连接中";
     if (state === "limited") $("status").textContent = "连接受限，请手动重试";
   },
@@ -2588,7 +2643,11 @@ transport.subscribe("models.favorites.changed", {}, (message) => {
   modelPicker.syncAll();
 });
 transport.subscribe("models.config.changed", {}, () => refreshModelCatalog());
-window.addEventListener("pagehide", (event) => { if (!event.persisted) transport.dispose(); });
+window.addEventListener("pagehide", (event) => {
+  if (event.persisted) return;
+  transport.dispose();
+  modelPicker.dispose();
+});
 $("login").onsubmit = (e) => {
   e.preventDefault();
   void transport.connect().catch((e) => {
@@ -2615,12 +2674,12 @@ async function initializeConnection({ isCurrent }) {
       if (!isCurrent()) return;
       connected = true;
       $("login").hidden = true;
-      controls();
+      updateAvailability();
       return;
     }
     const service = await request("service.status");
     importDir = service.importDir || "";
-    serviceUi.apply(service);
+    region("连接状态", () => serviceUi.apply(service));
     models = await request("models.list");
     try { modelFavorites = await request("models.favorites.get"); }
     catch (e) { error(`收藏读取失败：${e.message}`); }
@@ -2634,7 +2693,7 @@ async function initializeConnection({ isCurrent }) {
       onboarding = true;
       sessionMissing = true;
       connected = true;
-      controls();
+      updateAvailability();
       $("login").hidden = true;
       $("workspace").hidden = false;
       error("尚无可用模型：请在「设置 → 模型与供应商」中添加并保存；保存后点击「＋ 新会话」即可开始，无需重启。");
@@ -2691,7 +2750,7 @@ async function initializeConnection({ isCurrent }) {
     remoteOnReconnect();
     initialized = true;
     resizePrompt();
-    controls();
+    updateAvailability();
   } catch (e) {
     if (initializingSession && isCurrent()) {
       // 业务配置失败不等于断线：保留设置/更新入口，避免安装后陷入重连死循环。
@@ -2699,7 +2758,7 @@ async function initializeConnection({ isCurrent }) {
       connected = true;
       $("login").hidden = true;
       $("workspace").hidden = false;
-      controls();
+      updateAvailability();
       $("open-settings").click();
       error(`会话暂时无法打开：${e.message}。服务仍已连接，可在设置中修正配置或更新服务，然后点击「＋ 新会话」重试。`);
       initialized = true;
@@ -2710,22 +2769,22 @@ async function initializeConnection({ isCurrent }) {
     }
   } finally {
     $("connect").disabled = false;
-    controls();
+    updateAvailability();
   }
 }
 let importDir = "";
-controls();
+updateAvailability();
 $("login").requestSubmit();
-$("agent-role").onchange = () => { if (config) renderAgentConfig(); controls(); };
+$("agent-role").onchange = () => { if (config) region("模型配置", renderAgentConfig); region("模型配置", updateModelAvailability); };
 $("provider").onchange = () => {
-  fillModels();
+  fillModels(modelEntries($("provider").value)[0]?.[0] || "");
   void configure();
 };
 $("model").onchange = () => {
   void configure();
 };
 $("subagent-provider").onchange = () => {
-  fillSubagentModels();
+  fillSubagentModels(modelEntries($("subagent-provider").value)[0]?.[0] || "");
   void configure(undefined, "subagent");
 };
 $("subagent-model").onchange = () => {
@@ -2747,7 +2806,7 @@ $("composer").onsubmit = async (e) => {
   const wasBusy = busy;
   const queueType = e.submitter?.dataset.queue || config?.queueType || "steer";
   busy = true;
-  controls();
+  region("输入操作", updateComposer);
   $("error").textContent = "";
   const sendingSession = sessionId;
 
@@ -2758,7 +2817,7 @@ $("composer").onsubmit = async (e) => {
     if (sessionId === sendingSession) {
       images = images.filter((image) => !sentImages.includes(image));
       renderImages();
-      controls();
+      region("输入操作", updateComposer);
     }
     const imageView = views.get(sendingSession);
     if (imageView) imageView.images = (imageView.images || []).filter((image) => !sentImages.includes(image));
@@ -2767,7 +2826,7 @@ $("composer").onsubmit = async (e) => {
       contextFiles = contextFiles.filter((file) => !files.includes(file));
       if (selectedSkill === skill) selectedSkill = "";
       resizePrompt();
-      controls();
+      region("输入操作", updateComposer);
     }
     const saved = views.get(sendingSession);
     if (saved?.draft === draft) {
@@ -2780,7 +2839,7 @@ $("composer").onsubmit = async (e) => {
     if (sessionId === sendingSession) {
       error(e);
       busy = wasBusy;
-      controls();
+      region("输入操作", updateComposer);
     }
   }
 };
@@ -2822,7 +2881,7 @@ function renderImages() {
       $("prompt").value = $("prompt").value.replace(/\[image(\d+)\]/g, (marker, n) =>
         Number(n) === index + 1 ? "" : Number(n) > index + 1 ? `[image${Number(n) - 1}]` : marker);
       images = images.filter((item) => item !== image);
-      renderImages(); resizePrompt(); controls();
+      renderImages(); resizePrompt(); region("输入操作", updateComposer);
     };
     const label = document.createElement("span");
     label.textContent = `[image${index + 1}]`;
@@ -2849,7 +2908,7 @@ async function addImages(files, target = sessionId) {
   const current = view ? (view.images || []) : images;
   if (current.length + added.length > 4) throw new Error("每条消息最多添加 4 张图片");
   if (view) { view.images = [...current, ...added]; views.set(target, view); }
-  else { images = [...current, ...added]; renderImages(); controls(); }
+  else { images = [...current, ...added]; renderImages(); region("输入操作", updateComposer); }
 }
 async function loadImages(files) {
   if (imageLoading || withdrawing || changing || !connected) return;
@@ -2860,7 +2919,7 @@ async function loadImages(files) {
   input.setRangeText(markers, input.selectionStart, input.selectionEnd, "end");
   input.dispatchEvent(new Event("input", { bubbles: true }));
   imageLoading = true;
-  renderImages(); controls();
+  renderImages(); region("输入操作", updateComposer);
   try { await addImages(files, target); }
   catch (e) {
     // ponytail: only roll back an unchanged insertion; edited markers remain ordinary draft text.
@@ -2875,7 +2934,7 @@ async function loadImages(files) {
     }
     error(e);
   }
-  finally { imageLoading = false; renderImages(); controls(); }
+  finally { imageLoading = false; renderImages(); region("输入操作", updateComposer); }
 }
 $("add-image").onclick = () => $("image-files").click();
 $("image-files").onchange = async () => {
@@ -2989,7 +3048,7 @@ async function withdrawQueue(recall = false) {
     if (sessionId === target && !changing) {
       $("prompt").value = [$("prompt").value, text].filter(Boolean).join("\n\n");
       images = [...images, ...restored];
-      renderImages(); resizePrompt(); controls(); $("prompt").focus();
+      renderImages(); resizePrompt(); region("输入操作", updateComposer); $("prompt").focus();
     } else {
       const view = views.get(target) || {};
       view.draft = [view.draft, text].filter(Boolean).join("\n\n");
@@ -3039,7 +3098,7 @@ $("session-alert").onclick = () => {
   stopAlert = false;
   markSessionSeen(sessionId); // 同一下点掉标题红点和侧栏「待查看」点，两处不至于分岔。
   renderSessions();
-  controls();
+  region("输入操作", updateComposer);
 };
 $("stop").onclick = () => void stopSession("safe");
 $("force-stop").onclick = () => {
@@ -3130,7 +3189,7 @@ async function updateSessions() {
 }
 async function recoverMissingSession() {
   sessionMissing = true;
-  controls();
+  region("输入操作", updateComposer);
   // 空模型目录不等于历史已删除，保留引用与草稿。
   if (!models.length) {
     error("当前会话暂不可用；请先在「设置 → 模型与供应商」配置模型，再点击「＋ 新会话」。");
@@ -3141,7 +3200,7 @@ async function recoverMissingSession() {
   const draft = views.get(sessionId);
   const cwd = currentCwd;
   changing = true;
-  controls();
+  updateAvailability();
   try {
     // 不把旧草稿塞入另一条已有会话；独立新建，且不自动发送。
     const state = await request("session.create", { cwd });
@@ -3154,7 +3213,7 @@ async function recoverMissingSession() {
   } finally {
     changing = false;
     renderSessions();
-    controls();
+    updateAvailability();
   }
 }
 async function switchSession(action) {
@@ -3162,7 +3221,7 @@ async function switchSession(action) {
   saveView();
   changing = true;
   $("error").textContent = "";
-  controls();
+  updateAvailability();
   try {
     const state = await action();
     if (currentCwd && state.cwd !== currentCwd) {
@@ -3186,7 +3245,7 @@ async function switchSession(action) {
     error(e);
   } finally {
     changing = false;
-    controls();
+    updateAvailability();
   }
 }
 // 保留源路径的分隔符，兼容 Windows、UNC 和 POSIX 文件路径。
@@ -3424,7 +3483,7 @@ function renderContextChips() {
     chip.append(entry.kind === "skill" ? contextIcon("skill") : fileIcon({ ...entry, name: entry.path.split(/[\\/]/).pop() }), label, close);
     chip.onclick = () => {
       if (entry.kind === "skill") { $("composer-skill").value = ""; $("composer-skill").onchange(); }
-      else { contextFiles = contextFiles.filter((file) => file.path !== entry.path); controls(); }
+      else { contextFiles = contextFiles.filter((file) => file.path !== entry.path); region("输入操作", updateComposer); }
     };
     return chip;
   }));
@@ -3495,7 +3554,7 @@ for (const button of document.querySelectorAll("[data-context]")) button.onclick
       options($("composer-skill"), [["", skills.length ? "选择 Skill（本次发送加载）" : "此会话无可用 Skill"], ...skills.map((skill) => [skill.name, skill.name])]);
       for (const option of $("composer-skill").options)
         option.title = skills.find((skill) => skill.name === option.value)?.description || "";
-      controls();
+      region("输入操作", updateComposer);
       renderContextResults();
       if (!$("context-picker").hidden) positionContextSkills();
     } catch (error) {
@@ -3509,7 +3568,7 @@ for (const button of document.querySelectorAll("[data-context]")) button.onclick
   if (!entry || target !== sessionId || !connected || changing) return;
   entry.path ||= ".";
   if (!contextFiles.some((file) => file.path === entry.path)) contextFiles.push(entry);
-  controls(); $("prompt").focus();
+  region("输入操作", updateComposer); $("prompt").focus();
 };
 const skillTrigger = document.querySelector('[data-context="skill"]');
 skillTrigger.removeAttribute("title");
@@ -3537,7 +3596,7 @@ $("context-close").onclick = () => {
 $("composer-skill").onchange = () => {
   selectedSkill = $("composer-skill").value;
   resizePrompt();
-  controls();
+  region("输入操作", updateComposer);
   $("prompt").focus();
 };
 // 斜杠补全里的命令（不是 Skill）：选择后只把 "/goal " 补进输入框，光标留在末尾，
@@ -3574,7 +3633,7 @@ function chooseCompletion(entry, browse = false) {
     else if (!contextFiles.some((file) => file.path === entry.path)) contextFiles.push(entry);
     input.setRangeText("", token.start, token.end, "end");
   }
-  closeCompletion(); input.focus(); resizePrompt(); controls();
+  closeCompletion(); input.focus(); resizePrompt(); region("输入操作", updateComposer);
   if (browse) void updateCompletion();
 }
 async function updateCompletion() {
@@ -3638,14 +3697,14 @@ $("prompt").oninput = (e) => {
     $("prompt").value = $("prompt").value.slice(command[0].length);
   }
   resizePrompt();
-  controls();
+  region("输入操作", updateComposer);
   if (!e?.isComposing) void updateCompletion();
   else closeCompletion();
 };
 $("prompt").oncompositionend = () => { void updateCompletion(); };
 $("open-workspace").onclick = async () => {
   const original = sessionId;
-  pickingWorkspace = true; controls();
+  pickingWorkspace = true; region("会话导航", updateNavigation);
   try {
     const entry = await filePicker.open({ title: "打开工作空间", mode: "folder", path: currentCwd });
     if (!entry || original !== sessionId || !connected || changing) return;
@@ -3663,7 +3722,7 @@ $("open-workspace").onclick = async () => {
         : request("session.create", { cwd: path });
     });
   } catch (e) { error(e); }
-  finally { pickingWorkspace = false; controls(); }
+  finally { pickingWorkspace = false; region("会话导航", updateNavigation); }
 };
 $("copy-workspace").onclick = async () => {
   try {
@@ -3697,7 +3756,9 @@ function renderDefaultsScope() {
   $("defaults-delete").hidden = !defaultsScope;
 }
 async function refreshDefaultsScope() {
+  const active = settingsTicket();
   const { workspaces } = await request("session.defaults.list");
+  if (!active()) return;
   defaultsWorkspaces = workspaces ?? [];
   if (defaultsScope && !defaultsWorkspaces.includes(defaultsScope)) defaultsScope = "";
   renderDefaultsScope();
@@ -3732,19 +3793,18 @@ function createAgentPicker(role, title, catalog, initial) {
   options(provider, [["", role === "main" ? "默认主代理模型" : "跟随主代理"],
     ...providerEntries()],
     models.find((m) => m.key === key)?.provider || "");
-  const fill = () => {
-    options(model, provider.value ? modelEntries(provider.value) : [["", "使用默认模型"]], key);
+  const fill = (selected) => {
+    options(model, provider.value ? modelEntries(provider.value) : [["", "使用默认模型"]], selected);
     model.disabled = !provider.value;
   };
-  provider.onchange = fill;
-  fill();
+  fill(key);
   const thinking = select("thinking", `${title}思考等级`);
   const fillThinking = () => {
     const levels = models.find((m) => m.key === model.value)?.levels || thinkingLevels;
     options(thinking, [["", role === "main" ? "沿用默认思考等级" : "跟随主代理思考等级"], ...levels.map((v) => [v, v])], thinking.value || initial.thinking || "");
   };
   model.onchange = fillThinking;
-  provider.onchange = () => { fill(); fillThinking(); };
+  provider.onchange = () => { fill(provider.value ? modelEntries(provider.value)[0]?.[0] || "" : ""); fillThinking(); };
   fillThinking();
   const mode = select("mode", `${title}能力模式`);
   options(mode, [...(role === "subagent" ? [["inherit", "跟随主代理能力"]] : []), ["all", "全部能力"], ["custom", "自定义能力"]], initial.capabilities === "inherit" ? "inherit" : initial.capabilities == null ? "all" : "custom");
@@ -3809,11 +3869,14 @@ const defaultsSelection = () => {
 let defaultsSaving = false;
 
 async function loadCreation() {
+  const active = settingsTicket();
   const current = creation;
   const load = ++creationLoad;
   const scope = defaultsScope;
   current.loading = true;
   current.main = null;
+  disposePickers($("create-agents"));
+  disposePickers($("create-compaction"));
   $("create-agents").replaceChildren();
   $("create-compaction").replaceChildren();
   $("create-retry").replaceChildren();
@@ -3824,7 +3887,7 @@ async function loadCreation() {
       request("session.defaults.get", scope ? { cwd: scope } : {}),
     ]);
     // 期间切了配置范围就丢弃这次结果：否则另一个目录的配置会画进当前表单并接着被自动保存回去。
-    if (creation !== current || load !== creationLoad || scope !== defaultsScope) return;
+    if (!active() || creation !== current || load !== creationLoad || scope !== defaultsScope) return;
     current.loading = false;
     $("create-agents").replaceChildren();
     current.main = createAgentPicker("main", "主代理", catalog, { model: selected.model, thinking: selected.thinking, capabilities: selected.capabilities });
@@ -3838,19 +3901,24 @@ async function loadCreation() {
     updateDefaultsPreview();
     $("create-feedback").textContent = catalog.warnings.join("\n");
   } catch (e) {
-    if (creation === current && load === creationLoad) $("create-feedback").textContent = `加载失败：${e.message}`;
+    if (active() && creation === current && load === creationLoad) $("create-feedback").textContent = `加载失败：${e.message}`;
   }
 }
 
+function disposePickers(root) {
+  for (const select of root.querySelectorAll("select[data-model-kind]")) modelPicker.dispose(select);
+}
 async function openDefaults() {
+  const active = settingsTicket();
   creation = {};
   $("create-feedback").textContent = "";
   $("defaults-preview").textContent = "";
+  disposePickers($("create-agents"));
   $("create-agents").replaceChildren();
   try {
     await refreshDefaultsScope();
-  } catch (e) { $("create-feedback").textContent = `读取已配置目录失败：${e.message}`; }
-  await loadCreation();
+  } catch (e) { if (active()) $("create-feedback").textContent = `读取已配置目录失败：${e.message}`; }
+  if (active()) await loadCreation();
 }
 
 // 下拉只决定编辑哪份配置，不切换当前会话。
@@ -3870,7 +3938,7 @@ $("defaults-directory").onclick = async () => {
     const { path } = entry;
     const previousWorkspaces = [...defaultsWorkspaces];
     changing = true;
-    controls();
+    updateAvailability();
     // 新目录从全局默认复制一份独立配置；已配置的目录直接加载自己的，绝不覆盖。
     if (!defaultsWorkspaces.includes(path)) {
       // 空补丁让服务端按真实目录复制有效配置，目录别名不会覆盖已有选择。
@@ -3883,7 +3951,7 @@ $("defaults-directory").onclick = async () => {
     renderDefaultsScope();
     await loadCreation();
   } catch (e) { $("create-feedback").textContent = `选择目录失败：${e.message}`; }
-  finally { changing = false; controls(); }
+  finally { changing = false; updateAvailability(); }
 };
 
 $("defaults-delete").onclick = async () => {
@@ -3891,7 +3959,7 @@ $("defaults-delete").onclick = async () => {
   if (!scope || changing || !connected) return;
   const button = $("defaults-delete");
   changing = true;
-  controls();
+  updateAvailability();
   button.disabled = true;
   try {
     await request("session.defaults.delete", { cwd: scope });
@@ -3901,7 +3969,7 @@ $("defaults-delete").onclick = async () => {
     await loadCreation();
   } catch (e) {
     if (defaultsScope === scope) $("create-feedback").textContent = `删除失败：${e.message}`;
-  } finally { changing = false; controls(); }
+  } finally { changing = false; updateAvailability(); }
 };
 
 function updateDefaultsPreview() {
@@ -3944,7 +4012,7 @@ $("create-form").onsubmit = async (e) => {
   const data = { ...defaultsSelection(), ...(scope ? { cwd: scope } : {}) };
   defaultsSaving = true;
   changing = true;
-  controls();
+  updateAvailability();
   $("create-feedback").textContent = "正在保存…";
   try {
     await request("session.defaults.configure", data);
@@ -3957,6 +4025,6 @@ $("create-form").onsubmit = async (e) => {
   } finally {
     defaultsSaving = false;
     changing = false;
-    controls();
+    updateAvailability();
   }
 };

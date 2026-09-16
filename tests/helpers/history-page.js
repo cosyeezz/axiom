@@ -142,7 +142,7 @@ export function bootHistoryPage({ sessionId = "long", title = "长会话", epoch
       transportState: () => transport.getConnectionState(),
       historyState: () => historyState,
       historyFlags: () => ({ loading: historyLoading, dirty: historyDirty, request: historyRequest, hiddenDirty, events: historyEvents }),
-      setConnected: (value) => { connected = value; controls(); },
+      setConnected: (value) => { connected = value; updateAvailability(); },
       failPlacement: () => { const original = placeSnapshotMessage; placeSnapshotMessage = () => { throw new Error("分片渲染失败"); }; return () => { placeSnapshotMessage = original; }; },
       dispose: () => transport.dispose(),
     };`,

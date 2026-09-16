@@ -17,6 +17,22 @@ const SELECT = `<select id="model" title="模型">${OPTS}</select>`;
 function boot(bodyHtml, favs = {}, hooks = {}) {
   const dom = new JSDOM(`<body>${bodyHtml}`, { runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window;
+  // 观察器记账：disconnect 后从 w.observers 移除，用来验证释放是否完整
+  const NativeObserver = w.MutationObserver;
+  w.observers = [];
+  w.MutationObserver = class extends NativeObserver {
+    constructor(cb) { super(cb); w.observers.push(this); }
+    disconnect() { w.observers.splice(w.observers.indexOf(this), 1); super.disconnect(); }
+  };
+  if (hooks.sheets) { // jsdom 不加载外部样式表：注入 model-picker.css 的假 sheet（同 tooltip.test.js）
+    w.sheet = {
+      href: "/model-picker.css",
+      cssRules: [],
+      insertRule(rule, index = this.cssRules.length) { this.cssRules.splice(index, 0, { cssText: rule, style: {} }); return index; },
+      deleteRule(index) { this.cssRules.splice(index, 1); },
+    };
+    Object.defineProperty(w.document, "styleSheets", { value: [w.sheet], configurable: true });
+  }
   w.favData = { provider: [], model: [], thinking: [], ...favs };
   w.toggled = [];
   w.errors = [];
@@ -214,6 +230,99 @@ test("持久化失败：onError 一次、星标回落真实状态、可重试", 
   } finally { dom.window.close(); }
 });
 
+test("sync：无实质变化不重建、选中只翻 aria-checked、真变化按稳定键恢复焦点与滚动", async () => {
+  const { dom, w } = boot(SELECT, { model: ["c"] });
+  try {
+    const select = $(w, "model");
+    w.picker.enhance(select, "model");
+    click(w, select);
+    assert.deepEqual(opts(w).map((o) => o.dataset.value), ["c", "a", "b", ""], "c 收藏置顶");
+    const head = opts(w)[0], headStar = stars(w)[0];
+    headStar.focus();
+    menu(w).scrollTop = 90;
+
+    w.picker.sync(select); // app 的 options() 每次重建同名同序 option 也是这种：不得重建菜单
+    w.picker.syncAll();
+    assert.equal(opts(w)[0], head, "无实质变化不重建选项节点");
+    assert.equal(stars(w)[0], headStar, "无实质变化不重建星标节点");
+    assert.equal(w.document.activeElement, headStar, "无实质变化不动焦点");
+    assert.equal(menu(w).scrollTop, 90, "无实质变化不动滚动");
+
+    select.value = "b"; // 选中变化：就地翻 aria-checked
+    w.picker.sync(select);
+    assert.equal(opts(w)[0], head, "选中变化不重建");
+    assert.deepEqual(
+      opts(w).filter((o) => o.getAttribute("aria-checked") === "true").map((o) => o.dataset.value),
+      ["b"],
+      "选中态就地翻到 b",
+    );
+    assert.equal(w.document.activeElement, headStar, "局部更新不动焦点");
+    assert.equal(menu(w).scrollTop, 90, "局部更新不动滚动");
+
+    opts(w).find((o) => o.dataset.value === "a").textContent = "Alpha 改名"; // 真变化：文本 + 收藏
+    w.favData.model = ["b"];
+    menu(w).scrollTop = 70;
+    w.picker.sync(select);
+    assert.notEqual(opts(w)[0], head, "真变化重建节点");
+    assert.deepEqual(opts(w).map((o) => o.dataset.value), ["b", "a", "", "c"], "重建后按新收藏置顶");
+    assert.equal(w.document.activeElement.dataset.value, "c", "焦点按选项值跟住原星");
+    assert.equal(w.document.activeElement.classList.contains("ax-mp-star"), true);
+    assert.equal(menu(w).scrollTop, 70, "重建后恢复滚动位置");
+
+    select.replaceChildren(new w.Option("Alpha", "a"), new w.Option("Beta", "b")); // 被聚焦的 c 整项消失
+    select.value = "b";
+    w.picker.sync(select);
+    assert.equal(w.document.activeElement.dataset.value, "b", "原项消失：焦点退回当前选中项");
+    assert.equal(w.document.activeElement.classList.contains("ax-mp-opt"), true);
+  } finally { dom.window.close(); }
+});
+
+test("dispose：实例收尾摘监听/Observer/定时器/定位规则，单 select release 还原原生", async () => {
+  const { dom, w } = boot(
+    `<select id="m" title="模型">${OPTS}</select><select id="m2" title="模型2">${OPTS}</select>`,
+    {}, { sheets: true },
+  );
+  try {
+    const m = $(w, "m"), m2 = $(w, "m2");
+    w.picker.enhance(m, "model");
+    w.picker.enhance(m2, "model");
+    assert.equal(w.observers.length, 2, "每个 select 一个 disabled 观察器");
+
+    const pending = new Set(); // 假定时器：只记账，用来验证 typeahead 定时器被清
+    const rawSet = w.setTimeout, rawClear = w.clearTimeout;
+    w.setTimeout = (fn, ms) => { const id = rawSet(fn, ms); pending.add(id); return id; };
+    w.clearTimeout = (id) => { pending.delete(id); return rawClear(id); };
+
+    click(w, m);
+    assert.equal(w.sheet.cssRules.length, 1, "定位规则按实例只插一条");
+    assert.match(w.sheet.cssRules[0].cssText, /^\[data-ax-mp="ax-mp-i1"\]/, "规则按实例标记选择菜单");
+    assert.match(w.sheet.cssRules[0].style.left, /^\d+px$/, "left 经 CSSOM 写入");
+    assert.match(w.sheet.cssRules[0].style.top, /^\d+px$/);
+    assert.equal(w.document.querySelectorAll("[style]").length, 0, "CSP：无 inline style");
+    key(w, opts(w)[0], "a");
+    assert.ok(pending.size >= 1, "字符查找起了 reset 定时器");
+
+    w.picker.dispose(m2); // 单 select 释放
+    assert.equal(m2.getAttribute("aria-haspopup"), null, "释放后还原成原生 select");
+    click(w, m2);
+    assert.equal(menu(w).parentElement, w.document.body, "m2 不再开菜单（当前菜单还是 m 的）");
+    assert.equal(w.observers.length, 1, "只断开 m2 的观察器");
+    assert.equal(w.sheet.cssRules.length, 1, "实例级定位规则不为单个 select 删除");
+
+    w.picker.dispose(); // 实例收尾
+    assert.equal(menu(w), null, "打开的菜单收起");
+    assert.equal(m.getAttribute("aria-expanded"), null, "ARIA 属性摘干净");
+    assert.equal(w.observers.length, 0, "观察器全断开");
+    assert.equal(pending.size, 0, "typeahead 定时器已清");
+    assert.equal(w.sheet.cssRules.length, 0, "定位规则随实例删除");
+    w.picker.enhance(m, "model"); // 已 dispose 的实例不再接新 select
+    click(w, m);
+    key(w, m, "ArrowDown");
+    assert.equal(menu(w), null, "dispose 后点击/键盘都不再打开菜单");
+    assert.equal(w.document.querySelectorAll(".ax-mp-menu").length, 0);
+  } finally { dom.window.close(); }
+});
+
 test("键盘：↑↓Home/End 移动、Tab 到星/退出、Esc 归还焦点、字符查找", async () => {
   const { dom, w } = boot(SELECT, { model: ["b"] }); // 顺序：b, a, 默认, c
   try {
@@ -295,11 +404,13 @@ test("dialog 内回退挂载、sync/syncAll、禁用同步、断连清理、宿�
     w.document.body.append(m3);
     w.picker.sync(m3); // seen=true
     m3.remove();
-    w.picker.syncAll(); // 曾挂载后断连：清理跟踪
+    w.picker.syncAll(); // 曾挂载后断连：彻底释放（跟踪/监听/观察器）
+    assert.equal(w.observers.length, 2, "被丢弃的 select 不再留着观察器");
     m3.title = "改过";
     w.picker.sync(m3);
     click(w, m3);
-    assert.equal(menu(w).getAttribute("aria-label"), "模型3", "清理后 sync 不再作用（防止泄漏跟踪）");
+    assert.equal(m3.getAttribute("aria-haspopup"), null, "释放后还原成原生 select");
+    assert.equal(w.document.querySelectorAll(".ax-mp-menu").length, 0, "释放后点击不再打开菜单（跟踪不复活）");
 
     click(w, m); // dialog 内再开
     assert.ok(menu(w));

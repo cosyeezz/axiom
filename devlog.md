@@ -2058,6 +2058,18 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 涉及：src/tasks.js、src/tools.js、src/prompts.js、src/goal.js、任务与目标相关测试、README.md 及代码索引/坑库。取消回执不作为 Goal 验收证据。
 - 验证：最终 npm test 共 547 项，545 通过、0 失败、2 项既有平台跳过；独立复核发现回执从 id 改为 taskId 后旧断言遗漏，已修正并补首个回执断言；集成测试验证工具注册、目标 abort、兄弟隔离、结果先落库后通知。node --check 与 git diff --check 通过。未新增依赖，未重启运行中的服务。
 
+## 2026-09-15 前端区域边界与稳定模型菜单
+- 文件：public/app.js、public/model-picker.js、tests/frontend-regions*、tests/model-picker.test.js 及引用旧 controls 的测试。
+- 原因：无关输入/输出触发全区同步重建菜单；正文滚动旧监听关闭模型菜单；设置迟到回执可能覆盖新面板。
+- 改动：拆 controls、去掉无关 syncAll；选项比较与缺失占位、稳定键焦点/滚动恢复、完整 picker dispose；请求代次守卫；权威归并成功才推进 seq。保留共享收藏 syncAll 和连接可用性扇出，不新建状态框架。
+- 验证：浏览器 41 项通过；专项 19 项通过。首轮全量604通过/1失败/2跳过，失败来自远程设置测试未真实打开 dialog，已修正测试场景并保留原断言，等待最终全量复跑。
+- 限制：03订阅接线、05/06算法及Electron成品不在本次实现；热加载单独接线/提交。两项追加委派因宿主插件加载失败，由主任务补测。
+
+## 2026-09-15 独立 Vite 开发入口
+- 文件：scripts/dev-vite.mjs、scripts/service.mjs、package*.json、tests/dev-vite*、README、索引。
+- 决策：Vite 8.3.0 仅devDependency，独立5173代理隔离4320；业务WS和开发WS分离，前端不管理后端进程。先校验同源再改写代理头；正式CSP不动，开发限定样式注入与loopback维护访问。
+- 有意阶段性收窄：草稿、附件、阅读锚点尚无可靠跨刷新保存，暂停JS/HTML整页自动刷新并明确提示，未冒称无损HMR。保留CSS热替换，不额外造保存框架或业务reload协议。
+- 验证：分区提交全量608通过/0失败/2跳过；Vite专项通过，真实Chromium验证CSS保留草稿和页面、JS刷新暂停、后端身份不变。最终全量另行复跑。
 ## 2026-06-01 — WebSocket 基础设施收口
 
 - 原因：app.js 的 socket/pending/重连/事件水位分散，回执到快照渲染有空窗；广播与删除通知绕过缓冲限制，监听异常能冒泡进业务。
@@ -2067,10 +2079,7 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 复核修复：断线作废旧渲染尾部；等待旧初始化退出再建新连接；重连坏会话回落初始化；跨工作空间打开后恢复本页订阅；bfcache pagehide 不销毁通信层；1009 清空队列。
 - 测试：新增 tests/realtime-transport.test.js，迁移 public-source 夹具与 app/goal/model/remote/snapshot 集成用例；全量 npm test 验证，未运行真实业务服务或模型，未安装依赖（仅 junction 复用已有 node_modules）。同步 README 与 codebase-map 架构/模块索引。
 
-
-### 2026-09-15 历史页复核补修与再次验证
-- 原因：分页后附属记录不能继续按全量历史假设展示；工具结束事件通常不重复携带参数。
-- 内容：src/sessions.js 按字段合并工具状态；public/app.js 禁止旧页末尾重试、只追加未落位的活动子代理、压缩消息锚点绑定摘要卡片。未改模型上下文、协议排序或流式播放算法。
-- 回归：tests/history-reading.test.js 新增旧页/最新页重试、页外子代理、压缩锚点；tests/session-history.test.js 新增 start→end 参数及窗口快照保真。全量串行 640 项，638 通过、2 跳过、0 失败（143.2 秒），git diff --check 通过。
-- 实测：docs/perf-history-session/followup.json 独立采集 3 轮（不覆盖旧 after.json），1831 条首输出 148–163ms、节点 1930、GC 后堆 3.9MB；6 次切换节点稳定，翻页断言全部通过。图片/流式布局锚点与长时泄漏尚未验收。
-- 同步文件：README.md、docs/perf-history-session/README.md、.pi/skills/codebase-map/{INDEX.md,knowledge.md}。本次只提交/推送功能分支，不集成 master，不清理 worktree。
+## 2026-09-15 功能分支同步最新 master 与最终复验
+- 合入 origin/master 的03连接基础设施；冲突保留 createTransport 唯一连接/水位/快照队列，删除本分支被替代的 appliedSeq/acceptEventSeq/旧WS监听，区域可用性接 onState；非bfcache离页释放 modelPicker。
+- 最终合并后全量616通过、0失败、2跳过；两组真实Chromium专项均通过。仅推送 feat/frontend-regions，按统一集成例外保留 worktree，不改动/推送 master。
+- 未完成：JS/HTML自动刷新与跨刷新完整保存（当前明确暂停）；Electron成品验收和真实模型长流性能采集。

@@ -57,6 +57,7 @@ const MODULE_INFO = {
 
   "src/inline-images.js": "模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列",
   "scripts/dev.mjs": "开发入口：DEV 标识、4320 端口与独立数据目录",
+  "scripts/dev-vite.mjs": "独立 Vite 前端：CSS 热替换、同源代理与整页刷新暂停",
   "scripts/service.mjs": "服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道",
   "scripts/uninstall.mjs": "统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据", 
   "scripts/autostart.mjs": "Windows/macOS/Linux 当前用户登录自动启动安装/卸载",
