@@ -1,4 +1,5 @@
-"""Run against node tests/conversation-preview.mjs (port 4321)."""
+"""Run against node tests/conversation-preview.mjs (port 4321).
+每次运行前重启预览进程：副本 mock 会在服务端累积会话状态，影响标题序号断言。"""
 import os
 import tempfile
 from playwright.sync_api import sync_playwright
@@ -30,7 +31,7 @@ with sync_playwright() as p:
     headers = page.locator('.workspace-name').all_text_contents()
     assert len(headers) == 2
     assert headers[1] == 'other'
-    assert '/other' in page.locator('.workspace-header').nth(1).get_attribute('title')
+    assert page.locator('.workspace-group').nth(1).locator('.workspace-path').get_attribute('title') == '/other'
     # 当前工作空间展开，/other 默认折叠
     assert page.locator('.workspace-group').first.evaluate('(el) => el.open')
     assert not page.locator('.workspace-group').nth(1).evaluate('(el) => el.open')
@@ -44,10 +45,10 @@ with sync_playwright() as p:
     assert cur.locator('.session-day').all_text_contents() == ['2026-09-11', '2026-09-10', '2026-09-09', '2026-09-08', '2026-09-07']
     assert not cur.locator('.session-completed').evaluate('(el) => el.open')
     assert not cur.locator('[data-session-id="done"]').is_visible()
-    # 已完成段紧挨在设置按钮上方
+    # 已完成段紧挨在设置按钮上方（中间隔折叠的 /other 组头部）
     completed = cur.locator('.session-completed').bounding_box()
     settings = page.locator('#open-settings').bounding_box()
-    assert 0 <= settings['y'] - completed['y'] - completed['height'] <= 40  # workspace header padding
+    assert 0 <= settings['y'] - completed['y'] - completed['height'] <= 150
     cur.locator('.session-completed > summary').click()
     assert cur.locator('[data-session-id="done"]').is_visible()
     page.evaluate('window.sidebarFixture((sessions) => sessions)')
@@ -76,8 +77,11 @@ with sync_playwright() as p:
     for width in [1440, 320]:
         page.set_viewport_size({"width": width, "height": 960})
         page.wait_for_timeout(150)
+        # 移动端 header 默认隐藏：先展开 composer 区域露出 ☰，再打开侧栏。
         if page.locator('#toggle-sidebar').get_attribute('aria-expanded') != 'true':
+            page.locator('#mobile-expand').click()
             page.locator('#toggle-sidebar').click()
+            page.wait_for_timeout(150)
         row = page.locator('[data-session-id="new"]')
         assert not row.locator('.session-rename').is_visible()
         before = page.locator('[data-session-id="old"]').bounding_box()
@@ -113,26 +117,49 @@ with sync_playwright() as p:
         page.keyboard.press('Enter')
         page.keyboard.press('Tab')
         assert row.locator('[data-copy="directory"]').evaluate('(el) => el === document.activeElement')
-        page.locator('.session-group').first.click()
+        page.locator('#search').click()
         assert not row.locator('.session-delete').is_visible()
         assert not row.locator('[data-copy="directory"]').is_visible()
     # ── 大量会话布局约束 ──
     page.evaluate('''() => window.sidebarFixture((sessions) => [
       ...sessions,
       ...Array.from({length: 40}, (_, i) => ({...sessions[0], id: `active-${i}`})),
-      ...Array.from({length: 40}, (_, i) => ({...sessions[0], id: `done-${i}`}))
+      ...Array.from({length: 40}, (_, i) => ({...sessions[0], id: `done-${i}`, status: 'idle'}))
     ])''')
     cur = page.locator('.workspace-group').first
+    # 分组折叠：进行中可折叠并带计数徽章，重绘后状态保留
+    assert cur.locator('[data-group="active"] > .session-group-toggle .session-group-count').inner_text() == '44'
+    assert cur.locator('[data-group="completed"] > .session-group-toggle .session-group-count').inner_text() == '41'
+    cur.locator('[data-group="active"] > .session-group-toggle').click()
+    assert not cur.locator('[data-group="active"]').evaluate('(el) => el.open')
+    assert not cur.locator('[data-session-id="run"]').is_visible()
     cur.locator('.session-completed > summary').click()
-    settings = page.locator('#open-settings').bounding_box()
-    completed = cur.locator('.session-completed').bounding_box()
-    assert settings['y'] + settings['height'] <= 960
-    assert completed['y'] + completed['height'] <= settings['y']
-    assert cur.locator('.session-section').first.evaluate('(el) => el.scrollHeight > el.clientHeight')
-    assert cur.locator('.session-completed').evaluate('''(el) => {
-      el.scrollTop = 10000;
-      return el.scrollTop > 0 || getComputedStyle(el, '::details-content').overflowY === 'auto';
-    }''')
+    # 已完成内容限高 45vh 并内部滚动；列表总高度交给 #sessions 整体滚动
+    completed = cur.locator('.session-completed')
+    assert completed.evaluate('(el) => el.getBoundingClientRect().height <= 0.45 * innerHeight + 48')
+    assert completed.evaluate("(el) => { const cs = getComputedStyle(el, '::details-content'); return parseFloat(cs.maxHeight) <= 0.45 * innerHeight + 1 && cs.overflowY === 'auto'; }")
+    assert page.locator('#sessions').evaluate('(el) => el.scrollHeight > el.clientHeight')
+    # 折叠状态跨重绘保留
+    page.evaluate('window.sidebarFixture((sessions) => sessions)')
+    assert not cur.locator('[data-group="active"]').evaluate('(el) => el.open')
+    assert cur.locator('.session-completed').evaluate('(el) => el.open')
+    cur.locator('[data-group="active"] > .session-group-toggle').click()
+    assert cur.locator('[data-session-id="run"]').is_visible()
+    # ── 复制会话 ──（回桌面视口：移动端选中会话会自动收起侧栏，副本行就不可见了）
+    page.set_viewport_size({"width": 1440, "height": 960})
+    page.wait_for_timeout(200)
+    assert page.locator('#toggle-sidebar').get_attribute('aria-expanded') == 'true'
+    assert page.locator('[data-session-id="run"] .session-duplicate').is_disabled()
+    new_row = page.locator('[data-session-id="new"]')
+    assert not new_row.locator('.session-duplicate').is_disabled()
+    new_row.locator('.session-more').click()
+    page.wait_for_timeout(100)
+    new_row.locator('.session-duplicate').click()
+    # 用本轮 hash 里的新 id 精确定位副本，避免预览 mock 跨运行累积的旧副本干扰前缀匹配。
+    page.wait_for_function("() => /#session=new-copy-/.test(location.hash)")
+    copy_id = page.evaluate("() => location.hash.split('=')[1]")
+    page.wait_for_selector(f'[data-session-id="{copy_id}"]')
+    assert page.locator(f'[data-session-id="{copy_id}"] .session-item span').inner_text().endswith(' 1')
     page.screenshot(path=os.environ.get('AXIOM_SIDEBAR_SCREENSHOT', os.path.join(tempfile.gettempdir(), 'axiom-session-sidebar.png')))
     browser.close()
-print('PASS: workspace groups, collapse/expand, running/attention/idle order, dots, dates, desktop/mobile action disclosure and keyboard dismissal')
+print('PASS: workspace groups, collapsible sections with counts, running/attention/idle order, dots, dates, desktop/mobile action disclosure, keyboard dismissal and session duplication')

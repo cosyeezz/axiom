@@ -395,6 +395,15 @@ export function createServerApp(sessions, service = {}) {
               data = await attach(id);
               break;
             }
+            case "session.duplicate": {
+              const id = await sessions.duplicate(request.sessionId);
+              if (ws.readyState !== WebSocket.OPEN) {
+                await sessions.remove(id);
+                return;
+              }
+              data = await attach(id);
+              break;
+            }
             case "session.attach":
               data = await attach(request.sessionId);
               break;

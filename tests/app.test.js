@@ -141,7 +141,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       message: { role: "assistant", content: "historical result" },
     },
   ];
-  let lastCreation, lastDefaults, lastImport, copiedPath;
+  let lastCreation, lastDefaults, lastImport, lastDuplication, copiedPath;
   Object.defineProperty(window.navigator, "clipboard", { value: { writeText: async (text) => { copiedPath = text; } } });
   let defaults = { model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
   let failDefaults = false, needsTrust = false;
@@ -291,6 +291,20 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
             lastImport = req;
             data = { sessionId: "imported", title: "imported", cwd: req.cwd, status: "idle", config, messages: [], tasks: [], live: {} };
             break;
+          case "session.duplicate":
+            // 与后端一致：标题原词接序号，任务历史随副本保留，运行状态归零。
+            lastDuplication = req;
+            {
+              const source = states.find((s) => s.sessionId === req.sessionId);
+              const copy = structuredClone(source);
+              copy.sessionId = "dup";
+              copy.title = `${source.title.replace(/\s+\d+$/, "")} 1`;
+              copy.status = "idle";
+              copy.live = {};
+              states.push(copy);
+              data = copy;
+            }
+            break;
           case "session.rename":
             states.find((s) => s.sessionId === req.sessionId).title = req.title;
             break;
@@ -318,7 +332,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("prompt").dispatchEvent(new window.Event("input"));
   };
   try {
-    window.eval(`${modelSources}\n${pickerSource}\n${serviceSource}\n${source}\nwindow.sidebarCheck = async () => {
+    window.eval(`${modelSources}\n${pickerSource}\n${serviceSource}\n${source}\nwindow.sidebarStripFiles = () => { allSessions = allSessions.map((s) => ({ ...s, sessionFile: null })); renderSessions(); };
+    window.sidebarCheck = async () => {
       allSessions = allSessions.map((s) => ({...s, sessionFile: null}));
       await updateSessions();
       return allSessions.find((s) => s.id === 'b').sessionFile;
@@ -430,15 +445,31 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("send").textContent, "Send");
     assert.equal(window.document.querySelector("header .menu"), null);
     const firstActions = $("sessions").querySelector(".session-actions");
-    assert.deepEqual([...$("sessions").querySelectorAll(".session-group")].map((n) => n.textContent), ["进行中", "已完成"]);
+    assert.deepEqual([...$("sessions").querySelectorAll(".session-group")].map((n) => n.textContent), ["进行中"], "没有已完成会话时空组不渲染");
     assert.equal(firstActions.children[0].className, "session-pin");
     assert.equal(firstActions.children[0].title, "置顶");
     assert.equal(firstActions.children[1].className, "session-hide");
     assert.equal(firstActions.children[1].title, "标记已完成");
     assert.equal(firstActions.children[2].className, "session-open");
-    assert.equal(firstActions.children[3].className, "session-copy");
+    assert.equal(firstActions.children[3].className, "session-duplicate");
+    assert.equal(firstActions.children[3].title, "复制会话");
+        assert.equal(firstActions.children[3].disabled, true, "running sessions cannot be duplicated");
+    assert.equal(firstActions.children[4].className, "session-copy");
+    assert.equal(firstActions.children[4].title, "复制文件");
     assert.equal(firstActions.querySelector(".session-rename").title, "重命名");
-    assert.equal($("sessions").querySelector(".session-completed").open, false);
+    assert.equal($("sessions").querySelector(".session-completed"), null, "空已完成组不渲染");
+    // 分组可折叠：summary 扛计数徽章，重绘保留手动状态并按工作区写入 localStorage。
+    const activeGroup = $("sessions").querySelector('[data-group="active"]');
+    assert.equal(activeGroup.querySelector(".session-group").textContent, "进行中");
+    assert.equal(activeGroup.querySelector(".session-group-count").textContent, "3");
+    assert.equal(activeGroup.open, true, "active group defaults to expanded");
+    activeGroup.open = false;
+    window.eval("renderSessions()");
+    assert.equal($("sessions").querySelector('[data-group="active"]').open, false, "refresh preserves manual disclosure");
+    assert.equal(JSON.parse(window.localStorage.getItem("axiom.sessionGroups"))["c:/work"].active, false);
+    $("sessions").querySelector('[data-group="active"]').open = true;
+    window.eval("renderSessions()");
+    assert.equal($("sessions").querySelector('[data-group="active"]').open, true);
     assert.equal(firstActions.children[1].querySelector("path").getAttribute("d"), "M5 12l4 4L19 6");
     const beforeHide = requests.length;
     const row = (id) => $("sessions").querySelector(`[data-session-id="${id}"]`);
@@ -447,6 +478,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("sessions").querySelector('[aria-label="已完成"] .session-item span').textContent, "a");
     assert.deepEqual(JSON.parse(window.localStorage.getItem("axiom.hiddenSessions")), ["a"]);
     assert.equal($("session-title").textContent, "a");
+    assert.equal($("sessions").querySelector(".session-completed").open, false, "已完成默认折叠");
     $("sessions").querySelector(".session-completed").open = true;
     window.eval("renderSessions()");
     assert.equal($("sessions").querySelector(".session-completed").open, true, "refresh preserves manual disclosure");
@@ -472,7 +504,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     await settle();
     assert.deepEqual(JSON.parse(window.localStorage.getItem("axiom.pinnedSessions")), ["b"]);
     assert.deepEqual(rowTitles(), ["b", "c", "a"], "pinned session sorts above a running one");
-    assert.deepEqual([...$("sessions").querySelectorAll(".session-group")].map((n) => n.textContent), ["置顶", "进行中", "已完成"]);
+    assert.deepEqual([...$("sessions").querySelectorAll(".session-group")].map((n) => n.textContent), ["置顶", "进行中"], "空置顶/已完成组都不渲染");
     assert.ok(row("b").classList.contains("pinned"), "pinned row gets the highlighted class");
     assert.equal(row("b").querySelector(".session-pin-icon").getAttribute("aria-label"), "已置顶");
     assert.equal(row("b").querySelector(".session-more").title, "会话操作：b");
@@ -481,7 +513,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     row("b").querySelector(".session-pin").click();
     await settle();
     assert.deepEqual(JSON.parse(window.localStorage.getItem("axiom.pinnedSessions")), []);
-    assert.deepEqual([...$("sessions").querySelectorAll(".session-group")].map((n) => n.textContent), ["进行中", "已完成"], "empty pinned group disappears");
+    assert.deepEqual([...$("sessions").querySelectorAll(".session-group")].map((n) => n.textContent), ["进行中"], "empty pinned group disappears");
     assert.deepEqual(rowTitles(), ["c", "a", "b"], "unpinning restores the normal order");
     // 跑完待查看：seen 记在打开之前 → 标主题色点；打开会话即写回时间戳并落盘。
     window.setSeenSessions({ a: 1, b: 1 });
@@ -516,6 +548,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(row("b").querySelector('[data-copy="path"]').disabled, false);
     assert.equal(row("b").querySelector(".session-hide").disabled, false);
     assert.equal(row("b").querySelector(".session-delete").disabled, true);
+    assert.equal(row("b").querySelector(".session-duplicate").disabled, true, "duplication needs a live connection");
     window.sidebarConnected(true);
     for (const [part, expected] of [["directory", "C:\\axiom\\"], ["name", "b.jsonl"], ["path", "C:\\axiom\\b.jsonl"]]) {
       const menu = row("b").querySelector(".session-options");
@@ -543,6 +576,17 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(copiedPath, "C:\\work");
     $("reveal-workspace").click(); await settle();
     assert.equal(requests.findLast((req) => req.type === "workspace.reveal").sessionId, "a");
+    // 复制会话：服务端按落盘历史重建副本并切换过去；没有会话文件的会话先禁用。
+    window.eval("window.sidebarStripFiles()");
+    assert.equal(row("b").querySelector(".session-duplicate").disabled, true, "sessions without a landed file cannot be duplicated");
+    await window.eval("refreshSessions()");
+    assert.equal(row("b").querySelector(".session-duplicate").disabled, false);
+    row("b").querySelector(".session-more").click();
+    row("b").querySelector(".session-duplicate").click();
+    await settle();
+    assert.equal(lastDuplication.sessionId, "b");
+    assert.equal($("session-title").textContent, "Renamed other session 1", "duplication switches to the copy");
+    assert.equal(row("dup").querySelector(".session-item span").textContent, "Renamed other session 1");
     window.open = () => {};
     $("open-workspace").click(); await settle();
     assert.equal($("file-picker").open, true);

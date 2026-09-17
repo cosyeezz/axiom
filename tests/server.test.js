@@ -119,6 +119,14 @@ test("local connection without token, foreign origin rejection, recovery and shu
       assert.equal(retried.ok, true);
       assert.deepEqual(retried.data, { taskId: "child", accepted: true });
     } finally { sessions.retryTask = retryTask; }
+    // session.duplicate：协议校验 + 分发（无存储实例拒绝并回传错误）。
+    assert.throws(() => command.parse({ id: "dup-invalid", type: "session.duplicate" }));
+    const dupRejected = await request(ws, { id: "dup-no-storage", type: "session.duplicate", sessionId });
+    assert.equal(dupRejected.ok, false);
+    assert.match(dupRejected.error, /未启用会话存储/);
+    const dupUnknown = await request(ws, { id: "dup-unknown", type: "session.duplicate", sessionId: "missing-session" });
+    assert.equal(dupUnknown.ok, false);
+    assert.match(dupUnknown.error, /Unknown session/);
     assert.equal(
       (await request(ws, { id: "2", type: "prompt", sessionId, text: "go" }))
         .ok,
