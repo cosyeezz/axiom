@@ -1,18 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import { marked } from "marked";
 import createPurify from "dompurify";
 import { JSDOM } from "jsdom";
+import { publicSource } from "./helpers/public-source.js";
 
 test("shared Markdown renderer formats blocks and removes unsafe content", async () => {
   const window = new JSDOM("").window;
   try {
-    const source = (
-      await readFile(new URL("../public/markdown.js", import.meta.url), "utf8")
-    )
-      .replace(/^import .*;\r?\n/gm, "")
-      .replace("export function", "function");
+    const source = await publicSource("clipboard", "markdown");
     const render = new Function(
       "marked",
       "DOMPurify",
@@ -40,6 +36,17 @@ test("shared Markdown renderer formats blocks and removes unsafe content", async
     window.navigator.clipboard.writeText = async () => { throw new Error("denied"); };
     await copy.onclick();
     assert.match(copy.textContent, /复制失败/);
+    // 远程 HTTP（非安全上下文）没有 Clipboard API：按钮回退 execCommand，而不是报 undefined。
+    delete window.navigator.clipboard;
+    let execValue;
+    window.document.execCommand = () => { execValue = window.document.querySelector("textarea")?.value; return true; };
+    await copy.onclick();
+    assert.equal(execValue, code.textContent, "回退路径复制的仍是代码原文");
+    assert.equal(copy.textContent, "已复制");
+    assert.equal(window.document.querySelector("textarea"), null, "复制后清理临时输入框");
+    // 恢复 Clipboard API，后续既有断言继续走注入路径。
+    delete window.document.execCommand;
+    Object.defineProperty(window.navigator, "clipboard", { configurable: true, value: { writeText: async (text) => { copied = text; } } });
     assert.equal(node.querySelector(".table-scroll").tabIndex, 0);
     assert.equal(node.querySelector("pre").tabIndex, 0);
     const original = node.querySelector("h1");
@@ -217,11 +224,7 @@ test("shared Markdown renderer formats blocks and removes unsafe content", async
 test("incremental Markdown rendering matches a fresh full render at every step", async () => {
   const window = new JSDOM("").window;
   try {
-    const source = (
-      await readFile(new URL("../public/markdown.js", import.meta.url), "utf8")
-    )
-      .replace(/^import .*;\r?\n/gm, "")
-      .replace("export function", "function");
+    const source = await publicSource("clipboard", "markdown");
     const render = new Function(
       "marked",
       "DOMPurify",
@@ -306,11 +309,7 @@ test("incremental Markdown rendering matches a fresh full render at every step",
 test("reference signatures cannot collide across id/href/title boundaries", async () => {
   const window = new JSDOM("").window;
   try {
-    const source = (
-      await readFile(new URL("../public/markdown.js", import.meta.url), "utf8")
-    )
-      .replace(/^import .*;\r?\n/gm, "")
-      .replace("export function", "function");
+    const source = await publicSource("clipboard", "markdown");
     const render = new Function(
       "marked",
       "DOMPurify",
