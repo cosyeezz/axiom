@@ -2264,3 +2264,10 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 涉及文件：`src/prompts.js`（Delegation/Response format/SUBAGENT_PROMPT 英文终稿）、`src/tools.js`（delegate 返回 note）、`src/pi.js`（queueStateOf 归一 string content、messageEntries 纳入 custom_message、notifyTask、refreshSkills 排除）、`src/sessions.js`（双通道 deliverTaskNotifications、settleTaskNotifications、startRun 挂接）、`public/app.js`（isTaskNotification/taskNotificationCard/实时与回放分支/删隐藏 hack/paintRaw 标注）、`public/style.css`（.task-notification）、`src/capabilities.js`（MAIN_EXCLUDED_SKILLS 分流）、`tests/task-notifications.test.js`（双通道两用例、fixture notifyTask）、`tests/app.test.js`（通知条断言替代隐藏断言）、`README.md`。
 - 决策：模型层无法区分 custom 与 user（SDK convertToLlm 把 custom 转普通 user 原文），custom 收益在存储/UI 分型；不引入 wait_result/sleep 规则（root fix 后症状自消）；triggerTurn 弃用（绕过 startRun 状态机会撒谎 status、丢收尾、双 run 并发）；通知不隐藏，与用户消息以样式区分。
 - 验证：`npm test` 698 项 696 通过 0 失败（2 skip 为既有）；新增用例覆盖 running 注入+settle 确认不重投、误清补投走 idle 通道；capabilities/project-skills/app/safe-stop 等回归全过。
+
+## 2026-09-17 恢复历史重排后的收尾
+
+- 合并 master（9b0f4d2/83fa04e）后 session.duplicate 用例失败：副本走 create() 恢复路径，messages 从 JSONL 重建触发 orderRestoredHistory；夹具子任务由 saveTask 落库、主历史无 delegate 锚点，无关联子消息按设计前置。判定为有意设计在副本路径的自然延伸，非回归。
+- 更新断言为 [s1,s2,u1,a1] 并补 at(-1)=main（无锚点副本最后仍是主回答）；带真实 delegate 锚点的会话子历史仍归位到声明点之后（restored-history-order.test.js 覆盖）。
+- 涉及文件：tests/session-flow.test.js、knowledge.md（追加）。
+- 验证：npm test 699 项全绿（697 通过、0 失败、2 既有跳过）。
