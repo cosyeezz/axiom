@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/16 23:45:41）
+# Axiom 多级代码索引（生成于 2026/9/16 23:53:20）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -7,7 +7,7 @@
 |---|---|---|---|
 | public/answer-tags.js | 48 | 主代理回答标签解析、代码保护与流式容错 | OPEN, CLOSE, MARKS, isMark |
 | public/app.js | 4345 | 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度 | questionUI, filePicker, $, sessionId |
-| public/clipboard.js | 26 | 统一剪贴板入口：Clipboard API 优先，非安全上下文回退 execCommand | copyText |
+| public/clipboard.js | 27 | 统一剪贴板入口：Clipboard API 优先，非安全上下文回退 execCommand | copyText |
 | public/file-picker.css | 276 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 355 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/goal-markers.js | 60 | 前后端共享 goal 完成标记解析与展示层剥离（含流式半截） | ROUND_MARKER, GOAL_MARKER, MARKER_TOKENS, SUFFIXES |
@@ -80,7 +80,7 @@
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
 | tests/capabilities.test.js | 314 | node --test 测试（npm test） | - |
 | tests/cli-help.test.js | 46 | node --test 测试（npm test） | cli |
-| tests/clipboard.test.js | 81 | node --test 测试（npm test） | loadCopyText, dom |
+| tests/clipboard.test.js | 85 | node --test 测试（npm test） | loadCopyText, dom |
 | tests/codebase-index.test.js | 20 | node --test 测试（npm test） | ROOT, SKILL |
 | tests/compaction-config.test.js | 165 | node --test 测试（npm test） | - |
 | tests/compaction-ui.py | 57 | node --test 测试（npm test） | - |
@@ -585,11 +585,11 @@
 | updateDefaultsPreview | method | 4313 |
 | updateAvailability | method | 4329 |
 
-### public/clipboard.js（26 行） — 统一剪贴板入口：Clipboard API 优先，非安全上下文回退 execCommand
+### public/clipboard.js（27 行） — 统一剪贴板入口：Clipboard API 优先，非安全上下文回退 execCommand
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| copyText | function | 4 |
+| copyText | function | 5 |
 
 ### public/file-picker.js（355 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 
@@ -1579,7 +1579,7 @@
 | cli | const | 27 |
 | spawnSync | method | 28 |
 
-### tests/clipboard.test.js（81 行） — node --test 测试（npm test）
+### tests/clipboard.test.js（85 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|

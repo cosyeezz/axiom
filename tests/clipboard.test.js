@@ -62,19 +62,23 @@ test("copyText copies into the view that owns the element", async () => {
   } finally { host.window.close(); target.window.close(); }
 });
 
-test("copyText reports failures from both paths", async () => {
+test("copyText falls back when writeText is denied, and reports actionable errors", async () => {
   const d = dom("<body></body>");
   try {
     const { window } = d;
     const copyText = await loadCopyText(window);
-    // jsdom 未实现 execCommand（undefined）：按复制失败处理，而不是 TypeError。
-    await assert.rejects(() => copyText("no api"), /拒绝了复制请求/);
+    // API 存在但被拒绝（如 Firefox 权限门控）：仍在用户手势窗口内，继续走 execCommand。
+    let captured;
     Object.defineProperty(window.navigator, "clipboard", {
       configurable: true,
       value: { writeText: async () => { throw new Error("denied"); } },
     });
-    // API 存在但被拒绝：保持原有错误透传语义（调用方 catch 后提示）。
-    await assert.rejects(() => copyText("denied"), /denied/);
+    window.document.execCommand = () => { captured = window.document.querySelector("textarea")?.value; return true; };
+    await copyText("rejected but copied");
+    assert.equal(captured, "rejected but copied", "writeText 拒绝后 execCommand 仍能复制");
+    // 两条路径都失败：给可操作指引，不暴露内部错误。
+    delete window.document.execCommand; // jsdom 本就未实现：恢复未实现状态。
+    await assert.rejects(() => copyText("both fail"), /拒绝.*改用系统复制菜单/);
     assert.equal(window.document.querySelector("textarea"), null, "失败后同样清理");
   } finally { d.window.close(); }
 });
