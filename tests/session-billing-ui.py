@@ -16,8 +16,8 @@ server = subprocess.Popen(['node', 'tests/conversation-preview.mjs'], cwd=ROOT, 
 try:
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        for width in [320, 390, 768, 1280]:
-            page = browser.new_page(viewport={'width': width, 'height': 1000})
+        for width, touch in [(320, False), (390, False), (768, False), (1280, False), (390, True)]:
+            page = browser.new_page(viewport={'width': width, 'height': 1000}, has_touch=touch)
             errors = []
             page.on('pageerror', lambda error: errors.append(str(error)))
             for attempt in range(40):
@@ -29,6 +29,12 @@ try:
             page.wait_for_selector('#workspace:not([hidden])')
             if width <= 700:
                 page.locator('#mobile-expand').click()
+            rows = page.locator('.session-detail-rows').bounding_box()
+            stats = page.locator('#session-runtime').bounding_box()
+            assert abs(rows['x'] - (stats['x'] + 12)) <= .5, 'left alignment'
+            assert abs(rows['x'] + rows['width'] - (stats['x'] + stats['width'] - 12)) <= .5, 'right alignment'
+            for row in page.locator('.session-detail-row').all():
+                assert abs(row.bounding_box()['height'] - (44 if touch else 36)) <= .5, 'compact / touch row height'
             page.locator('#session-inspector-trigger').click()
             page.locator('#inspector-tools-tab').click()
             page.locator('.inspector-tool > summary').click()
@@ -56,7 +62,7 @@ try:
             page.keyboard.press('Escape')
             assert not errors, errors
             page.close()
-            print(f'PASS {width}px: responsive selectors / runtime / tabs / JSON / bill')
+            print(f'PASS {width}px touch={touch}: alignment / compact rows / responsive selectors / runtime / tabs / JSON / bill')
         browser.close()
 finally:
     server.terminate()

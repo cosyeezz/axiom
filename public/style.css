@@ -804,7 +804,7 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 .runtime-summary > span { min-width: 0; }
-#session-runtime { padding: 0 16px 8px; }
+#session-runtime { padding: 0 12px 8px; }
 #composer { display: flex; flex-direction: column; }
 .message-model { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin-top: 8px; color: var(--muted); overflow-wrap: anywhere; font-size: 12px; font-variant-numeric: tabular-nums; }
 .message-model-name { color: var(--body-ink); }
@@ -1429,9 +1429,10 @@ textarea {
 #session-runtime { overflow-wrap: anywhere; }
 /* 详情独立阅读，输入区高度不随详情内容增长。 */
 .session-detail-rows { display: flex; flex-direction: column; margin: 0 12px 8px; border-top: 1px solid var(--line); }
-.session-detail-row { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 4px 0; font-size: 12px; font-weight: 500; color: var(--body-ink); text-align: left; background: transparent; border: 0; }
+.session-detail-row { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 4px 0; font-size: 12px; font-weight: 500; color: var(--body-ink); text-align: left; background: transparent; border: 0; }
 .session-detail-row::after { content: '↗'; margin-left: 4px; color: var(--muted); }
 .session-detail-row:hover { color: var(--ink); background: transparent; }
+@media (pointer: coarse) { .session-detail-row { min-height: 44px; } }
 #session-detail .task-body { padding: 16px 24px 24px; }
 #session-detail .session-detail-section { margin: 0 0 8px; padding: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
 #session-detail .session-detail-section > summary { min-height: 44px; border-radius: 0; background: transparent; box-shadow: none; position: static; }

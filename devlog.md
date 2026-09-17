@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-17 输入区详情入口对齐与紧凑排版
+
+- 原因：运行统计与详情入口左右内缩相差 4px，桌面入口沿用触控行高导致底部留白偏大。
+- 决策：统一为 12px 内缩；桌面行高从 44px 缩为 36px，两行共节省 16px，粗指针设备仍保留 44px 点击区域。不改变详情弹窗与账单行为。
+- 涉及：`public/style.css`、`tests/session-billing-ui.py`、`README.md`、`devlog.md`、自动生成的 `.pi/skills/codebase-map/INDEX.md`。
+- 验证：`npm test` 通过；浏览器在 320/390/768/1280px 与 390px 触控模式验证左右对齐、行高、无横向溢出及配置/账单交互均通过；合并前获取 origin/master，基线未变化。
+
 ## 2026-09-17 修复桌面 CI macOS 校验 PlistBuddy 路径
 
 - 原因：首次 Pake 构建中 Windows MSI 成功，macOS 作业在 DMG 校验步骤报 `PlistBuddy: command not found`（不在 runner 默认 PATH）。
