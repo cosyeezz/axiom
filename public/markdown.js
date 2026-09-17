@@ -1,5 +1,6 @@
 import { marked } from "./vendor/marked.js";
 import DOMPurify from "./vendor/purify.js";
+import { copyText } from "./clipboard.js";
 
 const cache = new WeakMap();
 const policy = {
@@ -343,7 +344,7 @@ export function renderMarkdown(element, text = "") {
       copy.setAttribute("aria-live", "polite");
       copy.onclick = async () => {
         try {
-          await element.ownerDocument.defaultView.navigator.clipboard.writeText(code.textContent);
+          await copyText(code.textContent, element.ownerDocument.defaultView);
           copy.textContent = "已复制";
         } catch { copy.textContent = "复制失败，请选中复制"; }
         copy.onblur = () => { copy.textContent = "复制"; };

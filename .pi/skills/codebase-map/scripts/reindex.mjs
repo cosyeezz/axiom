@@ -44,6 +44,7 @@ const MODULE_INFO = {
   "src/prompts.js": "Axiom 自有提示词按 main/subagent/compaction 角色集中维护",
   "public/memory-tags.js": "主子代理共享简单标签提取与流式显示过滤",
   "public/markdown-scan.js": "共享代码区扫描：围栏/缩进/行内代码掩码与区间切割",
+  "public/clipboard.js": "统一剪贴板入口：Clipboard API 优先，非安全上下文回退 execCommand",
   "public/goal-markers.js": "前后端共享 goal 完成标记解析与展示层剥离（含流式半截）",
   "tests/goal-markers.test.js": "完成标记严格口径、代码区保留、流式半截与页面展示回归",
   "tests/helpers/public-source.js": "页面测试加载 public ESM 源码：按序拼接并剥模块语法",

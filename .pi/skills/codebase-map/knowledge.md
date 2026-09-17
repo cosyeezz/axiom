@@ -663,3 +663,9 @@
 - 原因：duplicate() 走 create() 恢复路径，messages 从独立 JSONL 重建时应用 orderRestoredHistory；测试夹具的子任务由 saveTask 直接落库、主历史无 delegate toolResult 锚点，无关联子消息按设计前置到头部。
 - 修复：这不是回归而是新语义在副本路径的自然延伸——断言更新为 [s1,s2,u1,a1]，并补 at(-1)=main（无锚点副本最后仍是主回答）；带真实 delegate 锚点的会话子历史仍归位到声明处。
 - 防再犯：改 duplicate/恢复顺序断言前先确认夹具是否有委派锚点；orderRestoredHistory 只在 restoredFromJsonl 为真时生效，旧快照 messages 保序（保护 retry messageCount 下标）。
+
+### 2026-09-17 远程 HTTP 没有 navigator.clipboard，复制直连 writeText 必炸
+- 症状：浏览器远程连接（Tailscale HTTP 非安全上下文）里点「复制文件 ›」等复制按钮报「Cannot read properties of undefined (reading 'writeText')」。
+- 根因：非安全上下文浏览器不暴露 Clipboard API；前端 5 处调用点（app.js×4、markdown.js×1）直连 `navigator.clipboard.writeText` 无防护。此坑 2026-09-11 已在 Tailscale 记录里认定「剪贴板能力并非处处可用」，但只保留了错误提示文案。
+- 修复：统一入口 `public/clipboard.js` copyText(text, view)：API 可用优先；缺失时回退 textarea + select + execCommand("copy")，跨文档传 view（markdown 代码块用 element.ownerDocument.defaultView）。失败（execCommand 返回 false/未实现）才抛错。
+- 防再犯：新复制功能一律 import copyText，禁止直连 navigator.clipboard；tests/clipboard.test.js 锁定回退行为。jsdom 里 document.execCommand 是 undefined 且 navigator.clipboard 默认不存在，测试需自行注入（注意 Object.defineProperty 加 configurable: true 才能事后 delete 模拟非安全上下文）。

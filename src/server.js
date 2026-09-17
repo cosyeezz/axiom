@@ -49,6 +49,7 @@ const assets = new Map(
     ["/stream-playback.js", "public/stream-playback.js"],
     ["/markdown-scan.js", "public/markdown-scan.js"],
     ["/memory-tags.js", "public/memory-tags.js"],
+    ["/clipboard.js", "public/clipboard.js"],
     ["/answer-tags.js", "public/answer-tags.js"],
     ["/goal-markers.js", "public/goal-markers.js"],
     ["/vendor/marked.js", "node_modules/marked/lib/marked.esm.js"],

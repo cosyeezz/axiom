@@ -2297,3 +2297,10 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 涉及文件：src/pi.js（context 钩子、memoryState、prompt）、src/session-memory.js（wantsTitle、onReply 定案、复用导出的 TITLE_MAX）、src/sessions.js（fallbackTitle、send、恢复愈合）、public/memory-tags.js（导出 TITLE_MAX）、tests/session-memory.test.js（重试/自愈/占位符回归）、tests/pi-memory.test.js（整轮注入断言重写）、tests/image-input.test.js、.pi/skills/codebase-map/INDEX.md（测试期自动重建）、README.md、devlog.md。
 - 决策：不引入独立标题总结模型调用（保持零额外请求）；愈合用长度启发式——新语义下 titleRequested=1 只伴随 ≤10 字自报标题，超长必是旧兜底，titleManual 短路排除；enqueue 走 SDK 层 followUp 不经标题逻辑，维持现状。
 - 验证：worktree F:/worktrees/Axiom-title-retry 内 `node --test tests/*.test.js` 700 项全绿（698 通过、0 失败、2 既有跳过）；新增用例覆盖首轮漏报→下一条消息重试→自报定案、旧坏会话重启自愈、`[image1]` 占位符剥离、整轮（含工具轮）持续注入。
+
+## 2026-09-17 远程 HTTP 复制回退：统一剪贴板入口
+
+- 内容与原因：用户通过浏览器远程连接（Tailscale HTTP）时，「复制文件 ›」等复制操作报「复制失败：Cannot read properties of undefined (reading 'writeText')」。根因是远程地址属非安全上下文，`navigator.clipboard` 为 undefined，而前端 5 处直连 `writeText`（app.js 4 处 + markdown.js 代码块 1 处）都没有防护。修复：新增 `public/clipboard.js` 的 `copyText(text, view)`——Clipboard API 可用时优先使用（保留原有权限拒绝语义），缺失时在目标文档里建临时只读 textarea、`select()` + `execCommand("copy")`、复制后清理并恢复焦点，两条路径都失败才抛错。5 处调用点全部收敛到该入口，markdown 代码块传入 `element.ownerDocument.defaultView` 支持任务弹窗等跨文档场景。
+- 涉及文件：public/clipboard.js（新增）、public/app.js、public/markdown.js、tests/clipboard.test.js（新增）、tests/markdown.test.js、tests/git-log.test.js、tests/app.test.js、tests/helpers/public-source.js、.pi/skills/codebase-map/scripts/reindex.mjs、.pi/skills/codebase-map/INDEX.md（重建）、README.md、devlog.md、package.json（0.1.7 → 0.1.8）。
+- 决策：页面测试按「剥模块语法拼接 eval 真实源码」的既有装配方式接入新模块——publicSource 的 app 拼接序列加入 clipboard（app 页面测试自动获得 copyText），各 markdown 独立求值点改用 `publicSource("clipboard", "markdown")`，不引入新的 window 注入口。API 存在但被拒绝（安全上下文权限）仍按原语义透传错误提示，不做 execCommand 二次回退，避免改变既有失败提示的确定性。
+- 验证：worktree F:/worktrees/Axiom-clipboard-fallback 内 `npm test` 705 项全绿（703 通过、0 失败、2 既有跳过）；新增 4 项剪贴板用例覆盖 API 优先、execCommand 回退、跨文档复制与失败语义，markdown 按钮级补了「删除 clipboard 注入后回退仍复制原文」回归。

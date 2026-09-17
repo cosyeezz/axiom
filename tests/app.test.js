@@ -95,8 +95,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
   // 只对 reduced-motion 明确对齐（正文整批显示）；其余查询保持原有语义（true）。
   window.matchMedia = (query) =>
     query.includes("prefers-reduced-motion: reduce") ? { matches: true } : media;
-  const markdownSource = (await readFile(new URL("../public/markdown.js", import.meta.url), "utf8"))
-    .replace(/^import .*;\r?\n/gm, "").replace("export function", "function");
+  const markdownSource = await publicSource("clipboard", "markdown");
   const renderMarkdown = new Function("marked", "DOMPurify", `${markdownSource}; return renderMarkdown;`)(marked, createPurify(window));
   let renders = 0;
   window.renderMarkdown = (node, text) => {
@@ -142,7 +141,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     },
   ];
   let lastCreation, lastDefaults, lastImport, lastDuplication, copiedPath;
-  Object.defineProperty(window.navigator, "clipboard", { value: { writeText: async (text) => { copiedPath = text; } } });
+  Object.defineProperty(window.navigator, "clipboard", { configurable: true, value: { writeText: async (text) => { copiedPath = text; } } });
   let defaults = { model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: null, subagentCapabilities: null };
   let failDefaults = false, needsTrust = false;
   let withdrawnImages;
@@ -1568,8 +1567,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     for (const fn of batch) fn();
   };
   window.matchMedia = () => ({ matches: true });
-  const markdownSource = (await readFile(new URL("../public/markdown.js", import.meta.url), "utf8"))
-    .replace(/^import .*;\r?\n/gm, "").replace("export function", "function");
+  const markdownSource = await publicSource("clipboard", "markdown");
   window.renderMarkdown = new Function("marked", "DOMPurify", `${markdownSource}; return renderMarkdown;`)(marked, createPurify(window));
   window.createStreamRenderer = (render, after) =>
     createStreamRenderer(render, after, window.requestAnimationFrame, window.cancelAnimationFrame);
