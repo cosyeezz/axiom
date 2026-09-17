@@ -9,9 +9,9 @@ import { join } from "node:path";
 // 子进程隔离凭据，真实 SDK + 本地 fake SSE 供应商；验证 selection.memory 接线契约：
 // message_end 在工具执行前同步触发 onReply；轮次计数逐 turn_end +1（含工具轮）；
 // 子代理到达 wrapUpAt 后每次请求注入一次 WRAP_UP_PROMPT（故意反复、无去重、无硬停）；
-// 主代理 policy 为 null：任何轮次都不注入预算提示；titleRequest 标题指令只随当次首个请求注入；
-// 子代理系统提示词含轮次预算原文，主代理不含。
-test("memory hooks order, per-request context, one-shot title and wrap-up budget injection", async () => {
+// 主代理 policy 为 null：任何轮次都不注入预算提示；标题指令在 wantsTitle 为真期间逐请求注入
+// （含同一次 prompt 的工具后续轮），自报成功即停；子代理系统提示词含轮次预算原文，主代理不含。
+test("memory hooks order, per-request context, run-long title and wrap-up budget injection", async () => {
   const dir = await mkdtemp(join(tmpdir(), "axiom-memory-"));
   try {
     const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
@@ -73,10 +73,12 @@ test("memory hooks order, per-request context, one-shot title and wrap-up budget
           execute: async () => { ran += 1; events.push(['tool', ran]); return { content: [{ type: 'text', text: 'ok' }], details: {} }; },
         });
 
-        // —— 主代理（policy null）：任何轮次都不注入预算提示；标题指令一次性；result() 给模型原文 ——
+        // —— 主代理（policy null）：任何轮次都不注入预算提示；标题指令整轮索要（含工具轮） ——
+        let wantTitle = false;
         const memory = {
           role: 'main',
           policy: null, // 真实装配由 memoryHooks 提供：主代理没有预算
+          wantsTitle: () => wantTitle, // 真实装配由 item.titlePending 提供
           onReply({ message }) { events.push(['reply', textOf(message)]); },
         };
         const agent = await factory([probe], { memory });
@@ -88,11 +90,15 @@ test("memory hooks order, per-request context, one-shot title and wrap-up budget
             { text: 'ok4' },
             { text: 'ok5' },
           ];
+          wantTitle = true; // 第一问整轮索要（含工具后续轮）：首轮直接委派漏标签时，后续轮还有机会补
           await agent.prompt('第一问');
           // result() 是模型原文出口（落库与 read_result 都要原文），剥离只属于展示层。
           assert.equal(agent.result(), '完成。<title>标题甲</title>');
+          wantTitle = false; // 真实装配：自报成功即停注
           await agent.prompt('第二问');
-          await agent.prompt('第三问', { titleRequest: true });
+          wantTitle = true;
+          await agent.prompt('第三问');
+          wantTitle = false;
           await agent.prompt('第四问');
 
           // 回放顺序：message_end（onReply）先于工具执行。
@@ -116,16 +122,19 @@ test("memory hooks order, per-request context, one-shot title and wrap-up budget
           assert.doesNotMatch(mainSystem, /轮次预算/);
           assert.doesNotMatch(mainSystem, /不超过10字的会话标题/);
 
-          // 第 3 次 prompt（请求 4）：标题指令随该次首个请求注入，用户原文未被污染。
+          // 第 1 问两轮请求（工具轮 + 收尾轮）都带标题指令：漏报后工具后续轮还能补。
+          assert.match(texts[0], /不超过10字的会话标题/);
+          assert.match(texts[1], /不超过10字的会话标题/);
+          // 第 3 次 prompt（请求 4）：索要中，指令随请求注入，用户原文未被污染。
           assert.match(texts[3], /不超过10字的会话标题/);
           const textOfLlm = (m) => (typeof m.content === 'string' ? m.content
             : Array.isArray(m.content) ? m.content.filter((b) => b.type === 'text').map((b) => b.text).join('') : '');
           const user = requests[3].find((m) => m.role === 'user' && textOfLlm(m).includes('第三问'));
           assert.equal(textOfLlm(user), '第三问');
-          // customType 'axiom-memory' 只是 display:false 的请求副本：texts[3] 证明它进了当次 LLM 请求，
-          // 而请求 5 又不含它 —— 若这条 custom 条目落进消息历史，后续每次请求都会复现它。
+          // customType 'axiom-memory' 只是 display:false 的请求副本：texts[0]/[1]/[3] 证明它进了当次 LLM 请求，
+          // 而索要结束后（请求 3、5）不含它 —— 若这条 custom 条目落进消息历史，后续每次请求都会复现它。
           for (const [index, text] of texts.entries())
-            if (index !== 3) assert.doesNotMatch(text, /不超过10字的会话标题/, 'main request ' + (index + 1));
+            if (index !== 0 && index !== 1 && index !== 3) assert.doesNotMatch(text, /不超过10字的会话标题/, 'main request ' + (index + 1));
         } finally {
           await agent.dispose();
         }

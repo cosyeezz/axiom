@@ -16,7 +16,7 @@ const TAG = new RegExp(`<(${NAMES})>((?:(?!<(?:/?(?:${NAMES})))[\\s\\S])*?)</\\1
 const OPEN = new RegExp(`<(${NAMES})>`, "gi");
 const CLOSE = new RegExp(`</(${NAMES})>`, "gi");
 const MARKS = TAGS.flatMap((tag) => [`<${tag}>`, `</${tag}>`]);
-const TITLE_MAX = 10;
+export const TITLE_MAX = 10;
 // 与真 HTML 元素同名的标签写在这些父元素里就是正经 HTML（<details> 的折叠标题、<head> 的页面标题），不剥。
 const PARENT = { summary: "details", title: "head" };
 // 已剥离内容的占位符：与 FILL（代码区）分开，反复剥壳时外层才不会把已剥内容误当代码区。

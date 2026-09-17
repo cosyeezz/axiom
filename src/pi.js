@@ -95,7 +95,7 @@ export async function recallLastMessage(session) {
   };
 }
 
-// 标题指令只在 titleRequest 的当次首个请求随背景注入，不进系统提示词、不改用户原文。
+// 标题指令不进系统提示词、不改用户原文：由 context 钩子按 memory.wantsTitle() 逐请求随背景注入。
 
 
 // 检查点边界：firstKeptEntryId 指向任何真实条目都会把该条之后的历史继续留在请求上下文里；
@@ -104,8 +104,9 @@ export async function recallLastMessage(session) {
 const CHECKPOINT_BOUNDARY = "__axiom_checkpoint__";
 
 // 会话记忆接入：context 钩子在每次 LLM 请求（含同一次 prompt 的工具后续轮）注入临时背景；
-// executionContext（goal 模式每请求重算）与 titleRequest 标题指令同走这里，均只改请求副本。
-// titleRequest 的标题指令只随当次首个请求注入一次。
+// executionContext（goal 模式每请求重算）与标题指令同走这里，均只改请求副本。
+// 标题指令在 memory.wantsTitle()（标题未定案且本次运行在索要）为真的每个请求都注入：
+// 首轮直接委派时模型常漏掉开头的 <title> 行，只注首个请求会让标题永久丢失；自报成功即停注。
 // 子代理累计 turn 到达 wrapUpAt（建会话时由 task-budget 按持久化配置定死，逐请求不重读）后，
 // 每次请求前附加一次 [轮次预算] 收尾指令（不额外发请求）。上限是软的、故意反复注入：
 // 没有硬停——abort 会让 result() 对 aborted 抛错，前面所有轮次的产出一起丢掉。
@@ -118,8 +119,7 @@ function memoryExtension(state, memory, policy, executionContext) {
       const background = executionContext?.();
       if (background) parts.push(background);
       if (policy && state && state.turn >= policy.wrapUpAt) parts.push(WRAP_UP_PROMPT);
-      if (state?.pending) parts.push(state.pending);
-      if (state) state.pending = null;
+      if (memory?.wantsTitle?.()) parts.push(TITLE_INSTRUCTION);
       if (!parts.length) return undefined;
       return { messages: [...messages, {
         role: "custom", customType: "axiom-memory", content: parts.join("\n\n"), display: false, timestamp: Date.now(),
@@ -150,7 +150,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
     // 主代理没有预算（policy 为 null）：人在盯，且它是会话本体，不该被截断。
     const policy = memory?.policy ?? null;
     // 轮次只在本次子代理进程内计数：子代理不跨重启续命，重启即取消，无需持久化。
-    const memoryState = memory ? { turn: 0, pending: null } : null;
+    const memoryState = memory ? { turn: 0 } : null;
     // 启动不依赖模型；每次建会话从最新目录选择，网页首次配置后无需重启。
     const key = selection.model || defaultKey;
     // 恢复历史允许暂未鉴权的已知模型；仍保持原模型，请求时由 SDK 报凭据问题。
@@ -428,8 +428,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       prompt: async (text, options) => {
         if (await compactionCtrl.maybeApply()) emitAxiom({ type: "agent.runtime", data: agentRuntime(session) });
         beginRun();
-        // 背景由 context 钩子按请求实时取；这里只挂 titleRequest 的标题指令，消费一次即失效。
-        if (memoryState) memoryState.pending = options?.titleRequest ? TITLE_INSTRUCTION : null;
+        // 背景与标题指令都由 context 钩子按请求实时取（memory.wantsTitle 读会话实时状态，无需透传选项）。
         try {
           await retry.run(() => session.prompt(text, options?.images ? { images: options.images } : undefined));
         } catch (error) {
