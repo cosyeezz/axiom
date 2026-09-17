@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-17 修复桌面 CI macOS 校验 PlistBuddy 路径
+
+- 原因：首次 Pake 构建中 Windows MSI 成功，macOS 作业在 DMG 校验步骤报 `PlistBuddy: command not found`（不在 runner 默认 PATH）。
+- 决策：改用完整路径 `/usr/libexec/PlistBuddy`；重新构建后两个产物均通过校验。
+- 涉及：`.github/workflows/desktop.yml`。
+- 验证：重建 run 35210946054：Windows 8m9s 与 macOS 10m4s 双作业全绿，产物 Axiom-Windows-x4（3.3MB）/ Axiom-macOS-universal（9.1MB）已上传。
+
 ## 2026-09-17 桌面端回归 Pake 壳并支持可配置连接地址
 
 - 原因：用户认为 Electron 方案过重（随包 Node 运行时、生命周期握手、electron-builder 链路），决定移除 Electron，回归 Pake 轻量壳，且连接地址不再构建期烘焙，须可配置（本机或远程均司）。
