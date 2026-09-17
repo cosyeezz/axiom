@@ -672,7 +672,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("file-picker-confirm").click(); await settle();
     assert.match($("context-chips").textContent, /src\/app.js/);
     input("参考文件");
-    $("composer").requestSubmit(); await settle();
+    $("composer").requestSubmit(); paint(); await settle();
     assert.match(requests.findLast((req) => req.type === "prompt").text, /文件："src\/app.js"/);
     assert.equal($("context-chips").children.length, 0);
     const completionKey = (key) => $("prompt").dispatchEvent(new window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
@@ -695,7 +695,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.match($("prompt-completion").textContent, /文件夹：src/);
     completionKey("Enter");
     assert.equal($("prompt").required, false, "folder-only reference can submit");
-    $("composer").requestSubmit(); await settle();
+    $("composer").requestSubmit(); paint(); await settle();
     assert.match(requests.findLast((req) => req.type === "prompt").text, /文件夹："src"/);
     input("参考 @sr"); await settle(); completionKey("ArrowRight"); await settle();
     assert.equal($("prompt").value, '参考 @"src/');
@@ -753,6 +753,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("composer-skill").value, "codebase-map");
     assert.equal($("prompt").value, "检查代码");
     $("composer").requestSubmit();
+    paint();
     await settle();
     assert.equal(requests.findLast((req) => req.type === "prompt").text, "/skill:codebase-map 检查代码");
     $("open-raw-io").click();
@@ -1036,6 +1037,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     input("  accepted task \n");
     failList = true;
     $("composer").requestSubmit();
+    paint();
     assert.equal($("subagent-model").disabled, false);
     await settle();
     assert.equal(
@@ -1118,6 +1120,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     await settle();
     input("撤回的输入");
     $("composer").requestSubmit();
+    paint();
     await settle();
     assert.match($("output").textContent, /撤回的输入/);
     emit("session.state", { status: "running" });
@@ -1420,6 +1423,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     await settle();
     assert.equal($("image-attachments").querySelectorAll("img").length, 1, "switching back restores attachments");
     $("composer").requestSubmit();
+    paint();
     await settle();
     assert.equal(requests.findLast((req) => req.type === "prompt").images[0].mimeType, "image/png");
     assert.equal(requests.findLast((req) => req.type === "prompt").text, "[image1]");
@@ -1801,6 +1805,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     // 新消息通过 agent.message.end 的 entryId 参与后续折叠。
     input("问题三");
     $("composer").requestSubmit();
+    paint();
     await settle();
     emit("agent.compaction", { id: "c3", summary: "包含新消息", firstKeptEntryId: "m5", compactedMessageIds: ["m4", "m5"] });
     assert.equal(cards().length, 3);

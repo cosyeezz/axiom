@@ -841,6 +841,8 @@ button.danger:hover:not(:disabled) { background: light-dark(#a92f41, #c13e50); }
 .session-inspector-body pre { user-select: text; }
 .task-error { color: var(--danger); white-space: pre-wrap; overflow-wrap: anywhere; }
 .task-truncated { margin: 0; font-size: 12px; color: var(--warning, var(--danger)); border-left: 2px solid var(--warning, var(--danger)); padding: 4px 8px; }
+.message-status { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+.message-status-unknown { color: var(--warning, var(--danger)); }
 .task-card[data-status="running"] .task-status,
 .task-card[data-status="starting"] .task-status { color: var(--subagent); }
 .task-card[data-status="failed"] .task-status,

@@ -2198,7 +2198,15 @@ function applyEvent(message) {
   }
   if (type === "agent.message.end" && data.message.role === "user" && !isTaskNotification(data.message)) {
     clearWaiting(agentId);
-    const item = card("你", tasks.get(agentId));
+    // 乐观卡对账：事件信封带 runId（无 runId 时单槽假设），命中则原位升级，不另建卡。
+    const claimed = agentId === "main" && pendingUser &&
+      (!message.runId || !pendingUser.runId || message.runId === pendingUser.runId);
+    const item = claimed ? pendingUser.item : card("你", tasks.get(agentId));
+    if (claimed) {
+      pendingUser = null;
+      item.statusNode?.remove();
+      item.statusNode = undefined;
+    }
     bindRaw(item, endedRaw);
     renderMessage(item, data.message);
     if (agentId === "main") {
@@ -2590,6 +2598,8 @@ document.addEventListener("visibilitychange", () => {
 });
 // 换页时卸载旧页，只建立当前页的索引。
 function beginSnapshot(state, target) {
+  // 快照重建是最终权威：乐观卡槽位重置，真实记录由快照消息重新挂载。
+  pendingUser = null;
   // 原文对照与当前页共用消息，不维护另一份历史副本。
   rawEntries = state.messages;
   // View handles belong only to this mounted page; message objects remain authoritative.
@@ -2996,6 +3006,7 @@ $("composer").onsubmit = async (e) => {
   if (sentImages.length > 4) return error(new Error("每条消息最多发送 4 张图片，请移除多余附件后分批发送"));
   const wasBusy = busy;
   const queueType = e.submitter?.dataset.queue || config?.queueType || "steer";
+  const onOldPage = !!historyState?.history?.nextCursor;
   busy = true;
   region("输入操作", updateComposer);
   $("error").textContent = "";
@@ -3004,8 +3015,17 @@ $("composer").onsubmit = async (e) => {
   follow = true;
   scrollLatest();
   try {
-    if (historyState?.history?.nextCursor) await latestHistory();
-    await request("prompt", { sessionId: sendingSession, text, ...(sentImages.length ? { images: sentImages } : {}), ...(wasBusy ? { queueType } : {}) });
+    // 乐观上屏：空闲且在最新页时立即显示「发送中」卡；忙碌排队走队列行反馈，旧页无卡（先回最新）。
+    const optimistic = !wasBusy && !onOldPage;
+    if (optimistic) mountPendingUser(text, sentImages);
+    // 先让浏览器绘制乐观卡，再做请求序列化重活（大文本/图片 stringify 同步占主线程）。
+    if (optimistic) await nextPaint();
+    // 旧页提交不再阻塞在整页重建上：先派发 prompt（传输层同步序列化发送），
+    // 历史并行回最新，事件落在最新快照后继续。
+    const sent = request("prompt", { sessionId: sendingSession, text, ...(sentImages.length ? { images: sentImages } : {}), ...(wasBusy ? { queueType } : {}) });
+    if (onOldPage) void latestHistory().catch(error);
+    const reply = await sent;
+    settlePendingUser(reply?.runId);
     if (sessionId === sendingSession) {
       images = images.filter((image) => !sentImages.includes(image));
       renderImages();
@@ -3029,12 +3049,59 @@ $("composer").onsubmit = async (e) => {
     void refreshSessions().catch(error);
   } catch (e) {
     if (sessionId === sendingSession) {
+      // 确定失败（response_error）：撤卡保草稿；结果未知（断线/超时等 unknown）：保留卡并标未确认。
+      failPendingUser(!!e.unknown);
       error(e);
       busy = wasBusy;
       region("输入操作", updateComposer);
     }
   }
 };
+// 乐观发送：提交后立即上屏一张「发送中」的用户卡；prompt 回执带 runId 用于对账，
+// agent.message.end(user) 到达时原位升级为正式消息（bindRaw + mainItems + goal 锚）。
+// 只做临时占位，绝不伪装已确认状态：失败确定时撤卡，未知时如实标注，快照重建天然收敛。
+let pendingUser = null;
+function mountPendingUser(text, sentImages) {
+  const item = card("你");
+  const blocks = [{ type: "text", text }];
+  for (const image of sentImages || []) blocks.push({ type: "image", ...image });
+  renderMessage(item, { role: "user", content: blocks });
+  const status = document.createElement("p");
+  status.className = "message-status";
+  status.textContent = "发送中…";
+  item.node.append(status);
+  item.statusNode = status;
+  pendingUser = { item, runId: null, session: sessionId };
+  return item;
+}
+// 回执的 runId 绑到卡上（早于事件到达）；事件按 runId 声领，避免按文本猜对账。
+function settlePendingUser(runId) {
+  if (!pendingUser) return;
+  pendingUser.runId = runId ?? null;
+}
+function failPendingUser(unknown) {
+  if (!pendingUser) return;
+  const { item } = pendingUser;
+  pendingUser = null;
+  if (!unknown) {
+    if (item.node.isConnected) item.node.remove();
+    return;
+  }
+  const status = item.statusNode;
+  if (status) {
+    status.textContent = "发送结果未确认：可能已送达，等待事件落地或刷新查看。";
+    status.classList.add("message-status-unknown");
+  }
+}
+// rAF 后再放行序列化重活；无渲染环境（测试/jsdom）靠短超时兑底，不卡发送。
+function nextPaint() {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    requestAnimationFrame(finish);
+    setTimeout(finish, 64);
+  });
+}
 function enableImagePreview(image) {
   image.tabIndex = 0;
   image.setAttribute("role", "button");
