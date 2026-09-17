@@ -2298,6 +2298,13 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 决策：不引入独立标题总结模型调用（保持零额外请求）；愈合用长度启发式——新语义下 titleRequested=1 只伴随 ≤10 字自报标题，超长必是旧兜底，titleManual 短路排除；enqueue 走 SDK 层 followUp 不经标题逻辑，维持现状。
 - 验证：worktree F:/worktrees/Axiom-title-retry 内 `node --test tests/*.test.js` 700 项全绿（698 通过、0 失败、2 既有跳过）；新增用例覆盖首轮漏报→下一条消息重试→自报定案、旧坏会话重启自愈、`[image1]` 占位符剥离、整轮（含工具轮）持续注入。
 
+## 2026-09-17 会话统计恢复、计费与输入区详情优化
+
+- 时间：2026-09-17 UTC（本机核对时间 2026-09-16 23:54 -0700）。原因：历史只读快照缺 runtime；移动选择区和统计横滚隐藏信息；模型 cost 仅支持高级 JSON；主代理详情平铺难读。
+- 内容：只读恢复最近已报告 usage 与压缩后上下文估算；主会话全 entries 按模型累计费用，工具/摘要分桶；模型管理四项价格输入与非负校验；输入区 flex 自动检测可用宽度换行；双页签主代理详情、逐层折叠 JSON、独立账单。
+- 决策：保留有效 SDK 上下文，缺失 token 数时也在活跃路径标注估算（有意更新旧 null 测试契约）；不把当前价格追溯到历史、不把 SDK 全零费用伪称免费；不含独立委托会话。界面沿用 Linear surface/line/ink token、8px 圆角与键盘页签。
+- 涉及文件：src/session-billing.js、src/session-history.js、src/sessions.js、src/pi.js、src/server.js；public/session-details.js、app.js、index.html、model-manager.js、style.css；对应 config/app/model-manager/session-history/session-billing/session-details 测试、浏览器夹具及 public-source 装配器；README.md、代码索引与 knowledge.md。
+- 验证：npm test 全绿（2 项既有跳过）；新增单测覆盖计费口径、空态、价格非法值和 tiers 保留、安全 JSON 与页签；frontend-regions-ui.py 通过；session-billing-ui.py 在 320/390/768/1280px 检查无横向溢出、统计、页签与账单通过。合并最新 master 后再次验证。
 ## 2026-09-17 远程 HTTP 复制回退：统一剪贴板入口
 
 - 内容与原因：用户通过浏览器远程连接（Tailscale HTTP）时，「复制文件 ›」等复制操作报「复制失败：Cannot read properties of undefined (reading 'writeText')」。根因是远程地址属非安全上下文，`navigator.clipboard` 为 undefined，而前端 5 处直连 `writeText`（app.js 4 处 + markdown.js 代码块 1 处）都没有防护。修复：新增 `public/clipboard.js` 的 `copyText(text, view)`——Clipboard API 可用时优先使用，被拒绝（如 Firefox 权限门控）或缺失时在目标文档里建临时只读 textarea、`select()` + `execCommand("copy")`、复制后清理并恢复焦点，两条路径都失败才抛错。5 处调用点全部收敛到该入口，markdown 代码块传入 `element.ownerDocument.defaultView` 支持任务弹窗等跨文档场景。

@@ -164,11 +164,17 @@
                 <summary>主代理系统提示词与工具</summary>
                 <div class="session-inspector-body">
                   <p>当前运行态快照，不是最后一次完整请求。运行结束后扩展提示可能复位；不含动态用户消息或供应商内部指令。分享前请检查隐私内容。</p>
-                  <h3>系统提示词</h3>
-                  <pre id="session-system-prompt">系统提示词尚未加载；会话启动后可查看。</pre>
-                  <h3>当前激活工具（名称、描述与参数）</h3>
-                  <pre id="session-active-tools">工具信息尚未加载。</pre>
+                  <div class="inspector-tabs" role="tablist" aria-label="主代理详情">
+                    <button type="button" role="tab" id="inspector-prompt-tab" aria-selected="true" aria-controls="inspector-prompt-panel">系统提示词</button>
+                    <button type="button" role="tab" id="inspector-tools-tab" aria-selected="false" aria-controls="inspector-tools-panel" tabindex="-1">工具注册</button>
+                  </div>
+                  <div id="inspector-prompt-panel" role="tabpanel" aria-labelledby="inspector-prompt-tab"><pre id="session-system-prompt">系统提示词尚未加载；会话启动后可查看。</pre></div>
+                  <div id="inspector-tools-panel" role="tabpanel" aria-labelledby="inspector-tools-tab" hidden><div id="session-active-tools">工具信息尚未加载。</div></div>
                 </div>
+              </details>
+              <details id="session-billing" class="task-system-prompt">
+                <summary>当前会话账单</summary>
+                <div id="session-bill-body" class="session-inspector-body"></div>
               </details>
               <div class="mobile-controls">
                 <span id="mobile-runtime" aria-live="polite"></span>

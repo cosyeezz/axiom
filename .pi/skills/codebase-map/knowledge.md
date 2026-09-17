@@ -664,6 +664,12 @@
 - 修复：这不是回归而是新语义在副本路径的自然延伸——断言更新为 [s1,s2,u1,a1]，并补 at(-1)=main（无锚点副本最后仍是主回答）；带真实 delegate 锚点的会话子历史仍归位到声明处。
 - 防再犯：改 duplicate/恢复顺序断言前先确认夹具是否有委派锚点；orderRestoredHistory 只在 restoredFromJsonl 为真时生效，旧快照 messages 保序（保护 retry messageCount 下标）。
 
+### 2026-09-17 历史统计与前端模块接线
+
+- 未加载会话 snapshot 原来不含 runtime，导致有 JSONL 用量仍显示暂无数据。只读 SessionManager 投影恢复统计，不为浏览启动模型。
+- 上下文与账单不同口径：buildSessionContext 是压缩后当前消息；getEntries 是所有历史分支与摘要。分页消息不能用来累计账单。
+- 新前端模块必须同时登记 src/server.js 静态白名单、tests/helpers/public-source.js eval 依赖和 reindex MODULE_INFO；仅 node 测试通过不代表浏览器模块图可加载。
+- SDK 对未配置模型价格可能记录全零 cost；零费用不等于真实免费，必须在账单解释该限制，不能用当前价格追溯伪造历史费用。
 ### 2026-09-17 远程 HTTP 没有 navigator.clipboard，复制直连 writeText 必炸
 - 症状：浏览器远程连接（Tailscale HTTP 非安全上下文）里点「复制文件 ›」等复制按钮报「Cannot read properties of undefined (reading 'writeText')」。
 - 根因：非安全上下文浏览器不暴露 Clipboard API；前端 5 处调用点（app.js×4、markdown.js×1）直连 `navigator.clipboard.writeText` 无防护。此坑 2026-09-11 已在 Tailscale 记录里认定「剪贴板能力并非处处可用」，但只保留了错误提示文案。

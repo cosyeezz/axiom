@@ -1,34 +1,35 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/16 23:53:20）
+# Axiom 多级代码索引（生成于 2026/9/17 00:03:21）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
 | public/answer-tags.js | 48 | 主代理回答标签解析、代码保护与流式容错 | OPEN, CLOSE, MARKS, isMark |
-| public/app.js | 4345 | 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度 | questionUI, filePicker, $, sessionId |
+| public/app.js | 4346 | 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度 | questionUI, filePicker, $, sessionId |
 | public/clipboard.js | 27 | 统一剪贴板入口：Clipboard API 优先，非安全上下文回退 execCommand | copyText |
 | public/file-picker.css | 276 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 355 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/goal-markers.js | 60 | 前后端共享 goal 完成标记解析与展示层剥离（含流式半截） | ROUND_MARKER, GOAL_MARKER, MARKER_TOKENS, SUFFIXES |
 | public/goal.css | 239 | Goal 目标面板、轮次与控制样式 | - |
 | public/goal.js | 642 | Goal 专属状态、操作与复用消息轮次分组 | createGoalUI |
-| public/index.html | 390 | 页面骨架与元素 id（见 L3） | - |
+| public/index.html | 396 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown-scan.js | 72 | 共享代码区扫描：围栏/缩进/行内代码掩码与区间切割 | FILL, FENCE, INLINE, fill |
 | public/markdown.js | 411 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, textLanguages, isText |
 | public/memory-tags.js | 107 | 主子代理共享简单标签提取与流式显示过滤 | LIVE, DEAD, TAGS, NAMES |
 | public/model-auth.js | 97 | 网页登录：授权提示、设备码、凭据输入与取消 | createModelAuth |
 | public/model-manager.css | 520 | 模型配置页：供应商列表、编辑表单与响应式布局 | - |
-| public/model-manager.js | 1278 | 统一模型管理：供应商、字段覆盖与思考等级编辑 | THINKING_LEVELS, API_TYPES, PROVIDER_TEMPLATES, PROVIDER_ID |
+| public/model-manager.js | 1316 | 统一模型管理：供应商、字段覆盖与思考等级编辑 | THINKING_LEVELS, API_TYPES, PROVIDER_TEMPLATES, PROVIDER_ID |
 | public/model-picker.css | 88 | 共享收藏下拉：浮层、星标、触屏与焦点样式 | - |
 | public/model-picker.js | 381 | 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互 | GAP, EDGE, TYPEAHEAD_MS, instanceSeq |
 | public/question.css | 49 | 提问面板样式、焦点与窄屏布局 | - |
 | public/question.js | 237 | 主代理提问选项卡、键盘交互与回答提交 | createQuestionUI |
 | public/service-settings.js | 296 | 设置页服务维护：真实进度、结果、更新确认与独立维护通道 | MAINT_URL_RE, POLL_MS, initServiceSettings |
 | public/session-cache.js | 53 | 可淘汰会话阅读位置缓存与未保存输入保护 | EVICTABLE_VIEWS, hasUnsavedInput, createSessionCache |
+| public/session-details.js | 102 | 主代理页签、安全可折叠 JSON 树与会话账单渲染 | jsonTree, initInspector, renderTools, money |
 | public/stream-playback.js | 165 | 有界字素播放游标与真实时间缓冲追赶 | BUFFER_MS, BASE_RATE, CATCHUP_S, MAX_RATE |
 | public/stream-renderer.js | 168 | 共享 rAF 流式绘制、交互让路与挂载生命周期 | createStreamRenderer |
-| public/style.css | 1701 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1718 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | public/theme.js | 11 | 首帧前阻塞应用明/暗主题（localStorage axiom.theme，默认深色） | - |
 | public/tooltip.css | 50 | 共享悬停说明样式（浅色主题下反色） | - |
 | public/tooltip.js | 225 | 共享悬停说明：动态 title、键盘、定位与无障碍 | SHOW_DELAY, HIDE_DELAY, GAP, EDGE |
@@ -60,11 +61,12 @@
 | src/questions.js | 86 | 主代理 question 工具、参数校验与可取消的回答等待 | text, option, input, questionAnswers |
 | src/remote.js | 547 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
 | src/retry.js | 196 | 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_DELAY_MS, MAX_RETRIES, RECOVERY_PROMPT |
-| src/server.js | 522 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | dev, digest, load, freshen |
-| src/session-history.js | 168 | 稳定消息身份、绑定会话/实例/修订的历史游标与有界传输页 | HISTORY_PAGE_DEFAULT, HISTORY_PAGE_MAX, CURSOR_VERSION, revisions |
+| src/server.js | 523 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | dev, digest, load, freshen |
+| src/session-billing.js | 44 | 全会话 entries 用量与费用统计、当前上下文估算 | keys, zero, number, sessionBilling |
+| src/session-history.js | 171 | 稳定消息身份、绑定会话/实例/修订的历史游标与有界传输页 | HISTORY_PAGE_DEFAULT, HISTORY_PAGE_MAX, CURSOR_VERSION, revisions |
 | src/session-memory.js | 34 | 标题提取登记、轮次预算挂钩与委派背景 | textOf, memoryHooks |
 | src/session-store.js | 479 | 会话三表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, TABLES, INDEXES |
-| src/sessions.js | 1967 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | GOAL_TOOL_NAMES, hasRunningTasks, relevantTools, delegateTaskIds |
+| src/sessions.js | 1978 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | GOAL_TOOL_NAMES, hasRunningTasks, relevantTools, delegateTaskIds |
 | src/task-budget.js | 35 | 主子代理轮次预算规则、收尾提示词与配置页参数校验 | TASK_BUDGET_LIMITS, taskBudgetDefaults, within, taskBudgetPolicy |
 | src/tasks.js | 234 | Tasks：子任务（委托）生命周期 | ACTIVE, historyResult, Tasks |
 | src/tools.js | 157 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
@@ -73,7 +75,7 @@
 | tests/__pycache__/goal-ui.cpython-312.pyc | 165 | node --test 测试（npm test） | - |
 | tests/activity-groups-ui.py | 201 | node --test 测试（npm test） | activityHistory, sessions |
 | tests/answer-tags.test.js | 56 | node --test 测试（npm test） | open |
-| tests/app.test.js | 1990 | node --test 测试（npm test） | pickerSource, modelSources, serviceSource |
+| tests/app.test.js | 1991 | node --test 测试（npm test） | pickerSource, modelSources, serviceSource |
 | tests/autoscroll-ui.py | 99 | node --test 测试（npm test） | - |
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
 | tests/backend-lifecycle.test.js | 76 | node --test 测试（npm test） | fixture |
@@ -86,13 +88,13 @@
 | tests/compaction-ui.py | 57 | node --test 测试（npm test） | - |
 | tests/compaction-ui.test.js | 187 | node --test 测试（npm test） | page |
 | tests/compaction.test.js | 823 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
-| tests/config.test.js | 308 | node --test 测试（npm test） | - |
+| tests/config.test.js | 309 | node --test 测试（npm test） | - |
 | tests/context-menu-ui.py | 66 | node --test 测试（npm test） | - |
 | tests/continuous-history.test.js | 53 | node --test 测试（npm test） | send |
 | tests/continuous-preview.mjs | 19 | node --test 测试（npm test） | id, history, records, state |
 | tests/continuous-ui.py | 27 | node --test 测试（npm test） | - |
 | tests/conversation-font-ui.py | 43 | node --test 测试（npm test） | - |
-| tests/conversation-preview.mjs | 137 | node --test 测试（npm test） | markdown, message, thinking, state |
+| tests/conversation-preview.mjs | 143 | node --test 测试（npm test） | markdown, message, thinking, state |
 | tests/conversation-ui.py | 254 | node --test 测试（npm test） | - |
 | tests/data-owner.test.js | 24 | node --test 测试（npm test） | - |
 | tests/data-version.test.js | 25 | node --test 测试（npm test） | - |
@@ -133,7 +135,7 @@
 | tests/mobile-reading-ui.py | 130 | node --test 测试（npm test） | - |
 | tests/model-auth.test.js | 133 | node --test 测试（npm test） | SECRET, fakeAuth, waitFor, noLeak |
 | tests/model-config.test.js | 1159 | node --test 测试（npm test） | sha, EMPTY, tempDir, openDatabases |
-| tests/model-manager.test.js | 1229 | node --test 测试（npm test） | authSource, source, tick, j |
+| tests/model-manager.test.js | 1254 | node --test 测试（npm test） | authSource, source, tick, j |
 | tests/model-onboarding-ui.test.js | 184 | node --test 测试（npm test） | stripImports, modelSources, pickerSource, memoryTagsSource |
 | tests/model-onboarding.test.js | 78 | node --test 测试（npm test） | - |
 | tests/model-picker.test.js | 422 | node --test 测试（npm test） | source, tick, nap, OPTS |
@@ -170,10 +172,13 @@
 | tests/service-settings-ui.py | 60 | node --test 测试（npm test） | - |
 | tests/service-settings.test.js | 401 | node --test 测试（npm test） | source, html, setup |
 | tests/service.test.js | 684 | node --test 测试（npm test） | until, readMaybe, killTree, buildWorkspace |
+| tests/session-billing-ui.py | 51 | node --test 测试（npm test） | - |
+| tests/session-billing.test.js | 41 | node --test 测试（npm test） | usage |
 | tests/session-cache.test.js | 115 | node --test 测试（npm test） | clean, withDraft, withImages |
 | tests/session-created-at.test.js | 44 | node --test 测试（npm test） | factory |
+| tests/session-details.test.js | 35 | node --test 测试（npm test） | - |
 | tests/session-flow.test.js | 590 | node --test 测试（npm test） | flowFactory, jsonlFactory |
-| tests/session-history.test.js | 411 | node --test 测试（npm test） | build, ids, ask, fakeSource |
+| tests/session-history.test.js | 414 | node --test 测试（npm test） | build, ids, ask, fakeSource |
 | tests/session-memory.test.js | 162 | node --test 测试（npm test） | reply |
 | tests/session-migration.test.js | 282 | node --test 测试（npm test） | factory, workspaceHash |
 | tests/session-model-restore.test.js | 61 | node --test 测试（npm test） | stubFactory, cleanup |
@@ -220,370 +225,370 @@
 | isMark | const | 10 |
 | splitAnswer | function | 12 |
 
-### public/app.js（4345 行） — 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度
+### public/app.js（4346 行） — 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| questionUI | const | 16 |
-| filePicker | const | 18 |
-| $ | const | 19 |
-| sessionId | const | 20 |
-| sessionMissing | const | 32 |
-| onboarding | const | 33 |
-| allSessions | const | 34 |
-| views | const | 36 |
-| HISTORY_LIMIT | const | 37 |
-| historyState | const | 38 |
-| hiddenDirty | const | 39 |
-| goalUI | function | 43 |
-| compactionDefaults | const | 59 |
-| taskBudgetDefaults | const | 61 |
-| thinkingLevels | const | 62 |
-| modelFavorites | const | 63 |
-| favoriteKey | function | 66 |
-| modelPicker | const | 71 |
-| modelManager | const | 85 |
-| serviceUi | const | 86 |
-| compactions | const | 87 |
-| goalAnchors | const | 89 |
-| anchorGoal | function | 90 |
-| clearGoalPrompt | function | 96 |
-| resizePrompt | method | 101 |
-| region | method | 102 |
-| lastMainMessage | const | 105 |
-| compactionNodes | const | 106 |
-| images | const | 107 |
-| completionVersion | const | 108 |
-| selectedSkill | const | 109 |
-| hiddenSessions | const | 113 |
-| pinnedSessions | const | 119 |
-| openCwds | const | 125 |
-| sessionGroupPrefs | const | 132 |
-| saveSessionGroupPrefs | function | 138 |
-| seenSessions | const | 143 |
-| markSessionSeen | function | 148 |
-| readSessionPreference | function | 155 |
-| changeSessionPreference | function | 159 |
-| setSessionHidden | function | 174 |
-| setSessionPinned | function | 182 |
-| focusSessionMore | function | 190 |
-| saveView | function | 203 |
-| promptLayout | const | 222 |
-| promptFit | const | 223 |
-| resizePrompt | function | 224 |
-| invalidatePrompt | function | 233 |
-| scrollFrame | const | 234 |
-| FOLLOW_GAP | const | 235 |
-| scrollIntent | const | 236 |
-| lastScrollTops | const | 237 |
-| noteScrollIntent | const | 239 |
-| atLatest | const | 241 |
-| readFollow | function | 244 |
-| scrollToLatest | const | 253 |
-| scrollLatest | function | 254 |
-| scheduleCallGroups | method | 255 |
-| transcript | const | 264 |
-| growthWatch | const | 266 |
-| growthObserver | function | 267 |
-| watchGrowth | function | 270 |
-| forgetGrowth | function | 271 |
-| renderer | const | 274 |
-| prefetchHistory | method | 287 |
-| scrollLatest | method | 308 |
-| mobile | const | 310 |
-| sidebar | function | 311 |
-| sidebar | method | 326 |
-| sidebar | method | 329 |
-| invalidatePrompt | method | 330 |
-| promptResizeFrame | const | 335 |
-| fontScale | const | 344 |
-| applyConversationFontScale | function | 345 |
-| savedFontScale | const | 350 |
-| applyConversationFontScale | method | 354 |
-| themeColors | const | 360 |
-| applyTheme | function | 361 |
-| applyTheme | method | 372 |
-| live | const | 381 |
-| error | function | 382 |
-| rawEntries | const | 386 |
-| rawMode | function | 387 |
-| rawMode | method | 395 |
-| rawChanged | function | 406 |
-| rawEntry | function | 412 |
-| selectRaw | function | 417 |
-| rawMode | method | 419 |
-| TASK_NOTIFICATION_TYPE | const | 436 |
-| TASK_NOTIFICATION_PREFIX | const | 437 |
-| isTaskNotification | const | 438 |
-| taskNotificationCard | function | 447 |
-| scrollLatest | method | 459 |
-| bindRaw | function | 462 |
-| paintRaw | function | 476 |
-| request | function | 524 |
-| region | function | 529 |
-| updateAvailability | function | 533 |
-| updateNavigation | method | 534 |
-| region | method | 535 |
-| region | method | 536 |
+| questionUI | const | 17 |
+| filePicker | const | 19 |
+| $ | const | 20 |
+| sessionId | const | 22 |
+| sessionMissing | const | 34 |
+| onboarding | const | 35 |
+| allSessions | const | 36 |
+| views | const | 38 |
+| HISTORY_LIMIT | const | 39 |
+| historyState | const | 40 |
+| hiddenDirty | const | 41 |
+| goalUI | function | 45 |
+| compactionDefaults | const | 61 |
+| taskBudgetDefaults | const | 63 |
+| thinkingLevels | const | 64 |
+| modelFavorites | const | 65 |
+| favoriteKey | function | 68 |
+| modelPicker | const | 73 |
+| modelManager | const | 87 |
+| serviceUi | const | 88 |
+| compactions | const | 89 |
+| goalAnchors | const | 91 |
+| anchorGoal | function | 92 |
+| clearGoalPrompt | function | 98 |
+| resizePrompt | method | 103 |
+| region | method | 104 |
+| lastMainMessage | const | 107 |
+| compactionNodes | const | 108 |
+| images | const | 109 |
+| completionVersion | const | 110 |
+| selectedSkill | const | 111 |
+| hiddenSessions | const | 115 |
+| pinnedSessions | const | 121 |
+| openCwds | const | 127 |
+| sessionGroupPrefs | const | 134 |
+| saveSessionGroupPrefs | function | 140 |
+| seenSessions | const | 145 |
+| markSessionSeen | function | 150 |
+| readSessionPreference | function | 157 |
+| changeSessionPreference | function | 161 |
+| setSessionHidden | function | 176 |
+| setSessionPinned | function | 184 |
+| focusSessionMore | function | 192 |
+| saveView | function | 205 |
+| promptLayout | const | 224 |
+| promptFit | const | 225 |
+| resizePrompt | function | 226 |
+| invalidatePrompt | function | 235 |
+| scrollFrame | const | 236 |
+| FOLLOW_GAP | const | 237 |
+| scrollIntent | const | 238 |
+| lastScrollTops | const | 239 |
+| noteScrollIntent | const | 241 |
+| atLatest | const | 243 |
+| readFollow | function | 246 |
+| scrollToLatest | const | 255 |
+| scrollLatest | function | 256 |
+| scheduleCallGroups | method | 257 |
+| transcript | const | 266 |
+| growthWatch | const | 268 |
+| growthObserver | function | 269 |
+| watchGrowth | function | 272 |
+| forgetGrowth | function | 273 |
+| renderer | const | 276 |
+| prefetchHistory | method | 289 |
+| scrollLatest | method | 310 |
+| mobile | const | 312 |
+| sidebar | function | 313 |
+| sidebar | method | 328 |
+| sidebar | method | 331 |
+| invalidatePrompt | method | 332 |
+| promptResizeFrame | const | 337 |
+| fontScale | const | 346 |
+| applyConversationFontScale | function | 347 |
+| savedFontScale | const | 352 |
+| applyConversationFontScale | method | 356 |
+| themeColors | const | 362 |
+| applyTheme | function | 363 |
+| applyTheme | method | 374 |
+| live | const | 383 |
+| error | function | 384 |
+| rawEntries | const | 388 |
+| rawMode | function | 389 |
+| rawMode | method | 397 |
+| rawChanged | function | 408 |
+| rawEntry | function | 414 |
+| selectRaw | function | 419 |
+| rawMode | method | 421 |
+| TASK_NOTIFICATION_TYPE | const | 438 |
+| TASK_NOTIFICATION_PREFIX | const | 439 |
+| isTaskNotification | const | 440 |
+| taskNotificationCard | function | 449 |
+| scrollLatest | method | 461 |
+| bindRaw | function | 464 |
+| paintRaw | function | 478 |
+| request | function | 526 |
+| region | function | 531 |
+| updateAvailability | function | 535 |
+| updateNavigation | method | 536 |
 | region | method | 537 |
 | region | method | 538 |
-| updateConnection | function | 540 |
-| updateModelAvailability | function | 545 |
-| updateSettingsAvailability | function | 553 |
-| updateNavigation | function | 566 |
-| duplicateBlocked | function | 580 |
-| updateComposer | function | 583 |
-| renderContextChips | method | 594 |
-| syncRetryPrompt | method | 605 |
-| options | function | 607 |
-| providerEntries | const | 618 |
-| modelEntries | const | 619 |
-| catalogRequest | const | 621 |
-| refreshModelCatalog | function | 622 |
-| updateNavigation | method | 645 |
-| fillModels | function | 653 |
-| options | method | 655 |
-| renderAgentConfig | function | 657 |
-| options | method | 661 |
-| fillModels | method | 662 |
-| options | method | 664 |
-| fillSubagentModels | function | 668 |
-| options | method | 670 |
-| capabilityName | function | 678 |
-| runtimeSummary | function | 688 |
-| renderRuntime | function | 701 |
-| updateTaskRuntime | function | 722 |
-| renderRuntime | method | 724 |
-| applyConfig | function | 727 |
-| region | method | 730 |
+| region | method | 539 |
+| region | method | 540 |
+| updateConnection | function | 542 |
+| updateModelAvailability | function | 547 |
+| updateSettingsAvailability | function | 555 |
+| updateNavigation | function | 568 |
+| duplicateBlocked | function | 582 |
+| updateComposer | function | 585 |
+| renderContextChips | method | 596 |
+| syncRetryPrompt | method | 607 |
+| options | function | 609 |
+| providerEntries | const | 620 |
+| modelEntries | const | 621 |
+| catalogRequest | const | 623 |
+| refreshModelCatalog | function | 624 |
+| updateNavigation | method | 647 |
+| fillModels | function | 655 |
+| options | method | 657 |
+| renderAgentConfig | function | 659 |
+| options | method | 663 |
+| fillModels | method | 664 |
+| options | method | 666 |
+| fillSubagentModels | function | 670 |
+| options | method | 672 |
+| capabilityName | function | 680 |
+| runtimeSummary | function | 690 |
+| renderRuntime | function | 703 |
+| updateTaskRuntime | function | 723 |
+| renderRuntime | method | 725 |
+| applyConfig | function | 728 |
 | region | method | 731 |
 | region | method | 732 |
-| renderComposerConfig | function | 734 |
-| options | method | 735 |
-| renderModelConfig | function | 741 |
-| options | method | 742 |
-| fillSubagentModels | method | 747 |
-| renderAgentConfig | method | 748 |
-| configureSeq | const | 751 |
-| configure | function | 752 |
-| updateAvailability | method | 763 |
-| taskBudgetInputs | const | 786 |
-| settingsGeneration | const | 787 |
-| budgetRequest | const | 788 |
-| settingsTicket | const | 789 |
-| loadTaskBudget | function | 799 |
-| saveTaskBudget | function | 810 |
-| showSettingsPanel | function | 826 |
-| showSettingsPanel | method | 843 |
-| showSettingsPanel | method | 847 |
-| region | method | 848 |
-| remoteView | const | 860 |
-| remoteLoaded | const | 861 |
-| remoteAnchor | function | 862 |
-| remoteRender | function | 870 |
-| region | method | 916 |
-| remoteLoad | function | 918 |
-| remoteAuthUrl | function | 938 |
-| remoteLogin | function | 946 |
-| remoteOnReconnect | function | 972 |
-| updateAvailability | method | 986 |
-| messageItems | const | 999 |
-| activityPaths | const | 1001 |
-| setActivityIcon | function | 1018 |
-| callGroupsFrame | const | 1028 |
-| scheduleCallGroups | function | 1029 |
-| createCallGroup | function | 1039 |
-| paintCallGroup | function | 1053 |
-| refreshCallGroups | function | 1095 |
-| foldCallsBeforeMessage | function | 1227 |
-| paintCallGroup | method | 1231 |
-| disclosureHint | function | 1233 |
-| activityLine | function | 1253 |
-| setActivity | method | 1263 |
-| setActivity | function | 1266 |
-| scheduleCallGroups | method | 1267 |
-| setActivityIcon | method | 1269 |
-| waiting | function | 1280 |
-| scheduleCallGroups | method | 1282 |
-| scrollLatest | method | 1288 |
-| clearWaiting | function | 1290 |
-| stopActivity | function | 1294 |
-| scheduleCallGroups | method | 1296 |
-| clearWaiting | method | 1297 |
-| updateActivity | function | 1309 |
-| setActivity | method | 1324 |
+| region | method | 733 |
+| renderComposerConfig | function | 735 |
+| options | method | 736 |
+| renderModelConfig | function | 742 |
+| options | method | 743 |
+| fillSubagentModels | method | 748 |
+| renderAgentConfig | method | 749 |
+| configureSeq | const | 752 |
+| configure | function | 753 |
+| updateAvailability | method | 764 |
+| taskBudgetInputs | const | 787 |
+| settingsGeneration | const | 788 |
+| budgetRequest | const | 789 |
+| settingsTicket | const | 790 |
+| loadTaskBudget | function | 800 |
+| saveTaskBudget | function | 811 |
+| showSettingsPanel | function | 827 |
+| showSettingsPanel | method | 844 |
+| showSettingsPanel | method | 848 |
+| region | method | 849 |
+| remoteView | const | 861 |
+| remoteLoaded | const | 862 |
+| remoteAnchor | function | 863 |
+| remoteRender | function | 871 |
+| region | method | 917 |
+| remoteLoad | function | 919 |
+| remoteAuthUrl | function | 939 |
+| remoteLogin | function | 947 |
+| remoteOnReconnect | function | 973 |
+| updateAvailability | method | 987 |
+| messageItems | const | 1000 |
+| activityPaths | const | 1002 |
+| setActivityIcon | function | 1019 |
+| callGroupsFrame | const | 1029 |
+| scheduleCallGroups | function | 1030 |
+| createCallGroup | function | 1040 |
+| paintCallGroup | function | 1054 |
+| refreshCallGroups | function | 1096 |
+| foldCallsBeforeMessage | function | 1228 |
+| paintCallGroup | method | 1232 |
+| disclosureHint | function | 1234 |
+| activityLine | function | 1254 |
+| setActivity | method | 1264 |
+| setActivity | function | 1267 |
+| scheduleCallGroups | method | 1268 |
+| setActivityIcon | method | 1270 |
+| waiting | function | 1281 |
+| scheduleCallGroups | method | 1283 |
+| scrollLatest | method | 1289 |
+| clearWaiting | function | 1291 |
+| stopActivity | function | 1295 |
+| scheduleCallGroups | method | 1297 |
+| clearWaiting | method | 1298 |
+| updateActivity | function | 1310 |
 | setActivity | method | 1325 |
-| mergeThoughts | function | 1329 |
-| diffView | const | 1347 |
-| renderToolDetail | function | 1352 |
-| section | method | 1440 |
-| toolState | function | 1442 |
-| clearWaiting | method | 1444 |
-| setActivity | method | 1488 |
-| renderToolDetail | method | 1489 |
-| scrollLatest | method | 1490 |
-| card | function | 1492 |
-| prepareStream | function | 1556 |
-| updateActivity | method | 1575 |
-| renderMessage | function | 1577 |
-| updateActivity | method | 1685 |
-| renderCompactionStatus | function | 1688 |
-| trackTaskEntries | function | 1705 |
-| placeCompactedTasks | function | 1716 |
-| placeCompactedRetries | method | 1717 |
-| compactionCard | function | 1746 |
-| renderMarkdown | method | 1766 |
-| foldCompaction | function | 1769 |
-| placeCompactedTasks | method | 1791 |
-| mergeThoughts | method | 1792 |
-| compactionEditor | function | 1799 |
-| options | method | 1837 |
-| fillThinking | method | 1867 |
-| retryChipList | function | 1878 |
-| render | method | 1927 |
-| retryEditor | function | 1931 |
-| renderTaskRuns | function | 1951 |
-| renderQueue | function | 1979 |
-| canResumeMessage | const | 1998 |
-| retryPrompt | const | 2000 |
-| syncRetryPrompt | function | 2001 |
-| scrollLatest | method | 2030 |
-| retryCards | const | 2032 |
-| placeCompactedRetries | function | 2033 |
-| retryArchive | function | 2057 |
-| renderRetry | function | 2070 |
-| placeCompactedRetries | method | 2106 |
-| scrollLatest | method | 2107 |
-| applyEvent | function | 2109 |
-| prefetchHistory | function | 2360 |
-| prependHistory | function | 2365 |
-| restoreRetries | method | 2396 |
-| mergeThoughts | method | 2402 |
-| placeCompactedTasks | method | 2404 |
-| rawChanged | method | 2405 |
-| snapshotJob | const | 2410 |
-| snapshot | function | 2411 |
-| mountHistory | function | 2429 |
-| finishSnapshot | method | 2435 |
-| paintHistoryControls | method | 2436 |
-| paintHistoryControls | function | 2438 |
-| loadHistory | function | 2451 |
-| saveView | method | 2453 |
-| paintHistoryControls | method | 2457 |
-| latestHistory | function | 2483 |
-| saveView | method | 2485 |
-| receiveHistoryEvent | function | 2498 |
-| applyEvent | method | 2531 |
-| beginSnapshot | function | 2545 |
-| rawChanged | method | 2552 |
-| clearTimeout | method | 2555 |
-| markSessionSeen | method | 2572 |
-| updatePageTitle | method | 2576 |
-| renderTaskRuns | method | 2589 |
-| renderCompactionStatus | method | 2594 |
-| renderImages | method | 2631 |
-| closeCompletion | method | 2634 |
-| placeSnapshotMessage | function | 2640 |
-| finishSnapshot | function | 2691 |
-| mergeThoughts | method | 2718 |
-| placeCompactedTasks | method | 2732 |
-| renderQueue | method | 2752 |
-| applyConfig | method | 2754 |
-| updateAvailability | method | 2756 |
-| region | method | 2757 |
-| transport | const | 2759 |
-| onState | method | 2763 |
-| initialized | const | 2799 |
-| initializeConnection | function | 2800 |
-| importDir | const | 2917 |
-| fillModels | method | 2922 |
-| fillSubagentModels | method | 2929 |
-| closeCompletion | method | 2946 |
-| region | method | 2951 |
-| scrollLatest | method | 2956 |
-| enableImagePreview | function | 2989 |
-| renderImages | function | 3010 |
-| addImages | function | 3035 |
-| loadImages | function | 3056 |
-| renderImages | method | 3065 |
-| selectionCopy | const | 3088 |
-| copySelection | function | 3100 |
-| escapeTimer | const | 3163 |
-| withdrawQueue | function | 3164 |
-| markSessionSeen | method | 3242 |
-| renderSessions | method | 3243 |
-| region | method | 3244 |
-| stopSession | function | 3258 |
-| refreshing | const | 3267 |
-| refreshSessions | function | 3268 |
-| timerText | function | 3284 |
-| renderTaskTimer | function | 3291 |
-| applyElapsed | function | 3304 |
-| renderTaskTimer | method | 3310 |
-| updatePageTitle | function | 3312 |
-| updateSessions | function | 3316 |
-| renderTaskTimer | method | 3318 |
-| updatePageTitle | method | 3330 |
-| renderSessions | method | 3331 |
-| recoverMissingSession | function | 3333 |
-| region | method | 3335 |
-| saveView | method | 3342 |
-| updateAvailability | method | 3346 |
-| switchSession | function | 3362 |
-| saveView | method | 3364 |
-| updateAvailability | method | 3367 |
-| copySessionFile | function | 3383 |
-| positionSessionMenu | function | 3396 |
-| normalizeCwd | function | 3402 |
-| sessionDayLabel | function | 3406 |
-| renderSessions | function | 3419 |
-| sessionAction | const | 3741 |
-| openSessionAction | function | 3743 |
-| contextIcon | function | 3784 |
-| renderContextChips | function | 3787 |
-| fuzzyHit | function | 3806 |
-| renderContextResults | function | 3813 |
-| showContextSkills | function | 3833 |
-| positionContextSkills | function | 3838 |
-| showContextSkills | method | 3850 |
-| region | method | 3885 |
-| skillTrigger | const | 3887 |
-| showContextSkills | method | 3903 |
-| resizePrompt | method | 3912 |
-| region | method | 3913 |
-| SLASH_COMMANDS | const | 3918 |
-| closeCompletion | function | 3921 |
-| highlightCompletion | function | 3929 |
-| chooseCompletion | function | 3938 |
-| closeCompletion | method | 3950 |
-| updateCompletion | function | 3953 |
-| closeCompletion | method | 3954 |
-| resizePrompt | method | 4013 |
-| region | method | 4014 |
-| switchSession | method | 4054 |
-| creationLoad | const | 4065 |
-| defaultsScope | const | 4067 |
-| renderDefaultsScope | function | 4068 |
-| options | method | 4069 |
-| refreshDefaultsScope | function | 4072 |
-| renderDefaultsScope | method | 4078 |
-| createAgentPicker | function | 4081 |
-| options | method | 4107 |
-| fill | method | 4114 |
-| fillThinking | method | 4122 |
-| options | method | 4124 |
-| defaultsSelection | const | 4170 |
-| defaultsSaving | const | 4183 |
-| loadCreation | function | 4185 |
-| disposePickers | method | 4192 |
+| setActivity | method | 1326 |
+| mergeThoughts | function | 1330 |
+| diffView | const | 1348 |
+| renderToolDetail | function | 1353 |
+| section | method | 1441 |
+| toolState | function | 1443 |
+| clearWaiting | method | 1445 |
+| setActivity | method | 1489 |
+| renderToolDetail | method | 1490 |
+| scrollLatest | method | 1491 |
+| card | function | 1493 |
+| prepareStream | function | 1557 |
+| updateActivity | method | 1576 |
+| renderMessage | function | 1578 |
+| updateActivity | method | 1686 |
+| renderCompactionStatus | function | 1689 |
+| trackTaskEntries | function | 1706 |
+| placeCompactedTasks | function | 1717 |
+| placeCompactedRetries | method | 1718 |
+| compactionCard | function | 1747 |
+| renderMarkdown | method | 1767 |
+| foldCompaction | function | 1770 |
+| placeCompactedTasks | method | 1792 |
+| mergeThoughts | method | 1793 |
+| compactionEditor | function | 1800 |
+| options | method | 1838 |
+| fillThinking | method | 1868 |
+| retryChipList | function | 1879 |
+| render | method | 1928 |
+| retryEditor | function | 1932 |
+| renderTaskRuns | function | 1952 |
+| renderQueue | function | 1980 |
+| canResumeMessage | const | 1999 |
+| retryPrompt | const | 2001 |
+| syncRetryPrompt | function | 2002 |
+| scrollLatest | method | 2031 |
+| retryCards | const | 2033 |
+| placeCompactedRetries | function | 2034 |
+| retryArchive | function | 2058 |
+| renderRetry | function | 2071 |
+| placeCompactedRetries | method | 2107 |
+| scrollLatest | method | 2108 |
+| applyEvent | function | 2110 |
+| prefetchHistory | function | 2361 |
+| prependHistory | function | 2366 |
+| restoreRetries | method | 2397 |
+| mergeThoughts | method | 2403 |
+| placeCompactedTasks | method | 2405 |
+| rawChanged | method | 2406 |
+| snapshotJob | const | 2411 |
+| snapshot | function | 2412 |
+| mountHistory | function | 2430 |
+| finishSnapshot | method | 2436 |
+| paintHistoryControls | method | 2437 |
+| paintHistoryControls | function | 2439 |
+| loadHistory | function | 2452 |
+| saveView | method | 2454 |
+| paintHistoryControls | method | 2458 |
+| latestHistory | function | 2484 |
+| saveView | method | 2486 |
+| receiveHistoryEvent | function | 2499 |
+| applyEvent | method | 2532 |
+| beginSnapshot | function | 2546 |
+| rawChanged | method | 2553 |
+| clearTimeout | method | 2556 |
+| markSessionSeen | method | 2573 |
+| updatePageTitle | method | 2577 |
+| renderTaskRuns | method | 2590 |
+| renderCompactionStatus | method | 2595 |
+| renderImages | method | 2632 |
+| closeCompletion | method | 2635 |
+| placeSnapshotMessage | function | 2641 |
+| finishSnapshot | function | 2692 |
+| mergeThoughts | method | 2719 |
+| placeCompactedTasks | method | 2733 |
+| renderQueue | method | 2753 |
+| applyConfig | method | 2755 |
+| updateAvailability | method | 2757 |
+| region | method | 2758 |
+| transport | const | 2760 |
+| onState | method | 2764 |
+| initialized | const | 2800 |
+| initializeConnection | function | 2801 |
+| importDir | const | 2918 |
+| fillModels | method | 2923 |
+| fillSubagentModels | method | 2930 |
+| closeCompletion | method | 2947 |
+| region | method | 2952 |
+| scrollLatest | method | 2957 |
+| enableImagePreview | function | 2990 |
+| renderImages | function | 3011 |
+| addImages | function | 3036 |
+| loadImages | function | 3057 |
+| renderImages | method | 3066 |
+| selectionCopy | const | 3089 |
+| copySelection | function | 3101 |
+| escapeTimer | const | 3164 |
+| withdrawQueue | function | 3165 |
+| markSessionSeen | method | 3243 |
+| renderSessions | method | 3244 |
+| region | method | 3245 |
+| stopSession | function | 3259 |
+| refreshing | const | 3268 |
+| refreshSessions | function | 3269 |
+| timerText | function | 3285 |
+| renderTaskTimer | function | 3292 |
+| applyElapsed | function | 3305 |
+| renderTaskTimer | method | 3311 |
+| updatePageTitle | function | 3313 |
+| updateSessions | function | 3317 |
+| renderTaskTimer | method | 3319 |
+| updatePageTitle | method | 3331 |
+| renderSessions | method | 3332 |
+| recoverMissingSession | function | 3334 |
+| region | method | 3336 |
+| saveView | method | 3343 |
+| updateAvailability | method | 3347 |
+| switchSession | function | 3363 |
+| saveView | method | 3365 |
+| updateAvailability | method | 3368 |
+| copySessionFile | function | 3384 |
+| positionSessionMenu | function | 3397 |
+| normalizeCwd | function | 3403 |
+| sessionDayLabel | function | 3407 |
+| renderSessions | function | 3420 |
+| sessionAction | const | 3742 |
+| openSessionAction | function | 3744 |
+| contextIcon | function | 3785 |
+| renderContextChips | function | 3788 |
+| fuzzyHit | function | 3807 |
+| renderContextResults | function | 3814 |
+| showContextSkills | function | 3834 |
+| positionContextSkills | function | 3839 |
+| showContextSkills | method | 3851 |
+| region | method | 3886 |
+| skillTrigger | const | 3888 |
+| showContextSkills | method | 3904 |
+| resizePrompt | method | 3913 |
+| region | method | 3914 |
+| SLASH_COMMANDS | const | 3919 |
+| closeCompletion | function | 3922 |
+| highlightCompletion | function | 3930 |
+| chooseCompletion | function | 3939 |
+| closeCompletion | method | 3951 |
+| updateCompletion | function | 3954 |
+| closeCompletion | method | 3955 |
+| resizePrompt | method | 4014 |
+| region | method | 4015 |
+| switchSession | method | 4055 |
+| creationLoad | const | 4066 |
+| defaultsScope | const | 4068 |
+| renderDefaultsScope | function | 4069 |
+| options | method | 4070 |
+| refreshDefaultsScope | function | 4073 |
+| renderDefaultsScope | method | 4079 |
+| createAgentPicker | function | 4082 |
+| options | method | 4108 |
+| fill | method | 4115 |
+| fillThinking | method | 4123 |
+| options | method | 4125 |
+| defaultsSelection | const | 4171 |
+| defaultsSaving | const | 4184 |
+| loadCreation | function | 4186 |
 | disposePickers | method | 4193 |
-| disposePickers | function | 4222 |
-| openDefaults | function | 4225 |
-| disposePickers | method | 4230 |
-| updateAvailability | method | 4276 |
-| updateDefaultsPreview | function | 4289 |
-| updateDefaultsPreview | method | 4313 |
-| updateAvailability | method | 4329 |
+| disposePickers | method | 4194 |
+| disposePickers | function | 4223 |
+| openDefaults | function | 4226 |
+| disposePickers | method | 4231 |
+| updateAvailability | method | 4277 |
+| updateDefaultsPreview | function | 4290 |
+| updateDefaultsPreview | method | 4314 |
+| updateAvailability | method | 4330 |
 
 ### public/clipboard.js（27 行） — 统一剪贴板入口：Clipboard API 优先，非安全上下文回退 execCommand
 
@@ -698,7 +703,7 @@
 |---|---|---|
 | createModelAuth | function | 2 |
 
-### public/model-manager.js（1278 行） — 统一模型管理：供应商、字段覆盖与思考等级编辑
+### public/model-manager.js（1316 行） — 统一模型管理：供应商、字段覆盖与思考等级编辑
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -729,7 +734,7 @@
 | openDialog | function | 171 |
 | openModal | method | 189 |
 | initModelManager | function | 194 |
-| renderProviders | method | 1275 |
+| renderProviders | method | 1313 |
 
 ### public/model-picker.js（381 行） — 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互
 
@@ -765,6 +770,16 @@
 | EVICTABLE_VIEWS | const | 7 |
 | hasUnsavedInput | const | 9 |
 | createSessionCache | function | 11 |
+
+### public/session-details.js（102 行） — 主代理页签、安全可折叠 JSON 树与会话账单渲染
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| jsonTree | function | 2 |
+| initInspector | function | 25 |
+| renderTools | function | 48 |
+| money | const | 69 |
+| renderBill | function | 70 |
 
 ### public/stream-playback.js（165 行） — 有界字素播放游标与真实时间缓冲追赶
 
@@ -1193,7 +1208,7 @@
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| agentRuntime | function | 16 |
+| agentRuntime | function | 17 |
 | queueStateOf | function | 33 |
 | hasModelOutput | function | 56 |
 | withdrawQueue | function | 66 |
@@ -1296,7 +1311,7 @@
 | canResume | function | 86 |
 | createAutoRetry | function | 102 |
 
-### src/server.js（522 行） — createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发
+### src/server.js（523 行） — createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1305,9 +1320,19 @@
 | load | const | 14 |
 | freshen | const | 19 |
 | assets | const | 29 |
-| createServerApp | function | 73 |
+| createServerApp | function | 74 |
 
-### src/session-history.js（168 行） — 稳定消息身份、绑定会话/实例/修订的历史游标与有界传输页
+### src/session-billing.js（44 行） — 全会话 entries 用量与费用统计、当前上下文估算
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| keys | const | 3 |
+| zero | const | 4 |
+| number | const | 5 |
+| sessionBilling | function | 9 |
+| usageRuntime | function | 35 |
+
+### src/session-history.js（171 行） — 稳定消息身份、绑定会话/实例/修订的历史游标与有界传输页
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1327,7 +1352,8 @@
 | bindCursor | function | 80 |
 | toPageRecord | const | 89 |
 | pageOf | function | 100 |
-| readSessionHistory | function | 162 |
+| readSessionManager | function | 162 |
+| readSessionHistory | function | 169 |
 
 ### src/session-memory.js（34 行） — 标题提取登记、轮次预算挂钩与委派背景
 
@@ -1365,105 +1391,105 @@
 | saveTask | method | 450 |
 | listTasks | method | 473 |
 
-### src/sessions.js（1967 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
+### src/sessions.js（1978 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| GOAL_TOOL_NAMES | const | 24 |
-| hasRunningTasks | const | 26 |
-| relevantTools | function | 29 |
-| delegateTaskIds | const | 47 |
-| orderRestoredHistory | function | 59 |
-| pageTasks | function | 82 |
-| pageRetries | function | 94 |
-| BROWSE_PAGE | const | 109 |
-| SEARCH_LIMIT | const | 111 |
-| SEARCH_DIR_LIMIT | const | 112 |
-| IGNORED_ENTRIES | const | 114 |
-| fuzzyHit | function | 117 |
-| matchRank | function | 128 |
-| searchEntries | function | 137 |
-| pointStatus | function | 165 |
-| trackElapsed | function | 172 |
-| fallbackTitle | function | 183 |
-| resolveDir | function | 188 |
-| parentOf | function | 199 |
-| absoluteCrumbs | function | 208 |
-| importedTitle | function | 230 |
-| duplicateTitle | function | 254 |
-| hostLocations | function | 266 |
-| landedSessionFile | function | 285 |
-| RETRYABLE_SQLITE | const | 292 |
-| retryableWrite | const | 293 |
-| DEFAULTS_NS | const | 298 |
-| WORKSPACE_PREFIX | const | 299 |
-| workspaceKeyOf | const | 300 |
-| CAPABILITY_KINDS | const | 301 |
-| catalogProjectsOf | const | 303 |
-| validateProjectSkills | function | 306 |
-| validateProjectSkillEntry | function | 310 |
-| mergeLegacyProjectSkills | function | 318 |
-| Sessions | class | 327 |
-| constructor | method | 328 |
-| applyDefaults | method | 352 |
-| loadDefaults | method | 358 |
-| migrateDefaults | method | 370 |
-| migrateLegacyStore | method | 385 |
-| loadWorkspaceDefaults | method | 409 |
-| loadTaskBudget | method | 428 |
-| getTaskBudget | method | 443 |
-| configureTaskBudget | method | 449 |
-| getDefaults | method | 456 |
-| defaultsFor | method | 460 |
-| listDefaults | method | 464 |
-| deleteDefaults | method | 470 |
-| removeDefaults | method | 475 |
-| workspaceDefaults | method | 485 |
-| configureDefaults | method | 505 |
-| saveDefaults | method | 511 |
-| pushCompaction | method | 550 |
-| validateSelection | method | 561 |
-| validateCompaction | method | 592 |
-| load | method | 606 |
-| ensureLoaded | method | 631 |
-| migrateLegacySessions | method | 655 |
-| sessionData | method | 679 |
-| persist | method | 698 |
-| writeChange | method | 727 |
-| saveChange | method | 743 |
-| list | method | 748 |
-| rename | method | 765 |
-| importSession | method | 778 |
-| duplicate | method | 808 |
-| create | method | 865 |
-| goalAction | method | 1252 |
-| scheduleGoal | method | 1298 |
-| advanceGoal | method | 1310 |
-| goalNotificationsBlocked | method | 1348 |
-| scheduleTaskNotifications | method | 1355 |
-| deliverTaskNotifications | method | 1368 |
-| settleTaskNotifications | method | 1413 |
-| get | method | 1434 |
-| revealWorkspace | method | 1439 |
-| browse | method | 1453 |
-| listFiles | method | 1459 |
-| refreshSkills | method | 1521 |
-| snapshot | method | 1530 |
-| history | method | 1614 |
-| subscribe | method | 1624 |
-| configure | method | 1632 |
-| startRun | method | 1668 |
-| retry | method | 1714 |
-| prompt | method | 1723 |
-| withdraw | method | 1757 |
-| replyQuestion | method | 1813 |
-| safeStop | method | 1822 |
-| cancel | method | 1837 |
-| retryTask | method | 1863 |
-| deleteRecords | method | 1874 |
-| releaseIdle | method | 1885 |
-| remove | method | 1908 |
-| close | method | 1957 |
+| GOAL_TOOL_NAMES | const | 25 |
+| hasRunningTasks | const | 27 |
+| relevantTools | function | 30 |
+| delegateTaskIds | const | 48 |
+| orderRestoredHistory | function | 60 |
+| pageTasks | function | 83 |
+| pageRetries | function | 95 |
+| BROWSE_PAGE | const | 110 |
+| SEARCH_LIMIT | const | 112 |
+| SEARCH_DIR_LIMIT | const | 113 |
+| IGNORED_ENTRIES | const | 115 |
+| fuzzyHit | function | 118 |
+| matchRank | function | 129 |
+| searchEntries | function | 138 |
+| pointStatus | function | 166 |
+| trackElapsed | function | 173 |
+| fallbackTitle | function | 184 |
+| resolveDir | function | 189 |
+| parentOf | function | 200 |
+| absoluteCrumbs | function | 209 |
+| importedTitle | function | 231 |
+| duplicateTitle | function | 255 |
+| hostLocations | function | 267 |
+| landedSessionFile | function | 286 |
+| RETRYABLE_SQLITE | const | 293 |
+| retryableWrite | const | 294 |
+| DEFAULTS_NS | const | 299 |
+| WORKSPACE_PREFIX | const | 300 |
+| workspaceKeyOf | const | 301 |
+| CAPABILITY_KINDS | const | 302 |
+| catalogProjectsOf | const | 304 |
+| validateProjectSkills | function | 307 |
+| validateProjectSkillEntry | function | 311 |
+| mergeLegacyProjectSkills | function | 319 |
+| Sessions | class | 328 |
+| constructor | method | 329 |
+| applyDefaults | method | 353 |
+| loadDefaults | method | 359 |
+| migrateDefaults | method | 371 |
+| migrateLegacyStore | method | 386 |
+| loadWorkspaceDefaults | method | 410 |
+| loadTaskBudget | method | 429 |
+| getTaskBudget | method | 444 |
+| configureTaskBudget | method | 450 |
+| getDefaults | method | 457 |
+| defaultsFor | method | 461 |
+| listDefaults | method | 465 |
+| deleteDefaults | method | 471 |
+| removeDefaults | method | 476 |
+| workspaceDefaults | method | 486 |
+| configureDefaults | method | 506 |
+| saveDefaults | method | 512 |
+| pushCompaction | method | 551 |
+| validateSelection | method | 562 |
+| validateCompaction | method | 593 |
+| load | method | 607 |
+| ensureLoaded | method | 632 |
+| migrateLegacySessions | method | 656 |
+| sessionData | method | 680 |
+| persist | method | 699 |
+| writeChange | method | 728 |
+| saveChange | method | 744 |
+| list | method | 749 |
+| rename | method | 766 |
+| importSession | method | 779 |
+| duplicate | method | 809 |
+| create | method | 866 |
+| goalAction | method | 1253 |
+| scheduleGoal | method | 1299 |
+| advanceGoal | method | 1311 |
+| goalNotificationsBlocked | method | 1349 |
+| scheduleTaskNotifications | method | 1356 |
+| deliverTaskNotifications | method | 1369 |
+| settleTaskNotifications | method | 1414 |
+| get | method | 1435 |
+| revealWorkspace | method | 1440 |
+| browse | method | 1454 |
+| listFiles | method | 1460 |
+| refreshSkills | method | 1522 |
+| snapshot | method | 1531 |
+| history | method | 1625 |
+| subscribe | method | 1635 |
+| configure | method | 1643 |
+| startRun | method | 1679 |
+| retry | method | 1725 |
+| prompt | method | 1734 |
+| withdraw | method | 1768 |
+| replyQuestion | method | 1824 |
+| safeStop | method | 1833 |
+| cancel | method | 1848 |
+| retryTask | method | 1874 |
+| deleteRecords | method | 1885 |
+| releaseIdle | method | 1896 |
+| remove | method | 1919 |
+| close | method | 1968 |
 
 ### src/task-budget.js（35 行） — 主子代理轮次预算规则、收尾提示词与配置页参数校验
 
@@ -1544,7 +1570,7 @@
 |---|---|---|
 | open | const | 5 |
 
-### tests/app.test.js（1990 行） — node --test 测试（npm test）
+### tests/app.test.js（1991 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1647,7 +1673,7 @@
 | sessions | const | 9 |
 | app | const | 17 |
 
-### tests/conversation-preview.mjs（137 行） — node --test 测试（npm test）
+### tests/conversation-preview.mjs（143 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1655,17 +1681,17 @@
 | message | const | 21 |
 | thinking | const | 26 |
 | state | const | 38 |
-| sequence | const | 45 |
-| add | const | 46 |
-| assistant | const | 47 |
-| add | method | 59 |
-| add | method | 60 |
-| states | const | 64 |
-| longState | const | 75 |
-| compactState | const | 91 |
-| sessions | const | 113 |
-| app | const | 134 |
-| port | const | 135 |
+| sequence | const | 51 |
+| add | const | 52 |
+| assistant | const | 53 |
+| add | method | 65 |
+| add | method | 66 |
+| states | const | 70 |
+| longState | const | 81 |
+| compactState | const | 97 |
+| sessions | const | 119 |
+| app | const | 140 |
+| port | const | 141 |
 
 ### tests/file-picker.test.js（67 行） — node --test 测试（npm test）
 
@@ -1938,7 +1964,7 @@
 | jsonResponse | const | 672 |
 | test | method | 951 |
 
-### tests/model-manager.test.js（1229 行） — node --test 测试（npm test）
+### tests/model-manager.test.js（1254 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1959,39 +1985,39 @@
 | dialogButton | method | 366 |
 | confirm | method | 399 |
 | confirm | method | 406 |
-| row | method | 536 |
-| row | method | 547 |
-| discoverPanelEl | const | 847 |
-| discoverRows | const | 848 |
-| rowBox | const | 849 |
-| addSelectedButton | const | 850 |
-| fetchButton | const | 851 |
-| checkRow | const | 852 |
-| rowBox | method | 853 |
-| rowBox | method | 854 |
-| fetchButton | method | 864 |
-| checkRow | method | 885 |
-| fetchButton | method | 897 |
-| checkRow | method | 909 |
+| row | method | 561 |
+| row | method | 572 |
+| discoverPanelEl | const | 872 |
+| discoverRows | const | 873 |
+| rowBox | const | 874 |
+| addSelectedButton | const | 875 |
+| fetchButton | const | 876 |
+| checkRow | const | 877 |
+| rowBox | method | 878 |
+| rowBox | method | 879 |
+| fetchButton | method | 889 |
 | checkRow | method | 910 |
-| addSelectedButton | method | 911 |
-| fetchButton | method | 945 |
-| addSelectedButton | method | 952 |
-| addSelectedButton | method | 971 |
-| fetchButton | method | 993 |
-| fetchButton | method | 1001 |
-| fetchButton | method | 1024 |
-| fetchButton | method | 1043 |
-| fetchButton | method | 1046 |
-| fetchButton | method | 1063 |
-| fetchButton | method | 1069 |
-| sonnetCatalog | const | 1087 |
-| openSonnet | const | 1092 |
-| checkLevel | const | 1099 |
-| checkLevel | method | 1116 |
-| checkLevel | method | 1144 |
-| confirmDialog | method | 1182 |
-| confirmDialog | method | 1214 |
+| fetchButton | method | 922 |
+| checkRow | method | 934 |
+| checkRow | method | 935 |
+| addSelectedButton | method | 936 |
+| fetchButton | method | 970 |
+| addSelectedButton | method | 977 |
+| addSelectedButton | method | 996 |
+| fetchButton | method | 1018 |
+| fetchButton | method | 1026 |
+| fetchButton | method | 1049 |
+| fetchButton | method | 1068 |
+| fetchButton | method | 1071 |
+| fetchButton | method | 1088 |
+| fetchButton | method | 1094 |
+| sonnetCatalog | const | 1112 |
+| openSonnet | const | 1117 |
+| checkLevel | const | 1124 |
+| checkLevel | method | 1141 |
+| checkLevel | method | 1169 |
+| confirmDialog | method | 1207 |
+| confirmDialog | method | 1239 |
 
 ### tests/model-onboarding-ui.test.js（184 行） — node --test 测试（npm test）
 
@@ -2246,6 +2272,12 @@
 | home | const | 569 |
 | fs | const | 654 |
 
+### tests/session-billing.test.js（41 行） — node --test 测试（npm test）
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| usage | const | 5 |
+
 ### tests/session-cache.test.js（115 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
@@ -2267,7 +2299,7 @@
 | flowFactory | const | 92 |
 | jsonlFactory | const | 102 |
 
-### tests/session-history.test.js（411 行） — node --test 测试（npm test）
+### tests/session-history.test.js（414 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -2651,8 +2683,8 @@
 ## L3 横切常量（跨模块定位入口）
 
 - 协议 command.type：image、inherit、goal.action、service.status、service.update.check、service.restart、remote.get、remote.login、remote.configure、session.rename、workspace.reveal、workspace.browse、files.browse、models.list、models.config.get、models.provider.save、models.provider.delete、models.provider.rename、models.model.save、models.model.delete、models.provider.discover、models.favorites.get、models.model.override、models.auth.list、models.auth.start、models.auth.status、models.auth.respond、models.auth.cancel、models.auth.logout、models.hidden.set、models.favorites.set、capabilities.list、session.defaults.get、session.defaults.configure、session.defaults.list、session.defaults.delete、task.budget.get、task.budget.configure、session.configure、sessions.list、session.create、session.import、session.duplicate、session.attach、session.history、session.skills.refresh、session.close、prompt、cancel、question.reply、session.retry、task.retry、queue.withdraw、tasks.read（src/protocol.js）
-- HTML id：sidebar、new、open-workspace、import-session、search、sessions、open-settings、sidebar-backdrop、toggle-sidebar、session-alert、session-title、workspace-label、copy-workspace、reveal-workspace、workspace-feedback、conversation-font-scale、github-link、status、service-dev、service-version、open-raw-io、toggle-theme、login、maintenance-state、connect、workspace、goal-track、earliest、history-pages、history-before、history-position、history-after、history-newest、transcript、output、raw-io、raw-io-title、close-raw-io、raw-io-empty、raw-io-list、goal-dock、question-dock、latest、message-queue、task-runs、compaction-progress、safe-stop-progress、add-context、add-image、goal-enter、image-files、context-chips、task-timer、task-timer-value、context-menu、context-picker、context-back、context-title、context-close、context-search、context-results、context-error、image-attachments、composer、prompt、prompt-completion、composer-skill、agent-role、provider、model、thinking、stop、force-stop、send-steer、send-followup、send、session-runtime、session-inspector、session-system-prompt、session-active-tools、mobile-runtime、mobile-expand、composer-help、error、session-action、session-action-form、session-action-title、session-action-description、session-name-label、session-name、session-action-error、session-action-cancel、session-action-submit、image-preview、image-preview-close、image-preview-image、restart-dialog、restart-form、restart-title、restart-description、restart-warning、restart-cancel、restart-submit、force-stop-dialog、force-stop-form、force-stop-title、force-stop-description、force-stop-warning、force-stop-cancel、force-stop-submit、task-overlays、task-template、goal-plan、goal-plan-title、goal-plan-meta、goal-plan-constraints-title、goal-plan-constraints、goal-plan-acceptance-title、goal-plan-acceptance、goal-plan-rounds-section、goal-plan-rounds-title、goal-plan-rounds、goal-plan-close、goal-plan-confirm、settings、settings-title、settings-defaults-tab、settings-remote-tab、settings-models-tab、settings-service-tab、defaults-panel、selection-copy-title、selection-copy、selection-copy-help、selection-copy-feedback、queue-type、steer-help、followup-help、defaults-preview、task-budget-title、task-max-turns、task-wrap-up-window、task-budget-help、subagent-title、subagent-help、subagent-provider、subagent-model、settings-feedback、defaults-title、defaults-workspace、defaults-directory、defaults-delete、defaults-workspace-help、defaults-editor、create-form、create-defaults-help、create-agents、create-compaction、create-retry、create-feedback、remote-panel、remote-status-title、remote-status、remote-login、remote-auth、remote-url、remote-form、remote-note、remote-enabled、remote-email、remote-email-help、remote-feedback、remote-refresh、remote-save、models-panel、service-panel、service-state-title、service-feedback、service-restart-title、restart-quick、restart-rebuild、service-recover、service-update-section、service-update-title、update-check、update-result、update-install、service-history-title、service-history（public/index.html）
-- HTTP 静态路由：/、/favicon.svg、/style.css、/theme.js、/app.js、/session-cache.js、/transport.js、/goal.js、/goal.css、/question.js、/question.css、/service-settings.js、/file-picker.js、/tooltip.js、/tooltip.css、/file-picker.css、/markdown.js、/stream-renderer.js、/stream-playback.js、/markdown-scan.js、/memory-tags.js、/clipboard.js、/answer-tags.js、/goal-markers.js、/vendor/marked.js、/vendor/purify.js、/model-manager.js、/model-auth.js、/model-manager.css、/model-picker.js、/model-picker.css、/health（src/server.js）
+- HTML id：sidebar、new、open-workspace、import-session、search、sessions、open-settings、sidebar-backdrop、toggle-sidebar、session-alert、session-title、workspace-label、copy-workspace、reveal-workspace、workspace-feedback、conversation-font-scale、github-link、status、service-dev、service-version、open-raw-io、toggle-theme、login、maintenance-state、connect、workspace、goal-track、earliest、history-pages、history-before、history-position、history-after、history-newest、transcript、output、raw-io、raw-io-title、close-raw-io、raw-io-empty、raw-io-list、goal-dock、question-dock、latest、message-queue、task-runs、compaction-progress、safe-stop-progress、add-context、add-image、goal-enter、image-files、context-chips、task-timer、task-timer-value、context-menu、context-picker、context-back、context-title、context-close、context-search、context-results、context-error、image-attachments、composer、prompt、prompt-completion、composer-skill、agent-role、provider、model、thinking、stop、force-stop、send-steer、send-followup、send、session-runtime、session-inspector、inspector-prompt-tab、inspector-tools-tab、inspector-prompt-panel、session-system-prompt、inspector-tools-panel、session-active-tools、session-billing、session-bill-body、mobile-runtime、mobile-expand、composer-help、error、session-action、session-action-form、session-action-title、session-action-description、session-name-label、session-name、session-action-error、session-action-cancel、session-action-submit、image-preview、image-preview-close、image-preview-image、restart-dialog、restart-form、restart-title、restart-description、restart-warning、restart-cancel、restart-submit、force-stop-dialog、force-stop-form、force-stop-title、force-stop-description、force-stop-warning、force-stop-cancel、force-stop-submit、task-overlays、task-template、goal-plan、goal-plan-title、goal-plan-meta、goal-plan-constraints-title、goal-plan-constraints、goal-plan-acceptance-title、goal-plan-acceptance、goal-plan-rounds-section、goal-plan-rounds-title、goal-plan-rounds、goal-plan-close、goal-plan-confirm、settings、settings-title、settings-defaults-tab、settings-remote-tab、settings-models-tab、settings-service-tab、defaults-panel、selection-copy-title、selection-copy、selection-copy-help、selection-copy-feedback、queue-type、steer-help、followup-help、defaults-preview、task-budget-title、task-max-turns、task-wrap-up-window、task-budget-help、subagent-title、subagent-help、subagent-provider、subagent-model、settings-feedback、defaults-title、defaults-workspace、defaults-directory、defaults-delete、defaults-workspace-help、defaults-editor、create-form、create-defaults-help、create-agents、create-compaction、create-retry、create-feedback、remote-panel、remote-status-title、remote-status、remote-login、remote-auth、remote-url、remote-form、remote-note、remote-enabled、remote-email、remote-email-help、remote-feedback、remote-refresh、remote-save、models-panel、service-panel、service-state-title、service-feedback、service-restart-title、restart-quick、restart-rebuild、service-recover、service-update-section、service-update-title、update-check、update-result、update-install、service-history-title、service-history（public/index.html）
+- HTTP 静态路由：/、/favicon.svg、/style.css、/theme.js、/app.js、/session-cache.js、/session-details.js、/transport.js、/goal.js、/goal.css、/question.js、/question.css、/service-settings.js、/file-picker.js、/tooltip.js、/tooltip.css、/file-picker.css、/markdown.js、/stream-renderer.js、/stream-playback.js、/markdown-scan.js、/memory-tags.js、/clipboard.js、/answer-tags.js、/goal-markers.js、/vendor/marked.js、/vendor/purify.js、/model-manager.js、/model-auth.js、/model-manager.css、/model-picker.js、/model-picker.css、/health（src/server.js）
 
 ## ⚠ 未登记文件（0）
 
