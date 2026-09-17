@@ -1,7 +1,7 @@
 // 展示协议只识别独占行的标签；原始消息始终由调用方保存。
 // 代码区判定与 memory-tags、goal 共用 public/markdown-scan.js：写在围栏、缩进代码块或行内代码
 // 里的标记是在举例，不是协议（原先自带的行内反引号计数器跨行不重置，一个落单反引号就让整条消息失效）。
-import { maskCode, cutSpans } from "./markdown-scan.js";
+import { maskCode, maskCodeCached, cutSpans } from "./markdown-scan.js";
 
 const OPEN = "<axiom_display>";
 const CLOSE = "</axiom_display>";
@@ -9,9 +9,9 @@ const MARKS = [OPEN, CLOSE];
 // 标记必须独占一行、缩进不超过 3 空格：4 空格起是缩进代码块，属于举例。
 const isMark = (line) => /^ {0,3}\S/.test(line) && MARKS.includes(line.trim());
 
-export function splitAnswer(text, { streaming = false } = {}) {
+export function splitAnswer(text, { streaming = false, maskCache } = {}) {
   text = String(text ?? "");
-  const lines = maskCode(text).split("\n");
+  const lines = (maskCache ? maskCodeCached(text, maskCache) : maskCode(text)).split("\n");
   const marks = [];
   let offset = 0, pending = -1;
   for (let i = 0; i < lines.length; i++) {

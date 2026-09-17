@@ -4,6 +4,7 @@ import { createSessionCache } from "./session-cache.js";
 import { copyText } from "./clipboard.js";
 import { renderMarkdown } from "./markdown.js";
 import { stripMemoryTags } from "./memory-tags.js";
+import { createMaskCache } from "./markdown-scan.js";
 import { createStreamRenderer } from "./stream-renderer.js";
 import { splitAnswer } from "./answer-tags.js";
 import { stripGoalMarkers } from "./goal-markers.js";
@@ -1559,13 +1560,17 @@ function prepareStream(item) {
   // 纯思考 delta 不改原文，未变化的 raw 不重复去标签/拆分。
   if (item.preparedRaw !== item.raw) {
     item.preparedRaw = item.raw;
+    // 剧本增量缓存：maskCode 是这条链上量级最大的全文扫描（T1 实测剥离管线占流式 CPU 的
+    // 大头），三个模块各持一份掩码缓存，append 帧只重扫末行+末段，非 append 帧（残片翻转/
+    // 整行删除）自动退化全量。缓存随 item 存活，dispose 即回收。
+    item.scanCache ||= { goal: createMaskCache(), memory: createMaskCache(), answer: createMaskCache() };
     // 与最终渲染同序：先剥 goal 完成标记，再剥记忆标签；半截标记由 streaming 模式暂存。
-    item.buffer = stripMemoryTags(stripGoalMarkers(item.raw || "", { streaming: true }), { streaming: true });
+    item.buffer = stripMemoryTags(stripGoalMarkers(item.raw || "", { streaming: true, maskCache: item.scanCache.goal }), { streaming: true, maskCache: item.scanCache.memory });
     // 累计解析：开标签到达即展示回答，半截标签暂存。
     item.processBuffer = "";
     if (!item.task) {
       let split;
-      try { split = splitAnswer(item.buffer, { streaming: true }); }
+      try { split = splitAnswer(item.buffer, { streaming: true, maskCache: item.scanCache.answer }); }
       catch { split = null; }
       if (split) {
         item.buffer = split.answer;

@@ -2,7 +2,7 @@
 // extractMemoryTags 供后端落库（src/session-memory.js），stripMemoryTags 供展示过滤（前端流式与 result() 去标签）。
 // 代码区（围栏、缩进代码块、行内代码）一律不处理：写在代码里的标签是在讨论标签，不是自报标签，
 // 判定口径与 answer-tags、goal 共用 public/markdown-scan.js。
-import { maskCode, cutSpans, FILL } from "./markdown-scan.js";
+import { maskCode, maskCodeCached, cutSpans, FILL } from "./markdown-scan.js";
 
 // 自报标签只有 title 一个，且只认「回复的第一行」：<title> 同时是常见 HTML 元素，正文里讲页头
 // 写法时出现的 <title>示例站点</title> 不是自报，既不能提取（污染会话标题）也不能删（吞掉正文）。
@@ -69,10 +69,10 @@ export function extractMemoryTags(text) {
 // （谈到标签名不该吞掉后文，更不该吞掉别的机制的标记）；整行只剩空白就丢掉该行，不留空档。
 // streaming=true 时另外两条：落单开启标签按「正在输入的整块」隐藏到文本末尾，行尾正在输入的
 // 标签残片（"<sum"、"</t" 等）也隐藏，避免半截标签闪现。
-export function stripMemoryTags(text, { streaming = false } = {}) {
+export function stripMemoryTags(text, { streaming = false, maskCache } = {}) {
   if (typeof text !== "string" || !text) return text;
   const clean = sanitize(text);
-  const masked = maskCode(clean);
+  const masked = maskCache ? maskCodeCached(clean, maskCache) : maskCode(clean);
   const head = headLine(masked);
   const spans = [];
   // 归属：死标签任何位置都剥，自报标题只在第一行剥；同名真 HTML 的父元素内不剥。

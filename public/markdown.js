@@ -406,5 +406,20 @@ export function renderMarkdown(element, text = "") {
   cache.set(element, { text, blocks, linksKey });
 }
 
+// 纯文本判定字符类：与渲染路径共用一份正则常量，避免两处漂移。增量版（isPlainTextCached）
+// 供流式热路径：字符类判定逐字符独立，append 帧只需检查新增段；非 append 自动全量重判。
+const PLAIN_CHARS = /^[\p{L}\p{M}\p{N}\p{Zs}\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\u200d\ufe0f\ud800-\udfff，。！？；：“”‘’、（）…]*$/u;
+
 renderMarkdown.isPlainText = (text = "") => text.length <= 24000 &&
-  !/^\s/.test(text) && /^[\p{L}\p{M}\p{N}\p{Zs}\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\u200d\ufe0f\ud800-\udfff，。！？；：“”‘’、（）…]*$/u.test(text);
+  !/^\s/.test(text) && (!text.length || PLAIN_CHARS.test(text));
+
+renderMarkdown.isPlainTextCached = (text, cache) => {
+  if (text === cache.text) return cache.ok;
+  const appended = cache.text && typeof text === "string" && text.startsWith(cache.text);
+  if (appended && !cache.ok) return false; // 混杂字符仍留在文本里
+  let ok = typeof text === "string" && text.length <= 24000 && !/^\s/.test(text);
+  if (ok) ok = !text.length || PLAIN_CHARS.test(appended ? text.slice(cache.text.length) : text);
+  cache.text = text;
+  cache.ok = ok;
+  return ok;
+};

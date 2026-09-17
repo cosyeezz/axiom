@@ -83,7 +83,9 @@ export function createStreamRenderer(
     if (!state) { state = { align: Boolean(item.paintedText) }; states.set(item, state); }
     let text = item.buffer;
     let pending = false;
-    if (!final && item.active && !item.task && renderMarkdown.isPlainText?.(text)) {
+    if (!final && item.active && !item.task
+      && (renderMarkdown.isPlainTextCached?.(text, (state.plain ||= { text: "", ok: false }))
+        ?? renderMarkdown.isPlainText?.(text))) {
       state.playback ||= createPlayback();
       const result = state.playback.update(text, time, {
         align: state.align || motion?.matches,
@@ -95,7 +97,14 @@ export function createStreamRenderer(
     } else {
       state.playback = undefined;
       // Complex structures are whole-document, coalesced updates, never per-grapheme parsing.
-      if (!final && item.active && !motion?.matches && state.nextMarkdown > time && item.paintedText !== text) return { changed: false, pending: true };
+      // The gate covers every markdown surface — body, process, reasoning: pure-thought streams
+      // used to re-lex reasoning every frame (~40ms) with no gate at all.
+      if (!final && item.active && !motion?.matches && state.nextMarkdown > time) {
+        const stale = item.paintedText !== text
+          || (Boolean(item.processText) && item.processGroup?.open && item.paintedProcess !== item.processBuffer)
+          || (item.thinking.open && item.paintedReasoning !== item.reasoning);
+        if (stale) return { changed: false, pending: true };
+      }
     }
     let changed = false;
     if (item.paintedText !== text) {
@@ -108,12 +117,14 @@ export function createStreamRenderer(
     if (item.processText && item.processGroup?.open && item.paintedProcess !== item.processBuffer) {
       renderMarkdown(item.processText, item.processBuffer || "");
       item.paintedProcess = item.processBuffer;
+      state.nextMarkdown = Math.max(state.nextMarkdown, time + Math.max(100, (now() - time) * 4));
       changed = true;
     }
     item.thinking.hidden = !item.reasoning;
     if (item.thinking.open && item.paintedReasoning !== item.reasoning) {
       renderMarkdown(item.thought, item.reasoning);
       item.paintedReasoning = item.reasoning;
+      state.nextMarkdown = Math.max(state.nextMarkdown, time + Math.max(100, (now() - time) * 4));
       changed = true;
     }
     return { changed, pending };

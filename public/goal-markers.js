@@ -4,7 +4,7 @@
 // 渲染进对话；两侧各写一套正则正是第 5 轮 X2 的教训，这里从一开始就共用。
 // 代码区（围栏、缩进代码块、行内代码）内的标记一律是在举例，不是信号，判定口径与 memory-tags、
 // answer-tags 共用 public/markdown-scan.js。
-import { cutSpans, maskCode } from "./markdown-scan.js";
+import { cutSpans, maskCode, maskCodeCached } from "./markdown-scan.js";
 
 export const ROUND_MARKER = "<axiom_round_finished>";
 export const GOAL_MARKER = "<axiom_goal_finished>";
@@ -16,10 +16,12 @@ const SUFFIXES = [ROUND_MARKER, GOAL_MARKER].flatMap((mark) => [mark, `</${mark.
 
 // 协议标记只认「代码区外、缩进不超过 3 空格」的行：写在围栏、缩进代码块或行内代码里的标记是在
 // 举例，不是信号；4 空格/Tab 起头的缩进代码、引用与列表内容同样不算独立信号。
-function signalLines(text) {
+// masked 形参是调用方已算好的同文掩码（流式热路径上 stripGoalMarkers 内 signalLines 与
+// streaming 分支共用同一次 maskCode，避免同一全文重复全文扫描）。
+function signalLines(text, masked = maskCode(text)) {
   const lines = [];
   let at = 0;
-  for (const line of maskCode(text).split("\n")) {
+  for (const line of masked.split("\n")) {
     if (/^ {0,3}\S/.test(line)) lines.push({ line, start: at });
     at += line.length + 1;
   }
@@ -42,13 +44,15 @@ export function parseGoalMarkers(text) {
 // 「不认作信号」与「要清掉原文」是两件事：空标签对不算完成信号（不放宽防伪造口径），但也不能
 // 让 <axiom_round_finished></axiom_round_finished> 这种残留漏进展示文本与轮次小结。
 // streaming=true 时另外隐藏行尾正在输入的标记残片。
-export function stripGoalMarkers(text, { streaming = false } = {}) {
+export function stripGoalMarkers(text, { streaming = false, maskCache } = {}) {
   if (typeof text !== "string" || !text) return text;
+  // 掩码缓存：流式热路径上同一文本逐帧 append，增量重扫末行+末段；不传则每帧局部新建
+  //（等价全量，供后端与终态一次性调用）。
+  const masked = maskCache ? maskCodeCached(text, maskCache) : maskCode(text);
   const spans = [];
-  for (const { line, start } of signalLines(text))
+  for (const { line, start } of signalLines(text, masked))
     for (const hit of line.matchAll(MARKER_TOKENS)) spans.push([start + hit.index, start + hit.index + hit[0].length]);
   if (streaming) {
-    const masked = maskCode(text);
     const max = Math.max(...SUFFIXES.map((token) => token.length));
     for (let len = 1; len <= Math.min(max, masked.length); len++) {
       const suffix = masked.slice(-len).toLowerCase();
