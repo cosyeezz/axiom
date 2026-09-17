@@ -467,7 +467,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("workspace").hidden, false);
     assert.equal(requests.some((req) => req.type === "session.defaults.list"), false, "只看服务面板不拉取默认配置");
     assert.equal($("send").disabled, true);
-    assert.equal($("send").textContent, "Send");
+    assert.equal($("send").textContent, "发送");
     assert.equal(window.document.querySelector("header .menu"), null);
     const firstActions = $("sessions").querySelector(".session-actions");
     assert.deepEqual([...$("sessions").querySelectorAll(".session-group")].map((n) => n.textContent), ["进行中"], "没有已完成会话时空组不渲染");
@@ -1011,7 +1011,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     const historicalTask = $(historicalTrigger.getAttribute("aria-controls"));
     assert.equal(historicalTrigger.tagName, "BUTTON");
     assert.equal(historicalTrigger.querySelector(".message"), null, "the main transcript only holds a subagent entry");
-    assert.match(historicalTrigger.textContent, /SUBAGENT.*已完成/s);
+    assert.match(historicalTrigger.textContent, /子代理.*已完成/s);
     assert.equal($("task-overlays").contains(historicalTask), true);
     assert.equal(historicalTask.open, false);
     assert.equal(historicalTask.querySelector(".message > .markdown").textContent, "");
@@ -1295,7 +1295,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     emit("agent.runtime", { ...runtime, model: "test/model" });
     assert.match($("session-runtime").textContent, /80.0%.*test · model · high/);
     assert.equal($("session-system-prompt").textContent, runtime.systemPrompt);
-    assert.equal($("session-active-tools").querySelector(".inspector-tool summary").textContent, "read");
+    assert.equal($("session-active-tools").querySelector(".inspector-tool .tool-name").textContent, "read");
     assert.equal($("session-active-tools").querySelector(".inspector-tool p").textContent, runtime.tools[0].description);
     assert.equal($("session-inspector").querySelector("img"), null, "prompt and tool definitions are plain text");
     emit("agent.runtime", { ...runtime, systemPrompt: "child only" }, { agentId: "child" });

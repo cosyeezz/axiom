@@ -6,7 +6,7 @@ import { homedir } from "node:os";
 import { Database } from "./database.js";
 import { SessionStore } from "./session-store.js";
 import { readSessionHistory, readSessionManager } from "./session-history.js";
-import { sessionBilling, usageRuntime } from "./session-billing.js";
+import { sessionBilling, combinedBilling, usageRuntime } from "./session-billing.js";
 import { Goal, createGoalStore } from "./goal.js";
 import { basename, dirname, join, relative, isAbsolute, resolve, sep, parse } from "node:path";
 
@@ -1052,6 +1052,12 @@ export class Sessions {
       // 持久化专用字段不进入 WebSocket 广播。
       delete envelope.saved;
       const envelopes = [envelope];
+      if (event.type === "agent.runtime" && (!event.agentId || event.agentId === "main")) item.billingMain = event.data?.billing;
+      if (event.type === "agent.runtime" || event.type === "task.state") {
+        const main = item.billingMain ?? item.agent?.runtime?.()?.billing;
+        envelopes.push({ type: "session.billing", sessionId: id, seq: ++item.seq,
+          data: combinedBilling(main, [...(item.tasks?.jobs.values() ?? [])]) });
+      }
       // 换号单独广播：客户端可以只认这一种事件来丢弃旧页并重取首屏，不必解析每种历史变更。
       if (historyRevision !== undefined)
         envelopes.push({ type: "session.history.changed", sessionId: id, seq: ++item.seq,
@@ -1142,7 +1148,9 @@ export class Sessions {
     for (const job of item.tasks.jobs.values()) {
       if (!job.sessionFile || !existsSync(job.sessionFile)) continue;
       try {
-        const entries = readSessionHistory(job.sessionFile, item.cwd);
+        const taskManager = readSessionManager(job.sessionFile, item.cwd);
+        const entries = taskManager.getBranch().filter(entry => entry.type === "message");
+        job.runtime = { ...job.runtime, billing: sessionBilling(taskManager.getEntries()) };
         item.messages.push(...entries.map(entry => ({ agentId: job.id, entryId: entry.id, message: entry.message })));
       } catch (error) {
         job.status = "failed";
@@ -1573,7 +1581,9 @@ export class Sessions {
       for (const task of tasks) {
         if (!task.sessionFile) continue;
         try {
-          messages.push(...readSessionHistory(task.sessionFile, saved.cwd).map(entry => ({ agentId: task.id, entryId: entry.id, message: entry.message })));
+          const taskManager = readSessionManager(task.sessionFile, saved.cwd);
+          task.runtime = { ...task.runtime, billing: sessionBilling(taskManager.getEntries()) };
+          messages.push(...taskManager.getBranch().filter(entry => entry.type === "message").map(entry => ({ agentId: task.id, entryId: entry.id, message: entry.message })));
         } catch (error) { task.error = `子任务历史读取失败：${error.message}`; }
       }
       messages = projectTimeline(messages);
@@ -1584,7 +1594,7 @@ export class Sessions {
         load: () => structuredClone(this.goalStore.load(id)), save: () => {},
       } });
       const base = { sessionId: id, cwd: item.cwd, title: item.title, seq: item.seq ?? 0,
-        status: "idle", safeStop: false, runtime: restoredRuntime, config: saved.selection ?? {}, messages: page ? page.records.map(toPageRecord) : messages,
+        status: "idle", safeStop: false, runtime: restoredRuntime, billing: combinedBilling(restoredRuntime.billing, tasks), config: saved.selection ?? {}, messages: page ? page.records.map(toPageRecord) : messages,
         compactions: saved.compactions ?? [], retries: saved.retries ?? [], live: {}, tools: {},
         questions: [], tasks, goal: goal.snapshot(), canReask: false, compactionStatus: null };
       if (page) {
@@ -1614,6 +1624,7 @@ export class Sessions {
       // 刷新/重连后也要能看到「等待安全点」提示，所以跟快照一起下发。
       safeStop: item.status !== "idle" && !!item.safeStopping,
       runtime: item.agent.runtime?.(),
+      billing: combinedBilling(item.agent.runtime?.()?.billing, [...item.tasks.jobs.values()]),
       queue: item.agent.queue?.(),
       config: {
         queueType: item.queueType,

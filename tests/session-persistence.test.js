@@ -420,8 +420,12 @@ test("跨重启读回：会话元数据、任务、事件三类原样恢复，�
     assert.equal(opened.elapsedMs, 4200);
     assert.deepEqual(opened.retries, saved.retries);
     assert.deepEqual(opened.compactions, saved.compactions);
-    assert.deepEqual(opened.tasks.snapshot(), [{ ...child, error: undefined }], "任务快照逐字段还原");
-    assert.deepEqual(sessions.store.listTasks(id), [child], "恢复对账重写任务不得丢字段");
+    const restoredChild = { ...child, runtime: { ...child.runtime, billing: {
+      records: 0, unpriced: 0, groups: [],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    } } };
+    assert.deepEqual(opened.tasks.snapshot(), [{ ...restoredChild, error: undefined }], "恢复字段并从任务历史重建账单");
+    assert.deepEqual(sessions.store.listTasks(id), [restoredChild], "恢复对账重写任务不得丢字段");
     await sessions.close();
 
     sessions = new Sessions(factory, undefined, storage);

@@ -157,25 +157,13 @@
                 </div>
                 <button type="button" class="secondary" id="stop" title="安全停止：等当前一步跑完再停，不丢已完成的产出" aria-label="安全停止当前会话任务" hidden>Stop <span aria-hidden="true">■</span></button
                 ><button type="button" class="danger" id="force-stop" title="强制停止：立即中断，本轮未完成的回答与工具产出会丢失" aria-label="强制停止当前会话任务" hidden>Force <span aria-hidden="true">⚠</span></button
-                ><button type="submit" class="secondary" id="send-steer" data-queue="steer" title="在下一个可介入节点补充指令，不中断正在运行的工具" hidden>Steer</button><button type="submit" class="secondary" id="send-followup" data-queue="followUp" title="等待当前这一轮结束后发送，不影响当前执行" hidden>Follow-up</button><button id="send">Send</button>
+                ><button type="submit" class="secondary" id="send-steer" data-queue="steer" title="在下一个可介入节点补充指令，不中断正在运行的工具" hidden>Steer</button><button type="submit" class="secondary" id="send-followup" data-queue="followUp" title="等待当前这一轮结束后发送，不影响当前执行" hidden>Follow-up</button><button id="send">发送</button>
               </div>
               <div id="session-runtime" class="runtime-summary" role="status" aria-live="polite"></div>
-              <details id="session-inspector" class="task-system-prompt">
-                <summary>主代理系统提示词与工具</summary>
-                <div class="session-inspector-body">
-                  <p>当前运行态快照，不是最后一次完整请求。运行结束后扩展提示可能复位；不含动态用户消息或供应商内部指令。分享前请检查隐私内容。</p>
-                  <div class="inspector-tabs" role="tablist" aria-label="主代理详情">
-                    <button type="button" role="tab" id="inspector-prompt-tab" aria-selected="true" aria-controls="inspector-prompt-panel">系统提示词</button>
-                    <button type="button" role="tab" id="inspector-tools-tab" aria-selected="false" aria-controls="inspector-tools-panel" tabindex="-1">工具注册</button>
-                  </div>
-                  <div id="inspector-prompt-panel" role="tabpanel" aria-labelledby="inspector-prompt-tab"><pre id="session-system-prompt">系统提示词尚未加载；会话启动后可查看。</pre></div>
-                  <div id="inspector-tools-panel" role="tabpanel" aria-labelledby="inspector-tools-tab" hidden><div id="session-active-tools">工具信息尚未加载。</div></div>
-                </div>
-              </details>
-              <details id="session-billing" class="task-system-prompt">
-                <summary>当前会话账单</summary>
-                <div id="session-bill-body" class="session-inspector-body"></div>
-              </details>
+              <div class="session-detail-rows">
+                <button type="button" id="session-inspector-trigger" class="session-detail-row" aria-haspopup="dialog"><span>主代理配置</span><span class="detail-summary-meta">系统提示词与工具</span></button>
+                <button type="button" id="session-billing-trigger" class="session-detail-row" aria-haspopup="dialog"><span>会话账单</span><span id="session-bill-total" class="detail-summary-meta">查看明细</span></button>
+              </div>
               <div class="mobile-controls">
                 <span id="mobile-runtime" aria-live="polite"></span>
                 <button type="button" id="mobile-expand" class="secondary" aria-expanded="false" aria-controls="composer earliest session-title">展开</button>
@@ -220,10 +208,30 @@
         <div class="dialog-actions"><button type="button" id="force-stop-cancel" class="secondary" autofocus>取消</button><button id="force-stop-submit" class="danger">确认强停</button></div>
       </form>
     </dialog>
+    <dialog id="session-detail" class="task-dialog" aria-labelledby="session-detail-title">
+      <div class="task-top"><header><h2 id="session-detail-title">会话详情</h2><button type="button" id="session-detail-close" class="secondary" aria-label="关闭会话详情">关闭 ✕</button></header></div>
+      <div class="task-body">
+        <details id="session-inspector" class="session-detail-section" name="session-detail" open>
+          <summary>主代理配置</summary>
+          <div class="session-inspector-body">
+            <p class="inspector-caption">当前运行配置 <span title="不是完整请求，不含动态消息或供应商内部指令；分享前请检查隐私。">ⓘ</span></p>
+            <div class="inspector-tabs" role="tablist" aria-label="主代理详情">
+              <button type="button" role="tab" id="inspector-prompt-tab" aria-selected="true" aria-controls="inspector-prompt-panel">系统提示词</button>
+              <button type="button" role="tab" id="inspector-tools-tab" aria-selected="false" aria-controls="inspector-tools-panel" tabindex="-1">工具注册</button>
+            </div>
+            <div id="inspector-prompt-panel" role="tabpanel" aria-labelledby="inspector-prompt-tab"><pre id="session-system-prompt">系统提示词尚未加载；会话启动后可查看。</pre></div>
+            <div id="inspector-tools-panel" role="tabpanel" aria-labelledby="inspector-tools-tab" hidden><div id="session-active-tools">工具信息尚未加载。</div></div>
+          </div>
+        </details>
+        <details id="session-billing" class="session-detail-section" name="session-detail">
+          <summary>会话账单</summary><div id="session-bill-body" class="session-inspector-body"></div>
+        </details>
+      </div>
+    </dialog>
     <div id="task-overlays"></div>
     <template id="task-template">
       <button type="button" class="task-card" aria-haspopup="dialog">
-        <span class="task-meta"><span class="task-badge">SUBAGENT</span><span class="task-status"></span><span class="task-open" aria-hidden="true">查看详情 ↗</span></span>
+        <span class="task-meta"><span class="task-badge">子代理</span><span class="task-status"></span><span class="task-cost"></span><span class="task-open" aria-hidden="true">查看详情 ↗</span></span>
         <span class="task-title"></span>
       </button>
       <dialog class="task-dialog">
@@ -242,6 +250,7 @@
           <h3>任务</h3>
           <pre class="task-description"></pre>
           <details class="task-system-prompt"><summary>系统提示词（运行时）</summary><pre></pre></details>
+          <details class="task-billing"><summary>任务账单</summary><div class="task-bill-body"></div></details>
           <p class="task-error" role="alert" hidden></p>
         </div>
       </dialog>

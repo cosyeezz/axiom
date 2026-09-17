@@ -43,7 +43,7 @@ const state = {
     tools: [{ name: "read", description: "读取文件内容", parameters: { type: "object", properties: { path: { type: "string" }, limit: { type: "number" } }, required: ["path"] } }],
     usage: { input: 1000, output: 200, cacheRead: 4000, cacheWrite: 0 },
     context: { tokens: 5000, contextWindow: 128000, percent: 3.90625 },
-    billing: { records: 2, unpriced: 0, cost: { total: .012 }, groups: [{ model: "preview/axiom", tokens: { input: 1000, output: 200, cacheRead: 4000, cacheWrite: 0 }, cost: { input: .003, output: .005, cacheRead: .004, cacheWrite: 0, total: .012 } }] },
+    billing: { records: 2, unpriced: 0, cost: { input: .003, output: .005, cacheRead: .004, cacheWrite: 0, total: .012 }, groups: [{ model: "preview/axiom", tokens: { input: 1000, output: 200, cacheRead: 4000, cacheWrite: 0 }, cost: { input: .003, output: .005, cacheRead: .004, cacheWrite: 0, total: .012 } }] },
   },
   messages: [], live: {}, tools: {},
   tasks: [{ id: "review", task: "检查移动端布局、长路径与思考内容的阅读体验", status: "completed" }],
@@ -116,6 +116,20 @@ for (const [index, task] of compactState.tasks.entries()) {
 }
 compactState.messages.push({ agentId: "main", entryId: "compact-recent", message: { role: "user", content: "继续下一阶段，之前的摘要和子代理结果都要能查看。" } });
 states.push(compactState);
+const childBill = (input, output, cacheRead, total) => {
+  const cost = { input, output, cacheRead, cacheWrite: 0, total };
+  return { records: 1, unpriced: 0, cost, groups: [{ model: "preview/axiom", tokens: { input: 400, output: 150, cacheRead: 1600, cacheWrite: 0 }, cost }] };
+};
+const billedTasks = [
+  { id: "review", task: "检查移动端布局与阅读体验", status: "completed", runtime: { model: "preview/axiom", billing: childBill(.001, .003, .002, .006) } },
+  { id: "audit", task: "核对主代理与子代理费用", status: "completed", runtime: { model: "preview/axiom", billing: childBill(.001, .002, .002, .005) } },
+];
+const mainBill = state.runtime.billing;
+const totalCost = { input: .005, output: .010, cacheRead: .008, cacheWrite: 0, total: .023 };
+states.push({ ...state, sessionId: "ui-billing", title: "账单验收 · 主代理与子代理", tasks: billedTasks,
+  billing: { records: 4, unpriced: 0, incomplete: false, cost: totalCost,
+    groups: [{ model: "preview/axiom", tokens: { input: 1800, output: 500, cacheRead: 7200, cacheWrite: 0 }, cost: totalCost }],
+    agents: [{ id: "main", billing: mainBill }, ...billedTasks.map(t => ({ id: t.id, task: t.task, billing: t.runtime.billing }))] } });
 const sessions = {
   createAgent: { catalog: () => [{ provider: "preview", id: "axiom", key: "preview/axiom", name: "Axiom Preview", levels: ["off", "high"] }] },
   list: () => states.map((s) => ({ id: s.sessionId, cwd: s.cwd, title: s.title, status: s.status, updatedAt: Date.now(), sessionFile: `preview-${s.sessionId}.jsonl` })),

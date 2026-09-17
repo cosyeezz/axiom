@@ -675,3 +675,9 @@
 - 根因：非安全上下文浏览器不暴露 Clipboard API；前端 5 处调用点（app.js×4、markdown.js×1）直连 `navigator.clipboard.writeText` 无防护。此坑 2026-09-11 已在 Tailscale 记录里认定「剪贴板能力并非处处可用」，但只保留了错误提示文案。
 - 修复：统一入口 `public/clipboard.js` copyText(text, view)：API 可用优先、被拒绝（权限门控）也回退；textarea + select + execCommand("copy")，跨文档传 view（markdown 代码块用 element.ownerDocument.defaultView）。双失败抛可操作文案，不透传内部错误。
 - 防再犯：新复制功能一律 import copyText，禁止直连 navigator.clipboard；tests/clipboard.test.js 锁定回退行为。jsdom 里 document.execCommand 是 undefined 且 navigator.clipboard 默认不存在，测试需自行注入（注意 Object.defineProperty 加 configurable: true 才能事后 delete 模拟非安全上下文）。
+
+### 2026-09-17 会话总账与详情布局必须独立于消息窗口和输入区
+- 症状：子代理费用缺失，翻页/恢复可能漏账；配置与账单同时展开挤占输入区，手机出现内外双重滚动。
+- 根因：runtime.billing 只代表单代理，当前页任务不覆盖全会话；两个详情各自设置 vh 上限仍会叠加高度。
+- 修复：src/session-billing.js combinedBilling 纯函数合并主代理及全部任务；src/sessions.js 快照和 session.billing 事件同口径，恢复从各自 JSONL getEntries 重算，缺文件回退持久化的最后已知账；public/index.html/app.js/style.css 将详情移入独立原生 dialog，内容只由弹窗主体滚动。
+- 防再犯：不在前端按消息/任务页累计费用，不改变 runtime.billing 的单代理语义；测试同时覆盖实时、冷快照、分页、恢复和缺文件。新增前端辅助函数避免与 eval 测试拼接模块的顶层名称冲突；浏览器需验证真实 ESM 加载、移动端展开态、焦点和关闭返回。

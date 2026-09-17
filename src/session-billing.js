@@ -32,6 +32,25 @@ export function sessionBilling(entries = []) {
   return { records, unpriced, cost, groups: [...groups.values()] };
 }
 
+export function combinedBilling(main, tasks = []) {
+  const agents = [{ id: "main", billing: main ?? null }, ...tasks.map(task => ({ id: task.id, task: task.task, status: task.status, billing: task.runtime?.billing ?? null }))];
+  const groups = new Map();
+  const cost = { ...zero(), total: 0 };
+  let records = 0, unpriced = 0;
+  for (const { billing } of agents) {
+    if (!billing) continue;
+    records += number(billing.records); unpriced += number(billing.unpriced);
+    for (const key of [...keys, "total"]) cost[key] += number(billing.cost?.[key]);
+    for (const group of billing.groups ?? []) {
+      if (!groups.has(group.model)) groups.set(group.model, { model: group.model, tokens: zero(), cost: { ...zero(), total: 0 } });
+      const target = groups.get(group.model);
+      for (const key of keys) target.tokens[key] += number(group.tokens?.[key]);
+      for (const key of [...keys, "total"]) target.cost[key] += number(group.cost?.[key]);
+    }
+  }
+  return { records, unpriced, cost, groups: [...groups.values()], agents, incomplete: agents.some(agent => !agent.billing) };
+}
+
 export function usageRuntime(messages = [], model = {}, context) {
   const usage = messages.findLast(message => message.role === "assistant" && message.usage)?.usage ?? null;
   if (!Number.isFinite(context?.tokens)) {
