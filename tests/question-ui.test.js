@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
-const source = (await readFile(new URL('../public/question.js', import.meta.url), 'utf8')).replace(/^export /gm, '');
+import { publicSource } from './helpers/public-source.js';
+const source = await publicSource('question');
 test('question UI keyboard, custom answers, reconnect, session isolation and submission', async () => {
   const dom = new JSDOM('<button id="prompt">输入</button><section id="dock"></section>', { runScripts: 'outside-only' });
   const w = dom.window, d = w.document, calls = [];

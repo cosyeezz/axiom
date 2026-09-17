@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
+import { publicSource } from "./helpers/public-source.js";
 
-const source = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+const source = await publicSource("file-picker");
 const tick = () => new Promise(setImmediate);
 
 test("shared picker loads one directory at a time, paginates, selects and ignores stale replies", async () => {
