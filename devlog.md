@@ -2318,3 +2318,10 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 涉及文件：public/clipboard.js（新增）、public/app.js、public/markdown.js、tests/clipboard.test.js（新增）、tests/markdown.test.js、tests/git-log.test.js、tests/app.test.js、tests/helpers/public-source.js、.pi/skills/codebase-map/scripts/reindex.mjs、.pi/skills/codebase-map/INDEX.md（重建）、README.md、devlog.md、package.json（0.1.7 → 0.1.8）。
 - 决策：页面测试按「剥模块语法拼接 eval 真实源码」的既有装配方式接入新模块——publicSource 的 app 拼接序列加入 clipboard（app 页面测试自动获得 copyText），各 markdown 独立求值点改用 `publicSource("clipboard", "markdown")`，不引入新的 window 注入口。交叉复核（第二个调研子任务）后补强：writeText 被拒绝时也在同一用户手势窗口内继续 execCommand（Firefox 等存在 API 存在但拒绝、execCommand 仍可用的场景），双失败抛可操作文案「请改用系统复制菜单」而不透传内部错误。
 - 验证：worktree F:/worktrees/Axiom-clipboard-fallback 内 `npm test` 705 项全绿（703 通过、0 失败、2 既有跳过）；新增 4 项剪贴板用例覆盖 API 优先、writeText 被拒绝后 execCommand 回退、跨文档复制与可操作失败文案，markdown 按钮级补了「删除 clipboard 注入后回退仍复制原文」回归。Playwright 实测 Chromium：无 Clipboard API 与 writeText 被拒绝两种场景，代码块/工作空间复制均回退成功且清理临时输入框。
+
+## 2026-09-17 会话总账与详情阅读 v2
+
+- 内容与原因：上一版详情占用输入区过多且未计入子代理费用。改为两行轻量入口打开独立原生详情弹窗；配置提供提示词/工具注册页签、工具搜索、可折叠 JSON。账单以总额、代理分项、模型明细组织，任务卡与任务详情各显示本任务费用；字号与触控高度按 Linear 规范复核。
+- 涉及文件：src/session-billing.js、src/sessions.js、public/session-details.js、public/app.js、public/index.html、public/style.css、tests/subagent-billing.test.js（新增）、tests/session-details.test.js、tests/session-persistence.test.js、tests/app.test.js、tests/conversation-preview.mjs、tests/session-billing-ui.py、tests/conversation-ui.py、README.md、.pi/skills/codebase-map/knowledge.md、INDEX.md。
+- 决策：保留 runtime.billing 单代理语义，新增快照 billing 与 session.billing 事件统一汇总全部子任务；覆盖而非增量相加，避免重复。恢复按每个代理的完整 JSONL entries 重算，缺文件回退最后已知任务账。独立弹窗避免手机输入区内外双滚动，费用仍是估算而非实际扣款。
+- 验证：npm test 712 项（710 通过、2 项平台条件跳过）；session-billing-ui.py 在 320/390/768/1280px 验证页签、JSON、总账与任务账单，实际截图核对 $0.023 = 主代理 $0.012 + 子代理 $0.006 + $0.005；frontend-regions-ui.py 通过。用户明确选择继续修复旧 conversation-ui.py：修正 hash 路由优先级（原测试未真正切换 fixture）、撤销事务前置、移动展开及活动组展开、双层吸顶/弹窗 static 断言、过时折叠图标和等待/工具状态动画目标；支持 PREVIEW_PORT 隔离端口。最终在独立 4397 端口完整通过 1440/390/320px、浏览器错误为零。

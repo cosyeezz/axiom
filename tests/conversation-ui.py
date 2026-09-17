@@ -18,14 +18,18 @@ with sync_playwright() as p:
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
 
     def load(id):
-        page.goto("http://127.0.0.1:4321")
+        page.goto(f"http://127.0.0.1:{__import__('os').environ.get('PREVIEW_PORT', '4321')}/#session={id}")
         page.wait_for_selector("#workspace:not([hidden])")
         page.wait_for_timeout(150)
         page.evaluate('(id) => localStorage.setItem("axiom.session", id)', id)
         page.reload()
         page.wait_for_selector("#workspace:not([hidden])")
         page.wait_for_timeout(150)
-        assert page.evaluate('() => localStorage.getItem("axiom.session")') == id
+        assert page.evaluate('() => location.hash') == f"#session={id}"
+        if page.evaluate('() => innerWidth <= 700'):
+            page.locator('#mobile-expand').click()
+        for group in page.locator('#output .call-group:not([open]) > summary').all():
+            group.click()
 
     def style(el, key, pseudo=None):
         return el.evaluate('(el, args) => getComputedStyle(el, args[1])[args[0]]', [key, pseudo])
@@ -39,10 +43,10 @@ with sync_playwright() as p:
         assert page.evaluate('''() => document.documentElement.scrollWidth <= innerWidth &&
             [...document.querySelectorAll('#output, .task-dialog[open]')].every(el => el.scrollWidth <= el.clientWidth)''')
 
-    def rotating(el, pseudo=None):
+    def rotating(el, pseudo=None, expected_width="12px"):
         assert style(el, "animationName", pseudo) in ["activity-spin", "task-run-spin"]
         assert style(el, "animationDuration", pseudo) == "1.6s"
-        assert style(el, "width", pseudo) == "12px"
+        assert style(el, "width", pseudo) == expected_width
         before = style(el, "transform", pseudo)
         page.wait_for_timeout(120)
         assert style(el, "transform", pseudo) != before, "spinner must actually move"
@@ -83,6 +87,7 @@ with sync_playwright() as p:
     page.locator('#selection-copy').select_option('on')
     page.keyboard.press('Escape')
     prompt.fill('')
+    prompt.blur()  # Separate setup from the next native undo transaction.
     prompt.focus()
     page.keyboard.insert_text('undo this draft')
     page.keyboard.press('Control+z')
@@ -156,28 +161,35 @@ with sync_playwright() as p:
 
         # Real long content: sticky summaries stay in view, inner regions do not scroll vertically.
         load('ui-long')
-        for scope, scroll in [('#output', '#transcript'), ('.task-dialog', '.task-body')]:
+        for scope, scroll in [('#output', '#transcript'), ('.task-dialog', '.task-dialog[open] .task-body')]:
             if scope == '.task-dialog':
                 page.locator('.task-card').click()
+                for group in page.locator('.task-dialog[open] .call-group:not([open]) > summary').all():
+                    group.click()
             for kind in (['.thinking-record:not([hidden])', '.tool-record'] if scope == '#output' else ['.thinking-record:not([hidden])', '.task-system-prompt']):
-                record = page.locator(f'{scope} {kind}').first
+                record = page.locator(f'{scope if scope == "#output" else ".task-dialog[open]"} {kind}').first
                 record.locator('summary').click()
-                page.wait_for_timeout(120)
+                page.wait_for_timeout(750)  # Allow the interaction-deferred renderer to paint.
                 record.evaluate('''(el, selector) => {
                     const scroller = document.querySelector(selector);
-                    scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + 650;
+                    const within = Math.min(650, Math.max(1, el.getBoundingClientRect().height - 120));
+                    scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + within;
                 }''', scroll)
                 page.wait_for_timeout(120)
                 summary = record.locator('summary')
                 scroller = page.locator(scroll)
                 sticky_top = scroller.bounding_box()['y'] + float(style(scroller, 'paddingTop').removesuffix('px'))
-                assert abs(summary.bounding_box()['y'] - sticky_top) <= 2, (width, scope, kind, summary.bounding_box(), sticky_top)
-                expect(summary.locator('.when-open svg')).to_be_visible()
+                if scope == '#output' and width > 700:
+                    assert style(summary, 'position') == 'sticky'
+                    expected = sticky_top + float(style(summary, 'top').removesuffix('px'))
+                    assert abs(summary.bounding_box()['y'] - expected) <= 2, (width, scope, kind, summary.bounding_box(), expected)
+                else:
+                    assert style(summary, 'position') == 'static'
                 assert record.evaluate('''el => [...el.querySelectorAll('pre, .diff-split')].every(node =>
                     node.scrollHeight <= node.clientHeight + 1)'''), "no nested vertical scrolling"
                 overflow()
                 shot(f"sticky-{width}-{'main' if scope == '#output' else 'task'}-{kind.split(':')[0][1:]}")
-                summary.locator('.when-open').click()
+                summary.click()
                 assert not record.evaluate('(el) => el.open')
             if scope == '.task-dialog':
                 page.keyboard.press('Escape')
@@ -202,7 +214,7 @@ with sync_playwright() as p:
         assert page.locator('.task-dialog[open]').count() == 0
         rect, viewport = card.bounding_box(), page.locator('#transcript').bounding_box()
         assert viewport['y'] <= rect['y'] < viewport['y'] + viewport['height']
-        expect(card.locator('.task-badge')).to_have_text('SUBAGENT')
+        expect(card.locator('.task-badge')).to_have_text('子代理')
         assert style(card, 'borderLeftWidth') == '3px'
         assert style(card, 'borderColor') != style(page.locator('body'), 'borderColor')
         rotating(run.locator('.task-run-spin'))
@@ -212,6 +224,8 @@ with sync_playwright() as p:
         page.locator('#latest').click()
         expect(page.locator('#latest')).to_be_hidden()
         card.click()
+        for group in page.locator('.task-dialog[open] .call-group:not([open]) > summary').all():
+            group.click()
         task_label = page.locator('.task-dialog[open] .thinking-record:visible .activity-label').first
         assert style(task_label, 'fontSize') == '12px'
         assert style(task_label, 'fontWeight') == '400'
@@ -222,15 +236,15 @@ with sync_playwright() as p:
         overflow()
         page.keyboard.press('Escape')
 
-    for state, selector, pseudo in [
-        ('ui-thinking', '[data-state="thinking"] .activity-icon', '::after'),
-        ('ui-waiting', '[data-state="waiting"] .activity-icon', '::after'),
-        ('ui-tools', '[data-state="running"] .tool-status', '::before'),
+    for state, selector, pseudo, icon_width in [
+        ('ui-thinking', '[data-state="thinking"] .activity-icon', '::after', '12px'),
+        ('ui-waiting', '.call-group[data-active="true"] > summary .activity-icon svg', None, '14px'),
+        ('ui-tools', '.call-group[data-active="true"] > summary .activity-icon svg', None, '14px'),
     ]:
         load(state)
         el = page.locator(selector + ':visible').first
         handle = el.element_handle()
-        rotating(el, pseudo)
+        rotating(el, pseudo, icon_width)
         if state == 'ui-thinking':
             dots = page.locator('[data-state="thinking"] .thinking-dots').first
             before = style(dots, 'clipPath')
@@ -244,9 +258,16 @@ with sync_playwright() as p:
         if state == 'ui-waiting':
             expect(page.locator('[data-state="waiting"] .activity-label')).to_have_text('connecting...')
             page.locator('[data-state="waiting"]').evaluate('(el) => el.dataset.state = "running"')
-            rotating(page.locator('[data-state="running"] .activity-icon'), '::after')
+            running = page.locator('[data-state="running"] .activity-icon').first
+            assert style(running, 'animationName', '::after') == 'activity-spin'
+            assert style(running, 'width', '::after') == '12px'
+        if state == 'ui-tools':
+            row = page.locator('.tool-activity[data-state="running"]').first
+            expect(row).to_be_visible()
+            expect(row.locator('.activity-label')).to_have_text('read')
         shot(state)
         page.locator('[data-state]').evaluate_all('(els) => els.forEach(el => el.dataset.state = "done")')
+        page.locator('.call-group').evaluate_all('(els) => els.forEach(el => el.dataset.active = "false")')
         assert style(handle, 'animationName', pseudo) == 'none'
     assert not errors, errors
     print(json.dumps({"viewports": [1440, 390, 320], "checks": "palette/typography/raw-labels/density/module-badges/touch-targets/sticky/no-inner-scroll/jump/animation/reduced-motion", "browserErrors": errors}))

@@ -19,10 +19,21 @@ const questionUI = createQuestionUI({ root: document.getElementById("question-do
 const filePicker = createFilePicker(request);
 const $ = (id) => document.getElementById(id);
 initInspector($("session-inspector"));
+const sessionDetail = $("session-detail");
+function openSessionDetail(section) {
+  $("session-inspector").open = section === "inspector";
+  $("session-billing").open = section === "billing";
+  sessionDetail.showModal();
+  sessionDetail.querySelector(".task-body").scrollTop = 0;
+}
+$("session-inspector-trigger").onclick = () => openSessionDetail("inspector");
+$("session-billing-trigger").onclick = () => openSessionDetail("billing");
+$("session-detail-close").onclick = () => sessionDetail.close();
 let sessionId,
   models = [],
   config,
   runtime,
+  sessionBill,
   activeTask,
   busy = false,
   // safeStopping: 已请求安全停止、还在等轮次边界；stopAlert: 停住了但用户还没回来看。
@@ -704,16 +715,17 @@ function renderRuntime(node, value) {
   if (node.id === "session-runtime") {
     $("session-system-prompt").textContent = value?.systemPrompt ?? "系统提示词尚未加载；会话启动后可查看。";
     renderTools($("session-active-tools"), value?.tools);
-    renderBill($("session-bill-body"), value?.billing);
+    renderBill($("session-bill-body"), sessionBill ?? value?.billing);
+    $("session-bill-total").textContent = (sessionBill ?? value?.billing)?.records ? `${money((sessionBill ?? value.billing).cost.total)}${sessionBill ? " · 含子代理" : ""}` : "主代理与子代理";
     const { usage, context } = value || {};
     const input = (usage?.input ?? 0) + (usage?.cacheRead ?? 0) + (usage?.cacheWrite ?? 0);
     const cache = input > 0 && Number.isFinite(usage?.cacheRead) ? `${(usage.cacheRead / input * 100).toFixed(1)}%` : "—";
     const percent = Number.isFinite(context?.percent) ? `${context.percent.toFixed(1)}%` : "—";
-    const identity = runtimeSummary(value)[2];
+    const identity = runtimeSummary(sessionBill ? { ...value, billing: sessionBill } : value)[2];
     $("mobile-runtime").textContent = `${cache} · ${percent} · ${identity}`;
     $("mobile-runtime").setAttribute("aria-label", `缓存命中率 ${cache}，上下文占比 ${percent}，${identity}`);
   }
-  node.replaceChildren(...runtimeSummary(value).map((text) => {
+  node.replaceChildren(...runtimeSummary(node.id === "session-runtime" && sessionBill ? { ...value, billing: sessionBill } : value).map((text) => {
     const span = document.createElement("span");
     span.textContent = text;
     return span;
@@ -723,6 +735,8 @@ function renderRuntime(node, value) {
 function updateTaskRuntime(task, value) {
   if (!task) return;
   renderRuntime(task.runtime, value);
+  task.trigger.querySelector(".task-cost").textContent = value?.billing?.records ? money(value.billing.cost.total) : "用量待报告";
+  renderBill(task.node.querySelector(".task-bill-body"), value?.billing, { compact: true });
   task.systemPrompt.textContent = value?.systemPrompt ?? "系统提示词尚未加载";
 }
 function applyConfig(value) {
@@ -2341,7 +2355,7 @@ function applyEvent(message) {
     item.trigger.dataset.status = item.node.dataset.status = data.status;
     const status = { starting: "启动中", running: "运行中", completed: "已完成", failed: "失败", cancelled: "已取消" }[data.status] || data.status;
     item.status.textContent = status;
-    item.heading.textContent = `SUBAGENT · ${status}`;
+    item.heading.textContent = `子代理 · ${status}`;
     item.title.textContent = item.trigger.title = data.task;
     item.description.textContent = data.task;
     item.failure.textContent = data.error || "";
@@ -2354,6 +2368,10 @@ function applyEvent(message) {
     if (["starting", "running"].includes(data.status)) waiting(message.taskId);
     else stopActivity(message.taskId, status);
     scrollLatest();
+  }
+  if (type === "session.billing") {
+    sessionBill = data;
+    renderRuntime($("session-runtime"), runtime);
   }
   if (type === "error") error(data.message);
 }
@@ -2751,6 +2769,7 @@ function finishSnapshot(job, ctx) {
     prefetchHistory();
   });
   renderQueue(state.queue);
+  sessionBill = state.billing;
   runtime = state.runtime;
   applyConfig(state.config);
   config.compaction = state.config.compaction || compactionDefaults;
