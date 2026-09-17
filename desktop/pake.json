@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tw93/Pake/main/schema/pake.schema.json",
+  "url": "desktop/connector",
+  "name": "Axiom",
+  "title": "Axiom",
+  "appVersion": "0.2.0",
+  "icon": "public/favicon.svg",
+  "width": 1440,
+  "height": 900,
+  "newWindow": true,
+  "enableDragDrop": true,
+  "forceInternalNavigation": true
+}

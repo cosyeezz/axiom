@@ -1,5 +1,15 @@
 # 开发记录
 
+## 2026-09-17 桌面端回归 Pake 壳并支持可配置连接地址
+
+- 原因：用户认为 Electron 方案过重（随包 Node 运行时、生命周期握手、electron-builder 链路），决定移除 Electron，回归 Pake 轻量壳，且连接地址不再构建期烘焙，须可配置（本机或远程均司）。
+- 决策：壳内置本地连接入口页 `desktop/connector/index.html`（pake-cli 支持本地目录打包，无后端依赖）：填 `host:port`（默认端口 4319）或完整 http(s) 地址，点「连接」后以 no-cors 探测可达即整页跳转；上次地址可达时自动直达。pake.json `appVersion` 升 0.2.0，`url` 指向 connector 目录，`forceInternalNavigation: true` 保证跳转留在壳内。网页右上角连接状态点击改为直达设置的「连接」面板（新增第 5 个 tab），断线时也可切换地址，地址校验与 connector 同源规则（拒绝非 http(s)、userinfo、非法端口）。后端配套：`AXIOM_HOST` 环境变量支持非回环监听；WS 升级放宽 loopback Host 白名单（同源 Origin 校验保留）。
+- 删除：`desktop/main.mjs`、`desktop/backend-lifecycle.mjs`、`scripts/stage-desktop.mjs`、`scripts/smoke-shell.mjs`、`scripts/smoke-desktop.mjs`、`tests/backend-lifecycle.test.js`；`package.json` 移除 `main`、`build` 段、`desktop:dev/stage/pack/build/web` 脚本与 electron/electron-builder 依赖；`src/main.js` 移除 AXIOM_DESKTOP 分支（随机端口、ready 握手扩展）；`src/update.js` 移除 checkDesktopUpdate；`src/server.js` 移除 service.desktop 字段；`public/service-settings.js` 移除 desktop 分支；同步删改 tests/{update,service-api,service-settings,app}.test.js。CI 重写为 Pake 构建（Windows MSI + macOS Universal DMG，含 DMG 完整性与双架构校验）。
+- 保留：`desktop:pake` 脚本（配置已重建可用）；`src/data-owner.js`、`src/database.js` 版本守卫、stop/prepareStop、`tests/smoke.js`（与桌面方案无关的通用能力）。
+- 文档：README 桌面段重写为 Pake 方案，旧版 v0.1.0 段落转为历史下载说明；development-plans 概述改为历史存档定位。
+- 涉及：desktop/pake.json、desktop/connector/index.html（新增）；src/{main,update,server}.js；public/{index.html,app.js,style.css,service-settings.js}；scripts/（删 3）、tests/（删 1 改 4）；.github/workflows/desktop.yml；package.json、package-lock.json、.gitignore、README.md、devlog.md。
+- 验证：npm test 697 项：695 通过、0 失败、2 平台跳过（与基线一致）；全仓无 electron/AXIOM_DESKTOP 残留引用。壳内跳转、入口页自动直达与远程直连需 CI 产物实机验收（本机无 Rust 工具链，历史上即依赖 CI 出包）。
+
 ## 2026-09-17 置顶图钉视觉优化
 
 - 原因：侧栏 11px 紫色实心图钉过密，与其他线性图标风格不一致。
