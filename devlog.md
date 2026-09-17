@@ -10,6 +10,14 @@
 - 涉及：desktop/pake.json、desktop/connector/index.html（新增）；src/{main,update,server}.js；public/{index.html,app.js,style.css,service-settings.js}；scripts/（删 3）、tests/（删 1 改 4）；.github/workflows/desktop.yml；package.json、package-lock.json、.gitignore、README.md、devlog.md。
 - 验证：npm test 697 项：695 通过、0 失败、2 平台跳过（与基线一致）；全仓无 electron/AXIOM_DESKTOP 残留引用。壳内跳转、入口页自动直达与远程直连需 CI 产物实机验收（本机无 Rust 工具链，历史上即依赖 CI 出包）。
 
+## 2026-09-17 隔离内部任务通知与用户撤回队列
+
+- 原因：SDK 的 custom 通知与用户 Steer 共用真实队列，快照丢失角色信息，导致通知显示成 Steer，Esc 清除通知并将内部 JSON 写入输入框。
+- 决策：队列快照增加平行 internal 标记，前端不渲染内部行；保留原文本数组以维持 checkpoint / idle 闸门。撤回仅返回用户文本与图片，清理 SDK 镜像后同步原样恢复 custom 消息，不提前落历史、不改变送达确认。送达后的独立通知条保持不变。
+- 设计：仅过滤队列行，沿用 Linear 既有布局和 token，无新增样式。
+- 涉及文件：`src/pi.js`、`public/app.js`、`tests/internal-task-queue.test.js`、`tests/app.test.js`、`README.md`、`devlog.md`、自动生成的 `.pi/skills/codebase-map/INDEX.md`。
+- 验证：初次定向测试因独立 worktree 缺少依赖未启动，链接现有依赖后全量测试 712 项（710 通过、2 跳过、0 失败）。覆盖双队列内部消息保序、重复撤回、图片索引、内部队列隐藏及既有通知投递回归；获取最新 origin/master 后无新增变更。未运行真实模型或浏览器手测。
+
 ## 2026-09-17 置顶图钉视觉优化
 
 - 原因：侧栏 11px 紫色实心图钉过密，与其他线性图标风格不一致。
@@ -2328,3 +2336,15 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 涉及文件：public/clipboard.js（新增）、public/app.js、public/markdown.js、tests/clipboard.test.js（新增）、tests/markdown.test.js、tests/git-log.test.js、tests/app.test.js、tests/helpers/public-source.js、.pi/skills/codebase-map/scripts/reindex.mjs、.pi/skills/codebase-map/INDEX.md（重建）、README.md、devlog.md、package.json（0.1.7 → 0.1.8）。
 - 决策：页面测试按「剥模块语法拼接 eval 真实源码」的既有装配方式接入新模块——publicSource 的 app 拼接序列加入 clipboard（app 页面测试自动获得 copyText），各 markdown 独立求值点改用 `publicSource("clipboard", "markdown")`，不引入新的 window 注入口。交叉复核（第二个调研子任务）后补强：writeText 被拒绝时也在同一用户手势窗口内继续 execCommand（Firefox 等存在 API 存在但拒绝、execCommand 仍可用的场景），双失败抛可操作文案「请改用系统复制菜单」而不透传内部错误。
 - 验证：worktree F:/worktrees/Axiom-clipboard-fallback 内 `npm test` 705 项全绿（703 通过、0 失败、2 既有跳过）；新增 4 项剪贴板用例覆盖 API 优先、writeText 被拒绝后 execCommand 回退、跨文档复制与可操作失败文案，markdown 按钮级补了「删除 clipboard 注入后回退仍复制原文」回归。Playwright 实测 Chromium：无 Clipboard API 与 writeText 被拒绝两种场景，代码块/工作空间复制均回退成功且清理临时输入框。
+
+## 2026-09-17 会话渲染一致性修复：分页/位置/卡片位置/乐观发送
+
+- 时间：2026-09-17。分支 `feat/session-render-consistency`（worktree F:/worktrees/Axiom-session-render-consistency），计划与决策全文见 `docs/session-render-plan.md`。
+- 现象：回到最早后读不回最新；切走切回位置丢失；重启后主对话被 subagent 记录挤空；卡片位置反复丢失落到时间线末尾；发送大内容卡顿。
+- 内容（三阶段提交）：
+  - `851b28b` 服务端：pageOf 窗口预算改按主记录计（1..200，默认 60），子代理记录随委派锚点整组进出；单页记录上限 400，超限裁子代理记录并下发 truncatedTasks；每次分页重建 messageId 索引（投影数组使增量索引失效）；sessions.js 读时投影 projectTimeline（live 到达序不动，仅窗口下发重排，孤儿前置）；pageRetries anchorEntryId 优先；新增 translateRetries 把 live 重试 messageCount 换算到投影下标。
+  - `b4a4d52` 前端：paintHistoryControls 分页条在旧页/加载/有新消息常驻（前向入口曾因 2f25500 无条件隐藏）；prefetchForward 近底部前向预取（historyDirty 时假游标 pending 不进请求）；pendingAnchorRestore 挂起登记 + changing=false 的 finally 冲刷（锚点恢复曾被 changing 守卫吞掉）；移除 finishSnapshot 对未锚定运行任务的末尾追加，入口收敛到 #task-runs（行在入口缺席本页时禁用）；实时子代理消息渲染后立即 placeCompactedTasks 归位；visibilitychange 分视角（贴底追新/旧页保位）；markTruncatedTasks 截断声明。
+  - `fdf1263` 发送：乐观卡「发送中」提交即上屏（nextPaint 先绘制再序列化，测试无渲染环境靠 64ms 兜底 + paint() 驱动）；prompt 回执 runId 绑卡，agent.message.end(user) 按 runId 声领原位升级（无 runId 单槽假设）；response_error 撤卡保草稿，unknown 保留卡标「发送结果未确认」；beginSnapshot 重置槽位；旧页提交先派发 prompt（transport 同步序列化发送），历史回最新并行不阻塞。
+- 涉及文件：src/session-history.js、src/sessions.js；public/app.js、public/style.css；tests/history-main-budget.test.js（新增）、tests/send-optimistic.test.js（新增）、tests/history-reading.test.js（重写 1 项 + 新增 5 项）、tests/session-history.test.js、tests/app.test.js（提交点补 paint() 驱动）；README.md、docs/session-render-plan.md（补实施结果）。
+- 决策：不做整会话静态渲染文件（服务端原文唯一权威）；乐观卡只做占位+原位升级，绝不按文本对账、不伪装已确认；渲染管线（rAF 批处理/epoch 取消/隐藏 park）不推倒重做；虚拟化与增量解析延后（需真实浏览器实测）；不升 CURSOR_VERSION（游标只在前端内存）。
+- 验证：worktree 内 `npm test` 726 项全绿（724 通过、0 失败、2 既有跳过）；service-settings 的真实 HTTP 契约用例在全量并发下偶发一次，单独重跑通过，非本次改动引入。
