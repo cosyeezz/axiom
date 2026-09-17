@@ -402,8 +402,8 @@ summary {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 .session-row.pinned:has(.session-item[aria-current="page"]) .session-item { color: var(--ink); font-weight: 500; }
-.session-pin-icon { flex-shrink: 0; display: grid; place-items: center; color: var(--accent-ink); }
-.session-pin-icon svg { width: 11px; height: 11px; fill: currentColor; }
+.session-pin-icon { flex-shrink: 0; display: grid; place-items: center; width: 16px; height: 16px; color: var(--muted); }
+.session-pin-icon svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .session-running-dot,
 .session-attention-dot {
   flex-shrink: 0;
