@@ -2350,7 +2350,7 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 涉及文件：src/session-billing.js、src/sessions.js、public/session-details.js、public/app.js、public/index.html、public/style.css、tests/subagent-billing.test.js（新增）、tests/session-details.test.js、tests/session-persistence.test.js、tests/app.test.js、tests/conversation-preview.mjs、tests/session-billing-ui.py、tests/conversation-ui.py、README.md、.pi/skills/codebase-map/knowledge.md、INDEX.md。
 - 决策：保留 runtime.billing 单代理语义，新增快照 billing 与 session.billing 事件统一汇总全部子任务；覆盖而非增量相加，避免重复。恢复按每个代理的完整 JSONL entries 重算，缺文件回退最后已知任务账。独立弹窗避免手机输入区内外双滚动，费用仍是估算而非实际扣款。
 - 验证：npm test 712 项（710 通过、2 项平台条件跳过）；session-billing-ui.py 在 320/390/768/1280px 验证页签、JSON、总账与任务账单，实际截图核对 $0.023 = 主代理 $0.012 + 子代理 $0.006 + $0.005；frontend-regions-ui.py 通过。用户明确选择继续修复旧 conversation-ui.py：修正 hash 路由优先级（原测试未真正切换 fixture）、撤销事务前置、移动展开及活动组展开、双层吸顶/弹窗 static 断言、过时折叠图标和等待/工具状态动画目标；支持 PREVIEW_PORT 隔离端口。最终在独立 4397 端口完整通过 1440/390/320px、浏览器错误为零。
-- 合并复验（2026-09-17）：同步 origin/master 3f181e9，保留双方开发日志并重建索引；适配最新未锚定任务设计，conversation-ui.py 改验底部禁用运行条与动画，不再要求不存在的主轴卡片。npm ci 成功，npm test 719 项（717 通过、2 跳过、0 失败），账单四档宽度、frontend-regions-ui.py 与 conversation-ui.py 全部通过。
+- 合并复验（2026-09-17）：同步 origin/master 3f181e9，随后再次合入 941b673（macOS CI 路径修复）并完整重跑以下验收；保留双方开发日志并重建索引；适配最新未锚定任务设计，conversation-ui.py 改验底部禁用运行条与动画，不再要求不存在的主轴卡片。npm ci 成功，npm test 719 项（717 通过、2 跳过、0 失败），账单四档宽度、frontend-regions-ui.py 与 conversation-ui.py 全部通过。
 
 ## 2026-09-17 会话渲染一致性修复：分页/位置/卡片位置/乐观发送
 
