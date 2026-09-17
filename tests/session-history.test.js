@@ -204,7 +204,9 @@ test("分页只带本页引用到的已完成元数据（工具/任务/压缩/�
   try {
     const id = await sessions.create(root);
     const records = build(140);
-    // 页内引用面：主代理的 delegate 结果（声明 taskD）、子代理 taskA 自己的消息、工具 t-in 的调用与结果。
+    // 页内引用面：主代理的 delegate 结果（声明 taskD）、子代理 taskA 自己的消息（由 e99 的委派锚定）、工具 t-in 的调用与结果。
+    records[99] = { agentId: "main", entryId: "e99", message: { role: "toolResult", toolName: "delegate", toolCallId: "t-delegate-a",
+      content: [{ type: "text", text: JSON.stringify({ taskIds: ["taskA"] }) }] } };
     records[100] = { agentId: "main", entryId: "e100", message: { role: "toolResult", toolName: "delegate", toolCallId: "t-delegate",
       content: [{ type: "text", text: JSON.stringify({ taskIds: ["taskD"] }) }] } };
     records[101] = { agentId: "taskA", entryId: "e101", message: { role: "assistant", content: [{ type: "toolCall", id: "t-in", name: "read", arguments: {} }] } };
@@ -235,7 +237,8 @@ test("分页只带本页引用到的已完成元数据（工具/任务/压缩/�
     assert.deepEqual(Object.keys(page.tools).sort(), ["main:t-in", "main:t-live"], "只留页内引用与仍在跑的工具");
     assert.deepEqual(page.tasks.map((task) => task.id).sort(), ["taskA", "taskC", "taskD"], "页内 agent / spawn 关联 / 在跑任务");
     assert.deepEqual(page.compactions.map((record) => record.id), ["c-in"], "压缩卡只留交集本页的");
-    assert.deepEqual(page.retries.map((record) => [record.id, record.messageCount]), [["r-in", 40], ["r-anchor", undefined]], "重试位置换算成页内下标");
+    // 窗口预算按主记录计：e101（taskA）不占预算，末页从主秩 79（下标 79）开始，120 换算为页内 41。
+    assert.deepEqual(page.retries.map((record) => [record.id, record.messageCount]), [["r-in", 41], ["r-anchor", undefined]], "重试位置换算成页内下标");
 
     // 翻到第一页：只剩第一页引用到的（压缩 c-out 命中，delegate 与 taskA 都不在）。
     const first = await sessions.history(id, { edge: "first", limit: 60 }, "inst");
