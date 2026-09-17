@@ -75,7 +75,7 @@ test("不支持图片的模型在回执前拒绝，支持时透传 prompt 与队
     assert.equal(sessions.get(id).status, "idle");
     await sessions.configure(id, { model: "test/vision" });
     await sessions.prompt(id, "", undefined, images);
-    assert.deepEqual(calls.prompt.at(-1), { text: "", options: { images, titleRequest: true } });
+    assert.deepEqual(calls.prompt.at(-1), { text: "", options: { images } });
     await assert.rejects(sessions.prompt(id, "x", undefined, [{ type: "image", mimeType: "image/png", data: jpegBase64 }]), /格式不符/);
     await sessions.prompt(id, "插话", "steer", images);
     assert.deepEqual(calls.enqueue.at(-1), { text: "插话", type: "steer", images });

@@ -17,6 +17,7 @@ import { delegationTools } from "./tools.js";
 import { createQuestions } from "./questions.js";
 import { resolveCapabilities } from "./capabilities.js";
 import { memoryHooks } from "./session-memory.js";
+import { TITLE_MAX } from "../public/memory-tags.js";
 import { createHistory, pageOf, toPageRecord, touchHistory } from "./session-history.js";
 
 // Goal 模式挂载的四个工具：普通会话初始即停用，退出 Goal 时统一停用。
@@ -176,6 +177,12 @@ function trackElapsed(item, status) {
   if (!item.runningSince) return;
   item.elapsedMs += Date.now() - item.runningSince;
   item.runningSince = null;
+}
+
+// 兑底标题：首条输入剥掉 [imageN] 占位符后取前 60 字；剥完为空（纯图片输入）回退「[图片]」。
+function fallbackTitle(text) {
+  const clean = text.trim().replace(/\[image\d+\]\s*/g, "").trim();
+  return (clean || "[图片]").slice(0, 60);
 }
 
 async function resolveDir(target) {
@@ -726,7 +733,7 @@ export class Sessions {
       const { id, ...patch } = change.session;
       this.store.updateSession(item.id, patch);
     }
-    // 自报标题成功即固化「已索要过」：否则标题写库成功后崩溃，重启会再注入一次标题请求。
+    // 自报标题成功即固化「已定案」：titleRequested 只在真正拿到标题后才为真，重启不会重复索要。
     if (change.title) this.store.updateSession(item.id, { title: item.title, titleRequested: item.titleRequested });
     if (change.event) this.store.saveEvent(item.id, change.event.type, change.event.record);
     if (change.task) this.store.saveTask(item.id, change.task);
@@ -876,7 +883,10 @@ export class Sessions {
       queueType: selection.queueType || "steer",
       title: saved?.title || "新会话",
       titleManual: saved?.titleManual ?? !!saved,
-      titleRequested: saved?.titleRequested ?? !!saved,
+      // 旧「一次性索要」时代失败的会话已把 titleRequested 固化成 1：标题是 60 字兑底（超过自报
+      // 上限，不可能是模型给的），视为未定案——恢复后下一条消息重新索要，存量坏会话自愈。
+      titleRequested: (saved?.titleRequested ?? !!saved)
+        && (saved?.titleManual === true || [...(saved?.title ?? "")].length <= TITLE_MAX),
       titlePending: false,
       // 轮次预算随会话创建定死：新会话取当前全局值（保存后新建即生效），运行中不热更；
       // 恢复的会话从 selection 读回创建时的预算，全局值后来改了也不追认。
@@ -1735,12 +1745,11 @@ export class Sessions {
     item.goalExited = false;
     const goal = item.goal.snapshot();
     if (goal?.phase === "clarifying" && !goal.objective && !goal.rounds.length) item.goal.supplyObjective(text);
-    if (item.title === "新会话" && !item.titleManual) item.title = (text.trim() || "[图片]").slice(0, 60);
-    const titleRequest = !item.titleRequested && !item.titleManual;
-    item.titleRequested = true;
-    item.titlePending = titleRequest;
-    return this.startRun(item, () =>
-      item.agent.prompt(text, titleRequest || images?.length ? { ...(images?.length ? { images } : {}), ...(titleRequest ? { titleRequest } : {}) } : undefined));
+    if (item.title === "新会话" && !item.titleManual) item.title = fallbackTitle(text);
+    // 标题未定案（模型没自报过、也没手动命名）就持续索要：本轮靠 item.titlePending（context 钩子
+    // 逐请求读 memory.wantsTitle），run 结束清零；titleRequested 只在自报成功后才固化为真。
+    item.titlePending = !item.titleRequested && !item.titleManual;
+    return this.startRun(item, () => item.agent.prompt(text, images?.length ? { images } : undefined));
   }
 
   // 撤回：recall 时把这一轮已进入上下文的输入退回输入框（先停稳、无模型输出才允许）；
