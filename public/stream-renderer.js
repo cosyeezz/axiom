@@ -109,7 +109,7 @@ export function createStreamRenderer(
     let changed = false;
     if (item.paintedText !== text) {
       if (item.node?.classList.contains("user")) item.text.textContent = text;
-      else renderMarkdown(item.text, text);
+      else renderMarkdown(item.text, text, item.markdownOptions);
       item.paintedText = text;
       state.nextMarkdown = time + Math.max(100, (now() - time) * 4);
       changed = true;

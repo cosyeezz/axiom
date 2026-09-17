@@ -28,6 +28,7 @@ async function bootPage() {
   window.requestAnimationFrame = () => 0;
   window.cancelAnimationFrame = () => {};
   window.renderMarkdown = () => {};
+  window.createMarkdownPageCache = () => ({ entries: new Map(), bytes: 0, stats: { hit: 0, miss: 0, store: 0, evict: 0 }, get: () => null, store: () => {} });
   window.createStreamRenderer = (render, after) => createStreamRenderer(render, after, window.requestAnimationFrame, window.cancelAnimationFrame);
   const favStore = { provider: [], model: [], thinking: [] };
   const sessionState = {

@@ -22,6 +22,7 @@ async function page({ skills = [] } = {}) {
   w.requestAnimationFrame = (fn) => { frames.set(++nextFrame, fn); return nextFrame; };
   w.cancelAnimationFrame = (id) => frames.delete(id);
   w.renderMarkdown = (node, text) => { node.textContent = text ?? ""; };
+  w.createMarkdownPageCache = () => ({ entries: new Map(), bytes: 0, stats: { hit: 0, miss: 0, store: 0, evict: 0 }, get: () => null, store: () => {} });
   w.stripMemoryTags = (text) => text;
   w.stripGoalMarkers = (text) => text;
   w.createStreamRenderer = (render, after) => createStreamRenderer(render, after, w.requestAnimationFrame, w.cancelAnimationFrame);

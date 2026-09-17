@@ -2,7 +2,7 @@ import { initInspector, renderTools, renderBill, money } from "./session-details
 import { createTransport } from "./transport.js";
 import { createSessionCache } from "./session-cache.js";
 import { copyText } from "./clipboard.js";
-import { renderMarkdown } from "./markdown.js";
+import { renderMarkdown, createMarkdownPageCache } from "./markdown.js";
 import { stripMemoryTags } from "./memory-tags.js";
 import { createMaskCache } from "./markdown-scan.js";
 import { createStreamRenderer } from "./stream-renderer.js";
@@ -275,6 +275,17 @@ function forgetGrowth(el) { growthWatch.delete(el); growthObserver?.unobserve(el
 for (const event of ["wheel", "touchstart", "touchmove", "keydown", "pointerdown"])
   transcript.addEventListener(event, () => noteScrollIntent(transcript), { capture: true, passive: true });
 const renderer = createStreamRenderer(renderMarkdown, scrollLatest);
+// 页级渲染缓存（Phase D2）：epoch = 会话 + 历史修订，切换即整体丢弃（压缩/撤回修订后旧产物
+// 不可复用）；同 revision 内翻页/锚点恢复/切走切回命中复用。预算见 createMarkdownPageCache。
+let markdownPageCache, markdownPageEpoch = "";
+function pageCacheCurrent() {
+  const epoch = `${sessionId}\u0000${historyState?.history?.revision ?? 0}`;
+  if (epoch !== markdownPageEpoch) {
+    markdownPageEpoch = epoch;
+    markdownPageCache = createMarkdownPageCache();
+  }
+  return markdownPageCache;
+}
 window.addEventListener("pagehide", (event) => { if (!event.persisted) renderer.dispose(); });
 // 只监听用户意图，不监听程序触发的 scroll，以免贴底刷新自我延迟。
 for (const event of ["wheel", "touchstart", "touchmove", "pointerdown", "keydown", "input"])
@@ -2745,6 +2756,12 @@ function placeSnapshotMessage(ctx, index, { agentId, message, entryId }) {
     live.delete(agentId);
     // 绑定与下标同构的原文条目：rawEntries 与 state.messages 顺序一致。
     bindRaw(item, rawEntries[index]);
+    // 页级渲染缓存（Phase D2）：历史快照是整页替换主场景，同一消息反复从零 lex/parse；
+    // 键含会话与修订（随 epoch 切换失效），entryId 跨页稳定。实时流与半成品流不缓存。
+    item.markdownOptions = {
+      pageCache: pageCacheCurrent(),
+      cacheKey: `${agentId}\u0000${entryId ?? index}`,
+    };
     renderMessage(item, message);
     if (agentId === "main") {
       mainItems.push({ item, entryId });

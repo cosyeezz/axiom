@@ -26,7 +26,7 @@ test("user input stays plain text with newlines; process uses Markdown", () => {
 test("one frame, shared Markdown for lazy thinking, final flush and switch cancellation", async () => {
   const dom = new JSDOM("");
   const source = (await readFile(new URL("../public/markdown.js", import.meta.url), "utf8"))
-    .replace(/^import .*;\r?\n/gm, "").replace("export function", "function");
+    .replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "");
   const render = new Function("marked", "DOMPurify", `${source}; return renderMarkdown;`)(marked, createPurify(dom.window));
   const document = dom.window.document;
   let scheduled,

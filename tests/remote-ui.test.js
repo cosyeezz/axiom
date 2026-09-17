@@ -28,8 +28,10 @@ const modelSources = await Promise.all(["model-picker", "model-auth", "model-man
   w.requestAnimationFrame = (fn) => { frames.set(++nextFrame, fn); return nextFrame; };
   w.cancelAnimationFrame = (id) => frames.delete(id);
   const markdown = (await readFile(new URL("../public/markdown.js", import.meta.url), "utf8"))
-    .replace(/^import .*;\r?\n/gm, "").replace("export function", "function");
-  w.renderMarkdown = new Function("marked", "DOMPurify", `${markdown}; return renderMarkdown;`)(marked, createPurify(w));
+    .replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "");
+  const markdownApi = new Function("marked", "DOMPurify", `${markdown}; return { renderMarkdown, createMarkdownPageCache };`)(marked, createPurify(w));
+  w.renderMarkdown = markdownApi.renderMarkdown;
+  w.createMarkdownPageCache = markdownApi.createMarkdownPageCache;
   w.createStreamRenderer = (render, after) => createStreamRenderer(render, after, w.requestAnimationFrame, w.cancelAnimationFrame);
   w.WebSocket = class { constructor() { w.__socket = this; } static OPEN = 1; readyState = 1; send(data) { (this.sent ||= []).push(data); } };
   w.eval(`${modelSources}\n${picker}\n${source}\nconnected = true;\n${extra}`);

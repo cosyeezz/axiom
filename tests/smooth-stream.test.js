@@ -16,7 +16,7 @@ async function fixture() {
   dom.window.matchMedia = () => media;
   Object.defineProperty(doc, 'visibilityState', { configurable: true, value: 'visible' });
   const source = (await readFile(new URL('../public/markdown.js', import.meta.url), 'utf8'))
-    .replace(/^import .*;\r?\n/gm, '').replace('export function', 'function');
+    .replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
   const parser = Object.create(marked);
   parser.lexer = (...args) => { parses++; return marked.lexer(...args); };
   const render = new Function('marked', 'DOMPurify', `${source}; return renderMarkdown;`)(parser, createPurify(dom.window));

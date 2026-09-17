@@ -3,6 +3,46 @@ import DOMPurify from "./vendor/purify.js";
 import { copyText } from "./clipboard.js";
 
 const cache = new WeakMap();
+
+// —— 页级 LRU（Phase D2） ——
+// 整页替换（分页翻页/锚点恢复/切会话回切/压缩修订重取）会重建消息元素，元素级 WeakMap
+// 随元素销毁失效，导致同一消息反复从零 lex/parse/sanitize。页缓存按调用方键存终态渲染
+// 产物（blocks 节点强引用，旧元素销毁后节点自动 detached 可 move 复用）。只缓存终态复杂
+// markdown：流式/半成品不传键，纯文本与 >24K literal 走自己的快路径不参与。
+const PAGE_CACHE_ENTRY_LIMIT = 300;
+const PAGE_CACHE_BYTE_LIMIT = 4 << 20;
+export function createMarkdownPageCache() {
+  return {
+    entries: new Map(), // key → { text, linksKey, blocks }，插入序即 LRU 序
+    bytes: 0,
+    stats: { hit: 0, miss: 0, store: 0, evict: 0 },
+    get(key) {
+      const entry = this.entries.get(key);
+      if (!entry) { this.stats.miss++; return null; }
+      this.entries.delete(key);
+      this.entries.set(key, entry); // 刷新 LRU 序
+      return entry;
+    },
+    store(key, entry) {
+      if (this.entries.has(key)) {
+        const old = this.entries.get(key);
+        this.bytes -= old.text.length;
+        this.entries.delete(key);
+      }
+      this.entries.set(key, entry);
+      this.bytes += entry.text.length;
+      this.stats.store++;
+      while (this.entries.size > PAGE_CACHE_ENTRY_LIMIT || this.bytes > PAGE_CACHE_BYTE_LIMIT) {
+        const oldest = this.entries.keys().next().value;
+        if (oldest === undefined) break;
+        this.bytes -= this.entries.get(oldest).text.length;
+        this.entries.delete(oldest);
+        this.stats.evict++;
+      }
+    },
+  };
+}
+
 const policy = {
   USE_PROFILES: { html: true },
   FORBID_TAGS: ["img", "video", "audio", "form", "input", "button", "style"],
@@ -263,9 +303,23 @@ function linksSignature(links) {
   );
 }
 
-export function renderMarkdown(element, text = "") {
+export function renderMarkdown(element, text = "", options = {}) {
   const previous = cache.get(element);
   if (previous?.text === text) return;
+  // 页级缓存命中：同键同文的终态渲染产物且节点均已 detach（旧页已销毁）→ 直接 move 进
+  // 当前元素。节点仍连接（同页双渲染同键，如原文对照等罕见场景）→ 不 clone（cloneNode 丢
+  // 代码块工具栏事件），当 miss 重新渲染。
+  const pageCache = options.pageCache, pageKey = options.cacheKey;
+  if (pageCache && pageKey && !previous) {
+    const hit = pageCache.get(pageKey);
+    if (hit && hit.text === text && hit.blocks.every((block) => !block.node.isConnected)) {
+      element.replaceChildren(...hit.blocks.map((block) => block.node));
+      cache.set(element, { text, blocks: hit.blocks, linksKey: hit.linksKey });
+      pageCache.stats.hit++;
+      pageCache.stats.miss--; // get 里已计 miss，命中抵消
+      return;
+    }
+  }
   // Conservative single-paragraph whitelist: no Markdown/HTML/autolink syntax.
   // Retain the Text node so ordinary playback never re-lexes or destroys a selection.
   const plain = renderMarkdown.isPlainText(text);
@@ -404,6 +458,7 @@ export function renderMarkdown(element, text = "") {
   for (const block of previous?.blocks.slice(blocks.length) || [])
     block.node.remove();
   cache.set(element, { text, blocks, linksKey });
+  if (pageCache && pageKey) pageCache.store(pageKey, { text, blocks, linksKey });
 }
 
 // 纯文本判定字符类：与渲染路径共用一份正则常量，避免两处漂移。增量版（isPlainTextCached）

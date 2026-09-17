@@ -30,8 +30,10 @@ async function page() {
   w.requestAnimationFrame = (fn) => { frames.set(++nextFrame, fn); return nextFrame; };
   w.cancelAnimationFrame = (id) => frames.delete(id);
   const markdown = (await readFile(new URL("../public/markdown.js", import.meta.url), "utf8"))
-    .replace(/^import .*;\r?\n/gm, "").replace("export function", "function");
-  w.renderMarkdown = new Function("marked", "DOMPurify", `${markdown}; return renderMarkdown;`)(marked, createPurify(w));
+    .replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "");
+  const markdownApi = new Function("marked", "DOMPurify", `${markdown}; return { renderMarkdown, createMarkdownPageCache };`)(marked, createPurify(w));
+  w.renderMarkdown = markdownApi.renderMarkdown;
+  w.createMarkdownPageCache = markdownApi.createMarkdownPageCache;
   w.createStreamRenderer = (render, after) => createStreamRenderer(render, after, w.requestAnimationFrame, w.cancelAnimationFrame);
   w.WebSocket = class { static OPEN = 1; readyState = 1; send() {} };
   for (const name of ["model-picker", "model-auth", "model-manager"]) {

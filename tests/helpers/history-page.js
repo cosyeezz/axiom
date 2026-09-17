@@ -35,7 +35,8 @@ const pageSource = await publicSource("markdown-scan", "memory-tags", "goal-mark
 // answer-tags 与 memory-tags 都有顶层常量，同处一段脚本会重复声明；包一层隔离作用域。
 const answerSource = `Object.assign(window, (() => { ${(await readFile(new URL("../../public/answer-tags.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "")}\nreturn { splitAnswer }; })());`;
 const markdownSource = (await readFile(new URL("../../public/markdown.js", import.meta.url), "utf8"))
-  .replace(/^import .*;\r?\n/gm, "").replace("export function", "function");
+  .replace(/^import .*;\r?\n/gm, "")
+  .replace(/^export /gm, "");
 
 // 无分页元数据的会话状态（老服务端 / 内存态）：事件直接落地，不走翻页停放。
 export function sessionState(sessionId, { messages = [], live = {}, seq, status = "idle" } = {}) {
@@ -70,7 +71,10 @@ export function bootHistoryPage({ sessionId = "long", title = "长会话", epoch
   window.requestAnimationFrame = (fn) => { frames.set(++frameId, fn); return frameId; };
   window.cancelAnimationFrame = (id) => frames.delete(id);
   const clock = { t: 0 };
-  window.renderMarkdown = new Function("marked", "DOMPurify", `${markdownSource}; return renderMarkdown;`)(marked, createPurify(window));
+  // markdown.js 同时导出页级渲染缓存工厂（Phase D2），与渲染器一并注入 eval 版 app。
+  const markdownApi = new Function("marked", "DOMPurify", `${markdownSource}; return { renderMarkdown, createMarkdownPageCache };`)(marked, createPurify(window));
+  window.renderMarkdown = markdownApi.renderMarkdown;
+  window.createMarkdownPageCache = markdownApi.createMarkdownPageCache;
   window.createStreamRenderer = (render, after) =>
     createStreamRenderer(render, after, window.requestAnimationFrame, window.cancelAnimationFrame, 40, () => clock.t);
 
@@ -145,6 +149,7 @@ export function bootHistoryPage({ sessionId = "long", title = "长会话", epoch
       historyFlags: () => ({ loading: historyLoading, dirty: historyDirty, request: historyRequest, hiddenDirty, events: historyEvents }),
       setConnected: (value) => { connected = value; updateAvailability(); },
       failPlacement: () => { const original = placeSnapshotMessage; placeSnapshotMessage = () => { throw new Error("分片渲染失败"); }; return () => { placeSnapshotMessage = original; }; },
+      pageCacheStats: () => ({ ...pageCacheCurrent().stats, bytes: pageCacheCurrent().bytes, entries: pageCacheCurrent().entries.size }),
       dispose: () => transport.dispose(),
     };`,
   ].join("\n"));

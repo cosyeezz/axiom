@@ -96,12 +96,14 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
   window.matchMedia = (query) =>
     query.includes("prefers-reduced-motion: reduce") ? { matches: true } : media;
   const markdownSource = await publicSource("clipboard", "markdown");
-  const renderMarkdown = new Function("marked", "DOMPurify", `${markdownSource}; return renderMarkdown;`)(marked, createPurify(window));
+  const markdownApi = new Function("marked", "DOMPurify", `${markdownSource}; return { renderMarkdown, createMarkdownPageCache };`)(marked, createPurify(window));
+  const renderMarkdown = markdownApi.renderMarkdown;
   let renders = 0;
   window.renderMarkdown = (node, text) => {
     renders++;
     renderMarkdown(node, text);
   };
+  window.createMarkdownPageCache = markdownApi.createMarkdownPageCache;
   window.createStreamRenderer = (render, after) =>
     createStreamRenderer(
       render,
@@ -1581,7 +1583,10 @@ test("compaction settings edit per scope and fold transcripts in place", async (
   };
   window.matchMedia = () => ({ matches: true });
   const markdownSource = await publicSource("clipboard", "markdown");
-  window.renderMarkdown = new Function("marked", "DOMPurify", `${markdownSource}; return renderMarkdown;`)(marked, createPurify(window));
+  // markdown.js 同时导出页级渲染缓存工厂（Phase D2），与渲染器一并注入 eval 版 app。
+  const markdownApi = new Function("marked", "DOMPurify", `${markdownSource}; return { renderMarkdown, createMarkdownPageCache };`)(marked, createPurify(window));
+  window.renderMarkdown = markdownApi.renderMarkdown;
+  window.createMarkdownPageCache = markdownApi.createMarkdownPageCache;
   window.createStreamRenderer = (render, after) =>
     createStreamRenderer(render, after, window.requestAnimationFrame, window.cancelAnimationFrame);
   const compactionDefaults = { enabled: true, tokenThreshold: 100000, percentThreshold: 50, model: null, thinking: "off", keepRecentTokens: 5000 };

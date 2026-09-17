@@ -1,6 +1,7 @@
 """Run: python tests/git-log-ui.py (Playwright Chromium)."""
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+import re
 
 root = Path(__file__).resolve().parents[1]
 with sync_playwright() as p:
@@ -12,7 +13,7 @@ with sync_playwright() as p:
     page.add_script_tag(path=str(root / 'node_modules/dompurify/dist/purify.js'))
     source = (root / 'public/markdown.js').read_text(encoding='utf-8')
     source = '\n'.join(line for line in source.splitlines() if not line.startswith('import '))
-    page.add_script_tag(content=source.replace('export function', 'function'))
+    page.add_script_tag(content=source.replace('\nimport .+\n', '') if False else re.sub(r'^export ', '', source, flags=re.M))
     subject = '恢复历史重排修复并移除会话标签栏 ' * 10 + 'long-unbroken-subject-' * 20
     samples = [
         f'189730d merge: {subject}\n├─ 3faddf1 chore: regenerate codebase index\n└─ 4e2e2f1 docs: record duplicate-order adaptation',
