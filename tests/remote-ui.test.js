@@ -211,6 +211,7 @@ test("非安全上下文：请求 id 用自增序号，乱序回执按 id 匹配
       await new Promise((r) => setTimeout(r, 0)); // onsubmit 继续，发出 service.status 并挂起
       const p1 = request("remote.get");
       const p2 = request("session.attach", { sessionId: "x" });
+      await new Promise((r) => setTimeout(r, 0)); // 发送走保序链，断言前冲刷。
       const m1 = JSON.parse(ws.sent.at(-2)), m2 = JSON.parse(ws.sent.at(-1));
       // 回执乱序到达，仍按 id 匹配
       ws.onmessage({ data: JSON.stringify({ type: "response", id: m2.id, ok: true, data: { n: 2 } }) });

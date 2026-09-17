@@ -1,12 +1,57 @@
 // One owner for the native business socket. No command replay, no event reordering.
+// 大命令序列化（D4）：估算超阈值的 stringify 移入后台 Worker，主线程只付结构化克隆成本；
+// 无 Worker 环境（旧浏览器/测试）自动退化同步路径。发送顺序由 queueTail 链保证，与同步路径一致。
+const SERIALIZE_THRESHOLD = 1 << 20;
+const WORKER_SOURCE = 'self.onmessage = ({ data }) => {' +
+  'const raw = JSON.stringify(data.command);' +
+  "self.postMessage({ key: data.key, raw, bytes: new TextEncoder().encode(raw).length });" +
+  '};';
+function estimateBytes(value, depth = 0) {
+  if (typeof value === "string") return value.length;
+  if (value == null || typeof value !== "object" || depth > 6) return 8;
+  let total = 16;
+  for (const item of Array.isArray(value) ? value : Object.values(value)) {
+    total += estimateBytes(item, depth + 1);
+    if (total > SERIALIZE_THRESHOLD) return total; // 早退：只需判断是否超阈
+  }
+  return total;
+}
 export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
   initialize = () => {}, reduce = () => {}, onState = () => {},
   report = (entry) => console.warn("[transport]", entry),
   setTimer = setTimeout, clearTimer = clearTimeout, now = Date.now,
   timeout = 120000, maxPending = 256, maxBytes = 32 * 1024 * 1024,
-  maxEvents = 10000, maxRetries = 5 } = {}) {
+  maxEvents = 10000, maxRetries = 5, Serializer = globalThis.Worker } = {}) {
   let socket, opening, disposed = false, state = "closed", timer, failures = 0, id = 0;
   let generation = 0, epoch, gate = null, queuedBytes = 0, oldest = 0;
+  // 发送序链（D4）：入队后统一序列化/发送，与同步路径保同等顺序。
+  let queueTail = Promise.resolve();
+  let serializer, serializerUrl, serialKey = 0;
+  const pendingSerial = new Map();
+  function serializeOffThread(command) {
+    if (!serializer) {
+      serializerUrl = URL.createObjectURL(new Blob([WORKER_SOURCE], { type: "text/javascript" }));
+      serializer = new Serializer(serializerUrl);
+      serializer.onmessage = ({ data }) => {
+        const waiter = pendingSerial.get(data.key);
+        if (waiter) { pendingSerial.delete(data.key); waiter.resolve(data); }
+      };
+      serializer.onerror = () => {
+        for (const waiter of pendingSerial.values()) waiter.reject(failure("serialize_failed", "后台序列化失败，请重试"));
+        pendingSerial.clear();
+      };
+    }
+    return new Promise((resolve, reject) => {
+      const key = ++serialKey;
+      pendingSerial.set(key, { resolve, reject });
+      try { serializer.postMessage({ key, command }); }
+      catch (e) { pendingSerial.delete(key); reject(e); }
+    });
+  }
+  const serializeCommand = (full) =>
+    Serializer && estimateBytes(full) > SERIALIZE_THRESHOLD
+      ? serializeOffThread(full)
+      : Promise.resolve({ raw: JSON.stringify(full), bytes: null });
   const pending = new Map(), listeners = new Set(), watermarks = new Map();
   const diagnostic = (code) => {
     // Never include payloads, exception messages, request bodies or credentials.
@@ -98,9 +143,6 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
       return Promise.reject(failure("disconnected", "连接已断开，请重新连接"));
     if (pending.size >= maxPending) return Promise.reject(failure("pending_limit", "等待中的请求过多"));
     const key = String(++id);
-    const raw = JSON.stringify({ ...command, id: key });
-    if ((socket.bufferedAmount || 0) + new Blob([raw]).size > maxBytes)
-      return Promise.reject(failure("send_limit", "发送缓冲超限，请稍后重试"));
     // Buffer before sending attach; do not lose events emitted while the snapshot loads.
     if (["session.attach", "session.create", "session.import"].includes(command.type)) beginSnapshot();
     return new Promise((resolve, reject) => {
@@ -109,8 +151,22 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
         timer: setTimer(() => settle(key, failure("timeout", "回执超时，请求结果未知；请确认状态后再操作", true)), timeoutMs) };
       pending.set(key, entry);
       signal?.addEventListener("abort", abort, { once: true });
-      try { socket.send(raw); }
-      catch { settle(key, failure("send_failed", "发送失败，请求结果未知", true)); }
+      // 序列化与发送进入保序链：大命令的 stringify 在后台 Worker，小命令同步路径不变。
+      const sent = queueTail
+        .then(() => (pending.get(key) === entry ? serializeCommand({ ...command, id: key }) : null))
+        .then((serialized) => {
+          if (!serialized || pending.get(key) !== entry) return; // 已超时/取消：不再发送。
+          if (socket?.readyState !== 1 || ["recovering", "limited"].includes(state) || disposed)
+            throw failure("disconnected", "连接已断开，请重新连接");
+          // send 前复检缓冲水位：保 send_limit 的确定性失败语义（单消息原子不可分片）。
+          const size = serialized.bytes ?? new Blob([serialized.raw]).size;
+          if ((socket.bufferedAmount || 0) + size > maxBytes)
+            throw failure("send_limit", "发送缓冲超限，请稍后重试");
+          try { socket.send(serialized.raw); }
+          catch { throw failure("send_failed", "发送失败，请求结果未知", true); }
+        });
+      queueTail = sent.catch(() => {});
+      sent.catch((error) => settle(key, error));
     });
   }
   function connect({ retry = false } = {}) {
@@ -203,6 +259,8 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
       disconnectPending(); clearGate(); watermarks.clear();
       for (const entry of listeners) entry.controller.abort();
       listeners.clear();
+      serializer?.terminate(); serializer = undefined;
+      if (serializerUrl) { URL.revokeObjectURL(serializerUrl); serializerUrl = undefined; }
       socket?.close(1000, "disposed"); socket = undefined;
       status("disposed");
     },

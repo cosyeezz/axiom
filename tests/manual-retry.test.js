@@ -116,6 +116,7 @@ async function page() {
   w.createMarkdownPageCache = markdownApi.createMarkdownPageCache;
   w.createStreamRenderer = (render, after) => createStreamRenderer(render, after, w.requestAnimationFrame, w.cancelAnimationFrame);
   const sent = [];
+  const settle = () => new Promise(setImmediate);
   w.WebSocket = class { static OPEN = 1; readyState = 1; send(raw) { sent.push(JSON.parse(raw)); } };
   for (const name of ["model-picker", "model-auth", "model-manager"]) {
     const module = await readFile(new URL(`../public/${name}.js`, import.meta.url), "utf8");
@@ -147,8 +148,10 @@ test("retry prompt sits at the end of the stream only when an interrupted main t
     assert.equal(output.lastElementChild, prompt(output), "贴在会话流末尾");
     assert.equal(output.querySelector(".retry-card"), null);
 
-    // 点击走 session.retry，不重发输入。
+    // 点击走 session.retry，不重发输入（发送走保序链，断言前冲刷微任务）。
+    await new Promise(setImmediate);
     prompt(output).querySelector("button").click();
+    await new Promise(setImmediate);
     const request = sent.at(-1);
     assert.equal(request.type, "session.retry");
     assert.equal(request.sessionId, "retry");

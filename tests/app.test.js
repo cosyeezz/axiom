@@ -1079,6 +1079,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       assert.equal(restartRequests().length, before);
       $(`restart-${mode}`).click();
       $("restart-form").requestSubmit();
+      await settle(); // 发送走保序链（微任务），断言前冲刷。
       $("restart-form").requestSubmit();
       assert.equal($("restart-dialog").open, false);
       assert.equal(restartRequests().length, before + 1);

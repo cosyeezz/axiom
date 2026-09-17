@@ -51,6 +51,7 @@ test("typed/filter subscriptions isolate sync/async failures and invalidate late
 test("pending cleanup on receipt, duplicate, timeout, abort, send failure and disconnect; never replay", async () => {
   const r = rig(); const ws = await r.open();
   const p = r.transport.request({ type: "prompt", text: "side effect" });
+  await flush(); // 发送走保序链（微任务），回执注入前先冲刷。
   ws.message({ type: "response", id: ws.sent.at(-1).id, ok: true, data: 7 });
   ws.message({ type: "response", id: ws.sent.at(-1).id, ok: true, data: 8 });
   assert.equal(await p, 7); assert.equal(r.timers.size, 0);
@@ -75,6 +76,7 @@ test("snapshot response closes the microtask gap, preserves seq 10 body before s
   const seen = []; const r = rig({ reduce: event => seen.push(event.seq) }); const ws = await r.open();
   r.transport.commitSnapshot({ sessionId: "s", seq: 9, instanceId: "old" });
   const p = r.transport.request({ type: "session.attach", sessionId: "s" });
+  await flush(); // 发送走保序链（微任务），回执注入前先冲刷。
   ws.message({ type: "response", id: ws.sent.at(-1).id, ok: true, data: { sessionId: "s", seq: 9, instanceId: "old" } });
   ws.message({ type: "agent.delta", sessionId: "s", seq: 10, priority: 1 });
   ws.message({ type: "agent.end", sessionId: "s", seq: 11, priority: 0 });
