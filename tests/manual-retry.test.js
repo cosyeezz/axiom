@@ -99,7 +99,7 @@ test("session.retry is a strict protocol command dispatched to sessions.retry", 
 async function page() {
   const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
   const source = await publicSource("markdown-scan", "memory-tags", "goal-markers", "question", "service-settings", "app");
-  const picker = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+  const picker = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "");
   const dom = new JSDOM(html, { url: "http://localhost", runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window;
   w.matchMedia = () => ({ matches: false });
@@ -154,14 +154,15 @@ test("retry prompt sits at the end of the stream only when an interrupted main t
 
     // 取消提问使用同一受保护的恢复命令，但文案和服务端行为区别于普通重试。
     emit("session.state", { status: "idle", canReask: true });
-    assert.equal(prompt(output).querySelector("button").textContent, "↻ 重新提问");
+    assert.equal(prompt(output).querySelector("button").textContent.trim(), "重新提问");
+    assert.equal(prompt(output).querySelector("button svg").dataset.icon, "retry");
     assert.match(prompt(output).textContent, /提问已取消/);
     restore({ canReask: true });
-    assert.equal(prompt(output).querySelector("button").textContent, "↻ 重新提问", "刷新恢复入口");
+    assert.equal(prompt(output).querySelector("button").textContent.trim(), "重新提问", "刷新恢复入口");
     prompt(output).querySelector("button").click();
     assert.equal(sent.at(-1).type, "session.retry");
     restore({ messages: [{ message: message("assistant", "aborted"), agentId: "main" }] });
-    assert.equal(prompt(output).querySelector("button").textContent, "↻ 重试", "普通中断不冒用重新提问");
+    assert.equal(prompt(output).querySelector("button").textContent.trim(), "重试", "普通中断不冒用重新提问");
 
     // 服务端转 running → 卡片收走；再正常收尾 → 不回来。
     emit("session.state", { status: "running", runId: "r2" });

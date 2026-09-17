@@ -46,6 +46,19 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 }
+/* Shared action glyphs keep their own geometry, including inside legacy control rules. */
+svg.action-icon {
+  width: 16px; height: 16px; flex: 0 0 auto; vertical-align: -3px;
+  fill: none; stroke: currentColor; stroke-width: 1.75;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+svg.action-icon[data-icon="more"] { stroke-width: 3; }
+.ax-mp-star[aria-checked="true"] svg.action-icon { fill: currentColor; }
+.mm-caret svg.action-icon { width: 12px; height: 12px; }
+.retry-chip svg.action-icon, .context-chip svg.action-icon[data-icon="close"] { width: 12px; height: 12px; }
+.session-more svg.action-icon { vertical-align: middle; }
+.session-pin-icon svg.action-icon { width: 16px; height: 16px; }
+.context-chevron svg.action-icon, .session-copy-arrow svg.action-icon { width: 12px; height: 12px; }
 * {
   box-sizing: border-box;
   scrollbar-width: thin;

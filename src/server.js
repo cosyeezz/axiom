@@ -33,6 +33,7 @@ const assets = new Map(
     ["/style.css", "public/style.css", "text/css"],
     ["/theme.js", "public/theme.js"],
     ["/app.js", "public/app.js"],
+    ["/icons.js", "public/icons.js"],
     ["/session-cache.js", "public/session-cache.js"],
     ["/session-details.js", "public/session-details.js"],
     ["/transport.js", "public/transport.js"],

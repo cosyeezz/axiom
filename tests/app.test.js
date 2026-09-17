@@ -7,7 +7,7 @@ import createPurify from "dompurify";
 import { createStreamRenderer } from "../public/stream-renderer.js";
 import { publicSource } from "./helpers/public-source.js";
 
-const pickerSource = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+const pickerSource = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "");
 const modelSources = await Promise.all(["model-picker", "model-auth", "model-manager"].map(async (name) => {
   const source = await readFile(new URL(`../public/${name}.js`, import.meta.url), "utf8");
   const exports = [...source.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
@@ -469,7 +469,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("sessions").querySelector('[data-group="active"]').open = true;
     window.eval("renderSessions()");
     assert.equal($("sessions").querySelector('[data-group="active"]').open, true);
-    assert.equal(firstActions.children[1].querySelector("path").getAttribute("d"), "M5 12l4 4L19 6");
+    assert.equal(firstActions.children[1].querySelector("svg").dataset.icon, "check");
     const beforeHide = requests.length;
     const row = (id) => $("sessions").querySelector(`[data-session-id="${id}"]`);
     row("a").querySelector(".session-hide").click();
@@ -539,8 +539,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("composer-skill").disabled, false);
     assert.equal($("composer-skill").options[1].title, "代码导航");
     assert.equal($("composer-skill").hidden, true);
-    assert.equal($("stop").textContent.trim(), "Stop ■");
-    assert.equal($("stop").querySelector('span[aria-hidden="true"]').textContent, "■");
+    assert.equal($("stop").textContent.trim(), "Stop");
+    assert.equal($("stop").querySelector('svg[aria-hidden="true"]').dataset.icon, "stop");
     assert.equal(await window.sidebarCheck(), "C:\\axiom\\b.jsonl", "file-only changes refresh cached copy targets");
     window.sidebarConnected(false);
     assert.equal(row("b").querySelector(".session-copy").disabled, false);
@@ -797,7 +797,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("subagent-model").value, "");
     assert.equal($("subagent-model").disabled, true);
     assert.equal($("composer").contains($("subagent-model")), false);
-    assert.equal($("new").textContent.trim(), "＋ 新会话");
+    assert.equal($("new").textContent.trim(), "新会话");
+    assert.equal($("new").querySelector("svg").dataset.icon, "plus");
     const mainThinking = $("thinking").value;
     $("agent-role").value = "subagent";
     $("agent-role").dispatchEvent(new window.Event("change"));

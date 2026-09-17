@@ -136,6 +136,7 @@ const MODULE_INFO = {
   "tests/project-skills.test.js": "项目技能来源、工作空间默认隔离、旧配置迁移与目录链接加载回归",
   "tests/session-flow.test.js": "会话落盘/恢复/删除、历史索引与队列/模型切换回归",
   "tests/": "node --test 测试（npm test）",
+  "public/icons.js": "全页面动作 SVG 图标：固定几何路径字典、静态控件与模板水合",
 };
 
 const SCAN_DIRS = ["src", "public", "tests", "scripts"];

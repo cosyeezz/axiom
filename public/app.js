@@ -1,3 +1,5 @@
+import { actionIcon, initActionIcons } from "./icons.js";
+initActionIcons(document);
 import { initInspector, renderTools, renderBill, money } from "./session-details.js";
 import { createTransport } from "./transport.js";
 import { createSessionCache } from "./session-cache.js";
@@ -1240,13 +1242,7 @@ function disclosureHint(label = "详情") {
     span.className = className;
     span.textContent = text;
     if (className === "when-open") {
-      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      icon.setAttribute("viewBox", "0 0 24 24");
-      icon.setAttribute("aria-hidden", "true");
-      const path = document.createElementNS(icon.namespaceURI, "path");
-      path.setAttribute("d", "M5 4h14M6 14l6-6 6 6M12 8v12");
-      icon.append(path);
-      span.prepend(icon);
+      span.insertAdjacentHTML("afterbegin", actionIcon("collapse"));
     }
     hint.append(span);
   }
@@ -1909,7 +1905,7 @@ function retryChipList(labelText, initial) {
       text.textContent = value;
       const remove = document.createElement("button");
       remove.type = "button";
-      remove.textContent = "×";
+      remove.innerHTML = actionIcon("close");
       remove.setAttribute("aria-label", `删除 ${value}`);
       remove.onclick = () => { state.splice(index, 1); render(); input.focus(); notify(); };
       chip.append(text, remove);
@@ -2027,7 +2023,7 @@ function syncRetryPrompt() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "secondary";
-    button.textContent = "↻ 重试";
+    button.innerHTML = `${actionIcon("retry")} 重试`;
     button.title = "接着上次中断的地方继续，不重发你的输入";
     button.onclick = async () => {
       button.disabled = true;
@@ -2040,7 +2036,7 @@ function syncRetryPrompt() {
     retryPrompt.hint = hint;
   }
   retryPrompt.hint.textContent = canReask ? "提问已取消，可以重新打开原问题。" : "上一次请求未正常结束。";
-  retryPrompt.button.textContent = canReask ? "↻ 重新提问" : "↻ 重试";
+  retryPrompt.button.innerHTML = `${actionIcon("retry")} ${canReask ? "重新提问" : "重试"}`;
   retryPrompt.button.title = canReask ? "直接重新调用提问工具，回答后继续原任务" : "接着上次中断的地方继续，不重发你的输入";
   retryPrompt.button.disabled = false;
   if ($("output").lastElementChild === retryPrompt) return;
@@ -2323,7 +2319,7 @@ function applyEvent(message) {
       const retryButton = document.createElement("button");
       retryButton.type = "button";
       retryButton.className = "secondary";
-      retryButton.textContent = "↻ 重试";
+      retryButton.innerHTML = `${actionIcon("retry")} 重试`;
       retryButton.title = "接着上次中断的地方继续，不重新委派任务";
       retryButton.hidden = true;
       task.retryButton = retryButton;
@@ -3134,7 +3130,7 @@ function renderImages() {
     enableImagePreview(preview);
     const remove = document.createElement("button");
     remove.type = "button";
-    remove.textContent = "×";
+    remove.innerHTML = actionIcon("close");
     remove.setAttribute("aria-label", `移除图片 ${index + 1}`);
     remove.disabled = imageLoading;
     remove.onclick = () => {
@@ -3601,7 +3597,7 @@ function renderSessions() {
       const pin = document.createElement("small");
       pin.className = "session-pin-icon";
       pin.setAttribute("aria-label", "已置顶");
-      pin.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4v4l-6-6h4l4-4 1-4Z"/><path d="m3 21 7-7"/></svg>';
+      pin.innerHTML = actionIcon("pin");
       button.append(pin);
     }
     button.onclick = () =>
@@ -3613,7 +3609,7 @@ function renderSessions() {
     menu.className = "session-options";
     const more = document.createElement("summary");
     more.className = "session-more";
-    more.textContent = "⋯";
+    more.innerHTML = actionIcon("more");
     more.title = `会话操作：${s.title}`;
     more.setAttribute("aria-label", more.title);
     menu.append(more);
@@ -3632,13 +3628,13 @@ function renderSessions() {
     actions.className = "session-actions";
     actions.setAttribute("popover", "manual");
     actions.setAttribute("aria-label", `会话操作：${s.title}`);
-    for (const [kind, label, path] of [
-      ["pin", pinned(s) ? "取消置顶" : "置顶", 'M16 12V4h1V2H7v2h1v8l-2 2v2h5v6h2v-6h5v-2l-2-2z'],
-      ["hide", hidden ? "移回进行中" : "标记已完成", hidden ? 'M12 20V4M5 11l7-7 7 7' : 'M5 12l4 4L19 6'],
-      ["duplicate", "复制会话", 'M9 9h11v12H9ZM15 9V3H4v12h5M14.5 14v3M13 15.5h3'],
-      ["copy", "复制文件", 'M9 9h11v12H9ZM15 9V3H4v12h5'],
-      ["rename", "重命名", 'M16 3l5 5L8 21H3v-5L16 3zM13 6l5 5M3 16l5 5'],
-      ["delete", "删除会话", 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7'],
+    for (const [kind, label, iconName] of [
+      ["pin", pinned(s) ? "取消置顶" : "置顶", "pin"],
+      ["hide", hidden ? "移回进行中" : "标记已完成", hidden ? "up" : "check"],
+      ["duplicate", "复制会话", "duplicate"],
+      ["copy", "复制文件", "copy"],
+      ["rename", "重命名", "edit"],
+      ["delete", "删除会话", "trash"],
     ]) {
       const action = document.createElement("button");
       action.type = "button";
@@ -3649,7 +3645,7 @@ function renderSessions() {
       // 复制文件与置顶是纯前端偏好，不依赖连接，断连时也保持可用；复制会话另按 duplicateBlocked 判定。
       if (kind === "duplicate") action.disabled = duplicateBlocked(s);
       else action.disabled = !["hide", "copy", "pin"].includes(kind) && (!connected || changing);
-      action.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
+      action.innerHTML = actionIcon(iconName);
       action.append(document.createTextNode(label));
       if (kind === "copy") {
         const submenu = document.createElement("div");
@@ -3658,7 +3654,7 @@ function renderSessions() {
         submenu.setAttribute("aria-label", "复制会话文件信息");
         submenu.hidden = true;
         action.setAttribute("aria-expanded", "false");
-        action.innerHTML += '<span class="session-copy-arrow" aria-hidden="true">›</span>';
+        action.innerHTML += `<span class="session-copy-arrow" aria-hidden="true">${actionIcon("chevron")}</span>`;
         for (const [part, text] of [["directory", "复制所在目录"], ["name", "复制文件名"], ["path", "复制完整路径"]]) {
           const item = document.createElement("button");
           item.type = "button";
@@ -3718,7 +3714,7 @@ function renderSessions() {
     const chevron = document.createElement("span");
     chevron.className = "workspace-chevron";
     chevron.setAttribute("aria-hidden", "true");
-    chevron.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+    chevron.innerHTML = actionIcon("chevron");
     headerTop.append(chevron);
     const nameSpan = document.createElement("span");
     nameSpan.className = "workspace-name";
@@ -3746,7 +3742,7 @@ function renderSessions() {
     newBtn.className = "workspace-new-btn icon-button";
     newBtn.title = `在「${displayName}」新建会话`;
     newBtn.setAttribute("aria-label", newBtn.title);
-    newBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+    newBtn.innerHTML = actionIcon("plus");
     newBtn.onclick = (e) => {
       e.stopPropagation();
       if (!connected || changing) return;
@@ -3912,7 +3908,7 @@ function renderContextChips() {
     chip.title = `移除${entry.kind === "skill" ? "待加载 Skill" : "引用"}：${entry.name}`;
     chip.setAttribute("aria-label", chip.title);
     const label = document.createElement("span"); label.textContent = entry.name;
-    const close = document.createElement("span"); close.textContent = "×"; close.setAttribute("aria-hidden", "true");
+    const close = document.createElement("span"); close.innerHTML = actionIcon("close"); close.setAttribute("aria-hidden", "true");
     chip.append(entry.kind === "skill" ? contextIcon("skill") : fileIcon({ ...entry, name: entry.path.split(/[\\/]/).pop() }), label, close);
     chip.onclick = () => {
       if (entry.kind === "skill") { $("composer-skill").value = ""; $("composer-skill").onchange(); }

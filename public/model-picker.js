@@ -1,3 +1,4 @@
+import { actionIconNode } from "./icons.js";
 // public/model-picker.js — 原生 select 收藏增强（无依赖，主入口接线）。
 // 用法：
 //   import { createModelPicker } from "./model-picker.js";
@@ -238,7 +239,7 @@ export function createModelPicker({ getFavorites, onToggle, onError, favKey } = 
       type: "button", class: "ax-mp-star", role: "menuitemcheckbox", tabindex: "-1",
       "aria-checked": String(row.starred), "aria-label": `${row.starred ? "取消收藏" : "收藏"}：${row.text}`,
       "data-value": row.value,
-    }, row.starred ? "★" : "☆");
+    }, actionIconNode("star"));
     star.addEventListener("click", () => toggle(state, row.value));
     return el("div", { role: "none", class: "ax-mp-entry" }, pick, star); // role=none 包装：menu 合法子结构，星与选项平级不嵌套
   }
