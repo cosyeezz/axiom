@@ -3483,7 +3483,7 @@ function renderSessions() {
       const pin = document.createElement("small");
       pin.className = "session-pin-icon";
       pin.setAttribute("aria-label", "已置顶");
-      pin.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5v6h2v-6h5v-2l-2-2z"/></svg>';
+      pin.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4v4l-6-6h4l4-4 1-4Z"/><path d="m3 21 7-7"/></svg>';
       button.append(pin);
     }
     button.onclick = () =>
