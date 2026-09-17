@@ -5,7 +5,8 @@ import { realpath, stat, readFile, mkdir, writeFile, copyFile, rm, readdir } fro
 import { homedir } from "node:os";
 import { Database } from "./database.js";
 import { SessionStore } from "./session-store.js";
-import { readSessionHistory } from "./session-history.js";
+import { readSessionHistory, readSessionManager } from "./session-history.js";
+import { sessionBilling, usageRuntime } from "./session-billing.js";
 import { Goal, createGoalStore } from "./goal.js";
 import { basename, dirname, join, relative, isAbsolute, resolve, sep, parse } from "node:path";
 
@@ -1533,8 +1534,18 @@ export class Sessions {
       const saved = this.store.getSession(id);
       let messages = [];
       const tasks = structuredClone(saved.tasks ?? []);
-      if (saved.sessionFile)
-        messages.push(...readSessionHistory(saved.sessionFile, saved.cwd).map(entry => ({ agentId: "main", entryId: entry.id, message: entry.message })));
+      const manager = saved.sessionFile ? readSessionManager(saved.sessionFile, saved.cwd) : null;
+      const branch = manager?.getBranch() ?? [];
+      messages.push(...branch.filter(entry => entry.type === "message").map(entry => ({ agentId: "main", entryId: entry.id, message: entry.message })));
+      const selection = saved.selection ?? {};
+      const model = (this.createAgent?.modelCatalog?.() ?? this.createAgent?.catalog?.() ?? []).find(model => model.key === selection.model) ?? {};
+      const restoredRuntime = {
+        model: selection.model, thinking: selection.thinking,
+        ...usageRuntime(manager?.buildSessionContext().messages ?? [], model),
+        // 压缩后的实际上下文可能还没有 assistant，但最近请求用量仍可从分支恢复。
+        usage: branch.findLast(entry => entry.type === "message" && entry.message?.role === "assistant" && entry.message.usage)?.message.usage ?? null,
+        billing: sessionBilling(manager?.getEntries() ?? []),
+      };
       for (const task of tasks) {
         if (!task.sessionFile) continue;
         try {
@@ -1549,7 +1560,7 @@ export class Sessions {
         load: () => structuredClone(this.goalStore.load(id)), save: () => {},
       } });
       const base = { sessionId: id, cwd: item.cwd, title: item.title, seq: item.seq ?? 0,
-        status: "idle", safeStop: false, config: saved.selection ?? {}, messages: page ? page.records.map(toPageRecord) : messages,
+        status: "idle", safeStop: false, runtime: restoredRuntime, config: saved.selection ?? {}, messages: page ? page.records.map(toPageRecord) : messages,
         compactions: saved.compactions ?? [], retries: saved.retries ?? [], live: {}, tools: {},
         questions: [], tasks, goal: goal.snapshot(), canReask: false, compactionStatus: null };
       if (page) {

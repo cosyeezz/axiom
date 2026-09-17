@@ -1,3 +1,4 @@
+import { initInspector, renderTools, renderBill, money } from "./session-details.js";
 import { createTransport } from "./transport.js";
 import { createSessionCache } from "./session-cache.js";
 import { copyText } from "./clipboard.js";
@@ -17,6 +18,7 @@ const questionUI = createQuestionUI({ root: document.getElementById("question-do
 
 const filePicker = createFilePicker(request);
 const $ = (id) => document.getElementById(id);
+initInspector($("session-inspector"));
 let sessionId,
   models = [],
   config,
@@ -690,20 +692,19 @@ function runtimeSummary(value = {}) {
   const input = (usage?.input ?? 0) + (usage?.cacheRead ?? 0) + (usage?.cacheWrite ?? 0);
   const count = (n) => Number.isFinite(n) ? n.toLocaleString("en-US") : "—";
   const cache = input > 0 && Number.isFinite(usage?.cacheRead)
-    ? `${(usage.cacheRead / input * 100).toFixed(1)}% (${count(usage.cacheRead)} tokens)` : "暂无数据";
+    ? `${(usage.cacheRead / input * 100).toFixed(1)}% (${count(usage.cacheRead)} tokens)` : usage ? "供应商未报告缓存用量" : "尚无已报告用量的请求";
   const contextText = context?.contextWindow > 0
     ? `${count(context.tokens)} / ${count(context.contextWindow)} tokens${Number.isFinite(context.percent) ? ` · ${context.percent.toFixed(1)}%` : " · 待更新"}`
-    : "暂无数据";
+    : Number.isFinite(context?.tokens) ? `${count(context.tokens)} tokens · 窗口未配置` : "等待首条消息";
   const split = model?.indexOf("/") ?? -1;
   const identity = split >= 0 ? `${model.slice(0, split)} · ${model.slice(split + 1)}` : model || "模型待加载";
-  return [`缓存命中 ${cache}`, `上下文 ${contextText}`, `${identity} · ${thinking || "未知"}`];
+  return [`缓存命中 ${cache}`, `上下文 ${contextText}${context?.estimated ? " · 估算" : ""}`, `${identity} · ${thinking || "未知"}${value.billing?.records ? ` · 会话 ${money(value.billing.cost.total)}${value.billing.unpriced ? "（部分未计价）" : ""}` : ""}`];
 }
 function renderRuntime(node, value) {
   if (node.id === "session-runtime") {
     $("session-system-prompt").textContent = value?.systemPrompt ?? "系统提示词尚未加载；会话启动后可查看。";
-    $("session-active-tools").textContent = Array.isArray(value?.tools)
-      ? value.tools.length ? JSON.stringify(value.tools, null, 2) : "当前没有激活工具。"
-      : "工具信息尚未加载。";
+    renderTools($("session-active-tools"), value?.tools);
+    renderBill($("session-bill-body"), value?.billing);
     const { usage, context } = value || {};
     const input = (usage?.input ?? 0) + (usage?.cacheRead ?? 0) + (usage?.cacheWrite ?? 0);
     const cache = input > 0 && Number.isFinite(usage?.cacheRead) ? `${(usage.cacheRead / input * 100).toFixed(1)}%` : "—";
