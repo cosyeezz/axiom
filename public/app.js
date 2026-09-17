@@ -88,6 +88,13 @@ for (const id of ["provider", "model", "thinking", "subagent-provider", "subagen
 const modelManager = initModelManager({ root: $("models-panel"), request, onSaved: refreshModelCatalog });
 const serviceUi = initServiceSettings({ request, isReady: () => connected });
 let compactions = [], mainItems = [];
+// —— 有界 DOM（Phase D1）——
+// 前插（上滚读旧历史）是唯一的累积方向：after 取页走整页替换天然有界。挂载窗口超限时裁
+// 掉阅读端远端（最新端）的非流式节点；live 流式卡不在 rawEntries，不会被裁。
+// 回载闭环：被裁第一条记为 trimmedForwardBoundary，贴底预取/下翻改走 target 定位整页
+// 重挂（同 revision 下 D2 页缓存命中，重建成本低）；直接点「回到最新」走 attach last。
+const HISTORY_DOM_LIMIT = 300;
+let trimmedForwardBoundary = null;
 // 消息锚点：键既可以是 state.messages 的下标，也可以是 entryId（startMessage/endMessage 两种语义都可用）。
 let goalAnchors = new Map(), goalAnchorCount = 0;
 function anchorGoal(key, item, entryId) {
@@ -302,7 +309,9 @@ transcript.onscroll = () => {
   prefetchForward();
 };
 $("history-before").onclick = () => void loadHistory({ before: historyState.history.prevCursor });
-$("history-after").onclick = () => historyDirty ? void latestHistory() : void loadHistory({ after: historyState.history.nextCursor });
+$("history-after").onclick = () => historyDirty ? void latestHistory() : trimmedForwardBoundary ?
+  (() => { const target = trimmedForwardBoundary; trimmedForwardBoundary = null; void loadHistory({ target }); })()
+  : void loadHistory({ after: historyState.history.nextCursor });
 $("history-newest").onclick = () => void latestHistory();
 $("earliest").onclick = () => {
   if (historyState?.history?.prevCursor) { void loadHistory({ edge: "first" }); return; }
@@ -2410,10 +2419,53 @@ function prefetchHistory() {
 }
 // 对称的前向预取：从旧页向新页连续阅读时，近底部自动取下一页（整页替换、从页顶开始）。
 // historyDirty 时 nextCursor 可能是假游标 "pending"（等回最新对账）：预取必须让位，只允许显式按钮路径。
+function trimMountedWindow() {
+  // 只在前插累积超窗时触发；整页替换（mountHistory/beginSnapshot）天然有界，不进入这里。
+  const history = historyState?.history;
+  if (!history || rawEntries.length <= HISTORY_DOM_LIMIT) return;
+  // 从最新端（尾部）收集溢出条目：遇压缩共享节点即停（共享 node 的部分裁剪会破坏折叠卡），
+  // 宁可少裁不破坏一致性。流式 live 与乐观卡不在 rawEntries，天然安全。
+  const shared = new Set(compactionNodes.values());
+  let cut = 0;
+  while (rawEntries.length - cut > HISTORY_DOM_LIMIT) {
+    const entry = rawEntries[rawEntries.length - 1 - cut];
+    if (!entry?.item?.node || shared.has(entry.item.node)) break;
+    cut++;
+  }
+  if (cut <= 0) return;
+  const dropped = rawEntries.splice(rawEntries.length - cut, cut);
+  const droppedNodes = new Set();
+  for (const entry of dropped) {
+    const item = entry.item;
+    if (!item?.node) continue;
+    droppedNodes.add(item.node);
+    // 附属独立节点连带移除（processGroup/skillBlocks 在主节点之外）。
+    item.processGroup?.remove();
+    item.skillBlocks?.remove();
+    item.node.remove();
+  }
+  // 强引用反查清理：goal 锚 / 工具记录 / 重试卡（messageItems 是 WeakMap 无需处理）。
+  for (const [key, node] of [...goalAnchors]) if (droppedNodes.has(node)) goalAnchors.delete(key);
+  for (const [key, tool] of [...toolItems]) if (droppedNodes.has(tool.node)) toolItems.delete(key);
+  for (const [key, card] of [...retryCards]) if (droppedNodes.has(card.node)) retryCards.delete(key);
+  mainItems = mainItems.filter(({ item }) => !droppedNodes.has(item?.node));
+  historyState.messages = rawEntries;
+  // 窗口右端收缩：分页条反映真实挂载范围；被裁第一条作为回载定位（服务端游标必须由
+  // 服务端签发，前端不能伪造，故 target 定位而不是拼 after 游标）。
+  history.end = history.start + rawEntries.length;
+  trimmedForwardBoundary = dropped[0].messageId || dropped[0].entryId;
+  goalUI.anchors(goalAnchors);
+}
 function prefetchForward() {
   if (!connected || changing || historyLoading || historyDirty || document.hidden || !historyState?.history?.nextCursor) return;
-  if (transcript.clientHeight > 0 && transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 160)
-    void loadHistory({ after: historyState.history.nextCursor });
+  if (transcript.clientHeight > 0 && transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 160) {
+    if (trimmedForwardBoundary) {
+      // 裁剪后贴底：从被裁第一条整页重挂，避免 after 游标跳过被裁区间造成页隙。
+      const target = trimmedForwardBoundary;
+      trimmedForwardBoundary = null;
+      void loadHistory({ target });
+    } else void loadHistory({ after: historyState.history.nextCursor });
+  }
 }
 function prependHistory(state) {
   const output = $("output");
@@ -2456,8 +2508,10 @@ function prependHistory(state) {
   mergeThoughts(output);
   for (const task of tasks.values()) mergeThoughts(task.output);
   placeCompactedTasks();
+  trimMountedWindow();
   rawChanged();
   goalUI.anchors(goalAnchors);
+  paintHistoryControls(); // 前插/裁剪后分页条立即反映真实窗口范围。
   if (anchor?.isConnected) transcript.scrollTop += anchor.getBoundingClientRect().top - top;
   lastScrollTops.set(transcript, transcript.scrollTop);
 }
@@ -2507,14 +2561,14 @@ function paintHistoryControls() {
   if (!bar) return;
   // 分页条常驻旧页与加载/有新消息状态：前向翻页必须可达（曾因无条件隐藏而「回不到后续消息」）。
   // 最新页不占空间：向上滚有预取、「回到最早/最新」各自常驻滚动按钮。
-  bar.hidden = !page || (!historyLoading && !historyDirty && !page.nextCursor);
+  bar.hidden = !page || (!historyLoading && !historyDirty && !page.nextCursor && !trimmedForwardBoundary);
   $("history-before").hidden = false;
   $("history-after").hidden = false;
-  $("history-newest").hidden = !historyDirty && !page?.nextCursor;
+  $("history-newest").hidden = !historyDirty && !page?.nextCursor && !trimmedForwardBoundary;
   $("history-before").disabled = historyLoading || !page?.prevCursor;
-  $("history-after").disabled = historyLoading || (!page?.nextCursor && !historyDirty);
+  $("history-after").disabled = historyLoading || (!page?.nextCursor && !trimmedForwardBoundary && !historyDirty);
   $("history-position").textContent = page
-    ? (historyLoading ? "正在加载历史…" : historyDirty ? "有新消息 · 回到最新查看" : page.nextCursor ? `${page.start + 1}–${page.end} / 共 ${page.total} 条` : "")
+    ? (historyLoading ? "正在加载历史…" : historyDirty ? "有新消息 · 回到最新查看" : page.nextCursor || trimmedForwardBoundary ? `${page.start + 1}–${page.end} / 共 ${page.total} 条` : "")
     : "";
 }
 async function loadHistory(options = {}, reading) {
@@ -2602,6 +2656,8 @@ function receiveHistoryEvent(message) {
   if (type === "agent.message.end") {
     historyState.messages = rawEntries;
     historyState.history.total++;
+    // 窗口右端始终等于挂载范围（实时追加与裁剪共用同一条公式，分页条不漂移）。
+    historyState.history.end = historyState.history.start + rawEntries.length;
     paintHistoryControls();
   }
 }
@@ -2619,6 +2675,7 @@ function beginSnapshot(state, target) {
   pendingUser = null;
   // 原文对照与当前页共用消息，不维护另一份历史副本。
   rawEntries = state.messages;
+  trimmedForwardBoundary = null; // 新页整挂：裁剪定位作废（新页 meta 自带完整游标）。
   // View handles belong only to this mounted page; message objects remain authoritative.
   for (const entry of rawEntries) { delete entry.item; delete entry.node; }
   rawLive.clear();
