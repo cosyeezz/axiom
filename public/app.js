@@ -430,6 +430,34 @@ function selectRaw(entry, source = false) {
   }
   target?.scrollIntoView?.({ block: "center" });
 }
+// 任务通知有两代形态：新 custom 通道（role:"custom" + customType）与旧 user+前缀（历史会话兼容）。
+// 统一识别后以独立通知条渲染，与用户消息区分，不再隐藏。
+const TASK_NOTIFICATION_TYPE = "task-notification";
+const TASK_NOTIFICATION_PREFIX = "[Axiom 子任务完成通知]";
+const isTaskNotification = (message) => {
+  if (message?.role === "custom") return message?.customType === TASK_NOTIFICATION_TYPE;
+  if (message?.role !== "user") return false;
+  // 旧会话的通知是 user 消息，content 可为字符串或块数组（与旧隐藏逻辑同判据）。
+  const text = typeof message.content === "string" ? message.content
+    : (message.content || []).filter((block) => block?.type === "text").map((block) => block.text).join("\n");
+  return text.startsWith(TASK_NOTIFICATION_PREFIX);
+};
+// 通知条不进对话卡片体系：无用户气泡、无思考/工具区；返回 { node } 与 bindRaw 兼容（对照原文按钮可挂）。
+function taskNotificationCard(message, agentId) {
+  const blocks = typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content || [];
+  const text = blocks.filter((b) => b?.type === "text").map((b) => b.text).join("\n");
+  const node = document.createElement("article");
+  node.className = "task-notification";
+  const head = document.createElement("h3");
+  head.textContent = agentId === "main" ? "任务通知" : "任务通知 · 子代理";
+  const body = document.createElement("pre");
+  body.textContent = text;
+  node.append(head, body);
+  $("output").querySelector(".empty")?.remove();
+  (tasks.get(agentId)?.output || $("output")).append(node);
+  scrollLatest();
+  return { node };
+}
 function bindRaw(item, entry) {
   if (!entry) return;
   entry.item = item;
@@ -479,7 +507,7 @@ function paintRaw() {
       $("raw-io-list").append(entry.node);
     }
     const { message, agentId } = entry;
-    entry.label.textContent = `${String(index + 1).padStart(2, "0")} · ${message.role === "user" ? "你的输入" : message.role === "toolResult" ? "工具结果" : "模型输出"}${agentId !== "main" ? " · 子代理" : ""}${rawLive.get(agentId) === entry ? " · 正在生成" : ""}`;
+    entry.label.textContent = `${String(index + 1).padStart(2, "0")} · ${isTaskNotification(message) ? "内部任务通知" : message.role === "user" ? "你的输入" : message.role === "toolResult" ? "工具结果" : message.role === "custom" ? "自定义消息" : "模型输出"}${agentId !== "main" ? " · 子代理" : ""}${rawLive.get(agentId) === entry ? " · 正在生成" : ""}`;
     const blocks = typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content || [];
     const text = blocks.filter(b => b?.type === "text").map(b => b.text).join("\n");
     if (entry.body.textContent !== text) entry.body.textContent = text;
@@ -488,7 +516,6 @@ function paintRaw() {
     const extra = blocks.filter(b => b && b.type !== "text").map(b => b.type === "thinking" ? `思考\n${b.thinking || ""}` : b.type === "image" ? `图片附件 · ${b.mimeType || "image"}（不展开 base64）` : JSON.stringify(b, null, 2)).join("\n\n");
     entry.extra.hidden = !extra && !!text;
     entry.extraText.textContent = extra || "本条消息尚无文本输出。";
-    if (message.role === "user" && text.startsWith("[Axiom 子任务完成通知]")) entry.label.textContent = `${String(index + 1).padStart(2, "0")} · 内部任务通知`;
     entry.node.querySelector(".raw-locate").hidden = !entry.item || entry.item.node.hidden;
   }
   if (atBottom) list.scrollTop = list.scrollHeight;
@@ -1549,12 +1576,7 @@ function prepareStream(item) {
 function renderMessage(item, message) {
   const text = typeof message.content === "string" ? message.content
     : (message.content || []).filter((block) => block?.type === "text").map((block) => block.text).join("\n");
-  // 内部唤醒消息保留在模型上下文，仅从会话展示隐藏（含历史记录）。
-  if (message.role === "user" && text.startsWith("[Axiom 子任务完成通知]")) {
-    item.node.hidden = true;
-    return;
-  }
-  // 最终态优先：挂起的流式绘制不得再用旧 pending 覆盖已落定的内容。
+  // 任务通知不进入本函数：实时与历史路径均在 card 之前改道为独立通知条（taskNotificationCard）。
   item.pending = false;
   // 消息已落定，停用摘要让位给最终内容/自身的 stopReason。
   item.stopped = undefined;
@@ -2146,7 +2168,13 @@ function applyEvent(message) {
     $("session-title").textContent = data.title || "新会话";
     updatePageTitle();
   }
-  if (type === "agent.message.end" && data.message.role === "user") {
+  if (type === "agent.message.end" && isTaskNotification(data.message)) {
+    // 任务通知（custom 新形态或 user+前缀旧形态）：独立通知条渲染，与用户消息区分；
+    // 槽位计数在上方 main 通用分支已统一进行，通知不 anchorGoal、不进 mainItems，保持下标同构。
+    clearWaiting(agentId);
+    bindRaw(taskNotificationCard(data.message, agentId), endedRaw);
+  }
+  if (type === "agent.message.end" && data.message.role === "user" && !isTaskNotification(data.message)) {
     clearWaiting(agentId);
     const item = card("你", tasks.get(agentId));
     bindRaw(item, endedRaw);
@@ -2615,6 +2643,11 @@ function placeSnapshotMessage(ctx, index, { agentId, message, entryId }) {
   if (message.role === "toolResult") {
     toolState(agentId, { ...message, phase: "end" });
     if (agentId === "main") placeCompactedTasks();
+  }
+  if (isTaskNotification(message)) {
+    // 任务通知（新旧形态统一）：独立通知条，不进对话卡片、不占 goal 锚位，仅保持下标同构。
+    bindRaw(taskNotificationCard(message, agentId), rawEntries[index]);
+    return;
   }
   if (["assistant", "user"].includes(message.role)) {
     if (agentId === "main" && entryId && ctx.folded.has(entryId)) {

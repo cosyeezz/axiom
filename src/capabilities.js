@@ -21,6 +21,12 @@ for (const name of ["pi-coding-agent", "pi-agent-core", "pi-tui", "pi-ai"])
     alias[`${scope}/${name}`] = fileURLToPath(resolver.esmResolve(`@earendil-works/${name}${name === "pi-ai" ? "/compat" : ""}`));
 const jiti = createJiti(import.meta.url, { alias });
 
+// 主代理不装配的导航类技能：探索/导航一律交给子代理（MAIN_AGENT_PROMPT 的 Delegation 段）。
+// 主代理的 loader 不装载它们，系统提示里就没有可用技能入口，模型无法借技能亲自调研；
+// 子代理（无 customTools）装配全部选中技能。选择集本身不变：子代理 inherit 主代理选择集
+// 时仍含这些技能，能力配置的持久化与恢复语义不受影响。
+export const MAIN_EXCLUDED_SKILLS = ["codebase-map"];
+
 export function snapshotSettings(cwd, agentDir, projectTrusted) {
   const disk = SettingsManager.create(cwd, agentDir, { projectTrusted });
   const errors = disk.drainErrors();
@@ -98,9 +104,10 @@ export function resolveCapabilities(selection, catalog, { allowUnavailable = fal
   return result;
 }
 
-export function refreshProjectSkills(loader, selected, catalog, all = false) {
-  // 项目技能可由 composer 手动调用，不受旧会话的全局技能快照限制。
-  const available = catalog.skills.filter((skill) => all || skill.scope === "project" || selected.skills.includes(skill.id));
+export function refreshProjectSkills(loader, selected, catalog, all = false, excludeNames = []) {
+  // 项目技能可由 composer 手动调用，不受旧会话的全局技能快照限制；excludeNames 为主代理排除的
+  // 导航技能：不随刷新注入 loader（选择集语义不变，见 MAIN_EXCLUDED_SKILLS）。
+  const available = catalog.skills.filter((skill) => (all || skill.scope === "project" || selected.skills.includes(skill.id)) && !excludeNames.includes(skill.name));
   selected.skills = [...new Set([...selected.skills, ...available.map((skill) => skill.id)])];
   loader.extendResources({
     skillPaths: available.map((skill) => ({ path: skill.id, metadata: { source: skill.scope, scope: skill.scope, origin: "top-level" } })),
@@ -111,6 +118,14 @@ export function refreshProjectSkills(loader, selected, catalog, all = false) {
 export function capabilityLoader(resources, selection, customTools, extraFactories = [], budgetPrompt = null) {
   const { catalog, settingsManager, paths, adapter, mcpConfig, createMcpAdapter, cwd, agentDir } = resources;
   const selected = resolveCapabilities(selection, catalog);
+  // 主代理（customTools 非空）不装配导航类技能：仅 loader 装配集剔除，选择集保持原样，
+  // 子代理 inherit 与能力持久化不受影响。子代理（customTools 为空）装配全部。
+  // skillsOverride 闭包必须实时计算：refreshProjectSkills 会扩充 selected.skills，
+  // 快照会把运行中新选入的技能一并滤掉；排除集合（按技能名）在 catalog 快照内固定。
+  const excludedSkillIds = new Set(catalog.skills.filter((skill) => MAIN_EXCLUDED_SKILLS.includes(skill.name)).map((skill) => skill.id));
+  const loaderSkills = () => (customTools.length
+    ? selected.skills.filter((id) => !excludedSkillIds.has(id))
+    : selected.skills);
   const factories = [...extraFactories, { name: "axiom-inline-images", factory: inlineImagesExtension }];
   if (adapter && (selection == null || selected.mcp.length)) {
     factories.push({ name: "axiom-mcp", factory: createMcpAdapter({ config: {
@@ -127,12 +142,12 @@ export function capabilityLoader(resources, selection, customTools, extraFactori
       cwd, agentDir, settingsManager,
       noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true,
       additionalExtensionPaths: selected.plugins,
-      additionalSkillPaths: selected.skills,
+      additionalSkillPaths: loaderSkills(),
       additionalPromptTemplatePaths: paths.prompts.filter((r) => r.enabled).map((r) => r.path),
       additionalThemePaths: paths.themes.filter((r) => r.enabled).map((r) => r.path),
       extensionFactories: factories,
       // Preserve the custom allowlist even when an extension contributes more skills on startup.
-      skillsOverride: (current) => ({ ...current, skills: current.skills.filter((s) => selection == null || selected.skills.includes(s.filePath)) }),
+      skillsOverride: (current) => ({ ...current, skills: current.skills.filter((s) => selection == null || loaderSkills().includes(s.filePath)) }),
       appendSystemPromptOverride: (current) => [...current,
         // 子代理轮次预算的开工告知，原文固定，来自 task-budget；
         // 动态 [轮次预算] 收尾提示由代码按累计 turn 注入，不让模型计数。

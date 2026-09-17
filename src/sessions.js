@@ -1315,7 +1315,8 @@ export class Sessions {
   }
 
   scheduleTaskNotifications(item) {
-    // ponytail: 通知等当前主运行结束再唤醒，不打断工具；需要轮次内低延迟时再接 SDK 自定义消息。
+    // 通知双通道：running 时经 SDK custom message（task-notification）在轮次边界注入，不打断工具、
+    // 不等待运行结束；idle 时经 prompt 直接唤醒，走完整 startRun 状态机。见 deliverTaskNotifications。
     if (item.notificationScheduled || item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item)) return;
     item.notificationScheduled = true;
     setImmediate(() => {
@@ -1327,17 +1328,31 @@ export class Sessions {
   }
 
   async deliverTaskNotifications(item) {
-    if (item.notifying || item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item) || item.configuring || item.status !== "idle") return;
+    if (item.notifying || item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item) || item.configuring) return;
     const jobs = [...item.tasks.jobs.values()].filter((job) => job.resultId && !job.notified)
       .map(({ id, resultId, status }) => ({ id, resultId, status }));
     if (!jobs.length) return;
+    const text = "[Axiom 子任务完成通知] 以下任务已结束。使用各自的 taskId 和 resultId 调用 read_result 获取结果；不要轮询。\n" +
+      JSON.stringify(jobs.map((job) => ({ taskId: job.id, resultId: job.resultId, status: job.status })));
+    if (item.status !== "idle") {
+      // running：结果先落盘，再以 custom message 注入 steering 队列——SDK 在轮次边界（安全点）送达，
+      // 当前 run 自动延长至通知消化完，状态机无需变更。不置 notified：送达确认由 settleTaskNotifications
+      // 在 run 收尾按消息历史判定；被 clear_queue 误清或滞留队列时经本调度补投（文本幂等）。
+      item.notifying = true;
+      try {
+        await this.persist(item, {});
+        if (item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item) || item.configuring) return;
+        await item.agent.notifyTask(text);
+      } finally {
+        item.notifying = false;
+      }
+      return;
+    }
     item.notifying = true;
     try {
-      // 结果先落盘再触达；通知不放入可撤回的用户 steer/followUp 队列。
+      // 结果先落盘再触达；idle 通道直接唤醒，走完整 startRun 状态机。
       await this.persist(item, {});
       if (item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item) || item.configuring || item.status !== "idle") return;
-      const text = "[Axiom 子任务完成通知] 以下任务已结束。使用各自的 taskId 和 resultId 调用 read_result 获取结果；不要轮询。\n" +
-        JSON.stringify(jobs.map((job) => ({ taskId: job.id, resultId: job.resultId, status: job.status })));
       await this.prompt(item.id, text);
       await item.work;
       if (item.notificationsPaused || item.closing) return;
@@ -1352,6 +1367,30 @@ export class Sessions {
     }
     this.scheduleTaskNotifications(item);
     this.scheduleGoal(item);
+  }
+
+  // running 通道注入的通知送达确认：消息已进历史（被模型消费、已落盘）才置 notified。不在历史
+  // （被 clear_queue 误清或尚滞留队列）一律保持未通知，交 scheduleTaskNotifications 补投：通知文本
+  // 幂等，read_result 靠 resultId 校验，重复投递无害。只在 run 收尾（status 回到 idle 后）调用。
+  async settleTaskNotifications(item) {
+    if (item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item)) return;
+    const jobs = [...item.tasks.jobs.values()].filter((job) => job.resultId && !job.notified);
+    if (!jobs.length) return;
+    for (const job of jobs) {
+      const delivered = item.messages.some((record) => {
+        if (record.agentId !== "main" || record.message?.role !== "custom" || record.message?.customType !== "task-notification") return false;
+        // 运行中为字符串，恢复后的历史条目可能是块数组；两种形态都取文本判任务 id。
+        const content = record.message?.content;
+        const text = typeof content === "string" ? content
+          : Array.isArray(content) ? content.filter((b) => b?.type === "text").map((b) => b.text).join("\n") : "";
+        return text.includes(`"${job.id}"`);
+      });
+      if (!delivered) continue;
+      await this.persist(item, { task: { id: job.id, notified: true } }).catch((error) =>
+        item.emit({ type: "error", data: { message: `通知确认落盘失败：${error.message}` } }));
+      const current = item.tasks.jobs.get(job.id);
+      if (current?.resultId === job.resultId) current.notified = true;
+    }
   }
 
   get(id) {
@@ -1621,6 +1660,8 @@ export class Sessions {
             type: "session.state",
             data: { status: "idle", runId: item.runId, canReask: !!item.agent.canReask?.(), stopped },
           });
+          // running 通道注入的通知在此判据确认（消息进历史才置 notified），未确认的交给下面的调度补投。
+          await this.settleTaskNotifications(item);
           this.scheduleTaskNotifications(item);
           this.scheduleGoal(item);
         }

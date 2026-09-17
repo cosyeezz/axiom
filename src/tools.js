@@ -68,6 +68,7 @@ export function delegationTools(tasks) {
         const { context, tasks: requested } = delegateInput.parse(input);
         return result({
           taskIds: tasks.start(requested.map(({ task }) => task), context),
+          note: "Subtasks are running in the background. Continue with work that does not depend on their results; when nothing remains, close the turn with a brief status — completion notifications arrive automatically.",
         });
       },
     },
