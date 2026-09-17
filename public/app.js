@@ -829,23 +829,59 @@ async function saveTaskBudget() {
 for (const id of taskBudgetInputs) $(id).addEventListener("change", () => void saveTaskBudget());
 function showSettingsPanel(panel) {
   settingsGeneration++;
-  for (const name of ["defaults", "remote", "models", "service"]) {
+  for (const name of ["connection", "defaults", "remote", "models", "service"]) {
     $(`${name}-panel`).hidden = name !== panel;
     const button = $(`settings-${name}-tab`);
     if (name === panel) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
+  if (panel === "connection") openConnectionPanel();
   if (panel === "models") void modelManager.load();
   if (panel === "remote") void remoteLoad();
 }
+$("settings-connection-tab").onclick = () => showSettingsPanel("connection");
 $("settings-defaults-tab").onclick = () => showSettingsPanel("defaults");
 $("settings-remote-tab").onclick = () => showSettingsPanel("remote");
 $("settings-models-tab").onclick = () => showSettingsPanel("models");
 $("settings-service-tab").onclick = () => showSettingsPanel("service");
-// 顶部状态可点击直达「服务与更新」；顶部只保留状态/DEV/版本，不暴露源码路径。
+// 顶部连接状态可点击直达「连接」面板（切地址）；顶部只保留状态/DEV/版本，不暴露源码路径。
 $("status").onclick = () => {
-  showSettingsPanel("service");
+  showSettingsPanel("connection");
   if (!$("settings").open) $("settings").showModal();
+};
+// 「连接」面板：切换后端地址（本地或远程均可）。解析规则与壳内连接页 desktop/connector 一致：
+// 只允许 http(s)、拒绝 userinfo 与非法端口，host:port 默认补 4319；断线时也可用（不入禁用名单）。
+const CONNECTION_KEY = "axiom.connection.address";
+function normalizeBackendAddress(raw) {
+  const text = String(raw || "").trim();
+  if (!text) return null;
+  let url;
+  try { url = new URL(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(text) ? text : `http://${text}`); }
+  catch { return null; }
+  if ((url.protocol !== "http:" && url.protocol !== "https:")
+    || !url.hostname || url.username || url.password) return null;
+  const port = url.port ? Number(url.port) : 4319;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+  const hostPart = url.port ? url.host : `${url.host}:${port}`;
+  return `${url.protocol}//${hostPart}`;
+}
+function openConnectionPanel() {
+  let saved = "";
+  try { saved = localStorage.getItem(CONNECTION_KEY) || ""; } catch {}
+  $("connection-current").textContent = `本页当前来自 ${location.origin}（${connected ? "连接正常" : "连接已断开"}）。`;
+  $("connection-address").value = saved || location.origin;
+  $("connection-feedback").textContent = "";
+}
+$("connection-form").onsubmit = (e) => {
+  e.preventDefault();
+  const origin = normalizeBackendAddress($("connection-address").value);
+  if (!origin) {
+    $("connection-feedback").textContent = "地址无效：请输入 host:port 或 http(s)://host:port";
+    return;
+  }
+  try { localStorage.setItem(CONNECTION_KEY, origin); } catch {}
+  $("connection-feedback").textContent = `正在跳转到 ${origin} …`;
+  location.href = origin;
 };
 $("open-settings").onclick = () => {
   showSettingsPanel(models.length ? "defaults" : "models");

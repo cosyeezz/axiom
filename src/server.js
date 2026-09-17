@@ -167,13 +167,15 @@ export function createServerApp(sessions, service = {}) {
     sender.broadcast(wss.clients, message);
   };
   server.on("upgrade", (req, socket, head) => {
-    const port = server.address().port;
-    const hosts = [`127.0.0.1:${port}`, `localhost:${port}`];
-    const localRequest =
-      hosts.includes(req.headers.host) &&
+    // 服务可经 AXIOM_HOST 绑定内网/远程地址供桌面壳或其他设备直连，故不再限定 loopback Host；
+    // 同源校验仍保留（Origin 必须与 Host 同源，或无 Origin 的非浏览器客户端），防跨源页面接入。
+    const host = req.headers.host;
+    const allowed =
+      typeof host === "string" && host.length > 0 &&
       (!req.headers.origin ||
-        req.headers.origin === `http://${req.headers.host}`);
-    if (!localRequest) {
+        req.headers.origin === `http://${host}` ||
+        req.headers.origin === `https://${host}`);
+    if (!allowed) {
       socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
       return;
     }
@@ -287,7 +289,7 @@ export function createServerApp(sessions, service = {}) {
           let data;
           switch (request.type) {
             case "service.status":
-              data = { managed: Boolean(service.restart) && !ws.isRemote, error: service.error || "", version: service.version || "", importDir: service.importDir || "", dev: Boolean(service.dev), desktop: Boolean(service.desktop), ...(!ws.isRemote && service.maintenance ? { maintenance: service.maintenance } : {}) };
+              data = { managed: Boolean(service.restart) && !ws.isRemote, error: service.error || "", version: service.version || "", importDir: service.importDir || "", dev: Boolean(service.dev), ...(!ws.isRemote && service.maintenance ? { maintenance: service.maintenance } : {}) };
               break;
             case "service.update.check":
               if (ws.isRemote) throw new Error("请在本机检查服务更新");

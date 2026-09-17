@@ -1,58 +1,56 @@
-name: Build Axiom Desktop Test Packages
-
+name: Build Axiom Desktop
 on:
   workflow_dispatch:
-
+  push:
+    branches: [master, feat/pake-desktop, feat/pake-config]
+    paths: ['.github/workflows/desktop.yml', 'desktop/**', 'public/favicon.svg']
 permissions:
   contents: read
-
 jobs:
   build:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            artifact: Axiom-Windows-x64-unsigned
-          - os: macos-15
-            artifact: Axiom-macOS-arm64-unsigned
+          - { os: windows-latest, target: x64, artifact: Axiom-Windows-x64, output: Axiom.msi }
+          - { os: macos-latest, target: universal, artifact: Axiom-macOS-universal, output: Axiom.dmg }
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: '24.19.0'
-          cache: npm
-      - run: npm ci
-      - run: npm test
-      - run: npm run desktop:stage
-      - run: npm run desktop:build -- --publish never
-        if: runner.os == 'Windows'
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      - name: Build macOS ad-hoc signed test package
+        with: { node-version: '22' }
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install macOS cross-compilation targets
         if: runner.os == 'macOS'
-        run: npm run desktop:build -- --publish never --config.mac.identity=-
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      - name: Verify bundled Windows startup
-        if: runner.os == 'Windows'
-        run: |
-          node scripts/smoke-desktop.mjs
-          node scripts/smoke-shell.mjs dist/win-unpacked/Axiom.exe
-      - name: Verify bundled macOS backend and disk image
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - name: Install Pake (independent of Axiom dependencies)
+        run: npm install --global pake-cli@3.16.2
+      - name: Build desktop shell
+        # 壳为本地连接入口页（desktop/connector），地址在壳内可配置，不再构建期烘焙服务地址。
+        run: pake --config desktop/pake.json --targets ${{ matrix.target }}
+      - name: Verify macOS DMG integrity and universal binary
         if: runner.os == 'macOS'
+        shell: bash
         run: |
-          codesign --verify --deep --strict --verbose=2 dist/mac-arm64/Axiom.app
-          node scripts/smoke-shell.mjs dist/mac-arm64/Axiom.app/Contents/MacOS/Axiom
-          node scripts/smoke-desktop.mjs dist/mac-arm64/Axiom.app/Contents/Resources
-          hdiutil verify dist/*.dmg
+          set -euo pipefail
+          hdiutil verify Axiom.dmg
+          mount_line=$(hdiutil attach Axiom.dmg -nobrowse -readonly | tail -1)
+          mount=$(printf '%s\n' "$mount_line" | sed -E 's/.*(\/Volumes\/.*)$/\1/')
+          trap 'hdiutil detach "$mount" >/dev/null 2>&1 || true' EXIT
+          exe=$(PlistBuddy -c 'Print :CFBundleExecutable' "$mount/Axiom.app/Contents/Info.plist")
+          lipo "$mount/Axiom.app/Contents/MacOS/$exe" -verify_arch arm64 x86_64
+          echo "verified: $mount/Axiom.app ($exe, arm64+x86_64)"
+      - name: Verify Windows MSI exists
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s Axiom.msi
+          echo "verified: Axiom.msi ($(stat -c %s Axiom.msi) bytes)"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: |
-            dist/*.exe
-            dist/*.dmg
+          path: ${{ matrix.output }}
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30

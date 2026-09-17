@@ -73,7 +73,7 @@ test("service restart validates mode, rejects active work and duplicate requests
     return JSON.parse((await response)[0]);
   };
   try {
-    assert.deepEqual((await request("service.status")).data, { managed: true, error: "previous build failed", version: "", importDir: "C:\\pi\\sessions", dev: false, desktop: false });
+    assert.deepEqual((await request("service.status")).data, { managed: true, error: "previous build failed", version: "", importDir: "C:\\pi\\sessions", dev: false });
     service.dev = true;
     service.sourceDir = "/development/axiom";
     const devStatus = (await request("service.status")).data;

@@ -1,30 +1,15 @@
 # Axiom
 
-## 运行时集成交付（2026-09-16）
+## 桌面壳（Pake，2026-09-17）
 
-桌面运行时、历史分页、前端分区和平滑流式已接线，验证与限制见[交付记录](docs/current-runtime-integration-status.md)。本轮 Windows 自包含包通过构建、随包后端与真实窗口冒烟；仍是未正式签名测试包，不是完整稳定发行版。
+桌面端基于 [Pake](https://github.com/tw93/Pake) 轻量壳（Tauri/WebView），不再使用 Electron。壳内置本地「连接入口页」（`desktop/connector/`）：服务地址不在构建期烘焙，启动后可配置本机或远程地址（`host:port`，默认端口 4319，也接受完整 `http(s)://` 地址），点连接后整页跳转到该地址加载网页工作台；已连接页面的右上角连接状态可点击直达设置的「连接」面板切换地址，断线时也可用。
 
-桌面手动更新：设置 → 服务与更新 → 检查更新 → 打开安装包下载链接 → 关闭应用并等待保存完成 → 手动安装。仅接受 GitHub 稳定三段版本及对应架构安装包；无稳定 Release、网络错误或缺可信匹配包时显示检查失败，不冒充最新。不会在桌面运行期执行 npm 更新，不自动下载或安装；签名、公证、更新前成套备份及覆盖安装/回退仍未验收。旧 npm 版须先退出并停用自启，不要让旧程序写新库。
+壳不内置 Node.js、Pi、网页副本或后端，不启动/停止服务；Axiom 更新后刷新窗口即可，通常无需重打壳；关闭窗口不停止后台任务。壳版本在 `desktop/pake.json` 独立维护（当前 0.2.0），不跟随 npm 包版本。
 
-开发入口不混用：`npm run dev:web` 是浏览器 Vite 开发服务器；`npm run desktop:dev` 加载 `desktop:stage` 生成的随包副本，不连接 Vite。改桌面网页源码需重新 stage 后启动；并行开发必须使用不同数据目录。
-
-
-Windows x64 / macOS Apple Silicon **未签名 dev 预发布版**：[desktop-v0.1.7-dev.1](https://github.com/cosyeezz/axiom/releases/tag/desktop-v0.1.7-dev.1)。Mac 下载 `Axiom-0.1.7-arm64.dmg`（仅M系列，未公证）；云端测试、随包后端启动与DMG校验通过，未做实机窗口验收。这是开发测试包，不是完整稳定版；安装/覆盖升级尚未完整验收。校验文件仅用于下载完整性检查，不是签名。
-
-> 桌面重构进度（功能分支）：精简 Electron 已接入随包独立 Node 24.19.0，Windows x64 自包含测试安装包已构建；实际打包目录已通过隔离数据的窗口加载与后端安全退出测试。安装包 **未签名，非完整交付版**；会话空闲释放和应用内标签已接入；旧安装迁移门禁与可信整包更新仍待完成。超时不强杀、不视为保存成功。数据根独占和写前版本检查只保护新版本，不能阻止旧程序写库，勿在旧服务未退出时使用真实数据。
-
-macOS 云端构建：dev 包使用 `--config.mac.identity=-` 做 ad-hoc 本地签名（不代表开发者认证或公证），避免改包后残留 Electron 原始签名。工作流检查 `codesign --verify --deep --strict`、真实窗口启动/安全退出、随包后端及 DMG 完整性；仍不替代带下载隔离标记的 Gatekeeper 和用户实机安装验收。首版 dev.1 Mac 包已发现无效资源签名，请勿使用。修正版构建 [35063188663](https://github.com/cosyeezz/axiom/actions/runs/35063188663) 已通过上述检查（Mac测试618项全部通过），这不代表已取得Apple开发者认证。
-
-桌面构建：使用固定 Node 后执行 `npm run desktop:stage` → `npm run desktop:build`。产物在 `dist/`；本机测试：`node scripts/smoke-desktop.mjs`、`node scripts/smoke-shell.mjs dist/win-unpacked/Axiom.exe`（Windows）。测试创建临时数据，不读取原有用户凭据。GitHub 下载不可达时可显式设置 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 和 `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`；镜像不替代平台签名。
-
-
-桌面异常退出：后端崩溃会明确提示；确认后端已不存在时可正常关闭桌面，但不代表任务已保存或允许安装更新。停止超时且进程仍存在时不绕过保护。
-
+远程连接：在被连接机器上以 `AXIOM_HOST=0.0.0.0`（或内网 IP）启动服务并放行端口，桌面壳或其他设备即可通过 `http://<地址>:<端口>` 直连；WebSocket 升级仍要求 Origin 与 Host 同源（或无 Origin 的非浏览器客户端）。不要将本地 Agent 服务暴露到公网。
 会话按需加载：打开历史只读取数据库和 JSONL，不初始化会话 SDK；发消息或执行需要代理的操作时才恢复。持久化会话空闲5分钟后按分钟检查释放；运行任务、通知、待保存、队列和活动Goal会话不释放。释放不删除历史或订阅，失败会保留错误信息。
 
 应用内标签：打开过的会话显示在顶部，可切换并保留草稿、附件和滚动状态；关闭标签不删除会话、不取消任务，重新打开仍恢复本次窗口内的草稿。关闭最后一个标签仅隐藏标签，不新建业务会话。跨工作区切换与侧栏“打开”均使用应用内标签，不弹出外部浏览器。
-
-桌面后端使用系统分配的空闲回环端口，就绪握手返回实际地址；不依赖4319可用，也不复用未知服务。CLI仍使用配置端口。
 
 ## 独立 SVG 动画
 
@@ -188,26 +173,26 @@ npm uninstall -g <包名>
 
 `~/.axiom` 会话数据与 `~/.pi` 配置跨更名保留，无需搬移。迁移期间及之后都不要同时运行新旧两个服务：两者默认占用同一端口并读写同一数据目录，同时启动会端口冲突或互相干扰；先确认旧服务已完全停止，再启动新服务。
 
-### 旧版 Pake 桌面壳（历史说明，已停止维护）
+### Pake 桌面壳（当前方案，0.2.0）
 
 ```text
-Axiom（npm 安装、独立更新） <-- http://127.0.0.1:4319 -- Pake 桌面窗口
+Axiom（npm 安装、独立更新） <-- http(s)://<可配置地址>/ -- Pake 桌面窗口（内置连接入口页）
 ```
 
-以下仅描述已发布的旧版 v0.1.0，不适用于当前 Electron 构建；当前仓库已移除 Pake 配置与构建入口，请使用本文顶部的桌面构建说明。旧桌面壳只打开本地正式服务，不内置 Node.js、Pi、网页副本或后端，不启动/停止服务。Axiom 更新后刷新窗口即可，通常无需重打壳；关闭窗口不停止后台任务。壳的版本在 `desktop/pake.json` 独立维护，不跟随 npm 包版本。
+桌面壳打开后先显示内置连接入口页：填入本机或远程地址点「连接」即可进入（上次地址可达时自动直达）；也可从网页右上角连接状态点击进入「连接」面板切换地址。壳不内置 Node.js、Pi、网页副本或后端，不启动/停止服务。Axiom 更新后刷新窗口即可，通常无需重打壳；关闭窗口不停止后台任务。壳的版本在 `desktop/pake.json` 独立维护，不跟随 npm 包版本。
 
-使用：先按上文 `npm install -g github:cosyeezz/axiom` 安装本体，再运行 `axiom-setup --no-browser`（可注册登录自启），最后安装并打开桌面壳。服务未启动时窗口无法加载，先运行 `axiom`，再重新打开窗口。桌面窗口与浏览器的 localStorage 不共享，但会话仍由同一本地服务保存。
+使用：先按上文 `npm install -g github:cosyeezz/axiom` 安装本体，再运行 `axiom-setup --no-browser`（可注册登录自启），最后安装并打开桌面壳。本机连接时先运行 `axiom`，再在入口页连接（默认 `127.0.0.1:4319`）；连接远程时在该机器上以 `AXIOM_HOST` 绑定对外地址并放行端口。桌面窗口与浏览器的 localStorage 不共享，但会话仍由所连接的服务保存。
 
-下载已构建安装包：[Desktop v0.1.0](https://github.com/cosyeezz/axiom/releases/tag/desktop-v0.1.0)（含 Windows MSI、macOS Universal DMG 与 SHA256 校验文件）。安装桌面壳不需要 Rust。
-
-以下是旧版发布时的历史流程，当前工作流已替换为 **Build Axiom Desktop Test Packages**，不会再生成下述 Pake 产物：
+构建产物由 GitHub Actions「**Build Axiom Desktop**」生成（手动触发，或推送 `desktop/**` 变更自动构建），产物保存 30 天：
 
 - `Axiom-Windows-x64`：`Axiom.msi`，Windows x64，运行需要 WebView2。
-- `Axiom-macOS-universal`：`Axiom.dmg`，同时支持 Apple Silicon 与 Intel，打开后拖入 Applications。
+- `Axiom-macOS-universal`：`Axiom.dmg`，同时支持 Apple Silicon 与 Intel，打开后拖入 Applications；CI 含 DMG 完整性与双架构校验。
 
-目前产物未配置代码签名/公证，系统可能提示未知发布者或拦截；仅安装可信来源的产物，不建议关闭系统安全机制。macOS 若拦截可信下载，可在「系统设置 → 隐私与安全性」批准打开。Actions 产物保存 30 天，正式包另行发布到 Release，不自动更新壳。
+旧版下载：[Desktop v0.1.0](https://github.com/cosyeezz/axiom/releases/tag/desktop-v0.1.0)（固定地址 127.0.0.1:4319 的历史版本，不含连接入口页）。
 
-旧版 Pake 构建命令（仅旧版本源码可用，当前分支不适用）：
+目前产物未配置代码签名/公证，系统可能提示未知发布者或拦截；仅安装可信来源的产物，不建议关闭系统安全机制。macOS 若拦截可信下载，可在「系统设置 → 隐私与安全性」批准打开。
+
+本机构建命令（可选，通常直接用 CI 产物）：
 
 ```sh
 npm install -g pake-cli@3.16.2
@@ -216,7 +201,7 @@ pake --config desktop/pake.json
 
 macOS 同时支持两种芯片时，先执行 `rustup target add aarch64-apple-darwin x86_64-apple-darwin`，然后 `pake --config desktop/pake.json --targets universal`；Windows x64 可显式加 `--targets x64`。需要 Node.js 22、Rust ≥1.85；macOS 需要 Xcode Command Line Tools，Windows 需要 Visual Studio Build Tools 的 C++ 桌面开发组件。npm 安装的是打包工具，不是免编译的桌面客户端。详见 [Pake CLI 文档](https://github.com/tw93/Pake/blob/main/docs/cli-usage.md)。
 
-配置复用 `public/favicon.svg`，保留系统标题栏，允许新窗口与拖放；无需启动 Axiom 就能打包。默认连接 `4319`，不会误连 `npm run dev` 的 `4320`。自定义服务端口需修改 `desktop/pake.json` 的 `url` 后重新打包；不要将本地 Agent 服务暴露到公网。Pake 只作为构建工具安装，不加入 Axiom 运行依赖。
+配置复用 `public/favicon.svg`，保留系统标题栏，允许新窗口与拖放；`forceInternalNavigation` 保证连接跳转留在壳内；无需启动 Axiom 就能打包。壳默认入口是本地连接页而非固定端口，不会误连 `npm run dev` 的 `4320`；自定义地址在入口页/连接面板配置，不需要重新打包。不要将本地 Agent 服务暴露到公网。Pake 只作为构建工具安装，不加入 Axiom 运行依赖。
 
 ### 更新后页面一直「连接中」
 
@@ -611,7 +596,7 @@ capabilities.js 原生能力发现、内存配置、MCP 快照与选择加载
 
 ## 桌面稳定性与前端性能开发计划
 
-以下六份文档保留最初设计，当前已集成状态与未完成发布门禁以各文档顶部及交付记录为准。每份包含独立开发范围、接口契约、隔离测试和验收要求；共享入口由集成负责人统一接线，不允许多组同时编辑。用户已明确授权以精简 Electron 替换 Pake；当前实现与尚未验收项见本文顶部，不再等待外部 Electron 仓库。
+以下六份文档保留最初设计，当前已集成状态与未完成发布门禁以各文档顶部及交付记录为准。每份包含独立开发范围、接口契约、隔离测试和验收要求；共享入口由集成负责人统一接线，不允许多组同时编辑。桌面方案现为 Pake 壳（见顶部「桌面壳」节），Electron 路线已移除，相关计划文档仅作历史设计存档。
 
 | 文档 | 独立开发范围 |
 |---|---|
@@ -684,7 +669,7 @@ Axiom 使用数据目录中的 `axiom.db`（Node 内置 SQLite，WAL 模式）�
 
 已合入任务03的 `createTransport`：连接生命周期、事件水位和快照队列由它唯一管理，共享收藏/目录通过 `subscribe` 接入；当前会话归并仍走唯一 reducer，不复制消息状态。页面离开（非 bfcache）同时 dispose 连接和选择器。05/06继续拥有历史窗口和流式绘制算法，本改动不替换它们。
 
-隔离验证：`node --test tests/frontend-regions.test.js tests/model-picker.test.js`；真实 Chromium：`python tests/frontend-regions-ui.py`（自动启动随机端口假数据服务，截图位于系统临时目录 `axiom-frontend-regions`）。浏览器输出增长测试直接增加正文 DOM；真实事件路径另由单测覆盖，不宣称已完成真实模型流式压测或 Electron 验收。
+隔离验证：`node --test tests/frontend-regions.test.js tests/model-picker.test.js`；真实 Chromium：`python tests/frontend-regions-ui.py`（自动启动随机端口假数据服务，截图位于系统临时目录 `axiom-frontend-regions`）。浏览器输出增长测试直接增加正文 DOM；真实事件路径另由单测覆盖，不宣称已完成真实模型流式压测或桌面壳验收。
 
 ### 独立前端开发服务器（Vite）
 

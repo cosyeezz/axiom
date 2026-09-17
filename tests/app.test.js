@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { JSDOM } from "jsdom";
+import { JSDOM, VirtualConsole } from "jsdom";
 import { marked } from "marked";
 import createPurify from "dompurify";
 import { createStreamRenderer } from "../public/stream-renderer.js";
@@ -69,10 +69,14 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     "utf8",
   );
   const source = await publicSource("markdown-scan", "memory-tags", "goal-markers", "question", "app");
+  const virtualConsole = new VirtualConsole();
+  const jsdomErrors = [];
+  virtualConsole.on("jsdomError", (error) => jsdomErrors.push(error));
   const dom = new JSDOM(html, {
     url: "http://localhost",
     runScripts: "outside-only",
     pretendToBeVisual: true,
+    virtualConsole,
   });
   const { window } = dom;
   const $ = (id) => window.document.getElementById(id);
@@ -435,8 +439,30 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(window.sessionStorage.getItem("axiom.maintenance"), JSON.stringify({ url: "http://127.0.0.1:4567", token: "secret" }));
     $("status").click();
     assert.equal($("settings").open, true, "header status opens settings");
-    assert.equal($("service-panel").hidden, false);
+    assert.equal($("connection-panel").hidden, false, "header status opens the connection panel");
+    assert.equal($("service-panel").hidden, true);
     assert.equal($("defaults-panel").hidden, true);
+    // 连接面板：无保存地址时预填当前 origin；解析规则与壳内连接页 desktop/connector 一致。
+    assert.equal($("connection-address").value, "http://localhost", "无保存地址时预填当前 origin");
+    const normalize = window.eval("normalizeBackendAddress");
+    assert.equal(normalize("192.168.1.8:9000"), "http://192.168.1.8:9000");
+    assert.equal(normalize("192.168.1.8"), "http://192.168.1.8:4319", "无端口默认 4319");
+    assert.equal(normalize("https://example.com:8443"), "https://example.com:8443");
+    assert.equal(normalize("http://[::1]:4319"), "http://[::1]:4319", "IPv6 保留括号");
+    assert.equal(normalize("javascript://x"), null, "拒绝非 http(s) 协议");
+    assert.equal(normalize("http://user:pass@host"), null, "拒绝 userinfo");
+    assert.equal(normalize("host:99999"), null, "拒绝非法端口");
+    assert.equal(normalize("   "), null, "空地址拒绝");
+    // 无效提交：反馈错误、不写入存储；有效提交：保存地址并整页跳转（stub href 捕获目标，避免 jsdom 导航噪音）。
+    $("connection-address").value = "javascript://x";
+    $("connection-form").dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    assert.match($("connection-feedback").textContent, /地址无效/);
+    assert.equal(window.localStorage.getItem("axiom.connection.address"), null);
+    $("connection-address").value = "192.168.1.8:9000";
+    $("connection-form").dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    assert.equal(window.localStorage.getItem("axiom.connection.address"), "http://192.168.1.8:9000", "提交后保存规范化地址");
+    assert.match($("connection-feedback").textContent, /正在跳转/);
+    assert.equal(jsdomErrors.some((error) => /navigation/.test(error.message)), true, "提交后触发整页导航到新后端");
     $("settings").close();
     assert.equal($("workspace").hidden, false);
     assert.equal(requests.some((req) => req.type === "session.defaults.list"), false, "只看服务面板不拉取默认配置");
@@ -870,7 +896,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.match($("create-agents").textContent, /\[当前项目\] Skill B/);
     assert.equal($("defaults-workspace").value, "", "默认编辑全局默认配置");
     assert.equal($("create-main-provider").value, "", "defaults do not take the current model implicitly");
-    assert.equal(window.document.querySelectorAll('.settings-nav button').length, 4, "默认新会话设置 + 远程控制 + 模型与供应商 + 服务与更新");
+    assert.equal(window.document.querySelectorAll('.settings-nav button').length, 5, "连接 + 默认新会话设置 + 远程控制 + 模型与供应商 + 服务与更新");
     assert.equal($("create-subagent-mode").querySelector('option[value="inherit"]').textContent, "跟随主代理能力");
     assert.equal($("create-subagent-thinking").querySelector('option[value="max"]').textContent, "max");
     $("create-main-thinking").value = "high";

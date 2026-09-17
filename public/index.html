@@ -65,7 +65,7 @@
               <option value="200">字号 200%</option>
             </select>
             <a id="github-link" class="icon-button" href="https://github.com/cosyeezz/axiom" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码" aria-label="在 GitHub 查看源码（新标签页打开）"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-2.92-.88-2.92-2.9 0-.58.21-1.05.55-1.42-.05-.14-.24-.68.05-1.42 0 0 .56-.18 1.83.68a6.9 6.9 0 0 1 1.71-.23c.58 0 1.17.08 1.71.23 1.27-.87 1.83-.68 1.83-.68.29.74.1 1.28.05 1.42.34.37.55.84.55 1.42 0 2.03-1.15 2.7-2.93 2.9.3.26.56.76.56 1.54 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg></a>
-            <button type="button" id="status" aria-live="polite" aria-haspopup="dialog" aria-controls="settings" title="查看服务与更新设置">连接中</button>
+            <button type="button" id="status" aria-live="polite" aria-haspopup="dialog" aria-controls="settings" title="查看连接设置">连接中</button>
             <span id="service-dev" hidden title="开发环境">DEV</span>
             <span id="service-version" hidden title="当前安装版本"></span>
             <button type="button" id="open-raw-io" class="icon-button" aria-pressed="false" aria-controls="raw-io" title="对照原文" aria-label="切换原文对照"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5-6 7 6 7M16 5l6 7-6 7M14 3l-4 18"/></svg></button>
@@ -279,11 +279,26 @@
       </header>
       <div class="settings-layout">
       <nav class="settings-nav" aria-label="设置分类">
+        <button id="settings-connection-tab" type="button" class="secondary" aria-controls="connection-panel">连接</button>
         <button id="settings-defaults-tab" type="button" class="secondary" aria-current="page" aria-controls="defaults-panel">默认新会话设置</button>
         <button id="settings-remote-tab" type="button" class="secondary" aria-controls="remote-panel">远程控制</button>
         <button id="settings-models-tab" type="button" class="secondary" aria-controls="models-panel">模型与供应商</button>
         <button id="settings-service-tab" type="button" class="secondary" aria-controls="service-panel">服务与更新</button>
       </nav>
+      <div class="settings-body" id="connection-panel" hidden>
+        <section aria-labelledby="connection-current-title">
+          <h3 id="connection-current-title">当前连接</h3>
+          <p id="connection-current" role="status">…</p>
+        </section>
+        <form id="connection-form">
+          <label for="connection-address">服务地址</label>
+          <input id="connection-address" type="text" inputmode="url" autocomplete="off" spellcheck="false"
+                 placeholder="127.0.0.1:4319 或 example.com:8080" aria-describedby="connection-help" />
+          <p id="connection-help">本机或远程地址均可（host:port，默认端口 4319；或完整 http(s) 地址）。连接会整页跳转到该地址；远程需在服务机器上以 <code>AXIOM_HOST</code> 绑定对应地址并放行端口。此表单在断线时也可使用，用于切换到可用的服务地址。</p>
+          <p id="connection-feedback" role="status" aria-live="polite"></p>
+          <div class="dialog-actions"><button type="submit" id="connection-connect">连接</button></div>
+        </form>
+      </div>
       <div class="settings-body" id="defaults-panel">
         <section aria-labelledby="selection-copy-title">
           <h3 id="selection-copy-title">输入与复制</h3>

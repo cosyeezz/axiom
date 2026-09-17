@@ -87,6 +87,16 @@ test("local connection without token, foreign origin rejection, recovery and shu
     assert.equal(res.statusCode, 401);
     req.destroy();
     bad.terminate();
+    // 2026-09-17：Host 不再限 loopback（AXIOM_HOST 可绑内网/远程供桌面壳直连）；
+    // 同源 Origin 或无 Origin 均放行，跨源 Origin 仍 401（上一断言）。
+    const sameOrigin = new WebSocket(url, { origin: http });
+    await once(sameOrigin, "open");
+    sameOrigin.close();
+    await once(sameOrigin, "close");
+    const remoteHost = new WebSocket(url, { headers: { Host: "192.168.1.8:9000" }, origin: "http://192.168.1.8:9000" });
+    await once(remoteHost, "open");
+    remoteHost.close();
+    await once(remoteHost, "close");
     ws = await connect();
     sessions.createAgent.capabilities = async () => Object.fromEntries(["skills", "mcp", "plugins"].map((kind) =>
       [kind, [{ id: "global", scope: "global" }, { id: "project", scope: "project" }]]));
