@@ -1585,6 +1585,29 @@ summary:hover > .disclosure-action { color: var(--ink); }
 [data-state="thinking"] .thinking-dots { animation: thinking-dots 1.2s steps(1, end) infinite; }
 @keyframes thinking-dots { 0% { clip-path: inset(0 2ch 0 0); } 33.33% { clip-path: inset(0 1ch 0 0); } 66.67% { clip-path: inset(0 0 0 0); } }
 @keyframes activity-spin { to { transform: rotate(360deg); } }
+/* 任务通知（子任务完成通知）条目：与用户消息区分的系统通知样式，不隐藏。 */
+.task-notification {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  border-radius: 8px;
+  padding: 8px 14px 10px;
+  margin: 10px auto 24px;
+  max-width: 72ch;
+}
+.task-notification h3 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-ink);
+}
+.task-notification pre {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 @media (prefers-reduced-motion: reduce) {
   .activity-icon, .activity-icon svg, .activity-icon::after, .tool-status::before,
   .task-status::before, .task-top h2::before, .task-run-spin, .thinking-dots, .task-timer-dot { animation: none !important; }

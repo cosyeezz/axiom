@@ -1768,10 +1768,19 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     assert.equal(retryCard.open, true);
     retryCard.remove();
 
-    for (const content of ["[Axiom 子任务完成通知] 内部消息", [{ type: "text", text: "[Axiom 子任务完成通知] 内部消息" }]]) {
-      emit("agent.message.end", { message: { role: "user", content } });
-      assert.equal($("output").lastElementChild.hidden, true, "internal task notifications stay out of the transcript");
-      $("output").lastElementChild.remove();
+    const userCardsBefore = $("output").querySelectorAll(":scope > .message.user").length;
+    for (const message of [
+      { role: "user", content: "[Axiom 子任务完成通知] 内部消息" },
+      { role: "user", content: [{ type: "text", text: "[Axiom 子任务完成通知] 内部消息" }] },
+      { role: "custom", customType: "task-notification", content: "任务通知内容" },
+    ]) {
+      emit("agent.message.end", { message });
+      const last = $("output").lastElementChild;
+      assert.equal(last.className, "task-notification", "任务通知以独立通知条渲染");
+      assert.equal(last.hidden, false, "通知不隐藏，与用户消息区分而非逐出转写");
+      assert.match(last.textContent, /内部消息|任务通知内容/);
+      assert.equal($("output").querySelectorAll(":scope > .message.user").length, userCardsBefore, "通知不伪装成用户卡片");
+      last.remove();
     }
 
     // 重复事件不重复。
