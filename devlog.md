@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-16 修复历史首屏正文缺失并删除会话标签栏
+
+- 原因：独立 JSONL 恢复时先拼全部主消息，再拼全部子历史；最近 60 条分页可能全部来自子代理，主正文被挤到更早页。
+- 决策：恢复时按委派结果的 taskIds 将子历史归位，无关联旧记录保留在前部，不按不可靠时间戳猜顺序，不改写原始历史。保留实时消息与既有完整时间线顺序。
+- UI：删除顶部标签 DOM、样式、状态与渲染函数及侧栏冗余打开入口；侧栏切换、页面内草稿、hash/sessionStorage 恢复保持不变。遵循既有 Linear 设计 token，不引入新颜色、字体或控件。
+- 涉及文件：`src/sessions.js`、`public/app.js`、`public/index.html`、`public/style.css`、`tests/restored-history-order.test.js`、`tests/workspace-tabs.test.js`、`tests/app.test.js`、`README.md`、代码索引及坑库。
+- 验证：新增 130 条子历史回归，覆盖首屏最终回答、主子分页无丢失/重复与真实 app 渲染；最终全量结果见本条后续更新。
+
 ## 2026-09-16 统一主代理追加提示词与项目交付规范
 
 - 内容与原因：将已确认的交流、只读调研委派、跨平台、Git/worktree 和 `<axiom_display>` 协议整理为 Pi 风格英文指令列表，仅追加到主代理，不替换默认提示词或扩散至子代理。
@@ -2256,3 +2264,10 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 涉及文件：`src/prompts.js`（Delegation/Response format/SUBAGENT_PROMPT 英文终稿）、`src/tools.js`（delegate 返回 note）、`src/pi.js`（queueStateOf 归一 string content、messageEntries 纳入 custom_message、notifyTask、refreshSkills 排除）、`src/sessions.js`（双通道 deliverTaskNotifications、settleTaskNotifications、startRun 挂接）、`public/app.js`（isTaskNotification/taskNotificationCard/实时与回放分支/删隐藏 hack/paintRaw 标注）、`public/style.css`（.task-notification）、`src/capabilities.js`（MAIN_EXCLUDED_SKILLS 分流）、`tests/task-notifications.test.js`（双通道两用例、fixture notifyTask）、`tests/app.test.js`（通知条断言替代隐藏断言）、`README.md`。
 - 决策：模型层无法区分 custom 与 user（SDK convertToLlm 把 custom 转普通 user 原文），custom 收益在存储/UI 分型；不引入 wait_result/sleep 规则（root fix 后症状自消）；triggerTurn 弃用（绕过 startRun 状态机会撒谎 status、丢收尾、双 run 并发）；通知不隐藏，与用户消息以样式区分。
 - 验证：`npm test` 698 项 696 通过 0 失败（2 skip 为既有）；新增用例覆盖 running 注入+settle 确认不重投、误清补投走 idle 通道；capabilities/project-skills/app/safe-stop 等回归全过。
+
+## 2026-09-17 恢复历史重排后的收尾
+
+- 合并 master（9b0f4d2/83fa04e）后 session.duplicate 用例失败：副本走 create() 恢复路径，messages 从 JSONL 重建触发 orderRestoredHistory；夹具子任务由 saveTask 落库、主历史无 delegate 锚点，无关联子消息按设计前置。判定为有意设计在副本路径的自然延伸，非回归。
+- 更新断言为 [s1,s2,u1,a1] 并补 at(-1)=main（无锚点副本最后仍是主回答）；带真实 delegate 锚点的会话子历史仍归位到声明点之后（restored-history-order.test.js 覆盖）。
+- 涉及文件：tests/session-flow.test.js、knowledge.md（追加）。
+- 验证：npm test 699 项全绿（697 通过、0 失败、2 既有跳过）。

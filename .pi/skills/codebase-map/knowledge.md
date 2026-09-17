@@ -1,5 +1,10 @@
 # 坑与 bug 知识库（自成长：只追加，不删改历史）
 
+### 2026-09-16 独立子历史堆尾挤走首屏主正文
+- 原因：恢复时将子任务 JSONL 全部追加在主消息后，last60 分页只剩子代理卡片；实时顺序正常，因此纯主消息测试未发现。
+- 修复：sessions.js 在独立历史重建时按 delegate 结果 taskIds 归位，无关联记录前置保留；不重排既有完整历史，不改实时数组或原文件。
+- 防再犯：restored-history-order 回归用真实数组 content 和超过一页的子消息，验证最终主回答可见及全量遍历不重不漏；移除标签 UI 后仍验证侧栏跨目录草稿恢复。
+
 ### 2026-09-15 历史分页不能复用实时快照水位与发起时草稿
 - 根因：历史页不包含水位后的全部事件，提交 seq 会吞掉实时消息；回包使用请求发起时的视图会覆盖期间新输入。
 - 修复：session.history 不带 seq，loadHistory 只换页不 commitSnapshot，按会话/实例/修订/请求序号作废迟到响应；挂载前重新 saveView 保留草稿。仅 attach 提交实时快照。
@@ -653,3 +658,8 @@
 ### 2026-09-16 前插历史必须同步辅助记录与锚点顺序
 - 原因：只前插DOM但 mainItems 仍push到尾，重试取at(-1)错位；ctx.restoreRetries为空且未合并历史compactions。
 - 修复：新历史主消息数组放在已有数组前，合并压缩记录并按页内边界恢复重试；history-prepend-records回归。
+
+### 2026-09-17 恢复重排与 session.duplicate 的交互
+- 原因：duplicate() 走 create() 恢复路径，messages 从独立 JSONL 重建时应用 orderRestoredHistory；测试夹具的子任务由 saveTask 直接落库、主历史无 delegate toolResult 锚点，无关联子消息按设计前置到头部。
+- 修复：这不是回归而是新语义在副本路径的自然延伸——断言更新为 [s1,s2,u1,a1]，并补 at(-1)=main（无锚点副本最后仍是主回答）；带真实 delegate 锚点的会话子历史仍归位到声明处。
+- 防再犯：改 duplicate/恢复顺序断言前先确认夹具是否有委派锚点；orderRestoredHistory 只在 restoredFromJsonl 为真时生效，旧快照 messages 保序（保护 retry messageCount 下标）。

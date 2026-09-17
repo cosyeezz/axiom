@@ -450,12 +450,12 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(firstActions.children[0].title, "置顶");
     assert.equal(firstActions.children[1].className, "session-hide");
     assert.equal(firstActions.children[1].title, "标记已完成");
-    assert.equal(firstActions.children[2].className, "session-open");
-    assert.equal(firstActions.children[3].className, "session-duplicate");
-    assert.equal(firstActions.children[3].title, "复制会话");
-        assert.equal(firstActions.children[3].disabled, true, "running sessions cannot be duplicated");
-    assert.equal(firstActions.children[4].className, "session-copy");
-    assert.equal(firstActions.children[4].title, "复制文件");
+    assert.equal(firstActions.querySelector(".session-open"), null);
+    assert.equal(firstActions.children[2].className, "session-duplicate");
+    assert.equal(firstActions.children[2].title, "复制会话");
+    assert.equal(firstActions.children[2].disabled, true, "running sessions cannot be duplicated");
+    assert.equal(firstActions.children[3].className, "session-copy");
+    assert.equal(firstActions.children[3].title, "复制文件");
     assert.equal(firstActions.querySelector(".session-rename").title, "重命名");
     assert.equal($("sessions").querySelector(".session-completed"), null, "空已完成组不渲染");
     // 分组可折叠：summary 扛计数徽章，重绘保留手动状态并按工作区写入 localStorage。
@@ -608,7 +608,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(new window.URLSearchParams(window.location.hash.slice(1)).get("session"), "a");
     let opened;
     window.open = (...args) => { opened = args; };
-    row("a").querySelector(".session-open").click();
+    row("a").querySelector(".session-copy").click();
     await settle();
     assert.equal(opened, undefined);
     $("prompt").value = "current workspace draft";

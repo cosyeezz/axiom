@@ -83,7 +83,7 @@ async function bootPage(url, { hash, session, local } = {}) {
 
 const attachCalls = (requests) => requests.filter((r) => r.type === "session.attach").map((r) => r.sessionId);
 
-test("应用内标签切换保留草稿，关闭只移除标签不删除或取消会话", async () => {
+test("移除应用内标签后侧栏切换保留草稿，不删除或取消会话", async () => {
   const page = await bootPage("http://localhost/", { hash: "session=s-a" });
   const other = state("s-tab", "同目录标签", "C:\\wa");
   STATES.set("s-tab", other);
@@ -91,14 +91,11 @@ test("应用内标签切换保留草稿，关闭只移除标签不删除或取�
     await page.connect();
     page.$("prompt").value = "A的草稿";
     await page.window.eval('switchSession(() => request("session.attach", { sessionId: "s-tab" }))');
-    assert.equal(page.$("session-tabs").children.length, 2);
+    assert.equal(page.$("session-tabs"), null);
     page.$("prompt").value = "B的草稿";
-    page.$("session-tabs").firstElementChild.firstElementChild.click();
+    [...page.$("sessions").querySelectorAll(".session-item")].find(node => node.textContent.includes("会话A")).click();
     await page.drain();
     assert.equal(page.$("prompt").value, "A的草稿");
-    page.$("session-tabs").lastElementChild.lastElementChild.click();
-    await page.drain();
-    assert.equal(page.$("session-tabs").children.length, 1);
     assert.equal(page.requests.some(r => ["session.delete", "session.cancel"].includes(r.type)), false);
     await page.window.eval('switchSession(() => request("session.attach", { sessionId: "s-tab" }))');
     assert.equal(page.$("prompt").value, "B的草稿");
@@ -126,7 +123,7 @@ test("快照只在会话 hash 变化时更新 History，不重复触发同文档
   } finally { page.dom.window.close(); }
 });
 
-test("跨目录操作在应用内标签打开，切回保留原草稿", async () => {
+test("跨目录操作在当前会话区打开，侧栏切回保留原草稿", async () => {
   const page = await bootPage("http://localhost/", { hash: "session=s-a" });
   try {
     await page.connect();
@@ -137,8 +134,8 @@ test("跨目录操作在应用内标签打开，切回保留原草稿", async ()
     assert.deepEqual(opened, []);
     assert.equal(page.$("workspace-label").textContent, "C:\\wb");
     assert.equal(page.window.location.hash, "#session=s-b");
-    assert.equal(page.$("session-tabs").children.length, 2);
-    page.$("session-tabs").firstElementChild.firstElementChild.click();
+    assert.equal(page.$("session-tabs"), null);
+    [...page.$("sessions").querySelectorAll(".session-item")].find(node => node.textContent.includes("会话A")).click();
     await page.drain();
     assert.equal(page.$("workspace-label").textContent, "C:\\wa");
     assert.equal(page.$("prompt").value, "保留草稿");

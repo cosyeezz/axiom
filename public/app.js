@@ -2571,8 +2571,6 @@ function beginSnapshot(state, target) {
   markSessionSeen(sessionId);
   $("session-title").textContent = state.title || "新会话";
   currentCwd = state.cwd;
-  openSessionTabs.set(target, { id: target, title: state.title, cwd: state.cwd, status: state.status });
-  renderSessionTabs();
   $("workspace-label").textContent = state.cwd;
   updatePageTitle();
   busy = state.status !== "idle";
@@ -3400,47 +3398,11 @@ function positionSessionMenu(trigger, panel) {
   panel.style.left = `${left}px`;
   panel.style.top = `${Math.max(8, Math.min(anchor.top, innerHeight - box.height - 8))}px`;
 }
-const openSessionTabs = new Map();
-function renderSessionTabs() {
-  const bar = $("session-tabs");
-  if (!bar) return;
-  bar.replaceChildren();
-  for (const [id, remembered] of openSessionTabs) {
-    const item = allSessions.find(s => s.id === id) ?? remembered;
-    const group = document.createElement("span");
-    group.className = "session-tab";
-    const button = document.createElement("button");
-    const unread = id !== sessionId && seenSessions[id] != null && item.updatedAt > seenSessions[id];
-    button.textContent = `${item.status !== "idle" ? "◌ " : unread ? "• " : ""}${item.title || "新会话"}`;
-    button.title = item.cwd || "";
-    button.setAttribute("aria-current", id === sessionId ? "page" : "false");
-    button.onclick = () => switchSession(() => request("session.attach", { sessionId: id }));
-    const close = document.createElement("button");
-    close.textContent = "×";
-    close.setAttribute("aria-label", `关闭标签：${item.title || "新会话"}（不停止任务）`);
-    close.onclick = async () => {
-      if (changing) return;
-      if (id === sessionId) {
-        saveView();
-        const next = [...openSessionTabs.keys()].find(key => key !== id);
-        // 最后一页保留当前会话，避免关闭标签创建或删除业务会话。
-        if (!next) { openSessionTabs.delete(id); renderSessionTabs(); return; }
-        await switchSession(() => request("session.attach", { sessionId: next }));
-        if (sessionId === id) return;
-      }
-      openSessionTabs.delete(id);
-      renderSessionTabs();
-    };
-    group.append(button, close);
-    bar.append(group);
-  }
-}
 function normalizeCwd(cwd) {
   return (cwd || "").replaceAll("\\", "/").replace(/\/$/, "").toLowerCase();
 }
 
 function renderSessions() {
-  renderSessionTabs();
   const fragment = document.createDocumentFragment();
   const query = $("search").value.trim().toLowerCase();
   const running = (s) => s.status !== "idle";
@@ -3540,7 +3502,6 @@ function renderSessions() {
     for (const [kind, label, path] of [
       ["pin", pinned(s) ? "取消置顶" : "置顶", 'M16 12V4h1V2H7v2h1v8l-2 2v2h5v6h2v-6h5v-2l-2-2z'],
       ["hide", hidden ? "移回进行中" : "标记已完成", hidden ? 'M12 20V4M5 11l7-7 7 7' : 'M5 12l4 4L19 6'],
-      ["open", "在新标签页打开", 'M14 3h7v7M21 3l-10 10M10 3H3v18h18v-7'],
       ["duplicate", "复制会话", 'M9 9h11v12H9ZM15 9V3H4v12h5M14.5 14v3M13 15.5h3'],
       ["copy", "复制文件", 'M9 9h11v12H9ZM15 9V3H4v12h5'],
       ["rename", "重命名", 'M16 3l5 5L8 21H3v-5L16 3zM13 6l5 5M3 16l5 5'],
@@ -3593,8 +3554,7 @@ function renderSessions() {
         menu.open = false;
         actions.hidePopover?.();
         more.focus();
-        if (kind === "open") void switchSession(() => request("session.attach", { sessionId: s.id }));
-        else if (kind === "duplicate") void switchSession(() => request("session.duplicate", { sessionId: s.id }));
+        if (kind === "duplicate") void switchSession(() => request("session.duplicate", { sessionId: s.id }));
         else if (kind === "hide") void setSessionHidden(s.id, !hidden);
         else if (kind === "pin") void setSessionPinned(s.id, !pinned(s));
         else openSessionAction(kind, s);
