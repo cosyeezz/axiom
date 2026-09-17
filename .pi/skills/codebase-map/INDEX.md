@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/16 21:56:01）
+# Axiom 多级代码索引（生成于 2026/9/16 21:58:32）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -53,7 +53,7 @@
 | src/model-auth.js | 89 | SDK 登录桥：连接隔离、超时取消与安全事件投影 | safeUrl, text, eventView, createModelAuthService |
 | src/model-config.js | 619 | Pi models.json 无损配置读写与共享收藏持久化 | sdkModelConfig, sdkResolveConfigValue, digest, LEVELS |
 | src/pi-model-storage.js | 409 | 模型与凭据 SQLite 权威存储、Pi 派生兼容文件 | sdkResolveConfigValue, sdkIsCommandConfigValue, NAMESPACE, AUTH_NAMESPACE |
-| src/pi.js | 561 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, queueStateOf, hasModelOutput, withdrawQueue |
+| src/pi.js | 560 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, queueStateOf, hasModelOutput, withdrawQueue |
 | src/prompts.js | 60 | Axiom 自有提示词按 main/subagent/compaction 角色集中维护 | MAIN_AGENT_PROMPT, TITLE_INSTRUCTION, SUBAGENT_PROMPT, WRAP_UP_PROMPT |
 | src/protocol.js | 373 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/questions.js | 86 | 主代理 question 工具、参数校验与可取消的回答等待 | text, option, input, questionAnswers |
@@ -61,9 +61,9 @@
 | src/retry.js | 196 | 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_DELAY_MS, MAX_RETRIES, RECOVERY_PROMPT |
 | src/server.js | 521 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | dev, digest, load, freshen |
 | src/session-history.js | 168 | 稳定消息身份、绑定会话/实例/修订的历史游标与有界传输页 | HISTORY_PAGE_DEFAULT, HISTORY_PAGE_MAX, CURSOR_VERSION, revisions |
-| src/session-memory.js | 29 | 标题提取登记、轮次预算挂钩与委派背景 | textOf, memoryHooks |
+| src/session-memory.js | 34 | 标题提取登记、轮次预算挂钩与委派背景 | textOf, memoryHooks |
 | src/session-store.js | 479 | 会话三表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, TABLES, INDEXES |
-| src/sessions.js | 1958 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | GOAL_TOOL_NAMES, hasRunningTasks, relevantTools, delegateTaskIds |
+| src/sessions.js | 1967 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | GOAL_TOOL_NAMES, hasRunningTasks, relevantTools, delegateTaskIds |
 | src/task-budget.js | 35 | 主子代理轮次预算规则、收尾提示词与配置页参数校验 | TASK_BUDGET_LIMITS, taskBudgetDefaults, within, taskBudgetPolicy |
 | src/tasks.js | 234 | Tasks：子任务（委托）生命周期 | ACTIVE, historyResult, Tasks |
 | src/tools.js | 157 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
@@ -144,7 +144,7 @@
 | tests/perf-measure-lock.test.js | 28 | node --test 测试（npm test） | - |
 | tests/perf-profile-cli.test.js | 82 | node --test 测试（npm test） | script, realCrossCheck |
 | tests/perf-startup-cleanup.test.js | 206 | node --test 测试（npm test） | DIR, SCRIPTS, extractFunction, dropLine |
-| tests/pi-memory.test.js | 171 | node --test 测试（npm test） | - |
+| tests/pi-memory.test.js | 180 | node --test 测试（npm test） | - |
 | tests/pi-model-storage.test.js | 624 | node --test 测试（npm test） | tempDir, makeStorage, seedPiModels, seedPiAuth |
 | tests/pi-question.test.js | 197 | node --test 测试（npm test） | - |
 | tests/project-skills.test.js | 143 | node --test 测试（npm test） | scopeKey, setup |
@@ -172,7 +172,7 @@
 | tests/session-created-at.test.js | 44 | node --test 测试（npm test） | factory |
 | tests/session-flow.test.js | 590 | node --test 测试（npm test） | flowFactory, jsonlFactory |
 | tests/session-history.test.js | 411 | node --test 测试（npm test） | build, ids, ask, fakeSource |
-| tests/session-memory.test.js | 110 | node --test 测试（npm test） | reply |
+| tests/session-memory.test.js | 162 | node --test 测试（npm test） | reply |
 | tests/session-migration.test.js | 282 | node --test 测试（npm test） | factory, workspaceHash |
 | tests/session-model-restore.test.js | 61 | node --test 测试（npm test） | stubFactory, cleanup |
 | tests/session-persistence.test.js | 460 | node --test 测试（npm test） | factory |
@@ -1181,7 +1181,7 @@
 | isPlainObject | method | 43 |
 | createPiModelStorage | function | 51 |
 
-### src/pi.js（561 行） — createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）
+### src/pi.js（560 行） — createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1191,7 +1191,7 @@
 | withdrawQueue | function | 66 |
 | recallLastMessage | function | 76 |
 | CHECKPOINT_BOUNDARY | const | 104 |
-| memoryExtension | function | 114 |
+| memoryExtension | function | 115 |
 | createPiFactory | function | 139 |
 
 ### src/prompts.js（60 行） — Axiom 自有提示词按 main/subagent/compaction 角色集中维护
@@ -1321,7 +1321,7 @@
 | pageOf | function | 100 |
 | readSessionHistory | function | 162 |
 
-### src/session-memory.js（29 行） — 标题提取登记、轮次预算挂钩与委派背景
+### src/session-memory.js（34 行） — 标题提取登记、轮次预算挂钩与委派背景
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1357,104 +1357,105 @@
 | saveTask | method | 450 |
 | listTasks | method | 473 |
 
-### src/sessions.js（1958 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
+### src/sessions.js（1967 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| GOAL_TOOL_NAMES | const | 23 |
-| hasRunningTasks | const | 25 |
-| relevantTools | function | 28 |
-| delegateTaskIds | const | 46 |
-| orderRestoredHistory | function | 58 |
-| pageTasks | function | 81 |
-| pageRetries | function | 93 |
-| BROWSE_PAGE | const | 108 |
-| SEARCH_LIMIT | const | 110 |
-| SEARCH_DIR_LIMIT | const | 111 |
-| IGNORED_ENTRIES | const | 113 |
-| fuzzyHit | function | 116 |
-| matchRank | function | 127 |
-| searchEntries | function | 136 |
-| pointStatus | function | 164 |
-| trackElapsed | function | 171 |
-| resolveDir | function | 181 |
-| parentOf | function | 192 |
-| absoluteCrumbs | function | 201 |
-| importedTitle | function | 223 |
-| duplicateTitle | function | 247 |
-| hostLocations | function | 259 |
-| landedSessionFile | function | 278 |
-| RETRYABLE_SQLITE | const | 285 |
-| retryableWrite | const | 286 |
-| DEFAULTS_NS | const | 291 |
-| WORKSPACE_PREFIX | const | 292 |
-| workspaceKeyOf | const | 293 |
-| CAPABILITY_KINDS | const | 294 |
-| catalogProjectsOf | const | 296 |
-| validateProjectSkills | function | 299 |
-| validateProjectSkillEntry | function | 303 |
-| mergeLegacyProjectSkills | function | 311 |
-| Sessions | class | 320 |
-| constructor | method | 321 |
-| applyDefaults | method | 345 |
-| loadDefaults | method | 351 |
-| migrateDefaults | method | 363 |
-| migrateLegacyStore | method | 378 |
-| loadWorkspaceDefaults | method | 402 |
-| loadTaskBudget | method | 421 |
-| getTaskBudget | method | 436 |
-| configureTaskBudget | method | 442 |
-| getDefaults | method | 449 |
-| defaultsFor | method | 453 |
-| listDefaults | method | 457 |
-| deleteDefaults | method | 463 |
-| removeDefaults | method | 468 |
-| workspaceDefaults | method | 478 |
-| configureDefaults | method | 498 |
-| saveDefaults | method | 504 |
-| pushCompaction | method | 543 |
-| validateSelection | method | 554 |
-| validateCompaction | method | 585 |
-| load | method | 599 |
-| ensureLoaded | method | 624 |
-| migrateLegacySessions | method | 648 |
-| sessionData | method | 672 |
-| persist | method | 691 |
-| writeChange | method | 720 |
-| saveChange | method | 736 |
-| list | method | 741 |
-| rename | method | 758 |
-| importSession | method | 771 |
-| duplicate | method | 801 |
-| create | method | 858 |
-| goalAction | method | 1242 |
-| scheduleGoal | method | 1288 |
-| advanceGoal | method | 1300 |
-| goalNotificationsBlocked | method | 1338 |
-| scheduleTaskNotifications | method | 1345 |
-| deliverTaskNotifications | method | 1358 |
-| settleTaskNotifications | method | 1403 |
-| get | method | 1424 |
-| revealWorkspace | method | 1429 |
-| browse | method | 1443 |
-| listFiles | method | 1449 |
-| refreshSkills | method | 1511 |
-| snapshot | method | 1520 |
-| history | method | 1604 |
-| subscribe | method | 1614 |
-| configure | method | 1622 |
-| startRun | method | 1658 |
-| retry | method | 1704 |
-| prompt | method | 1713 |
-| withdraw | method | 1748 |
-| replyQuestion | method | 1804 |
-| safeStop | method | 1813 |
-| cancel | method | 1828 |
-| retryTask | method | 1854 |
-| deleteRecords | method | 1865 |
-| releaseIdle | method | 1876 |
-| remove | method | 1899 |
-| close | method | 1948 |
+| GOAL_TOOL_NAMES | const | 24 |
+| hasRunningTasks | const | 26 |
+| relevantTools | function | 29 |
+| delegateTaskIds | const | 47 |
+| orderRestoredHistory | function | 59 |
+| pageTasks | function | 82 |
+| pageRetries | function | 94 |
+| BROWSE_PAGE | const | 109 |
+| SEARCH_LIMIT | const | 111 |
+| SEARCH_DIR_LIMIT | const | 112 |
+| IGNORED_ENTRIES | const | 114 |
+| fuzzyHit | function | 117 |
+| matchRank | function | 128 |
+| searchEntries | function | 137 |
+| pointStatus | function | 165 |
+| trackElapsed | function | 172 |
+| fallbackTitle | function | 183 |
+| resolveDir | function | 188 |
+| parentOf | function | 199 |
+| absoluteCrumbs | function | 208 |
+| importedTitle | function | 230 |
+| duplicateTitle | function | 254 |
+| hostLocations | function | 266 |
+| landedSessionFile | function | 285 |
+| RETRYABLE_SQLITE | const | 292 |
+| retryableWrite | const | 293 |
+| DEFAULTS_NS | const | 298 |
+| WORKSPACE_PREFIX | const | 299 |
+| workspaceKeyOf | const | 300 |
+| CAPABILITY_KINDS | const | 301 |
+| catalogProjectsOf | const | 303 |
+| validateProjectSkills | function | 306 |
+| validateProjectSkillEntry | function | 310 |
+| mergeLegacyProjectSkills | function | 318 |
+| Sessions | class | 327 |
+| constructor | method | 328 |
+| applyDefaults | method | 352 |
+| loadDefaults | method | 358 |
+| migrateDefaults | method | 370 |
+| migrateLegacyStore | method | 385 |
+| loadWorkspaceDefaults | method | 409 |
+| loadTaskBudget | method | 428 |
+| getTaskBudget | method | 443 |
+| configureTaskBudget | method | 449 |
+| getDefaults | method | 456 |
+| defaultsFor | method | 460 |
+| listDefaults | method | 464 |
+| deleteDefaults | method | 470 |
+| removeDefaults | method | 475 |
+| workspaceDefaults | method | 485 |
+| configureDefaults | method | 505 |
+| saveDefaults | method | 511 |
+| pushCompaction | method | 550 |
+| validateSelection | method | 561 |
+| validateCompaction | method | 592 |
+| load | method | 606 |
+| ensureLoaded | method | 631 |
+| migrateLegacySessions | method | 655 |
+| sessionData | method | 679 |
+| persist | method | 698 |
+| writeChange | method | 727 |
+| saveChange | method | 743 |
+| list | method | 748 |
+| rename | method | 765 |
+| importSession | method | 778 |
+| duplicate | method | 808 |
+| create | method | 865 |
+| goalAction | method | 1252 |
+| scheduleGoal | method | 1298 |
+| advanceGoal | method | 1310 |
+| goalNotificationsBlocked | method | 1348 |
+| scheduleTaskNotifications | method | 1355 |
+| deliverTaskNotifications | method | 1368 |
+| settleTaskNotifications | method | 1413 |
+| get | method | 1434 |
+| revealWorkspace | method | 1439 |
+| browse | method | 1453 |
+| listFiles | method | 1459 |
+| refreshSkills | method | 1521 |
+| snapshot | method | 1530 |
+| history | method | 1614 |
+| subscribe | method | 1624 |
+| configure | method | 1632 |
+| startRun | method | 1668 |
+| retry | method | 1714 |
+| prompt | method | 1723 |
+| withdraw | method | 1757 |
+| replyQuestion | method | 1813 |
+| safeStop | method | 1822 |
+| cancel | method | 1837 |
+| retryTask | method | 1863 |
+| deleteRecords | method | 1874 |
+| releaseIdle | method | 1885 |
+| remove | method | 1908 |
+| close | method | 1957 |
 
 ### src/task-budget.js（35 行） — 主子代理轮次预算规则、收尾提示词与配置页参数校验
 
@@ -2262,7 +2263,7 @@
 | fakeSource | function | 110 |
 | append | const | 127 |
 
-### tests/session-memory.test.js（110 行） — node --test 测试（npm test）
+### tests/session-memory.test.js（162 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|

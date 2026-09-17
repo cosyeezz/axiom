@@ -2289,3 +2289,11 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 测试同步：session-sidebar-ui.py 引入 page.clock.set_fixed_time(datetime(2026,9,12))，日期断言改为 ['昨天','前天','3 天前','4 天前','5 天前']；原「已完成段紧挨设置按钮 ≤150px」断言只在旧行高恰好填满 960px 视口时成立，改为验证脚注钉底 + 列表不重叠（紧凑化后列表下方留白属正常侧栏行为）。
 - 涉及文件：public/index.html、public/app.js、public/style.css、tests/session-sidebar-ui.py、README.md、devlog.md。
 - 验证：worktree 内 npm test 699 项全绿（697 通过、0 失败、2 既有跳过）；session-sidebar-ui.py PASS。
+
+## 2026-09-17 会话标题修复：失败不固化、整轮索要与坏会话自愈
+
+- 现象与根因：9/17 凌晨起 5 个会话侧栏标题退化为首条消息前 60 字（含 `[imageN]` 前缀）。排查结论：标题靠主代理自报 `<title>` 行，指令经 pi 层 memoryState.pending 只注入当次 run 的首个 LLM 请求、消费即失效；出问题会话首轮回复直接委派、没带标签，而 sessions.send 早已把 titleRequested 固化为 true，run 结束全量快照落库后永不重试。非代码回归（标题链路 9/16 以来无改动），是「一次性注入 + 一次机会 + 失败永久固化」的设计脆弱点撞上模型合规率波动。
+- 修复：① 索要开关改由 memoryHooks.wantsTitle()（闭包读 item.titlePending）实时提供，context 钩子对标题未定案的整轮每次请求（含工具后续轮）都注入 TITLE_INSTRUCTION，自报成功即停；删除 memoryState.pending 一次性消费机制与 prompt 的 titleRequest 选项。② titleRequested 语义改为「标题已定案」：只在 onReply 真正提取到合法标题时置 true 并随 change.title 同笔落库，send 不再提前固化，失败后下一条消息自动重试。③ 恢复自愈：create() 恢复时 titleRequested 为 true 但标题超过自报上限（必为旧兜底）且非手动命名的视为未定案重新索要，存量 5 个坏会话下一条消息即自动修复。④ 兜底标题剥掉 `[imageN]` 占位符，纯图片回退「[图片]」。
+- 涉及文件：src/pi.js（context 钩子、memoryState、prompt）、src/session-memory.js（wantsTitle、onReply 定案、复用导出的 TITLE_MAX）、src/sessions.js（fallbackTitle、send、恢复愈合）、public/memory-tags.js（导出 TITLE_MAX）、tests/session-memory.test.js（重试/自愈/占位符回归）、tests/pi-memory.test.js（整轮注入断言重写）、tests/image-input.test.js、.pi/skills/codebase-map/INDEX.md（测试期自动重建）、README.md、devlog.md。
+- 决策：不引入独立标题总结模型调用（保持零额外请求）；愈合用长度启发式——新语义下 titleRequested=1 只伴随 ≤10 字自报标题，超长必是旧兜底，titleManual 短路排除；enqueue 走 SDK 层 followUp 不经标题逻辑，维持现状。
+- 验证：worktree F:/worktrees/Axiom-title-retry 内 `node --test tests/*.test.js` 700 项全绿（698 通过、0 失败、2 既有跳过）；新增用例覆盖首轮漏报→下一条消息重试→自报定案、旧坏会话重启自愈、`[image1]` 占位符剥离、整轮（含工具轮）持续注入。
