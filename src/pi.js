@@ -5,7 +5,7 @@ import {
   ModelRuntime,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
-import { capabilityLoader, discoverCapabilities, refreshProjectSkills } from "./capabilities.js";
+import { capabilityLoader, discoverCapabilities, refreshProjectSkills, MAIN_EXCLUDED_SKILLS } from "./capabilities.js";
 import { createBackgroundCompaction, entryIdFor, normalizeCompaction, summarizedEntryIds } from "./compaction.js";
 import { resolveCompaction } from "./protocol.js";
 import { WRAP_UP_PROMPT, budgetSystemPrompt } from "./task-budget.js";
@@ -32,10 +32,14 @@ export function agentRuntime(session) {
 // 也避免 clearQueue 同步触发 queue_update 先清空 shadow 再取图导致撤回丢图。
 export function queueStateOf(steeringQueue, followUpQueue) {
   const read = (queue) =>
-    queue.messages.map((message) => ({
-      text: message.content.filter((block) => block.type === "text").map((block) => block.text).join("\n"),
-      images: message.content.filter((block) => block.type === "image").map((block) => ({ ...block })),
-    }));
+    queue.messages.map((message) => {
+      // SDK sendCustomMessage 入队的 custom 消息 content 可能是字符串；统一归一成块数组再取文/图。
+      const content = typeof message.content === "string" ? [{ type: "text", text: message.content }] : (message.content || []);
+      return {
+        text: content.filter((block) => block.type === "text").map((block) => block.text).join("\n"),
+        images: content.filter((block) => block.type === "image").map((block) => ({ ...block })),
+      };
+    });
   const steering = read(steeringQueue);
   const followUp = read(followUpQueue);
   return {
@@ -255,7 +259,13 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       if (call && customTools.some((tool) => tool.name === 'question')) return { assistant, call };
     };
     const queueState = () => queueStateOf(session.agent.steeringQueue, session.agent.followUpQueue);
-    const messageEntries = () => session.sessionManager.getBranch().filter((entry) => entry.type === "message");
+    // 历史条目含 custom_message（SDK sendCustomMessage 的持久化形态）：转回 message 结构供 UI/恢复使用，
+    // 否则 custom 通知在恢复后的消息历史与锚点下标中丢失。
+    const messageEntries = () => session.sessionManager.getBranch()
+      .filter((entry) => entry.type === "message" || entry.type === "custom_message")
+      .map((entry) => entry.type === "custom_message"
+        ? { ...entry, message: { role: "custom", customType: entry.customType, content: entry.content ?? [], display: entry.display, details: entry.details, timestamp: new Date(entry.timestamp).getTime() } }
+        : entry);
     const compactionRecords = () => session.sessionManager.getBranch().filter((entry) => entry.type === "compaction").map((entry) => {
       const branch = session.sessionManager.getBranch(entry.id);
       return { id: entry.id, summary: entry.summary, ...(entry.details?.progress ? { progress: entry.details.progress } : {}), firstKeptEntryId: entry.firstKeptEntryId,
@@ -353,6 +363,14 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       withdraw: () => withdrawQueue(session),
       recall: () => recallLastMessage(session),
       enqueue: (text, type, images) => (type === "steer" ? session.steer(text, images) : session.followUp(text, images)),
+      // 子任务完成通知的主会话注入（running 通道）：SDK custom message 与用户 steer 消息分型标记（customType），
+      // deliverAs "steer" 入 agent steering 队列，轮次边界（安全点）由 SDK 抽水循环送达——agent run 不结束直到
+      // 队列抽干，prompt promise 覆盖整个消化窗口，会话状态机无需变更。消息被消费后经 message_end 进历史
+      // 与持久化；被 clear_queue 误清时由 sessions.js 的 notified 判据补投。
+      notifyTask: (text) => session.sendCustomMessage(
+        { customType: "task-notification", content: text, display: true },
+        { deliverAs: "steer" },
+      ),
       async configure({ model: key, thinking, compaction }) {
         const currentKey = `${session.model?.provider}/${session.model?.id}`;
         const selected = available.find((m) => `${m.provider}/${m.id}` === key)
@@ -375,7 +393,8 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       },
       async refreshSkills() {
         const fresh = await discoverCapabilities(workspace, { loadAdapter: false });
-        return refreshProjectSkills(loader, capabilities, fresh.catalog, selection.capabilities == null);
+        return refreshProjectSkills(loader, capabilities, fresh.catalog, selection.capabilities == null,
+          customTools.length ? MAIN_EXCLUDED_SKILLS : []);
       },
       // 激活已注册工具（如进入 Goal 模式启用 goal_*）：与当前激活集合并，未知名称由 SDK 忽略。
       enableTools: (names) => {

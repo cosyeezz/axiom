@@ -12,9 +12,11 @@ function factoryFixture() {
   const factory = async (tools) => {
     let finish;
     const agent = {
-      calls: [], config: () => ({ model: "test/model" }),
+      calls: [], notifies: [], config: () => ({ model: "test/model" }),
       subscribe: () => () => {},
       prompt(text) { this.calls.push(text); return new Promise((resolve) => { finish = resolve; }); },
+      // running 通道通知：SDK sendCustomMessage 的投影，不进入 prompt 调用序列。
+      notifyTask(text) { this.notifies.push(text); return Promise.resolve(); },
       enqueue() { throw new Error("system notifications must not enter withdrawable queues"); },
       result: () => "done", dispose: async () => {},
       finish: () => finish?.(), abort: async () => finish?.(),
@@ -151,7 +153,9 @@ test("通知等待持久化期间用户先发送，通知退让且不进入可�
     assert.deepEqual(mains[0].calls, ["user wins"]);
     assert.equal(job.notified, false);
     mains[0].finish();
+    const t0 = Date.now();
     await until(() => mains[0].calls.length === 2);
+    console.log("DBG replay took", Date.now() - t0, "ms; calls:", JSON.stringify(mains[0].calls.map(c => c.slice(0, 30))));
     assert.match(mains[0].calls[1], /Axiom 子任务完成通知/);
     mains[0].finish();
     await until(() => job.notified && !item.notifying);
@@ -193,4 +197,57 @@ test("undelivered persisted notification replays on restart; save failure never 
     assert.equal(next.mains[0].calls.length, 1);
     restored.persist = Sessions.prototype.persist;
   } finally { await restored?.close(); await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+// 双通道之一：主代理运行中子任务完成 —— 走 custom 通知注入（notifyTask），不打断 prompt，
+// 送达进历史后由 run 收尾的 settle 判据确认，不再补投。
+test("running completion injects a custom notification and settle confirms it without re-prompting", async () => {
+  const { factory, mains, children } = factoryFixture();
+  const sessions = new Sessions(factory);
+  try {
+    const id = await sessions.create();
+    const item = sessions.get(id);
+    await sessions.prompt(id, "parent work");
+    const [taskId] = item.tasks.start(["child"]);
+    await tick();
+    children[0].finish();
+    await item.tasks.jobs.get(taskId).done;
+    await until(() => mains[0].notifies.length === 1);
+    assert.equal(mains[0].calls.length, 1, "running parent is never prompted by notifications");
+    assert.match(mains[0].notifies[0], /Axiom 子任务完成通知/);
+    assert.equal(item.tasks.jobs.get(taskId).notified, false, "injection alone does not confirm delivery");
+    // 模拟 SDK 轮次边界送达：消息进入历史（custom 形态）。
+    item.messages.push({ agentId: "main", entryId: "e1", message: { role: "custom", customType: "task-notification", content: mains[0].notifies[0] } });
+    mains[0].finish();
+    await until(() => item.tasks.jobs.get(taskId).notified);
+    await until(() => !item.notifying && item.status === "idle");
+    assert.equal(mains[0].calls.length, 1, "confirmed delivery needs no follow-up prompt");
+    assert.equal(mains[0].notifies.length, 1, "no duplicate injection either");
+  } finally { await sessions.close(); }
+});
+
+// 双通道之二：注入的通知未进历史（如被 clear_queue 误清）—— settle 不确认，
+// run 收尾后由 idle 通道补投（文本幂等），再按 idle 路径置 notified。
+test("cleared notification is not confirmed by settle and is replayed through the idle channel", async () => {
+  const { factory, mains, children } = factoryFixture();
+  const sessions = new Sessions(factory);
+  try {
+    const id = await sessions.create();
+    const item = sessions.get(id);
+    await sessions.prompt(id, "parent work");
+    const [taskId] = item.tasks.start(["child"]);
+    await tick();
+    children[0].finish();
+    await item.tasks.jobs.get(taskId).done;
+    await until(() => mains[0].notifies.length === 1);
+    // 不写入任何 custom 消息：模拟注入后被 clear_queue 误清。
+    mains[0].finish();
+    await until(() => mains[0].calls.length === 2);
+    assert.match(mains[0].calls[1], /Axiom 子任务完成通知/);
+    // 补投拉起的新 run 需要结束，await item.work 才返回，idle 通道随后置 notified。
+    mains[0].finish();
+    await until(() => item.tasks.jobs.get(taskId).notified);
+    await until(() => !item.notifying && item.status === "idle");
+    assert.equal(mains[0].calls.length, 2, "one replay, no polling loop");
+  } finally { await sessions.close(); }
 });

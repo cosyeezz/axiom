@@ -2246,3 +2246,21 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 修复 public/app.js 前插历史后 mainItems 顺序、旧页压缩摘要和重试卡遗漏；恢复子代理正文分组。新增 history-prepend-records.test.js，扩展测试 helper。
 - 全量695项：693通过、2跳过。README/索引/坑库同步。
 - 清理前一worktree时 Windows junction 被递归处理导致主目录部分依赖缺失；已通过独立 npm ci 安装并 robocopy 仅补缺失文件恢复，不终止在用进程。后续不使用 git worktree remove 清理含联接目录。
+
+## 2026-09-17 会话复制与侧栏分组折叠
+- 新增「复制会话」：后端 `session.duplicate` 协议命令（src/protocol.js、src/server.js 分发、src/sessions.js 实现）——服务端把主历史 JSONL 与全部子任务历史复制成新会话（副本文件绝不引用源路径，删除源不影响副本），配置沿用源会话，标题原名接序号（xxx → xxx 1，复制「xxx 1」也回到同一条 xxx N 序列）；运行中/无已落盘历史/未启用存储均拒绝。副本不接管未完成子任务、不重发完成通知（与 goal 退出同一 notified 口径）。
+- 侧栏三组（置顶/进行中/已完成）统一为可折叠 `<details>` + 计数徽章：空组不渲染（置顶/已完成）；折叠状态按工作区记入 localStorage `axiom.sessionGroups`，渲染时同步固化 + toggle 双保险；已完成展开时限高 45vh 组内滚动，整体滚动交给 #sessions。
+- 前端 app.js：操作菜单插入「复制会话」（禁用条件集中 duplicateBlocked()：断连/切换中/运行中/无 sessionFile，渲染与 updateNavigation 共用）；原「复制」改名「复制文件」。
+- 顺带修复：duplicateTitle 把源标题计入 taken，副本绝不与源同名；移动端（≤700px）点击复制后自动收起侧栏属既有行为，py 断言改在桌面视口下验证。
+- 测试：session-flow.test.js 新增 duplicate 全行为用例（复制/序号/独立性/重启恢复/拒绝路径）；server.test.js 补协议分发；app.test.js 调整空组断言 + 复制 mock；conversation-preview.mjs 补 duplicate mock 与 sessionFile；session-sidebar-ui.py 改造为分组折叠/计数/限高/复制断言，并修复 master 上本就漂移的断言与 320px 轮次从未跑通的 toggle 路径（先点 #mobile-expand 再开侧栏）。
+- 验证：npm test 696 项全绿（694 通过、2 既有跳过）；4399 预览上 session-sidebar-ui.py PASS。README 同步侧栏/菜单/协议/测试指引。
+
+## 2026-09-17 委托纪律提示词与通知双通道
+
+- 内容与原因：修复已观察到的委托死锁环——主代理把"You are responsible for verifying key findings"当亲自调研的许可证（单会话 42 次 read/rg），叠加通知只在 idle 投递的守卫，主代理收尾被"Do not use a promise to act"锁死后 status 恒 running，子任务完成通知永久无法送达。三管齐下：① 系统提示词重写 Delegation 段（信息收集全域走 delegate、spot-check 替代亲自验证、收尾例外允许通知唤醒）；② delegate 工具返回值提示"继续无关工作或收尾等通知"；③ 通知改双通道。
+- 通知双通道：主代理 running 时子任务完成经 `session.sendCustomMessage`（customType=task-notification，deliverAs steer）注入 steering 队列，SDK 在轮次边界（安全点）送达，不打断在飞工具，当前 run 自动延长到通知消化完（`_handlePostAgentRun` 抽水）；idle 时保持原 prompt 唤醒路径。送达确认（notified 置位）移到 run 收尾的 `settleTaskNotifications`：以消息历史中存在对应 custom 通知为准，未进历史（clear_queue 误清、滞留队列）保持未通知并自动补投，文本幂等、read_result 靠 resultId 校验。安全停止/goal 暂停的 notificationsPaused 冻结语义不变。
+- 前端通知显示：不再隐藏。新 custom 通知与旧 user+前缀通知统一识别（isTaskNotification），以独立通知条（.task-notification，accent 左边线）渲染，与用户消息区分；实时路径（agent.message.end）与历史回放（placeSnapshotMessage）同构处理，通知占 goal 锚点槽位但不 anchorGoal，下标与 live 侧一致。原文面板标注"内部任务通知"。
+- 能力分流：主代理（customTools 非空）loader 不装配导航类技能（MAIN_EXCLUDED_SKILLS=["codebase-map"]），系统提示不出现其可用性；选择集不变，子代理 inherit 时仍装配全部选中技能；skillsOverride 闭包实时计算以兼容 refreshProjectSkills 的运行时扩充。
+- 涉及文件：`src/prompts.js`（Delegation/Response format/SUBAGENT_PROMPT 英文终稿）、`src/tools.js`（delegate 返回 note）、`src/pi.js`（queueStateOf 归一 string content、messageEntries 纳入 custom_message、notifyTask、refreshSkills 排除）、`src/sessions.js`（双通道 deliverTaskNotifications、settleTaskNotifications、startRun 挂接）、`public/app.js`（isTaskNotification/taskNotificationCard/实时与回放分支/删隐藏 hack/paintRaw 标注）、`public/style.css`（.task-notification）、`src/capabilities.js`（MAIN_EXCLUDED_SKILLS 分流）、`tests/task-notifications.test.js`（双通道两用例、fixture notifyTask）、`tests/app.test.js`（通知条断言替代隐藏断言）、`README.md`。
+- 决策：模型层无法区分 custom 与 user（SDK convertToLlm 把 custom 转普通 user 原文），custom 收益在存储/UI 分型；不引入 wait_result/sleep 规则（root fix 后症状自消）；triggerTurn 弃用（绕过 startRun 状态机会撒谎 status、丢收尾、双 run 并发）；通知不隐藏，与用户消息以样式区分。
+- 验证：`npm test` 698 项 696 通过 0 失败（2 skip 为既有）；新增用例覆盖 running 注入+settle 确认不重投、误清补投走 idle 通道；capabilities/project-skills/app/safe-stop 等回归全过。

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { realpath, stat, readFile, mkdir, writeFile, rm, readdir } from "node:fs/promises";
+import { realpath, stat, readFile, mkdir, writeFile, copyFile, rm, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { Database } from "./database.js";
 import { SessionStore } from "./session-store.js";
@@ -239,6 +239,20 @@ function importedTitle(lines, source) {
     }
   }
   return (name || first || basename(source).replace(/\.jsonl$/i, "")).slice(0, 60);
+}
+
+// 复制会话的标题：原名去掉结尾序号后接下一个可用序号（xxx → xxx 1，再复制 → xxx 2；
+// 复制「xxx 1」也回到同一条 xxx N 序列，不会出现「xxx 1 1」）。序号只避开同工作区现有
+// 标题与源会话自身，副本绝不与源同名。
+function duplicateTitle(base, taken) {
+  const raw = String(base || "").trim() || "新会话";
+  const stem = raw.replace(/\s+\d+$/, "").trim() || raw;
+  const titles = new Set(taken);
+  for (let n = 1; n <= 999; n++) {
+    const candidate = `${stem} ${n}`.slice(0, 60);
+    if (!titles.has(candidate)) return candidate;
+  }
+  return `${stem} 副本`.slice(0, 60);
 }
 
 // 主机快速位置：主目录 + 文件系统根；Windows 盘符仅全局模式用 fs stat 探测，不 shell。
@@ -781,6 +795,66 @@ export class Sessions {
     });
   }
 
+  // 复制会话：主历史 JSONL 与子任务历史都复制成新身份（等价于把会话完整重启成一份副本），
+  // 配置沿用源会话，标题原名接序号。只允许空闲会话复制：运行中主历史还在追加，边写边复制
+  // 可能截断末行；副本也不会接管未完成的子任务（那会造成同一任务双跑）。
+  async duplicate(id) {
+    if (!this.items.has(id)) throw new Error("Unknown session");
+    if (!this.storagePath) throw new Error("当前实例未启用会话存储，无法复制会话");
+    if (this.get(id).loading) await this.get(id).loading;
+    const item = this.get(id);
+    if (item.closing) throw new Error("Session is closing");
+    const file = landedSessionFile(item);
+    if (!file) throw new Error("会话还没有历史文件，发送首条消息后再复制");
+    if (pointStatus(item) !== "idle") throw new Error("会话正在运行，请等任务结束或停止后再复制");
+    // 先冲刷内存里的最新状态到库（标题/时间/累计用时等，失败按原语义上抛，不做降级复制）。
+    await this.persist(item);
+    const saved = this.store.getSession(id);
+    const cwd = item.cwd;
+    const newId = randomUUID();
+    const storageDir = join(this.storagePath, createHash("sha256").update(process.platform === "win32" ? cwd.toLowerCase() : cwd).digest("hex"));
+    const tasksDir = join(storageDir, `${newId}-tasks`);
+    await mkdir(tasksDir, { recursive: true });
+    // 主历史：只重写首行身份（id/cwd），其余条目与分支 ID 原样保留，与导入同一口径。
+    const lines = (await readFile(file, "utf8")).split("\n").filter((line) => line.trim());
+    let header;
+    try { header = JSON.parse(lines[0]); }
+    catch { throw new Error("会话历史文件损坏，无法复制"); }
+    const mainCopy = join(storageDir, `${newId}.jsonl`);
+    await writeFile(mainCopy, [JSON.stringify({ ...header, id: newId, cwd }), ...lines.slice(1)].join("\n"), { mode: 0o600 });
+    // 子任务历史：逐个复制到副本自己的 -tasks 目录；文件缺失（历史已丢失）的旧任务保留
+    // 记录但不再引用源路径——副本绝不能读回源会话的文件，否则删除源会把副本变成坏引用。
+    const tasks = [];
+    for (const task of saved?.tasks || []) {
+      const record = { ...task };
+      if (record.sessionFile && existsSync(record.sessionFile)) {
+        const target = join(tasksDir, `${record.id}.jsonl`);
+        try { await copyFile(record.sessionFile, target); }
+        catch (error) { throw new Error(`复制子任务历史失败：${error.message}`); }
+        record.sessionFile = target;
+      } else delete record.sessionFile;
+      // 副本不接管未完成的子任务；通知也一律视为已消费：用户在源会话已看过结果，
+      // 副本重启后不该再自动唤醒一轮通知（与 goal 退出的 notified 归一口径一致）。
+      if (["starting", "running"].includes(record.status))
+        Object.assign(record, { status: "cancelled", error: "副本不接管未完成的子任务" });
+      record.notified = true;
+      tasks.push(record);
+    }
+    return this.create(cwd, saved?.selection ?? {}, {
+      ...saved,
+      id: newId,
+      sessionFile: mainCopy,
+      title: duplicateTitle(item.title, [item.title, ...[...this.items.values()].filter((other) => other !== item && other.cwd === cwd).map((other) => other.title)]),
+      titleManual: true,
+      titleRequested: true,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      elapsedMs: 0,
+      runningSince: null,
+      tasks,
+    });
+  }
+
   async create(workspace, selection = {}, saved) {
     const inherited = ["capabilities", "subagentCapabilities"].filter((key) =>
       saved || (selection.useDefaults !== false && selection[key] === undefined));
@@ -1269,7 +1343,8 @@ export class Sessions {
   }
 
   scheduleTaskNotifications(item) {
-    // ponytail: 通知等当前主运行结束再唤醒，不打断工具；需要轮次内低延迟时再接 SDK 自定义消息。
+    // 通知双通道：running 时经 SDK custom message（task-notification）在轮次边界注入，不打断工具、
+    // 不等待运行结束；idle 时经 prompt 直接唤醒，走完整 startRun 状态机。见 deliverTaskNotifications。
     if (item.notificationScheduled || item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item)) return;
     item.notificationScheduled = true;
     setImmediate(() => {
@@ -1281,17 +1356,31 @@ export class Sessions {
   }
 
   async deliverTaskNotifications(item) {
-    if (item.notifying || item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item) || item.configuring || item.status !== "idle") return;
+    if (item.notifying || item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item) || item.configuring) return;
     const jobs = [...item.tasks.jobs.values()].filter((job) => job.resultId && !job.notified)
       .map(({ id, resultId, status }) => ({ id, resultId, status }));
     if (!jobs.length) return;
+    const text = "[Axiom 子任务完成通知] 以下任务已结束。使用各自的 taskId 和 resultId 调用 read_result 获取结果；不要轮询。\n" +
+      JSON.stringify(jobs.map((job) => ({ taskId: job.id, resultId: job.resultId, status: job.status })));
+    if (item.status !== "idle") {
+      // running：结果先落盘，再以 custom message 注入 steering 队列——SDK 在轮次边界（安全点）送达，
+      // 当前 run 自动延长至通知消化完，状态机无需变更。不置 notified：送达确认由 settleTaskNotifications
+      // 在 run 收尾按消息历史判定；被 clear_queue 误清或滞留队列时经本调度补投（文本幂等）。
+      item.notifying = true;
+      try {
+        await this.persist(item, {});
+        if (item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item) || item.configuring) return;
+        await item.agent.notifyTask(text);
+      } finally {
+        item.notifying = false;
+      }
+      return;
+    }
     item.notifying = true;
     try {
-      // 结果先落盘再触达；通知不放入可撤回的用户 steer/followUp 队列。
+      // 结果先落盘再触达；idle 通道直接唤醒，走完整 startRun 状态机。
       await this.persist(item, {});
       if (item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item) || item.configuring || item.status !== "idle") return;
-      const text = "[Axiom 子任务完成通知] 以下任务已结束。使用各自的 taskId 和 resultId 调用 read_result 获取结果；不要轮询。\n" +
-        JSON.stringify(jobs.map((job) => ({ taskId: job.id, resultId: job.resultId, status: job.status })));
       await this.prompt(item.id, text);
       await item.work;
       if (item.notificationsPaused || item.closing) return;
@@ -1306,6 +1395,30 @@ export class Sessions {
     }
     this.scheduleTaskNotifications(item);
     this.scheduleGoal(item);
+  }
+
+  // running 通道注入的通知送达确认：消息已进历史（被模型消费、已落盘）才置 notified。不在历史
+  // （被 clear_queue 误清或尚滞留队列）一律保持未通知，交 scheduleTaskNotifications 补投：通知文本
+  // 幂等，read_result 靠 resultId 校验，重复投递无害。只在 run 收尾（status 回到 idle 后）调用。
+  async settleTaskNotifications(item) {
+    if (item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item)) return;
+    const jobs = [...item.tasks.jobs.values()].filter((job) => job.resultId && !job.notified);
+    if (!jobs.length) return;
+    for (const job of jobs) {
+      const delivered = item.messages.some((record) => {
+        if (record.agentId !== "main" || record.message?.role !== "custom" || record.message?.customType !== "task-notification") return false;
+        // 运行中为字符串，恢复后的历史条目可能是块数组；两种形态都取文本判任务 id。
+        const content = record.message?.content;
+        const text = typeof content === "string" ? content
+          : Array.isArray(content) ? content.filter((b) => b?.type === "text").map((b) => b.text).join("\n") : "";
+        return text.includes(`"${job.id}"`);
+      });
+      if (!delivered) continue;
+      await this.persist(item, { task: { id: job.id, notified: true } }).catch((error) =>
+        item.emit({ type: "error", data: { message: `通知确认落盘失败：${error.message}` } }));
+      const current = item.tasks.jobs.get(job.id);
+      if (current?.resultId === job.resultId) current.notified = true;
+    }
   }
 
   get(id) {
@@ -1576,6 +1689,8 @@ export class Sessions {
             type: "session.state",
             data: { status: "idle", runId: item.runId, canReask: !!item.agent.canReask?.(), stopped },
           });
+          // running 通道注入的通知在此判据确认（消息进历史才置 notified），未确认的交给下面的调度补投。
+          await this.settleTaskNotifications(item);
           this.scheduleTaskNotifications(item);
           this.scheduleGoal(item);
         }

@@ -268,7 +268,7 @@ test("storage 同步完成标记且只显示当前工作空间；忽略旧排序
     assert.deepEqual([...curWs.querySelectorAll(".session-item span")].map((n) => n.textContent), ["会话A"]);
     page.window.localStorage.clear();
     page.window.dispatchEvent(new page.window.StorageEvent("storage", { key: null }));
-    assert.equal(page.$("sessions").querySelector('[aria-label="已完成"]').querySelectorAll('.session-row').length, 0);
+    assert.equal(page.$("sessions").querySelectorAll('[aria-label="已完成"] .session-row').length, 0, "空已完成组不渲染（或无行）");
     let lock = Promise.resolve();
     Object.defineProperty(page.window.navigator, "locks", { value: {
       request: (_key, fn) => { const next = lock.then(fn); lock = next.catch(() => {}); return next; },
