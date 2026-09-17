@@ -694,6 +694,13 @@ export function initModelManager({ root, request, onSaved }) {
     const extras = parseJsonText(form.extrasText);
     if (extras.error) return { error: extras.error };
     const payload = keepMasked(extras.value);
+    if (payload.cost != null) {
+      for (const key of ["input", "output", "cacheRead", "cacheWrite"]) {
+        const rate = payload.cost[key];
+        if (rate !== undefined && (typeof rate !== "number" || !Number.isFinite(rate) || rate < 0 || rate > 1e6))
+          return { error: `费用 ${key} 必须是非负数且不超过 1000000（不会静默丢弃该字段）` };
+      }
+    }
     // 既有模型的 id 以快照为准（upsert 按 id 定位，改输入框不是改名只会造出重复条目）；
     // 新行才允许填写 id。
     const id = String((isNew ? form.id : form.snap?.id) ?? "").trim();
@@ -785,6 +792,31 @@ export function initModelManager({ root, request, onSaved }) {
         if (select.value) { state.selected = select.value; renderProviders(); }
         else openDraft();
       } });
+  }
+
+  function costFields(form, sync, override) {
+    const parsed = parseJsonText(form.extrasText);
+    const cost = parsed.value?.cost ?? {};
+    const fields = [["input", "输入"], ["output", "输出"], ["cacheRead", "缓存读取"], ["cacheWrite", "缓存写入"]];
+    return el("fieldset", { class: "mm-cost" },
+      el("legend", {}, "模型价格 · USD / 百万 tokens"),
+      el("div", { class: "mm-model-grid" }, ...fields.map(([key, label]) =>
+        field(label, el("input", { type: "text", inputmode: "decimal", value: cost[key] ?? "",
+          "aria-label": `费用·${label}（USD/百万 tokens）`, "data-cost-key": key, placeholder: "未配置",
+          oninput: event => {
+            const current = parseJsonText(form.extrasText);
+            if (current.error) { showAlert("error", current.error); return; }
+            const raw = event.target.value.trim();
+            current.value.cost = { ...current.value.cost };
+            if (!raw) delete current.value.cost[key];
+            else current.value.cost[key] = Number.isFinite(Number(raw)) ? Number(raw) : raw;
+            if (!Object.keys(current.value.cost).length) delete current.value.cost;
+            form.extrasText = JSON.stringify(current.value, null, 2);
+            const textarea = event.target.closest(".mm-model")?.querySelector(".mm-extras");
+            if (textarea) textarea.value = form.extrasText;
+            sync();
+          } })))),
+      el("p", { class: "mm-hint" }, `0 表示零价格；分层价格 tiers 可在高级 JSON 中设置。${override ? "覆盖模型请填写全部四项；清空全部价格可恢复内置价格，单项留空保留原覆盖。" : "留空表示未配置该项。"}价格只作用于后续请求。`));
   }
 
   function thinkingFields(form, model, sync, providerId) {
@@ -1192,7 +1224,7 @@ export function initModelManager({ root, request, onSaved }) {
       if (override && !result.error) {
         result.value.reasoning = Boolean(form.reasoning);
         result.value.input = form.image ? ["text", "image"] : ["text"];
-        for (const key of ["name", "contextWindow", "maxTokens"])
+        for (const key of ["name", "contextWindow", "maxTokens", "cost"])
           if (!(key in result.value) && key in row.snap) result.value[key] = null;
       }
       return result;
@@ -1245,6 +1277,12 @@ export function initModelManager({ root, request, onSaved }) {
           onchange: (event) => { form.image = event.target.checked; sync(); } }), "支持图片输入")));
     const advanced = extrasField(form, "model");
     advanced.addEventListener("toggle", sync);
+    advanced.addEventListener("input", () => {
+      const parsed = parseJsonText(form.extrasText);
+      if (!parsed.error) for (const input of advanced.closest(".mm-model")?.querySelectorAll("[data-cost-key]") ?? [])
+        input.value = parsed.value?.cost?.[input.dataset.costKey] ?? "";
+      sync();
+    });
     sync();
     const displayId = isNew ? (String(form.id ?? "").trim() || "新模型") : String(row.snap.id ?? "");
     const displayName = String(form.name ?? "").trim();
@@ -1268,7 +1306,7 @@ export function initModelManager({ root, request, onSaved }) {
             : iconButton("delete", `删除模型「${displayId}」`, () => override
               ? confirmHide({ key: row.snap.key, kind: "model", id: providerId, models: [row.snap] })
               : confirmDeleteModel(providerId, String(row.snap.id ?? ""))))),
-      grid, thinkingFields(form, row.snap, sync, providerId), advanced,
+      grid, costFields(form, sync, override), thinkingFields(form, row.snap, sync, providerId), advanced,
       el("div", { class: "mm-model-actions" }, saveButton));
   }
 

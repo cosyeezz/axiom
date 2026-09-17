@@ -378,6 +378,9 @@ test("未加载历史分页不创建 SDK，身份/水位/页外元数据遵守�
     assert.equal(page.sessionId, "s");
     assert.equal(page.seq, 7);
     assert.equal(page.messages.length, 60);
+    assert.equal(page.runtime.context.estimated, true);
+    assert.ok(page.runtime.context.tokens > 0);
+    assert.equal(page.runtime.billing.records, 0);
     assert.deepEqual([page.tasks, page.compactions, page.retries], [[], [], []]);
     const earlier = await sessions.history("s", { before: page.history.prevCursor, limit: 60 }, "inst");
     assert.equal(earlier.messages[0].messageId, "e0");

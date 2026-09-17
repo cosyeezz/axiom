@@ -17,6 +17,8 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  * 未登记的文件会在 INDEX.md 里标 ⚠ 提醒补充。
  */
 const MODULE_INFO = {
+  "src/session-billing.js": "全会话 entries 用量与费用统计、当前上下文估算",
+  "public/session-details.js": "主代理页签、安全可折叠 JSON 树与会话账单渲染",
   "src/data-owner.js": "写库前数据根独占：内核管道或socket持有，禁止同根双写",
   "tests/data-owner.test.js": "数据根独占、路径别名和释放重开回归",
   "tests/data-version.test.js": "数据版本超限写前拒绝与文件不变回归",

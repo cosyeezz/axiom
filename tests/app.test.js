@@ -787,11 +787,11 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     sockets[1].receive({ type: "session.state", sessionId: onScreen, data: { status: "idle" } });
     assert.ok(JSON.parse(window.localStorage.getItem("axiom.sessionSeen"))[onScreen] > 0, "the session on screen is marked seen when it finishes");
     input("");
-    assert.match($("session-runtime").textContent, /缓存命中 暂无数据.*上下文 暂无数据.*test · model · off/);
+    assert.match($("session-runtime").textContent, /缓存命中 尚无已报告用量的请求.*上下文 等待首条消息.*test · model · off/);
     assert.equal($("thinking").selectedOptions[0].textContent, "off");
     assert.equal(window.runtimeSummary({ model: "zai-coding-cn/glm-5.3-flash", thinking: "max" })[2], "zai-coding-cn · glm-5.3-flash · max");
     assert.match(window.runtimeSummary({ usage: { input: 100, cacheRead: 0, cacheWrite: 0 } })[0], /0.0%/);
-    assert.match(window.runtimeSummary({ usage: { input: 0, cacheRead: 0 } })[0], /暂无数据/);
+    assert.match(window.runtimeSummary({ usage: { input: 0, cacheRead: 0 } })[0], /供应商未报告缓存用量/);
     assert.match(window.runtimeSummary({ context: { tokens: null, contextWindow: 10000, percent: null } })[1], /— \/ 10,000 tokens · 待更新/);
     assert.equal($("session-runtime").previousElementSibling.className, "actions");
     assert.equal($("subagent-model").value, "");
@@ -1254,11 +1254,12 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       context: { tokens: 1200, contextWindow: 10000, percent: 12 },
     };
     emit("agent.runtime", runtime, { agentId: "child" });
-    assert.match($("session-runtime").textContent, /暂无数据/);
+    assert.match($("session-runtime").textContent, /尚无已报告用量的请求/);
     emit("agent.runtime", { ...runtime, model: "test/model" });
     assert.match($("session-runtime").textContent, /80.0%.*test · model · high/);
     assert.equal($("session-system-prompt").textContent, runtime.systemPrompt);
-    assert.deepEqual(JSON.parse($("session-active-tools").textContent), runtime.tools);
+    assert.equal($("session-active-tools").querySelector(".inspector-tool summary").textContent, "read");
+    assert.equal($("session-active-tools").querySelector(".inspector-tool p").textContent, runtime.tools[0].description);
     assert.equal($("session-inspector").querySelector("img"), null, "prompt and tool definitions are plain text");
     emit("agent.runtime", { ...runtime, systemPrompt: "child only" }, { agentId: "child" });
     assert.equal($("session-system-prompt").textContent, runtime.systemPrompt, "child runtime cannot overwrite main inspector");
@@ -1380,7 +1381,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("task-runs").children.length, 1);
     row("b").querySelector(".session-item").click();
     await settle();
-    assert.match($("session-runtime").textContent, /暂无数据/, "switching sessions clears previous usage");
+    assert.match($("session-runtime").textContent, /尚无已报告用量的请求/, "switching sessions clears previous usage");
     assert.doesNotMatch($("session-system-prompt").textContent, /System instructions/, "switching sessions clears previous prompt");
     assert.equal($("session-active-tools").textContent, "工具信息尚未加载。");
     assert.equal($("task-runs").hidden, true, "switching sessions resets the run summary");

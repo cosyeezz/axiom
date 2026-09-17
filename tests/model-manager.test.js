@@ -429,6 +429,31 @@ test("重命名走原子命令：弹窗校验失败留在弹窗，成功后缓�
   h.window.close();
 });
 
+test("模型价格字段回填、非法值阻止保存、零费率与 tiers 保留", async () => {
+  const h = harness();
+  const loaded = h.manager.load();
+  const tiers = [{ inputTokensAbove: 200000, input: 6, output: 30, cacheRead: .6, cacheWrite: 7.5 }];
+  h.flushGet({ providers: [{ id: "p1", api: "openai-completions", models: [{ id: "m1", cost: { input: 3, output: 15, cacheRead: .3, cacheWrite: 3.75, tiers } }] }] });
+  await h.settle(); await loaded; await h.selectProvider("p1");
+  const model = h.detail().querySelector(".mm-model");
+  const input = model.querySelector('[aria-label="费用·输入（USD/百万 tokens）"]');
+  const saveButton = model.querySelector(".mm-model-actions button");
+  assert.equal(input.value, "3");
+  assert.equal(saveButton.disabled, true);
+  h.setInput(input, "-1");
+  assert.equal(saveButton.disabled, true);
+  assert.match(saveButton.title, /非负数/);
+  h.setInput(input, "abc");
+  assert.equal(saveButton.disabled, true);
+  h.setInput(input, "0");
+  assert.equal(saveButton.disabled, false);
+  saveButton.click(); await h.settle();
+  const save = h.lastPending("models.model.save");
+  assert.deepEqual(j(save.args.model.cost), { input: 0, output: 15, cacheRead: .3, cacheWrite: 3.75, tiers });
+  save.settled = true; save.resolve({ fingerprint: "fp-4" });
+  await h.settle(); h.flushGet(); await h.settle(); h.window.close();
+});
+
 test("模型编辑为整条替换 upsert：未知字段保留、脏检查阻止空写", async () => {
   const h = harness();
   const loaded = h.manager.load();

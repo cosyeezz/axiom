@@ -31,7 +31,8 @@ test("runtime snapshots use actual agent state, survive disposal and stay out of
   try {
     const initial = sessions.snapshot(id).runtime;
     assert.equal(initial.usage, null);
-    assert.equal(initial.context.tokens, null);
+    assert.equal(initial.context.tokens, 0);
+    assert.equal(initial.context.estimated, true, "missing SDK token count uses explicit estimate");
     assert.equal(initial.systemPrompt, "Initial prompt");
     assert.deepEqual(initial.tools, [{ name: "read", description: "Read", parameters: { type: "object" } }]);
     assert.equal(Object.hasOwn(initial.tools[0], "execute"), false, "only serializable tool definitions are exposed");

@@ -1,3 +1,4 @@
+import { sessionBilling, usageRuntime } from "./session-billing.js";
 import { TITLE_INSTRUCTION } from "./prompts.js";
 import {
   createAgentSession,
@@ -14,14 +15,13 @@ import { createJiti } from "jiti";
 const { getSupportedThinkingLevels } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai/compat");
 
 export function agentRuntime(session) {
-  const last = session.messages.findLast((message) => message.role === "assistant");
   return {
     model: `${session.model.provider}/${session.model.id}`,
     thinking: session.thinkingLevel,
     systemPrompt: session.systemPrompt,
     tools: session.agent?.state.tools?.map(({ name, description, parameters }) => ({ name, description, parameters })) ?? null,
-    context: session.getContextUsage() ?? null,
-    usage: last?.usage ?? null,
+    ...usageRuntime(session.messages, session.model, session.getContextUsage()),
+    billing: sessionBilling(session.sessionManager?.getEntries() ?? session.messages.map(message => ({ type: "message", message }))),
   };
 }
 

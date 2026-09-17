@@ -1252,13 +1252,14 @@ textarea {
   align-items: center;
   min-width: 0;
   flex: 1;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
+  flex-wrap: wrap;
+  overflow: visible;
   padding: 3px;
 }
 .selectors label {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
   position: relative;
 }
 .selectors select {
@@ -1394,6 +1395,22 @@ textarea {
 [hidden] {
   display: none !important;
 }
+.inspector-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+.inspector-tabs button { min-height: 40px; border-radius: 8px; background: transparent; color: var(--muted); }
+.inspector-tabs button[aria-selected="true"] { background: var(--raised); color: var(--ink); border-color: var(--line-strong); }
+.inspector-tool, .bill-model { border: 1px solid var(--line); border-radius: 8px; margin-top: 8px; padding: 8px 12px; background: var(--raised); overflow-wrap: anywhere; }
+.inspector-tool > summary, .bill-model > summary { min-height: 40px; align-content: center; cursor: pointer; font-weight: 500; }
+.json-tree { margin: 4px 0 4px 12px; padding-left: 8px; border-left: 1px solid var(--line); font-family: ui-monospace, monospace; font-size: 12px; }
+.json-tree summary { cursor: pointer; min-height: 28px; color: var(--ink); }
+.json-leaf { padding: 2px 0 2px 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.json-key { color: var(--ink); font-weight: 600; }
+.json-string { color: var(--body-ink); }
+.json-number, .json-boolean { color: var(--muted); font-weight: 600; }
+.json-null { color: var(--muted); font-style: italic; }
+.bill-model dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 16px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.bill-model dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+#session-runtime { overflow-wrap: anywhere; }
+#session-billing { margin-top: 8px; }
 .mobile-controls { display: none; }
 @media (max-width: 700px) {
   body { --sidebar-width: 0px; }
@@ -1402,9 +1419,9 @@ textarea {
   .shell:not(.mobile-expanded) .composer-wrap > :not(#composer),
   .shell:not(.mobile-expanded) #composer > :not(.mobile-controls) { display: none; }
   .shell:not(.mobile-expanded) #composer { border: 0; background: transparent; box-shadow: none; }
-  #session-runtime { display: none; }
+  .shell.mobile-expanded #session-runtime { display: flex; }
   .mobile-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px; }
-  #mobile-runtime { min-width: 0; flex: 1; overflow-x: auto; white-space: nowrap; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; scrollbar-width: none; }
+  #mobile-runtime { min-width: 0; flex: 1; overflow-wrap: anywhere; white-space: normal; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; scrollbar-width: none; }
   #mobile-expand { flex-shrink: 0; min-height: 40px; padding: 4px 8px; border: 0; background: transparent; color: var(--muted); font-size: 12px; }
   .shell,
   .shell.collapsed {
@@ -1457,11 +1474,11 @@ textarea {
   #add-context, #add-image, .icon-group > * { width: 40px; height: 40px; min-height: 40px; }
   #composer .actions { gap: 4px; padding: 4px 8px; }
   #composer .selectors { flex-basis: 100%; gap: 4px; padding: 0; }
-  #composer .selectors label { flex: 1; min-width: 0; }
+  #composer .selectors label { flex: 1 1 120px; min-width: 0; }
   #composer .selectors select { width: 100%; max-width: 100%; padding-left: 8px; }
-  #composer .actions > button { flex: 1; }
-  #session-runtime { flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; padding: 4px 8px; }
-  #session-runtime > span { flex-shrink: 0; }
+  #composer .actions > button { flex: 1 1 96px; }
+  #session-runtime { flex-wrap: wrap; white-space: normal; padding: 8px; }
+  #session-runtime > span { min-width: 0; overflow-wrap: anywhere; }
   #session-runtime:empty { display: none; }
   .composer-footer { display: none; }
   #task-runs { max-height: 88px; overflow-y: auto; }

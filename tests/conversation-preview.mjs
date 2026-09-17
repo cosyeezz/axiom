@@ -38,7 +38,13 @@ const thinking = `### 先看信息层级
 const state = {
   sessionId: "ui-review", title: "会话阅读体验 · UI 验收", cwd: process.cwd(), status: "idle",
   config: { model: "preview/axiom", thinking: "high", levels: ["off", "high"], skills: [] },
-  runtime: { model: "preview/axiom", thinking: "high" },
+  runtime: { model: "preview/axiom", thinking: "high",
+    systemPrompt: "你是主代理。安全读取文件并给出清晰答复。",
+    tools: [{ name: "read", description: "读取文件内容", parameters: { type: "object", properties: { path: { type: "string" }, limit: { type: "number" } }, required: ["path"] } }],
+    usage: { input: 1000, output: 200, cacheRead: 4000, cacheWrite: 0 },
+    context: { tokens: 5000, contextWindow: 128000, percent: 3.90625 },
+    billing: { records: 2, unpriced: 0, cost: { total: .012 }, groups: [{ model: "preview/axiom", tokens: { input: 1000, output: 200, cacheRead: 4000, cacheWrite: 0 }, cost: { input: .003, output: .005, cacheRead: .004, cacheWrite: 0, total: .012 } }] },
+  },
   messages: [], live: {}, tools: {},
   tasks: [{ id: "review", task: "检查移动端布局、长路径与思考内容的阅读体验", status: "completed" }],
 };
