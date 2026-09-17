@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/16 20:44:04）
+# Axiom 多级代码索引（生成于 2026/9/16 20:48:16）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -168,7 +168,7 @@
 | tests/service.test.js | 684 | node --test 测试（npm test） | until, readMaybe, killTree, buildWorkspace |
 | tests/session-cache.test.js | 115 | node --test 测试（npm test） | clean, withDraft, withImages |
 | tests/session-created-at.test.js | 44 | node --test 测试（npm test） | factory |
-| tests/session-flow.test.js | 587 | node --test 测试（npm test） | flowFactory, jsonlFactory |
+| tests/session-flow.test.js | 590 | node --test 测试（npm test） | flowFactory, jsonlFactory |
 | tests/session-history.test.js | 411 | node --test 测试（npm test） | build, ids, ask, fakeSource |
 | tests/session-memory.test.js | 110 | node --test 测试（npm test） | reply |
 | tests/session-migration.test.js | 282 | node --test 测试（npm test） | factory, workspaceHash |
@@ -2240,7 +2240,7 @@
 |---|---|---|
 | factory | const | 8 |
 
-### tests/session-flow.test.js（587 行） — node --test 测试（npm test）
+### tests/session-flow.test.js（590 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|

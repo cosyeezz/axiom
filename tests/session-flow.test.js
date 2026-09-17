@@ -522,9 +522,12 @@ test("session.duplicate copies histories into a fresh identity with a sequenced 
     assert.equal(view("task-b").error, "副本不接管未完成的子任务");
     assert.equal(view("task-c").status, "failed");
     assert.equal(copyTasks.find((task) => task.id === "task-a").notified, true, "完成结果不重发通知");
-    // 副本历史完整重建：主消息 + 子任务消息都以副本文件为源。
-    assert.deepEqual(sessions.snapshot(copyId).messages.map((record) => record.entryId), ["u1", "a1", "s1", "s2"]);
-    assert.equal(sessions.snapshot(copyId).messages.at(-2).agentId, "task-a");
+    // 副本历史完整重建：主消息 + 子任务消息都以副本文件为源；测试夹具没有委派锚点，
+    // 无关联子历史保留在前部，最后一条仍是主回答（与真实带 delegate 结果的会话相反）。
+    assert.deepEqual(sessions.snapshot(copyId).messages.map((record) => record.entryId), ["s1", "s2", "u1", "a1"]);
+    assert.equal(sessions.snapshot(copyId).messages.at(0).agentId, "task-a");
+    assert.equal(sessions.snapshot(copyId).messages.at(1).agentId, "task-b");
+    assert.equal(sessions.snapshot(copyId).messages.at(-1).agentId, "main", "无锚点副本最后仍是主回答");
 
     // 同名连续复制接续序号；复制「周报复盘 1」也回到同一序号序列。
     const secondId = await sessions.duplicate(id);
@@ -540,7 +543,7 @@ test("session.duplicate copies histories into a fresh identity with a sequenced 
     await restored.load();
     await restored.ensureLoaded(copyId);
     assert.equal(restored.snapshot(copyId).title, "周报复盘 1");
-    assert.deepEqual(restored.snapshot(copyId).messages.map((record) => record.entryId), ["u1", "a1", "s1", "s2"]);
+    assert.deepEqual(restored.snapshot(copyId).messages.map((record) => record.entryId), ["s1", "s2", "u1", "a1"]);
     assert.equal(restored.snapshot(copyId).tasks.find((task) => task.id === "task-b").status, "cancelled");
     await restored.remove(copyId);
     await restored.close();

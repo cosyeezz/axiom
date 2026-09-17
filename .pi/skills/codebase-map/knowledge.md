@@ -658,3 +658,8 @@
 ### 2026-09-16 前插历史必须同步辅助记录与锚点顺序
 - 原因：只前插DOM但 mainItems 仍push到尾，重试取at(-1)错位；ctx.restoreRetries为空且未合并历史compactions。
 - 修复：新历史主消息数组放在已有数组前，合并压缩记录并按页内边界恢复重试；history-prepend-records回归。
+
+### 2026-09-17 恢复重排与 session.duplicate 的交互
+- 原因：duplicate() 走 create() 恢复路径，messages 从独立 JSONL 重建时应用 orderRestoredHistory；测试夹具的子任务由 saveTask 直接落库、主历史无 delegate toolResult 锚点，无关联子消息按设计前置到头部。
+- 修复：这不是回归而是新语义在副本路径的自然延伸——断言更新为 [s1,s2,u1,a1]，并补 at(-1)=main（无锚点副本最后仍是主回答）；带真实 delegate 锚点的会话子历史仍归位到声明处。
+- 防再犯：改 duplicate/恢复顺序断言前先确认夹具是否有委派锚点；orderRestoredHistory 只在 restoredFromJsonl 为真时生效，旧快照 messages 保序（保护 retry messageCount 下标）。
