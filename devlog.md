@@ -2271,3 +2271,13 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 更新断言为 [s1,s2,u1,a1] 并补 at(-1)=main（无锚点副本最后仍是主回答）；带真实 delegate 锚点的会话子历史仍归位到声明点之后（restored-history-order.test.js 覆盖）。
 - 涉及文件：tests/session-flow.test.js、knowledge.md（追加）。
 - 验证：npm test 699 项全绿（697 通过、0 失败、2 既有跳过）。
+
+## 2026-09-17 侧栏视觉对齐 Linear
+
+- 内容与原因：侧栏观感陈旧（三个描边按钮堆叠、hover 用 --surface 与侧栏底色相同导致完全不可见、品牌行是纯文本、展开指示符是 "▶" 字符、行高 40px 偏松）。按 Linear 设计规范与成熟侧栏（VS Code/Linear/ChatGPT）语汇重构：品牌行改为 20px 强调色方块 + XIOM 字标；「新会话」保留为唯一主按钮，「打开工作空间/导入会话」降为并排 30px 幽灵按钮；搜索包进 .search-wrap 内嵌框（画布色底+左侧放大镜）；设置按钮换成 gear SVG 钉底部脚注行（ghost 风格）。
+- 关键修复：.session-row:hover 改用 var(--hover)（旧值 --surface 与 aside 背景同色，悬停反馈为零，同病还有 .session-group-count 底色）；.workspace-group.current 区分当前工作区（常驻 8% 淡强调底 + 名称提重，非当前降 --body-ink/500）。
+- 选中/置顶语汇重做：正在看的会话 = 淡强调底 + inset 2px 主色左键 + 文字 500；置顶 = --raised 底 + 45% 主色左键；叠加规则（置顶+当前）置于其后。会话行 32px 紧凑化（coarse 40px），「⋯」28px 悬停浮现，状态点 8px→6px（#session-alert 共享点类，单独补 8px 兜底）。
+- 日期分线改相对标签：app.js 新增 sessionDayLabel()（今天/昨天/前天/N 天前，3-6 天；同年 M月D日；跨年带年份；无效时间「日期未知」），分线加 title 显示精确日期。
+- 测试同步：session-sidebar-ui.py 引入 page.clock.set_fixed_time(datetime(2026,9,12))，日期断言改为 ['昨天','前天','3 天前','4 天前','5 天前']；原「已完成段紧挨设置按钮 ≤150px」断言只在旧行高恰好填满 960px 视口时成立，改为验证脚注钉底 + 列表不重叠（紧凑化后列表下方留白属正常侧栏行为）。
+- 涉及文件：public/index.html、public/app.js、public/style.css、tests/session-sidebar-ui.py、README.md、devlog.md。
+- 验证：worktree 内 npm test 699 项全绿（697 通过、0 失败、2 既有跳过）；session-sidebar-ui.py PASS。

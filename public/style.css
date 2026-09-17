@@ -73,8 +73,8 @@ body:has(.shell.collapsed) { --sidebar-width: 0px; }
 aside {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 24px 16px;
+  gap: 10px;
+  padding: 14px 12px 10px;
   /* 侧栏字号比正文小一级，突出主区对话内容。 */
   font-size: 13px;
   background: var(--surface);
@@ -86,15 +86,77 @@ aside {
   visibility: hidden;
   padding: 0;
 }
+/* 品牌行：强调色方块托住 A，正文字重压回 XIOM（Linear 规范：薰衣草蓝只给品牌、主 CTA、焦点）。 */
 .brand {
-  font-size: 17px;
-  font-weight: 650;
-  letter-spacing: 1.5px;
-  color: var(--accent);
-  padding: 0 8px 8px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 4px 2px;
 }
-.brand span {
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+.brand-name {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 1.6px;
   color: var(--ink);
+}
+/* 新会话是侧栏唯一主按钮（primary CTA），其余动作降为幽灵行，不再用三个描边按钮堆叠。 */
+#new { min-height: 36px; }
+.sidebar-tools {
+  display: flex;
+  gap: 6px;
+}
+.sidebar-tool {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.sidebar-tool:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
+.sidebar-tool svg { width: 13px; height: 13px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+/* 搜索：画布色内嵌输入框 + 左侧放大镜，label 仍走 sr-only。 */
+.search-wrap { position: relative; flex-shrink: 0; }
+.search-wrap svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  width: 13px;
+  height: 13px;
+  transform: translateY(-50%);
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+.search-wrap input {
+  min-height: 36px;
+  padding: 6px 10px 6px 30px;
+  background: var(--canvas);
+}
+@media (pointer: coarse) {
+  #new, .search-wrap input { min-height: 40px; }
+  .sidebar-tool { min-height: 40px; }
 }
 input,
 select,
@@ -167,50 +229,56 @@ summary {
   flex: 1;
   min-height: 60px;
   overflow-y: auto;
+  padding-right: 2px;
 }
 .session-section { min-height: 0; }
 .session-completed::details-content { min-height: 0; max-height: 45vh; overflow: auto; }
+/* 组头（进行中/已完成）走 eyebrow 风格：小字、轻微正字距，与正文区分。 */
 .session-group-toggle {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 16px 8px 0;
+  margin: 10px 6px 2px;
   padding: 4px 6px;
-  min-height: 28px;
+  min-height: 26px;
   list-style: none;
   cursor: pointer;
   border-radius: 6px;
+  color: var(--muted);
 }
 .session-group-toggle::marker { content: ""; }
 .session-group-toggle::-webkit-details-marker { display: none; }
 .session-group-toggle:hover { background: var(--hover); }
 .session-group-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.session-group { font-size: 11px; color: var(--ink); font-weight: 600; }
+.session-group { font-size: 11px; color: inherit; font-weight: 500; letter-spacing: 0.4px; }
 .session-group-count {
   margin-left: auto;
   font-size: 10px;
   color: var(--muted);
-  background: var(--surface);
+  background: var(--raised);
   border-radius: 999px;
   padding: 1px 7px;
   font-variant-numeric: tabular-nums;
 }
-.session-section + .session-section { border-top: 1px solid var(--line); margin-top: 8px; }
-.session-day { display: flex; align-items: center; gap: 8px; margin: 12px 8px 4px; font-size: 11px; color: var(--muted); }
-.session-day::after { content: ""; height: 1px; flex: 1; background: var(--line); }
-.session-empty { margin: 8px; color: var(--muted); font-size: 11px; }
+.session-section + .session-section { border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); margin-top: 6px; padding-top: 2px; }
+.session-day { display: flex; align-items: center; gap: 8px; margin: 10px 6px 2px; font-size: 10.5px; letter-spacing: 0.3px; color: var(--muted); }
+.session-day::after { content: ""; height: 1px; flex: 1; background: color-mix(in srgb, var(--line) 70%, transparent); }
+.session-empty { margin: 8px 6px; color: var(--muted); font-size: 11px; }
+/* 工作区分组：当前工作区常驻一层极淡的强调底，其余靠 hover 浮起。 */
 .workspace-group { display: block; }
-.workspace-group + .workspace-group { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 6px; }
+.workspace-group + .workspace-group { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
 .workspace-header {
   display: block;
   cursor: pointer;
   user-select: none;
   list-style: none;
-  padding: 6px 8px 8px;
+  padding: 5px 6px;
   border-radius: 6px;
 }
 .workspace-header::marker, .workspace-header::-webkit-details-marker { display: none; }
 .workspace-header:hover { background: var(--hover); }
+.workspace-group.current > .workspace-header { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.workspace-group.current > .workspace-header:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
 /* 顶行：展开指示符 + 名称 + 徽章 + 新建按钮 */
 .workspace-header-top {
@@ -218,14 +286,17 @@ summary {
   align-items: center;
   gap: 6px;
 }
-.workspace-header-top::before {
-  content: "▶";
-  font-size: 8px;
+.workspace-chevron {
+  display: grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
   color: var(--muted);
   transition: transform .15s;
-  flex-shrink: 0;
 }
-.workspace-group[open] > .workspace-header .workspace-header-top::before {
+.workspace-chevron svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.workspace-group[open] > .workspace-header .workspace-chevron {
   transform: rotate(90deg);
 }
 
@@ -240,47 +311,49 @@ summary {
   color: var(--ink);
   letter-spacing: -0.2px;
 }
+.workspace-group:not(.current) .workspace-name { color: var(--body-ink); font-weight: 500; }
 
 /* 第二行：完整工作空间路径 */
 .workspace-path {
   display: block;
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--muted);
-  padding-left: 16px;
+  padding-left: 18px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  margin-top: 2px;
-  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  margin-top: 1px;
+  font-family: var(--mono);
 }
 
-.workspace-badge { flex-shrink: 0; font-size: 10px; font-weight: 500; margin-left: 2px; }
+.workspace-badge { flex-shrink: 0; font-size: 10px; font-weight: 500; margin-left: 2px; font-variant-numeric: tabular-nums; }
 .ws-badge-running { color: var(--success); }
 .ws-badge-attention { color: var(--accent-ink); }
-.workspace-new-btn { flex-shrink: 0; width: 24px; height: 24px; min-height: 0; padding: 0; border: 0; background: transparent; border-radius: 4px; color: var(--muted); cursor: pointer; display: grid; place-items: center; opacity: 0; }
+.workspace-new-btn { flex-shrink: 0; width: 22px; height: 22px; min-height: 0; padding: 0; border: 0; background: transparent; border-radius: 5px; color: var(--muted); cursor: pointer; display: grid; place-items: center; opacity: 0; }
 .workspace-header:hover .workspace-new-btn, .workspace-new-btn:focus-visible { opacity: 1; }
 .workspace-new-btn:hover { background: var(--raised); color: var(--ink); }
-.workspace-new-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.workspace-content { padding-left: 12px; }
+.workspace-new-btn svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.workspace-content { padding-left: 10px; }
 @media (pointer: coarse) { .workspace-new-btn { opacity: 1; width: 28px; height: 28px; } }
-.session-row { display: flex; flex-wrap: wrap; align-items: center; min-width: 0; padding-right: 4px; border: 1px solid transparent; border-radius: 8px; }
-.session-row:hover, .session-row:focus-within { background: var(--surface); }
-.session-row { position: relative; }
-.session-row > .session-item { flex-basis: 100%; padding-right: 44px; }
+/* 会话行：桌面 32px 紧凑行；悬停必须用 --hover —— 侧栏底就是 --surface，再用 surface 会完全看不见。 */
+.session-row { display: flex; flex-wrap: wrap; align-items: center; min-width: 0; padding-right: 2px; border-radius: 6px; position: relative; }
+.session-row > .session-item { flex-basis: 100%; padding-right: 34px; }
+.session-row:hover, .session-row:focus-within { background: var(--hover); }
 .session-options { width: 100%; }
-.session-more { position: absolute; top: 0; right: 4px; display: grid; place-items: center; width: 40px; min-height: 40px; cursor: pointer; list-style: none; color: var(--muted); border-radius: 8px; font-size: 20px; }
+.session-more { position: absolute; top: 2px; right: 2px; display: grid; place-items: center; width: 28px; min-height: 28px; cursor: pointer; list-style: none; color: var(--muted); border-radius: 6px; font-size: 16px; opacity: 0; }
+.session-row:hover .session-more, .session-more:focus-visible { opacity: 1; }
 .session-more::marker { content: ""; }
 .session-more::-webkit-details-marker { display: none; }
 .session-more:hover { background: var(--raised); color: var(--ink); }
 .session-more:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.session-actions { position: fixed; inset: auto; margin: 0; width: 192px; max-width: calc(100vw - 16px); padding: 4px; background: var(--raised); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; z-index: 20; }
+.session-actions { position: fixed; inset: auto; margin: 0; width: 192px; max-width: calc(100vw - 16px); padding: 4px; background: var(--raised); color: var(--ink); border: 1px solid var(--line-strong); border-radius: 8px; z-index: 20; box-shadow: 0 8px 24px var(--shadow-mid); }
 .session-options[open] > .session-more { background: var(--raised); color: var(--ink); }
 .session-options:not([open]) > .session-actions { display: none; }
 .session-actions button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 8px; background: transparent; border-color: transparent; color: var(--ink); text-align: left; font-weight: 400; }
 .session-actions button:hover:not(:disabled) { background: var(--surface); }
 .session-copy-arrow { margin-left: auto; font-size: 20px; line-height: 1; }
 .session-copy-menu[hidden] { display: none; }
-@media (pointer: coarse) { .session-more, .session-actions button { min-height: 44px; } .session-more { width: 44px; } }
+@media (pointer: coarse) { .session-more, .session-actions button { min-height: 44px; } .session-more { width: 44px; } .session-item { min-height: 40px; } }
 .session-actions svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .session-item {
   min-width: 0;
@@ -290,37 +363,17 @@ summary {
   justify-content: space-between;
   gap: 8px;
   text-align: left;
-  color: var(--ink);
+  color: var(--body-ink);
   background: transparent;
-  border-color: transparent;
-  min-height: 40px;
-  padding: 8px;
+  border: 0;
+  min-height: 32px;
+  padding: 4px 8px 4px 10px;
   font-weight: 400;
+  border-radius: 6px;
 }
 .session-item:hover:not(:disabled) {
   background: transparent;
 }
-.session-row:has(.session-item[aria-current="page"]) {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 17%, transparent);
-  box-shadow: inset 2px 0 var(--accent);
-}
-/* 置顶会话：底色从侧栏表面加深一层，配一条强调色左键，比普通行更重、与“当前页”高亮也能区分。 */
-.session-row.pinned {
-  background: var(--raised);
-  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
-  box-shadow: inset 3px 0 color-mix(in srgb, var(--accent) 55%, transparent);
-}
-.session-row.pinned:hover,
-.session-row.pinned:focus-within { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); }
-/* 置顶 + 正在看的会话：两套高亮叠加，比单纯“当前页”更重，保留加深的底和更实的左键。 */
-.session-row.pinned:has(.session-item[aria-current="page"]) {
-  background: color-mix(in srgb, var(--accent) 14%, var(--raised));
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
-  box-shadow: inset 3px 0 var(--accent);
-}
-.session-pin-icon { flex-shrink: 0; display: grid; place-items: center; color: var(--accent-ink); }
-.session-pin-icon svg { width: 12px; height: 12px; fill: currentColor; }
 .session-item span {
   flex: 1;
   min-width: 0;
@@ -328,11 +381,34 @@ summary {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 正在看的会话：淡强调底 + 左侧 2px 实键 + 文字提重（成熟侧栏的选中语汇）。 */
+.session-row:has(.session-item[aria-current="page"]) {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.session-row:has(.session-item[aria-current="page"]):hover,
+.session-row:has(.session-item[aria-current="page"]):focus-within {
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+}
+.session-row:has(.session-item[aria-current="page"]) .session-item { color: var(--ink); font-weight: 500; }
+/* 置顶会话：底色从侧栏表面加深一层，配一条半透明左键，比普通行更重、又与“当前页”高亮可区分。 */
+.session-row.pinned {
+  background: var(--raised);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
+}
+/* 置顶 + 正在看的会话：两套高亮叠加，保留加深的底和实色左键。 */
+.session-row.pinned:has(.session-item[aria-current="page"]) {
+  background: color-mix(in srgb, var(--accent) 10%, var(--raised));
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.session-row.pinned:has(.session-item[aria-current="page"]) .session-item { color: var(--ink); font-weight: 500; }
+.session-pin-icon { flex-shrink: 0; display: grid; place-items: center; color: var(--accent-ink); }
+.session-pin-icon svg { width: 11px; height: 11px; fill: currentColor; }
 .session-running-dot,
 .session-attention-dot {
   flex-shrink: 0;
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
 }
 .session-running-dot {
@@ -345,10 +421,22 @@ summary {
 #defaults-workspace { min-width: 200px; }
 .sidebar-footer {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 500;
   text-align: left;
-  padding: 10px 12px;
 }
+.sidebar-footer:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
+.sidebar-footer svg { width: 14px; height: 14px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+@media (pointer: coarse) { .sidebar-footer { min-height: 40px; } }
 main {
   display: flex;
   flex-direction: column;
@@ -374,7 +462,7 @@ header {
 .header-title h1 { line-height: 20px; }
 /* 标题前的提醒点要跟标题同行，又不能挤掉 h1 的省略号，所以单独包一层 min-width:0 的行。 */
 .title-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
-#session-alert { padding: 0; margin: 0; min-height: 0; border: 0; cursor: pointer; }
+#session-alert { padding: 0; margin: 0; min-height: 0; border: 0; cursor: pointer; width: 8px; height: 8px; }
 h1 {
   font-size: 14px;
   font-weight: 500;
@@ -798,11 +886,10 @@ button.danger:hover:not(:disabled) { background: light-dark(#a92f41, #c13e50); }
   overflow: hidden;
   box-shadow: 0 8px 32px var(--shadow-soft);
 }
-.workspace-open { display: flex; align-items: center; justify-content: center; gap: 8px; }
 .workspace-location { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .workspace-location #workspace-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .workspace-location .icon-button { width: 24px; height: 24px; min-height: 24px; border: 0; background: transparent; display: grid; place-items: center; }
-.workspace-location svg, .workspace-open svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; flex-shrink: 0; }
+.workspace-location svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; flex-shrink: 0; }
 .image-attachments { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 8px; }
 .image-attachments > div { position: relative; flex-shrink: 0; }
 .image-attachments img { display: block; width: 88px; height: 72px; object-fit: contain; border: 1px solid var(--line); border-radius: 8px; }

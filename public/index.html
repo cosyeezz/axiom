@@ -21,14 +21,19 @@
   <body>
     <div class="shell">
       <aside id="sidebar">
-        <div class="brand">A<span>XIOM</span></div>
-        <button id="open-workspace" class="secondary workspace-open"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l3 3h9v4M3 7v13h16l3-9H7l-4 9"/></svg>打开工作空间</button>
-        <button id="new" class="secondary" title="在当前工作空间新建会话，使用默认新会话配置">＋ 新会话</button>
-        <button id="import-session" class="secondary" title="导入 pi 的 .jsonl 会话文件">导入 pi 会话…</button>
-        <label class="sr-only" for="search">搜索所有工作空间会话</label
-        ><input id="search" type="search" placeholder="搜索所有工作空间会话…" />
+        <div class="brand"><span class="brand-mark" aria-hidden="true">A</span><span class="brand-name">XIOM</span></div>
+        <button id="new" title="在当前工作空间新建会话，使用默认新会话配置">＋ 新会话</button>
+        <div class="sidebar-tools">
+          <button id="open-workspace" class="sidebar-tool"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l3 3h9v4M3 7v13h16l3-9H7l-4 9"/></svg>打开工作空间</button>
+          <button id="import-session" class="sidebar-tool" title="导入 pi 的 .jsonl 会话文件"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11M8 10l4 4 4-4M4 20h16"/></svg>导入会话</button>
+        </div>
+        <div class="search-wrap">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16.5 16.5 4 4"/></svg>
+          <label class="sr-only" for="search">搜索所有工作空间会话</label
+          ><input id="search" type="search" placeholder="搜索所有工作空间会话…" />
+        </div>
         <nav id="sessions" aria-label="当前工作空间的会话历史"></nav>
-        <button id="open-settings" class="secondary sidebar-footer" aria-haspopup="dialog" aria-controls="settings"><span aria-hidden="true">⚙</span> 设置</button>
+        <button id="open-settings" class="sidebar-footer" aria-haspopup="dialog" aria-controls="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.08a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.08a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.08a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg> 设置</button>
       </aside>
       <button
         id="sidebar-backdrop"

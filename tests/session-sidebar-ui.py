@@ -1,7 +1,9 @@
 """Run against node tests/conversation-preview.mjs (port 4321).
-每次运行前重启预览进程：副本 mock 会在服务端累积会话状态，影响标题序号断言。"""
+每次运行前重启预览进程：副本 mock 会在服务端累积会话状态，影响标题序号断言。
+分线断言依赖相对日期（今天/昨天/前天/N 天前），用固定时钟避免跨天波动。"""
 import os
 import tempfile
+from datetime import datetime
 from playwright.sync_api import sync_playwright
 
 with sync_playwright() as p:
@@ -13,6 +15,8 @@ with sync_playwright() as p:
     page.route('**/app.js', expose)
     page.goto(os.environ.get("AXIOM_PREVIEW_URL", "http://127.0.0.1:4321"))
     page.wait_for_selector(".session-row")
+    # 固定在 2026-09-12：fixture 的 9/7–9/11 会话落在昨天到 5 天前，/other 的 9/12 是今天。
+    page.clock.set_fixed_time(datetime(2026, 9, 12, 12, 0, 0))
     page.evaluate("""() => window.sidebarFixture((sessions) => {
       const base = sessions[0];
       // updatedAt 同时决定排序和日期分线；attention 的 seen 记在 updatedAt 之前 → 待查看。
@@ -42,13 +46,16 @@ with sync_playwright() as p:
     cur = page.locator('.workspace-group').first
     assert cur.locator('.session-group').all_text_contents() == ['进行中', '已完成']
     assert cur.locator('.session-item span').all_text_contents() == ['运行会话', '待查看会话', '旧会话', '新会话', '已完成会话']
-    assert cur.locator('.session-day').all_text_contents() == ['2026-09-11', '2026-09-10', '2026-09-09', '2026-09-08', '2026-09-07']
+    assert cur.locator('.session-day').all_text_contents() == ['昨天', '前天', '3 天前', '4 天前', '5 天前']
     assert not cur.locator('.session-completed').evaluate('(el) => el.open')
     assert not cur.locator('[data-session-id="done"]').is_visible()
-    # 已完成段紧挨在设置按钮上方（中间隔折叠的 /other 组头部）
+    # 设置按钮钉在侧栏底部（脚注位）；会话列表从顶部往下排，与脚注不重叠。
+    # 旧断言要求已完成段“紧挨”脚注，那只在行高恰好填满视口时成立，紧凑化后不再适用。
     completed = cur.locator('.session-completed').bounding_box()
     settings = page.locator('#open-settings').bounding_box()
-    assert 0 <= settings['y'] - completed['y'] - completed['height'] <= 150
+    sidebar = page.locator('#sidebar').bounding_box()
+    assert settings['y'] + settings['height'] <= sidebar['y'] + sidebar['height'] + 1
+    assert completed['y'] + completed['height'] <= settings['y']
     cur.locator('.session-completed > summary').click()
     assert cur.locator('[data-session-id="done"]').is_visible()
     page.evaluate('window.sidebarFixture((sessions) => sessions)')

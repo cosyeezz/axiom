@@ -3401,6 +3401,19 @@ function positionSessionMenu(trigger, panel) {
 function normalizeCwd(cwd) {
   return (cwd || "").replaceAll("\\", "/").replace(/\/$/, "").toLowerCase();
 }
+// 会话分线跟随“今天”滚动：今天/昨天/前天/N 天前，同年只到“M月D日”，精确日期放在 title 上。
+function sessionDayLabel(ts) {
+  const d = new Date(ts);
+  if (Number.isNaN(+d)) return "日期未知";
+  const startOfDay = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.floor((startOfDay(new Date()) - startOfDay(d)) / 86400000);
+  if (days <= 0) return "今天";
+  if (days === 1) return "昨天";
+  if (days === 2) return "前天";
+  if (days <= 6) return `${days} 天前`;
+  const label = `${d.getMonth() + 1}月${d.getDate()}日`;
+  return d.getFullYear() === new Date().getFullYear() ? label : `${d.getFullYear()}年${label}`;
+}
 
 function renderSessions() {
   const fragment = document.createDocumentFragment();
@@ -3570,7 +3583,7 @@ function renderSessions() {
     const sessions = wsMap.get(ncwd) || [];
     const isCurrent = ncwd === currentNcwd;
     const wsDetail = document.createElement("details");
-    wsDetail.className = "workspace-group";
+    wsDetail.className = `workspace-group${isCurrent ? " current" : ""}`;
     wsDetail.dataset.cwd = ncwd;
     // 默认：当前展开，其他折叠（除非有保存的状态）
     wsDetail.open = openCwds.has(ncwd) || (isCurrent && openCwds.size === 0);
@@ -3582,6 +3595,11 @@ function renderSessions() {
     wsHeader.className = "workspace-header";
     const headerTop = document.createElement("span");
     headerTop.className = "workspace-header-top";
+    const chevron = document.createElement("span");
+    chevron.className = "workspace-chevron";
+    chevron.setAttribute("aria-hidden", "true");
+    chevron.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+    headerTop.append(chevron);
     const nameSpan = document.createElement("span");
     nameSpan.className = "workspace-name";
     nameSpan.textContent = displayName;
@@ -3680,13 +3698,14 @@ function renderSessions() {
         });
         let day;
         for (const s of groupSessions) {
-          const date = new Date(s.updatedAt);
-          const label = Number.isNaN(+date) ? "日期未知" : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+          const label = sessionDayLabel(s.updatedAt);
           if (day !== label) {
             day = label;
             const divider = document.createElement("p");
             divider.className = "session-day";
             divider.textContent = label;
+            const exact = new Date(s.updatedAt);
+            if (!Number.isNaN(+exact)) divider.title = `${exact.getFullYear()}-${String(exact.getMonth() + 1).padStart(2, "0")}-${String(exact.getDate()).padStart(2, "0")}`;
             content.append(divider);
           }
           content.append(addRow(s));
