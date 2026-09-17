@@ -5,44 +5,6 @@
  "license": "MIT",
  "author": "cosyeezz",
  "type": "module",
- "main": "desktop/main.mjs",
- "build": {
-  "appId": "com.cosyeezz.axiom",
-  "productName": "Axiom",
-  "artifactName": "Axiom-${version}-${os}-${arch}.${ext}",
-  "asar": true,
-  "npmRebuild": false,
-  "files": [
-   "desktop/*.mjs",
-   "package.json",
-   "!node_modules/**/*"
-  ],
-  "extraResources": [
-   {
-    "from": ".desktop-stage",
-    "to": "."
-   }
-  ],
-  "win": {
-   "target": [
-    {
-     "target": "nsis",
-     "arch": [
-      "x64"
-     ]
-    }
-   ]
-  },
-  "nsis": {
-   "oneClick": false,
-   "perMachine": false,
-   "allowToChangeInstallationDirectory": true
-  },
-  "mac": {
-   "target": "dmg",
-   "category": "public.app-category.developer-tools"
-  }
- },
  "repository": {
   "type": "git",
   "url": "git+https://github.com/cosyeezz/axiom.git"
@@ -67,10 +29,6 @@
   "install.cmd"
  ],
  "scripts": {
-  "desktop:stage": "node scripts/stage-desktop.mjs",
-  "desktop:dev": "electron .",
-  "desktop:pack": "electron-builder --dir",
-  "desktop:build": "electron-builder",
   "start": "node scripts/service.mjs",
   "dev": "node scripts/dev.mjs",
   "dev:web": "node scripts/dev-vite.mjs",
@@ -78,8 +36,7 @@
   "autostart:disable": "node scripts/autostart.mjs disable",
   "test": "node --test --test-timeout=120000 tests/*.test.js",
   "check": "npm test",
-  "desktop:pake": "pake --config desktop/pake.json",
-  "desktop:web": "desktop:stage && electron ."
+  "desktop:pake": "pake --config desktop/pake.json"
  },
  "dependencies": {
   "@earendil-works/pi-coding-agent": "0.85.1",
@@ -90,8 +47,6 @@
   "zod": "^3.24.1"
  },
  "devDependencies": {
-  "electron": "44.4.1",
-  "electron-builder": "26.15.3",
   "jsdom": "^30.0.1",
   "vite": "8.3.0"
  }

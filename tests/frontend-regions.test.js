@@ -9,8 +9,8 @@ import { publicSource } from "./helpers/public-source.js";
 // 区域 = DOM 更新边界，权威数据仍归 app.js 全局：这里只断言「跨区不串扰」，
 // 不断言内部实现，也不替代浏览器里的焦点/滚动人工验收。
 const appSource = await publicSource("markdown-scan", "memory-tags", "goal-markers", "question", "service-settings", "app");
-const pickerSource = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
-const modelPickerSource = (await readFile(new URL("../public/model-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+const pickerSource = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "");
+const modelPickerSource = (await readFile(new URL("../public/model-picker.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "");
 const modelSources = (await Promise.all(["model-auth", "model-manager"].map(async (name) =>
   (await readFile(new URL(`../public/${name}.js`, import.meta.url), "utf8"))
     .replace(/^import .*;\r?\n/gm, "")

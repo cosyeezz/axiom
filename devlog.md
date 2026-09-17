@@ -1,5 +1,30 @@
 # 开发记录
 
+## 2026-09-17 桌面端回归 Pake 壳并支持可配置连接地址
+
+- 原因：用户认为 Electron 方案过重（随包 Node 运行时、生命周期握手、electron-builder 链路），决定移除 Electron，回归 Pake 轻量壳，且连接地址不再构建期烘焙，须可配置（本机或远程均司）。
+- 决策：壳内置本地连接入口页 `desktop/connector/index.html`（pake-cli 支持本地目录打包，无后端依赖）：填 `host:port`（默认端口 4319）或完整 http(s) 地址，点「连接」后以 no-cors 探测可达即整页跳转；上次地址可达时自动直达。pake.json `appVersion` 升 0.2.0，`url` 指向 connector 目录，`forceInternalNavigation: true` 保证跳转留在壳内。网页右上角连接状态点击改为直达设置的「连接」面板（新增第 5 个 tab），断线时也可切换地址，地址校验与 connector 同源规则（拒绝非 http(s)、userinfo、非法端口）。后端配套：`AXIOM_HOST` 环境变量支持非回环监听；WS 升级放宽 loopback Host 白名单（同源 Origin 校验保留）。
+- 删除：`desktop/main.mjs`、`desktop/backend-lifecycle.mjs`、`scripts/stage-desktop.mjs`、`scripts/smoke-shell.mjs`、`scripts/smoke-desktop.mjs`、`tests/backend-lifecycle.test.js`；`package.json` 移除 `main`、`build` 段、`desktop:dev/stage/pack/build/web` 脚本与 electron/electron-builder 依赖；`src/main.js` 移除 AXIOM_DESKTOP 分支（随机端口、ready 握手扩展）；`src/update.js` 移除 checkDesktopUpdate；`src/server.js` 移除 service.desktop 字段；`public/service-settings.js` 移除 desktop 分支；同步删改 tests/{update,service-api,service-settings,app}.test.js。CI 重写为 Pake 构建（Windows MSI + macOS Universal DMG，含 DMG 完整性与双架构校验）。
+- 保留：`desktop:pake` 脚本（配置已重建可用）；`src/data-owner.js`、`src/database.js` 版本守卫、stop/prepareStop、`tests/smoke.js`（与桌面方案无关的通用能力）。
+- 文档：README 桌面段重写为 Pake 方案，旧版 v0.1.0 段落转为历史下载说明；development-plans 概述改为历史存档定位。
+- 涉及：desktop/pake.json、desktop/connector/index.html（新增）；src/{main,update,server}.js；public/{index.html,app.js,style.css,service-settings.js}；scripts/（删 3）、tests/（删 1 改 4）；.github/workflows/desktop.yml；package.json、package-lock.json、.gitignore、README.md、devlog.md。
+- 验证：npm test 697 项：695 通过、0 失败、2 平台跳过（与基线一致）；全仓无 electron/AXIOM_DESKTOP 残留引用。壳内跳转、入口页自动直达与远程直连需 CI 产物实机验收（本机无 Rust 工具链，历史上即依赖 CI 出包）。
+
+## 2026-09-17 隔离内部任务通知与用户撤回队列
+
+- 原因：SDK 的 custom 通知与用户 Steer 共用真实队列，快照丢失角色信息，导致通知显示成 Steer，Esc 清除通知并将内部 JSON 写入输入框。
+- 决策：队列快照增加平行 internal 标记，前端不渲染内部行；保留原文本数组以维持 checkpoint / idle 闸门。撤回仅返回用户文本与图片，清理 SDK 镜像后同步原样恢复 custom 消息，不提前落历史、不改变送达确认。送达后的独立通知条保持不变。
+- 设计：仅过滤队列行，沿用 Linear 既有布局和 token，无新增样式。
+- 涉及文件：`src/pi.js`、`public/app.js`、`tests/internal-task-queue.test.js`、`tests/app.test.js`、`README.md`、`devlog.md`、自动生成的 `.pi/skills/codebase-map/INDEX.md`。
+- 验证：初次定向测试因独立 worktree 缺少依赖未启动，链接现有依赖后全量测试 712 项（710 通过、2 跳过、0 失败）。覆盖双队列内部消息保序、重复撤回、图片索引、内部队列隐藏及既有通知投递回归；获取最新 origin/master 后无新增变更。未运行真实模型或浏览器手测。
+
+## 2026-09-17 全页面操作图标统一重绘
+
+- 原因：上一版置顶图标仍不够清晰，用户明确要求连同页面所有操作图标重绘。
+- 决策：新增共享 SVG 图标表，以 24×24 网格、1.75 圆角描边和 currentColor 统一轮廓。置顶改为直立钉帽、曲线肩部、独立针尖，行内和菜单同源；替换关闭、更多、重试、收藏等字体符号。沿用 Linear 的 muted/ink/accent，不新增配色；保留品牌、文件类型图示、数据仪表与工具身份图形。
+- 涉及：`public/icons.js`、`public/app.js`、`public/style.css`、文件/模型选择器、模型管理、Goal/Question 模块、`src/server.js`、测试加载器与回归、`README.md`、代码索引。
+- 验证：同步最新 master（16b99e2）后全量 730 项，728 通过、2 跳过、0 失败；侧栏浏览器回归通过（含桌面/移动端菜单、键盘关闭及复制）；明暗主题截图核对图钉与菜单轮廓。新增图标几何安全、水合幂等回归，收藏断言改为 SVG 与 aria 状态。期间共享依赖短暂缺失导致一次加载失败，依赖恢复后重新全量验证通过。
+
 ## 2026-09-17 置顶图钉视觉优化
 
 - 原因：侧栏 11px 紫色实心图钉过密，与其他线性图标风格不一致。
@@ -2325,3 +2350,16 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 涉及文件：src/session-billing.js、src/sessions.js、public/session-details.js、public/app.js、public/index.html、public/style.css、tests/subagent-billing.test.js（新增）、tests/session-details.test.js、tests/session-persistence.test.js、tests/app.test.js、tests/conversation-preview.mjs、tests/session-billing-ui.py、tests/conversation-ui.py、README.md、.pi/skills/codebase-map/knowledge.md、INDEX.md。
 - 决策：保留 runtime.billing 单代理语义，新增快照 billing 与 session.billing 事件统一汇总全部子任务；覆盖而非增量相加，避免重复。恢复按每个代理的完整 JSONL entries 重算，缺文件回退最后已知任务账。独立弹窗避免手机输入区内外双滚动，费用仍是估算而非实际扣款。
 - 验证：npm test 712 项（710 通过、2 项平台条件跳过）；session-billing-ui.py 在 320/390/768/1280px 验证页签、JSON、总账与任务账单，实际截图核对 $0.023 = 主代理 $0.012 + 子代理 $0.006 + $0.005；frontend-regions-ui.py 通过。用户明确选择继续修复旧 conversation-ui.py：修正 hash 路由优先级（原测试未真正切换 fixture）、撤销事务前置、移动展开及活动组展开、双层吸顶/弹窗 static 断言、过时折叠图标和等待/工具状态动画目标；支持 PREVIEW_PORT 隔离端口。最终在独立 4397 端口完整通过 1440/390/320px、浏览器错误为零。
+- 合并复验（2026-09-17）：同步 origin/master 3f181e9，保留双方开发日志并重建索引；适配最新未锚定任务设计，conversation-ui.py 改验底部禁用运行条与动画，不再要求不存在的主轴卡片。npm ci 成功，npm test 719 项（717 通过、2 跳过、0 失败），账单四档宽度、frontend-regions-ui.py 与 conversation-ui.py 全部通过。
+
+## 2026-09-17 会话渲染一致性修复：分页/位置/卡片位置/乐观发送
+
+- 时间：2026-09-17。分支 `feat/session-render-consistency`（worktree F:/worktrees/Axiom-session-render-consistency），计划与决策全文见 `docs/session-render-plan.md`。
+- 现象：回到最早后读不回最新；切走切回位置丢失；重启后主对话被 subagent 记录挤空；卡片位置反复丢失落到时间线末尾；发送大内容卡顿。
+- 内容（三阶段提交）：
+  - `851b28b` 服务端：pageOf 窗口预算改按主记录计（1..200，默认 60），子代理记录随委派锚点整组进出；单页记录上限 400，超限裁子代理记录并下发 truncatedTasks；每次分页重建 messageId 索引（投影数组使增量索引失效）；sessions.js 读时投影 projectTimeline（live 到达序不动，仅窗口下发重排，孤儿前置）；pageRetries anchorEntryId 优先；新增 translateRetries 把 live 重试 messageCount 换算到投影下标。
+  - `b4a4d52` 前端：paintHistoryControls 分页条在旧页/加载/有新消息常驻（前向入口曾因 2f25500 无条件隐藏）；prefetchForward 近底部前向预取（historyDirty 时假游标 pending 不进请求）；pendingAnchorRestore 挂起登记 + changing=false 的 finally 冲刷（锚点恢复曾被 changing 守卫吞掉）；移除 finishSnapshot 对未锚定运行任务的末尾追加，入口收敛到 #task-runs（行在入口缺席本页时禁用）；实时子代理消息渲染后立即 placeCompactedTasks 归位；visibilitychange 分视角（贴底追新/旧页保位）；markTruncatedTasks 截断声明。
+  - `fdf1263` 发送：乐观卡「发送中」提交即上屏（nextPaint 先绘制再序列化，测试无渲染环境靠 64ms 兜底 + paint() 驱动）；prompt 回执 runId 绑卡，agent.message.end(user) 按 runId 声领原位升级（无 runId 单槽假设）；response_error 撤卡保草稿，unknown 保留卡标「发送结果未确认」；beginSnapshot 重置槽位；旧页提交先派发 prompt（transport 同步序列化发送），历史回最新并行不阻塞。
+- 涉及文件：src/session-history.js、src/sessions.js；public/app.js、public/style.css；tests/history-main-budget.test.js（新增）、tests/send-optimistic.test.js（新增）、tests/history-reading.test.js（重写 1 项 + 新增 5 项）、tests/session-history.test.js、tests/app.test.js（提交点补 paint() 驱动）；README.md、docs/session-render-plan.md（补实施结果）。
+- 决策：不做整会话静态渲染文件（服务端原文唯一权威）；乐观卡只做占位+原位升级，绝不按文本对账、不伪装已确认；渲染管线（rAF 批处理/epoch 取消/隐藏 park）不推倒重做；虚拟化与增量解析延后（需真实浏览器实测）；不升 CURSOR_VERSION（游标只在前端内存）。
+- 验证：worktree 内 `npm test` 726 项全绿（724 通过、0 失败、2 既有跳过）；service-settings 的真实 HTTP 契约用例在全量并发下偶发一次，单独重跑通过，非本次改动引入。

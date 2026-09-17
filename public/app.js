@@ -1,3 +1,5 @@
+import { actionIcon, initActionIcons } from "./icons.js";
+initActionIcons(document);
 import { initInspector, renderTools, renderBill, money } from "./session-details.js";
 import { createTransport } from "./transport.js";
 import { createSessionCache } from "./session-cache.js";
@@ -298,6 +300,7 @@ transcript.onscroll = () => {
   follow = readFollow(transcript, follow);
   $("latest").hidden = follow;
   prefetchHistory();
+  prefetchForward();
 };
 $("history-before").onclick = () => void loadHistory({ before: historyState.history.prevCursor });
 $("history-after").onclick = () => historyDirty ? void latestHistory() : void loadHistory({ after: historyState.history.nextCursor });
@@ -840,23 +843,59 @@ async function saveTaskBudget() {
 for (const id of taskBudgetInputs) $(id).addEventListener("change", () => void saveTaskBudget());
 function showSettingsPanel(panel) {
   settingsGeneration++;
-  for (const name of ["defaults", "remote", "models", "service"]) {
+  for (const name of ["connection", "defaults", "remote", "models", "service"]) {
     $(`${name}-panel`).hidden = name !== panel;
     const button = $(`settings-${name}-tab`);
     if (name === panel) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
+  if (panel === "connection") openConnectionPanel();
   if (panel === "models") void modelManager.load();
   if (panel === "remote") void remoteLoad();
 }
+$("settings-connection-tab").onclick = () => showSettingsPanel("connection");
 $("settings-defaults-tab").onclick = () => showSettingsPanel("defaults");
 $("settings-remote-tab").onclick = () => showSettingsPanel("remote");
 $("settings-models-tab").onclick = () => showSettingsPanel("models");
 $("settings-service-tab").onclick = () => showSettingsPanel("service");
-// 顶部状态可点击直达「服务与更新」；顶部只保留状态/DEV/版本，不暴露源码路径。
+// 顶部连接状态可点击直达「连接」面板（切地址）；顶部只保留状态/DEV/版本，不暴露源码路径。
 $("status").onclick = () => {
-  showSettingsPanel("service");
+  showSettingsPanel("connection");
   if (!$("settings").open) $("settings").showModal();
+};
+// 「连接」面板：切换后端地址（本地或远程均可）。解析规则与壳内连接页 desktop/connector 一致：
+// 只允许 http(s)、拒绝 userinfo 与非法端口，host:port 默认补 4319；断线时也可用（不入禁用名单）。
+const CONNECTION_KEY = "axiom.connection.address";
+function normalizeBackendAddress(raw) {
+  const text = String(raw || "").trim();
+  if (!text) return null;
+  let url;
+  try { url = new URL(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(text) ? text : `http://${text}`); }
+  catch { return null; }
+  if ((url.protocol !== "http:" && url.protocol !== "https:")
+    || !url.hostname || url.username || url.password) return null;
+  const port = url.port ? Number(url.port) : 4319;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+  const hostPart = url.port ? url.host : `${url.host}:${port}`;
+  return `${url.protocol}//${hostPart}`;
+}
+function openConnectionPanel() {
+  let saved = "";
+  try { saved = localStorage.getItem(CONNECTION_KEY) || ""; } catch {}
+  $("connection-current").textContent = `本页当前来自 ${location.origin}（${connected ? "连接正常" : "连接已断开"}）。`;
+  $("connection-address").value = saved || location.origin;
+  $("connection-feedback").textContent = "";
+}
+$("connection-form").onsubmit = (e) => {
+  e.preventDefault();
+  const origin = normalizeBackendAddress($("connection-address").value);
+  if (!origin) {
+    $("connection-feedback").textContent = "地址无效：请输入 host:port 或 http(s)://host:port";
+    return;
+  }
+  try { localStorage.setItem(CONNECTION_KEY, origin); } catch {}
+  $("connection-feedback").textContent = `正在跳转到 ${origin} …`;
+  location.href = origin;
 };
 $("open-settings").onclick = () => {
   showSettingsPanel(models.length ? "defaults" : "models");
@@ -1253,13 +1292,7 @@ function disclosureHint(label = "详情") {
     span.className = className;
     span.textContent = text;
     if (className === "when-open") {
-      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      icon.setAttribute("viewBox", "0 0 24 24");
-      icon.setAttribute("aria-hidden", "true");
-      const path = document.createElementNS(icon.namespaceURI, "path");
-      path.setAttribute("d", "M5 4h14M6 14l6-6 6 6M12 8v12");
-      icon.append(path);
-      span.prepend(icon);
+      span.insertAdjacentHTML("afterbegin", actionIcon("collapse"));
     }
     hint.append(span);
   }
@@ -1717,6 +1750,19 @@ function renderCompactionStatus(data) {
   label.textContent = `${labels[data.status]}${data.message ? ` · ${data.message}` : ""}`;
   node.append(label);
 }
+// 页上限截断的任务：在任务弹窗顶部声明本页只装载了最近部分，避免误读为完整记录。
+function markTruncatedTasks(state) {
+  for (const id of state.history?.truncatedTasks || []) {
+    const task = tasks.get(id);
+    if (task && !task.truncated) {
+      task.truncated = true;
+      const note = document.createElement("p");
+      note.className = "task-truncated";
+      note.textContent = "任务记录过长：本页只装载了最近的部分记录，更早部分被页上限截断。";
+      task.output.prepend(note);
+    }
+  }
+}
 function trackTaskEntries(message, entryId) {
   if (message.isError || message.role !== "toolResult" || message.toolName?.replace(/^functions\./, "") !== "delegate") return;
   for (const block of Array.isArray(message.content) ? message.content : []) {
@@ -1909,7 +1955,7 @@ function retryChipList(labelText, initial) {
       text.textContent = value;
       const remove = document.createElement("button");
       remove.type = "button";
-      remove.textContent = "×";
+      remove.innerHTML = actionIcon("close");
       remove.setAttribute("aria-label", `删除 ${value}`);
       remove.onclick = () => { state.splice(index, 1); render(); input.focus(); notify(); };
       chip.append(text, remove);
@@ -1969,9 +2015,12 @@ function renderTaskRuns() {
     const row = document.createElement("button");
     row.type = "button";
     row.className = "task-run";
-    row.title = `定位子代理：${task.trigger.title}`;
+    const anchored = task.trigger.isConnected;
+    row.title = anchored ? `定位子代理：${task.trigger.title}` : `${task.trigger.title}（入口在另一页，翻到所在页后可定位）`;
     row.setAttribute("aria-label", row.title);
+    row.disabled = !anchored; // 入口不在当前页（页替换后未渲染）：保留行但不可定位，翻页/回最新后自动恢复。
     row.onclick = () => {
+      if (!task.trigger.isConnected) return;
       follow = false;
       $("latest").hidden = false;
       for (let parent = task.trigger.parentElement; parent; parent = parent.parentElement)
@@ -1993,7 +2042,8 @@ function renderTaskRuns() {
 }
 function renderQueue(queue = {}) {
   const entries = [["Steer", "steering"], ["Follow-up", "followUp"]];
-  $("message-queue").replaceChildren(...entries.flatMap(([type, key]) => (queue[key] || []).map((text, index) => {
+  $("message-queue").replaceChildren(...entries.flatMap(([type, key]) => (queue[key] || []).flatMap((text, index) => {
+    if (queue.internal?.[key]?.[index]) return [];
     const row = document.createElement("button");
     row.type = "button";
     row.title = "撤回全部队列到输入框修改（与 Pi 原生一致）";
@@ -2023,7 +2073,7 @@ function syncRetryPrompt() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "secondary";
-    button.textContent = "↻ 重试";
+    button.innerHTML = `${actionIcon("retry")} 重试`;
     button.title = "接着上次中断的地方继续，不重发你的输入";
     button.onclick = async () => {
       button.disabled = true;
@@ -2036,7 +2086,7 @@ function syncRetryPrompt() {
     retryPrompt.hint = hint;
   }
   retryPrompt.hint.textContent = canReask ? "提问已取消，可以重新打开原问题。" : "上一次请求未正常结束。";
-  retryPrompt.button.textContent = canReask ? "↻ 重新提问" : "↻ 重试";
+  retryPrompt.button.innerHTML = `${actionIcon("retry")} ${canReask ? "重新提问" : "重试"}`;
   retryPrompt.button.title = canReask ? "直接重新调用提问工具，回答后继续原任务" : "接着上次中断的地方继续，不重发你的输入";
   retryPrompt.button.disabled = false;
   if ($("output").lastElementChild === retryPrompt) return;
@@ -2167,6 +2217,9 @@ function applyEvent(message) {
     // 每条主代理消息（含工具结果）占一个 state.messages 槽位，计数与下标保持同构。
     goalAnchorCount++;
   }
+  if (type === "agent.message.end" && agentId !== "main" && ["assistant", "user"].includes(data.message?.role) && tasks.has(agentId))
+    // 实时到达的子代理消息渲染后把任务入口归位到主轴锚点：否则 pill 会留在追加时的时间线末尾。
+    placeCompactedTasks();
   if (type === "agent.retry") {
     stopActivity(agentId, data.status === "waiting" ? "等待重试" : "已停止");
     renderRetry(agentId, data);
@@ -2192,7 +2245,15 @@ function applyEvent(message) {
   }
   if (type === "agent.message.end" && data.message.role === "user" && !isTaskNotification(data.message)) {
     clearWaiting(agentId);
-    const item = card("你", tasks.get(agentId));
+    // 乐观卡对账：事件信封带 runId（无 runId 时单槽假设），命中则原位升级，不另建卡。
+    const claimed = agentId === "main" && pendingUser &&
+      (!message.runId || !pendingUser.runId || message.runId === pendingUser.runId);
+    const item = claimed ? pendingUser.item : card("你", tasks.get(agentId));
+    if (claimed) {
+      pendingUser = null;
+      item.statusNode?.remove();
+      item.statusNode = undefined;
+    }
     bindRaw(item, endedRaw);
     renderMessage(item, data.message);
     if (agentId === "main") {
@@ -2308,7 +2369,7 @@ function applyEvent(message) {
       const retryButton = document.createElement("button");
       retryButton.type = "button";
       retryButton.className = "secondary";
-      retryButton.textContent = "↻ 重试";
+      retryButton.innerHTML = `${actionIcon("retry")} 重试`;
       retryButton.title = "接着上次中断的地方继续，不重新委派任务";
       retryButton.hidden = true;
       task.retryButton = retryButton;
@@ -2381,6 +2442,13 @@ function prefetchHistory() {
   if (transcript.clientHeight > 0 && (transcript.scrollHeight <= transcript.clientHeight + 80 || transcript.scrollTop < transcript.clientHeight))
     void loadHistory({ before: historyState.history.prevCursor });
 }
+// 对称的前向预取：从旧页向新页连续阅读时，近底部自动取下一页（整页替换、从页顶开始）。
+// historyDirty 时 nextCursor 可能是假游标 "pending"（等回最新对账）：预取必须让位，只允许显式按钮路径。
+function prefetchForward() {
+  if (!connected || changing || historyLoading || historyDirty || document.hidden || !historyState?.history?.nextCursor) return;
+  if (transcript.clientHeight > 0 && transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 160)
+    void loadHistory({ after: historyState.history.nextCursor });
+}
 function prependHistory(state) {
   const output = $("output");
   const anchor = [...output.children].find(node => node.getBoundingClientRect().bottom > transcript.getBoundingClientRect().top);
@@ -2410,6 +2478,7 @@ function prependHistory(state) {
   const ctx = { state, folded, placed: new Set(compactionNodes.keys()), foldedTools: new Set(), restoreRetries };
   for (const task of state.tasks || []) if (!tasks.has(task.id))
     applyEvent({ type: "task.state", sessionId, taskId: task.id, data: task });
+  markTruncatedTasks(state);
   for (const entry of entries) if (entry.agentId === "main") trackTaskEntries(entry.message, entry.entryId);
   for (let index = 0; index < entries.length; index++) placeSnapshotMessage(ctx, index, entries[index]);
   restoreRetries(entries.length);
@@ -2427,6 +2496,19 @@ function prependHistory(state) {
   lastScrollTops.set(transcript, transcript.scrollTop);
 }
 let snapshotJob = 0;
+// 切换会话时的锚点恢复：不能用 microtask 直接发（会被 loadHistory 的 changing 守卫吞掉），
+// 登记后在 changing=false 的时机冲刷（switchSession finally / loadHistory finally / 直接 snapshot 尾部）。
+let pendingRestore = null;
+function scheduleAnchorRestore(state, view) {
+  pendingRestore = { sessionId: state.sessionId, anchor: view.anchor, view: { ...view } };
+}
+function flushAnchorRestore() {
+  if (!pendingRestore || pendingRestore.sessionId !== sessionId) { pendingRestore = null; return; }
+  if (changing || historyLoading) return; // 有请求在飞：留待 loadHistory/finally 尾部再冲刷。
+  const pending = pendingRestore;
+  pendingRestore = null;
+  void loadHistory({ target: pending.anchor }, pending.view);
+}
 function snapshot(state, onReady) {
   ++historyRequest;
   historyLoading = false;
@@ -2439,11 +2521,10 @@ function snapshot(state, onReady) {
     else { sessionId = state.sessionId; onReady?.(); }
     transport.commitSnapshot(state);
     const view = views.get(state.sessionId);
-    if (!document.hidden && state.history && !view?.follow && view?.anchor && !state.messages.some(entry => entry.messageId === view.anchor)) {
-      const saved = { ...view };
-      queueMicrotask(() => { if (sessionId === state.sessionId) void loadHistory({ target: saved.anchor }, saved); });
-    }
+    if (!document.hidden && state.history && !view?.follow && view?.anchor && !state.messages.some(entry => entry.messageId === view.anchor))
+      scheduleAnchorRestore(state, view);
   } catch (e) { transport.failSnapshot(); throw e; }
+  if (!changing) flushAnchorRestore();
 }
 function mountHistory(state, onReady) {
   const job = ++snapshotJob;
@@ -2458,14 +2539,17 @@ function paintHistoryControls() {
   const page = historyState?.history;
   const bar = $("history-pages");
   if (!bar) return;
-  bar.hidden = !page || (!historyLoading && !historyDirty);
-  $("history-before").hidden = true;
-  $("history-after").hidden = true;
-  $("history-newest").hidden = !historyDirty;
+  // 分页条常驻旧页与加载/有新消息状态：前向翻页必须可达（曾因无条件隐藏而「回不到后续消息」）。
+  // 最新页不占空间：向上滚有预取、「回到最早/最新」各自常驻滚动按钮。
+  bar.hidden = !page || (!historyLoading && !historyDirty && !page.nextCursor);
+  $("history-before").hidden = false;
+  $("history-after").hidden = false;
+  $("history-newest").hidden = !historyDirty && !page?.nextCursor;
   $("history-before").disabled = historyLoading || !page?.prevCursor;
   $("history-after").disabled = historyLoading || (!page?.nextCursor && !historyDirty);
   $("history-position").textContent = page
-    ? (historyLoading ? "正在加载更早消息…" : historyDirty ? "有新消息 · 回到最新查看" : "") : "";
+    ? (historyLoading ? "正在加载历史…" : historyDirty ? "有新消息 · 回到最新查看" : page.nextCursor ? `${page.start + 1}–${page.end} / 共 ${page.total} 条` : "")
+    : "";
 }
 async function loadHistory(options = {}, reading) {
   if (historyLoading || !historyState?.history || changing) return;
@@ -2497,6 +2581,7 @@ async function loadHistory(options = {}, reading) {
     if (token === historyRequest && target === sessionId) error(`历史页读取失败，请返回最新重试：${e.message}`);
   } finally {
     if (token === historyRequest) { historyLoading = false; paintHistoryControls(); requestAnimationFrame(prefetchHistory); }
+    flushAnchorRestore();
   }
 }
 async function latestHistory() {
@@ -2557,11 +2642,15 @@ function receiveHistoryEvent(message) {
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden && hiddenDirty) {
     hiddenDirty = false;
-    void latestHistory();
+    // 贴底跟随的视角回来自动追新；阅读旧页的视角保留位置，交给「有新消息」横幅与手动回最新。
+    if (follow) void latestHistory();
+    else paintHistoryControls();
   }
 });
 // 换页时卸载旧页，只建立当前页的索引。
 function beginSnapshot(state, target) {
+  // 快照重建是最终权威：乐观卡槽位重置，真实记录由快照消息重新挂载。
+  pendingUser = null;
   // 原文对照与当前页共用消息，不维护另一份历史副本。
   rawEntries = state.messages;
   // View handles belong only to this mounted page; message objects remain authoritative.
@@ -2621,6 +2710,7 @@ function beginSnapshot(state, target) {
     applyEvent({ type: "task.state", sessionId, taskId: task.id, data: task });
     tasks.get(task.id).trigger.remove();
   }
+  markTruncatedTasks(state);
   const folded = new Map();
   for (const record of compactions)
     for (const entryId of record.compactedMessageIds || [])
@@ -2742,13 +2832,14 @@ function finishSnapshot(job, ctx) {
   }
   if (state.status === "running") waiting("main");
   else stopActivity("main", "已结束");
-  for (const task of tasks.values())
-    if (["starting", "running"].includes(task.trigger.dataset.status) && !task.trigger.isConnected) $("output").append(task.trigger);
+  // 未锚定到本页的运行中任务不再追加到主轴末尾（曾致卡片位置反复丢失/落到时间线末尾）；
+  // 它们的唯一入口是底部 #task-runs 栏，行在入口缺席本页时禁用并提示翻页。
   for (const record of compactions)
     if (!compactionNodes.has(record.id)) $("output").prepend(compactionCard(record));
   // 摘要按记录顺序集中在历史顶部；原任务入口移动而非复制，弹窗与状态保持不变。
   $("output").prepend(...compactions.map((record) => compactionNodes.get(record.id)));
   placeCompactedTasks();
+  renderTaskRuns(); // placeCompactedTasks 之后重算行状态（入口连接与否可能刚变化）。
   const retryHistory = $("output").querySelector(":scope > .retry-archive");
   if (retryHistory) $("output").prepend(retryHistory);
   if (!$("output").children.length) {
@@ -2967,6 +3058,7 @@ $("composer").onsubmit = async (e) => {
   if (sentImages.length > 4) return error(new Error("每条消息最多发送 4 张图片，请移除多余附件后分批发送"));
   const wasBusy = busy;
   const queueType = e.submitter?.dataset.queue || config?.queueType || "steer";
+  const onOldPage = !!historyState?.history?.nextCursor;
   busy = true;
   region("输入操作", updateComposer);
   $("error").textContent = "";
@@ -2975,8 +3067,17 @@ $("composer").onsubmit = async (e) => {
   follow = true;
   scrollLatest();
   try {
-    if (historyState?.history?.nextCursor) await latestHistory();
-    await request("prompt", { sessionId: sendingSession, text, ...(sentImages.length ? { images: sentImages } : {}), ...(wasBusy ? { queueType } : {}) });
+    // 乐观上屏：空闲且在最新页时立即显示「发送中」卡；忙碌排队走队列行反馈，旧页无卡（先回最新）。
+    const optimistic = !wasBusy && !onOldPage;
+    if (optimistic) mountPendingUser(text, sentImages);
+    // 先让浏览器绘制乐观卡，再做请求序列化重活（大文本/图片 stringify 同步占主线程）。
+    if (optimistic) await nextPaint();
+    // 旧页提交不再阻塞在整页重建上：先派发 prompt（传输层同步序列化发送），
+    // 历史并行回最新，事件落在最新快照后继续。
+    const sent = request("prompt", { sessionId: sendingSession, text, ...(sentImages.length ? { images: sentImages } : {}), ...(wasBusy ? { queueType } : {}) });
+    if (onOldPage) void latestHistory().catch(error);
+    const reply = await sent;
+    settlePendingUser(reply?.runId);
     if (sessionId === sendingSession) {
       images = images.filter((image) => !sentImages.includes(image));
       renderImages();
@@ -3000,12 +3101,59 @@ $("composer").onsubmit = async (e) => {
     void refreshSessions().catch(error);
   } catch (e) {
     if (sessionId === sendingSession) {
+      // 确定失败（response_error）：撤卡保草稿；结果未知（断线/超时等 unknown）：保留卡并标未确认。
+      failPendingUser(!!e.unknown);
       error(e);
       busy = wasBusy;
       region("输入操作", updateComposer);
     }
   }
 };
+// 乐观发送：提交后立即上屏一张「发送中」的用户卡；prompt 回执带 runId 用于对账，
+// agent.message.end(user) 到达时原位升级为正式消息（bindRaw + mainItems + goal 锚）。
+// 只做临时占位，绝不伪装已确认状态：失败确定时撤卡，未知时如实标注，快照重建天然收敛。
+let pendingUser = null;
+function mountPendingUser(text, sentImages) {
+  const item = card("你");
+  const blocks = [{ type: "text", text }];
+  for (const image of sentImages || []) blocks.push({ type: "image", ...image });
+  renderMessage(item, { role: "user", content: blocks });
+  const status = document.createElement("p");
+  status.className = "message-status";
+  status.textContent = "发送中…";
+  item.node.append(status);
+  item.statusNode = status;
+  pendingUser = { item, runId: null, session: sessionId };
+  return item;
+}
+// 回执的 runId 绑到卡上（早于事件到达）；事件按 runId 声领，避免按文本猜对账。
+function settlePendingUser(runId) {
+  if (!pendingUser) return;
+  pendingUser.runId = runId ?? null;
+}
+function failPendingUser(unknown) {
+  if (!pendingUser) return;
+  const { item } = pendingUser;
+  pendingUser = null;
+  if (!unknown) {
+    if (item.node.isConnected) item.node.remove();
+    return;
+  }
+  const status = item.statusNode;
+  if (status) {
+    status.textContent = "发送结果未确认：可能已送达，等待事件落地或刷新查看。";
+    status.classList.add("message-status-unknown");
+  }
+}
+// rAF 后再放行序列化重活；无渲染环境（测试/jsdom）靠短超时兑底，不卡发送。
+function nextPaint() {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    requestAnimationFrame(finish);
+    setTimeout(finish, 64);
+  });
+}
 function enableImagePreview(image) {
   image.tabIndex = 0;
   image.setAttribute("role", "button");
@@ -3037,7 +3185,7 @@ function renderImages() {
     enableImagePreview(preview);
     const remove = document.createElement("button");
     remove.type = "button";
-    remove.textContent = "×";
+    remove.innerHTML = actionIcon("close");
     remove.setAttribute("aria-label", `移除图片 ${index + 1}`);
     remove.disabled = imageLoading;
     remove.onclick = () => {
@@ -3377,6 +3525,7 @@ async function recoverMissingSession() {
     changing = false;
     renderSessions();
     updateAvailability();
+    flushAnchorRestore();
   }
 }
 async function switchSession(action) {
@@ -3397,6 +3546,7 @@ async function switchSession(action) {
   } finally {
     changing = false;
     updateAvailability();
+    flushAnchorRestore();
   }
 }
 // 保留源路径的分隔符，兼容 Windows、UNC 和 POSIX 文件路径。
@@ -3502,7 +3652,7 @@ function renderSessions() {
       const pin = document.createElement("small");
       pin.className = "session-pin-icon";
       pin.setAttribute("aria-label", "已置顶");
-      pin.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4v4l-6-6h4l4-4 1-4Z"/><path d="m3 21 7-7"/></svg>';
+      pin.innerHTML = actionIcon("pin");
       button.append(pin);
     }
     button.onclick = () =>
@@ -3514,7 +3664,7 @@ function renderSessions() {
     menu.className = "session-options";
     const more = document.createElement("summary");
     more.className = "session-more";
-    more.textContent = "⋯";
+    more.innerHTML = actionIcon("more");
     more.title = `会话操作：${s.title}`;
     more.setAttribute("aria-label", more.title);
     menu.append(more);
@@ -3533,13 +3683,13 @@ function renderSessions() {
     actions.className = "session-actions";
     actions.setAttribute("popover", "manual");
     actions.setAttribute("aria-label", `会话操作：${s.title}`);
-    for (const [kind, label, path] of [
-      ["pin", pinned(s) ? "取消置顶" : "置顶", 'M16 12V4h1V2H7v2h1v8l-2 2v2h5v6h2v-6h5v-2l-2-2z'],
-      ["hide", hidden ? "移回进行中" : "标记已完成", hidden ? 'M12 20V4M5 11l7-7 7 7' : 'M5 12l4 4L19 6'],
-      ["duplicate", "复制会话", 'M9 9h11v12H9ZM15 9V3H4v12h5M14.5 14v3M13 15.5h3'],
-      ["copy", "复制文件", 'M9 9h11v12H9ZM15 9V3H4v12h5'],
-      ["rename", "重命名", 'M16 3l5 5L8 21H3v-5L16 3zM13 6l5 5M3 16l5 5'],
-      ["delete", "删除会话", 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7'],
+    for (const [kind, label, iconName] of [
+      ["pin", pinned(s) ? "取消置顶" : "置顶", "pin"],
+      ["hide", hidden ? "移回进行中" : "标记已完成", hidden ? "up" : "check"],
+      ["duplicate", "复制会话", "duplicate"],
+      ["copy", "复制文件", "copy"],
+      ["rename", "重命名", "edit"],
+      ["delete", "删除会话", "trash"],
     ]) {
       const action = document.createElement("button");
       action.type = "button";
@@ -3550,7 +3700,7 @@ function renderSessions() {
       // 复制文件与置顶是纯前端偏好，不依赖连接，断连时也保持可用；复制会话另按 duplicateBlocked 判定。
       if (kind === "duplicate") action.disabled = duplicateBlocked(s);
       else action.disabled = !["hide", "copy", "pin"].includes(kind) && (!connected || changing);
-      action.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
+      action.innerHTML = actionIcon(iconName);
       action.append(document.createTextNode(label));
       if (kind === "copy") {
         const submenu = document.createElement("div");
@@ -3559,7 +3709,7 @@ function renderSessions() {
         submenu.setAttribute("aria-label", "复制会话文件信息");
         submenu.hidden = true;
         action.setAttribute("aria-expanded", "false");
-        action.innerHTML += '<span class="session-copy-arrow" aria-hidden="true">›</span>';
+        action.innerHTML += `<span class="session-copy-arrow" aria-hidden="true">${actionIcon("chevron")}</span>`;
         for (const [part, text] of [["directory", "复制所在目录"], ["name", "复制文件名"], ["path", "复制完整路径"]]) {
           const item = document.createElement("button");
           item.type = "button";
@@ -3619,7 +3769,7 @@ function renderSessions() {
     const chevron = document.createElement("span");
     chevron.className = "workspace-chevron";
     chevron.setAttribute("aria-hidden", "true");
-    chevron.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+    chevron.innerHTML = actionIcon("chevron");
     headerTop.append(chevron);
     const nameSpan = document.createElement("span");
     nameSpan.className = "workspace-name";
@@ -3647,7 +3797,7 @@ function renderSessions() {
     newBtn.className = "workspace-new-btn icon-button";
     newBtn.title = `在「${displayName}」新建会话`;
     newBtn.setAttribute("aria-label", newBtn.title);
-    newBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+    newBtn.innerHTML = actionIcon("plus");
     newBtn.onclick = (e) => {
       e.stopPropagation();
       if (!connected || changing) return;
@@ -3813,7 +3963,7 @@ function renderContextChips() {
     chip.title = `移除${entry.kind === "skill" ? "待加载 Skill" : "引用"}：${entry.name}`;
     chip.setAttribute("aria-label", chip.title);
     const label = document.createElement("span"); label.textContent = entry.name;
-    const close = document.createElement("span"); close.textContent = "×"; close.setAttribute("aria-hidden", "true");
+    const close = document.createElement("span"); close.innerHTML = actionIcon("close"); close.setAttribute("aria-hidden", "true");
     chip.append(entry.kind === "skill" ? contextIcon("skill") : fileIcon({ ...entry, name: entry.path.split(/[\\/]/).pop() }), label, close);
     chip.onclick = () => {
       if (entry.kind === "skill") { $("composer-skill").value = ""; $("composer-skill").onchange(); }

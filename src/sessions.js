@@ -56,11 +56,12 @@ const delegateTaskIds = (message, into) => {
   }
 };
 
-// 独立 JSONL 不共享时间线：按真实委派结果归位，不能把所有子历史堆到主回答之后。
-function orderRestoredHistory(messages) {
+// 投影：独立 JSONL 不共享时间线，按真实委派结果归位，不能把所有子历史堆到主回答之后。
+// 读时投影（live 数组不动）：分页窗口、前端主轴预算都以这个顺序为准；幂等，重复投影不变。
+function projectTimeline(messages) {
   const main = [], children = new Map();
   for (const record of messages) {
-    if (record.agentId === "main") main.push(record);
+    if ((record.agentId ?? "main") === "main") main.push(record);
     else {
       if (!children.has(record.agentId)) children.set(record.agentId, []);
       children.get(record.agentId).push(record);
@@ -94,15 +95,38 @@ function pageTasks(item, records) {
 
 function pageRetries(records, entryIds, start, end) {
   return records.flatMap((record) => {
-    // messageCount 是「下发的 messages 数组内的下标」：换页时改成页内相对值，前端才能摆对位置。
-    if (Number.isInteger(record.messageCount) && record.messageCount >= start && record.messageCount < end)
-      return [{ ...record, messageCount: record.messageCount - start }];
+    // 锚点在前：anchorEntryId 是精确身份，跨重排不漂；messageCount 只是同构下标的兜底。
     if (record.anchorEntryId && entryIds.has(record.anchorEntryId)) {
       const copy = { ...record };
       delete copy.messageCount;
       return [copy];
     }
+    // messageCount 是「下发的 messages 数组内的下标」：换页时改成页内相对值，前端才能摆对位置。
+    if (Number.isInteger(record.messageCount) && record.messageCount >= start && record.messageCount < end)
+      return [{ ...record, messageCount: record.messageCount - start }];
     return [];
+  });
+}
+
+// live 数组按到达序累积，重试卡的 messageCount 是记录时的数组下标；下发投影页时
+// 换算成投影下标（主记录恒保序，双指针 O(n)；全主记录数组上恒等）。
+function translateRetries(retries, raw, projected) {
+  if (!retries.some((record) => Number.isInteger(record.messageCount))) return retries;
+  const slots = []; // 第 k 条主记录的投影下标 + 1，即「其后」的槽位。
+  let p = 0;
+  for (const record of raw) {
+    if ((record.agentId ?? "main") !== "main") continue;
+    while (p < projected.length && projected[p] !== record) p++;
+    if (projected[p] !== record) break; // 主记录必然在投影里；防御式退出。
+    slots.push(p + 1);
+  }
+  return retries.map((record) => {
+    if (!Number.isInteger(record.messageCount)) return record;
+    let mains = 0;
+    for (let index = 0; index < Math.min(record.messageCount, raw.length); index++)
+      if ((raw[index].agentId ?? "main") === "main") mains++;
+    const slot = mains > 0 && mains <= slots.length ? slots[mains - 1] : 0;
+    return slot === record.messageCount ? record : { ...record, messageCount: slot };
   });
 }
 
@@ -1135,7 +1159,7 @@ export class Sessions {
     }
     // 仅独立 JSONL 重建（子历史堆在末尾）才按委派锚点归位；旧快照自带完整 messages
     // 的顺序就是真实交错历史，重排会改写 messageCount 等下标语义。
-    if (restoredFromJsonl) item.messages = orderRestoredHistory(item.messages);
+    if (restoredFromJsonl) item.messages = projectTimeline(item.messages);
     // Upgrade legacy web history IDs and recover compaction commits saved in Pi JSONL
     // before a crash could persist the web snapshot. Match in order, never by timestamp alone.
     const history = item.agent.historyEntries?.() || [];
@@ -1562,7 +1586,7 @@ export class Sessions {
           messages.push(...taskManager.getBranch().filter(entry => entry.type === "message").map(entry => ({ agentId: task.id, entryId: entry.id, message: entry.message })));
         } catch (error) { task.error = `子任务历史读取失败：${error.message}`; }
       }
-      messages = orderRestoredHistory(messages);
+      messages = projectTimeline(messages);
       // 无 SessionManager 实例：JSONL 只读投影。history 缓存在 stub 上，同进程内 revision 稳定，游标才可用。
       const history = item.history ??= createHistory(id);
       const page = options.window ? pageOf(messages, history, { sessionId: id, epoch: options.epoch, ...options.window }) : null;
@@ -1584,7 +1608,9 @@ export class Sessions {
       if (options.includeSeq === false) delete cloned.seq;
       return cloned;
     }
-    const page = options.window ? pageOf(item.messages, item.history, { sessionId: id, epoch: options.epoch, ...options.window }) : null;
+    // 读时投影：live 数组保持到达序（撤回/重试/压缩等内部逻辑依赖它），只有窗口下发按锚点顺序。
+    const projected = projectTimeline(item.messages);
+    const page = options.window ? pageOf(projected, item.history, { sessionId: id, epoch: options.epoch, ...options.window }) : null;
     // live 只在最新页：旧页没有正在流的消息，带上只会画出幽灵半成品。
     const atLatest = !page || page.meta.end === page.meta.total;
     const pageEntryIds = page ? new Set(page.records.map((record) => record.entryId).filter(Boolean)) : null;
@@ -1613,7 +1639,7 @@ export class Sessions {
       // 换过历史的压缩卡只留给「被压缩消息真在本页」的那页；页内引用不到就与本页无关。
       compactions: page ? item.compactions.filter((record) => record.compactedMessageIds?.some((entryId) => pageEntryIds.has(entryId))) : item.compactions,
       compactionStatus: item.agent.compactionStatus?.() ?? null,
-      retries: page ? pageRetries(item.retries, pageEntryIds, page.meta.start, page.meta.end) : item.retries,
+      retries: page ? pageRetries(translateRetries(item.retries, item.messages, projected), pageEntryIds, page.meta.start, page.meta.end) : item.retries,
       live: atLatest ? item.live : {},
       tools: page ? relevantTools(item, page.records) : item.tools,
       questions: item.questions.snapshot(),

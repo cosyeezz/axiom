@@ -1,3 +1,4 @@
+import { actionIconNode } from "./icons.js";
 // public/file-picker.js — 原生 JS 可复用文件选择组件（无依赖、无框架）。
 // 主题：完全依赖 style.css 的 :root 变量（--canvas/--surface/--raised/--line/--ink/--muted/--accent），
 // 深/浅主题切换只需覆盖变量，本组件自动适配。样式见 file-picker.css。
@@ -125,14 +126,14 @@ export function createFilePicker(request) {
     el("div", { class: "fp-shell" },
       el("header", { class: "fp-head" },
         titleEl = el("h2", { id: "file-picker-title", class: "fp-title" }, "选择文件"),
-        el("button", { id: "file-picker-close", type: "button", class: "fp-iconbtn", "aria-label": "关闭", title: "关闭", onclick: () => settle(null) }, "✕")),
+        el("button", { id: "file-picker-close", type: "button", class: "fp-iconbtn", "aria-label": "关闭", title: "关闭", onclick: () => settle(null) }, actionIconNode("close"))),
       el("div", { class: "fp-toolbar" },
         pathInput = el("input", {
           id: "file-picker-path", type: "text", placeholder: "输入路径后按 Enter 打开", spellcheck: "false", autocomplete: "off", "aria-label": "路径",
           onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); clearTimeout(searchTimer); navigate(e.currentTarget.value.trim()); } },
         }),
-        upBtn = el("button", { id: "file-picker-up", type: "button", class: "fp-iconbtn", "aria-label": "上一级", title: "上一级", onclick: () => parent != null && navigate(parent) }, "↑"),
-        refreshBtn = el("button", { id: "file-picker-refresh", type: "button", class: "fp-iconbtn", "aria-label": "刷新", title: "刷新", onclick: () => reload() }, "↻")),
+        upBtn = el("button", { id: "file-picker-up", type: "button", class: "fp-iconbtn", "aria-label": "上一级", title: "上一级", onclick: () => parent != null && navigate(parent) }, actionIconNode("up")),
+        refreshBtn = el("button", { id: "file-picker-refresh", type: "button", class: "fp-iconbtn", "aria-label": "刷新", title: "刷新", onclick: () => reload() }, actionIconNode("retry"))),
       crumbsEl = el("nav", { id: "file-picker-crumbs", class: "fp-crumbs", "aria-label": "路径导航" }),
       el("div", { class: "fp-body" },
         el("div", { class: "fp-side" },

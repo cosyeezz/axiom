@@ -12,14 +12,15 @@ import { Sessions } from "./sessions.js";
 import { createModelsService } from "./model-config.js";
 import { createServerApp } from "./server.js";
 import { createRemoteAccess, createTailscale } from "./remote.js";
-import { checkUpdate, checkDesktopUpdate, validateCommit } from "./update.js";
+import { checkUpdate, validateCommit } from "./update.js";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 
-const desktop = process.env.AXIOM_DESKTOP === "1";
-const port = desktop ? 0 : Number(process.env.AXIOM_PORT || 4319);
-if (!Number.isInteger(port) || port < (desktop ? 0 : 1) || port > 65535)
+const port = Number(process.env.AXIOM_PORT || 4319);
+if (!Number.isInteger(port) || port < 1 || port > 65535)
   throw new Error("Invalid AXIOM_PORT");
+// 监听地址默认只绑本机回环；需要让其他设备/桌面壳直连时设 AXIOM_HOST（如 0.0.0.0 或内网 IP）。
+const host = process.env.AXIOM_HOST || "127.0.0.1";
 const cwd = resolve(process.env.AXIOM_CWD || process.cwd());
 if (!(await stat(cwd)).isDirectory())
   throw new Error("AXIOM_CWD must be a directory");
@@ -60,8 +61,7 @@ const service = {
   dev: process.env.AXIOM_DEV === "1",
   maintenance: process.env.AXIOM_MAINTENANCE_URL && process.env.AXIOM_MAINTENANCE_TOKEN
     ? { url: process.env.AXIOM_MAINTENANCE_URL, token: process.env.AXIOM_MAINTENANCE_TOKEN } : undefined,
-  desktop,
-  checkUpdate: desktop ? () => checkDesktopUpdate({ version: service.version }) : checkUpdate,
+  checkUpdate,
   // pi 的会话目录：网页「导入 pi 会话」的默认浏览位置。
   importDir: join(getAgentDir(), "sessions"),
   models,
@@ -92,12 +92,10 @@ const app = createServerApp(sessions, service);
 // 否则启动即收 SIGTERM 时这笔写入会撞上已关闭的库，并被 .catch 吞掉（service.remoteShutdown
 // 也可能尚未赋值，app.close 里的可选调用被跳过）。
 let remoteReady = Promise.resolve();
-app.server.listen(port, "127.0.0.1", () => {
-  const port = app.server.address().port;
-  console.log(`Axiom listening on http://127.0.0.1:${port}; workspace: ${cwd}`);
-  process.send?.({ type: "service.ready", instanceId: process.env.AXIOM_INSTANCE_ID, version: service.version,
-    ...(process.env.AXIOM_DESKTOP === "1" ? { protocol: 1, token: process.env.AXIOM_START_TOKEN,
-      pid: process.pid, bundleVersion: process.env.AXIOM_BUNDLE_VERSION, url: `http://127.0.0.1:${port}` } : {}) });
+app.server.listen(port, host, () => {
+  const bound = app.server.address();
+  console.log(`Axiom listening on http://${bound.address}:${bound.port}; workspace: ${cwd}`);
+  process.send?.({ type: "service.ready", instanceId: process.env.AXIOM_INSTANCE_ID, version: service.version });
   // 已进入关闭流程就不再开远程访问：否则这笔初始化会排在关库之后。
   if (closing) return;
   remoteReady = initRemote().catch((error) => console.error("远程访问初始化失败：", error));

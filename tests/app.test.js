@@ -1,13 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { JSDOM } from "jsdom";
+import { JSDOM, VirtualConsole } from "jsdom";
 import { marked } from "marked";
 import createPurify from "dompurify";
 import { createStreamRenderer } from "../public/stream-renderer.js";
 import { publicSource } from "./helpers/public-source.js";
 
-const pickerSource = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+const pickerSource = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "");
 const modelSources = await Promise.all(["model-picker", "model-auth", "model-manager"].map(async (name) => {
   const source = await readFile(new URL(`../public/${name}.js`, import.meta.url), "utf8");
   const exports = [...source.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
@@ -69,10 +69,14 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     "utf8",
   );
   const source = await publicSource("markdown-scan", "memory-tags", "goal-markers", "question", "app");
+  const virtualConsole = new VirtualConsole();
+  const jsdomErrors = [];
+  virtualConsole.on("jsdomError", (error) => jsdomErrors.push(error));
   const dom = new JSDOM(html, {
     url: "http://localhost",
     runScripts: "outside-only",
     pretendToBeVisual: true,
+    virtualConsole,
   });
   const { window } = dom;
   const $ = (id) => window.document.getElementById(id);
@@ -435,8 +439,30 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(window.sessionStorage.getItem("axiom.maintenance"), JSON.stringify({ url: "http://127.0.0.1:4567", token: "secret" }));
     $("status").click();
     assert.equal($("settings").open, true, "header status opens settings");
-    assert.equal($("service-panel").hidden, false);
+    assert.equal($("connection-panel").hidden, false, "header status opens the connection panel");
+    assert.equal($("service-panel").hidden, true);
     assert.equal($("defaults-panel").hidden, true);
+    // 连接面板：无保存地址时预填当前 origin；解析规则与壳内连接页 desktop/connector 一致。
+    assert.equal($("connection-address").value, "http://localhost", "无保存地址时预填当前 origin");
+    const normalize = window.eval("normalizeBackendAddress");
+    assert.equal(normalize("192.168.1.8:9000"), "http://192.168.1.8:9000");
+    assert.equal(normalize("192.168.1.8"), "http://192.168.1.8:4319", "无端口默认 4319");
+    assert.equal(normalize("https://example.com:8443"), "https://example.com:8443");
+    assert.equal(normalize("http://[::1]:4319"), "http://[::1]:4319", "IPv6 保留括号");
+    assert.equal(normalize("javascript://x"), null, "拒绝非 http(s) 协议");
+    assert.equal(normalize("http://user:pass@host"), null, "拒绝 userinfo");
+    assert.equal(normalize("host:99999"), null, "拒绝非法端口");
+    assert.equal(normalize("   "), null, "空地址拒绝");
+    // 无效提交：反馈错误、不写入存储；有效提交：保存地址并整页跳转（stub href 捕获目标，避免 jsdom 导航噪音）。
+    $("connection-address").value = "javascript://x";
+    $("connection-form").dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    assert.match($("connection-feedback").textContent, /地址无效/);
+    assert.equal(window.localStorage.getItem("axiom.connection.address"), null);
+    $("connection-address").value = "192.168.1.8:9000";
+    $("connection-form").dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    assert.equal(window.localStorage.getItem("axiom.connection.address"), "http://192.168.1.8:9000", "提交后保存规范化地址");
+    assert.match($("connection-feedback").textContent, /正在跳转/);
+    assert.equal(jsdomErrors.some((error) => /navigation/.test(error.message)), true, "提交后触发整页导航到新后端");
     $("settings").close();
     assert.equal($("workspace").hidden, false);
     assert.equal(requests.some((req) => req.type === "session.defaults.list"), false, "只看服务面板不拉取默认配置");
@@ -469,7 +495,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("sessions").querySelector('[data-group="active"]').open = true;
     window.eval("renderSessions()");
     assert.equal($("sessions").querySelector('[data-group="active"]').open, true);
-    assert.equal(firstActions.children[1].querySelector("path").getAttribute("d"), "M5 12l4 4L19 6");
+    assert.equal(firstActions.children[1].querySelector("svg").dataset.icon, "check");
     const beforeHide = requests.length;
     const row = (id) => $("sessions").querySelector(`[data-session-id="${id}"]`);
     row("a").querySelector(".session-hide").click();
@@ -539,8 +565,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("composer-skill").disabled, false);
     assert.equal($("composer-skill").options[1].title, "代码导航");
     assert.equal($("composer-skill").hidden, true);
-    assert.equal($("stop").textContent.trim(), "Stop ■");
-    assert.equal($("stop").querySelector('span[aria-hidden="true"]').textContent, "■");
+    assert.equal($("stop").textContent.trim(), "Stop");
+    assert.equal($("stop").querySelector('svg[aria-hidden="true"]').dataset.icon, "stop");
     assert.equal(await window.sidebarCheck(), "C:\\axiom\\b.jsonl", "file-only changes refresh cached copy targets");
     window.sidebarConnected(false);
     assert.equal(row("b").querySelector(".session-copy").disabled, false);
@@ -672,7 +698,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("file-picker-confirm").click(); await settle();
     assert.match($("context-chips").textContent, /src\/app.js/);
     input("参考文件");
-    $("composer").requestSubmit(); await settle();
+    $("composer").requestSubmit(); paint(); await settle();
     assert.match(requests.findLast((req) => req.type === "prompt").text, /文件："src\/app.js"/);
     assert.equal($("context-chips").children.length, 0);
     const completionKey = (key) => $("prompt").dispatchEvent(new window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
@@ -695,7 +721,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.match($("prompt-completion").textContent, /文件夹：src/);
     completionKey("Enter");
     assert.equal($("prompt").required, false, "folder-only reference can submit");
-    $("composer").requestSubmit(); await settle();
+    $("composer").requestSubmit(); paint(); await settle();
     assert.match(requests.findLast((req) => req.type === "prompt").text, /文件夹："src"/);
     input("参考 @sr"); await settle(); completionKey("ArrowRight"); await settle();
     assert.equal($("prompt").value, '参考 @"src/');
@@ -753,6 +779,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("composer-skill").value, "codebase-map");
     assert.equal($("prompt").value, "检查代码");
     $("composer").requestSubmit();
+    paint();
     await settle();
     assert.equal(requests.findLast((req) => req.type === "prompt").text, "/skill:codebase-map 检查代码");
     $("open-raw-io").click();
@@ -796,7 +823,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("subagent-model").value, "");
     assert.equal($("subagent-model").disabled, true);
     assert.equal($("composer").contains($("subagent-model")), false);
-    assert.equal($("new").textContent.trim(), "＋ 新会话");
+    assert.equal($("new").textContent.trim(), "新会话");
+    assert.equal($("new").querySelector("svg").dataset.icon, "plus");
     const mainThinking = $("thinking").value;
     $("agent-role").value = "subagent";
     $("agent-role").dispatchEvent(new window.Event("change"));
@@ -868,7 +896,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.match($("create-agents").textContent, /\[当前项目\] Skill B/);
     assert.equal($("defaults-workspace").value, "", "默认编辑全局默认配置");
     assert.equal($("create-main-provider").value, "", "defaults do not take the current model implicitly");
-    assert.equal(window.document.querySelectorAll('.settings-nav button').length, 4, "默认新会话设置 + 远程控制 + 模型与供应商 + 服务与更新");
+    assert.equal(window.document.querySelectorAll('.settings-nav button').length, 5, "连接 + 默认新会话设置 + 远程控制 + 模型与供应商 + 服务与更新");
     assert.equal($("create-subagent-mode").querySelector('option[value="inherit"]').textContent, "跟随主代理能力");
     assert.equal($("create-subagent-thinking").querySelector('option[value="max"]').textContent, "max");
     $("create-main-thinking").value = "high";
@@ -1036,6 +1064,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     input("  accepted task \n");
     failList = true;
     $("composer").requestSubmit();
+    paint();
     assert.equal($("subagent-model").disabled, false);
     await settle();
     assert.equal(
@@ -1084,7 +1113,15 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       assert.equal($(`restart-${mode}`).disabled, false);
     }
     assert.equal($("status").dataset.connected, "true");
-    emit("session.queue", { steering: ["插话内容"], followUp: ["追加内容"] });
+    emit("session.queue", { steering: ["内部通知"], followUp: [], internal: { steering: [true], followUp: [] } });
+    assert.equal($("message-queue").hidden, true, "internal-only queue is not a user-editable queue");
+    emit("session.queue", {
+      steering: ["内部通知", "插话内容"], followUp: ["追加内容", "内部追加"],
+      internal: { steering: [true, false], followUp: [false, true] },
+      images: { steering: [null, [{ type: "image", data: "test" }]], followUp: [] },
+    });
+    assert.doesNotMatch($("message-queue").textContent, /内部/);
+    assert.match($("message-queue").textContent, /图片 × 1/, "filtering keeps image indexes aligned");
     assert.equal($("message-queue").children.length, 2);
     assert.match($("message-queue").textContent, /Steer.*Follow-up/);
     for (const [id, queueType] of [["send-steer", "steer"], ["send-followup", "followUp"]]) {
@@ -1118,6 +1155,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     await settle();
     input("撤回的输入");
     $("composer").requestSubmit();
+    paint();
     await settle();
     assert.match($("output").textContent, /撤回的输入/);
     emit("session.state", { status: "running" });
@@ -1420,6 +1458,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     await settle();
     assert.equal($("image-attachments").querySelectorAll("img").length, 1, "switching back restores attachments");
     $("composer").requestSubmit();
+    paint();
     await settle();
     assert.equal(requests.findLast((req) => req.type === "prompt").images[0].mimeType, "image/png");
     assert.equal(requests.findLast((req) => req.type === "prompt").text, "[image1]");
@@ -1801,6 +1840,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     // 新消息通过 agent.message.end 的 entryId 参与后续折叠。
     input("问题三");
     $("composer").requestSubmit();
+    paint();
     await settle();
     emit("agent.compaction", { id: "c3", summary: "包含新消息", firstKeptEntryId: "m5", compactedMessageIds: ["m4", "m5"] });
     assert.equal(cards().length, 3);

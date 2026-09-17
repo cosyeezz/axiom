@@ -219,7 +219,12 @@ with sync_playwright() as p:
         assert style(card, 'borderColor') != style(page.locator('body'), 'borderColor')
         rotating(run.locator('.task-run-spin'))
         rotating(card.locator('.task-status'), '::before')
-        rotating(page.locator('[aria-controls="task-queued"] .task-status'), '::before')
+        # 未锚定任务仅在底部运行条显示，不能跳转到当前页不存在的卡片。
+        assert page.locator('[aria-controls="task-queued"]').count() == 0
+        queued_row = page.locator('#task-runs .task-run').nth(1)
+        expect(queued_row).to_be_disabled()
+        assert '翻到所在页' in queued_row.get_attribute('title')
+        rotating(queued_row.locator('.task-run-spin'))
         shot(f"agent-jump-{width}")
         page.locator('#latest').click()
         expect(page.locator('#latest')).to_be_hidden()

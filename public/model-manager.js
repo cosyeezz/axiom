@@ -1,3 +1,4 @@
+import { actionIconNode } from "./icons.js";
 // 设置页「模型与供应商」面板：编辑 Axiom SQLite 中 的自定义/覆盖供应商与模型。
 // 协议见 docs/model-config-protocol.md v1：
 //   models.config.get → { fingerprint, path, parseError?, providers:[…], catalog:[…] }
@@ -135,21 +136,15 @@ function parseJsonText(text) {
   catch (error) { return { error: `高级字段 JSON 无法解析：${error.message}` }; }
 }
 
-const SVG_NS = "http://www.w3.org/2000/svg";
-// 图标与会话操作菜单同源（app.js session-actions），保证同一套视觉语言。
+// 图标与会话操作菜单同源（icons.js），保证同一套视觉语言。
 const ICONS = {
-  rename: "M16 3l5 5L8 21H3v-5L16 3zM13 6l5 5M3 16l5 5",
-  delete: "M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7",
-  eye: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7zM12 15a3 3 0 100-6 3 3 0 000 6z",
-  eyeOff: "M3 4l18 16M10.6 5.2A10.4 10.4 0 0112 5c6.5 0 10 7 10 7a17.3 17.3 0 01-3.3 4.1M6.7 6.9A17.4 17.4 0 002 12s3.5 7 10 7c1.6 0 3-.4 4.3-1.1M9.9 9.9a3 3 0 004.2 4.2",
+  rename: "edit",
+  delete: "trash",
+  eye: "eye",
+  eyeOff: "eyeOff",
 };
 function icon(path) {
-  const svg = document.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("aria-hidden", "true");
-  const shape = document.createElementNS(SVG_NS, "path");
-  shape.setAttribute("d", path);
-  svg.append(shape);
+  const svg = actionIconNode(path);
   return svg;
 }
 
@@ -921,7 +916,7 @@ export function initModelManager({ root, request, onSaved }) {
         reveal.setAttribute("aria-pressed", String(!shown));
         reveal.title = shown ? "显示本次输入的内容" : "隐藏本次输入的内容";
         reveal.setAttribute("aria-label", `${shown ? "显示" : "隐藏"}本次输入的 API Key`);
-        reveal.querySelector("path").setAttribute("d", shown ? ICONS.eye : ICONS.eyeOff);
+        reveal.querySelector("svg").replaceWith(actionIconNode(shown ? "eye" : "eyeOff"));
       } }, icon(ICONS.eye));
     const clearKey = el("input", { type: "checkbox", checked: form.apiKeyClear, "aria-label": "清除已保存的 API Key",
       onchange: (event) => { form.apiKeyClear = event.target.checked; apiKeyInput.disabled = event.target.checked; } });
@@ -974,7 +969,7 @@ export function initModelManager({ root, request, onSaved }) {
         placeholder: row.masked ? `已配置（${MASK_KINDS[row.kind] ?? "掩码值"}）——留空保留` : "值或 $ENV",
         oninput: (event) => { row.value = event.target.value; } }),
       el("button", { type: "button", class: "secondary mm-header-remove", "aria-label": `删除请求头 ${row.name || "(未命名)"}`,
-        onclick: () => { form.headerRows = form.headerRows.filter((item) => item !== row); renderProviders(); } }, "✕"));
+        onclick: () => { form.headerRows = form.headerRows.filter((item) => item !== row); renderProviders(); } }, actionIconNode("close")));
   }
 
   function extrasField(form, kind) {
@@ -1291,7 +1286,7 @@ export function initModelManager({ root, request, onSaved }) {
     return el("details", { class: `mm-model${isNew ? " mm-model-new" : ""}`, open: row.expanded,
       ontoggle: (event) => { row.expanded = event.target.open; } },
       el("summary", { class: "mm-model-summary" },
-        el("span", { class: "mm-caret", "aria-hidden": "true" }, "▸"),
+        el("span", { class: "mm-caret", "aria-hidden": "true" }, actionIconNode("chevron")),
         el("span", { class: "mm-model-id mm-mono", title: displayId }, displayId),
         displayName && displayName !== displayId ? el("span", { class: "mm-model-name", title: displayName }, displayName) : null,
         el("span", { class: "mm-catalog-model-tags" },

@@ -27,7 +27,7 @@ export function agentRuntime(session) {
 
 // SDK 的 queue_update/clearQueue/getSteeringMessages 只回传文本，图片仅存于 agent 真实队列
 // （agent.steeringQueue/followUpQueue.messages，pi-coding-agent 0.85.1 私有字段但为普通属性，
-// 元素为 {role:'user',content:[text,...image]}，入队后不会被 clearQueue 之外的路径改写）。
+// 元素包含 user 输入与 custom 内部通知，入队后不会被 clearQueue 之外的路径改写）。
 // 展示与撤回直接读真实队列：避免按文本做 shadow 映射的同文本键碰撞，
 // 也避免 clearQueue 同步触发 queue_update 先清空 shadow 再取图导致撤回丢图。
 export function queueStateOf(steeringQueue, followUpQueue) {
@@ -45,6 +45,12 @@ export function queueStateOf(steeringQueue, followUpQueue) {
   return {
     steering: steering.map((entry) => entry.text),
     followUp: followUp.map((entry) => entry.text),
+    ...(steeringQueue.messages.some((message) => message.role === "custom") || followUpQueue.messages.some((message) => message.role === "custom") ? {
+      internal: {
+        steering: steeringQueue.messages.map((message) => message.role === "custom"),
+        followUp: followUpQueue.messages.map((message) => message.role === "custom"),
+      },
+    } : {}),
     images: {
       steering: steering.map((entry) => (entry.images.length ? entry.images : null)),
       followUp: followUp.map((entry) => (entry.images.length ? entry.images : null)),
@@ -62,10 +68,19 @@ function hasModelOutput(entry) {
   return !["aborted", "error"].includes(stopReason);
 }
 
-// 撤回 = 先快照真实队列再 clearQueue：clearQueue 会同步清空队列并发出 queue_update，事后取不到图。
+// 只撤回用户输入；custom 通知仍计入运行闸门，但不属于用户可编辑队列。
+// clearQueue 同时维护 SDK 文本镜像；同步原样恢复内部消息，不能用空闲时会直接落历史的 sendCustomMessage。
 export function withdrawQueue(session) {
-  const queued = queueStateOf(session.agent.steeringQueue, session.agent.followUpQueue);
+  const { steeringQueue, followUpQueue } = session.agent;
+  const internalSteering = steeringQueue.messages.filter((message) => message.role === "custom");
+  const internalFollowUp = followUpQueue.messages.filter((message) => message.role === "custom");
+  const queued = queueStateOf(
+    { messages: steeringQueue.messages.filter((message) => message.role !== "custom") },
+    { messages: followUpQueue.messages.filter((message) => message.role !== "custom") },
+  );
   session.clearQueue();
+  for (const message of internalSteering) session.agent.steer(message);
+  for (const message of internalFollowUp) session.agent.followUp(message);
   return queued;
 }
 
