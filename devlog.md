@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-17 隔离内部任务通知与用户撤回队列
+
+- 原因：SDK 的 custom 通知与用户 Steer 共用真实队列，快照丢失角色信息，导致通知显示成 Steer，Esc 清除通知并将内部 JSON 写入输入框。
+- 决策：队列快照增加平行 internal 标记，前端不渲染内部行；保留原文本数组以维持 checkpoint / idle 闸门。撤回仅返回用户文本与图片，清理 SDK 镜像后同步原样恢复 custom 消息，不提前落历史、不改变送达确认。送达后的独立通知条保持不变。
+- 设计：仅过滤队列行，沿用 Linear 既有布局和 token，无新增样式。
+- 涉及文件：`src/pi.js`、`public/app.js`、`tests/internal-task-queue.test.js`、`tests/app.test.js`、`README.md`、`devlog.md`、自动生成的 `.pi/skills/codebase-map/INDEX.md`。
+- 验证：初次定向测试因独立 worktree 缺少依赖未启动，链接现有依赖后全量测试 712 项（710 通过、2 跳过、0 失败）。覆盖双队列内部消息保序、重复撤回、图片索引、内部队列隐藏及既有通知投递回归；获取最新 origin/master 后无新增变更。未运行真实模型或浏览器手测。
+
 ## 2026-09-17 置顶图钉视觉优化
 
 - 原因：侧栏 11px 紫色实心图钉过密，与其他线性图标风格不一致。

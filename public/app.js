@@ -1979,7 +1979,8 @@ function renderTaskRuns() {
 }
 function renderQueue(queue = {}) {
   const entries = [["Steer", "steering"], ["Follow-up", "followUp"]];
-  $("message-queue").replaceChildren(...entries.flatMap(([type, key]) => (queue[key] || []).map((text, index) => {
+  $("message-queue").replaceChildren(...entries.flatMap(([type, key]) => (queue[key] || []).flatMap((text, index) => {
+    if (queue.internal?.[key]?.[index]) return [];
     const row = document.createElement("button");
     row.type = "button";
     row.title = "撤回全部队列到输入框修改（与 Pi 原生一致）";

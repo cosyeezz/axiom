@@ -1084,7 +1084,15 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       assert.equal($(`restart-${mode}`).disabled, false);
     }
     assert.equal($("status").dataset.connected, "true");
-    emit("session.queue", { steering: ["插话内容"], followUp: ["追加内容"] });
+    emit("session.queue", { steering: ["内部通知"], followUp: [], internal: { steering: [true], followUp: [] } });
+    assert.equal($("message-queue").hidden, true, "internal-only queue is not a user-editable queue");
+    emit("session.queue", {
+      steering: ["内部通知", "插话内容"], followUp: ["追加内容", "内部追加"],
+      internal: { steering: [true, false], followUp: [false, true] },
+      images: { steering: [null, [{ type: "image", data: "test" }]], followUp: [] },
+    });
+    assert.doesNotMatch($("message-queue").textContent, /内部/);
+    assert.match($("message-queue").textContent, /图片 × 1/, "filtering keeps image indexes aligned");
     assert.equal($("message-queue").children.length, 2);
     assert.match($("message-queue").textContent, /Steer.*Follow-up/);
     for (const [id, queueType] of [["send-steer", "steer"], ["send-followup", "followUp"]]) {
