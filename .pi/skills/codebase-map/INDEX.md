@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/16 21:07:40）
+# Axiom 多级代码索引（生成于 2026/9/16 21:56:01）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -14,7 +14,7 @@
 | public/goal.js | 642 | Goal 专属状态、操作与复用消息轮次分组 | createGoalUI |
 | public/index.html | 390 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown-scan.js | 72 | 共享代码区扫描：围栏/缩进/行内代码掩码与区间切割 | FILL, FENCE, INLINE, fill |
-| public/markdown.js | 370 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, textLanguages, isText |
+| public/markdown.js | 410 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, textLanguages, isText |
 | public/memory-tags.js | 107 | 主子代理共享简单标签提取与流式显示过滤 | LIVE, DEAD, TAGS, NAMES |
 | public/model-auth.js | 97 | 网页登录：授权提示、设备码、凭据输入与取消 | createModelAuth |
 | public/model-manager.css | 520 | 模型配置页：供应商列表、编辑表单与响应式布局 | - |
@@ -27,7 +27,7 @@
 | public/session-cache.js | 53 | 可淘汰会话阅读位置缓存与未保存输入保护 | EVICTABLE_VIEWS, hasUnsavedInput, createSessionCache |
 | public/stream-playback.js | 165 | 有界字素播放游标与真实时间缓冲追赶 | BUFFER_MS, BASE_RATE, CATCHUP_S, MAX_RATE |
 | public/stream-renderer.js | 168 | 共享 rAF 流式绘制、交互让路与挂载生命周期 | createStreamRenderer |
-| public/style.css | 1694 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1701 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | public/theme.js | 11 | 首帧前阻塞应用明/暗主题（localStorage axiom.theme，默认深色） | - |
 | public/tooltip.css | 50 | 共享悬停说明样式（浅色主题下反色） | - |
 | public/tooltip.js | 225 | 共享悬停说明：动态 title、键盘、定位与无障碍 | SHOW_DELAY, HIDE_DELAY, GAP, EDGE |
@@ -103,6 +103,8 @@
 | tests/frontend-regions-preview.mjs | 64 | node --test 测试（npm test） | home, catalog, factory, sessions |
 | tests/frontend-regions-ui.py | 452 | node --test 测试（npm test） | - |
 | tests/frontend-regions.test.js | 213 | node --test 测试（npm test） | appSource, pickerSource, modelPickerSource, modelSources |
+| tests/git-log-ui.py | 38 | node --test 测试（npm test） | - |
+| tests/git-log.test.js | 54 | node --test 测试（npm test） | - |
 | tests/goal-command-ui.test.js | 142 | node --test 测试（npm test） | page, $, settle, input |
 | tests/goal-markers.test.js | 116 | node --test 测试（npm test） | page, lastAssistant |
 | tests/goal-pi.test.js | 288 | node --test 测试（npm test） | PREAMBLE, FOOTER, run |
@@ -633,7 +635,7 @@
 | maskCode | function | 21 |
 | cutSpans | function | 53 |
 
-### public/markdown.js（370 行） — marked + DOMPurify 渲染（XSS 边界）
+### public/markdown.js（410 行） — marked + DOMPurify 渲染（XSS 边界）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -648,14 +650,15 @@
 | ruleLine | const | 17 |
 | borderedRows | function | 20 |
 | alignedRows | function | 39 |
-| textTable | function | 81 |
-| looksLikeDiagram | function | 117 |
-| layoutDiagram | function | 124 |
-| isJson | function | 153 |
-| fixCjkBold | function | 160 |
-| jsonControls | function | 174 |
-| linksSignature | function | 216 |
-| renderMarkdown | function | 226 |
+| gitLogTable | function | 82 |
+| textTable | function | 120 |
+| looksLikeDiagram | function | 156 |
+| layoutDiagram | function | 163 |
+| isJson | function | 192 |
+| fixCjkBold | function | 199 |
+| jsonControls | function | 213 |
+| linksSignature | function | 255 |
+| renderMarkdown | function | 265 |
 
 ### public/memory-tags.js（107 行） — 主子代理共享简单标签提取与流式显示过滤
 

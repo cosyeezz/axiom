@@ -78,6 +78,45 @@ function alignedRows(text) {
   return { rows, rules, aligned: true };
 }
 
+// Convert only whole, consistent graph logs; keep arbitrary ASCII diagrams untouched.
+function gitLogTable(code, language) {
+  if (!isText(language) && !["git", "gitgraph"].includes(language.toLowerCase())) return null;
+  const text = code.textContent.replace(/^\n+|\s+$/g, "");
+  if (text.length > 20000 || text.includes("\t")) return null;
+  const lines = text.split(/\r?\n/);
+  if (lines.length < 3 || lines.some((line) => !line.trim())) return null;
+  const graphRows = lines.map((line) => {
+    const match = line.match(/^([ |/\\]*\*[ |/\\]*?)([0-9a-f]{7,40})(?: +(.*))?$/);
+    if (match) return [match[1], match[2], match[3] || ""];
+    return /^[ |/\\]+$/.test(line) ? [line, "", ""] : null;
+  });
+  let rows = graphRows;
+  if (!rows.every(Boolean) || rows.filter((row) => row[1]).length < 2) {
+    const head = lines[0].match(/^(\* )?([0-9a-f]{7,40})(?: +(.*))?$/);
+    if (!head) return null;
+    rows = [[head[1] || "", head[2], head[3] || ""]];
+    for (let index = 1; index < lines.length; index++) {
+      const branch = lines[index].match(/^([├└]─+) +([0-9a-f]{7,40})(?: +(.*))?$/);
+      if (!branch || (branch[1].startsWith("└") && index !== lines.length - 1)) return null;
+      rows.push([branch[1], branch[2], branch[3] || ""]);
+    }
+  }
+  const table = code.ownerDocument.createElement("table");
+  table.className = "git-log";
+  table.setAttribute("aria-label", "Git 提交历史");
+  const body = table.createTBody();
+  for (const values of rows) {
+    const row = body.insertRow();
+    row.className = values[1] ? "git-commit" : "git-link";
+    values.forEach((value, index) => {
+      const cell = row.insertCell();
+      cell.className = ["git-graph", "git-hash", "git-msg"][index];
+      cell.textContent = value;
+    });
+  }
+  return table;
+}
+
 function textTable(code, language) {
   if (!isText(language)) return null;
   const text = code.textContent.replace(/^\n+|\s+$/g, "");
@@ -289,17 +328,18 @@ export function renderMarkdown(element, text = "") {
       const bar = element.ownerDocument.createElement("div");
       bar.className = "code-toolbar";
       const label = element.ownerDocument.createElement("span");
-      const table = textTable(code, language);
+      const table = gitLogTable(code, language) || textTable(code, language);
+      const gitLog = table?.classList.contains("git-log");
       const json = language.toLowerCase() === "json" ||
         (["纯文本", "text", "txt", "plaintext"].includes(language) &&
           /^[\s]*[\[{]/.test(code.textContent) && isJson(code.textContent));
       const source = code.textContent;
       const diagram = !table && !json && looksLikeDiagram(source) && layoutDiagram(code, language);
-      label.textContent = table ? "表格" : json ? "JSON" : diagram ? "字符示意图" : language;
+      label.textContent = gitLog ? "Git 历史" : table ? "表格" : json ? "JSON" : diagram ? "字符示意图" : language;
       const copy = element.ownerDocument.createElement("button");
       copy.type = "button";
       copy.textContent = "复制";
-      copy.setAttribute("aria-label", table ? "复制表格原文" : "复制代码");
+      copy.setAttribute("aria-label", gitLog ? "复制 Git 历史原文" : table ? "复制表格原文" : "复制代码");
       copy.setAttribute("aria-live", "polite");
       copy.onclick = async () => {
         try {
@@ -315,7 +355,7 @@ export function renderMarkdown(element, text = "") {
       pre.before(block);
       block.append(bar, table || pre);
       if (status) block.append(status);
-      if (!json && isText(language)) {
+      if (!json && (isText(language) || gitLog)) {
         const toggle = element.ownerDocument.createElement("button");
         toggle.type = "button";
         let optimized = Boolean(table || diagram);
@@ -354,7 +394,7 @@ export function renderMarkdown(element, text = "") {
     for (const region of node.querySelectorAll("pre, .table-scroll")) {
       region.tabIndex = 0;
       region.setAttribute("role", "region");
-      region.setAttribute("aria-label", region.tagName === "PRE" ? "代码，可横向滚动" : "表格，可横向滚动");
+      region.setAttribute("aria-label", region.tagName === "PRE" ? "代码，可横向滚动" : region.querySelector(".git-log") ? "Git 历史" : "表格，可横向滚动");
     }
     if (old) old.node.replaceWith(node);
     else element.append(node);
