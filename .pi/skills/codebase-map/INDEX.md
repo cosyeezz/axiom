@@ -1,18 +1,18 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/16 11:39:35）
+# Axiom 多级代码索引（生成于 2026/9/16 20:43:10）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
 | public/answer-tags.js | 48 | 主代理回答标签解析、代码保护与流式容错 | OPEN, CLOSE, MARKS, isMark |
-| public/app.js | 4286 | 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度 | questionUI, filePicker, $, sessionId |
+| public/app.js | 4246 | 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度 | questionUI, filePicker, $, sessionId |
 | public/file-picker.css | 276 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 355 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/goal-markers.js | 60 | 前后端共享 goal 完成标记解析与展示层剥离（含流式半截） | ROUND_MARKER, GOAL_MARKER, MARKER_TOKENS, SUFFIXES |
 | public/goal.css | 239 | Goal 目标面板、轮次与控制样式 | - |
 | public/goal.js | 642 | Goal 专属状态、操作与复用消息轮次分组 | createGoalUI |
-| public/index.html | 386 | 页面骨架与元素 id（见 L3） | - |
+| public/index.html | 385 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown-scan.js | 72 | 共享代码区扫描：围栏/缩进/行内代码掩码与区间切割 | FILL, FENCE, INLINE, fill |
 | public/markdown.js | 370 | marked + DOMPurify 渲染（XSS 边界） | cache, policy, textLanguages, isText |
 | public/memory-tags.js | 107 | 主子代理共享简单标签提取与流式显示过滤 | LIVE, DEAD, TAGS, NAMES |
@@ -27,7 +27,7 @@
 | public/session-cache.js | 53 | 可淘汰会话阅读位置缓存与未保存输入保护 | EVICTABLE_VIEWS, hasUnsavedInput, createSessionCache |
 | public/stream-playback.js | 165 | 有界字素播放游标与真实时间缓冲追赶 | BUFFER_MS, BASE_RATE, CATCHUP_S, MAX_RATE |
 | public/stream-renderer.js | 168 | 共享 rAF 流式绘制、交互让路与挂载生命周期 | createStreamRenderer |
-| public/style.css | 1577 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1569 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | public/theme.js | 11 | 首帧前阻塞应用明/暗主题（localStorage axiom.theme，默认深色） | - |
 | public/tooltip.css | 50 | 共享悬停说明样式（浅色主题下反色） | - |
 | public/tooltip.js | 225 | 共享悬停说明：动态 title、键盘、定位与无障碍 | SHOW_DELAY, HIDE_DELAY, GAP, EDGE |
@@ -63,7 +63,7 @@
 | src/session-history.js | 168 | 稳定消息身份、绑定会话/实例/修订的历史游标与有界传输页 | HISTORY_PAGE_DEFAULT, HISTORY_PAGE_MAX, CURSOR_VERSION, revisions |
 | src/session-memory.js | 29 | 标题提取登记、轮次预算挂钩与委派背景 | textOf, memoryHooks |
 | src/session-store.js | 479 | 会话三表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, TABLES, INDEXES |
-| src/sessions.js | 1814 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | GOAL_TOOL_NAMES, hasRunningTasks, relevantTools, delegateTaskIds |
+| src/sessions.js | 1843 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | GOAL_TOOL_NAMES, hasRunningTasks, relevantTools, delegateTaskIds |
 | src/task-budget.js | 35 | 主子代理轮次预算规则、收尾提示词与配置页参数校验 | TASK_BUDGET_LIMITS, taskBudgetDefaults, within, taskBudgetPolicy |
 | src/tasks.js | 234 | Tasks：子任务（委托）生命周期 | ACTIVE, historyResult, Tasks |
 | src/tools.js | 156 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
@@ -156,6 +156,7 @@
 | tests/remote-ui.py | 51 | node --test 测试（npm test） | - |
 | tests/remote-ui.test.js | 227 | node --test 测试（npm test） | page, modelSources, flush, stubRequest |
 | tests/remote.test.js | 751 | node --test 测试（npm test） | EMAIL, mockTailscale, fakeChild, fakeDatabase |
+| tests/restored-history-order.test.js | 48 | node --test 测试（npm test） | - |
 | tests/retry-settings-ui.py | 30 | node --test 测试（npm test） | - |
 | tests/retry.test.js | 407 | node --test 测试（npm test） | RATE_LIMIT, QUOTA, ABORTED, fakeSession |
 | tests/safe-stop.test.js | 228 | node --test 测试（npm test） | - |
@@ -201,7 +202,7 @@
 | tests/update.test.js | 111 | node --test 测试（npm test） | old, URL_BASE, lm, mkRelease |
 | tests/workspace-isolation.test.js | 80 | node --test 测试（npm test） | - |
 | tests/workspace-picker.test.js | 99 | node --test 测试（npm test） | - |
-| tests/workspace-tabs.test.js | 286 | node --test 测试（npm test） | appSource, pickerSource, modelSources, html |
+| tests/workspace-tabs.test.js | 283 | node --test 测试（npm test） | appSource, pickerSource, modelSources, html |
 
 ## L2 符号 → 行号（跳转：read <文件> offset=<行>）
 
@@ -215,7 +216,7 @@
 | isMark | const | 10 |
 | splitAnswer | function | 12 |
 
-### public/app.js（4286 行） — 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度
+### public/app.js（4246 行） — 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -465,115 +466,111 @@
 | rawChanged | method | 2503 |
 | clearTimeout | method | 2506 |
 | markSessionSeen | method | 2523 |
-| renderSessionTabs | method | 2527 |
-| updatePageTitle | method | 2529 |
-| renderTaskRuns | method | 2542 |
-| renderCompactionStatus | method | 2547 |
-| renderImages | method | 2584 |
-| closeCompletion | method | 2587 |
-| placeSnapshotMessage | function | 2593 |
-| finishSnapshot | function | 2639 |
-| mergeThoughts | method | 2666 |
-| placeCompactedTasks | method | 2680 |
-| renderQueue | method | 2700 |
-| applyConfig | method | 2702 |
-| updateAvailability | method | 2704 |
-| region | method | 2705 |
-| transport | const | 2707 |
-| onState | method | 2711 |
-| initialized | const | 2747 |
-| initializeConnection | function | 2748 |
-| importDir | const | 2865 |
-| fillModels | method | 2870 |
-| fillSubagentModels | method | 2877 |
-| closeCompletion | method | 2894 |
-| region | method | 2899 |
-| scrollLatest | method | 2904 |
-| enableImagePreview | function | 2937 |
-| renderImages | function | 2958 |
-| addImages | function | 2983 |
-| loadImages | function | 3004 |
-| renderImages | method | 3013 |
-| selectionCopy | const | 3036 |
-| copySelection | function | 3048 |
-| escapeTimer | const | 3111 |
-| withdrawQueue | function | 3112 |
-| markSessionSeen | method | 3190 |
-| renderSessions | method | 3191 |
-| region | method | 3192 |
-| stopSession | function | 3206 |
-| refreshing | const | 3215 |
-| refreshSessions | function | 3216 |
-| timerText | function | 3232 |
-| renderTaskTimer | function | 3239 |
-| applyElapsed | function | 3252 |
-| renderTaskTimer | method | 3258 |
-| updatePageTitle | function | 3260 |
-| updateSessions | function | 3264 |
-| renderTaskTimer | method | 3266 |
-| updatePageTitle | method | 3278 |
-| renderSessions | method | 3279 |
-| recoverMissingSession | function | 3281 |
-| region | method | 3283 |
-| saveView | method | 3290 |
-| updateAvailability | method | 3294 |
-| switchSession | function | 3310 |
-| saveView | method | 3312 |
-| updateAvailability | method | 3315 |
-| copySessionFile | function | 3331 |
-| positionSessionMenu | function | 3344 |
-| openSessionTabs | const | 3350 |
-| renderSessionTabs | function | 3351 |
-| normalizeCwd | function | 3385 |
-| renderSessions | function | 3389 |
-| renderSessionTabs | method | 3390 |
-| sessionAction | const | 3682 |
-| openSessionAction | function | 3684 |
-| contextIcon | function | 3725 |
-| renderContextChips | function | 3728 |
-| fuzzyHit | function | 3747 |
-| renderContextResults | function | 3754 |
-| showContextSkills | function | 3774 |
-| positionContextSkills | function | 3779 |
-| showContextSkills | method | 3791 |
-| region | method | 3826 |
-| skillTrigger | const | 3828 |
-| showContextSkills | method | 3844 |
-| resizePrompt | method | 3853 |
-| region | method | 3854 |
-| SLASH_COMMANDS | const | 3859 |
-| closeCompletion | function | 3862 |
-| highlightCompletion | function | 3870 |
-| chooseCompletion | function | 3879 |
-| closeCompletion | method | 3891 |
-| updateCompletion | function | 3894 |
-| closeCompletion | method | 3895 |
-| resizePrompt | method | 3954 |
-| region | method | 3955 |
-| switchSession | method | 3995 |
-| creationLoad | const | 4006 |
-| defaultsScope | const | 4008 |
-| renderDefaultsScope | function | 4009 |
-| options | method | 4010 |
-| refreshDefaultsScope | function | 4013 |
-| renderDefaultsScope | method | 4019 |
-| createAgentPicker | function | 4022 |
-| options | method | 4048 |
-| fill | method | 4055 |
-| fillThinking | method | 4063 |
-| options | method | 4065 |
-| defaultsSelection | const | 4111 |
-| defaultsSaving | const | 4124 |
-| loadCreation | function | 4126 |
-| disposePickers | method | 4133 |
-| disposePickers | method | 4134 |
-| disposePickers | function | 4163 |
-| openDefaults | function | 4166 |
-| disposePickers | method | 4171 |
-| updateAvailability | method | 4217 |
-| updateDefaultsPreview | function | 4230 |
-| updateDefaultsPreview | method | 4254 |
-| updateAvailability | method | 4270 |
+| updatePageTitle | method | 2527 |
+| renderTaskRuns | method | 2540 |
+| renderCompactionStatus | method | 2545 |
+| renderImages | method | 2582 |
+| closeCompletion | method | 2585 |
+| placeSnapshotMessage | function | 2591 |
+| finishSnapshot | function | 2637 |
+| mergeThoughts | method | 2664 |
+| placeCompactedTasks | method | 2678 |
+| renderQueue | method | 2698 |
+| applyConfig | method | 2700 |
+| updateAvailability | method | 2702 |
+| region | method | 2703 |
+| transport | const | 2705 |
+| onState | method | 2709 |
+| initialized | const | 2745 |
+| initializeConnection | function | 2746 |
+| importDir | const | 2863 |
+| fillModels | method | 2868 |
+| fillSubagentModels | method | 2875 |
+| closeCompletion | method | 2892 |
+| region | method | 2897 |
+| scrollLatest | method | 2902 |
+| enableImagePreview | function | 2935 |
+| renderImages | function | 2956 |
+| addImages | function | 2981 |
+| loadImages | function | 3002 |
+| renderImages | method | 3011 |
+| selectionCopy | const | 3034 |
+| copySelection | function | 3046 |
+| escapeTimer | const | 3109 |
+| withdrawQueue | function | 3110 |
+| markSessionSeen | method | 3188 |
+| renderSessions | method | 3189 |
+| region | method | 3190 |
+| stopSession | function | 3204 |
+| refreshing | const | 3213 |
+| refreshSessions | function | 3214 |
+| timerText | function | 3230 |
+| renderTaskTimer | function | 3237 |
+| applyElapsed | function | 3250 |
+| renderTaskTimer | method | 3256 |
+| updatePageTitle | function | 3258 |
+| updateSessions | function | 3262 |
+| renderTaskTimer | method | 3264 |
+| updatePageTitle | method | 3276 |
+| renderSessions | method | 3277 |
+| recoverMissingSession | function | 3279 |
+| region | method | 3281 |
+| saveView | method | 3288 |
+| updateAvailability | method | 3292 |
+| switchSession | function | 3308 |
+| saveView | method | 3310 |
+| updateAvailability | method | 3313 |
+| copySessionFile | function | 3329 |
+| positionSessionMenu | function | 3342 |
+| normalizeCwd | function | 3348 |
+| renderSessions | function | 3352 |
+| sessionAction | const | 3642 |
+| openSessionAction | function | 3644 |
+| contextIcon | function | 3685 |
+| renderContextChips | function | 3688 |
+| fuzzyHit | function | 3707 |
+| renderContextResults | function | 3714 |
+| showContextSkills | function | 3734 |
+| positionContextSkills | function | 3739 |
+| showContextSkills | method | 3751 |
+| region | method | 3786 |
+| skillTrigger | const | 3788 |
+| showContextSkills | method | 3804 |
+| resizePrompt | method | 3813 |
+| region | method | 3814 |
+| SLASH_COMMANDS | const | 3819 |
+| closeCompletion | function | 3822 |
+| highlightCompletion | function | 3830 |
+| chooseCompletion | function | 3839 |
+| closeCompletion | method | 3851 |
+| updateCompletion | function | 3854 |
+| closeCompletion | method | 3855 |
+| resizePrompt | method | 3914 |
+| region | method | 3915 |
+| switchSession | method | 3955 |
+| creationLoad | const | 3966 |
+| defaultsScope | const | 3968 |
+| renderDefaultsScope | function | 3969 |
+| options | method | 3970 |
+| refreshDefaultsScope | function | 3973 |
+| renderDefaultsScope | method | 3979 |
+| createAgentPicker | function | 3982 |
+| options | method | 4008 |
+| fill | method | 4015 |
+| fillThinking | method | 4023 |
+| options | method | 4025 |
+| defaultsSelection | const | 4071 |
+| defaultsSaving | const | 4084 |
+| loadCreation | function | 4086 |
+| disposePickers | method | 4093 |
+| disposePickers | method | 4094 |
+| disposePickers | function | 4123 |
+| openDefaults | function | 4126 |
+| disposePickers | method | 4131 |
+| updateAvailability | method | 4177 |
+| updateDefaultsPreview | function | 4190 |
+| updateDefaultsPreview | method | 4214 |
+| updateAvailability | method | 4230 |
 
 ### public/file-picker.js（355 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 
@@ -1347,7 +1344,7 @@
 | saveTask | method | 450 |
 | listTasks | method | 473 |
 
-### src/sessions.js（1814 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
+### src/sessions.js（1843 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1355,92 +1352,93 @@
 | hasRunningTasks | const | 25 |
 | relevantTools | function | 28 |
 | delegateTaskIds | const | 46 |
-| pageTasks | function | 57 |
-| pageRetries | function | 69 |
-| BROWSE_PAGE | const | 84 |
-| SEARCH_LIMIT | const | 86 |
-| SEARCH_DIR_LIMIT | const | 87 |
-| IGNORED_ENTRIES | const | 89 |
-| fuzzyHit | function | 92 |
-| matchRank | function | 103 |
-| searchEntries | function | 112 |
-| pointStatus | function | 140 |
-| trackElapsed | function | 147 |
-| resolveDir | function | 157 |
-| parentOf | function | 168 |
-| absoluteCrumbs | function | 177 |
-| importedTitle | function | 199 |
-| hostLocations | function | 221 |
-| landedSessionFile | function | 240 |
-| RETRYABLE_SQLITE | const | 247 |
-| retryableWrite | const | 248 |
-| DEFAULTS_NS | const | 253 |
-| WORKSPACE_PREFIX | const | 254 |
-| workspaceKeyOf | const | 255 |
-| CAPABILITY_KINDS | const | 256 |
-| catalogProjectsOf | const | 258 |
-| validateProjectSkills | function | 261 |
-| validateProjectSkillEntry | function | 265 |
-| mergeLegacyProjectSkills | function | 273 |
-| Sessions | class | 282 |
-| constructor | method | 283 |
-| applyDefaults | method | 307 |
-| loadDefaults | method | 313 |
-| migrateDefaults | method | 325 |
-| migrateLegacyStore | method | 340 |
-| loadWorkspaceDefaults | method | 364 |
-| loadTaskBudget | method | 383 |
-| getTaskBudget | method | 398 |
-| configureTaskBudget | method | 404 |
-| getDefaults | method | 411 |
-| defaultsFor | method | 415 |
-| listDefaults | method | 419 |
-| deleteDefaults | method | 425 |
-| removeDefaults | method | 430 |
-| workspaceDefaults | method | 440 |
-| configureDefaults | method | 460 |
-| saveDefaults | method | 466 |
-| pushCompaction | method | 505 |
-| validateSelection | method | 516 |
-| validateCompaction | method | 547 |
-| load | method | 561 |
-| ensureLoaded | method | 586 |
-| migrateLegacySessions | method | 610 |
-| sessionData | method | 634 |
-| persist | method | 653 |
-| writeChange | method | 682 |
-| saveChange | method | 698 |
-| list | method | 703 |
-| rename | method | 720 |
-| importSession | method | 733 |
-| create | method | 760 |
-| goalAction | method | 1140 |
-| scheduleGoal | method | 1186 |
-| advanceGoal | method | 1198 |
-| goalNotificationsBlocked | method | 1236 |
-| scheduleTaskNotifications | method | 1243 |
-| deliverTaskNotifications | method | 1255 |
-| get | method | 1283 |
-| revealWorkspace | method | 1288 |
-| browse | method | 1302 |
-| listFiles | method | 1308 |
-| refreshSkills | method | 1370 |
-| snapshot | method | 1379 |
-| history | method | 1462 |
-| subscribe | method | 1472 |
-| configure | method | 1480 |
-| startRun | method | 1516 |
-| retry | method | 1560 |
-| prompt | method | 1569 |
-| withdraw | method | 1604 |
-| replyQuestion | method | 1660 |
-| safeStop | method | 1669 |
-| cancel | method | 1684 |
-| retryTask | method | 1710 |
-| deleteRecords | method | 1721 |
-| releaseIdle | method | 1732 |
-| remove | method | 1755 |
-| close | method | 1804 |
+| orderRestoredHistory | function | 58 |
+| pageTasks | function | 81 |
+| pageRetries | function | 93 |
+| BROWSE_PAGE | const | 108 |
+| SEARCH_LIMIT | const | 110 |
+| SEARCH_DIR_LIMIT | const | 111 |
+| IGNORED_ENTRIES | const | 113 |
+| fuzzyHit | function | 116 |
+| matchRank | function | 127 |
+| searchEntries | function | 136 |
+| pointStatus | function | 164 |
+| trackElapsed | function | 171 |
+| resolveDir | function | 181 |
+| parentOf | function | 192 |
+| absoluteCrumbs | function | 201 |
+| importedTitle | function | 223 |
+| hostLocations | function | 245 |
+| landedSessionFile | function | 264 |
+| RETRYABLE_SQLITE | const | 271 |
+| retryableWrite | const | 272 |
+| DEFAULTS_NS | const | 277 |
+| WORKSPACE_PREFIX | const | 278 |
+| workspaceKeyOf | const | 279 |
+| CAPABILITY_KINDS | const | 280 |
+| catalogProjectsOf | const | 282 |
+| validateProjectSkills | function | 285 |
+| validateProjectSkillEntry | function | 289 |
+| mergeLegacyProjectSkills | function | 297 |
+| Sessions | class | 306 |
+| constructor | method | 307 |
+| applyDefaults | method | 331 |
+| loadDefaults | method | 337 |
+| migrateDefaults | method | 349 |
+| migrateLegacyStore | method | 364 |
+| loadWorkspaceDefaults | method | 388 |
+| loadTaskBudget | method | 407 |
+| getTaskBudget | method | 422 |
+| configureTaskBudget | method | 428 |
+| getDefaults | method | 435 |
+| defaultsFor | method | 439 |
+| listDefaults | method | 443 |
+| deleteDefaults | method | 449 |
+| removeDefaults | method | 454 |
+| workspaceDefaults | method | 464 |
+| configureDefaults | method | 484 |
+| saveDefaults | method | 490 |
+| pushCompaction | method | 529 |
+| validateSelection | method | 540 |
+| validateCompaction | method | 571 |
+| load | method | 585 |
+| ensureLoaded | method | 610 |
+| migrateLegacySessions | method | 634 |
+| sessionData | method | 658 |
+| persist | method | 677 |
+| writeChange | method | 706 |
+| saveChange | method | 722 |
+| list | method | 727 |
+| rename | method | 744 |
+| importSession | method | 757 |
+| create | method | 784 |
+| goalAction | method | 1168 |
+| scheduleGoal | method | 1214 |
+| advanceGoal | method | 1226 |
+| goalNotificationsBlocked | method | 1264 |
+| scheduleTaskNotifications | method | 1271 |
+| deliverTaskNotifications | method | 1283 |
+| get | method | 1311 |
+| revealWorkspace | method | 1316 |
+| browse | method | 1330 |
+| listFiles | method | 1336 |
+| refreshSkills | method | 1398 |
+| snapshot | method | 1407 |
+| history | method | 1491 |
+| subscribe | method | 1501 |
+| configure | method | 1509 |
+| startRun | method | 1545 |
+| retry | method | 1589 |
+| prompt | method | 1598 |
+| withdraw | method | 1633 |
+| replyQuestion | method | 1689 |
+| safeStop | method | 1698 |
+| cancel | method | 1713 |
+| retryTask | method | 1739 |
+| deleteRecords | method | 1750 |
+| releaseIdle | method | 1761 |
+| remove | method | 1784 |
+| close | method | 1833 |
 
 ### src/task-budget.js（35 行） — 主子代理轮次预算规则、收尾提示词与配置页参数校验
 
@@ -2605,7 +2603,7 @@
 | req | const | 49 |
 | fields | const | 51 |
 
-### tests/workspace-tabs.test.js（286 行） — node --test 测试（npm test）
+### tests/workspace-tabs.test.js（283 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -2621,7 +2619,7 @@
 ## L3 横切常量（跨模块定位入口）
 
 - 协议 command.type：image、inherit、goal.action、service.status、service.update.check、service.restart、remote.get、remote.login、remote.configure、session.rename、workspace.reveal、workspace.browse、files.browse、models.list、models.config.get、models.provider.save、models.provider.delete、models.provider.rename、models.model.save、models.model.delete、models.provider.discover、models.favorites.get、models.model.override、models.auth.list、models.auth.start、models.auth.status、models.auth.respond、models.auth.cancel、models.auth.logout、models.hidden.set、models.favorites.set、capabilities.list、session.defaults.get、session.defaults.configure、session.defaults.list、session.defaults.delete、task.budget.get、task.budget.configure、session.configure、sessions.list、session.create、session.import、session.attach、session.history、session.skills.refresh、session.close、prompt、cancel、question.reply、session.retry、task.retry、queue.withdraw、tasks.read（src/protocol.js）
-- HTML id：sidebar、open-workspace、new、import-session、search、sessions、open-settings、sidebar-backdrop、session-tabs、toggle-sidebar、session-alert、session-title、workspace-label、copy-workspace、reveal-workspace、workspace-feedback、conversation-font-scale、github-link、status、service-dev、service-version、open-raw-io、toggle-theme、login、maintenance-state、connect、workspace、goal-track、earliest、history-pages、history-before、history-position、history-after、history-newest、transcript、output、raw-io、raw-io-title、close-raw-io、raw-io-empty、raw-io-list、goal-dock、question-dock、latest、message-queue、task-runs、compaction-progress、safe-stop-progress、add-context、add-image、goal-enter、image-files、context-chips、task-timer、task-timer-value、context-menu、context-picker、context-back、context-title、context-close、context-search、context-results、context-error、image-attachments、composer、prompt、prompt-completion、composer-skill、agent-role、provider、model、thinking、stop、force-stop、send-steer、send-followup、send、session-runtime、session-inspector、session-system-prompt、session-active-tools、mobile-runtime、mobile-expand、composer-help、error、session-action、session-action-form、session-action-title、session-action-description、session-name-label、session-name、session-action-error、session-action-cancel、session-action-submit、image-preview、image-preview-close、image-preview-image、restart-dialog、restart-form、restart-title、restart-description、restart-warning、restart-cancel、restart-submit、force-stop-dialog、force-stop-form、force-stop-title、force-stop-description、force-stop-warning、force-stop-cancel、force-stop-submit、task-overlays、task-template、goal-plan、goal-plan-title、goal-plan-meta、goal-plan-constraints-title、goal-plan-constraints、goal-plan-acceptance-title、goal-plan-acceptance、goal-plan-rounds-section、goal-plan-rounds-title、goal-plan-rounds、goal-plan-close、goal-plan-confirm、settings、settings-title、settings-defaults-tab、settings-remote-tab、settings-models-tab、settings-service-tab、defaults-panel、selection-copy-title、selection-copy、selection-copy-help、selection-copy-feedback、queue-type、steer-help、followup-help、defaults-preview、task-budget-title、task-max-turns、task-wrap-up-window、task-budget-help、subagent-title、subagent-help、subagent-provider、subagent-model、settings-feedback、defaults-title、defaults-workspace、defaults-directory、defaults-delete、defaults-workspace-help、defaults-editor、create-form、create-defaults-help、create-agents、create-compaction、create-retry、create-feedback、remote-panel、remote-status-title、remote-status、remote-login、remote-auth、remote-url、remote-form、remote-note、remote-enabled、remote-email、remote-email-help、remote-feedback、remote-refresh、remote-save、models-panel、service-panel、service-state-title、service-feedback、service-restart-title、restart-quick、restart-rebuild、service-recover、service-update-section、service-update-title、update-check、update-result、update-install、service-history-title、service-history（public/index.html）
+- HTML id：sidebar、open-workspace、new、import-session、search、sessions、open-settings、sidebar-backdrop、toggle-sidebar、session-alert、session-title、workspace-label、copy-workspace、reveal-workspace、workspace-feedback、conversation-font-scale、github-link、status、service-dev、service-version、open-raw-io、toggle-theme、login、maintenance-state、connect、workspace、goal-track、earliest、history-pages、history-before、history-position、history-after、history-newest、transcript、output、raw-io、raw-io-title、close-raw-io、raw-io-empty、raw-io-list、goal-dock、question-dock、latest、message-queue、task-runs、compaction-progress、safe-stop-progress、add-context、add-image、goal-enter、image-files、context-chips、task-timer、task-timer-value、context-menu、context-picker、context-back、context-title、context-close、context-search、context-results、context-error、image-attachments、composer、prompt、prompt-completion、composer-skill、agent-role、provider、model、thinking、stop、force-stop、send-steer、send-followup、send、session-runtime、session-inspector、session-system-prompt、session-active-tools、mobile-runtime、mobile-expand、composer-help、error、session-action、session-action-form、session-action-title、session-action-description、session-name-label、session-name、session-action-error、session-action-cancel、session-action-submit、image-preview、image-preview-close、image-preview-image、restart-dialog、restart-form、restart-title、restart-description、restart-warning、restart-cancel、restart-submit、force-stop-dialog、force-stop-form、force-stop-title、force-stop-description、force-stop-warning、force-stop-cancel、force-stop-submit、task-overlays、task-template、goal-plan、goal-plan-title、goal-plan-meta、goal-plan-constraints-title、goal-plan-constraints、goal-plan-acceptance-title、goal-plan-acceptance、goal-plan-rounds-section、goal-plan-rounds-title、goal-plan-rounds、goal-plan-close、goal-plan-confirm、settings、settings-title、settings-defaults-tab、settings-remote-tab、settings-models-tab、settings-service-tab、defaults-panel、selection-copy-title、selection-copy、selection-copy-help、selection-copy-feedback、queue-type、steer-help、followup-help、defaults-preview、task-budget-title、task-max-turns、task-wrap-up-window、task-budget-help、subagent-title、subagent-help、subagent-provider、subagent-model、settings-feedback、defaults-title、defaults-workspace、defaults-directory、defaults-delete、defaults-workspace-help、defaults-editor、create-form、create-defaults-help、create-agents、create-compaction、create-retry、create-feedback、remote-panel、remote-status-title、remote-status、remote-login、remote-auth、remote-url、remote-form、remote-note、remote-enabled、remote-email、remote-email-help、remote-feedback、remote-refresh、remote-save、models-panel、service-panel、service-state-title、service-feedback、service-restart-title、restart-quick、restart-rebuild、service-recover、service-update-section、service-update-title、update-check、update-result、update-install、service-history-title、service-history（public/index.html）
 - HTTP 静态路由：/、/favicon.svg、/style.css、/theme.js、/app.js、/session-cache.js、/transport.js、/goal.js、/goal.css、/question.js、/question.css、/service-settings.js、/file-picker.js、/tooltip.js、/tooltip.css、/file-picker.css、/markdown.js、/stream-renderer.js、/stream-playback.js、/markdown-scan.js、/memory-tags.js、/answer-tags.js、/goal-markers.js、/vendor/marked.js、/vendor/purify.js、/model-manager.js、/model-auth.js、/model-manager.css、/model-picker.js、/model-picker.css、/health（src/server.js）
 
 ## ⚠ 未登记文件（0）

@@ -54,6 +54,30 @@ const delegateTaskIds = (message, into) => {
   }
 };
 
+// 独立 JSONL 不共享时间线：按真实委派结果归位，不能把所有子历史堆到主回答之后。
+function orderRestoredHistory(messages) {
+  const main = [], children = new Map();
+  for (const record of messages) {
+    if (record.agentId === "main") main.push(record);
+    else {
+      if (!children.has(record.agentId)) children.set(record.agentId, []);
+      children.get(record.agentId).push(record);
+    }
+  }
+  const ordered = [];
+  for (const record of main) {
+    ordered.push(record);
+    const spawned = new Set();
+    delegateTaskIds(record.message, spawned);
+    for (const id of spawned) {
+      ordered.push(...(children.get(id) || []));
+      children.delete(id);
+    }
+  }
+  // 旧记录没有委派锚点时不伪造关联；保留为前置历史，避免遮蔽最新主回答。
+  return [...children.values()].flat().concat(ordered);
+}
+
 function pageTasks(item, records) {
   const referenced = new Set();
   const spawned = new Set();
@@ -1003,7 +1027,8 @@ export class Sessions {
     // 导入与库恢复的会话都没有完整消息快照（模型消息不再入库）：主代理历史从 Pi JSONL
     // 当前分支重建（撤回/压缩后的分支即真实历史），entryId 保留用于压缩折叠与撤回定位；
     // 子代理使用独立 JSONL，按 task ID 恢复到各自详情，不混入主上下文。
-    if (importedFile || (saved && !item.messages.length))
+    const restoredFromJsonl = importedFile || (saved && !item.messages.length);
+    if (restoredFromJsonl)
       item.messages = (item.agent.historyEntries?.() || []).map((entry) => ({ agentId: "main", message: entry.message, entryId: entry.id }));
     for (const job of item.tasks.jobs.values()) {
       if (!job.sessionFile || !existsSync(job.sessionFile)) continue;
@@ -1015,6 +1040,9 @@ export class Sessions {
         job.error = `子任务历史读取失败：${error.message}`;
       }
     }
+    // 仅独立 JSONL 重建（子历史堆在末尾）才按委派锚点归位；旧快照自带完整 messages
+    // 的顺序就是真实交错历史，重排会改写 messageCount 等下标语义。
+    if (restoredFromJsonl) item.messages = orderRestoredHistory(item.messages);
     // Upgrade legacy web history IDs and recover compaction commits saved in Pi JSONL
     // before a crash could persist the web snapshot. Match in order, never by timestamp alone.
     const history = item.agent.historyEntries?.() || [];
@@ -1380,7 +1408,7 @@ export class Sessions {
     const item = this.get(id);
     if (!item.loaded) {
       const saved = this.store.getSession(id);
-      const messages = [];
+      let messages = [];
       const tasks = structuredClone(saved.tasks ?? []);
       if (saved.sessionFile)
         messages.push(...readSessionHistory(saved.sessionFile, saved.cwd).map(entry => ({ agentId: "main", entryId: entry.id, message: entry.message })));
@@ -1390,6 +1418,7 @@ export class Sessions {
           messages.push(...readSessionHistory(task.sessionFile, saved.cwd).map(entry => ({ agentId: task.id, entryId: entry.id, message: entry.message })));
         } catch (error) { task.error = `子任务历史读取失败：${error.message}`; }
       }
+      messages = orderRestoredHistory(messages);
       // 无 SessionManager 实例：JSONL 只读投影。history 缓存在 stub 上，同进程内 revision 稳定，游标才可用。
       const history = item.history ??= createHistory(id);
       const page = options.window ? pageOf(messages, history, { sessionId: id, epoch: options.epoch, ...options.window }) : null;

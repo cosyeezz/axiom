@@ -435,8 +435,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(firstActions.children[0].title, "置顶");
     assert.equal(firstActions.children[1].className, "session-hide");
     assert.equal(firstActions.children[1].title, "标记已完成");
-    assert.equal(firstActions.children[2].className, "session-open");
-    assert.equal(firstActions.children[3].className, "session-copy");
+    assert.equal(firstActions.querySelector(".session-open"), null);
+    assert.equal(firstActions.children[2].className, "session-copy");
     assert.equal(firstActions.querySelector(".session-rename").title, "重命名");
     assert.equal($("sessions").querySelector(".session-completed").open, false);
     assert.equal(firstActions.children[1].querySelector("path").getAttribute("d"), "M5 12l4 4L19 6");
@@ -564,7 +564,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(new window.URLSearchParams(window.location.hash.slice(1)).get("session"), "a");
     let opened;
     window.open = (...args) => { opened = args; };
-    row("a").querySelector(".session-open").click();
+    row("a").querySelector(".session-copy").click();
     await settle();
     assert.equal(opened, undefined);
     $("prompt").value = "current workspace draft";
