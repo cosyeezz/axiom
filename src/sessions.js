@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { realpath, stat, readFile, mkdir, writeFile, rm, readdir } from "node:fs/promises";
+import { realpath, stat, readFile, mkdir, writeFile, copyFile, rm, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { Database } from "./database.js";
 import { SessionStore } from "./session-store.js";
@@ -215,6 +215,20 @@ function importedTitle(lines, source) {
     }
   }
   return (name || first || basename(source).replace(/\.jsonl$/i, "")).slice(0, 60);
+}
+
+// 复制会话的标题：原名去掉结尾序号后接下一个可用序号（xxx → xxx 1，再复制 → xxx 2；
+// 复制「xxx 1」也回到同一条 xxx N 序列，不会出现「xxx 1 1」）。序号只避开同工作区现有
+// 标题与源会话自身，副本绝不与源同名。
+function duplicateTitle(base, taken) {
+  const raw = String(base || "").trim() || "新会话";
+  const stem = raw.replace(/\s+\d+$/, "").trim() || raw;
+  const titles = new Set(taken);
+  for (let n = 1; n <= 999; n++) {
+    const candidate = `${stem} ${n}`.slice(0, 60);
+    if (!titles.has(candidate)) return candidate;
+  }
+  return `${stem} 副本`.slice(0, 60);
 }
 
 // 主机快速位置：主目录 + 文件系统根；Windows 盘符仅全局模式用 fs stat 探测，不 shell。
@@ -754,6 +768,66 @@ export class Sessions {
       imported: true,
       importText: text,
       messages: [],
+    });
+  }
+
+  // 复制会话：主历史 JSONL 与子任务历史都复制成新身份（等价于把会话完整重启成一份副本），
+  // 配置沿用源会话，标题原名接序号。只允许空闲会话复制：运行中主历史还在追加，边写边复制
+  // 可能截断末行；副本也不会接管未完成的子任务（那会造成同一任务双跑）。
+  async duplicate(id) {
+    if (!this.items.has(id)) throw new Error("Unknown session");
+    if (!this.storagePath) throw new Error("当前实例未启用会话存储，无法复制会话");
+    if (this.get(id).loading) await this.get(id).loading;
+    const item = this.get(id);
+    if (item.closing) throw new Error("Session is closing");
+    const file = landedSessionFile(item);
+    if (!file) throw new Error("会话还没有历史文件，发送首条消息后再复制");
+    if (pointStatus(item) !== "idle") throw new Error("会话正在运行，请等任务结束或停止后再复制");
+    // 先冲刷内存里的最新状态到库（标题/时间/累计用时等，失败按原语义上抛，不做降级复制）。
+    await this.persist(item);
+    const saved = this.store.getSession(id);
+    const cwd = item.cwd;
+    const newId = randomUUID();
+    const storageDir = join(this.storagePath, createHash("sha256").update(process.platform === "win32" ? cwd.toLowerCase() : cwd).digest("hex"));
+    const tasksDir = join(storageDir, `${newId}-tasks`);
+    await mkdir(tasksDir, { recursive: true });
+    // 主历史：只重写首行身份（id/cwd），其余条目与分支 ID 原样保留，与导入同一口径。
+    const lines = (await readFile(file, "utf8")).split("\n").filter((line) => line.trim());
+    let header;
+    try { header = JSON.parse(lines[0]); }
+    catch { throw new Error("会话历史文件损坏，无法复制"); }
+    const mainCopy = join(storageDir, `${newId}.jsonl`);
+    await writeFile(mainCopy, [JSON.stringify({ ...header, id: newId, cwd }), ...lines.slice(1)].join("\n"), { mode: 0o600 });
+    // 子任务历史：逐个复制到副本自己的 -tasks 目录；文件缺失（历史已丢失）的旧任务保留
+    // 记录但不再引用源路径——副本绝不能读回源会话的文件，否则删除源会把副本变成坏引用。
+    const tasks = [];
+    for (const task of saved?.tasks || []) {
+      const record = { ...task };
+      if (record.sessionFile && existsSync(record.sessionFile)) {
+        const target = join(tasksDir, `${record.id}.jsonl`);
+        try { await copyFile(record.sessionFile, target); }
+        catch (error) { throw new Error(`复制子任务历史失败：${error.message}`); }
+        record.sessionFile = target;
+      } else delete record.sessionFile;
+      // 副本不接管未完成的子任务；通知也一律视为已消费：用户在源会话已看过结果，
+      // 副本重启后不该再自动唤醒一轮通知（与 goal 退出的 notified 归一口径一致）。
+      if (["starting", "running"].includes(record.status))
+        Object.assign(record, { status: "cancelled", error: "副本不接管未完成的子任务" });
+      record.notified = true;
+      tasks.push(record);
+    }
+    return this.create(cwd, saved?.selection ?? {}, {
+      ...saved,
+      id: newId,
+      sessionFile: mainCopy,
+      title: duplicateTitle(item.title, [item.title, ...[...this.items.values()].filter((other) => other !== item && other.cwd === cwd).map((other) => other.title)]),
+      titleManual: true,
+      titleRequested: true,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      elapsedMs: 0,
+      runningSince: null,
+      tasks,
     });
   }
 

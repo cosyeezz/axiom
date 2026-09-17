@@ -112,10 +112,23 @@ compactState.messages.push({ agentId: "main", entryId: "compact-recent", message
 states.push(compactState);
 const sessions = {
   createAgent: { catalog: () => [{ provider: "preview", id: "axiom", key: "preview/axiom", name: "Axiom Preview", levels: ["off", "high"] }] },
-  list: () => states.map((s) => ({ id: s.sessionId, cwd: s.cwd, title: s.title, status: s.status, updatedAt: Date.now() })),
+  list: () => states.map((s) => ({ id: s.sessionId, cwd: s.cwd, title: s.title, status: s.status, updatedAt: Date.now(), sessionFile: `preview-${s.sessionId}.jsonl` })),
   get: (id) => states.find((s) => s.sessionId === id) || state,
   ensureLoaded: async (id) => sessions.get(id),
   snapshot: (id) => sessions.get(id),
+  // 复制会话预览：新 id + 标题原词接序号（与后端一致），内容原样，方便浏览器验收点击验证。
+  duplicate: async (id) => {
+    const source = sessions.get(id);
+    const copy = structuredClone(source);
+    copy.sessionId = `${id}-copy-${++sequence}`;
+    const stem = String(source.title).replace(/\s+\d+$/, "").trim();
+    let n = 1;
+    while (states.some((s) => s.title === `${stem} ${n}`)) n++;
+    copy.title = `${stem} ${n}`;
+    copy.status = "idle";
+    states.push(copy);
+    return copy.sessionId;
+  },
   subscribe: () => () => {},
 };
 const app = createServerApp(sessions);

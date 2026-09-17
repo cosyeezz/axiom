@@ -415,6 +415,142 @@ test("session.import copies a pi jsonl session, rebuilds history and protects th
   } finally { await restored?.close(); await sessions?.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+// 复制会话：主历史与子任务历史都复制成新身份，标题原名接序号，运行中/无历史被拒，
+// 删除源会话后副本文件仍完整独立（副本绝不引用源文件路径）。
+test("session.duplicate copies histories into a fresh identity with a sequenced title", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "axiom-duplicate-")));
+  const storage = join(root, "storage");
+  const workspace = join(root, "workspace");
+  await mkdir(workspace, { recursive: true });
+  const mainFile = join(root, "main.jsonl");
+  const taskFile = join(root, "task-a.jsonl");
+  const runningFile = join(root, "task-b.jsonl");
+  const jsonl = (header, messages) =>
+    [header, ...messages].map((entry) => JSON.stringify(entry)).join("\n");
+  await writeFile(mainFile, jsonl(
+    { type: "session", version: 3, id: "pi-1", timestamp: "2026-01-01T00:00:00.000Z", cwd: workspace },
+    [
+      { type: "message", id: "u1", parentId: null, timestamp: "t", message: { role: "user", content: [{ type: "text", text: "帮我整理周报" }] } },
+      { type: "message", id: "a1", parentId: "u1", timestamp: "t", message: { role: "assistant", content: [{ type: "text", text: "好的" }] } },
+    ]));
+  await writeFile(taskFile, jsonl(
+    { type: "session", version: 3, id: "sub-1", timestamp: "t", cwd: workspace },
+    [{ type: "message", id: "s1", parentId: null, timestamp: "t", message: { role: "assistant", content: [{ type: "text", text: "子任务结论" }] } }]));
+  await writeFile(runningFile, jsonl(
+    { type: "session", version: 3, id: "sub-2", timestamp: "t", cwd: workspace },
+    [{ type: "message", id: "s2", parentId: null, timestamp: "t", message: { role: "assistant", content: [{ type: "text", text: "跑到一半" }] } }]));
+  // 假工厂代替 SDK：像 SessionManager 一样从 sessionFile 读回历史；源会话用可变的
+  // sessionFilePath 模拟「首条消息后才落盘」。
+  let sessionFilePath = null;
+  const readEntries = (file) => file
+    ? readFileSync(file, "utf8").split("\n").filter(Boolean).slice(1)
+        .map((line) => JSON.parse(line)).filter((entry) => entry.type === "message")
+        .map((entry) => ({ id: entry.id, message: entry.message }))
+    : [];
+  const factory = async (_, selection = {}) => {
+    const file = () => selection.sessionFile ?? sessionFilePath;
+    return {
+      config: () => ({ model: "test/one", thinking: "off" }),
+      subscribe: () => () => {}, prompt: async () => {}, enqueue: async () => {},
+      queue: () => ({ steering: [], followUp: [] }), withdraw: () => ({}),
+      abort: async () => {}, result: () => "ok", dispose: async () => {},
+      sessionFile: file,
+      historyEntries: () => readEntries(file()),
+      compactions: () => [],
+    };
+  };
+  factory.catalog = () => [{ key: "test/one" }];
+  factory.cwd = workspace;
+  let sessions, restored;
+  try {
+    // 未启用会话存储的实例直接拒绝。
+    const bare = new Sessions(factory);
+    const bareId = await bare.create(workspace);
+    await assert.rejects(bare.duplicate(bareId), /未启用会话存储/);
+    await bare.close();
+
+    sessions = new Sessions(factory, undefined, storage);
+    const id = await sessions.create(workspace);
+    await assert.rejects(sessions.duplicate(id), /还没有历史文件/, "未落盘的历史不可复制");
+    // 模拟历史落盘：首条消息后文件写盘（工厂闭包指向真实文件），冲库后路径入 store。
+    sessionFilePath = mainFile;
+    await sessions.persist(sessions.get(id));
+    sessions.store.saveTask(id, {
+      id: "task-a", task: "检索旧周报", status: "completed", text: "子任务结论",
+      runtime: { elapsedMs: 1200 }, resultId: "r1", notified: false,
+      parentContext: "背景", persistenceVersion: 1, sessionFile: taskFile, historySaved: true,
+      createdAt: 1, updatedAt: 2,
+    });
+    sessions.store.saveTask(id, {
+      id: "task-b", task: "在跑的子任务", status: "running",
+      persistenceVersion: 1, sessionFile: runningFile, historySaved: true,
+      createdAt: 3, updatedAt: 4,
+    });
+    sessions.store.saveTask(id, {
+      id: "task-c", task: "历史已丢失的旧任务", status: "failed", error: "旧任务",
+      sessionFile: join(root, "missing.jsonl"), resultId: "r3", notified: false,
+      createdAt: 5, updatedAt: 6,
+    });
+    await sessions.rename(id, "周报复盘");
+    // 运行中（含子任务在跑）的会话拒绝复制：主历史仍在追加，边写边复制会截断末行。
+    sessions.get(id).status = "running";
+    await assert.rejects(sessions.duplicate(id), /会话正在运行/);
+    sessions.get(id).status = "idle";
+
+    const copyId = await sessions.duplicate(id);
+    assert.notEqual(copyId, id);
+    const copy = sessions.get(copyId);
+    assert.equal(sessions.snapshot(copyId).title, "周报复盘 1", "标题原名接序号");
+    const storageDir = copy.storageDir;
+    const copyMain = join(storageDir, `${copyId}.jsonl`);
+    assert.equal(copy.agent.sessionFile(), copyMain);
+    const [copyHeader, ...copyLines] = (await readFile(copyMain, "utf8")).split("\n");
+    assert.equal(JSON.parse(copyHeader).id, copyId, "副本首行换成新身份");
+    assert.equal(JSON.parse(copyHeader).cwd, workspace);
+    assert.deepEqual(copyLines, (await readFile(mainFile, "utf8")).split("\n").slice(1), "主历史条目原样复制");
+    // 子任务历史复制到副本自己的 -tasks 目录；缺失文件的旧任务保留记录但不再引用源路径。
+    const copyTasks = sessions.store.getSession(copyId).tasks;
+    assert.equal(copyTasks.find((task) => task.id === "task-a").sessionFile, join(storageDir, `${copyId}-tasks`, "task-a.jsonl"));
+    assert.equal(copyTasks.find((task) => task.id === "task-b").sessionFile, join(storageDir, `${copyId}-tasks`, "task-b.jsonl"));
+    assert.equal(copyTasks.find((task) => task.id === "task-c").sessionFile, null, "文件缺失的任务不再挂路径");
+    assert.equal(existsSync(join(storageDir, `${copyId}-tasks`, "task-a.jsonl")), true);
+    assert.equal(await readFile(join(storageDir, `${copyId}-tasks`, "task-a.jsonl"), "utf8"), await readFile(taskFile, "utf8"), "子任务历史内容一致");
+    const view = (taskId) => sessions.snapshot(copyId).tasks.find((task) => task.id === taskId);
+    assert.equal(view("task-a").status, "completed");
+    assert.equal(view("task-a").text, "子任务结论");
+    assert.equal(view("task-b").status, "cancelled", "副本不接管未完成的子任务");
+    assert.equal(view("task-b").error, "副本不接管未完成的子任务");
+    assert.equal(view("task-c").status, "failed");
+    assert.equal(copyTasks.find((task) => task.id === "task-a").notified, true, "完成结果不重发通知");
+    // 副本历史完整重建：主消息 + 子任务消息都以副本文件为源。
+    assert.deepEqual(sessions.snapshot(copyId).messages.map((record) => record.entryId), ["u1", "a1", "s1", "s2"]);
+    assert.equal(sessions.snapshot(copyId).messages.at(-2).agentId, "task-a");
+
+    // 同名连续复制接续序号；复制「周报复盘 1」也回到同一序号序列。
+    const secondId = await sessions.duplicate(id);
+    assert.equal(sessions.snapshot(secondId).title, "周报复盘 2");
+    const thirdId = await sessions.duplicate(copyId);
+    assert.equal(sessions.snapshot(thirdId).title, "周报复盘 3");
+
+    // 删除源会话不触碰副本：副本文件独立，重启后仍能完整恢复。
+    await sessions.remove(id);
+    assert.equal(existsSync(copyMain), true);
+    assert.equal(existsSync(join(storageDir, `${copyId}-tasks`, "task-a.jsonl")), true);
+    restored = new Sessions(factory, undefined, storage);
+    await restored.load();
+    await restored.ensureLoaded(copyId);
+    assert.equal(restored.snapshot(copyId).title, "周报复盘 1");
+    assert.deepEqual(restored.snapshot(copyId).messages.map((record) => record.entryId), ["u1", "a1", "s1", "s2"]);
+    assert.equal(restored.snapshot(copyId).tasks.find((task) => task.id === "task-b").status, "cancelled");
+    await restored.remove(copyId);
+    await restored.close();
+    restored = null;
+    assert.equal(existsSync(copyMain), false, "删除副本连同其历史文件一起清理");
+    await sessions.remove(secondId);
+    await sessions.remove(thirdId);
+  } finally { await restored?.close(); await sessions?.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test("尚未落盘的 JSONL 路径不落库，空会话重启后仍能打开", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-empty-session-"));
   const storage = join(root, "storage");

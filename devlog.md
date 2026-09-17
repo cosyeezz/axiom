@@ -2238,3 +2238,11 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 修复 public/app.js 前插历史后 mainItems 顺序、旧页压缩摘要和重试卡遗漏；恢复子代理正文分组。新增 history-prepend-records.test.js，扩展测试 helper。
 - 全量695项：693通过、2跳过。README/索引/坑库同步。
 - 清理前一worktree时 Windows junction 被递归处理导致主目录部分依赖缺失；已通过独立 npm ci 安装并 robocopy 仅补缺失文件恢复，不终止在用进程。后续不使用 git worktree remove 清理含联接目录。
+
+## 2026-09-17 会话复制与侧栏分组折叠
+- 新增「复制会话」：后端 `session.duplicate` 协议命令（src/protocol.js、src/server.js 分发、src/sessions.js 实现）——服务端把主历史 JSONL 与全部子任务历史复制成新会话（副本文件绝不引用源路径，删除源不影响副本），配置沿用源会话，标题原名接序号（xxx → xxx 1，复制「xxx 1」也回到同一条 xxx N 序列）；运行中/无已落盘历史/未启用存储均拒绝。副本不接管未完成子任务、不重发完成通知（与 goal 退出同一 notified 口径）。
+- 侧栏三组（置顶/进行中/已完成）统一为可折叠 `<details>` + 计数徽章：空组不渲染（置顶/已完成）；折叠状态按工作区记入 localStorage `axiom.sessionGroups`，渲染时同步固化 + toggle 双保险；已完成展开时限高 45vh 组内滚动，整体滚动交给 #sessions。
+- 前端 app.js：操作菜单插入「复制会话」（禁用条件集中 duplicateBlocked()：断连/切换中/运行中/无 sessionFile，渲染与 updateNavigation 共用）；原「复制」改名「复制文件」。
+- 顺带修复：duplicateTitle 把源标题计入 taken，副本绝不与源同名；移动端（≤700px）点击复制后自动收起侧栏属既有行为，py 断言改在桌面视口下验证。
+- 测试：session-flow.test.js 新增 duplicate 全行为用例（复制/序号/独立性/重启恢复/拒绝路径）；server.test.js 补协议分发；app.test.js 调整空组断言 + 复制 mock；conversation-preview.mjs 补 duplicate mock 与 sessionFile；session-sidebar-ui.py 改造为分组折叠/计数/限高/复制断言，并修复 master 上本就漂移的断言与 320px 轮次从未跑通的 toggle 路径（先点 #mobile-expand 再开侧栏）。
+- 验证：npm test 696 项全绿（694 通过、2 既有跳过）；4399 预览上 session-sidebar-ui.py PASS。README 同步侧栏/菜单/协议/测试指引。

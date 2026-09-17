@@ -126,6 +126,17 @@ try {
   const saved = JSON.parse(localStorage.getItem("axiom.openCwds") || "[]");
   if (Array.isArray(saved)) openCwds = new Set(saved);
 } catch {}
+// 侧栏分组折叠状态：normalized cwd → { pinned/active/completed: boolean }。
+// 置顶与进行中默认展开，已完成默认折叠；和 workspace-group 一样按工作区各自记住。
+let sessionGroupPrefs = (() => {
+  try {
+    const saved = JSON.parse(localStorage.getItem("axiom.sessionGroups") || "{}");
+    return saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
+  } catch { return {}; }
+})();
+function saveSessionGroupPrefs() {
+  try { localStorage.setItem("axiom.sessionGroups", JSON.stringify(sessionGroupPrefs)); } catch {}
+}
 // 已读时间戳：AI 跑完、用户还没打开过的会话在侧栏标主题色点。没有记录的一律视为已读，
 // 否则首次加载会把全部历史会话标成未读。
 let seenSessions = {};
@@ -530,7 +541,16 @@ function updateNavigation() {
   $("reveal-workspace").disabled = unavailable;
   $("copy-workspace").disabled = !$("workspace-label").textContent;
   $("new").disabled = unavailable || !models.length;
-  for (const button of $("sessions").querySelectorAll(".session-actions button")) button.disabled = !button.closest(".session-copy-menu") && !button.matches(".session-copy, .session-hide") && unavailable;
+  for (const button of $("sessions").querySelectorAll(".session-actions button")) {
+    if (button.classList.contains("session-duplicate"))
+      button.disabled = duplicateBlocked(allSessions.find((s) => s.id === button.closest(".session-row")?.dataset.sessionId));
+    else button.disabled = !button.closest(".session-copy-menu") && !button.matches(".session-copy, .session-hide") && unavailable;
+  }
+}
+// 复制会话按钮的可用性：除了连接/空闲切换，还要求会话不在运行且已落盘历史文件。
+// 渲染与状态刷新都会盖写按钮，两处共用同一份判定。
+function duplicateBlocked(session) {
+  return !connected || changing || !session || session.status !== "idle" || !session.sessionFile;
 }
 function updateComposer() {
   const unavailable = !connected || changing;
@@ -3396,16 +3416,16 @@ function renderSessions() {
   // 用户置顶的会话排在各自工作区最前，其次是运行中，再次是跑完待看的，最后是看过闲着的。
   const pinned = (s) => pinnedSessions.has(s.id);
 
-  // 保存当前 DOM 中各工作区状态
-  const completedOpenByCwd = new Map();
+  // 保存当前 DOM 中各工作区状态：重绘前先取回各分组折叠状态，用户刚点过的不会被重置。
+  const groupsOpenByCwd = new Map();
   for (const el of $("sessions").querySelectorAll(".workspace-group")) {
     const cwd = el.dataset.cwd;
-    if (cwd) {
-      if (el.open) openCwds.add(cwd);
-      else openCwds.delete(cwd);
-      const completed = el.querySelector(".session-completed");
-      if (completed) completedOpenByCwd.set(cwd, completed.open);
-    }
+    if (!cwd) continue;
+    if (el.open) openCwds.add(cwd);
+    else openCwds.delete(cwd);
+    const state = {};
+    for (const section of el.querySelectorAll(".session-section[data-group]")) state[section.dataset.group] = section.open;
+    if (Object.keys(state).length) groupsOpenByCwd.set(cwd, state);
   }
 
   // 按工作空间分组
@@ -3488,7 +3508,8 @@ function renderSessions() {
       ["pin", pinned(s) ? "取消置顶" : "置顶", 'M16 12V4h1V2H7v2h1v8l-2 2v2h5v6h2v-6h5v-2l-2-2z'],
       ["hide", hidden ? "移回进行中" : "标记已完成", hidden ? 'M12 20V4M5 11l7-7 7 7' : 'M5 12l4 4L19 6'],
       ["open", "在新标签页打开", 'M14 3h7v7M21 3l-10 10M10 3H3v18h18v-7'],
-      ["copy", "复制", 'M9 9h11v12H9ZM15 9V3H4v12h5'],
+      ["duplicate", "复制会话", 'M9 9h11v12H9ZM15 9V3H4v12h5M14.5 14v3M13 15.5h3'],
+      ["copy", "复制文件", 'M9 9h11v12H9ZM15 9V3H4v12h5'],
       ["rename", "重命名", 'M16 3l5 5L8 21H3v-5L16 3zM13 6l5 5M3 16l5 5'],
       ["delete", "删除会话", 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7'],
     ]) {
@@ -3498,8 +3519,9 @@ function renderSessions() {
       action.title = label;
       action.setAttribute("aria-label", `${label}：${s.title}`);
       if (["rename", "delete"].includes(kind)) action.setAttribute("aria-haspopup", "dialog");
-      // 复制路径与置顶是纯前端偏好，不依赖连接，断连时也保持可用。
-      action.disabled = !["hide", "copy", "pin"].includes(kind) && (!connected || changing);
+      // 复制文件与置顶是纯前端偏好，不依赖连接，断连时也保持可用；复制会话另按 duplicateBlocked 判定。
+      if (kind === "duplicate") action.disabled = duplicateBlocked(s);
+      else action.disabled = !["hide", "copy", "pin"].includes(kind) && (!connected || changing);
       action.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
       action.append(document.createTextNode(label));
       if (kind === "copy") {
@@ -3539,6 +3561,7 @@ function renderSessions() {
         actions.hidePopover?.();
         more.focus();
         if (kind === "open") void switchSession(() => request("session.attach", { sessionId: s.id }));
+        else if (kind === "duplicate") void switchSession(() => request("session.duplicate", { sessionId: s.id }));
         else if (kind === "hide") void setSessionHidden(s.id, !hidden);
         else if (kind === "pin") void setSessionPinned(s.id, !pinned(s));
         else openSessionAction(kind, s);
@@ -3628,17 +3651,40 @@ function renderSessions() {
         ["已完成", sorted.filter((s) => !pinned(s) && !running(s) && hiddenSessions.has(s.id))],
       ];
       for (const [name, groupSessions] of groups) {
-        const completed = name === "已完成";
-        const section = document.createElement(completed ? "details" : "section");
-        section.className = `session-section${completed ? " session-completed" : ""}`;
-        if (completed) section.open = completedOpenByCwd.get(ncwd) ?? false;
+        const key = name === "置顶" ? "pinned" : name === "进行中" ? "active" : "completed";
+        // 置顶/已完成空组不渲染：没有内容时组头只是噪音；进行中组保留承载空态提示。
+        if (!groupSessions.length && key !== "active") continue;
+        const section = document.createElement("details");
+        section.className = `session-section session-${key}`;
+        section.dataset.group = key;
         section.setAttribute("aria-label", name);
-        const heading = document.createElement(completed ? "summary" : "h2");
-        heading.className = "session-group";
-        heading.textContent = name;
+        // 折叠状态：先看重绘前的 DOM，再看按工作区记住的偏好；置顶/进行中默认展开，已完成默认折叠。
+        section.open = groupsOpenByCwd.get(ncwd)?.[key] ?? sessionGroupPrefs[ncwd]?.[key] ?? key !== "completed";
+        // 渲染时同步固化生效状态：toggle 事件是异步任务，不等它也能保证重绘后立刻一致；仅在变化时写盘。
+        const prefs = (sessionGroupPrefs[ncwd] ??= {});
+        if (prefs[key] !== section.open) { prefs[key] = section.open; saveSessionGroupPrefs(); }
+        const heading = document.createElement("summary");
+        heading.className = "session-group-toggle";
+        const label = document.createElement("span");
+        label.className = "session-group";
+        label.textContent = name;
+        heading.append(label);
+        if (groupSessions.length) {
+          const count = document.createElement("span");
+          count.className = "session-group-count";
+          count.textContent = String(groupSessions.length);
+          count.title = `${groupSessions.length} 个会话`;
+          heading.append(count);
+        }
         const content = document.createElement("div");
         content.className = "session-section-content";
         section.append(heading, content);
+        // 用户点折叠后按工作区记下来；读取当前值幂等，程序赋值引发的 toggle 不会造成抖动写库。
+        section.addEventListener("toggle", () => {
+          if (!section.isConnected) return;
+          const prefs = (sessionGroupPrefs[ncwd] ??= {});
+          if (prefs[key] !== section.open) { prefs[key] = section.open; saveSessionGroupPrefs(); }
+        });
         let day;
         for (const s of groupSessions) {
           const date = new Date(s.updatedAt);
