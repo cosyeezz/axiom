@@ -1,15 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import { marked } from "marked";
 import createPurify from "dompurify";
 import { JSDOM } from "jsdom";
+import { publicSource } from "./helpers/public-source.js";
 
 test("Git history wraps subjects without changing source or ordinary diagrams", async () => {
   const window = new JSDOM("").window;
   try {
-    const source = (await readFile(new URL("../public/markdown.js", import.meta.url), "utf8"))
-      .replace(/^import .*;\r?\n/gm, "").replace("export function", "function");
+    const source = await publicSource("clipboard", "markdown");
     const render = new Function("marked", "DOMPurify", `${source}; return renderMarkdown;`)(marked, createPurify(window));
     const node = window.document.createElement("div");
     const fence = (text, lang = "text") => `\`\`\`${lang}\n${text}\n\`\`\``;

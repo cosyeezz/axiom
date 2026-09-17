@@ -1,6 +1,7 @@
 import { initInspector, renderTools, renderBill, money } from "./session-details.js";
 import { createTransport } from "./transport.js";
 import { createSessionCache } from "./session-cache.js";
+import { copyText } from "./clipboard.js";
 import { renderMarkdown } from "./markdown.js";
 import { stripMemoryTags } from "./memory-tags.js";
 import { createStreamRenderer } from "./stream-renderer.js";
@@ -495,7 +496,7 @@ function paintRaw() {
       copy.className = "raw-copy secondary";
       copy.textContent = "复制原文";
       copy.onclick = async () => {
-        try { await navigator.clipboard.writeText(entry.body.textContent); copy.textContent = "已复制"; }
+        try { await copyText(entry.body.textContent); copy.textContent = "已复制"; }
         catch { copy.textContent = "复制失败，请选中文字复制"; }
       };
       bar.append(entry.label, locate, copy);
@@ -3115,7 +3116,7 @@ async function copySelection(e) {
     text = selection.toString();
   }
   if (!text.trim()) return;
-  try { await navigator.clipboard.writeText(text); }
+  try { await copyText(text); }
   catch { error(new Error("自动复制失败，请使用右键菜单复制。")); }
 }
 document.addEventListener("pointerup", copySelection);
@@ -3387,7 +3388,7 @@ async function copySessionFile(s, action, kind = "path") {
     const separator = Math.max(file.lastIndexOf("/"), file.lastIndexOf("\\"));
     const directory = file.slice(0, separator + 1);
     const value = kind === "name" ? file.slice(separator + 1) : kind === "directory" ? directory : file;
-    await navigator.clipboard.writeText(value);
+    await copyText(value);
     const label = action.title;
     action.title = "已复制";
     setTimeout(() => { action.title = label; }, 1600);
@@ -4040,7 +4041,7 @@ $("open-workspace").onclick = async () => {
 };
 $("copy-workspace").onclick = async () => {
   try {
-    await navigator.clipboard.writeText($("workspace-label").textContent);
+    await copyText($("workspace-label").textContent);
     $("copy-workspace").title = "已复制";
     $("workspace-feedback").textContent = "工作空间路径已复制";
     setTimeout(() => { $("copy-workspace").title = "复制工作空间路径"; }, 1600);
