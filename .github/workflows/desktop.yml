@@ -38,7 +38,7 @@ jobs:
           mount_line=$(hdiutil attach Axiom.dmg -nobrowse -readonly | tail -1)
           mount=$(printf '%s\n' "$mount_line" | sed -E 's/.*(\/Volumes\/.*)$/\1/')
           trap 'hdiutil detach "$mount" >/dev/null 2>&1 || true' EXIT
-          exe=$(PlistBuddy -c 'Print :CFBundleExecutable' "$mount/Axiom.app/Contents/Info.plist")
+          exe=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$mount/Axiom.app/Contents/Info.plist")
           lipo "$mount/Axiom.app/Contents/MacOS/$exe" -verify_arch arm64 x86_64
           echo "verified: $mount/Axiom.app ($exe, arm64+x86_64)"
       - name: Verify Windows MSI exists
