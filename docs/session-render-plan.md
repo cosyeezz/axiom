@@ -99,3 +99,14 @@
 - pageOf 窗口语义变化影响面：全主记录数组的窗口结果与旧算法逐条相同（既有 session-history.test.js 全部保留作回归）；混合数组行为变化是本次修复目标本身。
 - 前端 tests/helper 的 pageOf 直调不传投影：预算语义在全主记录下等价，无需改 helper 即兼容；新增投影用例走真实 Sessions。
 - 乐观卡与权威消息竞态：runId 对账 + 单槽假设 + 快照重建兜底；绝不按文本匹配。
+
+## 11. 实施结果（2026-09-17 交付）
+
+四个阶段全部完成，`npm test` 726 项全绿（724 通过、2 既有跳过）：
+
+- **Phase A（服务端，851b28b）**：`pageOf` 主轴预算 + 每次重建 messageId 索引 + 记录上限 400 与 `truncatedTasks`；`projectTimeline` 读时投影（live 到达序数组不动）；`pageRetries` anchorEntryId 优先 + `translateRetries` 投影换算。新增 `tests/history-main-budget.test.js` 5 项。
+- **Phase B（前端，b4a4d52）**：分页条常驻旧页/加载中/有新消息；近底部前向预取（dirty 假游标守卫）；`pendingAnchorRestore` 挂起冲刷；移除三处末尾追加中的快照尾追加（实时路径靠 placeCompactedTasks 归位），运行中未锚定任务入 #task-runs 栏且行禁用；visibilitychange 分视角；`markTruncatedTasks` 截断声明。`tests/history-reading.test.js` 重写钉旧行为的断言并新增 5 项。
+- **Phase C（发送，fdf1263）**：乐观卡立即上屏（nextPaint 先绘制再序列化，无渲染环境 64ms 兜底）；runId 对账原位升级；确定失败撤卡保草稿、unknown 如实标注；快照重建重置槽位；旧页提交先派发 prompt、历史回最新并行。新增 `tests/send-optimistic.test.js` 6 项。
+- **Phase D（延后）**：有界 DOM/虚拟化、块级解析缓存等仍按 §7 理由延后，需真实浏览器实测。
+
+附带发现：`npm test` 会因 `tests/codebase-index.test.js` 重建 `.pi/skills/codebase-map/INDEX.md`（测试副作用），提交前已还原，勿混入功能提交。
