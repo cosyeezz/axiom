@@ -251,8 +251,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
             break;
           case "models.list":
             data = [
-              { key: "test/model", provider: "test", name: "Model" },
-              { key: "other/child", provider: "other", name: "Child" },
+              // models.list 始终投影 levels（src/pi.js 的 catalog 投影），界面只列模型真正支持的等级。
+              { key: "test/model", provider: "test", name: "Model", levels: ["off"] },
+              { key: "other/child", provider: "other", name: "Child", levels: ["off", "medium", "high"] },
             ];
             break;
           case "session.configure":
@@ -900,11 +901,16 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("create-main-provider").value, "", "defaults do not take the current model implicitly");
     assert.equal(window.document.querySelectorAll('.settings-nav button').length, 5, "连接 + 默认新会话设置 + 远程控制 + 模型与供应商 + 服务与更新");
     assert.equal($("create-subagent-mode").querySelector('option[value="inherit"]').textContent, "跟随主代理能力");
-    assert.equal($("create-subagent-thinking").querySelector('option[value="max"]').textContent, "max");
-    $("create-main-thinking").value = "high";
+    // 思考等级只列出「当前选中模型真正支持的等级」：还没选模型时回退到当前会话的等级集合。
+    assert.deepEqual([...$("create-subagent-thinking").options].map((option) => option.value), ["", "off"],
+      "未选模型时不再罗列 max 等模型并不支持的等级");
     $("create-subagent-thinking").value = "off";
     $("create-main-provider").value = "other";
     $("create-main-provider").dispatchEvent(new window.Event("change"));
+    // 选中 other/child（levels: off/medium/high）后，等级列表随即跟上。
+    assert.deepEqual([...$("create-main-thinking").options].map((option) => option.value), ["", "off", "medium", "high"],
+      "换模型后等级列表跟着换");
+    $("create-main-thinking").value = "high";
     $("create-main-mode").value = "custom";
     $("create-main-mode").dispatchEvent(new window.Event("change"));
     window.document.querySelectorAll('.capability-agent:first-child input[data-kind="skills"]')[1].checked = false;

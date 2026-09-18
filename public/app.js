@@ -75,7 +75,14 @@ const goalUI = typeof createGoalUI === "function"
 const compactionDefaults = { enabled: true, tokenThreshold: 100000, percentThreshold: 50, model: null, thinking: "off", keepRecentTokens: 5000 };
 // 子代理轮次预算默认值，与 src/task-budget.js 的 taskBudgetDefaults 保持一致。
 const taskBudgetDefaults = { maxTurns: 20, wrapUpWindow: 2 };
-const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+// 有效思考等级：只展示目标模型真正支持的等级（目录条目的 levels 由 SDK 的
+// getSupportedThinkingLevels 派生）。找不到模型时退回当前会话主模型的等级，
+// 再退到 ["off"]——绝不展示一份写死的「全部等级」，否则界面会给出模型根本不支持的选项。
+function effectiveLevels(modelKey) {
+  const levels = models.find((entry) => entry.key === modelKey)?.levels;
+  if (Array.isArray(levels) && levels.length) return levels;
+  return Array.isArray(config?.levels) && config.levels.length ? config.levels : ["off"];
+}
 let modelFavorites = { provider: [], model: [], thinking: [] };
 // 思考收藏键带模型上下文，符合后端 provider/model:level 契约（model id 含冒号时后端按最后一个冒号切分）；
 // 无模型上下文（“默认主代理模型”“跟随主代理”等空值）返回空串，菜单不提供星标。
@@ -676,8 +683,7 @@ async function refreshModelCatalog() {
   }
   for (const select of document.querySelectorAll('select[data-model-kind="thinking"]')) {
     const model = select.closest(".selectors")?.querySelector('select[data-model-kind="model"]');
-    const levels = models.find((entry) => entry.key === model?.value)?.levels;
-    if (levels) refill(select, levels.map((level) => [level, level]));
+    refill(select, effectiveLevels(model?.value).map((level) => [level, level]));
   }
   updateNavigation();
   // 首次配置保存模型后解除引导态（并发重复刷新只在状态变化时执行一次）。
@@ -697,8 +703,8 @@ function renderAgentConfig() {
   const current = models.find((m) => m.key === key);
   options($("provider"), [...(child ? [["", "跟随主代理"]] : []), ...providerEntries()], current?.provider || "");
   fillModels();
-  const levels = child ? (current?.levels || config.levels) : config.levels;
-  options($("thinking"), [...(child ? [["", "跟随主代理思考等级"]] : []), ...(levels || []).map((v) => [v, v])],
+  const levels = effectiveLevels(key);
+  options($("thinking"), [...(child ? [["", "跟随主代理思考等级"]] : []), ...levels.map((v) => [v, v])],
     child ? config.subagentThinking || "" : config.thinking);
   modelPicker.sync($("model"));
 }
@@ -1945,7 +1951,7 @@ function compactionEditor(initial, mainModel) {
   };
   const valid = () => !error();
   const fillThinking = () => {
-    const levels = models.find((m) => m.key === (model.value || mainModel()))?.levels || thinkingLevels;
+    const levels = effectiveLevels(model.value || mainModel());
     const current = thinking.value || initial.thinking;
     options(thinking, levels.map((v) => [v, v]), levels.includes(current) ? current : "off");
   };
@@ -4378,7 +4384,7 @@ function createAgentPicker(role, title, catalog, initial) {
   fill(key);
   const thinking = select("thinking", `${title}思考等级`);
   const fillThinking = () => {
-    const levels = models.find((m) => m.key === model.value)?.levels || thinkingLevels;
+    const levels = effectiveLevels(model.value);
     options(thinking, [["", role === "main" ? "沿用默认思考等级" : "跟随主代理思考等级"], ...levels.map((v) => [v, v])], thinking.value || initial.thinking || "");
   };
   model.onchange = fillThinking;
