@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-19 移植 SoL-Pi Observation Pack：大工具结果折叠 + 面板统计
+
+- 内容：大于 6KB 的纯文本工具结果前 2 次请求照原文发送，之后在 context 投影层替换为字节级稳定的占位符（头尾完整行摘录 + 取回指引）；原文按内容寻址归档，模型用 `obs_recall` 按 16KB 分页取回。会话运行摘要新增 `OP 折叠 N 项 · 每请求省 X tokens · 取回 M 次 (R%)` 一行，取回率超 50% 整行标红（判定线写死在展示逻辑，不靠人记）。归档随会话删除清理，ledger 只记状态转换。
+- 原因：结论固化于调研轮：OP 投影层不动历史、零额外 LLM 调用、降低压缩触发频率，与 AXIOM 后台压缩互不干扰（压缩输入取 JSONL 原文）；EPR/OCC 不接、Action Fusion 另评。阈值取 6KB：本仓子代理报告实测 6 份中一半低于原版 10KB。
+- 决策：移植为纯 JS 单文件而非装 SoL-Pi 插件（不引入 projectTrusted 注入面、无 typebox/pi-tui 依赖）；归档目录由 AXIOM 会话存储布局显式注入（`selection.observationsDir` → `<sha>/<id>-observations/`）而非 SDK 会话推导，删除挂靠 `remove()` 两分支与 `${id}-tasks` 同批；ledger 从「可砍」定为保留但只记 fold/recall/fail-open 转换事件（SoL-Pi 逐请求记账会随请求次数膨胀且累计口径易误读）；面板「省 X」为当前每请求实时值而非累计和；主代理与子代理共享归档目录但计数各自独立；不做结构感知摘录、不按工具名排除、obs_recall 结果同样参与折叠（统一规则）。
+- 验证：`node --test tests/observation-pack.test.js` 10 项（占位符字节稳定、原消息不改写、分页拼接与原文逐字节一致、等长篡改拒用、fail-open 原文照发、重启种子、ledger 转换事件唯一、错误/图片块不折叠）；新增 `tests/observation-pack-flow.test.js` 真实 SDK 端到端（子进程 + 假 SSE 供应商，复用 goal-pi.test.js 骨架）：验证扩展经 `selection.observationsDir` 装载、obs_recall 进工具 schema、第 3 次请求后占位符替换全文、归档落盘、obs_recall 被“模型”实际调用并分页回原文、`runtime()` 面板字段与 ledger fold/recall 事件，以及未注入 observationsDir 的会话不装载扩展；全量 `node --test "tests/*.test.js"` 756 项 754 通过 0 失败（2 项存量跳过）；索引重建后 `codebase-index.test.js` 回绿。集成测试踩坑两处：fake SSE 脚本数组须按全局请求计数索引（改成 shift 队列）；同会话两次 tool call 须不同 id（否则 SDK 拒重复 id，不再续跑）。
+- 涉及文件：`src/observation-pack.js`（新）、`src/pi.js`、`src/sessions.js`、`public/app.js`、`public/style.css`、`tests/observation-pack.test.js`（新）、`tests/observation-pack-flow.test.js`（新）、`.pi/skills/codebase-map/scripts/reindex.mjs`、`.pi/skills/codebase-map/INDEX.md`、`README.md`、`devlog.md`。
+
 ## 2026-09-18 索引脚本跳过 __pycache__
 
 - 原因：`.gitignore` 已忽略 `__pycache__/`（`835767e` 顺手加的），但 `reindex.mjs` 的 `SKIP` 集只有 `node_modules`。跑过 `python tests/*-ui.py` 后 Python 重建字节码，重建索引就把 `.pyc` 当成「165 行的 node --test 测试」登记进 INDEX.md，让被跟踪的索引凭空多出假条目、产生脏 diff。实测确认：造一个 pyc 再 reindex，INDEX.md 立刻多一条。

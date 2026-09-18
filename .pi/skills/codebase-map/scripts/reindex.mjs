@@ -65,6 +65,7 @@ const MODULE_INFO = {
   "tests/session-sidebar-ui.py": "浏览器侧栏验收：单工作空间、分组日期、绿点与操作展开",
 
   "src/inline-images.js": "模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列",
+  "src/observation-pack.js": "Observation Pack 移植：大工具结果先全文后折叠为稳定占位符，原文归档可分页取回，含面板统计与 ledger",
   "scripts/dev.mjs": "开发入口：DEV 标识、4320 端口与独立数据目录",
   "scripts/dev-vite.mjs": "独立 Vite 前端：CSS 热替换、同源代理与整页刷新暂停",
   "scripts/service.mjs": "服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道",

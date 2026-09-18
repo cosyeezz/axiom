@@ -1160,6 +1160,8 @@ export class Sessions {
               (this.goalNotificationsBlocked(item) ? "\n用户已要求暂停：在当前工具完成后保存实际进度、未完成事项和产物位置，安全收尾，不启动新的工作。" : "");
           },
           sessionDir: storageDir ? join(storageDir, `${id}-tasks`) : undefined,
+          // 子代理与主会话共享同一归档目录：与 `${id}-tasks` 同批清理。
+          observationsDir: storageDir ? join(storageDir, `${id}-observations`) : undefined,
           sessionFile: job.sessionFile,
         });
       },
@@ -1200,6 +1202,7 @@ export class Sessions {
         trustProject: item.trustProject,
         cwd,
         sessionDir: storageDir,
+        observationsDir: storageDir ? join(storageDir, `${id}-observations`) : undefined,
         sessionFile: saved?.sessionFile ?? importedFile,
         memory: memoryHooks(item, saveMemory),
         executionContext: () => item.goal.context(),
@@ -2065,6 +2068,7 @@ export class Sessions {
         if (storageDir) {
           if (item.sessionFile) await rm(item.sessionFile, { force: true });
           await rm(join(storageDir, `${id}-tasks`), { recursive: true, force: true });
+          await rm(join(storageDir, `${id}-observations`), { recursive: true, force: true });
           await rm(join(storageDir, `${id}.json`), { force: true });
         }
       }
@@ -2090,6 +2094,7 @@ export class Sessions {
       if (item.storageDir) {
         if (item.agent.sessionFile?.()) await rm(item.agent.sessionFile(), { force: true });
         await rm(join(item.storageDir, `${id}-tasks`), { recursive: true, force: true });
+        await rm(join(item.storageDir, `${id}-observations`), { recursive: true, force: true });
         // 旧版磁盘快照兜底清理（已迁移标记的目录不会再被扫描）。
         await rm(join(item.storageDir, `${id}.json`), { force: true });
       }

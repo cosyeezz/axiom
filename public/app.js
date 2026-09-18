@@ -790,7 +790,13 @@ function runtimeSummary(value = {}) {
     : Number.isFinite(context?.tokens) ? `${count(context.tokens)} tokens · 窗口未配置` : "等待首条消息";
   const split = model?.indexOf("/") ?? -1;
   const identity = split >= 0 ? `${model.slice(0, split)} · ${model.slice(split + 1)}` : model || "模型待加载";
-  return [`缓存命中 ${cache}`, `上下文 ${contextText}${context?.estimated ? " · 估算" : ""}`, `${identity} · ${thinking || "未知"}${value.billing?.records ? ` · 会话 ${money(value.billing.cost.total)}${value.billing.unpriced ? "（部分未计价）" : ""}` : ""}`];
+  const lines = [`缓存命中 ${cache}`, `上下文 ${contextText}${context?.estimated ? " · 估算" : ""}`, `${identity} · ${thinking || "未知"}${value.billing?.records ? ` · 会话 ${money(value.billing.cost.total)}${value.billing.unpriced ? "（部分未计价）" : ""}` : ""}`];
+  const pack = value.observationPack;
+  if (pack && Number.isFinite(pack.folded)) {
+    const rate = pack.folded > 0 && Number.isFinite(pack.recallRate) ? ` (${Math.round(pack.recallRate * 100)}%)` : "";
+    lines.push(`OP 折叠 ${count(pack.folded)} 项 · 每请求省 ${count(pack.savedTokens)} tokens${pack.failures ? ` · 失败 ${count(pack.failures)}` : ""} · 取回 ${count(pack.recalls)}${rate}`);
+  }
+  return lines;
 }
 function renderRuntime(node, value) {
   if (node.id === "session-runtime") {
@@ -806,12 +812,15 @@ function renderRuntime(node, value) {
     $("mobile-runtime").textContent = `${cache} · ${percent} · ${identity}`;
     $("mobile-runtime").setAttribute("aria-label", `缓存命中率 ${cache}，上下文占比 ${percent}，${identity}`);
   }
+  const opWarning = value?.observationPack && value.observationPack.folded > 0
+    && Number.isFinite(value.observationPack.recallRate) && value.observationPack.recallRate > 0.5;
   node.replaceChildren(...runtimeSummary(node.id === "session-runtime" && sessionBill ? { ...value, billing: sessionBill } : value).map((text) => {
     const span = document.createElement("span");
     span.textContent = text;
+    if (opWarning && text.startsWith("OP ")) span.className = "op-warning";
     return span;
   }));
-  node.title = "缓存命中：最近一次模型请求的缓存读取 / 输入总量（含缓存读写）；上下文：Pi 当前估算，非累计消耗。";
+  node.title = "缓存命中：最近一次模型请求的缓存读取 / 输入总量（含缓存读写）；上下文：Pi 当前估算，非累计消耗。OP：大工具结果折叠为占位符，原文归档可取回；取回率超 50% 提示折太早（标红）。";
 }
 function updateTaskRuntime(task, value) {
   if (!task) return;

@@ -803,6 +803,7 @@ h1 {
 }
 .runtime-summary > span { min-width: 0; }
 #session-runtime { padding: 0 12px 8px; }
+#session-runtime > span.op-warning { color: var(--danger); }
 #composer { display: flex; flex-direction: column; }
 .message-model { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin-top: 8px; color: var(--muted); overflow-wrap: anywhere; font-size: 12px; font-variant-numeric: tabular-nums; }
 .message-model-name { color: var(--body-ink); }

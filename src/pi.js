@@ -1,5 +1,6 @@
 import { sessionBilling, usageRuntime } from "./session-billing.js";
 import { TITLE_INSTRUCTION } from "./prompts.js";
+import { observationPackExtension, createObservationStats, observationRuntime } from "./observation-pack.js";
 import {
   createAgentSession,
   estimateTokens,
@@ -14,7 +15,7 @@ import { canResume, createAutoRetry, dropFailedAssistant } from "./retry.js";
 import { createJiti } from "jiti";
 const { getSupportedThinkingLevels } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai/compat");
 
-export function agentRuntime(session) {
+export function agentRuntime(session, observations = null) {
   return {
     model: `${session.model.provider}/${session.model.id}`,
     thinking: session.thinkingLevel,
@@ -22,6 +23,7 @@ export function agentRuntime(session) {
     tools: session.agent?.state.tools?.map(({ name, description, parameters }) => ({ name, description, parameters })) ?? null,
     ...usageRuntime(session.messages, session.model, session.getContextUsage()),
     billing: sessionBilling(session.sessionManager?.getEntries() ?? session.messages.map(message => ({ type: "message", message }))),
+    ...(observations ? { observationPack: observationRuntime(observations) } : {}),
   };
 }
 
@@ -193,9 +195,16 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
     settingsManager.applyOverrides({ retry: { provider: { maxRetries: 0 } } });
     // executionContext 与记忆共用 context 钩子；任一存在即装配（子代理也要注入执行上下文）。
     const executionContext = selection.executionContext;
+    // Observation Pack：大工具结果先全文发送 FULL_SENDS 次，之后投影为稳定占位符；
+    // 原文归档在 selection.observationsDir，面板统计挂 agentRuntime。
+    const observations = selection.observationsDir ? createObservationStats() : null;
+    const extraFactories = [];
+    if (memoryState || typeof executionContext === "function")
+      extraFactories.push(memoryExtension(memoryState, memory, policy, executionContext));
+    if (selection.observationsDir)
+      extraFactories.push({ name: "axiom-observation-pack", factory: observationPackExtension(selection.observationsDir, observations) });
     const { loader, selected: capabilities } = capabilityLoader(resources, selection.capabilities, customTools,
-      memoryState || typeof executionContext === "function"
-        ? [memoryExtension(memoryState, memory, policy, executionContext)] : [],
+      extraFactories,
       policy ? budgetSystemPrompt(policy) : null);
     await loader.reload();
     const diagnostics = loader.getExtensions().errors;
@@ -346,10 +355,10 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       }
       // Lifecycle boundaries only: never resend the prompt or scan history per token.
       if (["message_start", "message_end", "turn_end", "agent_end", "compaction_end"].includes(event.type))
-        emitAxiom({ type: "agent.runtime", data: agentRuntime(session) });
+        emitAxiom({ type: "agent.runtime", data: agentRuntime(session, observations) });
     });
     return {
-      runtime: () => agentRuntime(session),
+      runtime: () => agentRuntime(session, observations),
       sessionFile: () => session.sessionFile,
       historyEntries: messageEntries,
       compactions: compactionRecords,
@@ -414,12 +423,12 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       // 激活已注册工具（如进入 Goal 模式启用 goal_*）：与当前激活集合并，未知名称由 SDK 忽略。
       enableTools: (names) => {
         session.setActiveToolsByName([...new Set([...session.getActiveToolNames(), ...names])]);
-        emitAxiom({ type: "agent.runtime", data: agentRuntime(session) });
+        emitAxiom({ type: "agent.runtime", data: agentRuntime(session, observations) });
       },
       // 停用已激活工具（如退出 Goal 模式禁用 goal_*）：与当前激活集求差，未知名称无副作用。
       disableTools: (names) => {
         session.setActiveToolsByName(session.getActiveToolNames().filter((name) => !names.includes(name)));
-        emitAxiom({ type: "agent.runtime", data: agentRuntime(session) });
+        emitAxiom({ type: "agent.runtime", data: agentRuntime(session, observations) });
       },
       config: () => ({
         model: `${session.model.provider}/${session.model.id}`,
@@ -441,7 +450,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       },
       safeStopPending: () => safeStopPending,
       prompt: async (text, options) => {
-        if (await compactionCtrl.maybeApply()) emitAxiom({ type: "agent.runtime", data: agentRuntime(session) });
+        if (await compactionCtrl.maybeApply()) emitAxiom({ type: "agent.runtime", data: agentRuntime(session, observations) });
         beginRun();
         // 背景与标题指令都由 context 钩子按请求实时取（memory.wantsTitle 读会话实时状态，无需透传选项）。
         try {
