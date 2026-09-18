@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/18 07:14:11）
+# Axiom 多级代码索引（生成于 2026/9/18 11:20:26）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -46,7 +46,7 @@
 | scripts/service.mjs | 619 | 服务守护：IPC 重启、HTTP 安全停止与崩溃退避停止通道 | root, output, run, npmRun |
 | scripts/uninstall.mjs | 18 | 统一卸载：核对 npm 目标、安全停止、取消自启、保留用户数据 | uninstall |
 | src/capabilities.js | 159 | 模型/子代理/技能目录发现、解析与设置快照（capabilityLoader/resolveCapabilities） | sdkEntry, resolver, alias, jiti |
-| src/compaction.js | 391 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
+| src/compaction.js | 525 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
 | src/data-owner.js | 23 | 写库前数据根独占：内核管道或socket持有，禁止同根双写 | claimDataRoot |
 | src/database.js | 122 | 共享 SQLite 连接、小配置 KV、WAL 与一致性备份 | nodeOk, DATA_VERSION, assertDataVersion, Database |
 | src/goal.js | 988 | Goal：会话级目标状态、轮次计划、验收门与持久化 | GOAL_PHASES, GOAL_ACTIONS, ROUND_STATUSES, GOAL_MAX_SEGMENTS |
@@ -56,7 +56,7 @@
 | src/model-config.js | 619 | Pi models.json 无损配置读写与共享收藏持久化 | sdkModelConfig, sdkResolveConfigValue, digest, LEVELS |
 | src/pi-model-storage.js | 409 | 模型与凭据 SQLite 权威存储、Pi 派生兼容文件 | sdkResolveConfigValue, sdkIsCommandConfigValue, NAMESPACE, AUTH_NAMESPACE |
 | src/pi.js | 575 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | agentRuntime, queueStateOf, hasModelOutput, withdrawQueue |
-| src/prompts.js | 60 | Axiom 自有提示词按 main/subagent/compaction 角色集中维护 | MAIN_AGENT_PROMPT, TITLE_INSTRUCTION, SUBAGENT_PROMPT, WRAP_UP_PROMPT |
+| src/prompts.js | 61 | Axiom 自有提示词按 main/subagent/compaction 角色集中维护 | MAIN_AGENT_PROMPT, TITLE_INSTRUCTION, SUBAGENT_PROMPT, WRAP_UP_PROMPT |
 | src/protocol.js | 362 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/questions.js | 86 | 主代理 question 工具、参数校验与可取消的回答等待 | text, option, input, questionAnswers |
 | src/remote.js | 547 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
@@ -86,7 +86,7 @@
 | tests/compaction-lazy.test.js | 161 | node --test 测试（npm test） | factory, withSession, sayMain |
 | tests/compaction-ui.py | 57 | node --test 测试（npm test） | - |
 | tests/compaction-ui.test.js | 283 | node --test 测试（npm test） | page |
-| tests/compaction.test.js | 823 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
+| tests/compaction.test.js | 1002 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
 | tests/config.test.js | 309 | node --test 测试（npm test） | - |
 | tests/context-menu-ui.py | 66 | node --test 测试（npm test） | - |
 | tests/continuous-history.test.js | 53 | node --test 测试（npm test） | send |
@@ -1049,23 +1049,29 @@
 | refreshProjectSkills | function | 107 |
 | capabilityLoader | function | 118 |
 
-### src/compaction.js（391 行） — 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交
+### src/compaction.js（525 行） — 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| contextTokens | function | 22 |
-| prepareBackgroundCompaction | function | 29 |
-| DEFAULT_COMPACTION_CONFIG | const | 56 |
-| normalizeCompaction | function | 58 |
-| overCompactionThreshold | function | 62 |
-| entryIdFor | function | 68 |
-| summarizedEntryIds | function | 81 |
-| COMPACT_MAX | const | 102 |
-| parseSummaryOutput | function | 103 |
-| throwIfAborted | function | 127 |
-| summarizeWithPiSession | function | 131 |
-| throwIfAborted | method | 132 |
-| createBackgroundCompaction | function | 205 |
+| contextTokens | function | 23 |
+| prepareBackgroundCompaction | function | 30 |
+| DEFAULT_COMPACTION_CONFIG | const | 57 |
+| normalizeCompaction | function | 59 |
+| overCompactionThreshold | function | 63 |
+| entryIdFor | function | 69 |
+| summarizedEntryIds | function | 82 |
+| COMPACT_MAX | const | 103 |
+| FACTS_MAX | const | 104 |
+| parseSummaryOutput | function | 105 |
+| throwIfAborted | function | 152 |
+| factMatch | function | 161 |
+| lineOf | const | 172 |
+| validateFacts | function | 174 |
+| writeConversationSnapshot | function | 203 |
+| appendVerifiedFacts | function | 219 |
+| summarizeWithPiSession | function | 236 |
+| throwIfAborted | method | 237 |
+| createBackgroundCompaction | function | 312 |
 
 ### src/data-owner.js（23 行） — 写库前数据根独占：内核管道或socket持有，禁止同根双写
 
@@ -1250,7 +1256,7 @@
 | memoryExtension | function | 130 |
 | createPiFactory | function | 154 |
 
-### src/prompts.js（60 行） — Axiom 自有提示词按 main/subagent/compaction 角色集中维护
+### src/prompts.js（61 行） — Axiom 自有提示词按 main/subagent/compaction 角色集中维护
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1648,32 +1654,36 @@
 | page | function | 11 |
 | restore | method | 41 |
 
-### tests/compaction.test.js（823 行） — node --test 测试（npm test）
+### tests/compaction.test.js（1002 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| fakeModel | const | 104 |
-| createTestSession | function | 117 |
-| seq | const | 134 |
-| userMsg | const | 135 |
-| assistantMsg | const | 136 |
-| big | const | 142 |
-| seed | function | 144 |
-| settle | const | 149 |
-| waitFor | function | 151 |
-| enabledConfig | const | 159 |
-| fakeSummarize | function | 168 |
-| startHangingLlmServer | function | 176 |
-| startFakeLlmServer | function | 199 |
-| zodError | method | 256 |
+| fakeModel | const | 105 |
+| createTestSession | function | 118 |
+| seq | const | 135 |
+| userMsg | const | 136 |
+| assistantMsg | const | 137 |
+| big | const | 143 |
+| seed | function | 145 |
+| settle | const | 150 |
+| waitFor | function | 152 |
+| enabledConfig | const | 160 |
+| fakeSummarize | function | 169 |
+| startHangingLlmServer | function | 177 |
+| startFakeLlmServer | function | 200 |
 | zodError | method | 257 |
 | zodError | method | 258 |
 | zodError | method | 259 |
 | zodError | method | 260 |
 | zodError | method | 261 |
-| hangingSummarize | function | 586 |
-| createLoopSession | function | 683 |
-| writeFileSync | method | 684 |
+| zodError | method | 262 |
+| hangingSummarize | function | 587 |
+| createLoopSession | function | 684 |
+| writeFileSync | method | 685 |
+| createPersistentTestSession | function | 826 |
+| factsTags | const | 842 |
+| withFacts | const | 843 |
+| withoutFacts | const | 845 |
 
 ### tests/continuous-history.test.js（53 行） — node --test 测试（npm test）
 

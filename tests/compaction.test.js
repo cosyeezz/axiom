@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -20,6 +20,7 @@ import {
   summarizedEntryIds,
   summaryRequest,
   parseSummaryOutput,
+  validateFacts,
   DEFAULT_COMPACTION_CONFIG,
 } from "../src/compaction.js";
 
@@ -818,5 +819,183 @@ test("entryIdFor: 按消息引用反查持久化 entry id，未持久化返回�
     assert.deepEqual(entryIdFor(sessionManager, message), { entryId });
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// —— facts 逐字引文三层机制：解析 → 校验 → 附录/快照 ——
+async function createPersistentTestSession() {
+  const dir = mkdtempSync(join(tmpdir(), "axiom-compaction-persist-"));
+  const session = (
+    await createAgentSession({
+      cwd: dir,
+      agentDir: dir,
+      modelRuntime: await ModelRuntime.create({ authPath: join(dir, "auth.json"), modelsPath: null }),
+      model: fakeModel(),
+      thinkingLevel: "off",
+      sessionManager: SessionManager.create(dir, dir), // 持久 session：sessionFile 非空，快照会落盘
+      settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
+    })
+  ).session;
+  return { session, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+const factsTags = (facts) => `<axiom_compact_facts>\n${facts}\n</axiom_compact_facts>`;
+const withFacts = (facts) =>
+  `summary body\n${factsTags(facts)}\n<axiom_compact_title>本次进展</axiom_compact_title>\n<axiom_compact_desc>本次新增发现。</axiom_compact_desc>`;
+const withoutFacts = () =>
+  `summary body\n<axiom_compact_title>本次进展</axiom_compact_title>\n<axiom_compact_desc>本次新增发现。</axiom_compact_desc>`;
+
+test("parseSummaryOutput: facts 块提取（存在/缺失/未闭合/空块/bullet 保留/超长行过滤/上限）", () => {
+  const ok = parseSummaryOutput(withFacts("- /src/a.js\n- npm test"));
+  assert.deepEqual(ok.facts, ["- /src/a.js", "- npm test"], "bullet 前缀原样保留，交给校验层降级匹配");
+  assert.equal(ok.summary, "summary body");
+  assert.ok(!ok.summary.includes("axiom_compact_facts"), "标签与块内容都不得留在正文");
+
+  const none = parseSummaryOutput(withoutFacts());
+  assert.ok(!("facts" in none), "无块：不出现 facts 键（向后兼容）");
+
+  const unclosed = parseSummaryOutput("summary body\n<axiom_compact_facts>\n- not a fact");
+  assert.ok(!("facts" in unclosed), "未闭合：不进 facts");
+  assert.ok(!unclosed.summary.includes("<axiom_compact_facts>"), "落单标记剥掉");
+  assert.ok(unclosed.summary.includes("not a fact"), "内容留在正文");
+
+  const empty = parseSummaryOutput(withFacts(""));
+  assert.ok(!("facts" in empty));
+  assert.ok(!empty.summary.includes("axiom_compact_facts"), "空块标记也剥掉");
+
+  const bullet = parseSummaryOutput(withFacts("- /a.js\n\n\n  /b.js  \n"));
+  assert.deepEqual(bullet.facts, ["- /a.js", "/b.js"], "空白行剔除、首尾 trim；bullet 前缀保留");
+
+  const overlong = parseSummaryOutput(withFacts(`- ${"y".repeat(400)}\n- z`));
+  assert.deepEqual(overlong.facts, ["- z"], "超过 300 字符的行剔除");
+
+  const many = parseSummaryOutput(withFacts(Array.from({ length: 40 }, (_, i) => `/f${i}`).join("\n")));
+  assert.equal(many.facts.length, 30, "上限 30 行");
+  assert.equal(many.facts[0], "/f0");
+  assert.equal(many.facts[29], "/f29");
+});
+
+test("validateFacts: 逐字对账（行号/漏检/前摘命中/bullet 降级/dedup）", () => {
+  const corpus = "[User]: 修一下 /src/a.js 的 bug\n\n[Assistant]: npm test 报\nAssertionError: expected 3";
+  const ok = validateFacts(["/src/a.js", "AssertionError: expected 3"], corpus, null);
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.facts, [
+    { quote: "/src/a.js", line: 1 },
+    { quote: "AssertionError: expected 3", line: 4 },
+  ]);
+
+  const bad = validateFacts(["/src/a.js", "不存在的话"], corpus, null);
+  assert.equal(bad.ok, false, "一条编造 → 整单失败");
+  assert.deepEqual(bad.missed, ["不存在的话"]);
+  assert.equal(bad.facts.length, 1, "其余引文仍核验记账");
+
+  const fromPrev = validateFacts(["/old/config.json"], "", "上轮已确认路径 /old/config.json");
+  assert.deepEqual(fromPrev.facts, [{ quote: "/old/config.json", line: null }], "仅前摘命中：无行号");
+  const preferConv = validateFacts(["/src/a.js"], corpus, "前摘里也有 /src/a.js");
+  assert.equal(preferConv.facts[0].line, 1, "会话原文优先于前摘");
+
+  const bullet = validateFacts(["- AssertionError: expected 3"], corpus, null);
+  assert.equal(bullet.ok, true);
+  assert.deepEqual(bullet.facts, [{ quote: "AssertionError: expected 3", line: 4 }], "bullet 前缀剥掉后命中");
+
+  const dup = validateFacts(["/src/a.js", "/src/a.js", "- /src/a.js"], corpus, null);
+  assert.equal(dup.facts.length, 1, "同引文（含变体）只记一条");
+});
+
+test("summaryRequest: 要求第三个标签 axiom_compact_facts 并写明逐字核验后果", () => {
+  const request = summaryRequest("conversation", null);
+  assert.ok(request.includes("<axiom_compact_facts>"));
+  assert.ok(request.includes("verified mechanically"));
+  assert.ok(request.includes("discard the entire summary"));
+  assert.ok(request.includes("exact contiguous copy"));
+});
+
+test("合法 facts：附录随摘要进上下文，原文快照落盘，details 携带", async () => {
+  const { session, cleanup } = await createPersistentTestSession();
+  let compaction;
+  try {
+    seed(session, [userMsg(big("a")), assistantMsg(big("b")), userMsg(big("c"))]);
+    const events = [];
+    compaction = createBackgroundCompaction({
+      session,
+      modelRuntime: null,
+      config: enabledConfig,
+      summarize: async () => ({
+        summary: "S:2",
+        progress: { title: "本次进展", description: "本次新增发现。" },
+        facts: ["a".repeat(80), "b".repeat(80)], // keepRecentTokens 保留最后一条消息：被摘要语料只含前两条
+        usage: { input: 10, output: 5 },
+      }),
+      onEvent: (event) => events.push(event),
+    });
+    await compaction.onTurnEnd();
+    await settle();
+    const data = await compaction.maybeApply();
+    assert.ok(data, "应用应成功");
+    // 附录：摘要原文在前，随后带行号的引文清单
+    assert.ok(data.summary.startsWith("S:2\n"), "摘要原文在前");
+    assert.ok(data.summary.includes("已核验引文"));
+    assert.ok(data.summary.includes(`- line=1 ${JSON.stringify("a".repeat(80))}`));
+    assert.ok(data.summary.includes(`- line=3 ${JSON.stringify("b".repeat(80))}`));
+    assert.ok(data.snapshotPath.endsWith(`.txt`) && data.snapshotPath.includes("compaction-snapshots"));
+    // 快照：真实存在且内容是渲染原文（行号指向它）
+    assert.ok(existsSync(data.snapshotPath));
+    const snapshot = readFileSync(data.snapshotPath, "utf8");
+    assert.ok(snapshot.includes("[User]: " + "a".repeat(80)));
+    assert.ok(snapshot.includes("[Assistant]: " + "b".repeat(80)));
+    assert.ok(data.summary.includes(`原文快照: ${data.snapshotPath}`), "回读指引随附录写入");
+    // 落盘 details 同构
+    const leaf = session.sessionManager.getLeafEntry();
+    assert.equal(leaf.type, "compaction");
+    assert.deepEqual(leaf.details.progress, { title: "本次进展", description: "本次新增发现。" });
+    assert.equal(leaf.details.snapshotPath, data.snapshotPath);
+    assert.deepEqual(leaf.details.facts, data.facts);
+    // 上下文中的摘要消息带附录
+    assert.equal(session.messages[0].role, "compactionSummary");
+    assert.equal(session.messages[0].summary, data.summary);
+    assert.deepEqual(events.find((e) => e.type === "agent.compaction").data, data);
+  } finally {
+    compaction?.dispose();
+    cleanup();
+  }
+});
+
+test("编造引文：整份摘要作废不落盘，下个 turn_end 自然重试", async () => {
+  const { session, cleanup } = await createTestSession();
+  let compaction;
+  try {
+    seed(session, [userMsg(big("a")), assistantMsg(big("b")), userMsg(big("c"))]);
+    const events = [];
+    const calls = [];
+    compaction = createBackgroundCompaction({
+      session,
+      modelRuntime: null,
+      config: enabledConfig,
+      summarize: async ({ messages }) => {
+        calls.push(messages.length);
+        return calls.length === 1
+          ? { summary: "S:3", facts: ["a".repeat(80), "这条引文在原文中不存在"], usage: { input: 10, output: 5 } }
+          : { summary: "S:3", facts: ["b".repeat(80)], usage: { input: 10, output: 5 } };
+      },
+      onEvent: (event) => events.push(event),
+    });
+    const before = session.messages.slice();
+    await compaction.onTurnEnd();
+    await settle();
+    assert.equal(await compaction.maybeApply(), null, "一条编造 → 整单作废");
+    assert.deepEqual(session.messages, before, "原文不动");
+    assert.ok(!session.sessionManager.getBranch().some((entry) => entry.type === "compaction"));
+    assert.equal(compaction.getStatus().status, "failed");
+    assert.ok(events.some((e) => e.type === "agent.compaction.status" && /逐字/.test(e.data.message)));
+    // 失败释放 flight，下个 turn_end 重新发起并通过
+    await compaction.onTurnEnd();
+    await settle();
+    assert.equal(calls.length, 2);
+    const data = await compaction.maybeApply();
+    assert.ok(data, "重试应成功");
+    assert.ok(data.summary.includes(`- line=3 ${JSON.stringify("b".repeat(80))}`));
+  } finally {
+    compaction?.dispose();
+    cleanup();
   }
 });
