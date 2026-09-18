@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-18 索引脚本跳过 __pycache__
+
+- 原因：`.gitignore` 已忽略 `__pycache__/`（`835767e` 顺手加的），但 `reindex.mjs` 的 `SKIP` 集只有 `node_modules`。跑过 `python tests/*-ui.py` 后 Python 重建字节码，重建索引就把 `.pyc` 当成「165 行的 node --test 测试」登记进 INDEX.md，让被跟踪的索引凭空多出假条目、产生脏 diff。实测确认：造一个 pyc 再 reindex，INDEX.md 立刻多一条。
+- 决策：`SKIP` 加入 `__pycache__`，README 的 codebase-map 段注明扫描跳过 `node_modules` 与 `__pycache__`。
+- 并行处理说明：本分支原本也做了「加 .gitignore + `git rm --cached` 删误入库的 pyc」，与 `835767e` 撞同一件事；合并 master 后那部分归其所有，这里只保留索引脚本这一处独有修复。
+- 验证：重建索引 215 个文件、零 `__pycache__` 条目；`npm test` 744 项全绿；`python tests/goal-ui.py` 通过。
+- 涉及文件：`.pi/skills/codebase-map/scripts/reindex.mjs`、`.pi/skills/codebase-map/INDEX.md`、`README.md`、`devlog.md`。
+
 ## 2026-09-18 修回 6 个浏览器验收脚本：折叠态、CSP eval 与模块注入
 
 - 起因：为「折叠态只留运行摘要」另开分支时逐个重跑浏览器脚本，翻出一批失败。发现远端 `master`（`c327e3f` + `b2306c4`）已实现同一需求，遂弃掉重复的产品改动，只把这批脚本修复搬过来。

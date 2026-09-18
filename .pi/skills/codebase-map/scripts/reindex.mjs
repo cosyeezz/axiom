@@ -136,7 +136,7 @@ const MODULE_INFO = {
 };
 
 const SCAN_DIRS = ["src", "public", "tests", "scripts", "desktop"];
-const SKIP = new Set(["node_modules"]);
+const SKIP = new Set(["node_modules", "__pycache__"]);
 const KEYWORDS = new Set([
   "if", "for", "while", "switch", "catch", "return", "function", "class",
   "const", "let", "var", "async", "await", "new", "delete", "typeof",
