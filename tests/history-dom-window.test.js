@@ -83,3 +83,40 @@ test("未超窗不裁剪，语义与现状一致", async (t) => {
   assert.equal(page.pageText(), "");
   assert.ok(page.count("历史419") >= 1, "未裁剪时全部消息在 DOM");
 });
+
+// 真实会话是混合记录：toolResult 不拥有自己的消息节点，内容渲染进前一条 assistant
+// 卡的过程组。裁剪不能在这类条目上停死（否则混合会话永远不裁，真实浏览器里曾挂
+// 满 500 条），也不能拆开它与主卡（否则 DOM 在展示已丢弃的记录）。
+const mixed = Array.from({ length: 420 }, (_, i) => {
+  const entryId = `mix-${i}`;
+  if (i % 4 === 0) return { agentId: "main", entryId, message: { role: "user", content: `提问${i}` } };
+  if (i % 4 === 1) return { agentId: "main", entryId, message: { role: "assistant", content: [{ type: "text", text: md(i) }] } };
+  if (i % 4 === 2) return { agentId: "main", entryId, message: { role: "assistant", content: [
+    { type: "thinking", thinking: `思考${i}` },
+    { type: "toolCall", id: `call-${i}`, name: "read", arguments: { path: `f-${i}.txt` } },
+  ] } };
+  return { agentId: "main", entryId, message: { role: "toolResult", toolCallId: `call-${i - 1}`, toolName: "read", content: [{ type: "text", text: `结果${i}` }] } };
+});
+
+test("混合记录（toolResult 无独立节点）仍裁到上限，且边界不拆开主卡", async (t) => {
+  const page = bootHistoryPage({ records: mixed });
+  t.after(page.close);
+  page.open();
+  await until(() => page.app.connected(), "连接");
+  await attachAndPageUp(page, 5); // 360 条记录挂载 → 裁到 ≤300
+  const mounted = page.app.historyState().messages;
+  assert.equal(mounted.length, 300, "混合会话也裁到上限（修前停在 toolResult 上 cut=0，全部挂着）");
+  assert.match(page.pageText(), /^61–360 \/ 共 420 条/, "分页条反映真实窗口");
+  // 丢弃集合 DOM 完整：被裁第一条（mix-360，拥有自己的节点）连内容离开 DOM；
+  // 右缘可以是 toolResult（mix-359），它的主卡 mix-358 仍在窗口内，没有被拆开。
+  assert.equal(mounted.at(-1).entryId, "mix-359");
+  assert.ok(mounted.some(entry => entry.entryId === "mix-358"), "右缘 toolResult 的主卡仍在窗口内");
+  assert.equal(page.count("提问360"), 0, "被裁的最新端不在 DOM");
+  assert.ok(page.count("提问64") >= 1, "窗口内消息在场");
+  assert.ok(page.messages() <= 300, `消息节点数有界：${page.messages()}`);
+  // 下翻回载：target 定位到被裁第一条（拥有节点的条目），区间完整回来。
+  page.$("history-after").click();
+  await until(() => page.requests.some(r => r.type === "session.history" && r.target === "mix-360"), "target 定位请求");
+  await until(() => page.app.historyState().history.start === 360, "重挂被裁页");
+  assert.ok(page.count("提问416") >= 1, "被裁区间回载后可见");
+});

@@ -2426,13 +2426,25 @@ function trimMountedWindow() {
   // 从最新端（尾部）收集溢出条目：遇压缩共享节点即停（共享 node 的部分裁剪会破坏折叠卡），
   // 宁可少裁不破坏一致性。流式 live 与乐观卡不在 rawEntries，天然安全。
   const shared = new Set(compactionNodes.values());
+  // 并非每条记录都拥有独立节点：toolResult 等渲染进前一条 assistant 卡的过程组内。
+  // 这类条目本身没有 DOM，可以随主卡一起裁；但裁剪边界必须落在「拥有自己节点」的条目上，
+  // 否则会留下 DOM 仍在展示、记录却已被丢弃的悬挂内容。
+  const ownsNode = (index) => !!rawEntries[index]?.item?.node;
+  const blocked = (index) => {
+    const node = rawEntries[index]?.item?.node;
+    return !!node && shared.has(node);
+  };
   let cut = 0;
   while (rawEntries.length - cut > HISTORY_DOM_LIMIT) {
-    const entry = rawEntries[rawEntries.length - 1 - cut];
-    if (!entry?.item?.node || shared.has(entry.item.node)) break;
+    if (blocked(rawEntries.length - 1 - cut)) break;
     cut++;
   }
-  if (cut <= 0) return;
+  // 边界对齐：把无独立节点的条目连同它所属的主卡一起纳入丢弃集合。
+  while (cut > 0 && cut < rawEntries.length && !ownsNode(rawEntries.length - cut)) {
+    if (blocked(rawEntries.length - 1 - cut)) { cut = 0; break; }
+    cut++;
+  }
+  if (cut <= 0 || cut >= rawEntries.length) return;
   const dropped = rawEntries.splice(rawEntries.length - cut, cut);
   const droppedNodes = new Set();
   for (const entry of dropped) {
@@ -2457,7 +2469,10 @@ function trimMountedWindow() {
   goalUI.anchors(goalAnchors);
 }
 function prefetchForward() {
-  if (!connected || changing || historyLoading || historyDirty || document.hidden || !historyState?.history?.nextCursor) return;
+  if (!connected || changing || historyLoading || historyDirty || document.hidden) return;
+  // 裁剪产生的可回载区间也算“有下页”：从末页往上翻时 nextCursor 恒为 null，
+  // 若只看 nextCursor，贴底回载就只能靠手点分页按钮。
+  if (!historyState?.history?.nextCursor && !trimmedForwardBoundary) return;
   if (transcript.clientHeight > 0 && transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 160) {
     if (trimmedForwardBoundary) {
       // 裁剪后贴底：从被裁第一条整页重挂，避免 after 游标跳过被裁区间造成页隙。
