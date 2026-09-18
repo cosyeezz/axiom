@@ -72,6 +72,14 @@ const HIDDEN_VIEW = ":hidden";
 // 供编辑表单直接托管的字段；其余（compat、cost、samplingParams…）走「高级字段」JSON。
 const MANAGED_PROVIDER_KEYS = ["id", "baseUrl", "api", "authHeader", "apiKey", "headers", "models", "modelOverrides"];
 const MANAGED_MODEL_KEYS = ["id", "name", "api", "reasoning", "input", "contextWindow", "maxTokens"];
+// 目录条目的派生字段（由 SDK 拼出来的，不属于用户配置）：绝不进高级 JSON、也不进保存载荷，
+// 否则复制内置模型时会把 provider/key/levels 当成用户字段写进配置。
+const DERIVED_MODEL_KEYS = ["provider", "key", "levels"];
+// 模型「高级字段」JSON 的排除表 = 表单托管字段 + 目录派生字段。
+const MODEL_EXTRA_EXCLUDE = [...MANAGED_MODEL_KEYS, ...DERIVED_MODEL_KEYS];
+// 详情页的两级分区：先配置供应商连接，保存后再配置它的模型列表。
+const TAB_CONNECTION = "connection";
+const TAB_MODELS = "models";
 
 const isMask = (value) => Boolean(value) && typeof value === "object" && value.masked === true;
 const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object ?? {}, key);
@@ -140,6 +148,7 @@ function parseJsonText(text) {
 const ICONS = {
   rename: "edit",
   delete: "trash",
+  duplicate: "duplicate",
   eye: "eye",
   eyeOff: "eyeOff",
 };
@@ -196,6 +205,8 @@ export function initModelManager({ root, request, onSaved }) {
     // 拉取面板状态（键 providerId）：status=loading/ready/error/blocked，models/byId=发现结果原文，
     // checked=勾选的模型 id，token=丢弃过期响应（并发拉取/切回旧供应商）。结果只在内存，不落盘。
     discover: new Map(),
+    // 详情页当前分区（键 viewId：供应商 id 或 :draft）：切走再回来停在原处。
+    tabs: new Map(),
     loadToken: 0,
   };
 
@@ -485,7 +496,8 @@ export function initModelManager({ root, request, onSaved }) {
     const items = [];
     if (state.draft) {
       const label = state.draft.form?.id?.trim() || "新供应商";
-      items.push(navItem(DRAFT, `＋ ${label}`, state.draft.saved ? "已保存 · 可继续添加模型" : "草稿（未保存）", { draft: true }));
+      items.push(navItem(DRAFT, `＋ ${label}`,
+        state.draft.copiedFrom ? `草稿（复制自 ${state.draft.copiedFrom}）` : "草稿（未保存）", { draft: true }));
     }
     if (custom.length) {
       items.push(el("div", { class: "mm-nav-group" }, "供应商"));
@@ -559,25 +571,91 @@ export function initModelManager({ root, request, onSaved }) {
     renderDetail();
   }
 
+  // ── 详情外壳：两级流程（供应商连接 → 模型列表） ────────────────────
+  // 供应商与模型彼此独立：连接还没落盘时模型分区禁用（新建草稿），保存成功后自动跳到模型分区。
+  // 当前分区按 viewId 记住，重渲染/回读不会把用户扔回去。
+  function activeTab(viewId, modelsDisabled) {
+    if (modelsDisabled) return TAB_CONNECTION;
+    return state.tabs.get(viewId) === TAB_MODELS ? TAB_MODELS : TAB_CONNECTION;
+  }
+  function detailShell({ viewId, title, meta, connection, models, modelsCount, modelsDisabled = false, modelsDisabledHint = "" }) {
+    const current = activeTab(viewId, modelsDisabled);
+    const tab = (id, label, { disabled = false, hint = "" } = {}) =>
+      el("button", { type: "button", class: "mm-tab", role: "tab", disabled: disabled || undefined,
+        title: disabled && hint ? hint : undefined,
+        "aria-selected": current === id ? "true" : "false",
+        onclick: () => { state.tabs.set(viewId, id); renderDetail(); } }, label);
+    return el("div", {},
+      el("div", { class: "mm-provider-title" }, title, meta),
+      el("div", { class: "mm-tabs", role: "tablist", "aria-label": "供应商配置分区" },
+        tab(TAB_CONNECTION, "供应商"),
+        tab(TAB_MODELS, modelsCount === undefined ? "模型" : `模型（${modelsCount}）`,
+          { disabled: modelsDisabled, hint: modelsDisabledHint })),
+      el("div", { class: "mm-tabpanel", role: "tabpanel" },
+        current === TAB_MODELS ? models() : connection()),
+      modelsDisabled && modelsDisabledHint ? el("p", { class: "mm-hint" }, modelsDisabledHint) : null);
+  }
+
+  // 模型分区：自定义模型行 + 待保存新行 + 内置目录覆盖行，只跟 viewId 对应的供应商有关。
+  function modelsView({ providerId, savedRows, catalogRows, discoverable, emptyHint, headHint, provider }) {
+    const pending = state.newRows.get(providerId) ?? [];
+    const addModel = () => {
+      const list = state.newRows.get(providerId) ?? [];
+      list.push({ mid: `mm-new-${Date.now()}-${list.length}`, snap: {} });
+      state.newRows.set(providerId, list);
+      renderProviders();
+    };
+    const dropPending = (row) => {
+      state.newRows.set(providerId, (state.newRows.get(providerId) ?? []).filter((item) => item !== row));
+      renderProviders();
+    };
+    const customRows = [
+      ...savedRows.map((model) => modelRow(providerId, model)),
+      ...pending.map((row) => modelRow(providerId, row, { isNew: true, onRemove: () => dropPending(row) })),
+    ];
+    const overrideRows = catalogRows.map(catalogModelRow);
+    const grouped = customRows.length > 0 && overrideRows.length > 0;
+    return el("div", {},
+      el("div", { class: "mm-models-head" },
+        el("h5", {}, `模型（${customRows.length + overrideRows.length}）`),
+        el("span", { class: "mm-models-actions" },
+          discoverable
+            ? el("button", { type: "button", class: "secondary", title: "只读拉取该供应商当前可用的模型列表",
+                onclick: () => void startDiscover(providerId, state.editForms.get(providerId)) }, "拉取模型列表…")
+            : null,
+          el("button", { type: "button", class: "secondary", onclick: addModel }, "添加模型"))),
+      headHint ? el("p", { class: "mm-hint" }, headHint) : null,
+      provider ? discoverPanel(provider) : null,
+      grouped ? el("div", { class: "mm-nav-group" }, "自定义模型") : null,
+      customRows.length ? el("div", { class: "mm-models" }, ...customRows) : null,
+      grouped ? el("div", { class: "mm-nav-group" }, "内置目录模型（可覆盖）") : null,
+      overrideRows.length ? el("div", { class: "mm-models" }, ...overrideRows) : null,
+      customRows.length + overrideRows.length ? null : el("p", { class: "mm-hint" }, emptyHint),
+      el("p", { class: "mm-hint" }, "模型逐条保存（upsert），未保存的新行不会写入配置。复制图标可以拿现有模型当模板新建一条。"));
+  }
+
   // ── 只读目录页：模型名称 + 实际 ID + 真实能力（推理/图片） ────────────────
   function catalogModelRow(model) {
     return modelRow(model.provider, model, { override: true });
   }
 
   function catalogDetail(id, models) {
-    return el("div", {},
-      el("div", { class: "mm-provider-title" },
-        el("strong", { class: "mm-mono" }, id),
-        badge(`${models.length} 个模型`)),
-      authSection(id),
-      el("p", { class: "mm-hint" }, "展开模型可配置名称、上下文和思考等级；只保存修改的字段，其余能力保持不变。"),
-      models.length
-        ? el("div", { class: "mm-catalog-models" }, ...models.map(catalogModelRow))
-        : el("p", { class: "mm-hint" }, "该供应商当前没有可用模型（可能缺少认证，或模型都已被隐藏）。"),
-      el("div", { class: "mm-form-actions" },
-        el("button", { type: "button", class: "secondary", onclick: () => openDraft(id) }, "编辑连接 / 添加模型"),
-        el("button", { type: "button", class: "secondary", onclick: () =>
-          void confirmHide({ key: id, kind: "provider", id, models }) }, "隐藏此供应商")));
+    return detailShell({
+      viewId: id,
+      title: el("strong", { class: "mm-mono" }, id),
+      meta: badge(`${models.length} 个模型`),
+      modelsCount: models.length,
+      connection: () => el("div", {},
+        el("p", { class: "mm-hint" }, "内置供应商：连接信息由 Pi 内置目录提供。登录或填入 API Key 即可使用；如需自定义 Base URL / 请求头，用下面的按钮建立同名自定义连接。"),
+        authSection(id),
+        el("div", { class: "mm-form-actions" },
+          el("button", { type: "button", class: "secondary", onclick: () => openDraft(id) }, "配置自定义连接"),
+          el("button", { type: "button", class: "secondary", onclick: () =>
+            void confirmHide({ key: id, kind: "provider", id, models }) }, "隐藏此供应商"))),
+      models: () => modelsView({ providerId: id, savedRows: [], catalogRows: models, discoverable: false,
+        emptyHint: "该供应商当前没有可用模型（可能缺少认证，或模型都已被隐藏）。",
+        headHint: "展开模型可配置名称、上下文和思考等级；只保存修改的字段，其余能力保持不变。" }),
+    });
   }
 
   // ── 已隐藏页：隐藏清单的单一恢复入口（隐藏 = 从左侧分组消失，没有这页就无法回头） ──────
@@ -663,6 +741,10 @@ export function initModelManager({ root, request, onSaved }) {
     else if (id !== (form.snap?.id ?? "") && state.providers.some((provider) => provider.id === id))
       errors.push(`供应商 id「${id}」已存在（保存会合并进它；如需覆盖请直接编辑该条目）`);
     if (payload.baseUrl && !/^https?:\/\//i.test(payload.baseUrl)) errors.push("baseUrl 必须是 http/https 绝对地址");
+    // 复制出来的请求头只带名称，值必须重填；宁可报错也不能默默写个空字符串上去。
+    for (const row of form.headerRows ?? [])
+      if (row.name.trim() && !row.masked && !String(row.value ?? "").trim())
+        errors.push(`请求头「${row.name.trim()}」缺少值（复制或新增的请求头需要重新填写，不需要就删掉这一行）`);
     if (typeof payload.apiKey === "string" && payload.apiKey.startsWith("!"))
       errors.push("出于安全考虑，不能新增命令执行型（! 开头）密钥；已有命令型密钥留空即可保留");
     for (const [name, value] of Object.entries(payload.headers ?? {}))
@@ -682,7 +764,7 @@ export function initModelManager({ root, request, onSaved }) {
       image: Array.isArray(snap.input) && snap.input.includes("image"),
       contextWindow: snap.contextWindow ?? "",
       maxTokens: snap.maxTokens ?? "",
-      extrasText: jsonExtras(snap, MANAGED_MODEL_KEYS),
+      extrasText: jsonExtras(snap, MODEL_EXTRA_EXCLUDE),
     };
   }
   function buildModelPayload(form, isNew = false) {
@@ -734,41 +816,124 @@ export function initModelManager({ root, request, onSaved }) {
       if (key.startsWith(prefix)) state.modelRows.delete(key);
   };
 
+  // ── 复制：供应商与模型 ───────────────────────────────
+  // 后端从不回显密钥（只给 {masked,kind}），所以复制时一律丢掉 {keep:true} 占位：
+  // 它只在「同一条目」的上下文里有意义，写进新条目会变成无法解析的空引用。
+  function dropKeep(value) {
+    if (Array.isArray(value)) return value.map(dropKeep).filter((item) => item !== undefined);
+    if (value && typeof value === "object") {
+      if (value.keep === true || isMask(value)) return undefined;
+      const out = {};
+      for (const [key, item] of Object.entries(value)) {
+        const next = dropKeep(item);
+        if (next !== undefined) out[key] = next;
+      }
+      return out;
+    }
+    return value;
+  }
+
+  // 复制后的模型 id：在「已保存 + 内置目录 + 待保存新行」里去重，否则 upsert 会直接覆盖原条。
+  function suggestModelId(providerId, baseId) {
+    const taken = new Set();
+    const provider = state.providers.find((item) => item.id === providerId);
+    for (const model of Array.isArray(provider?.models) ? provider.models : []) if (model?.id) taken.add(model.id);
+    for (const model of state.catalog) if (model.provider === providerId) taken.add(model.id);
+    for (const row of state.newRows.get(providerId) ?? []) {
+      const id = String(row.form?.id ?? row.snap?.id ?? "").trim();
+      if (id) taken.add(id);
+    }
+    const base = `${baseId}-copy`;
+    if (!taken.has(base)) return base;
+    for (let index = 2; ; index++) if (!taken.has(`${base}-${index}`)) return `${base}-${index}`;
+  }
+
+  // 供应商复制 = 拿它当模板开一份新草稿（新 id）；不碰原条目。
+  // 不带 modelOverrides：那是对「旧 id 对应内置目录」的覆盖，新 id 下无对应物。
+  function duplicateProvider(provider) {
+    const run = () => {
+      const source = state.editForms.get(provider.id) ?? providerForm(provider);
+      const form = providerForm(null, PROVIDER_TEMPLATES[0]);
+      form.id = suggestId(`${provider.id}-copy`);
+      form.baseUrl = source.baseUrl;
+      form.api = source.api;
+      form.authHeader = source.authHeader;
+      form.apiKeyValue = source.apiKeyMasked ? "" : source.apiKeyValue;
+      form.advancedOpen = Boolean(source.authHeader || source.headerRows.length);
+      // 请求头：只拿名称，已存值是掩码，只能请用户重新填。
+      form.headerRows = source.headerRows.map((row) => ({
+        name: row.name, value: row.masked ? "" : row.value, masked: false, kind: "",
+      }));
+      const extras = parseJsonText(source.extrasText);
+      form.extrasText = extras.error
+        ? source.extrasText
+        : (() => { const cleaned = dropKeep(extras.value); return Object.keys(cleaned).length ? JSON.stringify(cleaned, null, 2) : ""; })();
+      state.draft = {
+        saved: false, savedId: "", templateId: "custom", copiedFrom: provider.id, form,
+        rows: (Array.isArray(provider.models) ? provider.models : []).map((model, index) => ({
+          mid: `mm-copy-${index}`, snap: dropKeep(clone(model)),
+        })),
+      };
+      state.selected = DRAFT;
+      state.tabs.set(DRAFT, TAB_CONNECTION);
+      renderProviders();
+      showAlert("warn", `已从「${provider.id}」复制出草稿「${form.id}」。API Key 与已存请求头值没有复制，请填写后保存。`);
+    };
+    if (state.draft) {
+      openDialog({ title: "覆盖当前草稿？", danger: true,
+        description: `已经有一份未保存的新供应商草稿「${state.draft.form?.id ?? ""}」。继续会用「${provider.id}」的复制件替掉它。`,
+        confirmLabel: "覆盖草稿", onConfirm: () => { run(); } });
+      return;
+    }
+    run();
+  }
+
+  // 模型复制 = 拿表单当前值（不是快照）生成一条待保存新行；派生字段与掩码占位全部剔除。
+  function duplicateModel(providerId, form, isNew) {
+    const built = buildModelPayload(form, isNew);
+    if (built.error) return showAlert("error", `无法复制：${built.error}`);
+    const snap = dropKeep(built.value) ?? {};
+    for (const key of DERIVED_MODEL_KEYS) delete snap[key];
+    const baseId = String(snap.id ?? "").trim();
+    snap.id = suggestModelId(providerId, baseId || "model");
+    const list = state.newRows.get(providerId) ?? [];
+    list.push({ mid: `mm-new-${Date.now()}-${list.length}`, snap, expanded: true });
+    state.newRows.set(providerId, list);
+    state.tabs.set(providerId, TAB_MODELS);
+    renderProviders();
+    showAlert("ok", `已复制为新模型「${snap.id}」，确认后点「保存模型」写入。`);
+  }
+
   // ── 详情：新建供应商草稿 ────────────────────────────────────────────────
   function draftCard(draft) {
     const form = draft.form;
     const templateSelect = el("select", { "aria-label": "供应商模板",
       onchange: (event) => applyTemplate(draft, event.target.value) },
       ...PROVIDER_TEMPLATES.map((template) => new Option(template.label, template.id, false, template.id === draft.templateId)));
-    return el("div", {},
-      el("div", { class: "mm-provider-title" },
-        el("strong", {}, draft.saved ? "继续编辑新供应商" : "添加供应商"),
-        field("模板", templateSelect, "切换模板会覆盖连接字段与示例模型")),
-      el("div", { class: "mm-section" },
-        el("h5", { class: "mm-section-title" }, "连接"),
+    const pendingCount = draft.rows.length;
+    return detailShell({
+      viewId: DRAFT,
+      title: el("strong", {}, draft.copiedFrom ? `复制供应商「${draft.copiedFrom}」` : "添加供应商"),
+      meta: field("模板", templateSelect, "切换模板会覆盖连接字段与示例模型"),
+      modelsCount: pendingCount,
+      modelsDisabled: true,
+      modelsDisabledHint: pendingCount
+        ? `先保存供应商，再配置模型：已准备 ${pendingCount} 条待写入的模型，保存后在「模型」分区逐条确认。`
+        : "先保存供应商，再在「模型」分区添加它的模型。",
+      connection: () => el("div", {},
         el("div", { class: "mm-form" }, ...connectionFields(form)),
         advancedConnection(form),
         extrasField(form, "provider"),
         el("div", { class: "mm-form-actions" },
           el("button", { type: "button", class: "mm-primary",
-            onclick: (event) => void saveProviderForm(event.currentTarget, form, { draft }) },
-            draft.saved ? "保存供应商" : "创建供应商"),
-          el("button", { type: "button", class: "secondary", onclick: closeDraft }, draft.saved ? "完成" : "取消"))),
-      el("div", { class: "mm-section" },
-        el("div", { class: "mm-models-head" },
-          el("h5", {}, `模型（${draft.rows.length}）`),
-          el("button", { type: "button", class: "secondary", onclick: () => {
-            draft.rows.push({ mid: `mm-new-${Date.now()}-${draft.rows.length}`, snap: {} });
-            renderProviders();
-          } }, "添加模型")),
-        draft.rows.length
-          ? el("div", { class: "mm-models" }, ...draft.rows.map((row) =>
-              modelRow(form.id.trim() || "未命名供应商", row, { isNew: true, onRemove: () => {
-                draft.rows = draft.rows.filter((item) => item !== row);
-                renderProviders();
-              } })))
-          : el("p", { class: "mm-hint" }, "暂无模型；模板示例会自动填充，也可用「添加模型」录入。"),
-        el("p", { class: "mm-hint" }, "模型逐条保存（upsert），未保存的示例模型不会写入文件。")));
+            onclick: (event) => void saveProviderForm(event.currentTarget, form, { draft }) }, "保存供应商"),
+          el("button", { type: "button", class: "secondary", onclick: closeDraft }, "取消")),
+        draft.copiedFrom
+          ? el("p", { class: "mm-hint" },
+              `已从「${draft.copiedFrom}」复制连接字段与高级 JSON。API Key 与已存请求头值不会复制（后端不回显密钥），请重新填写。`)
+          : null),
+      models: () => el("p", { class: "mm-hint" }, "保存供应商后才能配置模型。"),
+    });
   }
 
   // ── 详情：既有供应商编辑器 ──────────────────────────────────────────────
@@ -814,34 +979,69 @@ export function initModelManager({ root, request, onSaved }) {
       el("p", { class: "mm-hint" }, `0 表示零价格；分层价格 tiers 可在高级 JSON 中设置。${override ? "覆盖模型请填写全部四项；清空全部价格可恢复内置价格，单项留空保留原覆盖。" : "留空表示未配置该项。"}价格只作用于后续请求。`));
   }
 
+  // ── 思考等级：只展示/写入「真正生效」的等级 ──────────────────
+  // thinkingLevelMap 的存储语义是混合的：缺省 = 跟 SDK 默认（标准等级支持、xhigh/max 不支持），
+  // null = 显式禁用，字符串 = 显式启用并指定 API 入参。所以勾选框不能当 allowlist 写：
+  //   未勾 → 写 null（denylist）；
+  //   勾上 → 本次编辑里的自定义字符串保留；已落盘的自定义字符串在勾回来时恢复（别把用户的
+  //            API 入参悄悄换成默认）；属于 opt-in（xhigh/max）或落盘里是 null 就写等级名（浅
+  //            合并语义下 delete 清不掉已落盘的 null）；其余删除该键，回到 SDK 默认。
+  const defaultLevels = (reasoning) => (reasoning ? ["off", "minimal", "low", "medium", "high"] : ["off"]);
+  // 快照侧的基准等级：目录条目自带 levels；自定义 models 条目是配置原文，回退到目录同名模型，
+  // 再回退到 SDK 默认（否则新建行会全部画成未勾，而它们在会话选择器里依旧可选）。
+  function baseLevels(model, providerId, reasoning) {
+    return model.levels
+      ?? state.catalog.find((entry) => entry.provider === providerId && entry.id === model.id)?.levels
+      ?? defaultLevels(reasoning);
+  }
+  const levelEnabled = (map, base, level) =>
+    (hasOwn(map, level) ? map[level] !== null : base.includes(level));
+
   function thinkingFields(form, model, sync, providerId) {
     const extra = parseJsonText(form.extrasText);
     const map = extra.value?.thinkingLevelMap ?? model.thinkingLevelMap ?? {};
-    // 自定义供应商的 models 条目是配置原文，没有 levels（只有目录条目才有）；
-    // 回退到目录里同一模型的真实可用等级，否则未显式映射的等级会被画成未勾选，
-    // 但它们在会话选择器里依旧可选（两边对不上）。
-    const levels = model.levels
-      ?? state.catalog.find((entry) => entry.provider === providerId && entry.id === model.id)?.levels
-      ?? [];
-    return el("fieldset", { class: "mm-thinking-levels" }, el("legend", {}, "支持的思考等级"),
-      ...THINKING_LEVELS.map((level) => el("label", { class: "mm-check" },
-        el("input", { type: "checkbox", checked: Object.hasOwn(map, level) ? map[level] !== null : levels.includes(level),
-          onchange: (event) => {
-            const current = parseJsonText(form.extrasText);
-            if (current.error) { event.target.checked = !event.target.checked; showAlert("error", current.error); return; }
-            current.value.thinkingLevelMap = { ...map, ...current.value.thinkingLevelMap,
-              [level]: event.target.checked ? (map[level] ?? level) : null };
-            form.extrasText = JSON.stringify(current.value, null, 2);
-            const textarea = event.target.closest(".mm-model")?.querySelector(".mm-extras");
-            if (textarea) textarea.value = form.extrasText;
-            if (event.target.checked && level !== "off") {
-              form.reasoning = true;
-              const reasoning = event.target.closest(".mm-model")?.querySelector(".mm-model-checks input");
-              if (reasoning) reasoning.checked = true;
-            }
-            sync();
-          } }), level)),
-      el("p", { class: "mm-hint" }, "勾选定义可选等级，不会提升服务商能力。API 映射可在高级 JSON 的 thinkingLevelMap 中调整；null 表示禁用。"));
+    const base = baseLevels(model, providerId, form.reasoning);
+    const summary = el("p", { class: "mm-hint mm-thinking-summary" });
+    const refreshSummary = () => {
+      const current = parseJsonText(form.extrasText);
+      const live = current.error ? map : (current.value?.thinkingLevelMap ?? map);
+      const active = form.reasoning
+        ? THINKING_LEVELS.filter((level) => levelEnabled(live, base, level))
+        : ["off"];
+      summary.textContent = `有效等级：${active.join(" · ")}`;
+    };
+    const fieldset = el("fieldset", { class: "mm-thinking-levels" }, el("legend", {}, "思考等级"),
+      ...THINKING_LEVELS.map((level) => {
+        const locked = !form.reasoning && level !== "off";
+        return el("label", { class: `mm-check${locked ? " mm-check-locked" : ""}` },
+          el("input", { type: "checkbox", disabled: locked || undefined,
+            title: locked ? "先勾「支持推理」再选思考等级" : undefined,
+            checked: form.reasoning ? levelEnabled(map, base, level) : level === "off",
+            onchange: (event) => {
+              const current = parseJsonText(form.extrasText);
+              if (current.error) { event.target.checked = !event.target.checked; showAlert("error", current.error); return; }
+              const next = { ...map, ...current.value.thinkingLevelMap };
+              const stored = model.thinkingLevelMap?.[level];
+              if (!event.target.checked) next[level] = null;
+              else if (typeof next[level] === "string") { /* 保留用户自定义的 API 入参 */ }
+              else if (typeof stored === "string") next[level] = stored;
+              else if (!base.includes(level) || stored === null) next[level] = level;
+              else delete next[level];
+              if (Object.keys(next).length) current.value.thinkingLevelMap = next;
+              else delete current.value.thinkingLevelMap;
+              form.extrasText = Object.keys(current.value).length ? JSON.stringify(current.value, null, 2) : "";
+              const textarea = event.target.closest(".mm-model")?.querySelector(".mm-extras");
+              if (textarea) textarea.value = form.extrasText;
+              refreshSummary();
+              sync();
+            } }), level);
+      }),
+      summary,
+      el("p", { class: "mm-hint" }, form.reasoning
+        ? "勾选只定义可选等级，不会提升服务商能力；xhigh / max 默认不开，勾上才会写入。API 映射可在高级 JSON 的 thinkingLevelMap 调整；null 表示禁用。"
+        : "模型未开启推理，会话里只会出现 off。先勾「支持推理」再选具体等级。"));
+    refreshSummary();
+    return fieldset;
   }
 
   function providerEditor(provider) {
@@ -849,50 +1049,37 @@ export function initModelManager({ root, request, onSaved }) {
     if (!form) { form = providerForm(provider); state.editForms.set(provider.id, form); }
     const freshRows = Array.isArray(provider.models) ? provider.models : [];
     const pending = state.newRows.get(provider.id) ?? [];
+    const hidden = hiddenKeys();
+    const catalogRows = state.catalog.filter((model) =>
+      model.provider === provider.id && !freshRows.some((item) => item.id === model.id) && !hidden.has(model.key));
     const overrides = provider.modelOverrides && typeof provider.modelOverrides === "object"
       ? Object.keys(provider.modelOverrides).length : 0;
-    return el("div", {},
-      el("div", { class: "mm-provider-title" },
-        el("strong", { class: "mm-mono" }, provider.id),
-        el("span", { class: "mm-provider-meta" },
-          `${freshRows.length} 个模型${overrides ? ` · 覆盖 ${overrides} 项内置模型` : ""}`)),
-      authSection(provider.id),
-      el("div", { class: "mm-section" },
-        el("h5", { class: "mm-section-title" }, "连接"),
+    return detailShell({
+      viewId: provider.id,
+      title: el("strong", { class: "mm-mono" }, provider.id),
+      meta: el("span", { class: "mm-provider-meta" },
+        `${freshRows.length} 个模型${overrides ? ` · 覆盖 ${overrides} 项内置模型` : ""}`),
+      modelsCount: freshRows.length + pending.length + catalogRows.length,
+      connection: () => el("div", {},
+        authSection(provider.id),
         el("div", { class: "mm-form" }, ...connectionFields(form, provider.id)),
         advancedConnection(form),
         extrasField(form, "provider"),
         el("div", { class: "mm-form-actions" },
           el("button", { type: "button", class: "mm-primary",
             onclick: (event) => void saveProviderForm(event.currentTarget, form, { existing: provider.id }) }, "保存供应商"),
+          el("button", { type: "button", class: "secondary", title: `拿「${provider.id}」当模板新建一个供应商`,
+            onclick: () => duplicateProvider(provider) }, "复制为新供应商"),
           el("button", { type: "button", class: "secondary", onclick: () => {
             state.editForms.delete(provider.id);
             state.newRows.delete(provider.id);
             pruneProviderRows(provider.id);
             renderProviders();
           } }, "取消"))),
-      el("div", { class: "mm-section" },
-        el("div", { class: "mm-models-head" },
-          el("h5", {}, `模型（${freshRows.length + pending.length}）`),
-          el("span", { class: "mm-models-actions" },
-            el("button", { type: "button", class: "secondary", title: "只读拉取该供应商当前可用的模型列表",
-              onclick: () => void startDiscover(provider.id, form) }, "拉取模型列表…"),
-            el("button", { type: "button", class: "secondary", onclick: () => {
-              const list = state.newRows.get(provider.id) ?? [];
-              list.push({ mid: `mm-new-${Date.now()}-${list.length}`, snap: {} });
-              state.newRows.set(provider.id, list);
-              renderProviders();
-            } }, "添加模型"))),
-        discoverPanel(provider),
-        ...state.catalog.filter((m) => m.provider === provider.id && !freshRows.some((item) => item.id === m.id) && !hiddenKeys().has(m.key)).map(catalogModelRow),
-        freshRows.length + pending.length
-          ? el("div", { class: "mm-models" },
-              ...freshRows.map((model) => modelRow(provider.id, model)),
-              ...pending.map((row) => modelRow(provider.id, row, { isNew: true, onRemove: () => {
-                state.newRows.set(provider.id, (state.newRows.get(provider.id) ?? []).filter((item) => item !== row));
-                renderProviders();
-              } })))
-          : el("p", { class: "mm-hint" }, "该供应商暂无 models 条目（可能仅覆盖内置供应商的 baseUrl/headers）。")));
+      models: () => modelsView({ providerId: provider.id, provider, savedRows: freshRows, catalogRows,
+        discoverable: true,
+        emptyHint: "该供应商暂无 models 条目（可能仅覆盖内置供应商的 baseUrl/headers）。" }),
+    });
   }
 
   // 连接区只留日常必改项：id（仅草稿）/ Base URL / API 协议 / API Key；其余全部折叠。
@@ -991,24 +1178,25 @@ export function initModelManager({ root, request, onSaved }) {
     const previousId = draft.form?.id ?? "";
     draft.form = providerForm(null, template);
     if (previousId.trim()) draft.form.id = previousId;
+    draft.copiedFrom = ""; // 换模板 = 连接字段已被覆盖，不再是复制件
     draft.rows = (template.models ?? []).map((model, index) => ({ mid: `mm-new-t${index}`, snap: clone(model) }));
     renderProviders();
   }
 
   function openDraft(prefillId) {
     if (!state.draft) {
-      state.draft = { saved: false, savedId: "", templateId: "custom", rows: [], form: null };
+      state.draft = { saved: false, savedId: "", templateId: "custom", copiedFrom: "", rows: [], form: null };
       applyTemplate(state.draft, "custom");
     }
     if (prefillId) state.draft.form.id = prefillId;
     state.selected = DRAFT;
+    state.tabs.set(DRAFT, TAB_CONNECTION);
     renderProviders();
   }
   function closeDraft() {
-    const savedId = state.draft?.savedId ?? "";
     state.draft = null;
     clearAlert();
-    if (state.selected === DRAFT) state.selected = savedId;
+    if (state.selected === DRAFT) state.selected = "";
     renderProviders();
   }
 
@@ -1024,11 +1212,25 @@ export function initModelManager({ root, request, onSaved }) {
     await submit(button, () =>
         request("models.provider.save", { providerId: id, provider: built.value, baseFingerprint: state.fingerprint }),
       {
-        successMessage: `已保存供应商「${id}」。`,
+        successMessage: draft
+          ? `已保存供应商「${id}」，现在可以配置它的模型。`
+          : `已保存供应商「${id}」。`,
         // onSuccess 在回读渲染前执行：只有真正成功才落定保存后状态。
         onSuccess: () => {
-          if (draft) { draft.saved = true; draft.savedId = id; }
-          else if (existing) { state.editForms.delete(existing); pruneProviderRows(existing); }
+          if (draft) {
+            // 供应商已落盘 → 草稿使命结束：未保存的模型行迁到真实供应商的待保存行，
+            // 直接跳到它的「模型」分区；不再保留「草稿已保存」态（会在左侧出现重复条目）。
+            if (draft.rows.length) {
+              const list = state.newRows.get(id) ?? [];
+              draft.rows.forEach((row, index) => list.push({
+                mid: `mm-new-${Date.now()}-${index}`, snap: row.snap, form: row.form, expanded: true,
+              }));
+              state.newRows.set(id, list);
+            }
+            state.draft = null;
+            state.selected = id;
+            state.tabs.set(id, TAB_MODELS);
+          } else if (existing) { state.editForms.delete(existing); pruneProviderRows(existing); }
         },
       });
   }
@@ -1214,6 +1416,7 @@ export function initModelManager({ root, request, onSaved }) {
     }
     if (!row.form) row.form = modelForm(row.snap);
     const form = row.form;
+    const thinkingBox = el("div", { class: "mm-thinking-box" });
     const build = () => {
       const result = buildModelPayload(form, isNew);
       if (override && !result.error) {
@@ -1267,10 +1470,16 @@ export function initModelManager({ root, request, onSaved }) {
         ...API_TYPES.map(([value, label]) => new Option(label, value, false, form.api === value))))),
       el("div", { class: "mm-model-checks" },
         el("label", { class: "mm-check" }, el("input", { type: "checkbox", checked: form.reasoning,
-          onchange: (event) => { form.reasoning = event.target.checked; sync(); } }), "支持推理"),
+          onchange: (event) => { form.reasoning = event.target.checked; renderThinking(); sync(); } }), "支持推理"),
         el("label", { class: "mm-check" }, el("input", { type: "checkbox", checked: form.image,
           onchange: (event) => { form.image = event.target.checked; sync(); } }), "支持图片输入")));
     const advanced = extrasField(form, "model");
+    // 思考等级装在稳定容器里：切「支持推理」只重渲这一块（等级可选项跟它联动），
+    // 不重建整行，不动展开态与焦点。
+    function renderThinking() {
+      thinkingBox.replaceChildren(thinkingFields(form, row.snap, sync, providerId));
+    }
+    renderThinking();
     advanced.addEventListener("toggle", sync);
     advanced.addEventListener("input", () => {
       const parsed = parseJsonText(form.extrasText);
@@ -1296,12 +1505,13 @@ export function initModelManager({ root, request, onSaved }) {
           ? el("span", { class: "mm-dot", title: "有未保存的修改", "aria-label": "有未保存的修改" })
           : null,
         el("span", { class: "mm-model-row-actions" },
+          iconButton("duplicate", `拿「${displayId}」当模板新建一条模型`, () => duplicateModel(providerId, form, isNew)),
           isNew && onRemove
             ? iconButton("delete", `移除未保存的模型「${displayId}」`, onRemove)
             : iconButton("delete", `删除模型「${displayId}」`, () => override
               ? confirmHide({ key: row.snap.key, kind: "model", id: providerId, models: [row.snap] })
               : confirmDeleteModel(providerId, String(row.snap.id ?? ""))))),
-      grid, costFields(form, sync, override), thinkingFields(form, row.snap, sync, providerId), advanced,
+      grid, costFields(form, sync, override), thinkingBox, advanced,
       el("div", { class: "mm-model-actions" }, saveButton));
   }
 

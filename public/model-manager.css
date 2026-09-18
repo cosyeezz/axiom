@@ -233,6 +233,30 @@ button.mm-icon-delete:focus-visible { color: var(--danger); }
 .mm-provider-title .mm-field { min-width: 200px; flex: 1 1 200px; margin: 0; }
 .mm-provider-meta { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 
+/* 两级分区（供应商 / 模型）：底边高亮同 session 检查器的 .inspector-tabs 模式 */
+.mm-tabs {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.mm-tab {
+  min-height: 36px;
+  padding: 6px 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.mm-tab:hover:not(:disabled) { color: var(--ink); background: transparent; }
+.mm-tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+.mm-tab:disabled { opacity: 0.45; cursor: not-allowed; }
+.mm-tabpanel { min-width: 0; }
+@media (pointer: coarse) { .mm-tab { min-height: 44px; } }
+
 /* 只读目录（详情面板内的模型清单：名称 + 实际 ID + 能力徽标） */
 .mm-catalog-models {
   display: flex;
@@ -509,6 +533,13 @@ button.mm-icon-delete:focus-visible { color: var(--danger); }
 }
 .mm-thinking-levels legend { padding: 0 4px; font-size: 11px; color: var(--muted); }
 .mm-thinking-levels label { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); cursor: pointer; }
+/* 未开推理时非 off 等级锁死：勾了也不生效，直接表达不可用 */
+.mm-thinking-levels label.mm-check-locked { opacity: 0.45; cursor: not-allowed; }
+/* reasoning 切换只重渲这个稳定容器，不动展开态与焦点 */
+.mm-thinking-box { min-width: 0; }
+/* 摘要与说明各占一行，不跟等级标签挤在同行 */
+.mm-thinking-levels > p { flex: 1 1 100%; }
+.mm-thinking-summary { margin: 6px 0 0; font-variant-numeric: tabular-nums; }
 
 /* 触屏：登录控件与思考等级标签提到 44px 触达目标（同 style.css 的 pointer:coarse 模式） */
 @media (pointer: coarse) {
