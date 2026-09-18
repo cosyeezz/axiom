@@ -906,9 +906,9 @@ button.danger:hover:not(:disabled) { background: light-dark(#a92f41, #c13e50); }
   overflow: hidden;
   box-shadow: 0 8px 32px var(--shadow-soft);
 }
-/* 折叠态（仅桌面）：一行输入 + 一行运行摘要（缓存/上下文/模型），右上角任务计时、
-   右下角两个停止按钮（运行中要能随手停）都保留；左上角 + / 图片 / 目标三个图标、
-   模型选择、发送按钮、会话详情入口与快捷键提示收起。图片附件不收，否则待发附件会失联。 */
+/* 折叠态（仅桌面）：一行输入 + 一行「运行摘要（缓存/上下文/模型）靠左 · 两个停止按钮靠右」，
+   右上角任务计时也保留；左上角 + / 图片 / 目标三个图标、模型选择、发送按钮、
+   会话详情入口与快捷键提示收起。图片附件不收，否则待发附件会失联。 */
 @media (min-width: 701px) {
   #composer[data-collapsed="true"] > .session-detail-rows,
   #composer[data-collapsed="true"] > .actions > :is(.selectors, #send, #send-steer, #send-followup),
@@ -921,15 +921,29 @@ button.danger:hover:not(:disabled) { background: light-dark(#a92f41, #c13e50); }
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* 摘要与动作区跟折叠输入框同一条左/右缘（20px）；摘要单行不换行，挤不下就裁末尾而不撑高。 */
-  #composer[data-collapsed="true"] #session-runtime {
-    padding: 0 20px 10px;
+  /* 摘要和停止按钮共用第二行：#composer 折叠时改 row wrap，输入框独占首行（basis 100%），
+     摘要占剩下的宽度，动作区靠右。不用给按钮预留固定 padding，也不用绝对定位盖在文字上。 */
+  #composer[data-collapsed="true"] { flex-flow: row wrap; align-items: center; }
+  #composer[data-collapsed="true"] > :is(#prompt, #prompt-completion) { flex: 1 0 100%; }
+  /* 摘要左缘跟折叠输入框对齐（20px）；单行不换行，挤不下就裁末尾。
+     flex-basis 必须是 0：用 auto 的话 nowrap 文本的内容宽就是初始主尺寸，窄屏时一个人就占满整行，
+     把停止按钮挤到下一行去。 */
+  #composer[data-collapsed="true"] > #session-runtime {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0 0 10px 20px;
     flex-wrap: nowrap;
     overflow: hidden;
     white-space: nowrap;
   }
-  #composer[data-collapsed="true"] > .actions { justify-content: flex-end; padding: 0 20px 8px; }
-  /* 空闲时两个停止按钮都 [hidden]，整条动作区收掉，不留空 padding。 */
+  #composer[data-collapsed="true"] > .actions {
+    order: 1;
+    flex: 0 0 auto;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+    padding: 0 20px 10px 8px;
+  }
+  /* 空闲时两个停止按钮都 [hidden]，整条动作区收掉，摘要独占这一行。 */
   #composer[data-collapsed="true"] > .actions:not(:has(> #stop:not([hidden]), > #force-stop:not([hidden]))) { display: none; }
 }
 .workspace-location { display: flex; align-items: center; gap: 4px; min-width: 0; }

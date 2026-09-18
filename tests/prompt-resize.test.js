@@ -261,7 +261,7 @@ test("还在用的状态不折叠：待发图片、补全打开；运行中照�
 });
 
 // 折叠态保留什么、收起什么，全靠这段 media query；jsdom 不跑媒体查询，改从 CSS 文本守。
-test("折叠态样式：保留运行摘要、任务计时与停止按钮，收起图标组与发送区", async () => {
+test("折叠态样式：摘要与停止按钮同一行，任务计时保留，图标组与发送区收起", async () => {
   const css = await readFile(new URL("../public/style.css", import.meta.url), "utf8");
   const block = css.match(/@media \(min-width: 701px\) \{\s*#composer\[data-collapsed[\s\S]*?\r?\n\}/)?.[0];
   assert.ok(block, "桌面折叠态样式块存在");
@@ -272,7 +272,13 @@ test("折叠态样式：保留运行摘要、任务计时与停止按钮，收�
   for (const keep of ["#session-runtime", "#task-timer", "#context-chips", "#image-attachments", "#stop", "#force-stop"]) {
     assert.ok(!hidden.includes(keep), `${keep} 折叠时保留`);
   }
-  assert.match(block, /#session-runtime \{[^}]*white-space: nowrap/, "摘要单行不换行");
-  assert.match(block, /> \.actions \{[^}]*justify-content: flex-end/, "停止按钮靠右下");
+  // 摘要和停止按钮共用第二行：输入框 basis 100% 独占首行，摘要 basis 必须是 0，
+  // 否则 nowrap 文本的内容宽就是初始主尺寸，窄屏时把按钮挤到下一行。
+  assert.match(block, /#composer\[data-collapsed="true"\] \{[^}]*flex-flow: row wrap/, "折叠态改横向换行排列");
+  assert.match(block, /#prompt, #prompt-completion\) \{[^}]*flex: 1 0 100%/, "输入框独占首行");
+  assert.match(block, /> #session-runtime \{[^}]*flex: 1 1 0/, "摘要按剩余宽度收缩，不把按钮顶走");
+  assert.match(block, /> #session-runtime \{[^}]*white-space: nowrap/, "摘要单行不换行");
+  assert.match(block, /> \.actions \{[^}]*justify-content: flex-end/, "停止按钮靠右");
+  assert.match(block, /> \.actions \{[^}]*order: 1/, "动作区排到摘要右侧");
   assert.match(block, /\.actions:not\(:has\(> #stop:not\(\[hidden\]\), > #force-stop:not\(\[hidden\]\)\)\) \{ display: none/, "两个停止按钮都隐藏时整条动作区收掉");
 });

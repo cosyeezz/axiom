@@ -1,5 +1,14 @@
 # 开发记录
 
+## 2026-09-18 折叠输入区：运行摘要与停止按钮合并到同一行
+
+- 原因：上一版折叠态运行中是上下两行（摘要一行、停止按钮又一行，约 116px），右侧大片空白白占一行高。
+- 决策：折叠态把 `#composer` 从竖向改为 `flex-flow: row wrap`，输入框 `flex: 1 0 100%` 独占首行，运行摘要与 `.actions`（`order: 1`）共用第二行：摘要 `flex: 1 1 0` 吃剩余宽度、`nowrap + overflow: hidden` 裁末尾，按钮 `flex: 0 0 auto` 靠右不收缩。运行折叠高度 116px → 约 90px。
+- 关键点：摘要的 flex-basis 必须写 0。`auto` 时 basis 取 nowrap 文本的完整内容宽（`.runtime-summary` 自身也是 flex 容器，nowrap 后 min/max-content 等于子项宽度之和），而换行判定发生在收缩之前，820px 窗口下摘要会独占一行把按钮挤到第三行（实测 118px）。
+- 方案取舍：不用绝对定位（要给按钮写死预留 padding，文案变长就漏），不用显式 grid（得给全部直接子节点排格子，脆）；不动 DOM 顺序（`tests/app.test.js` 断言 `#session-runtime` 的 `previousElementSibling` 是 `.actions`）。
+- 验证：Playwright 实测 1440px / 820px 两档，摘要与两个停止按钮垂直居中同行（cy 一致）、composer 高 90.4px，窄屏摘要按预期裁切；`tests/prompt-resize.test.js` 折叠样式守护改成断言 row wrap / basis 100% / `flex: 1 1 0` / `order: 1`；`npm test` 744 项全绿，`python tests/goal-ui.py` 通过。
+- 涉及文件：`public/style.css`（折叠 media query 块）、`tests/prompt-resize.test.js`、`README.md`、`devlog.md`。
+
 ## 2026-09-18 压缩后保留用户输入与正式答复的精简版记录
 
 - 原因：后台压缩一旦应用，段内历史整体隐藏/不下发，页面只剩摘要卡。长会话里用户看不到自己问过什么、agent 答过什么，阅读脉络整段断掉，只能逐张卡展开找。
