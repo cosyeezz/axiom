@@ -2497,3 +2497,14 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 涉及文件：public/style.css、public/app.js、tests/prompt-resize.test.js、tests/goal-ui.py、README.md。
 - 决策：不调 DOM 顺序（停止按钮留在输入框下方一行，不为「绝对贴右下」重排结构）；`#context-chips` 与图片附件继续保留，否则待发上下文/附件会失联；折叠态样式断言走 CSS 文本正则（jsdom 不跑 media query），与 `goal-command-ui.test.js` 的图标组断言同一路子。
 - 验证：`npm test` 742 项（740 通过、0 失败、2 既有跳过），其中 `tests/prompt-resize.test.js` 7 项含新增的折叠态样式守护；`python tests/goal-ui.py` 全绿（普通会话/新会话/图标组三处断言前先点 `#prompt` 展开，因为桌面折叠态图标组本就不可见）。
+
+## 2026-09-19 修复 context-menu-ui 与 service-settings-ui 两个失效验收脚本
+
+- 时间：2026-09-19。分支 `feat/fix-ui-scripts`（worktree F:/worktrees/axiom-fix-ui-scripts）。
+- 原因：两个浏览器验收脚本自 9-12 前后持续失败被搁置，均判明为脚本对产品改动的假设过期，产品无 bug：`context-menu-ui.py` 等待 `#context-results button` 超时（结果列表不渲染）；`service-settings-ui.py` 断言 `.settings-layout` 自身可滚动失败，且此前死在第一个视口，移动端分支从未执行过。
+- 内容：
+  - `tests/context-menu-ui.py`：主因——`47a4b57` 在 `renderContextResults` 前插入了 `fuzzyHit`，恰好落在测试两段 app.js 源码切片的空档里没被注入，`renderContextResults` 首行过滤即抛 `ReferenceError`，`#context-results` 永远为空；切片起点从 `"function renderContextResults("` 改为 `"function fuzzyHit("`。次因（390px 轮才暴露）——`403e140` 的移动端折叠 CSS 把 `.composer-wrap` 下非 `#composer` 子元素 `display:none`，`.context-bar` 与 `#context-menu` 都在其中；setup 给 `.shell` 加 `mobile-expanded`，`#add-context` 的 cssText 补 `z-index:100`，避免被展开的 `#model` select 挡住点击点。
+  - `tests/service-settings-ui.py`：`620cb55` 重构设置弹窗滚动结构后，桌面端 `.settings-layout` 是 `overflow:hidden`，真正滚动的是各 `.settings-body` 面板（窄屏 ≤700px 才由 `.settings-layout` 自身滚）；滚动断言改为同时滚 `#service-panel` 与 `.settings-layout`、断言至少一个 `scrollTop>0`。另窄屏顶栏默认隐藏（`9f95ca9`），先点 `#mobile-expand` 再点 `#toggle-sidebar`，否则后者不可见超时。
+- 涉及文件：tests/context-menu-ui.py、tests/service-settings-ui.py、.pi/skills/codebase-map/INDEX.md（重新生成）、devlog.md。
+- 决策：零产品代码改动，只修脚本的过期假设；不动断言语义（断言描述的行为在产品里都成立），滚动断言用「候选容器至少一个滚了」而非按视口宽度猜分支，与 CSS 媒体查询解耦；`fuzzyHit` 切片边界取函数头唯一字符串，纯函数无外部依赖，带上后不引入额外 stub。
+- 验证：worktree 内 `npm test` 744 项（742 通过、0 失败、2 既有跳过）；`python tests/context-menu-ui.py` 通过（1100 与 390 两轮全部断言）；`python tests/service-settings-ui.py` 四视口（1440×900、390×900、320×900、844×390）全部 PASS。

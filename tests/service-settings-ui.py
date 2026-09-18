@@ -25,6 +25,8 @@ try:
             page.goto(f"http://127.0.0.1:{port}")
             page.wait_for_function("document.querySelector('#open-settings').onclick !== null")
             if width < 700:
+                # 移动端顶栏默认隐藏，先展开顶栏才能点到 #toggle-sidebar。
+                page.locator("#mobile-expand").click()
                 page.locator("#toggle-sidebar").click()
             page.locator("#open-settings").click()
             bounds = page.locator("#settings").bounding_box()
@@ -36,11 +38,15 @@ try:
             # 长内容只滚动设置内部；标题和关闭按钮不移动。
             header = page.locator("#settings > header").bounding_box()
             page.locator("#service-history").evaluate("el => el.textContent = '长内容 '.repeat(5000)")
+            # 桌面端滚动容器是 .settings-body 面板；窄屏（<=700px）才是 .settings-layout 自身。
+            page.locator("#service-panel").evaluate("el => el.scrollTop = el.scrollHeight")
             page.locator(".settings-layout").evaluate("el => el.scrollTop = el.scrollHeight")
-            assert page.locator(".settings-layout").evaluate("el => el.scrollTop > 0")
+            assert page.evaluate("() => document.querySelector('#service-panel').scrollTop > 0"
+                                 " || document.querySelector('.settings-layout').scrollTop > 0")
             assert page.locator("#settings").bounding_box() == bounds
             assert page.locator("#settings > header").bounding_box() == header
             page.locator("#service-history").evaluate("el => el.textContent = ''")
+            page.locator("#service-panel").evaluate("el => el.scrollTop = 0")
             page.locator(".settings-layout").evaluate("el => el.scrollTop = 0")
             assert page.locator("#restart-quick").is_visible()
             assert page.locator("#restart-quick").is_disabled()  # 预览无守护进程
