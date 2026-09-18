@@ -71,8 +71,9 @@ test("compaction settings, message IDs and successful records survive restart; f
     await restored.ensureLoaded(id);
     assert.deepEqual((await restored.workspaceDefaults(dir)).compaction, config);
     assert.deepEqual(restored.snapshot(id).compactions, [record]);
-    // 被摘要折叠的消息不再随快照下发；点开摘要卡时按 compactionId 取原文。
-    assert.equal(restored.snapshot(id).messages.some((entry) => entry.entryId === "m1"), false);
+    // 被摘要折叠的消息随快照下发精简版（带 compacted 标记）；完整原文点开摘要卡时按 compactionId 取。
+    const lite = restored.snapshot(id).messages.find((entry) => entry.entryId === "m1");
+    assert.equal(lite?.compacted, true);
     const segment = await restored.compactionMessages(id, "c1");
     assert.deepEqual(segment.messages.map((entry) => entry.entryId), ["m1"]);
     assert.deepEqual(restored.snapshot(id).config.compaction, config);

@@ -18,7 +18,9 @@ import { delegationTools } from "./tools.js";
 import { createQuestions } from "./questions.js";
 import { resolveCapabilities } from "./capabilities.js";
 import { memoryHooks } from "./session-memory.js";
-import { TITLE_MAX } from "../public/memory-tags.js";
+import { TITLE_MAX, stripMemoryTags } from "../public/memory-tags.js";
+import { splitAnswer } from "../public/answer-tags.js";
+import { stripGoalMarkers } from "../public/goal-markers.js";
 
 // Goal 模式挂载的四个工具：普通会话初始即停用，退出 Goal 时统一停用。
 const GOAL_TOOL_NAMES = ["goal_plan", "goal_evidence", "goal_block", "goal_progress"];
@@ -95,10 +97,43 @@ function projectTimeline(messages) {
   return [...children.values()].flat().concat(ordered);
 }
 
-// 压缩折叠：被摘要覆盖的主消息不下发（点开摘要卡时按需取），挂在其后的子代理记录随锚点一起隐藏——
-// 锚点（delegate 结果）不在历史里时子任务入口本来也无处落位。
+const entryIdSet = (records) => new Set(records.map((record) => record.entryId).filter(Boolean));
+
+// 压缩段的展示口径正文：与前端 renderMessage、src/goal.js 的 bodyText 同一套实现
+// （先去 goal 完成标记，再剥记忆标签，最后取 <axiom_display> 内的正式答复），避免正则漂移。
+const compactedAnswer = (text) => {
+  const cleaned = stripMemoryTags(stripGoalMarkers(String(text ?? "")));
+  try { return splitAnswer(cleaned, { streaming: false }).answer.trim(); }
+  catch { return cleaned.trim(); }
+};
+
+// 压缩段记录 → 精简版：只留「人看的那一层」。
+// 用户输入原样保留（含图片附件，抹掉附件会让历史看起来像没发过图）；助手消息只留正式答复正文，
+// 思考、工具调用、用量与中断标记这些过程信息随摘要卡一起收走。返回 null 表示这条不再下发。
+function compactedRecord(record) {
+  if ((record.agentId ?? "main") !== "main") return null; // 子代理记录只在摘要卡展开时补进任务弹窗。
+  const message = record.message;
+  const role = message?.role;
+  if (role !== "user" && role !== "assistant") return null; // 工具结果、内部通知等不属于对话正文。
+  const blocks = typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content ?? [];
+  const text = blocks.filter((block) => block?.type === "text").map((block) => block.text).join("\n");
+  if (role === "user") {
+    // 旧会话的子任务完成通知是带前缀的 user 消息：它是内部通知，不是用户输入。
+    if (text.startsWith("[Axiom 子任务完成通知]")) return null;
+    const content = [...(text ? [{ type: "text", text }] : []), ...blocks.filter((block) => block?.type === "image")];
+    if (!content.length) return null;
+    return { ...record, compacted: true, message: { role: "user", content } };
+  }
+  const answer = compactedAnswer(text);
+  if (!answer) return null; // 纯过程轮次（只有思考/工具调用）在压缩后没有可展示的正文。
+  return { ...record, compacted: true, message: { role: "assistant", content: [{ type: "text", text: answer }] } };
+}
+
+// 压缩折叠：被摘要覆盖的历史裁成精简版下发——主会话的用户输入与助手正式答复留在原位，
+// 其余（思考、工具调用/结果、子代理记录）不下发，点开摘要卡时按需取原文。
 // keptBefore[i] = 原数组下标 i 之前仍然下发的记录数，用于把重试卡的下标兜底换算到下发数组上。
 // indexes[j] = 下发数组第 j 条在折叠前的下标：前端的目标轮次锚点按历史下标登记，折叠不能让它错位。
+// visibleIds 只收未被压缩的记录：精简版不是原文形态，锚在其上的重试卡仍随摘要卡展开补发。
 function foldCompacted(records, compactions) {
   const hidden = new Set();
   for (const record of compactions ?? [])
@@ -108,20 +143,29 @@ function foldCompacted(records, compactions) {
     const indexes = new Array(records.length);
     for (let index = 0; index <= records.length; index++) keptBefore[index] = index;
     for (let index = 0; index < records.length; index++) indexes[index] = index;
-    return { records, keptBefore, indexes, folded: false };
+    return { records, keptBefore, indexes, folded: false, visibleIds: entryIdSet(records) };
   }
   const kept = [];
   const indexes = [];
+  const visibleIds = new Set();
   let insideFold = false;
   for (let index = 0; index < records.length; index++) {
     keptBefore[index] = kept.length;
     const record = records[index];
     if ((record.agentId ?? "main") === "main") insideFold = !!record.entryId && hidden.has(record.entryId);
-    if (!insideFold) { kept.push(record); indexes.push(index); }
+    if (!insideFold) {
+      kept.push(record);
+      indexes.push(index);
+      if (record.entryId) visibleIds.add(record.entryId);
+      continue;
+    }
+    const lite = compactedRecord(record);
+    if (lite) { kept.push(lite); indexes.push(index); }
   }
   keptBefore[records.length] = kept.length;
-  return { records: kept, keptBefore, indexes, folded: kept.length !== records.length };
+  return { records: kept, keptBefore, indexes, folded: kept.length !== records.length, visibleIds };
 }
+
 
 // 重试卡按下发历史归位：锚点被折叠（在压缩段内）就不下发，下标兜底换算到下发数组上。
 function historyRetries(records, visibleIds, keptBefore, total) {
@@ -1612,7 +1656,7 @@ export class Sessions {
       messages = projectTimeline(messages);
       const compactions = saved.compactions ?? [];
       const fold = foldCompacted(messages, compactions);
-      const visibleIds = new Set(fold.records.map(record => record.entryId).filter(Boolean));
+      const visibleIds = fold.visibleIds;
       const goal = new Goal({ sessionId: id, store: {
         load: () => structuredClone(this.goalStore.load(id)), save: () => {},
       } });
@@ -1628,7 +1672,7 @@ export class Sessions {
     // 读时投影：live 数组保持到达序（撤回/重试/压缩等内部逻辑依赖它），下发按锚点顺序。
     const projected = projectTimeline(item.messages);
     const fold = foldCompacted(projected, item.compactions);
-    const visibleIds = new Set(fold.records.map((record) => record.entryId).filter(Boolean));
+    const visibleIds = fold.visibleIds;
     const state = {
       // 会话身份：前端按 sessionId 路由消息与持久化键，必须带出。
       sessionId: id,
