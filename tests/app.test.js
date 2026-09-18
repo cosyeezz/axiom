@@ -1794,11 +1794,16 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     const visible = window.document.querySelectorAll("#output > .message:not([hidden])");
     assert.deepEqual([...visible].map((node) => node.querySelector(":scope > .markdown").textContent.trim()), ["问题二", "回答二"]);
     const summaryBody = cards()[0].querySelector(".compaction-summary");
-    assert.match(summaryBody.textContent, /早前/);
-    assert.equal(summaryBody.querySelector("img"), null, "summaries render through the sanitizing pipeline");
     assert.match(cards()[0].querySelector("summary").textContent, /9,000.*1,200/s);
     assert.equal($("transcript").scrollTop, 950, "folding compensates the viewport anchor instead of forcing the bottom");
     assert.equal(cards()[0].open, false, "compaction cards stay folded by default");
+    // 摘要正文懒渲染：折叠态不建内容，展开（toggle 异步派发）才渲染。
+    assert.equal(summaryBody.textContent, "", "folded cards render nothing inside");
+    cards()[0].open = true;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.match(summaryBody.textContent, /早前/);
+    assert.equal(summaryBody.querySelector("img"), null, "summaries render through the sanitizing pipeline");
+    cards()[0].open = false;
     delete firstFolded.hidden;
 
     // 重试过程自动聚合，成功折叠，原生 details 仍可手动展开；错误文本不能注入 HTML。
@@ -1845,7 +1850,10 @@ test("compaction settings edit per scope and fold transcripts in place", async (
       compactedMessageIds: ["m1", "m2", "m3"],
       tokensBefore: 1200,
     });
+    for (const card of cards()) card.open = true;
+    await new Promise((resolve) => setTimeout(resolve, 0));
     assert.match(cards()[0].querySelector(".compaction-summary").textContent, /早前/); assert.match(cards()[1].querySelector(".compaction-summary").textContent, /累计摘要/);
+    for (const card of cards()) card.open = false;
     assert.match($("output").lastElementChild.textContent, /回答二/, "each cumulative summary keeps its own card");
     assert.equal(window.document.querySelectorAll("#output > .message:not([hidden])").length, 1, "recent messages survive");
 
@@ -1864,6 +1872,8 @@ test("compaction settings edit per scope and fold transcripts in place", async (
       { id: "c2", summary: "累计摘要", firstKeptEntryId: "m4", compactedMessageIds: ["m1", "m2", "m3"], tokensBefore: 1200 },
       { id: "c3", summary: "包含新消息", firstKeptEntryId: "m5", compactedMessageIds: ["m4", "m5"], tokensBefore: 1500 },
     ];
+    // 服务端不再下发被压缩折叠的消息（点开摘要卡才按需取），这里五条全被三张卡覆盖。
+    state.messages = [];
     sockets.at(-1).close();
     await settle();
     assert.equal($("login").hidden, false);

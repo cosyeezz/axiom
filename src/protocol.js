@@ -326,19 +326,8 @@ export const command = z.discriminatedUnion("type", [
   // 复制本实例已有会话：主历史与子任务历史复制成新会话，标题原名接序号（xxx → xxx 1）。
   z.object({ id, type: z.literal("session.duplicate"), sessionId: id }).strict(),
   z.object({ id, type: z.literal("session.attach"), sessionId: id }).strict(),
-  // 历史分页：attach 只下最近一页，更早/更新按不透明游标取；before/after/target/edge 互斥（服务端 pageOf 校验）。
-  z
-    .object({
-      id,
-      type: z.literal("session.history"),
-      sessionId: id,
-      edge: z.enum(["first", "last"]).optional(),
-      before: z.string().min(1).max(4096).optional(),
-      after: z.string().min(1).max(4096).optional(),
-      target: z.string().min(1).max(256).optional(),
-      limit: z.number().int().min(1).max(200).optional(),
-    })
-    .strict(),
+  // 压缩卡按需展开：attach 下发的历史不含被摘要折叠的消息，点开摘要卡时才取这一段原文。
+  z.object({ id, type: z.literal("session.compaction.messages"), sessionId: id, compactionId: z.string().min(1).max(256) }).strict(),
   // 运行中重新发现项目技能（composer 打开技能列表时调用）；返回 { skills: [{name, description}] }。
   z.object({ id, type: z.literal("session.skills.refresh"), sessionId: id }).strict(),
   z.object({ id, type: z.literal("session.close"), sessionId: id }).strict(),

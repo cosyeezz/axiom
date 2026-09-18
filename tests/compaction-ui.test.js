@@ -117,8 +117,10 @@ test("压缩卡片序号与 progress 标题描述，旧数据回退现文案", a
     assert.equal(meta.textContent, "保留检查点后的消息<script>alert(1)</script>");
     assert.equal(badge.querySelector("*"), null);
     assert.equal(meta.querySelector("*"), null);
-    // 摘要展开结构不变
+    // 摘要 markdown 懒渲染：折叠态是空的，展开（toggle 异步派发）后才落内容。
+    assert.equal(cards[1].querySelector(".compaction-summary").textContent, "");
     cards[1].open = true;
+    await new Promise((resolve) => setTimeout(resolve, 0));
     assert.match(cards[1].querySelector(".compaction-summary").textContent, /摘要二/);
     assert.equal(cards[1].querySelector(".compaction-tasks").childElementCount, 0);
   } finally { dom.window.close(); }
@@ -184,5 +186,97 @@ test("子任务手动重试绑定原会话和任务，禁止重复点击并随�
     w.event({ sessionId: "activity", type: "task.state", taskId: task.id, data: task });
     w.disconnectForTest();
     assert.equal(button.disabled, true);
+  } finally { dom.window.close(); }
+});
+
+test("压缩摘要卡懒加载原文：展开才取、只取一次、原文对照按时间序插回", async () => {
+  const { dom, w, restore, paint, output } = await page();
+  try {
+    w.HTMLElement.prototype.scrollIntoView = function () {};
+    const compactions = [{ id: "c1", summary: "摘要", compactedMessageIds: ["u1", "r1"], firstKeptEntryId: "keep" }];
+    // 服务端已把折叠段滤掉：页上只有摘要卡与其后保留的消息。
+    restore({
+      messages: [
+        { agentId: "main", entryId: "keep", message: { role: "assistant", content: "保留的回答" } },
+        { agentId: "child", entryId: "s2", message: { role: "assistant", content: "子代理后续输出" } },
+      ],
+      messageIndexes: [3, 4], messageCount: 5,
+      tasks: [{ id: "child", task: "子任务", status: "completed" }],
+      compactions,
+    });
+    paint();
+    w.eval('window.sent = []; request = (type, data) => { window.sent.push({ type, ...data }); return new Promise((resolve, reject) => { window.finishSegment = resolve; window.failSegment = reject; }); };');
+    const card = output.querySelector(":scope > .compaction-card");
+    assert.equal(w.sent.length, 0, "折叠态不取原文");
+    card.open = true;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(w.sent.length, 1);
+    assert.deepEqual({ ...w.sent[0] }, { type: "session.compaction.messages", sessionId: "activity", compactionId: "c1" });
+    w.finishSegment({
+      sessionId: "activity", compactionId: "c1",
+      messages: [
+        { agentId: "main", entryId: "u1", message: { role: "user", content: "折叠的提问" } },
+        { agentId: "main", entryId: "r1", message: { role: "toolResult", toolName: "delegate", toolCallId: "d1", content: [{ type: "text", text: '{"taskIds":["child"]}' }] } },
+        { agentId: "child", entryId: "s1", message: { role: "assistant", content: "子代理早期输出" } },
+      ],
+      tools: {}, retries: [{ id: "retry-1", agentId: "main", anchorEntryId: "u1", status: "succeeded", attempt: 1, history: [{ attempt: 1, delayMs: 2000, error: "429" }] }],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    paint(); paint(); paint();
+    // 主消息不重绘：摘要卡就是它们的形态，页上仍只有一张摘要卡与保留的回答。
+    assert.equal(output.querySelectorAll(":scope > .compaction-card").length, 1);
+    assert.equal([...output.querySelectorAll(":scope > .message")].length, 1);
+    // 原文对照按时间序插回：折叠段在 firstKeptEntryId 之前。
+    assert.deepEqual([...w.rawEntryIds()], ["u1", "r1", "s1", "keep", "s2"]);
+    // 子代理早期输出补进任务弹窗，且排在已有的后续输出之前（弹窗关着时正文不渲染，先打开）。
+    card.querySelector(".compaction-tasks .task-card").click();
+    paint(); paint();
+    const outputs = [...w.document.querySelectorAll("#task-child .message")].map((node) => node.textContent);
+    assert.equal(outputs.length, 2);
+    assert.match(outputs[0], /子代理早期输出/);
+    assert.match(outputs[1], /子代理后续输出/);
+    // 重试卡按锚点归位到摘要卡内，不落历史归档。
+    assert.equal(card.querySelectorAll(".compaction-tasks .retry-card").length, 1);
+    assert.equal(output.querySelector(".retry-archive"), null);
+    // 重复开合不再取第二次。
+    card.open = false;
+    card.open = true;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(w.sent.length, 1);
+  } finally { dom.window.close(); }
+});
+
+test("压缩段原文取回失败：提示可重试，重新展开再取一次", async () => {
+  const { dom, w, restore, output } = await page();
+  try {
+    w.HTMLElement.prototype.scrollIntoView = function () {};
+    restore({ messages: [], compactions: [{ id: "c1", summary: "摘要", compactedMessageIds: ["u1"] }] });
+    w.eval('window.sent = []; request = (type, data) => { window.sent.push({ type, ...data }); return new Promise((resolve, reject) => { window.finishSegment = resolve; window.failSegment = reject; }); };');
+    const card = output.querySelector(":scope > .compaction-card");
+    card.open = true;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    w.failSegment(new Error("历史文件缺失"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.match(w.document.getElementById("error").textContent, /历史文件缺失/);
+    card.open = false;
+    card.open = true;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(w.sent.length, 2, "失败不缓存：重新展开可重试");
+  } finally { dom.window.close(); }
+});
+
+test("换会话后迟到的压缩段原文被丢弃，不污染新会话", async () => {
+  const { dom, w, restore, output } = await page();
+  try {
+    w.HTMLElement.prototype.scrollIntoView = function () {};
+    restore({ messages: [], compactions: [{ id: "c1", summary: "摘要", compactedMessageIds: ["u1"] }] });
+    w.eval('window.sent = []; request = (type, data) => { window.sent.push({ type, ...data }); return new Promise((resolve) => { window.finishSegment = resolve; }); };');
+    output.querySelector(":scope > .compaction-card").open = true;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    restore({ sessionId: "other", messages: [], compactions: [] });
+    w.finishSegment({ sessionId: "activity", compactionId: "c1", messages: [{ agentId: "main", entryId: "u1", message: { role: "user", content: "过期原文" } }], tools: {}, retries: [] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.doesNotMatch(output.textContent, /过期原文/);
+    assert.deepEqual([...w.rawEntryIds()], []);
   } finally { dom.window.close(); }
 });

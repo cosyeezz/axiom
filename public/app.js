@@ -50,9 +50,9 @@ let onboarding = false;
 let allSessions = [],
   follow = true;
 const views = createSessionCache();
-const HISTORY_LIMIT = 60;
-let historyState, historyRequest = 0, historyLoading = false, historyDirty = false;
-let hiddenDirty = false, historyEvents = 0;
+// 会话历史一次全量挂载：attach 即完整历史（被压缩折叠的那段由摘要卡按需取）。
+// attachToken 让在飞的 attach 回包失效（切会话/重复请求），hiddenDirty 记「后台期间有新消息」。
+let attachToken = 0, attaching = false, hiddenDirty = false;
 // 目标模式：只消费 snapshot.goal 与 goal 事件，消息仍由本文件渲染；
 // 回执/事件里的 goal 由后端给出，前端对字段缺失完整容错。
 // （去掉 import 行单独跑 app.js 的测试环境里没有该模块，降级为空实现。）
@@ -108,13 +108,6 @@ for (const id of ["provider", "model", "thinking", "subagent-provider", "subagen
 const modelManager = initModelManager({ root: $("models-panel"), request, onSaved: refreshModelCatalog });
 const serviceUi = initServiceSettings({ request, isReady: () => connected });
 let compactions = [], mainItems = [];
-// —— 有界 DOM（Phase D1）——
-// 前插（上滚读旧历史）是唯一的累积方向：after 取页走整页替换天然有界。挂载窗口超限时裁
-// 掉阅读端远端（最新端）的非流式节点；live 流式卡不在 rawEntries，不会被裁。
-// 回载闭环：被裁第一条记为 trimmedForwardBoundary，贴底预取/下翻改走 target 定位整页
-// 重挂（同 revision 下 D2 页缓存命中，重建成本低）；直接点「回到最新」走 attach last。
-const HISTORY_DOM_LIMIT = 300;
-let trimmedForwardBoundary = null;
 // 消息锚点：键既可以是 state.messages 的下标，也可以是 entryId（startMessage/endMessage 两种语义都可用）。
 let goalAnchors = new Map(), goalAnchorCount = 0;
 function anchorGoal(key, item, entryId) {
@@ -134,6 +127,9 @@ function clearGoalPrompt(text) {
 // 手动重试靠主代理末尾消息判定：与服务端 canResume 同一条规则，避免两边判断不一致。
 let lastMainMessage = null, interrupted = false, canReask = false;
 const compactionNodes = new Map(), taskEntries = new Map();
+// 压缩摘要卡按需展开：attach 下发的历史不含被折叠的消息，点开才取这一段原文。
+// 值是取数 Promise（每张卡只取一次）；实时压缩折叠的卡直接标记为已加载（消息本来就在页上）。
+const compactionSegments = new Map();
 let images = [], imageLoading = false;
 let completionVersion = 0, completionToken, completionEntries = [], completionIndex = 0;
 let selectedSkill = "", contextFiles = [], pickingWorkspace = false, currentCwd = "";
@@ -302,11 +298,11 @@ function forgetGrowth(el) { growthWatch.delete(el); growthObserver?.unobserve(el
 for (const event of ["wheel", "touchstart", "touchmove", "keydown", "pointerdown"])
   transcript.addEventListener(event, () => noteScrollIntent(transcript), { capture: true, passive: true });
 const renderer = createStreamRenderer(renderMarkdown, scrollLatest);
-// 页级渲染缓存（Phase D2）：epoch = 会话 + 历史修订，切换即整体丢弃（压缩/撤回修订后旧产物
-// 不可复用）；同 revision 内翻页/锚点恢复/切走切回命中复用。预算见 createMarkdownPageCache。
+// 渲染缓存（Phase D2）：epoch = 会话，切走切回命中复用；缓存键含 entryId，JSONL 条目不可变，
+// 压缩/撤回不会让同 entryId 的产物失效。预算见 createMarkdownPageCache。
 let markdownPageCache, markdownPageEpoch = "";
 function pageCacheCurrent() {
-  const epoch = `${sessionId}\u0000${historyState?.history?.revision ?? 0}`;
+  const epoch = sessionId ?? "";
   if (epoch !== markdownPageEpoch) {
     markdownPageEpoch = epoch;
     markdownPageCache = createMarkdownPageCache();
@@ -325,16 +321,9 @@ transcript.onscroll = () => {
   locatedScroll = undefined;
   follow = readFollow(transcript, follow);
   $("latest").hidden = follow;
-  prefetchHistory();
-  prefetchForward();
 };
-$("history-before").onclick = () => void loadHistory({ before: historyState.history.prevCursor });
-$("history-after").onclick = () => historyDirty ? void latestHistory() : trimmedForwardBoundary ?
-  (() => { const target = trimmedForwardBoundary; trimmedForwardBoundary = null; void loadHistory({ target }); })()
-  : void loadHistory({ after: historyState.history.nextCursor });
-$("history-newest").onclick = () => void latestHistory();
+// 历史一次全量挂载：两个滚动按钮都只是本地跳转，不再触发取数。
 $("earliest").onclick = () => {
-  if (historyState?.history?.prevCursor) { void loadHistory({ edge: "first" }); return; }
   follow = false;
   transcript.scrollTop = 0;
   locatedScroll = transcript.scrollTop;
@@ -344,7 +333,6 @@ $("earliest").onclick = () => {
   transcript.focus({ preventScroll: true });
 };
 $("latest").onclick = () => {
-  if (historyDirty || historyState?.history?.nextCursor) { void latestHistory(); return; }
   locatedScroll = undefined;
   follow = true;
   lastScrollTops.set(transcript, transcript.scrollTop);
@@ -521,6 +509,7 @@ function paintRaw() {
   const list = $("raw-io-list");
   const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 80;
   $("raw-io-empty").hidden = rawEntries.length > 0;
+  let previous = null;
   for (const [index, entry] of rawEntries.entries()) {
     if (!entry.node) {
       entry.node = document.createElement("article");
@@ -549,8 +538,12 @@ function paintRaw() {
       entry.extraText = document.createElement("pre");
       entry.extra.append(summary, entry.extraText);
       entry.node.append(bar, entry.body, entry.extra);
-      $("raw-io-list").append(entry.node);
     }
+    // 面板顺序始终跟住 rawEntries：展开压缩摘要卡会把折叠段的原文插回数组中间，
+    // 只按创建顺序 append 会让这批条目堆到末尾。
+    if (previous ? previous.nextElementSibling !== entry.node : list.firstElementChild !== entry.node)
+      previous ? previous.after(entry.node) : list.prepend(entry.node);
+    previous = entry.node;
     const { message, agentId } = entry;
     entry.label.textContent = `${String(index + 1).padStart(2, "0")} · ${isTaskNotification(message) ? "内部任务通知" : message.role === "user" ? "你的输入" : message.role === "toolResult" ? "工具结果" : message.role === "custom" ? "自定义消息" : "模型输出"}${agentId !== "main" ? " · 子代理" : ""}${rawLive.get(agentId) === entry ? " · 正在生成" : ""}`;
     const blocks = typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content || [];
@@ -1781,19 +1774,6 @@ function renderCompactionStatus(data) {
   label.textContent = `${labels[data.status]}${data.message ? ` · ${data.message}` : ""}`;
   node.append(label);
 }
-// 页上限截断的任务：在任务弹窗顶部声明本页只装载了最近部分，避免误读为完整记录。
-function markTruncatedTasks(state) {
-  for (const id of state.history?.truncatedTasks || []) {
-    const task = tasks.get(id);
-    if (task && !task.truncated) {
-      task.truncated = true;
-      const note = document.createElement("p");
-      note.className = "task-truncated";
-      note.textContent = "任务记录过长：本页只装载了最近的部分记录，更早部分被页上限截断。";
-      task.output.prepend(note);
-    }
-  }
-}
 function trackTaskEntries(message, entryId) {
   if (message.isError || message.role !== "toolResult" || message.toolName?.replace(/^functions\./, "") !== "delegate") return;
   for (const block of Array.isArray(message.content) ? message.content : []) {
@@ -1854,8 +1834,18 @@ function compactionCard(data) {
   taskList.className = "compaction-tasks";
   node.append(label, body, taskList);
   compactionNodes.set(data.id, node);
-  // renderMarkdown 走 DOMPurify 白名单，摘要里的富文本不会执行。
-  renderMarkdown(body, data.summary || "");
+  // 折叠态不渲染内部内容：摘要 markdown 与折叠段原文都等到首次展开。
+  let painted = false;
+  node.ontoggle = () => {
+    if (!node.open) return;
+    if (!painted) {
+      painted = true;
+      // renderMarkdown 走 DOMPurify 白名单，摘要里的富文本不会执行。
+      renderMarkdown(body, data.summary || "");
+    }
+    void loadCompactionSegment(data.id);
+    scrollLatest();
+  };
   return node;
 }
 function foldCompaction(data) {
@@ -1870,6 +1860,8 @@ function foldCompaction(data) {
     placeCompactedTasks();
     return;
   }
+  // 实时折叠：这段消息刚刚还在页上（隐藏而非移除），展开时不必再向服务端取原文。
+  compactionSegments.set(data.id, Promise.resolve());
   const anchor = items.at(-1).item.node.nextElementSibling;
   const top = anchor?.getBoundingClientRect().top ?? 0;
   const first = items[0].item;
@@ -1887,6 +1879,83 @@ function foldCompaction(data) {
     transcript.scrollTop += anchor.getBoundingClientRect().top - top;
     lastScrollTops.set(transcript, transcript.scrollTop);
   }
+}
+// 首次展开摘要卡时取回被折叠的那段原文：每张卡只取一次，失败后允许重开重试。
+function loadCompactionSegment(id) {
+  const existing = compactionSegments.get(id);
+  if (existing) return existing;
+  const target = sessionId, job = snapshotJob;
+  const pending = (async () => {
+    const payload = await request("session.compaction.messages", { sessionId: target, compactionId: id });
+    // 期间切了会话或整挂了新快照：这批记录已无处落位，丢弃（缓存也一并清掉，回来再取）。
+    if (target !== sessionId || job !== snapshotJob) { compactionSegments.delete(id); return; }
+    mountCompactionSegment(id, payload);
+  })().catch((e) => {
+    compactionSegments.delete(id);
+    error(`压缩段原文读取失败，收起后重新展开可重试：${e.message}`);
+  });
+  compactionSegments.set(id, pending);
+  return pending;
+}
+// 折叠段落地：主消息不重绘（摘要卡就是它们的形态），只补回「原文对照」条目与子任务绑定；
+// 子代理消息渲染进各自任务弹窗，重试卡按锚点归位到摘要卡内。
+function mountCompactionSegment(id, payload) {
+  const records = payload.messages || [];
+  if (!records.length && !(payload.retries || []).length) return;
+  const summaryNode = compactionNodes.get(id);
+  // 原文对照按时间序插回：折叠段落在「本段之后第一条仍在页上的记录」之前。
+  let insertAt = rawEntries.length;
+  for (let index = compactions.findIndex((record) => record.id === id); index >= 0 && index < compactions.length; index++) {
+    const boundary = compactions[index].firstKeptEntryId;
+    const found = boundary ? rawEntries.findIndex((entry) => (entry.messageId || entry.entryId) === boundary) : -1;
+    if (found >= 0) { insertAt = found; break; }
+  }
+  const restored = records.map((record) => ({ ...record, ...(summaryNode ? { item: { node: summaryNode } } : {}) }));
+  rawEntries.splice(insertAt, 0, ...restored);
+  for (const record of records)
+    if ((record.agentId || "main") === "main") trackTaskEntries(record.message, record.entryId);
+  // 子代理记录补进任务弹窗：折叠段在时间上更早，渲染完整体移到已有内容之前。
+  const savedLive = new Map(live);
+  const touched = new Map();
+  for (const entry of restored) {
+    const agentId = entry.agentId || "main";
+    if (agentId === "main") continue;
+    const task = tasks.get(agentId);
+    if (!task) continue;
+    if (!touched.has(task)) touched.set(task, new Set(task.output.children));
+    const message = entry.message;
+    if (message.role === "toolResult") { toolState(agentId, { ...message, phase: "end" }); continue; }
+    if (isTaskNotification(message)) { bindRaw(taskNotificationCard(message, agentId), entry); continue; }
+    if (!["assistant", "user"].includes(message.role)) continue;
+    const item = card(message.role === "user" ? "你" : "子 Agent", task);
+    clearWaiting(agentId);
+    live.set(agentId, item);
+    for (const call of Array.isArray(message.content) ? message.content : [])
+      if (call.type === "toolCall") {
+        const known = toolItems.get(`${agentId}:${call.id}`);
+        if (known) { known.args ||= call.arguments; item.tools.append(known.container); }
+        else toolState(agentId, { phase: "history", toolCallId: call.id, toolName: call.name, args: call.arguments });
+      }
+    live.delete(agentId);
+    bindRaw(item, entry);
+    item.markdownOptions = { pageCache: pageCacheCurrent(), cacheKey: `${agentId}\u0000${entry.entryId ?? entry.messageId}` };
+    renderMessage(item, message);
+  }
+  for (const tool of Object.values(payload.tools || {}))
+    if ((tool.agentId || "main") !== "main") toolState(tool.agentId, tool);
+  live.clear();
+  for (const [agentId, item] of savedLive) live.set(agentId, item);
+  for (const [task, previous] of touched) {
+    const added = [...task.output.children].filter((node) => !previous.has(node));
+    if (added.length) task.output.prepend(...added);
+    mergeThoughts(task.output);
+  }
+  for (const record of payload.retries || [])
+    if (!retryCards.has(`${record.agentId || "main"}:${record.id}`)) renderRetry(record.agentId, record, true);
+  placeCompactedTasks();
+  renderTaskRuns();
+  rawChanged();
+  scrollLatest();
 }
 function compactionEditor(initial, mainModel) {
   initial = { ...compactionDefaults, ...initial };
@@ -2047,9 +2116,9 @@ function renderTaskRuns() {
     row.type = "button";
     row.className = "task-run";
     const anchored = task.trigger.isConnected;
-    row.title = anchored ? `定位子代理：${task.trigger.title}` : `${task.trigger.title}（入口在另一页，翻到所在页后可定位）`;
+    row.title = anchored ? `定位子代理：${task.trigger.title}` : `${task.trigger.title}（委派入口尚未入史，稍后可定位）`;
     row.setAttribute("aria-label", row.title);
-    row.disabled = !anchored; // 入口不在当前页（页替换后未渲染）：保留行但不可定位，翻页/回最新后自动恢复。
+    row.disabled = !anchored; // 委派错点还没入史（任务刚启动）：保留行但不可定位，错点到位后自动恢复。
     row.onclick = () => {
       if (!task.trigger.isConnected) return;
       follow = false;
@@ -2095,7 +2164,7 @@ const canResumeMessage = (message) =>
   !!message && (message.role !== "assistant" || ["error", "aborted", "length", "toolUse"].includes(message.stopReason));
 let retryPrompt;
 function syncRetryPrompt() {
-  if (historyState?.history?.nextCursor || !(interrupted && !busy && connected && !changing && sessionId && !sessionMissing)) return void retryPrompt?.remove();
+  if (!(interrupted && !busy && connected && !changing && sessionId && !sessionMissing)) return void retryPrompt?.remove();
   if (!retryPrompt) {
     retryPrompt = document.createElement("div");
     retryPrompt.className = "retry-prompt";
@@ -2176,7 +2245,9 @@ function renderRetry(agentId = "main", data, historical = false) {
     node.append(summary, status, history);
     const output = tasks.get(agentId)?.output || $("output");
     output.querySelector(".empty")?.remove();
-    const unknown = agentId === "main" && historical && (!Number.isInteger(data.messageCount) || data.messageCount < 0);
+    // anchorEntryId 是精确锚点：有它就能归位（压缩折叠段的重试卡只带锚点，没有下标）。
+    const unknown = agentId === "main" && historical && !data.anchorEntryId
+      && (!Number.isInteger(data.messageCount) || data.messageCount < 0);
     (unknown || (agentId !== "main" && !tasks.has(agentId)) ? retryArchive(output) : output).append(node);
     const label = document.createElement("span");
     summary.append(label, disclosureHint());
@@ -2467,155 +2538,17 @@ function applyEvent(message) {
   }
   if (type === "error") error(data.message);
 }
-// History extends the mounted timeline; fetching older records never gates live events.
-function prefetchHistory() {
-  if (!connected || changing || historyLoading || document.hidden || !historyState?.history?.prevCursor) return;
-  if (transcript.clientHeight > 0 && (transcript.scrollHeight <= transcript.clientHeight + 80 || transcript.scrollTop < transcript.clientHeight))
-    void loadHistory({ before: historyState.history.prevCursor });
-}
-// 对称的前向预取：从旧页向新页连续阅读时，近底部自动取下一页（整页替换、从页顶开始）。
-// historyDirty 时 nextCursor 可能是假游标 "pending"（等回最新对账）：预取必须让位，只允许显式按钮路径。
-function trimMountedWindow() {
-  // 只在前插累积超窗时触发；整页替换（mountHistory/beginSnapshot）天然有界，不进入这里。
-  const history = historyState?.history;
-  if (!history || rawEntries.length <= HISTORY_DOM_LIMIT) return;
-  // 从最新端（尾部）收集溢出条目：遇压缩共享节点即停（共享 node 的部分裁剪会破坏折叠卡），
-  // 宁可少裁不破坏一致性。流式 live 与乐观卡不在 rawEntries，天然安全。
-  const shared = new Set(compactionNodes.values());
-  // 并非每条记录都拥有独立节点：toolResult 等渲染进前一条 assistant 卡的过程组内。
-  // 这类条目本身没有 DOM，可以随主卡一起裁；但裁剪边界必须落在「拥有自己节点」的条目上，
-  // 否则会留下 DOM 仍在展示、记录却已被丢弃的悬挂内容。
-  const ownsNode = (index) => !!rawEntries[index]?.item?.node;
-  const blocked = (index) => {
-    const node = rawEntries[index]?.item?.node;
-    return !!node && shared.has(node);
-  };
-  let cut = 0;
-  while (rawEntries.length - cut > HISTORY_DOM_LIMIT) {
-    if (blocked(rawEntries.length - 1 - cut)) break;
-    cut++;
-  }
-  // 边界对齐：把无独立节点的条目连同它所属的主卡一起纳入丢弃集合。
-  while (cut > 0 && cut < rawEntries.length && !ownsNode(rawEntries.length - cut)) {
-    if (blocked(rawEntries.length - 1 - cut)) { cut = 0; break; }
-    cut++;
-  }
-  if (cut <= 0 || cut >= rawEntries.length) return;
-  const dropped = rawEntries.splice(rawEntries.length - cut, cut);
-  const droppedNodes = new Set();
-  for (const entry of dropped) {
-    const item = entry.item;
-    if (!item?.node) continue;
-    droppedNodes.add(item.node);
-    // 附属独立节点连带移除（processGroup/skillBlocks 在主节点之外）。
-    item.processGroup?.remove();
-    item.skillBlocks?.remove();
-    item.node.remove();
-  }
-  // 强引用反查清理：goal 锚 / 工具记录 / 重试卡（messageItems 是 WeakMap 无需处理）。
-  for (const [key, node] of [...goalAnchors]) if (droppedNodes.has(node)) goalAnchors.delete(key);
-  for (const [key, tool] of [...toolItems]) if (droppedNodes.has(tool.node)) toolItems.delete(key);
-  for (const [key, card] of [...retryCards]) if (droppedNodes.has(card.node)) retryCards.delete(key);
-  mainItems = mainItems.filter(({ item }) => !droppedNodes.has(item?.node));
-  historyState.messages = rawEntries;
-  // 窗口右端收缩：分页条反映真实挂载范围；被裁第一条作为回载定位（服务端游标必须由
-  // 服务端签发，前端不能伪造，故 target 定位而不是拼 after 游标）。
-  history.end = history.start + rawEntries.length;
-  trimmedForwardBoundary = dropped[0].messageId || dropped[0].entryId;
-  goalUI.anchors(goalAnchors);
-}
-function prefetchForward() {
-  if (!connected || changing || historyLoading || historyDirty || document.hidden) return;
-  // 裁剪产生的可回载区间也算“有下页”：从末页往上翻时 nextCursor 恒为 null，
-  // 若只看 nextCursor，贴底回载就只能靠手点分页按钮。
-  if (!historyState?.history?.nextCursor && !trimmedForwardBoundary) return;
-  if (transcript.clientHeight > 0 && transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 160) {
-    if (trimmedForwardBoundary) {
-      // 裁剪后贴底：从被裁第一条整页重挂，避免 after 游标跳过被裁区间造成页隙。
-      const target = trimmedForwardBoundary;
-      trimmedForwardBoundary = null;
-      void loadHistory({ target });
-    } else void loadHistory({ after: historyState.history.nextCursor });
-  }
-}
-function prependHistory(state) {
-  const output = $("output");
-  const anchor = [...output.children].find(node => node.getBoundingClientRect().bottom > transcript.getBoundingClientRect().top);
-  const top = anchor?.getBoundingClientRect().top;
-  const previous = new Set(output.children);
-  const ids = new Set(rawEntries.map(entry => entry.messageId || entry.entryId));
-  const entries = state.messages.filter(entry => !ids.has(entry.messageId || entry.entryId));
-  const savedLive = new Map(live);
-  const savedMainItems = mainItems;
-  mainItems = [];
-  live.clear();
-  rawEntries = [...entries, ...rawEntries];
-  historyState.messages = rawEntries;
-  historyState.history = { ...historyState.history, start: state.history.start, prevCursor: state.history.prevCursor };
-  for (const record of state.compactions || [])
-    if (!compactions.some(existing => existing.id === record.id)) compactions.push(record);
-  const folded = new Map();
-  for (const record of compactions) for (const id of record.compactedMessageIds || []) folded.set(id, record);
-  const restoreRetries = (index) => {
-    for (const record of state.retries || []) {
-      const boundary = Number.isInteger(record.messageCount) ? record.messageCount : entries.length;
-      if (boundary !== index || retryCards.has(`${record.agentId || "main"}:${record.id}`)) continue;
-      const anchor = entries.slice(0, index).findLast(entry => entry.agentId === (record.agentId || "main"))?.entryId;
-      renderRetry(record.agentId, { ...record, anchorEntryId: record.anchorEntryId || anchor }, true);
-    }
-  };
-  const ctx = { state, folded, placed: new Set(compactionNodes.keys()), foldedTools: new Set(), restoreRetries };
-  for (const task of state.tasks || []) if (!tasks.has(task.id))
-    applyEvent({ type: "task.state", sessionId, taskId: task.id, data: task });
-  markTruncatedTasks(state);
-  for (const entry of entries) if (entry.agentId === "main") trackTaskEntries(entry.message, entry.entryId);
-  for (let index = 0; index < entries.length; index++) placeSnapshotMessage(ctx, index, entries[index]);
-  restoreRetries(entries.length);
-  mainItems.push(...savedMainItems);
-  live.clear();
-  for (const [id, item] of savedLive) live.set(id, item);
-  const added = [...output.children].filter(node => !previous.has(node));
-  output.prepend(...added);
-  mergeThoughts(output);
-  for (const task of tasks.values()) mergeThoughts(task.output);
-  placeCompactedTasks();
-  trimMountedWindow();
-  rawChanged();
-  goalUI.anchors(goalAnchors);
-  paintHistoryControls(); // 前插/裁剪后分页条立即反映真实窗口范围。
-  if (anchor?.isConnected) transcript.scrollTop += anchor.getBoundingClientRect().top - top;
-  lastScrollTops.set(transcript, transcript.scrollTop);
-}
 let snapshotJob = 0;
-// 切换会话时的锚点恢复：不能用 microtask 直接发（会被 loadHistory 的 changing 守卫吞掉），
-// 登记后在 changing=false 的时机冲刷（switchSession finally / loadHistory finally / 直接 snapshot 尾部）。
-let pendingRestore = null;
-function scheduleAnchorRestore(state, view) {
-  pendingRestore = { sessionId: state.sessionId, anchor: view.anchor, view: { ...view } };
-}
-function flushAnchorRestore() {
-  if (!pendingRestore || pendingRestore.sessionId !== sessionId) { pendingRestore = null; return; }
-  if (changing || historyLoading) return; // 有请求在飞：留待 loadHistory/finally 尾部再冲刷。
-  const pending = pendingRestore;
-  pendingRestore = null;
-  void loadHistory({ target: pending.anchor }, pending.view);
-}
 function snapshot(state, onReady) {
-  ++historyRequest;
-  historyLoading = false;
-  historyDirty = false;
-  historyState = state = { ...state, messages: [...state.messages] };
+  ++attachToken;
+  attaching = false;
   hiddenDirty = document.hidden;
   transport.beginSnapshot();
   try {
-    if (!document.hidden) mountHistory(state, onReady);
+    if (!document.hidden) mountHistory({ ...state, messages: [...state.messages] }, onReady);
     else { sessionId = state.sessionId; onReady?.(); }
     transport.commitSnapshot(state);
-    const view = views.get(state.sessionId);
-    if (!document.hidden && state.history && !view?.follow && view?.anchor && !state.messages.some(entry => entry.messageId === view.anchor))
-      scheduleAnchorRestore(state, view);
   } catch (e) { transport.failSnapshot(); throw e; }
-  if (!changing) flushAnchorRestore();
 }
 function mountHistory(state, onReady) {
   const job = ++snapshotJob;
@@ -2624,129 +2557,53 @@ function mountHistory(state, onReady) {
   for (let index = 0; index < state.messages.length; index++)
     placeSnapshotMessage(ctx, index, state.messages[index]);
   finishSnapshot(job, ctx);
-  paintHistoryControls();
 }
-function paintHistoryControls() {
-  const page = historyState?.history;
-  const bar = $("history-pages");
-  if (!bar) return;
-  // 分页条常驻旧页与加载/有新消息状态：前向翻页必须可达（曾因无条件隐藏而「回不到后续消息」）。
-  // 最新页不占空间：向上滚有预取、「回到最早/最新」各自常驻滚动按钮。
-  bar.hidden = !page || (!historyLoading && !historyDirty && !page.nextCursor && !trimmedForwardBoundary);
-  $("history-before").hidden = false;
-  $("history-after").hidden = false;
-  $("history-newest").hidden = !historyDirty && !page?.nextCursor && !trimmedForwardBoundary;
-  $("history-before").disabled = historyLoading || !page?.prevCursor;
-  $("history-after").disabled = historyLoading || (!page?.nextCursor && !trimmedForwardBoundary && !historyDirty);
-  $("history-position").textContent = page
-    ? (historyLoading ? "正在加载历史…" : historyDirty ? "有新消息 · 回到最新查看" : page.nextCursor || trimmedForwardBoundary ? `${page.start + 1}–${page.end} / 共 ${page.total} 条` : "")
-    : "";
-}
-async function loadHistory(options = {}, reading) {
-  if (historyLoading || !historyState?.history || changing) return;
+// 重取快照整挂：历史被服务端改写（撤回）或后台期间攒了事件时，增量事件无法表达，
+// 只能整份重来。keepView 保住阅读位置（后台回来但没贴底跟随时不要跳到最新）。
+async function reattach({ keepView = false } = {}) {
+  if (attaching || changing || !connected || !sessionId) return;
   saveView();
-  const target = sessionId, revision = historyState.history.revision;
-  const instance = historyState.instanceId, token = ++historyRequest, events = historyEvents;
-  historyLoading = true;
-  paintHistoryControls();
-  try {
-    const state = await request("session.history", { sessionId: target, limit: HISTORY_LIMIT, ...options });
-    if (token !== historyRequest || target !== sessionId || instance !== historyState?.instanceId || revision !== historyState?.history.revision) return;
-    // Preserve input typed while the page request was in flight.
-    saveView();
-    // A page is not a realtime snapshot: never commit its seq to transport.
-    if (options.before) {
-      if (!document.hidden) prependHistory(state);
-      else hiddenDirty = true;
-      return;
-    }
-    historyState = state;
-    historyDirty = historyEvents !== events;
-    if (historyDirty && !state.history.nextCursor) state.history.nextCursor = "pending";
-    // Explicit page navigation starts at its top, not at an unrelated old scroll offset.
-    const view = views.get(target);
-    if (view) { view.follow = false; view.scroll = 0; view.anchor = reading?.anchor; view.anchorOffset = reading?.anchorOffset || 0; }
-    if (!document.hidden) mountHistory(state);
-    else hiddenDirty = true;
-  } catch (e) {
-    if (token === historyRequest && target === sessionId) error(`历史页读取失败，请返回最新重试：${e.message}`);
-  } finally {
-    if (token === historyRequest) { historyLoading = false; paintHistoryControls(); requestAnimationFrame(prefetchHistory); }
-    flushAnchorRestore();
-  }
-}
-async function latestHistory() {
-  if (historyLoading || changing || !connected) return;
-  saveView();
-  const target = sessionId, token = ++historyRequest;
-  historyLoading = true;
+  const target = sessionId, token = ++attachToken;
+  attaching = true;
   try {
     const state = await request("session.attach", { sessionId: target });
-    if (token !== historyRequest || target !== sessionId) return;
+    if (token !== attachToken || target !== sessionId) return;
     saveView();
     const view = views.get(target);
-    if (view) { view.follow = true; view.anchor = undefined; }
+    if (view && !keepView) { view.follow = true; view.anchor = undefined; }
     snapshot(state);
   } catch (e) { if (target === sessionId) { transport.failSnapshot(); error(e); } }
-  finally { if (target === sessionId) { historyLoading = false; paintHistoryControls(); } }
+  finally { if (token === attachToken) attaching = false; }
 }
 function receiveHistoryEvent(message) {
-  if (message.type === "session.deleted" || message.sessionId !== sessionId || !historyState?.history) return applyEvent(message);
-  const { type, data } = message;
-  ++historyEvents;
-  // Old-page and hidden views don't accumulate events or create background history DOM.
-  // Server history is authoritative; returning to latest fetches one bounded snapshot.
-  const parked = document.hidden || !!historyState.history.nextCursor;
-  if (type === "session.history.changed" && data.revision !== historyState.history.revision) {
-    historyState.history.revision = data.revision;
-    ++historyRequest;
-    historyLoading = false;
-    historyDirty = true;
-    if (!document.hidden) void latestHistory();
+  if (message.type === "session.deleted" || message.sessionId !== sessionId) return applyEvent(message);
+  const { type } = message;
+  // 历史被改写（撤回截断）：增量事件表达不了「消息消失」，整份重取。
+  if (type === "session.history.reset") {
+    if (document.hidden) hiddenDirty = true;
+    else void reattach({ keepView: !follow });
     return;
   }
-  if (parked) {
-    historyDirty = true;
-    hiddenDirty ||= document.hidden;
-    if (!document.hidden) {
-      // Business controls still reflect real status; only history drawing is parked.
-      if (type === "session.state") {
-        busy = data.status !== "idle";
-        safeStopping = busy && !!data.safeStop;
-        canReask = !!data.canReask;
-        region("输入操作", updateComposer);
-      }
-      if (type === "session.queue") renderQueue(data);
-      if (type === "question.asked") questionUI.asked(message.sessionId, data);
-      if (type === "question.closed") questionUI.closed(message.sessionId, data.toolCallId);
-      paintHistoryControls();
-    }
+  // 后台标签页不建历史 DOM：只记脏，回到前台再按需重取一份完整快照。
+  if (document.hidden) {
+    hiddenDirty = true;
     return;
   }
   applyEvent(message);
-  if (type === "agent.message.end") {
-    historyState.messages = rawEntries;
-    historyState.history.total++;
-    // 窗口右端始终等于挂载范围（实时追加与裁剪共用同一条公式，分页条不漂移）。
-    historyState.history.end = historyState.history.start + rawEntries.length;
-    paintHistoryControls();
-  }
 }
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden && hiddenDirty) {
     hiddenDirty = false;
-    // 贴底跟随的视角回来自动追新；阅读旧页的视角保留位置，交给「有新消息」横幅与手动回最新。
-    if (follow) void latestHistory();
-    else paintHistoryControls();
+    // 后台期间没建 DOM，回到前台重取一份完整历史；没贴底跟随的视角保留阅读位置。
+    void reattach({ keepView: !follow });
   }
 });
-// 换页时卸载旧页，只建立当前页的索引。
+// 重新挂载会话历史前卸载上一份，只保留当前会话的索引。
 function beginSnapshot(state, target) {
   // 快照重建是最终权威：乐观卡槽位重置，真实记录由快照消息重新挂载。
   pendingUser = null;
   // 原文对照与当前页共用消息，不维护另一份历史副本。
   rawEntries = state.messages;
-  trimmedForwardBoundary = null; // 新页整挂：裁剪定位作废（新页 meta 自带完整游标）。
   // View handles belong only to this mounted page; message objects remain authoritative.
   for (const entry of rawEntries) { delete entry.item; delete entry.node; }
   rawLive.clear();
@@ -2781,7 +2638,7 @@ function beginSnapshot(state, target) {
   stopAlert = false;
   lastMainMessage = state.messages.findLast((entry) => entry.agentId === "main")?.message || null;
   canReask = !!state.canReask;
-  interrupted = !state.history?.nextCursor && !busy && (canReask || canResumeMessage(lastMainMessage));
+  interrupted = !busy && (canReask || canResumeMessage(lastMainMessage));
   $("output").replaceChildren();
   live.clear();
   toolItems.clear();
@@ -2804,12 +2661,7 @@ function beginSnapshot(state, target) {
     applyEvent({ type: "task.state", sessionId, taskId: task.id, data: task });
     tasks.get(task.id).trigger.remove();
   }
-  markTruncatedTasks(state);
-  const folded = new Map();
-  for (const record of compactions)
-    for (const entryId of record.compactedMessageIds || [])
-      if (!folded.has(entryId)) folded.set(entryId, record);
-  const placed = new Set(), foldedTools = new Set();
+  compactionSegments.clear();
   const retriesAt = new Map();
   for (const record of state.retries || []) {
     // 无可靠边界的旧记录单独归档，不伪装成任务结束后的事件。
@@ -2838,7 +2690,7 @@ function beginSnapshot(state, target) {
   $("context-menu").hidePopover?.();
   follow = view?.follow ?? true;
   $("latest").hidden = follow;
-  return { state, folded, placed, foldedTools, restoreRetries, view };
+  return { state, restoreRetries, view };
 }
 function placeSnapshotMessage(ctx, index, { agentId, message, entryId }) {
   ctx.restoreRetries(index);
@@ -2852,17 +2704,6 @@ function placeSnapshotMessage(ctx, index, { agentId, message, entryId }) {
     return;
   }
   if (["assistant", "user"].includes(message.role)) {
-    if (agentId === "main" && entryId && ctx.folded.has(entryId)) {
-      const record = ctx.folded.get(entryId);
-      for (const call of Array.isArray(message.content) ? message.content : [])
-        if (call.type === "toolCall") ctx.foldedTools.add(`${agentId}:${call.id}`);
-      if (!ctx.placed.has(record.id)) {
-        ctx.placed.add(record.id);
-        $("output").append(compactionCard(record));
-      }
-      rawEntries[index].item = { node: compactionNodes.get(record.id) };
-      return;
-    }
     const item = card(
       message.role === "user"
         ? "你"
@@ -2893,14 +2734,16 @@ function placeSnapshotMessage(ctx, index, { agentId, message, entryId }) {
     renderMessage(item, message);
     if (agentId === "main") {
       mainItems.push({ item, entryId });
-      anchorGoal((ctx.state.history?.start || 0) + index, item, entryId);
+      // 目标轮次锚点键是折叠前的历史下标：压缩折叠会让下发数组下标偏移，按服务端映射还原。
+      anchorGoal(ctx.state.messageIndexes?.[index] ?? index, item, entryId);
     }
   }
 }
 function finishSnapshot(job, ctx) {
   if (job !== snapshotJob) return;
   const { state, view } = ctx;
-  goalAnchorCount = state.history?.total ?? state.messages.length;
+  // 目标轮次锚点按折叠前的历史下标计数：被压缩折叠的消息不下发，但计数必须连续。
+  goalAnchorCount = state.messageCount ?? state.messages.length;
   ctx.restoreRetries(state.messages.length);
   for (const [agentId, message] of Object.entries(state.live))
     if (message.role === "assistant") {
@@ -2922,8 +2765,7 @@ function finishSnapshot(job, ctx) {
       item.preparedRaw = undefined;
       live.set(agentId, item);
     }
-  for (const tool of Object.values(state.tools || {}))
-    if (!ctx.foldedTools.has(`${tool.agentId || "main"}:${tool.toolCallId}`)) toolState(tool.agentId || "main", tool);
+  for (const tool of Object.values(state.tools || {})) toolState(tool.agentId || "main", tool);
   mergeThoughts($("output"));
   for (const [id, task] of tasks) {
     mergeThoughts(task.output);
@@ -2932,8 +2774,8 @@ function finishSnapshot(job, ctx) {
   }
   if (state.status === "running") waiting("main");
   else stopActivity("main", "已结束");
-  // 未锚定到本页的运行中任务不再追加到主轴末尾（曾致卡片位置反复丢失/落到时间线末尾）；
-  // 它们的唯一入口是底部 #task-runs 栏，行在入口缺席本页时禁用并提示翻页。
+  // 委派锚点被压缩折叠的运行中任务不追加到主轴末尾（曾致卡片位置反复丢失/落到时间线末尾）；
+  // 它们的入口在摘要卡内或底部 #task-runs 栏。
   for (const record of compactions)
     if (!compactionNodes.has(record.id)) $("output").prepend(compactionCard(record));
   // 摘要按记录顺序集中在历史顶部；原任务入口移动而非复制，弹窗与状态保持不变。
@@ -2957,7 +2799,6 @@ function finishSnapshot(job, ctx) {
     const anchor = !follow && view?.anchor && rawEntries.find(entry => entry.messageId === view.anchor)?.item?.node;
     if (anchor) transcript.scrollTop += anchor.getBoundingClientRect().top - transcript.getBoundingClientRect().top - (view.anchorOffset || 0);
     lastScrollTops.set(transcript, transcript.scrollTop);
-    prefetchHistory();
   });
   renderQueue(state.queue);
   sessionBill = state.billing;
@@ -3158,7 +2999,6 @@ $("composer").onsubmit = async (e) => {
   if (sentImages.length > 4) return error(new Error("每条消息最多发送 4 张图片，请移除多余附件后分批发送"));
   const wasBusy = busy;
   const queueType = e.submitter?.dataset.queue || config?.queueType || "steer";
-  const onOldPage = !!historyState?.history?.nextCursor;
   busy = true;
   region("输入操作", updateComposer);
   $("error").textContent = "";
@@ -3167,16 +3007,12 @@ $("composer").onsubmit = async (e) => {
   follow = true;
   scrollLatest();
   try {
-    // 乐观上屏：空闲且在最新页时立即显示「发送中」卡；忙碌排队走队列行反馈，旧页无卡（先回最新）。
-    const optimistic = !wasBusy && !onOldPage;
+    // 乐观上屏：空闲时立即显示「发送中」卡；忙碌排队走队列行反馈。
+    const optimistic = !wasBusy;
     if (optimistic) mountPendingUser(text, sentImages);
     // 先让浏览器绘制乐观卡，再做请求序列化重活（大文本/图片 stringify 同步占主线程）。
     if (optimistic) await nextPaint();
-    // 旧页提交不再阻塞在整页重建上：先派发 prompt（传输层同步序列化发送），
-    // 历史并行回最新，事件落在最新快照后继续。
-    const sent = request("prompt", { sessionId: sendingSession, text, ...(sentImages.length ? { images: sentImages } : {}), ...(wasBusy ? { queueType } : {}) });
-    if (onOldPage) void latestHistory().catch(error);
-    const reply = await sent;
+    const reply = await request("prompt", { sessionId: sendingSession, text, ...(sentImages.length ? { images: sentImages } : {}), ...(wasBusy ? { queueType } : {}) });
     settlePendingUser(reply?.runId);
     if (sessionId === sendingSession) {
       images = images.filter((image) => !sentImages.includes(image));
@@ -3625,7 +3461,6 @@ async function recoverMissingSession() {
     changing = false;
     renderSessions();
     updateAvailability();
-    flushAnchorRestore();
   }
 }
 async function switchSession(action) {
@@ -3646,7 +3481,6 @@ async function switchSession(action) {
   } finally {
     changing = false;
     updateAvailability();
-    flushAnchorRestore();
   }
 }
 // 保留源路径的分隔符，兼容 Windows、UNC 和 POSIX 文件路径。

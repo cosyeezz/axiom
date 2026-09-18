@@ -214,7 +214,9 @@ test("legacy retry boundaries migrate once and survive repeated service restarts
       retry("ambiguous", { history: [{ nextRetryAt: base + 2150, delayMs: 2000 }] })] });
     // 旧记录时间线不可用时明确归档，不猜位置。
     // ambiguous/missing 均保持未知。
-    assert.deepEqual(sessions.snapshot(id).retries.map(r => r.messageCount), [3, 1, 3, undefined, undefined]);
+    // 下标是「下发数组内的位置」：快照按锚点投影（无委派锚点的子历史排在前部），
+    // fixed 的 messageCount=1（live 数组内 u 之后）换算到投影数组是 2。
+    assert.deepEqual(sessions.snapshot(id).retries.map(r => r.messageCount), [3, 2, 3, undefined, undefined]);
     await sessions.close();
 
     // —— 重启路径：快照不再存 messages，主代理历史从 JSONL 分支重建；位置已随首次 persist 固化，

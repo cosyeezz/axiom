@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { bootHistoryPage, until, makeRecords, PAGE_SIZE } from "./helpers/history-page.js";
+import { bootSessionPage, until, makeRecords } from "./helpers/session-page.js";
 
-// 分片删除后的版本：snapshot() 对一页做同步挂载，事件不再经过分片队列，
+// 分片与分页都已删除：snapshot() 对整份历史做同步挂载，
 // 但 transport 的「快照闸」语义没变——attach 在飞期间到达的事件先进闸，
 // 提交快照时按会话与 seq 水位过滤后补放。这里验证的正是这套真实语义。
 const messageEvent = (text, seq, sessionId = "long") => ({
@@ -18,8 +18,8 @@ async function login(page) {
 }
 
 test("attach 在飞时事件入闸：提交后按到达顺序补放且恰好一次", async (t) => {
-  // 10 条历史：补放事件不触发 60 条页预算，专测闸的顺序与恰好一次。
-  const page = bootHistoryPage({ records: makeRecords(10), hold: (req) => req.type === "session.attach" });
+  // 10 条历史：挂载开销小，专测闸的顺序与恰好一次。
+  const page = bootSessionPage({ records: makeRecords(10), hold: (req) => req.type === "session.attach" });
   t.after(page.close);
   const { app } = page;
   page.open();
@@ -39,7 +39,7 @@ test("attach 在飞时事件入闸：提交后按到达顺序补放且恰好一�
 });
 
 test("快照水位以内的事件按 seq 去重，不重复应用", async (t) => {
-  const page = await login(bootHistoryPage());
+  const page = await login(bootSessionPage());
   t.after(page.close);
   const { app } = page;
   app.event(messageEvent("水位下480", 480));
@@ -52,7 +52,7 @@ test("快照水位以内的事件按 seq 去重，不重复应用", async (t) =>
 });
 
 test("无 seq 事件不参与水位去重；跨会话事件被闸丢弃、session.deleted 仍放行", async (t) => {
-  const page = bootHistoryPage({ hold: (req) => req.type === "session.attach" });
+  const page = bootSessionPage({ hold: (req) => req.type === "session.attach" });
   t.after(page.close);
   const { app } = page;
   page.open();
@@ -69,13 +69,13 @@ test("无 seq 事件不参与水位去重；跨会话事件被闸丢弃、sessio
 });
 
 test("快照渲染抛错：解阀、水位不前进，随后事件不再归并", async (t) => {
-  const page = await login(bootHistoryPage());
+  const page = await login(bootSessionPage());
   t.after(page.close);
   const { app } = page;
   assert.equal(app.watermark("long"), 500);
   const restore = app.failPlacement();
-  const failing = { ...app.historyState(), seq: 999 };
-  assert.throws(() => app.snapshot(failing), /分片渲染失败/);
+  const failing = page.fullState({ seq: 999 });
+  assert.throws(() => app.snapshot(failing), /历史挂载失败/);
   assert.equal(app.watermark("long"), 500, "失败恢复不得把水位从 500 提前抬到 999");
   assert.equal(app.queue(), null, "抛错后事件闸已解除");
   assert.ok(["recovering", "disconnected"].includes(app.transportState()), "失败后停用归并，等待受控恢复");
@@ -84,22 +84,20 @@ test("快照渲染抛错：解阀、水位不前进，随后事件不再归并",
   restore();
 });
 
-test("前插历史不推进水位，浏览期间实时消息仍追加",  async (t) => {
-  const page = await login(bootHistoryPage());
+test("历史整份在场时，实时消息照常追加并推进水位", async (t) => {
+  const page = await login(bootSessionPage());
   t.after(page.close);
   const { app, $ } = page;
-  $("history-before").click();
-  await until(() => app.historyState().history.start === 120, "载入更早消息");
-  assert.equal(page.messages(), PAGE_SIZE * 2);
-  assert.equal(app.watermark("long"), 500, "页响应不是实时快照，不提交水位");
+  assert.equal(page.messages(), 240, "attach 一次给全量");
+  assert.equal(app.watermark("long"), 500);
 
-  // 浏览旧页期间服务端又追加了一条消息，实时事件到达。
-  page.records.push({ agentId: "main", entryId: "历史-新消息", message: { role: "user", content: "历史-新消息" } });
   app.event(messageEvent("新消息", 501));
-  assert.equal(page.count("新消息"), 1, "浏览历史不阻断实时消息");
-  assert.equal(app.watermark("long"), 501, "实时事件本身照常推进水位");
+  assert.equal(page.count("新消息"), 1, "实时消息直接追加到末尾");
+  assert.equal(app.watermark("long"), 501, "实时事件推进水位");
 
+  $("earliest").click();
   $("latest").click();
-  assert.equal(page.count("新消息"), 1, "回到最新后才绘制新消息");
-  assert.equal(page.count("历史239"), 1, "最新页仍是定长窗口");
+  assert.equal(page.count("新消息"), 1, "本地跳转不重建不重绘");
+  assert.equal(page.count("历史239"), 1);
+  assert.equal(page.messages(), 241);
 });

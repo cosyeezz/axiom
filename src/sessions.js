@@ -5,7 +5,7 @@ import { realpath, stat, readFile, mkdir, writeFile, copyFile, rm, readdir } fro
 import { homedir } from "node:os";
 import { Database } from "./database.js";
 import { SessionStore } from "./session-store.js";
-import { readSessionHistory, readSessionManager } from "./session-history.js";
+import { readSessionManager, toWireRecord } from "./session-history.js";
 import { sessionBilling, combinedBilling, usageRuntime } from "./session-billing.js";
 import { Goal, createGoalStore } from "./goal.js";
 import { basename, dirname, join, relative, isAbsolute, resolve, sep, parse } from "node:path";
@@ -19,15 +19,14 @@ import { createQuestions } from "./questions.js";
 import { resolveCapabilities } from "./capabilities.js";
 import { memoryHooks } from "./session-memory.js";
 import { TITLE_MAX } from "../public/memory-tags.js";
-import { createHistory, pageOf, toPageRecord, touchHistory } from "./session-history.js";
 
 // Goal 模式挂载的四个工具：普通会话初始即停用，退出 Goal 时统一停用。
 const GOAL_TOOL_NAMES = ["goal_plan", "goal_evidence", "goal_block", "goal_progress"];
 // 在飞子任务：状态在跑且真有运行 promise（恢复时被暂停的 starting 没有 done，不算在飞）。
 const hasRunningTasks = (item) => [...item.tasks.jobs.values()].some((job) => ["starting", "running"].includes(job.status) && job.done);
 
-// 薄投影只带本页消息引用到的工具与仍在跑的工具：整张工具表全量下发会在分页窗口外画出幽灵条目。
-function relevantTools(item, records) {
+// 消息引用到的工具调用身份（toolCall 块与 toolResult 的 toolCallId）。
+const referencedToolKeys = (records) => {
   const owned = new Set();
   for (const record of records) {
     const owner = record.agentId ?? "main";
@@ -36,15 +35,30 @@ function relevantTools(item, records) {
         if (block?.type === "toolCall" && block.id) owned.add(`${owner}:${block.id}`);
     if (record.message?.toolCallId) owned.add(`${owner}:${record.message.toolCallId}`);
   }
+  return owned;
+};
+
+// 下发已完成的工具记录：只给下发历史里真引用到的，否则被摘要折叠起来的那段工具会画出幽灵条目。
+function relevantTools(item, records) {
+  const owned = referencedToolKeys(records);
   const tools = {};
   for (const [key, tool] of Object.entries(item.tools))
     if (tool?.phase !== "end" || owned.has(`${tool.agentId ?? "main"}:${tool.toolCallId}`)) tools[key] = tool;
   return tools;
 }
 
-// 分页窗口的「已完成元数据」逐类按本页引用裁剪：整表下发会为窗口外的历史建 DOM。
-// 本页 entryId 集合供 compaction/retry 交集判定；任务多一路「页内 delegate 结果声明的 taskId」——
-// 与前端 trackTaskEntries 同一套解析，否则子任务入口接不回执行段。
+// 压缩卡展开时补发的工具记录：只要这段消息自己引用的，不夹带在跑的工具（快照里已有）。
+function ownedTools(allTools, records) {
+  const owned = referencedToolKeys(records);
+  const tools = {};
+  for (const [key, tool] of Object.entries(allTools ?? {}))
+    if (owned.has(`${tool?.agentId ?? "main"}:${tool?.toolCallId}`)) tools[key] = tool;
+  return tools;
+}
+
+// 已完成的元数据按下发历史裁剪：被摘要折叠掉的消息不在历史里，整表下发会为看不见的消息建 DOM。
+// 历史内 delegate 结果声明的 taskId：与前端 trackTaskEntries 同一套解析，
+// 投影时用来把子代理历史挂回它自己的委派锚点之后。
 const delegateTaskIds = (message, into) => {
   if (message?.isError || message?.role !== "toolResult" ||
       message.toolName?.replace(/^functions\./, "") !== "delegate") return;
@@ -57,7 +71,7 @@ const delegateTaskIds = (message, into) => {
 };
 
 // 投影：独立 JSONL 不共享时间线，按真实委派结果归位，不能把所有子历史堆到主回答之后。
-// 读时投影（live 数组不动）：分页窗口、前端主轴预算都以这个顺序为准；幂等，重复投影不变。
+// 读时投影（live 数组不动）：下发顺序、前端主轴预算都以这个顺序为准；幂等，重复投影不变。
 function projectTimeline(messages) {
   const main = [], children = new Map();
   for (const record of messages) {
@@ -81,34 +95,52 @@ function projectTimeline(messages) {
   return [...children.values()].flat().concat(ordered);
 }
 
-function pageTasks(item, records) {
-  const referenced = new Set();
-  const spawned = new Set();
-  for (const record of records) {
-    referenced.add(record.agentId ?? "main");
-    if ((record.agentId ?? "main") === "main") delegateTaskIds(record.message, spawned);
+// 压缩折叠：被摘要覆盖的主消息不下发（点开摘要卡时按需取），挂在其后的子代理记录随锚点一起隐藏——
+// 锚点（delegate 结果）不在历史里时子任务入口本来也无处落位。
+// keptBefore[i] = 原数组下标 i 之前仍然下发的记录数，用于把重试卡的下标兜底换算到下发数组上。
+// indexes[j] = 下发数组第 j 条在折叠前的下标：前端的目标轮次锚点按历史下标登记，折叠不能让它错位。
+function foldCompacted(records, compactions) {
+  const hidden = new Set();
+  for (const record of compactions ?? [])
+    for (const entryId of record.compactedMessageIds ?? []) hidden.add(entryId);
+  const keptBefore = new Array(records.length + 1);
+  if (!hidden.size) {
+    const indexes = new Array(records.length);
+    for (let index = 0; index <= records.length; index++) keptBefore[index] = index;
+    for (let index = 0; index < records.length; index++) indexes[index] = index;
+    return { records, keptBefore, indexes, folded: false };
   }
-  // 在跑的任务属于活业务，窗口外也留着（状态条/等待动画靠它）。
-  return item.tasks.snapshot().filter((task) =>
-    ["starting", "running"].includes(task.status) || referenced.has(task.id) || spawned.has(task.id));
+  const kept = [];
+  const indexes = [];
+  let insideFold = false;
+  for (let index = 0; index < records.length; index++) {
+    keptBefore[index] = kept.length;
+    const record = records[index];
+    if ((record.agentId ?? "main") === "main") insideFold = !!record.entryId && hidden.has(record.entryId);
+    if (!insideFold) { kept.push(record); indexes.push(index); }
+  }
+  keptBefore[records.length] = kept.length;
+  return { records: kept, keptBefore, indexes, folded: kept.length !== records.length };
 }
 
-function pageRetries(records, entryIds, start, end) {
+// 重试卡按下发历史归位：锚点被折叠（在压缩段内）就不下发，下标兜底换算到下发数组上。
+function historyRetries(records, visibleIds, keptBefore, total) {
   return records.flatMap((record) => {
     // 锚点在前：anchorEntryId 是精确身份，跨重排不漂；messageCount 只是同构下标的兜底。
-    if (record.anchorEntryId && entryIds.has(record.anchorEntryId)) {
+    if (record.anchorEntryId && !visibleIds.has(record.anchorEntryId)) return [];
+    if (!Number.isInteger(record.messageCount)) return [record];
+    // 下标越界（旧数据/历史被改写）时：有锚点就只靠锚点定位，没锚点才整条丢弃。
+    if (record.messageCount < 0 || record.messageCount > total) {
+      if (!record.anchorEntryId) return [];
       const copy = { ...record };
       delete copy.messageCount;
       return [copy];
     }
-    // messageCount 是「下发的 messages 数组内的下标」：换页时改成页内相对值，前端才能摆对位置。
-    if (Number.isInteger(record.messageCount) && record.messageCount >= start && record.messageCount < end)
-      return [{ ...record, messageCount: record.messageCount - start }];
-    return [];
+    return [{ ...record, messageCount: keptBefore[record.messageCount] }];
   });
 }
 
-// live 数组按到达序累积，重试卡的 messageCount 是记录时的数组下标；下发投影页时
+// live 数组按到达序累积，重试卡的 messageCount 是记录时的数组下标；下发投影时
 // 换算成投影下标（主记录恒保序，双指针 O(n)；全主记录数组上恒等）。
 function translateRetries(retries, raw, projected) {
   if (!retries.some((record) => Number.isInteger(record.messageCount))) return retries;
@@ -937,9 +969,8 @@ export class Sessions {
         return record;
       }),
       live: {},
-      // 流式消息的临时身份（agentId → uuid）与历史修订号；两者都不落盘。
+      // 流式消息的临时身份（agentId → uuid）；不落盘。
       liveIds: new Map(),
-      history: createHistory(id),
       tools: {},
       subagentModel: selection.subagentModel ?? null,
       subagentThinking: selection.subagentThinking ?? null,
@@ -952,7 +983,6 @@ export class Sessions {
     item.emit = (event) => {
       const agentId = event.agentId ?? "main";
       let endIdentity;
-      let historyRevision;
       if (event.type === "agent.message.start") {
         item.live[agentId] = structuredClone(event.data.message);
         item.liveIds.set(agentId, randomUUID());
@@ -1007,14 +1037,11 @@ export class Sessions {
       }
       if (event.type === "agent.compaction" && agentId === "main") {
         if (!item.compactions.some((entry) => entry.id === event.data.id)) item.compactions.push(event.data);
-        // 压缩会重写历史：换修订号，旧游标作废。
-        historyRevision = touchHistory(item.history);
         this.saveChange(item, { event: { type: "compaction", record: event.data } });
       }
       const envelope = { ...event, sessionId: id, seq: ++item.seq };
       if (endIdentity) envelope.data = { ...envelope.data, ...endIdentity };
       if (event.type === "agent.message.start") envelope.data = { ...envelope.data, messageId: item.liveIds.get(agentId) };
-      if (historyRevision !== undefined) envelope.data = { ...envelope.data, revision: historyRevision };
       if (event.type === "session.state" || event.type === "task.state") {
         // 绿点开始/结束才需要落盘：累计值变了，重启恢复才算得准。
         const wasRunning = item.runningSince;
@@ -1058,10 +1085,6 @@ export class Sessions {
         envelopes.push({ type: "session.billing", sessionId: id, seq: ++item.seq,
           data: combinedBilling(main, [...(item.tasks?.jobs.values() ?? [])]) });
       }
-      // 换号单独广播：客户端可以只认这一种事件来丢弃旧页并重取首屏，不必解析每种历史变更。
-      if (historyRevision !== undefined)
-        envelopes.push({ type: "session.history.changed", sessionId: id, seq: ++item.seq,
-          data: { revision: historyRevision, total: item.messages.length, reason: "compaction" } });
       for (const outgoing of envelopes)
         for (const listener of item.listeners) {
           try {
@@ -1557,9 +1580,9 @@ export class Sessions {
     return item.agent.refreshSkills();
   }
 
-  // options.window 存在 = 网络薄投影：先切页再 clone，历史全量永远不进内存拷贝。
-  // 不带 options 时保持内部全量契约不变。未加载时按数据库元数据 + JSONL 构建只读投影：
-  // 浏览历史不得持久化恢复状态或启动任务（Goal 恢复仅在内存投影）。
+  // 一次全量下发历史（不分页）：被压缩摘要折叠掉的消息除外，那段由前端点开摘要卡时按需取。
+  // 未加载时按数据库元数据 + JSONL 构建只读投影：浏览历史不得持久化恢复状态或启动任务
+  //（Goal 恢复仅在内存投影）。
   snapshot(id, options = {}) {
     const item = this.get(id);
     if (!item.loaded) {
@@ -1587,39 +1610,32 @@ export class Sessions {
         } catch (error) { task.error = `子任务历史读取失败：${error.message}`; }
       }
       messages = projectTimeline(messages);
-      // 无 SessionManager 实例：JSONL 只读投影。history 缓存在 stub 上，同进程内 revision 稳定，游标才可用。
-      const history = item.history ??= createHistory(id);
-      const page = options.window ? pageOf(messages, history, { sessionId: id, epoch: options.epoch, ...options.window }) : null;
+      const compactions = saved.compactions ?? [];
+      const fold = foldCompacted(messages, compactions);
+      const visibleIds = new Set(fold.records.map(record => record.entryId).filter(Boolean));
       const goal = new Goal({ sessionId: id, store: {
         load: () => structuredClone(this.goalStore.load(id)), save: () => {},
       } });
-      const base = { sessionId: id, cwd: item.cwd, title: item.title, seq: item.seq ?? 0,
-        status: "idle", safeStop: false, runtime: restoredRuntime, billing: combinedBilling(restoredRuntime.billing, tasks), config: saved.selection ?? {}, messages: page ? page.records.map(toPageRecord) : messages,
-        compactions: saved.compactions ?? [], retries: saved.retries ?? [], live: {}, tools: {},
-        questions: [], tasks, goal: goal.snapshot(), canReask: false, compactionStatus: null };
-      if (page) {
-        const entryIds = new Set(page.records.map(record => record.entryId).filter(Boolean));
-        Object.assign(base, { instanceId: options.epoch ?? null, revision: history.revision, history: page.meta, liveMessageIds: {},
-          compactions: base.compactions.filter(record => record.compactedMessageIds?.some(entryId => entryIds.has(entryId))),
-          retries: pageRetries(base.retries, entryIds, page.meta.start, page.meta.end),
-          tasks: pageTasks({ tasks: { snapshot: () => tasks } }, page.records) });
-      }
-      const cloned = structuredClone(base);
-      if (options.includeSeq === false) delete cloned.seq;
-      return cloned;
+      return structuredClone({ sessionId: id, cwd: item.cwd, title: item.title, seq: item.seq ?? 0,
+        instanceId: options.epoch ?? null, liveMessageIds: {},
+        status: "idle", safeStop: false, runtime: restoredRuntime, billing: combinedBilling(restoredRuntime.billing, tasks), config: saved.selection ?? {},
+        messages: fold.records.map(toWireRecord),
+        messageIndexes: fold.indexes, messageCount: messages.length,
+        compactions, retries: historyRetries(saved.retries ?? [], visibleIds, fold.keptBefore, messages.length),
+        live: {}, tools: {},
+        questions: [], tasks, goal: goal.snapshot(), canReask: false, compactionStatus: null });
     }
-    // 读时投影：live 数组保持到达序（撤回/重试/压缩等内部逻辑依赖它），只有窗口下发按锚点顺序。
+    // 读时投影：live 数组保持到达序（撤回/重试/压缩等内部逻辑依赖它），下发按锚点顺序。
     const projected = projectTimeline(item.messages);
-    const page = options.window ? pageOf(projected, item.history, { sessionId: id, epoch: options.epoch, ...options.window }) : null;
-    // live 只在最新页：旧页没有正在流的消息，带上只会画出幽灵半成品。
-    const atLatest = !page || page.meta.end === page.meta.total;
-    const pageEntryIds = page ? new Set(page.records.map((record) => record.entryId).filter(Boolean)) : null;
+    const fold = foldCompacted(projected, item.compactions);
+    const visibleIds = new Set(fold.records.map((record) => record.entryId).filter(Boolean));
     const state = {
       // 会话身份：前端按 sessionId 路由消息与持久化键，必须带出。
       sessionId: id,
       cwd: item.cwd,
       title: item.title,
       seq: item.seq,
+      instanceId: options.epoch ?? null,
       status: item.status,
       // 刷新/重连后也要能看到「等待安全点」提示，所以跟快照一起下发。
       safeStop: item.status !== "idle" && !!item.safeStopping,
@@ -1635,39 +1651,76 @@ export class Sessions {
         subagentCapabilities: item.subagentCapabilities,
       },
       runId: item.runId,
-      messages: page ? page.records.map(toPageRecord) : item.messages,
-      // 换过历史的压缩卡只留给「被压缩消息真在本页」的那页；页内引用不到就与本页无关。
-      compactions: page ? item.compactions.filter((record) => record.compactedMessageIds?.some((entryId) => pageEntryIds.has(entryId))) : item.compactions,
+      messages: fold.records.map(toWireRecord),
+      // 折叠前的下标与总数：前端按历史下标登记目标轮次锚点，压缩折叠不能让计数漂移。
+      messageIndexes: fold.indexes,
+      messageCount: projected.length,
+      compactions: item.compactions,
       compactionStatus: item.agent.compactionStatus?.() ?? null,
-      retries: page ? pageRetries(translateRetries(item.retries, item.messages, projected), pageEntryIds, page.meta.start, page.meta.end) : item.retries,
-      live: atLatest ? item.live : {},
-      tools: page ? relevantTools(item, page.records) : item.tools,
+      retries: historyRetries(translateRetries(item.retries, item.messages, projected), visibleIds, fold.keptBefore, projected.length),
+      live: item.live,
+      tools: relevantTools(item, fold.records),
       questions: item.questions.snapshot(),
       canReask: item.status === 'idle' && !!item.agent.canReask?.(),
-      tasks: page ? pageTasks(item, page.records) : item.tasks.snapshot(),
+      // 任务卡按 delegate 锚点渲染，折叠段里的委派入口也要能落到摘要卡内，所以任务不做裁剪。
+      tasks: item.tasks.snapshot(),
       goal: item.goal?.snapshot() ?? null,
+      // 活动流的身份：前端要按 agent.message.end 带的 messageId 把半成品原文接到正确槽位。
+      liveMessageIds: Object.fromEntries(item.liveIds),
     };
-    if (page)
-      Object.assign(state, { instanceId: options.epoch ?? null, revision: item.history.revision, history: page.meta,
-        // 活动流的身份：前端要按 agent.message.end 带的 messageId 把半成品原文接到正确槽位。
-        liveMessageIds: atLatest ? Object.fromEntries(item.liveIds) : {} });
-    const cloned = structuredClone(state);
-    // 分页响应不带 seq：客户端拿不到水位就不会 commitSnapshot（游标全由 history 自己管）。
-    if (options.includeSeq === false) delete cloned.seq;
-    return cloned;
+    return structuredClone(state);
   }
 
-  // 历史分页：请求不信任，游标/limit/互斥在 pageOf 里逐项显式校验（越界、换号、跨实例直接报错）。
-  // 未加载会话走 snapshot 的 JSONL 只读分支（不创建 SDK 实例）；已加载会话从内存切页。
-  async history(id, request = {}, epoch) {
-    return this.snapshot(id, {
-      epoch,
-      includeSeq: false,
-      window: {
-        edge: request.edge, before: request.before, after: request.after,
-        target: request.target, limit: request.limit,
-      },
-    });
+  // 压缩卡按需展开：取某条摘要折叠掉的原始消息（含挂在其后的子代理记录）与这些消息引用的工具记录。
+  // 未加载会话走 JSONL 只读投影，不创建 SDK 实例。
+  async compactionMessages(id, compactionId) {
+    const item = this.get(id);
+    let records;
+    let compactions;
+    let tools;
+    let retryRecords;
+    if (item.loaded) {
+      records = projectTimeline(item.messages);
+      compactions = item.compactions;
+      tools = item.tools;
+      retryRecords = translateRetries(item.retries, item.messages, records);
+    } else {
+      const saved = this.store.getSession(id);
+      const raw = [];
+      if (saved.sessionFile)
+        raw.push(...readSessionManager(saved.sessionFile, saved.cwd).getBranch()
+          .filter(entry => entry.type === "message").map(entry => ({ agentId: "main", entryId: entry.id, message: entry.message })));
+      for (const task of saved.tasks ?? []) {
+        if (!task.sessionFile) continue;
+        try {
+          raw.push(...readSessionManager(task.sessionFile, saved.cwd).getBranch()
+            .filter(entry => entry.type === "message").map(entry => ({ agentId: task.id, entryId: entry.id, message: entry.message })));
+        } catch {}
+      }
+      records = projectTimeline(raw);
+      compactions = saved.compactions ?? [];
+      tools = {};
+      retryRecords = saved.retries ?? [];
+    }
+    const record = compactions.find((entry) => entry.id === compactionId);
+    if (!record) throw new Error("找不到该压缩摘要");
+    const hidden = new Set(record.compactedMessageIds ?? []);
+    const picked = [];
+    let inside = false;
+    for (const entry of records) {
+      if ((entry.agentId ?? "main") === "main") inside = !!entry.entryId && hidden.has(entry.entryId);
+      if (inside) picked.push(entry);
+    }
+    // 锚点落在这段里的重试卡也随展开补发：快照已经把它们滤掉了（锚点不可见），
+    // 否则展开摘要后只剩消息、原地的重试记录凭空消失。
+    const pickedIds = new Set(picked.map((entry) => entry.entryId).filter(Boolean));
+    const retries = (retryRecords ?? []).filter((entry) => entry.anchorEntryId && pickedIds.has(entry.anchorEntryId))
+      .map((entry) => { const copy = { ...entry }; delete copy.messageCount; return copy; });
+    return structuredClone({ sessionId: id, compactionId,
+      messages: picked.map(toWireRecord),
+      // 只带子代理工具：折叠段的主消息不重绘（摘要卡就是它们的形态），主工具没有落位处。
+      tools: ownedTools(tools, picked.filter((entry) => (entry.agentId ?? "main") !== "main")),
+      retries });
   }
   subscribe(id, listener) {
     // 允许在 ensureLoaded 之前订阅：元数据条目（load 建的 stub）已经在 items 里，事件一个不漏；
@@ -1807,7 +1860,8 @@ export class Sessions {
     if (!recall) return item.agent.withdraw();
     if (item.status !== "idle" || item.cancelling) await this.cancel(id);
     const recalled = await item.agent.recall();
-    let revision;
+    // 历史真被截断时通知所有客户端重取快照：撤回重写了历史，增量事件无法表达「消息消失」。
+    let truncated = false;
     if (recalled) {
       const changes = [];
       // 网页历史跟着回退：否则重新 attach 仍会画出被撤回的输入和被打断的半截回答。
@@ -1842,8 +1896,7 @@ export class Sessions {
           changes.push({ event: { type: "retry", record: retry } });
         }
         changes.push({ deletedEvents: { type: "retry", records: previousRetries.filter((entry) => !item.retries.includes(entry)) } });
-        // 历史真被截断：换修订号，旧游标作废。
-        revision = touchHistory(item.history);
+        truncated = true;
       }
       delete item.live.main;
       item.liveIds.delete("main");
@@ -1852,10 +1905,8 @@ export class Sessions {
       // 错误由既有error事件报告，失败增量留到下次保存/关闭重试。
       this.saveChange(item, changes);
     }
-    if (revision !== undefined) {
-      item.emit({ type: "session.history.changed", data: { revision, total: item.messages.length, reason: "recall" } });
-    }
-    return { ...item.agent.withdraw(), recalled, ...(revision !== undefined ? { revision } : {}) };
+    if (truncated) item.emit({ type: "session.history.reset", data: { reason: "recall" } });
+    return { ...item.agent.withdraw(), recalled };
   }
 
   replyQuestion(id, toolCallId, answers) {

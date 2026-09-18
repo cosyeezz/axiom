@@ -61,7 +61,7 @@ scripts/autostart.mjs  Windows/macOS/Linux 用户登录自动启动注册
   │    └─ remote.js  可选 Tailscale 独立监听、同账号 whois 验证、本机远程配置
   ├─ model-config.js SQLite 模型配置、版本冲突保护与全局收藏（pi-model-storage.js 自动派生 SDK 兼容文件）
   ├─ Sessions        会话生命周期/队列、元数据启动与 SDK 按需恢复；Pi JSONL 为历史权威
-  │    ├─ session-history.js 稳定身份与历史页游标（不裁剪 SDK 上下文）
+  │    ├─ session-history.js 稳定身份与只读历史投影（不裁剪 SDK 上下文）
   │    ├─ session-store.js 会话/摘要/事件/任务四表、实体增量与旧数据迁移
   │    ├─ database.js SQLite 连接、小配置 store 表、WAL 与一致性备份
   │    ├─ session-memory.js  标题/逐回复摘要登记、最近32条背景与被动进度

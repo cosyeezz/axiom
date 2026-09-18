@@ -83,13 +83,19 @@ test("withdraw with recall trims the web history and leaves the queue alone when
       { agentId: "main", entryId: "u1", message: { role: "user", content: "撤回的输入" } },
       { agentId: "main", message: { role: "assistant", stopReason: "aborted", content: [] } },
     ];
+    // 历史被改写要广播：其他客户端手里的快照已经不对，必须整挂重取。
+    const resets = [];
+    sessions.subscribe(id, (event) => { if (event.type === "session.history.reset") resets.push(event); });
     const withdrawn = await sessions.withdraw(id, true);
+    assert.deepEqual(resets.map((event) => event.data.reason), ["recall"]);
+    assert.ok(Number.isInteger(resets[0].seq), "复用事件通路带 seq：前端 watermark 不能倒退");
     assert.deepEqual(withdrawn.recalled, recalled);
     assert.deepEqual(withdrawn.steering, ["插话"], "queue withdrawal still rides along");
     assert.deepEqual(sessions.snapshot(id).messages.map((record) => record.entryId), ["u0"], "recalled input and its interrupted answer leave the transcript");
     recalled = null;
     queued.steering = ["再来一条"];
     await assert.rejects(sessions.withdraw(id, true), /已经产生了模型输出/);
+    assert.equal(resets.length, 1, "撤回失败没有改写历史，不广播重取");
     assert.deepEqual(sessions.get(id).agent.queue(), { steering: ["再来一条"], followUp: [] }, "a refused recall must not eat the queue");
   } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
 });

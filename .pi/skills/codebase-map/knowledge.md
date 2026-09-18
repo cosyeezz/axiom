@@ -1,5 +1,17 @@
 # 坑与 bug 知识库（自成长：只追加，不删改历史）
 
+### 2026-09-18 消息分页被整体移除（负优化）
+- 症状：上滚前插闪烁、翻页后后续实时消息消失、阅读锚点跑位；为治时序又堆出游标作废、旧页不推水位、页隐重挂等一整套分支。
+- 根因：分页要解的 DOM 规模问题，上下文自动压缩已经解了（历史折成摘要卡）；两套机制叠加后，分页只剩下时序风险。
+- 修复：删除 `session.history` 与全部游标 / 窗口裁剪 / 分页条；`session.attach` 整份下发（排除被压缩折叠的段）；新增 `session.compaction.messages` 按 compactionId 按需取回折叠段原文；撤回真截断时广播 `session.history.reset` 让各端整份重取。
+- 防再犯：增量事件表达不了「消息消失」，历史被重写只能整份重取；想靠分页控 DOM 前先看压缩是不是已经做了同一件事。回归：snapshot-first-screen / snapshot-switch / snapshot-chunk / history-reading / compaction-lazy。
+
+### 2026-09-18 jsdom 页面测试关页顶序错报 getElementById of undefined
+- 症状：测试本体全绿，但结束后异步活动抛 `TypeError: Cannot read properties of undefined (reading 'getElementById')`。
+- 根因：`app.dispose()` 拒掉在飞请求 → 错误回调跑 `error()` 摸 DOM，而 JSDOM 已被 `window.close()` 销毁。
+- 修复：`tests/helpers/session-page.js` 的 close 改异步：置 closed 标志丢弃在飞响应 → dispose → `await setTimeout(0)` 让错误回调在活 window 上跑完 → 再 `dom.window.close()`。
+- 防再犯：卸载顺序固定为「停产 → 派完已排队回调 → 销毁宿主」；`t.after(page.close)` 会 await 异步 close。
+
 ### 2026-09-16 独立子历史堆尾挤走首屏主正文
 - 原因：恢复时将子任务 JSONL 全部追加在主消息后，last60 分页只剩子代理卡片；实时顺序正常，因此纯主消息测试未发现。
 - 修复：sessions.js 在独立历史重建时按 delegate 结果 taskIds 归位，无关联记录前置保留；不重排既有完整历史，不改实时数组或原文件。
