@@ -2498,6 +2498,17 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 决策：不调 DOM 顺序（停止按钮留在输入框下方一行，不为「绝对贴右下」重排结构）；`#context-chips` 与图片附件继续保留，否则待发上下文/附件会失联；折叠态样式断言走 CSS 文本正则（jsdom 不跑 media query），与 `goal-command-ui.test.js` 的图标组断言同一路子。
 - 验证：`npm test` 742 项（740 通过、0 失败、2 既有跳过），其中 `tests/prompt-resize.test.js` 7 项含新增的折叠态样式守护；`python tests/goal-ui.py` 全绿（普通会话/新会话/图标组三处断言前先点 `#prompt` 展开，因为桌面折叠态图标组本就不可见）。
 
+## 2026-09-19 压缩摘要三层引文核验（逐字校验/已核验附录/原文快照）
+- 时间：2026-09-19。分支 `feat/compaction-evidence`（worktree F:/worktrees/axiom-compaction-evidence）。
+- 原因：SoL-Pi 四机制调研收尾后，把 EPR（evidence-preserving reducer）里唯一与本仓库目标函数（注意力质量）兼容的设计——逐字节引文校验——移植进 AXIOM 后台压缩。EPR 整体不接（相关性缩减可靠性存疑、首抹即替换无纠错基础），但其「摘要声称的事实必须机械可对账」的纪律能补上压缩最大的缺口：摘要无法验证、漏抄无声。
+- 内容（三层：校验 → 附录 → 快照）：
+  - `src/prompts.js`：`summaryRequest` 输出格式改为末尾依次三个标签，新增 `<axiom_compact_facts>` 指令段——5–30 行、每行一条、逐字连续复制对话或上次摘要原文、保标点空格、禁转述/合并/编造、每行 <300 字符、选路径/命令/值/报错行/用户明确决定，并明说「未逐字出现的行会导致整份摘要作废」；同时允许引用旧摘要里已核验引文附录的引文行，禁止复制附录标记本身。
+  - `src/compaction.js`：`parseSummaryOutput` 新增 facts 块提取（无块/未闭合/空块都不出 facts 键，向后兼容既有形状；bullet 前缀原样保留）；新增 `validateFacts` 导出（先原样 indexOf、再剥 `^[-*]\s+` 降级匹配；命中会话语料记程序计算的行号，仅命中上次摘要记 `line:null`；dedup；任一 miss → `{ok:false, missed}`）。`onTurnEnd` 在 flight 上记 `corpus`（= `serializeConversation(convertToLlm(messagesToSummarize))`，与摘要模型所见逐字一致）与 `previousSummary`；成功回调里 facts 存在且非空时先核验，失败 → 整单作废、报告 failed、保留原文（不删坏行留其余，防「编十条留九条」）。`maybeApply` 里 `writeConversationSnapshot`（sessionFile 真值才写 `<dir>/compaction-snapshots/snapshot-<sha256前16>.txt`，内容寻址、失败返回 null 不阻断）+ `appendVerifiedFacts`（附录带行号随摘要进上下文、回读指引写摘要末尾而非系统提示词——路径每次压缩不同，指引紧邻引文、随会话持久化）；附录计入体积校验；`details` 与 data 事件新增 `facts`/`snapshotPath`。
+  - `tests/compaction.test.js`：新增 5 项——parseSummaryOutput facts 提取（存在/缺失/未闭合/空块/bullet 保留/超长行过滤/30 行上限）、validateFacts（行号/漏检/前摘命中 line:null/会话优先/bullet 降级/dedup）、summaryRequest 含第三标签与核验后果、合法 facts 集成（持久 SessionManager.create 会话：附录行号、快照文件内容即渲染原文、details/事件/上下文同构）、编造引文集成（整单作废不落盘、下个 turn_end 自然重试通过）。
+- 涉及文件：src/prompts.js、src/compaction.js、tests/compaction.test.js、README.md、devlog.md。
+- 决策：facts 缺席 = fail-open（只丢这层校验，与「模型不守格式只丢元数据」哲学一致）；facts 存在且引文造假 = 整单作废（激励干净）。回读指引写在摘要里不进系统提示词（EPR 的 readback 注记与 SDK bash 截断注记都嵌在产物本体）。附录用纯文本标记 `已核验引文（...）:` 不用标签，防标签随 previousSummary 回注自我强化。行号由程序计算不信模型自报。测试中 keepRecentTokens 会保留最后一条消息，被摘要语料只含前两条——第三条引文被校验正确拒收，恰好验证语料边界就是模型所见。
+- 验证：`npm test` 749 项（747 通过、0 失败、2 既有跳过）；`tests/compaction.test.js` 27 项（22 项既有全数通过，证明无 facts 的旧 mock 路径不受影响）。
+
 ## 2026-09-19 修复 context-menu-ui 与 service-settings-ui 两个失效验收脚本
 
 - 时间：2026-09-19。分支 `feat/fix-ui-scripts`（worktree F:/worktrees/axiom-fix-ui-scripts）。

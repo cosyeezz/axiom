@@ -1,8 +1,9 @@
 import { SUMMARY_SYSTEM_PROMPT, summaryRequest } from "./prompts.js";
 export { summaryRequest } from "./prompts.js";
-import { mkdtempSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   convertToLlm,
   createAgentSession,
@@ -100,6 +101,7 @@ export function summarizedEntryIds(branch, firstKeptEntryId) {
 // 下一轮摘要把标签当交接内容再抄一遍。解析放宽到「标签不在结尾、顺序颠倒、后面还有正文」
 // 都能拆出，长度按码点算（emoji 不占两格）。
 const COMPACT_MAX = { title: 30, desc: 200 };
+const FACTS_MAX = { lines: 30, chars: 300 };
 export function parseSummaryOutput(text) {
   const raw = text.trim();
   const masked = maskCode(raw);
@@ -118,14 +120,117 @@ export function parseSummaryOutput(text) {
     const value = raw.slice(at + open.length, end).trim();
     return value && !value.includes("<") && [...value].length <= COMPACT_MAX[name] ? value : null;
   };
+  // facts 块：逐字引文清单，交由 validateFacts 机械对账。无块/空块/超长行都只丢这一层，
+  // 摘要照旧——这层是校验增益不是硬门槛；但只要给出引文，就必须逐条能对上，一条编造整单作废。
+  // 引文里允许出现 <（代码事实常见），与 title/desc 的纯文本约束不同。
+  const factsField = () => {
+    const open = "<axiom_compact_facts>";
+    const close = "</axiom_compact_facts>";
+    for (const hit of scan.matchAll(new RegExp("</?axiom_compact_facts>", "g")))
+      spans.push([hit.index, hit.index + hit[0].length]);
+    const at = scan.indexOf(open);
+    const end = at < 0 ? -1 : scan.indexOf(close, at + open.length);
+    if (at < 0 || end < 0) return undefined; // 无块或配不成对：只剥标记本身，内容不进 facts
+    spans.push([at, end + close.length]);
+    const lines = raw
+      .slice(at + open.length, end)
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((line) => [...line].length <= FACTS_MAX.chars);
+    return lines.length > 0 ? lines.slice(0, FACTS_MAX.lines) : undefined;
+  };
+  const facts = factsField();
   const title = field("title");
   const description = field("desc");
   const summary = cutSpans(raw, spans).trim();
-  return title && description ? { summary, progress: { title, description } } : { summary };
+  const result = title && description ? { summary, progress: { title, description } } : { summary };
+  if (facts) result.facts = facts;
+  return result;
 }
 
 function throwIfAborted(signal) {
   if (signal?.aborted) throw signal.reason ?? new Error("Summarization aborted");
+}
+
+// —— 逐字引文校验（借鉴 SoL-Pi EPR 的 evidence 纪律）——
+// 摘要的叙述无法机械核对，但它声称的“事实”可以：每条引文在摘要模型实际看到的语料里
+// indexOf 逐字对账，一条编造就作废整份摘要（不是删掉坏行，防止“编十条留九条”的激励）。
+// 语料 = serializeConversation 渲染文本（与模型所见逐字一致，纯确定性渲染无时间戳），
+// 快照文件与行号都指向这份文本；上轮摘要里的内容可引（行号记 null，它不在本次快照里）。
+function factMatch(fact, corpus) {
+  const direct = corpus.indexOf(fact);
+  if (direct >= 0) return { index: direct, quote: fact };
+  const stripped = fact.replace(/^[-*]\s+/, ""); // 模型可能加 bullet 前缀；剥掉后能逐字命中才算数
+  if (stripped !== fact) {
+    const index = corpus.indexOf(stripped);
+    if (index >= 0) return { index, quote: stripped };
+  }
+  return null;
+}
+
+const lineOf = (text, index) => text.slice(0, index).split("\n").length;
+
+export function validateFacts(facts, conversationText, previousSummary) {
+  const verified = [];
+  const missed = [];
+  const seen = new Set();
+  for (const fact of facts) {
+    const inConversation = factMatch(fact, conversationText);
+    if (inConversation) {
+      if (!seen.has(inConversation.quote)) {
+        seen.add(inConversation.quote);
+        verified.push({ quote: inConversation.quote, line: lineOf(conversationText, inConversation.index) });
+      }
+      continue;
+    }
+    const inPrevious = previousSummary ? factMatch(fact, previousSummary) : null;
+    if (inPrevious) {
+      if (!seen.has(inPrevious.quote)) {
+        seen.add(inPrevious.quote);
+        verified.push({ quote: inPrevious.quote, line: null });
+      }
+      continue;
+    }
+    missed.push(fact);
+  }
+  return missed.length > 0 ? { ok: false, missed, facts: verified } : { ok: true, facts: verified };
+}
+
+// 原文快照：与摘要模型所见逐字一致的会话渲染，按内容哈希命名，落在 session 文件旁。
+// 先落盘再替换上下文，任何后续降级都保证原文可回读（journal 虽全量留档，但 JSONL 不适合直接 grep/read）。
+// 无持久 session 文件（内存会话）或写盘失败时跳过，不阻断压缩——引文校验与快照互不依赖。
+function writeConversationSnapshot(session, conversationText) {
+  try {
+    const sessionFile = session.sessionManager.getSessionFile?.() ?? session.sessionFile;
+    if (!sessionFile) return null;
+    const dir = join(dirname(sessionFile), "compaction-snapshots");
+    mkdirSync(dir, { recursive: true });
+    const path = join(dir, `snapshot-${createHash("sha256").update(conversationText).digest("hex").slice(0, 16)}.txt`);
+    writeFileSync(path, conversationText, "utf8");
+    return path;
+  } catch {
+    return null;
+  }
+}
+
+// 把已核验引文拼进摘要正文（行号指向快照），回读指引一并写入——写在摘要里而不是系统提示词：
+// 路径每次压缩都不同，且指引正好出现在模型需要它的位置（引文旁边），随会话持久化、resume 后仍在。
+function appendVerifiedFacts(summary, verifiedFacts, snapshotPath) {
+  if (!verifiedFacts?.length) return { summary, extra: {} };
+  const lines = [
+    "",
+    "已核验引文（逐字复制自压缩前对话，行号对应原文快照）:",
+    ...verifiedFacts.map((fact) =>
+      fact.line != null ? `- line=${fact.line} ${JSON.stringify(fact.quote)}` : `- (上轮摘要) ${JSON.stringify(fact.quote)}`,
+    ),
+  ];
+  if (snapshotPath)
+    lines.push(`原文快照: ${snapshotPath} — 需要精确原文或更多上下文时，用 grep 在该文件搜关键词，或用 read 按行号读取。`);
+  return {
+    summary: `${summary}\n${lines.join("\n")}`,
+    extra: { facts: verifiedFacts, ...(snapshotPath ? { snapshotPath } : {}) },
+  };
 }
 
 export async function summarizeWithPiSession({ messages, previousSummary, model, thinking, modelRuntime, signal }) {
@@ -198,6 +303,8 @@ export async function summarizeWithPiSession({ messages, previousSummary, model,
  *   prompt() 入口也会补一次，覆盖「flight 在空闲期完成」的场景。
  * - 提交验证：flight.value 直接读取（不 await 已 settled 的 promise），摘要非空且压缩后
  *   估算（estimateTokens 全量求和）确实变小才落盘；tokensBefore 在提交时重算。
+ * - 事实核验（EPR 纪律）：摘要自带的逐字引文在渲染语料里逐条对账，一条编造 → 整单作废；
+ *   通过的引文以附录（带行号）随摘要进上下文，原文快照落盘可 grep/read 回读。
  * - 失效检查：分支切换或快照之后落了别的压缩条目 → 结果作废，原文不动；摘要失败同样原文不动。
  * - 取消：cancel()（setConfig 变化 / dispose 时自动调用，pi wrapper 的 abort 也应调用）
  *   通过 AbortController 信号中断后台真实 LLM 请求。
@@ -271,6 +378,9 @@ export function createBackgroundCompaction({
       if (!preparation || preparation.messagesToSummarize.length === 0) return;
       const flight = {
         promise: runFlight(preparation),
+        // 校验语料：与摘要模型所见逐字一致（同一渲染函数、同一消息内容）；快照与引文行号都指向这份文本
+        corpus: serializeConversation(convertToLlm(preparation.messagesToSummarize)),
+        previousSummary: preparation.previousSummary,
         firstKeptEntryId: preparation.firstKeptEntryId,
         compactedMessageIds: summarizedEntryIds(branch, preparation.firstKeptEntryId),
         leafId: session.sessionManager.getLeafEntry()?.id ?? null,
@@ -286,6 +396,21 @@ export function createBackgroundCompaction({
             controller = null;
             report("skipped", "摘要为空，保留原文");
             return;
+          }
+          // 逐字引文校验：一条引文在渲染会话/上轮摘要里逐字找不到 → 整份摘要作废（不删坏行，防“编十条留九条”）。
+          // 模型没给 facts 块时不校验（格式缺失静默降级），给了就必须全对。
+          const facts = (value.facts ?? [])
+            .map((fact) => (typeof fact === "string" ? fact.trim() : ""))
+            .filter(Boolean);
+          if (facts.length > 0) {
+            const checked = validateFacts(facts, flight.corpus, flight.previousSummary);
+            if (!checked.ok) {
+              pending = null;
+              controller = null;
+              report("failed", `事实核验未通过（${checked.missed.length} 条引文无法逐字找到），保留原文`);
+              return;
+            }
+            flight.verifiedFacts = checked.facts;
           }
           flight.value = value;
           flight.settled = true;
@@ -321,18 +446,26 @@ export function createBackgroundCompaction({
       // 提交时重算压缩前占用：usage 可能过期（上次压缩后未回应），不可信时回退估算
       const freshUsage = session.getContextUsage?.();
       const tokensBefore = freshUsage?.tokens ?? contextTokens(session.messages);
+      // 引文附录 + 原文快照：先落盘再拼装（快照失败不阻断压缩），附录计入压缩后体积估算。
+      // 同一对话内容 → 同一哈希文件，拒绝重试不产生重复快照。
+      const snapshotPath = writeConversationSnapshot(session, flight.corpus);
+      const assembled = appendVerifiedFacts(summary, flight.verifiedFacts, snapshotPath);
       // 提交前验证：压缩后上下文（摘要 + 保留切点之后的消息）必须真的变小。
       // usage 在压缩后必然过期，这里按 estimateTokens 全量求和。
       const keptMessages = branch.slice(keptIndex).filter((entry) => entry.type !== "compaction").flatMap(sessionEntryToContextMessages);
       const estimatedAfter =
-        estimateTokens({ role: "compactionSummary", summary }) +
+        estimateTokens({ role: "compactionSummary", summary: assembled.summary }) +
         keptMessages.reduce((sum, message) => sum + estimateTokens(message), 0);
       if (estimatedAfter >= tokensBefore) return skip("摘要未缩小上下文，保留原文");
+      const details = {
+        ...(flight.value.progress ? { progress: flight.value.progress } : {}),
+        ...assembled.extra,
+      };
       const id = session.sessionManager.appendCompaction(
-        summary,
+        assembled.summary,
         flight.firstKeptEntryId,
         tokensBefore,
-        flight.value.progress ? { progress: flight.value.progress } : undefined,
+        Object.keys(details).length > 0 ? details : undefined,
         false,
         flight.value.usage,
       );
@@ -340,8 +473,9 @@ export function createBackgroundCompaction({
       session.agent.state.messages = messages;
       const data = {
         id,
-        summary,
+        summary: assembled.summary,
         ...(flight.value.progress ? { progress: flight.value.progress } : {}),
+        ...assembled.extra,
         firstKeptEntryId: flight.firstKeptEntryId,
         compactedMessageIds: flight.compactedMessageIds,
         tokensBefore,
