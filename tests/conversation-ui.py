@@ -30,6 +30,18 @@ with sync_playwright() as p:
             page.locator('#mobile-expand').click()
         for group in page.locator('#output .call-group:not([open]) > summary').all():
             group.click()
+        settle()
+
+    def settle():
+        # 展开分组会把 transcript 自动滚到底，而滬动按设计就会关掉悄浮提示。
+        # 不等滚动落定就 hover，这次滚动会落进提示的 500ms 显示延迟里把它掴掉，
+        # 成败全看输入区高度带来的帧数差——等 scrollTop 连续两帧不变再往下跑。
+        page.wait_for_function('''() => new Promise(done => {
+            const el = document.getElementById('transcript');
+            if (!el) return done(true);
+            const top = el.scrollTop;
+            requestAnimationFrame(() => requestAnimationFrame(() => done(el.scrollTop === top)));
+        })''')
 
     def style(el, key, pseudo=None):
         return el.evaluate('(el, args) => getComputedStyle(el, args[1])[args[0]]', [key, pseudo])

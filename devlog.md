@@ -1,5 +1,18 @@
 # 开发记录
 
+## 2026-09-18 修回 6 个浏览器验收脚本：折叠态、CSP eval 与模块注入
+
+- 起因：为「折叠态只留运行摘要」另开分支时逐个重跑浏览器脚本，翻出一批失败。发现远端 `master`（`c327e3f` + `b2306c4`）已实现同一需求，遂弃掉重复的产品改动，只把这批脚本修复搬过来。
+- `tests/conversation-ui.py`（真竞态，折叠高度变化暴露）：`load()` 展开全部分组会触发 transcript 自动滚到底，而 `tooltip.js` 按设计「滚动即关闭」。折叠高度变化前这次滚动落在 hover 前 8ms（`current` 尚未建立，关闭无效）侥幸躲过；变高后推迟到 43ms，正好落进 500ms 显示延迟里把提示掐死。改法是 `load()` 末尾加 `settle()`：等 `#transcript.scrollTop` 连续两帧 rAF 不变再往下跑，而不是放宽断言。教训：靠帧数差侥幸通过的断言，早晚被一次无关的布局改动撞翻。
+- `tests/session-billing-ui.py`、`tests/frontend-regions-ui.py`、`tests/dev-vite-ui.py`：都在等 `#model:enabled` 之类折叠态隐藏的元素。统一按真实交互补「先点 `#prompt` 展开」，不改产品行为。
+- `tests/activity-groups-ui.py`（三个互不相干的旧坑）：① 三处 `wait_for_function` 传表达式字符串，Playwright 会包成 `eval`，页面 CSP 没放 `unsafe-eval` 直接抛错 → 改箭头函数；② 测试钩子 `window.activityTestEvent = event` 在 `af51b00` 把全局 `event()` 改名 `applyEvent()` 后没跟，ReferenceError → 指向 `applyEvent`；③ 390px 下 `#earliest` 只在 `.mobile-expanded` 显示 → 先点 `#mobile-expand`。
+- `tests/question-layout-ui.py`：`question.js` 现在 `import { actionIconNode } from "./icons.js"`，整段拼进普通 `<script>` 报「Cannot use import statement outside a module」→ 先拼 icons.js 源码再剥掉 import/export，保持无服务器的纯样式验收。
+- `tests/goal-ui.py`：新增 `collapse_composer()`（鼠标移开 + blur，等 5s 定时器真收回）与 `check_collapsed_composer()`，验收折叠态隐藏 `+` / 图片 / 目标图标组与动作区、保留运行摘要三段且不换行、摘要左缘与输入行对齐、右上角计时未被折叠规则连带隐藏，并验展开后图标立刻回来。单行断言是必要的：换行会让折叠高度随屏宽跳动，钉在其上沿的「回到最新」跟着跳。
+- 确认属既有问题、本次不动（`master` 上同样失败，根因与输入区无关）：`tests/context-menu-ui.py`（`#context-results` 不渲染，片段式注入的 app.js 切片边界已漂）、`tests/service-settings-ui.py`（`.settings-layout` 不再滚动）。`model-selection-ui`、`model-settings-ui`、`retry-settings-ui`、`remote-ui` 需外部预览服务，未起服务不计作失败。
+- 顺手：`.gitignore` 加 `__pycache__/`，并移除此前误入库的 pyc。
+- 验证：上述 6 个脚本在 `master` 代码上全部转绿，`conversation-ui.py` 连跑三次稳定；`npm test` 739 通过 / 2 跳过。
+- 涉及文件：`tests/conversation-ui.py`、`tests/goal-ui.py`、`tests/session-billing-ui.py`、`tests/activity-groups-ui.py`、`tests/frontend-regions-ui.py`、`tests/question-layout-ui.py`、`tests/dev-vite-ui.py`、`.gitignore`、`devlog.md`。
+
 ## 2026-09-18 折叠输入区：运行摘要与停止按钮合并到同一行
 
 - 原因：上一版折叠态运行中是上下两行（摘要一行、停止按钮又一行，约 116px），右侧大片空白白占一行高。
