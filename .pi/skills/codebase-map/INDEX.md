@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/18 06:06:37）
+# Axiom 多级代码索引（生成于 2026/9/18 06:37:06）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -32,7 +32,7 @@
 | public/session-details.js | 141 | 主代理页签、安全可折叠 JSON 树与会话账单渲染 | detailElement, money, precise, count |
 | public/stream-playback.js | 165 | 有界字素播放游标与真实时间缓冲追赶 | BUFFER_MS, BASE_RATE, CATCHUP_S, MAX_RATE |
 | public/stream-renderer.js | 179 | 共享 rAF 流式绘制、交互让路与挂载生命周期 | createStreamRenderer |
-| public/style.css | 1833 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1847 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | public/theme.js | 11 | 首帧前阻塞应用明/暗主题（localStorage axiom.theme，默认深色） | - |
 | public/tooltip.css | 50 | 共享悬停说明样式（浅色主题下反色） | - |
 | public/tooltip.js | 225 | 共享悬停说明：动态 title、键盘、定位与无障碍 | SHOW_DELAY, HIDE_DELAY, GAP, EDGE |
@@ -157,7 +157,7 @@
 | tests/pi-model-storage.test.js | 624 | node --test 测试（npm test） | tempDir, makeStorage, seedPiModels, seedPiAuth |
 | tests/pi-question.test.js | 197 | node --test 测试（npm test） | - |
 | tests/project-skills.test.js | 143 | node --test 测试（npm test） | scopeKey, setup |
-| tests/prompt-resize.test.js | 279 | node --test 测试（npm test） | page |
+| tests/prompt-resize.test.js | 285 | node --test 测试（npm test） | page |
 | tests/question-layout-ui.py | 48 | node --test 测试（npm test） | - |
 | tests/question-preview.mjs | 36 | node --test 测试（npm test） | factory, sessions, app, port |
 | tests/question-ui.test.js | 99 | node --test 测试（npm test） | source |
@@ -2228,7 +2228,7 @@
 | scopeKey | const | 9 |
 | setup | function | 16 |
 
-### tests/prompt-resize.test.js（279 行） — node --test 测试（npm test）
+### tests/prompt-resize.test.js（285 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
