@@ -2338,3 +2338,19 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 涉及文件：src/session-history.js、src/sessions.js；public/app.js、public/style.css；tests/history-main-budget.test.js（新增）、tests/send-optimistic.test.js（新增）、tests/history-reading.test.js（重写 1 项 + 新增 5 项）、tests/session-history.test.js、tests/app.test.js（提交点补 paint() 驱动）；README.md、docs/session-render-plan.md（补实施结果）。
 - 决策：不做整会话静态渲染文件（服务端原文唯一权威）；乐观卡只做占位+原位升级，绝不按文本对账、不伪装已确认；渲染管线（rAF 批处理/epoch 取消/隐藏 park）不推倒重做；虚拟化与增量解析延后（需真实浏览器实测）；不升 CURSOR_VERSION（游标只在前端内存）。
 - 验证：worktree 内 `npm test` 726 项全绿（724 通过、0 失败、2 既有跳过）；service-settings 的真实 HTTP 契约用例在全量并发下偶发一次，单独重跑通过，非本次改动引入。
+
+## 2026-09-18 Phase D 渲染容量与发送链路：有界 DOM、页级缓存、增量剥离、Worker 序列化
+
+- 时间：2026-09-18。分支 `feat/session-render-phase-d`（worktree F:/worktrees/Axiom-session-render-phase-d），计划、调研与实施结果全文见 `docs/session-render-phase-d.md`。
+- 原因：上一轮会话渲染一致性修复把虚拟化与增量解析明确延后到真实浏览器实测之后。本轮补齐四项容量瓶颈：长会话 DOM 只增不减、翻页重复解析 Markdown、流式每批全文重扫剥离管线、大命令序列化阻塞主线程。
+- 内容（五次提交）：
+  - `8b0c3a0` D3 流式尾部增量：maskCode 增量缓存（段边界前缀缓存 + 尾窗重扫），goal-markers/memory-tags/answer-tags 各自持有 maskCache；思考面板三面统一节流口径；isPlainText 增量布尔。lexer 增量化与播放器整段重分段刻意不做（引用定义回溯改写、字素簇正确性靠整段定夺）。
+  - `e8c13f9` D2 页级渲染缓存：markdown.js 新增 createMarkdownPageCache（LRU 300 条 / 4MiB），renderMarkdown 支持 pageCache/cacheKey；缓存 epoch 为 `sessionId + revision`，只在快照路径挂键，已连接节点当 miss 重渲。
+  - `abfd5b7` D1 有界 DOM 窗口：HISTORY_DOM_LIMIT=300，trimMountedWindow 在前插末尾从最新端裁剪，被裁端以 target 整页重挂回载，分页条按真实窗口显示。
+  - `f398750` D4 发送序列化 Worker 化：超过 1MiB 的发送体走内联 Worker（返回字符串保 send 接口），全请求经 queueTail 保序链，无 Worker 环境退化同步；单条消息仍原子发送，32MiB 硬限与 send_limit 失败语义不变。
+  - `e9a2afa` 真实浏览器暴露的两个 D1 缺陷修复（详见下条）。
+- 真实浏览器（500 条混合会话，4× CPU 节流）抓出两个 jsdom 结构上覆盖不到的缺陷：① trimMountedWindow 遇到没有独立 DOM 节点的条目就 break，而工具结果记录渲染进前一条助手卡的过程组、本身不拥有节点，尾部一旦是工具结果裁剪立刻停在 0 条 —— 混合会话永远不裁，500 条全部挂载；改为连同所属主卡一起纳入丢弃集合，并把裁剪边界对齐到拥有自己节点的条目上，保证丢弃 DOM 完整。② prefetchForward 在 `!nextCursor` 时直接返回，而从末页往上翻时 nextCursor 恒为 null，滚底回载只能靠手点分页按钮；改为 trimmedForwardBoundary 存在时也视作有下页。附带效应是裁剪未生效时分页条位置文本恒空，修复后正常显示 `1–300 / 共 500 条`。
+- 涉及文件：public/app.js、public/markdown.js、public/stream-renderer.js、public/goal-markers.js、public/memory-tags.js、public/answer-tags.js、public/markdown-scan.js、public/transport.js；tests/markdown-page-cache.test.js、tests/history-page-cache.test.js、tests/history-dom-window.test.js、tests/serialize-worker.test.js、tests/render-capacity-ui.py（均新增）；tests/app.test.js、tests/manual-retry.test.js、tests/remote-ui.test.js 及多处测试环境注入补丁；README.md、docs/session-render-phase-d.md、devlog.md。
+- 决策：D1 只裁前插方向（向下本来就是整页替换，天然有界；顶部裁剪需反向滚动锚点补偿，收益不足），代价是实时跟随新消息的方向仍无上限，长时间挂机会话 DOM 继续增长，作为已知边界记录在 README 与设计文档；被裁端回载不沿用 after 游标（服务端签发游标不可伪造，沿用会跳过被裁区间形成页隙），改以被裁第一条为 target 整页重挂；压缩摘要共享的节点不参与裁剪；D2 只缓存派生渲染产物，服务端原文始终是唯一权威。
+- 验证：worktree 内 `npm test` 749 项（747 通过、0 失败、2 既有跳过）；新增 `python tests/render-capacity-ui.py` 7/7 通过（窗口封顶 300 条 / 225 节点、滚底 target 重挂降到 90 节点、被裁边界回载在场、滚动 p95 约 0.1ms、按键 p95 约 0.2ms、全展开后仍有界、无页面错误）；`python tests/smooth-stream-browser.py` 16/16 通过确认 D3 无回归。
+- 环境事件：主检出 node_modules 里 `@earendil-works/pi-coding-agent/dist/` 曾整体缺失，导致所有 Playwright 脚本（含既有 session-billing-ui.py）集体失败；在 F:/Axiom 执行 `npm install --no-audit --no-fund` 恢复。browser-ui 脚本集体挂掉时先查该 dist 是否存在。

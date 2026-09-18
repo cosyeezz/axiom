@@ -451,6 +451,14 @@ Git 历史单独优化为紧凑提交列表：关系列保留原始字符、哈�
 
 测试：`node --test tests/stream-playback.test.js tests/smooth-stream.test.js tests/stream-renderer.test.js tests/markdown.test.js`；隔离实测：`python tests/smooth-stream-browser.py --out docs/perf-smooth-stream.json`（需 Python Playwright/Chromium，只启动随机 loopback 静态实例，无模型/业务连接）。实测边界与接入说明见 [流式显示交付记录](docs/smooth-stream-delivery.md)。
 
+### 大会话渲染容量
+
+长会话按窗口渲染，不把整会话堆进 DOM：向上翻页累积到 300 条记录后从最新端裁剪，被裁区间以「被裁第一条」为 target 整页重挂回来（不沿用 after 游标，避免跳过被裁区间形成页隙），分页条按真实窗口显示 `起–止 / 共 N 条`。裁剪只发生在向上翻页方向；实时跟随新消息的方向仍无上限，长时间挂机的会话 DOM 会继续增长，属已知边界。压缩摘要共享的节点不参与裁剪；工具结果等没有独立消息节点的记录连同它所属的助手卡一起裁，保证 DOM 与记录一致。
+
+历史快照的 Markdown 渲染产物按条目缓存（LRU 300 条 / 4MiB，键含会话与修订号），同一修订内整页重挂直接复用已渲染节点；缓存只存派生产物，服务端原文始终是唯一权威，任何时候丢弃缓存都能重建。超过 1MiB 的发送体在后台 Worker 里序列化，避免大命令阻塞主线程；无 Worker 环境退化为同步序列化，单条消息仍是原子发送。
+
+浏览器验收：`python tests/render-capacity-ui.py`（需 Python Playwright/Chromium，4× CPU 节流下 500 条混合消息，覆盖窗口封顶、滚底回载、交互延迟与全展开后 DOM 有界）。设计与实测记录见 [会话渲染容量记录](docs/session-render-phase-d.md)。
+
 会话快照仅在地址 hash 变化时更新 History，避免首屏地址已正确时重复调用 `replaceState`；切换会话和缺失地址恢复仍同步写回。
 
 输入框自动高度复用未变化的测量结果，避免历史重建后重复读取 `scrollHeight`；输入内容、窗口尺寸、侧栏、手机展开或字体加载变化时重新测量。该优化不消除浏览器正常布局成本，实际长任务改善仍需实测。
