@@ -2441,3 +2441,17 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 涉及文件：public/app.js、public/style.css、tests/app.test.js、tests/prompt-resize.test.js、README.md、.pi/skills/codebase-map/INDEX.md（重新生成）。
 - 决策：通知不再展示 taskId/resultId 原文（`title` + 原文对照够用），也不做卡片外观；折叠只改高度不动草稿，不加高度动画（避免抖动）；不用 `:not()` 一把隐藏 `#composer` 子节点，显式列出要收的块，免得连带隐藏已选 Skill 行。
 - 验证：worktree 内 `npm test` 749 项（747 通过、0 失败、2 既有跳过）；`tests/prompt-resize.test.js` 新增 2 项折叠用例，用拦 5000ms setTimeout 的 `__collapseTick()` 驱动计时，不真等 5 秒。
+
+## 2026-09-19 折叠态只留运行摘要、任务计时与停止按钮
+
+- 时间：2026-09-19。分支 `feat/collapsed-composer-chrome`（worktree F:/worktrees/axiom-collapsed-composer-chrome）。
+- 原因：上一轮折叠把整条 `.actions` 与 `#session-runtime` 一起收掉，结果折叠态既看不到缓存命中/上下文/模型这组运行摘要（判断状态要先展开），任务运行中又因为 Stop / 强制停止被收起而整块豁免折叠，等于长任务期间折叠形同失效。用户明确要求：折叠态不显示左上角三个图标，保留运行摘要行，右上角任务计时与右下角两个停止按钮都是需求。
+- 内容（纯 CSS + 一处 JS 豁免条件）：
+  - 折叠态（`min-width: 701px`）隐藏清单改为：`.session-detail-rows`、`.actions` 内的 `.selectors` / `#send` / `#send-steer` / `#send-followup`、`.context-bar > .icon-group`（+ / 图片 / 目标三枚）、`.composer-footer`。
+  - 保留：`#session-runtime`（改 `padding: 0 20px 10px` 与折叠输入框同左右缘，`nowrap` + `overflow:hidden`，挤不下裁末尾而不换行撑高）、`#task-timer`（右上角，空闲时本身 `hidden`）、`#context-chips`、`#image-attachments`。
+  - `.actions` 折叠态改 `justify-content: flex-end` + `padding: 0 20px 8px`，只剩 Stop / Force 靠右下；两个按钮都 `[hidden]` 时用 `:not(:has(> #stop:not([hidden]), > #force-stop:not([hidden])))` 把整条收掉，空闲不留空 padding。
+  - `composerBusy()` 去掉 `!$("stop").hidden || !$("force-stop").hidden`：停止按钮在折叠态里本来就在，运行中不必再豁免折叠。
+  - 实测（Playwright 1440×900，goal-preview）：空闲折叠 76px（一行输入 46.4 + 摘要 27.6）、运行中折叠 116px（多一条 40px 停止按钮行）、展开 269.6px；折叠态 `.icon-group` 与 `#send` 不可见，`#task-timer` 在 x≈1344、Stop/Force 右缘距输入框右缘 20px。
+- 涉及文件：public/style.css、public/app.js、tests/prompt-resize.test.js、tests/goal-ui.py、README.md。
+- 决策：不调 DOM 顺序（停止按钮留在输入框下方一行，不为「绝对贴右下」重排结构）；`#context-chips` 与图片附件继续保留，否则待发上下文/附件会失联；折叠态样式断言走 CSS 文本正则（jsdom 不跑 media query），与 `goal-command-ui.test.js` 的图标组断言同一路子。
+- 验证：`npm test` 742 项（740 通过、0 失败、2 既有跳过），其中 `tests/prompt-resize.test.js` 7 项含新增的折叠态样式守护；`python tests/goal-ui.py` 全绿（普通会话/新会话/图标组三处断言前先点 `#prompt` 展开，因为桌面折叠态图标组本就不可见）。

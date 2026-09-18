@@ -394,14 +394,14 @@ function clearComposerCollapseTimer() {
 }
 // 折叠会收起动作区，所以「还在用」的状态一律不收：悬停、焦点在输入区、@ 补全或上下文菜单开着、
 // 有待发图片、任务在跑（Stop/Force 在动作区里，收起就点不到了）。
+// 折叠态仍然保留 Stop / Force 两个按钮，所以运行中不再豁免折叠；这里只挡住
+// “正在写/正在点” 的状态：悬停、焦点在输入区内、@ 补全或上下文菜单打开、有待发图片。
 function composerBusy() {
   return composerHovered
     || composerWrap.contains(document.activeElement)
     || !$("prompt-completion").hidden
     || $("context-menu").matches?.(":popover-open")
-    || !$("image-attachments").hidden
-    || !$("stop").hidden
-    || !$("force-stop").hidden;
+    || !$("image-attachments").hidden;
 }
 function expandComposer() {
   clearComposerCollapseTimer();

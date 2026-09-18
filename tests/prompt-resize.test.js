@@ -221,7 +221,7 @@ test("滚动按钮不算输入意图：点回到最新不展开输入区", async
   } finally { dom.window.close(); }
 });
 
-test("还在用的状态不折叠：运行中、待发图片、补全打开", async () => {
+test("还在用的状态不折叠：待发图片、补全打开；运行中照常折叠", async () => {
   const { dom, w, input } = await page();
   const composer = w.document.getElementById("composer");
   const wrap = w.document.querySelector(".composer-wrap");
@@ -231,11 +231,11 @@ test("还在用的状态不折叠：运行中、待发图片、补全打开", as
     await w.__collapseTick();
   };
   try {
-    // Stop/Force 在动作区里，折叠就点不到了。
+    // Stop/Force 在折叠态里是保留项（CSS 只收 selectors 与发送按钮），运行中不必撑开整个输入区。
     w.expandComposer();
     w.document.getElementById("stop").hidden = false;
     await leave();
-    assert.equal(composer.dataset.collapsed, "false", "任务运行中保留 Stop 按钮");
+    assert.equal(composer.dataset.collapsed, "true", "运行中也折叠，Stop 由折叠态保留");
     w.document.getElementById("stop").hidden = true;
     await leave();
     assert.equal(composer.dataset.collapsed, "true");
@@ -258,4 +258,21 @@ test("还在用的状态不折叠：运行中、待发图片、补全打开", as
     await leave();
     assert.equal(composer.dataset.collapsed, "true");
   } finally { dom.window.close(); }
+});
+
+// 折叠态保留什么、收起什么，全靠这段 media query；jsdom 不跑媒体查询，改从 CSS 文本守。
+test("折叠态样式：保留运行摘要、任务计时与停止按钮，收起图标组与发送区", async () => {
+  const css = await readFile(new URL("../public/style.css", import.meta.url), "utf8");
+  const block = css.match(/@media \(min-width: 701px\) \{\s*#composer\[data-collapsed[\s\S]*?\r?\n\}/)?.[0];
+  assert.ok(block, "桌面折叠态样式块存在");
+  const hidden = block.match(/([^{}]*)\{ display: none; \}/)[1];
+  for (const selector of [".session-detail-rows", ".selectors", "#send", ".icon-group", ".composer-footer"]) {
+    assert.ok(hidden.includes(selector), `${selector} 折叠时收起`);
+  }
+  for (const keep of ["#session-runtime", "#task-timer", "#context-chips", "#image-attachments", "#stop", "#force-stop"]) {
+    assert.ok(!hidden.includes(keep), `${keep} 折叠时保留`);
+  }
+  assert.match(block, /#session-runtime \{[^}]*white-space: nowrap/, "摘要单行不换行");
+  assert.match(block, /> \.actions \{[^}]*justify-content: flex-end/, "停止按钮靠右下");
+  assert.match(block, /\.actions:not\(:has\(> #stop:not\(\[hidden\]\), > #force-stop:not\(\[hidden\]\)\)\) \{ display: none/, "两个停止按钮都隐藏时整条动作区收掉");
 });
