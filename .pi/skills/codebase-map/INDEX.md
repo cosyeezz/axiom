@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/18 04:21:50）
+# Axiom 多级代码索引（生成于 2026/9/18 05:13:55）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -32,7 +32,7 @@
 | public/session-details.js | 141 | 主代理页签、安全可折叠 JSON 树与会话账单渲染 | detailElement, money, precise, count |
 | public/stream-playback.js | 165 | 有界字素播放游标与真实时间缓冲追赶 | BUFFER_MS, BASE_RATE, CATCHUP_S, MAX_RATE |
 | public/stream-renderer.js | 179 | 共享 rAF 流式绘制、交互让路与挂载生命周期 | createStreamRenderer |
-| public/style.css | 1813 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1826 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | public/theme.js | 11 | 首帧前阻塞应用明/暗主题（localStorage axiom.theme，默认深色） | - |
 | public/tooltip.css | 50 | 共享悬停说明样式（浅色主题下反色） | - |
 | public/tooltip.js | 225 | 共享悬停说明：动态 title、键盘、定位与无障碍 | SHOW_DELAY, HIDE_DELAY, GAP, EDGE |
@@ -115,7 +115,7 @@
 | tests/goal-preview.mjs | 148 | node --test 测试（npm test） | cwd, seq, text, makeState |
 | tests/goal-protocol.test.js | 15 | node --test 测试（npm test） | - |
 | tests/goal-sessions.test.js | 740 | node --test 测试（npm test） | PLAN, factoryFixture, tick, until |
-| tests/goal-ui.py | 488 | node --test 测试（npm test） | - |
+| tests/goal-ui.py | 501 | node --test 测试（npm test） | - |
 | tests/goal-ui.test.js | 432 | node --test 测试（npm test） | page, $, labels, messages |
 | tests/goal.test.js | 856 | node --test 测试（npm test） | ROUND, GOAL, PLAN, PLAN2 |
 | tests/helpers/model-concurrency-child.mjs | 93 | node --test 测试（npm test） | barrier, runOpponent |
@@ -157,7 +157,7 @@
 | tests/pi-model-storage.test.js | 624 | node --test 测试（npm test） | tempDir, makeStorage, seedPiModels, seedPiAuth |
 | tests/pi-question.test.js | 197 | node --test 测试（npm test） | - |
 | tests/project-skills.test.js | 143 | node --test 测试（npm test） | scopeKey, setup |
-| tests/prompt-resize.test.js | 262 | node --test 测试（npm test） | page |
+| tests/prompt-resize.test.js | 279 | node --test 测试（npm test） | page |
 | tests/question-layout-ui.py | 48 | node --test 测试（npm test） | - |
 | tests/question-preview.mjs | 36 | node --test 测试（npm test） | factory, sessions, app, port |
 | tests/question-ui.test.js | 99 | node --test 测试（npm test） | source |
@@ -321,7 +321,7 @@
 | resizePrompt | method | 388 |
 | clearComposerCollapseTimer | function | 390 |
 | clearTimeout | method | 392 |
-| composerBusy | function | 397 |
+| composerBusy | function | 399 |
 | expandComposer | function | 406 |
 | clearComposerCollapseTimer | method | 407 |
 | applyComposerCollapsed | method | 410 |
@@ -2220,7 +2220,7 @@
 | scopeKey | const | 9 |
 | setup | function | 16 |
 
-### tests/prompt-resize.test.js（262 行） — node --test 测试（npm test）
+### tests/prompt-resize.test.js（279 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|

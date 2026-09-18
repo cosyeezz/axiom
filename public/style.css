@@ -906,10 +906,13 @@ button.danger:hover:not(:disabled) { background: light-dark(#a92f41, #c13e50); }
   overflow: hidden;
   box-shadow: 0 8px 32px var(--shadow-soft);
 }
-/* 折叠态（仅桌面）：只留一行输入，模型选择/发送/运行摘要/快捷键提示都收起；
-   上下文工具条与图片附件不收，否则添加上下文要先多点一下。 */
+/* 折叠态（仅桌面）：一行输入 + 一行运行摘要（缓存/上下文/模型），右上角任务计时、
+   右下角两个停止按钮（运行中要能随手停）都保留；左上角 + / 图片 / 目标三个图标、
+   模型选择、发送按钮、会话详情入口与快捷键提示收起。图片附件不收，否则待发附件会失联。 */
 @media (min-width: 701px) {
-  #composer[data-collapsed="true"] > :is(.actions, #session-runtime, .session-detail-rows),
+  #composer[data-collapsed="true"] > .session-detail-rows,
+  #composer[data-collapsed="true"] > .actions > :is(.selectors, #send, #send-steer, #send-followup),
+  .composer-wrap[data-collapsed="true"] .context-bar > .icon-group,
   .composer-wrap[data-collapsed="true"] > .composer-footer { display: none; }
   #composer[data-collapsed="true"] #prompt {
     min-height: 0;
@@ -918,6 +921,16 @@ button.danger:hover:not(:disabled) { background: light-dark(#a92f41, #c13e50); }
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* 摘要与动作区跟折叠输入框同一条左/右缘（20px）；摘要单行不换行，挤不下就裁末尾而不撑高。 */
+  #composer[data-collapsed="true"] #session-runtime {
+    padding: 0 20px 10px;
+    flex-wrap: nowrap;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  #composer[data-collapsed="true"] > .actions { justify-content: flex-end; padding: 0 20px 8px; }
+  /* 空闲时两个停止按钮都 [hidden]，整条动作区收掉，不留空 padding。 */
+  #composer[data-collapsed="true"] > .actions:not(:has(> #stop:not([hidden]), > #force-stop:not([hidden]))) { display: none; }
 }
 .workspace-location { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .workspace-location #workspace-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

@@ -86,8 +86,18 @@ def open_session(page, session_id, title):
     page.wait_for_timeout(250)
 
 
+def expand_composer(page):
+    """桌面输入区默认折叠成一行（图标组、模型栏此时 display:none）；按真实交互点一下输入框展开再验收。"""
+    if page.locator('#composer[data-collapsed="true"]').count() == 0:
+        return
+    page.locator("#prompt").click()
+    page.wait_for_selector('#composer[data-collapsed="false"]', timeout=5000)
+    page.wait_for_timeout(120)
+
+
 def check_plain_chat(page, failures):
     open_session(page, "chat-plain", "普通会话 · 无目标")
+    expand_composer(page)
     assert page.locator("#goal-track").is_hidden(), "普通会话不该有目标进度条"
     assert page.locator("#goal-dock").is_hidden(), "普通会话不该有目标控制面板"
     assert page.locator("#goal-enter").is_visible(), "普通会话应保留目标入口图标"
@@ -265,6 +275,7 @@ def assert_composer_group(metrics, where, failures):
 def check_new_session(page, failures):
     """全新空会话同样不能出现目标面板（无历史消息也不该凭空长出一个）。"""
     open_session(page, "chat-new", "新会话")
+    expand_composer(page)
     assert page.locator("#goal-track").is_hidden(), "新会话不该有目标进度条"
     assert page.locator("#goal-dock").is_hidden(), "新会话不该有目标控制面板"
     assert page.locator("#goal-enter").is_visible(), "新会话应保留目标入口图标"
@@ -276,6 +287,7 @@ def check_new_session(page, failures):
 def check_composer_group(page, failures):
     """输入区图标组：+ / 图片 / 目标共用一条组边框，目标图标不再自带独立描边。"""
     open_session(page, "chat-plain", "普通会话 · 无目标")
+    expand_composer(page)
     assert_composer_group(group_metrics(page), "图标组 1440", failures)
     # 包进组后图片上传仍要能拉起文件选择。
     with page.expect_file_chooser(timeout=5000) as chooser:
@@ -396,6 +408,7 @@ def check_paused_exit(page, failures, frames):
     page.wait_for_function(
         "() => document.getElementById('goal-dock').hidden && document.getElementById('goal-track').hidden"
     )
+    expand_composer(page)
     page.wait_for_selector("#goal-enter", state="visible")
     page.wait_for_timeout(200)
     sent = [json.loads(item) for item in frames[mark:] if item.strip().startswith("{")]
