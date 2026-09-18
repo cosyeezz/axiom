@@ -18,7 +18,7 @@ const POLL_MS = 3000, FETCH_TIMEOUT = 5000, SUBMIT_GRACE = 5000;
 
 export function initServiceSettings({ request, isReady }) {
   const $ = (id) => document.getElementById(id);
-  let managed = false, desktop = false, restarting = false, checking = false, update = null;
+  let managed = false, restarting = false, checking = false, update = null;
   let pollTimer, polling = false, lastState = null, recovering = false, submittedAt = 0;
   const names = { quick: "重启服务", rebuild: "修复依赖并重启", update: "安装更新", install: "安装更新" };
   const statusNames = { running: "进行中", succeeded: "成功", failed: "失败", interrupted: "已中断" };
@@ -29,8 +29,7 @@ export function initServiceSettings({ request, isReady }) {
   function sync() {
     const ready = isReady() && managed && !restarting && !checking;
     for (const id of ["restart-quick", "restart-rebuild"]) {
-      $(id).disabled = !ready || desktop;
-      $(id).hidden = desktop;
+      $(id).disabled = !ready;
     }
     $("update-check").disabled = !ready;
     $("update-install").disabled = !ready;
@@ -73,15 +72,12 @@ export function initServiceSettings({ request, isReady }) {
 
   function apply(service) {
     managed = service.managed === true;
-    desktop = service.desktop === true;
     $("service-update-section").hidden = service.dev === true; // DEV 隐藏更新
     $("service-dev").hidden = service.dev !== true;
     const version = service.version ? `v${service.version}` : "";
     $("service-version").hidden = !version;
     $("service-version").textContent = version;
-    $("service-feedback").textContent = service.error || (desktop
-      ? "桌面版仅手动下载安装包；安装前请关闭应用，等待任务保存完成。当前测试包未正式签名，请核对发布说明。"
-      : managed
+    $("service-feedback").textContent = service.error || (managed
       ? "重启前请停止所有会话任务；页面会自动重连。"
       : "当前为直接启动，请改用 npm start 以启用重启和更新。");
     // service.status 不带 operation：无字段时沿用轮询 lastState，不抹掉历史、不误解锁进行中操作。
@@ -103,7 +99,7 @@ export function initServiceSettings({ request, isReady }) {
   }
 
   function openDialog(mode) {
-    if (!isReady() || !managed || restarting || desktop) return;
+    if (!isReady() || !managed || restarting) return;
     const dialog = $("restart-dialog");
     dialog.dataset.mode = mode;
     $("restart-title").textContent = names[mode];
@@ -125,20 +121,9 @@ export function initServiceSettings({ request, isReady }) {
     try {
       update = await request("service.update.check");
       $("update-result").textContent = update.available
-        ? `发现新版本 ${update.remote}（当前 ${update.local}）。${update.manual ? "请手动下载，关闭应用并等待保存完成后再安装；不要删除数据目录。" : "安装会重新部署并自动重启。"}`
+        ? `发现新版本 ${update.remote}（当前 ${update.local}）。安装会重新部署并自动重启。`
         : `已是最新版本（${update.local}）。`;
-      if (update.available && update.manual) {
-        const url = new URL(update.downloadUrl);
-        if (url.protocol !== "https:" || url.hostname !== "github.com" || url.username || url.password || url.port ||
-            !url.pathname.startsWith("/cosyeezz/axiom/releases/download/")) throw new Error("无效的安装包地址");
-        const link = document.createElement("a");
-        link.href = url.href;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        link.textContent = " 下载桌面安装包";
-        $("update-result").append(link);
-      }
-      $("update-install").hidden = !update.available || update.manual === true;
+      $("update-install").hidden = !update.available;
     } catch (e) {
       update = null;
       $("update-install").hidden = true;
@@ -153,7 +138,7 @@ export function initServiceSettings({ request, isReady }) {
     if (!dialog.open) return;
     const mode = dialog.dataset.mode;
     dialog.close();
-    if (!isReady() || !managed || restarting || desktop) return;
+    if (!isReady() || !managed || restarting) return;
     restarting = true;
     submittedAt = Date.now(); // 守护记账前的短暂窗口内，轮询不因 idle 提前解锁
     sync();

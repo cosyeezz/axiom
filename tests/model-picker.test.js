@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
+import { publicSource } from "./helpers/public-source.js";
 
-const source = (await readFile(new URL("../public/model-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+const source = await publicSource("model-picker");
 const tick = () => new Promise(setImmediate);
 const nap = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -109,7 +110,7 @@ test("收藏：字典播种置顶、星标只切收藏不选中不关闭、焦�
     w.picker.enhance(select, "model");
     click(w, select);
     assert.deepEqual(opts(w).map((o) => o.dataset.value), ["c", "a", "b", ""], "收藏稳定置顶");
-    assert.equal(stars(w)[0].textContent, "★");
+    assert.equal(stars(w)[0].querySelector("svg").dataset.icon, "star");
     assert.equal(stars(w)[0].getAttribute("aria-checked"), "true");
 
     stars(w)[0].focus(); // 模拟键盘到达星标（jsdom 不会因 click 聚焦）
@@ -119,7 +120,7 @@ test("收藏：字典播种置顶、星标只切收藏不选中不关闭、焦�
     assert.equal(select.getAttribute("aria-expanded"), "true");
     assert.equal(w.document.activeElement.dataset.value, "c", "焦点跟住原星");
     assert.equal(w.document.activeElement.classList.contains("ax-mp-star"), true);
-    assert.equal(w.document.activeElement.textContent, "☆");
+    assert.equal(w.document.activeElement.getAttribute("aria-checked"), "false");
     assert.deepEqual(opts(w).map((o) => o.dataset.value), ["a", "b", "", "c"], "取消后同步回落原序");
     await tick(); // onToggle 经微任务回调
     assert.deepEqual(w.toggled.map((t) => [...t]), [["model", "c", false]], "跨 realm 数组先拷回 Node 侧");
@@ -159,7 +160,7 @@ test("favKey 映射：星标按持久化键匹配、onToggle 上报映射键、�
     w.picker.enhance(select, "model");
     click(w, select);
     assert.deepEqual(opts(w).map((o) => o.dataset.value), ["c", "a", "b", ""], "映射键命中置顶");
-    assert.equal(stars(w)[0].textContent, "★", "存储键 prov/c 经映射回亮星");
+    assert.equal(stars(w)[0].getAttribute("aria-checked"), "true", "存储键 prov/c 经映射回亮星");
     stars(w)[1].focus(); // a 行
     click(w, stars(w)[1]);
     await tick();
@@ -199,7 +200,7 @@ test("快速连点：乐观集交替上报，请求按序落地后与最后一�
     assert.deepEqual(w.toggled.map((t) => [...t]), [["model", "c", true], ["model", "c", false]], "按序上报交替状态");
     gates[1]();
     await tick();
-    assert.equal(starOf("c").textContent, "☆", "落地后与最后一次请求一致");
+    assert.equal(starOf("c").getAttribute("aria-checked"), "false", "落地后与最后一次请求一致");
     assert.deepEqual(w.favData.model, []);
   } finally { dom.window.close(); }
 });
@@ -222,11 +223,11 @@ test("持久化失败：onError 一次、星标回落真实状态、可重试", 
     await tick();
     assert.equal(w.errors.length, 1);
     assert.match(w.errors[0].message, /persist down/);
-    assert.equal(stars(w)[0].textContent, "☆", "失败后星标回落 store 真实状态");
+    assert.equal(stars(w)[0].getAttribute("aria-checked"), "false", "失败后星标回落 store 真实状态");
     click(w, stars(w)[0]); // 重试：成功
     await tick();
     assert.equal(w.errors.length, 1, "失败只报一次");
-    assert.equal(stars(w)[0].textContent, "★");
+    assert.equal(stars(w)[0].getAttribute("aria-checked"), "true");
   } finally { dom.window.close(); }
 });
 

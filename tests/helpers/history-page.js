@@ -24,7 +24,7 @@ export const makeRecords = (count, tag = "历史") =>
   }));
 
 const html = await readFile(new URL("../../public/index.html", import.meta.url), "utf8");
-const pickerSource = (await readFile(new URL("../../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+const pickerSource = (await readFile(new URL("../../public/file-picker.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "");
 const modelSources = await Promise.all(["model-picker", "model-auth", "model-manager"].map(async (name) => {
   const source = await readFile(new URL(`../../public/${name}.js`, import.meta.url), "utf8");
   const exports = [...source.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);

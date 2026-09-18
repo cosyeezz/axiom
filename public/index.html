@@ -65,7 +65,7 @@
               <option value="200">字号 200%</option>
             </select>
             <a id="github-link" class="icon-button" href="https://github.com/cosyeezz/axiom" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码" aria-label="在 GitHub 查看源码（新标签页打开）"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-2.92-.88-2.92-2.9 0-.58.21-1.05.55-1.42-.05-.14-.24-.68.05-1.42 0 0 .56-.18 1.83.68a6.9 6.9 0 0 1 1.71-.23c.58 0 1.17.08 1.71.23 1.27-.87 1.83-.68 1.83-.68.29.74.1 1.28.05 1.42.34.37.55.84.55 1.42 0 2.03-1.15 2.7-2.93 2.9.3.26.56.76.56 1.54 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg></a>
-            <button type="button" id="status" aria-live="polite" aria-haspopup="dialog" aria-controls="settings" title="查看服务与更新设置">连接中</button>
+            <button type="button" id="status" aria-live="polite" aria-haspopup="dialog" aria-controls="settings" title="查看连接设置">连接中</button>
             <span id="service-dev" hidden title="开发环境">DEV</span>
             <span id="service-version" hidden title="当前安装版本"></span>
             <button type="button" id="open-raw-io" class="icon-button" aria-pressed="false" aria-controls="raw-io" title="对照原文" aria-label="切换原文对照"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5-6 7 6 7M16 5l6 7-6 7M14 3l-4 18"/></svg></button>
@@ -157,25 +157,13 @@
                 </div>
                 <button type="button" class="secondary" id="stop" title="安全停止：等当前一步跑完再停，不丢已完成的产出" aria-label="安全停止当前会话任务" hidden>Stop <span aria-hidden="true">■</span></button
                 ><button type="button" class="danger" id="force-stop" title="强制停止：立即中断，本轮未完成的回答与工具产出会丢失" aria-label="强制停止当前会话任务" hidden>Force <span aria-hidden="true">⚠</span></button
-                ><button type="submit" class="secondary" id="send-steer" data-queue="steer" title="在下一个可介入节点补充指令，不中断正在运行的工具" hidden>Steer</button><button type="submit" class="secondary" id="send-followup" data-queue="followUp" title="等待当前这一轮结束后发送，不影响当前执行" hidden>Follow-up</button><button id="send">Send</button>
+                ><button type="submit" class="secondary" id="send-steer" data-queue="steer" title="在下一个可介入节点补充指令，不中断正在运行的工具" hidden>Steer</button><button type="submit" class="secondary" id="send-followup" data-queue="followUp" title="等待当前这一轮结束后发送，不影响当前执行" hidden>Follow-up</button><button id="send">发送</button>
               </div>
               <div id="session-runtime" class="runtime-summary" role="status" aria-live="polite"></div>
-              <details id="session-inspector" class="task-system-prompt">
-                <summary>主代理系统提示词与工具</summary>
-                <div class="session-inspector-body">
-                  <p>当前运行态快照，不是最后一次完整请求。运行结束后扩展提示可能复位；不含动态用户消息或供应商内部指令。分享前请检查隐私内容。</p>
-                  <div class="inspector-tabs" role="tablist" aria-label="主代理详情">
-                    <button type="button" role="tab" id="inspector-prompt-tab" aria-selected="true" aria-controls="inspector-prompt-panel">系统提示词</button>
-                    <button type="button" role="tab" id="inspector-tools-tab" aria-selected="false" aria-controls="inspector-tools-panel" tabindex="-1">工具注册</button>
-                  </div>
-                  <div id="inspector-prompt-panel" role="tabpanel" aria-labelledby="inspector-prompt-tab"><pre id="session-system-prompt">系统提示词尚未加载；会话启动后可查看。</pre></div>
-                  <div id="inspector-tools-panel" role="tabpanel" aria-labelledby="inspector-tools-tab" hidden><div id="session-active-tools">工具信息尚未加载。</div></div>
-                </div>
-              </details>
-              <details id="session-billing" class="task-system-prompt">
-                <summary>当前会话账单</summary>
-                <div id="session-bill-body" class="session-inspector-body"></div>
-              </details>
+              <div class="session-detail-rows">
+                <button type="button" id="session-inspector-trigger" class="session-detail-row" aria-haspopup="dialog"><span>主代理配置</span><span class="detail-summary-meta">系统提示词与工具</span></button>
+                <button type="button" id="session-billing-trigger" class="session-detail-row" aria-haspopup="dialog"><span>会话账单</span><span id="session-bill-total" class="detail-summary-meta">查看明细</span></button>
+              </div>
               <div class="mobile-controls">
                 <span id="mobile-runtime" aria-live="polite"></span>
                 <button type="button" id="mobile-expand" class="secondary" aria-expanded="false" aria-controls="composer earliest session-title">展开</button>
@@ -220,10 +208,30 @@
         <div class="dialog-actions"><button type="button" id="force-stop-cancel" class="secondary" autofocus>取消</button><button id="force-stop-submit" class="danger">确认强停</button></div>
       </form>
     </dialog>
+    <dialog id="session-detail" class="task-dialog" aria-labelledby="session-detail-title">
+      <div class="task-top"><header><h2 id="session-detail-title">会话详情</h2><button type="button" id="session-detail-close" class="secondary" aria-label="关闭会话详情">关闭 ✕</button></header></div>
+      <div class="task-body">
+        <details id="session-inspector" class="session-detail-section" name="session-detail" open>
+          <summary>主代理配置</summary>
+          <div class="session-inspector-body">
+            <p class="inspector-caption">当前运行配置 <span title="不是完整请求，不含动态消息或供应商内部指令；分享前请检查隐私。">ⓘ</span></p>
+            <div class="inspector-tabs" role="tablist" aria-label="主代理详情">
+              <button type="button" role="tab" id="inspector-prompt-tab" aria-selected="true" aria-controls="inspector-prompt-panel">系统提示词</button>
+              <button type="button" role="tab" id="inspector-tools-tab" aria-selected="false" aria-controls="inspector-tools-panel" tabindex="-1">工具注册</button>
+            </div>
+            <div id="inspector-prompt-panel" role="tabpanel" aria-labelledby="inspector-prompt-tab"><pre id="session-system-prompt">系统提示词尚未加载；会话启动后可查看。</pre></div>
+            <div id="inspector-tools-panel" role="tabpanel" aria-labelledby="inspector-tools-tab" hidden><div id="session-active-tools">工具信息尚未加载。</div></div>
+          </div>
+        </details>
+        <details id="session-billing" class="session-detail-section" name="session-detail">
+          <summary>会话账单</summary><div id="session-bill-body" class="session-inspector-body"></div>
+        </details>
+      </div>
+    </dialog>
     <div id="task-overlays"></div>
     <template id="task-template">
       <button type="button" class="task-card" aria-haspopup="dialog">
-        <span class="task-meta"><span class="task-badge">SUBAGENT</span><span class="task-status"></span><span class="task-open" aria-hidden="true">查看详情 ↗</span></span>
+        <span class="task-meta"><span class="task-badge">子代理</span><span class="task-status"></span><span class="task-cost"></span><span class="task-open" aria-hidden="true">查看详情 ↗</span></span>
         <span class="task-title"></span>
       </button>
       <dialog class="task-dialog">
@@ -242,6 +250,7 @@
           <h3>任务</h3>
           <pre class="task-description"></pre>
           <details class="task-system-prompt"><summary>系统提示词（运行时）</summary><pre></pre></details>
+          <details class="task-billing"><summary>任务账单</summary><div class="task-bill-body"></div></details>
           <p class="task-error" role="alert" hidden></p>
         </div>
       </dialog>
@@ -279,11 +288,26 @@
       </header>
       <div class="settings-layout">
       <nav class="settings-nav" aria-label="设置分类">
+        <button id="settings-connection-tab" type="button" class="secondary" aria-controls="connection-panel">连接</button>
         <button id="settings-defaults-tab" type="button" class="secondary" aria-current="page" aria-controls="defaults-panel">默认新会话设置</button>
         <button id="settings-remote-tab" type="button" class="secondary" aria-controls="remote-panel">远程控制</button>
         <button id="settings-models-tab" type="button" class="secondary" aria-controls="models-panel">模型与供应商</button>
         <button id="settings-service-tab" type="button" class="secondary" aria-controls="service-panel">服务与更新</button>
       </nav>
+      <div class="settings-body" id="connection-panel" hidden>
+        <section aria-labelledby="connection-current-title">
+          <h3 id="connection-current-title">当前连接</h3>
+          <p id="connection-current" role="status">…</p>
+        </section>
+        <form id="connection-form">
+          <label for="connection-address">服务地址</label>
+          <input id="connection-address" type="text" inputmode="url" autocomplete="off" spellcheck="false"
+                 placeholder="127.0.0.1:4319 或 example.com:8080" aria-describedby="connection-help" />
+          <p id="connection-help">本机或远程地址均可（host:port，默认端口 4319；或完整 http(s) 地址）。连接会整页跳转到该地址；远程需在服务机器上以 <code>AXIOM_HOST</code> 绑定对应地址并放行端口。此表单在断线时也可使用，用于切换到可用的服务地址。</p>
+          <p id="connection-feedback" role="status" aria-live="polite"></p>
+          <div class="dialog-actions"><button type="submit" id="connection-connect">连接</button></div>
+        </form>
+      </div>
       <div class="settings-body" id="defaults-panel">
         <section aria-labelledby="selection-copy-title">
           <h3 id="selection-copy-title">输入与复制</h3>

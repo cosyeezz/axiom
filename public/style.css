@@ -46,6 +46,19 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 }
+/* Shared action glyphs keep their own geometry, including inside legacy control rules. */
+svg.action-icon {
+  width: 16px; height: 16px; flex: 0 0 auto; vertical-align: -3px;
+  fill: none; stroke: currentColor; stroke-width: 1.75;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+svg.action-icon[data-icon="more"] { stroke-width: 3; }
+.ax-mp-star[aria-checked="true"] svg.action-icon { fill: currentColor; }
+.mm-caret svg.action-icon { width: 12px; height: 12px; }
+.retry-chip svg.action-icon, .context-chip svg.action-icon[data-icon="close"] { width: 12px; height: 12px; }
+.session-more svg.action-icon { vertical-align: middle; }
+.session-pin-icon svg.action-icon { width: 16px; height: 16px; }
+.context-chevron svg.action-icon, .session-copy-arrow svg.action-icon { width: 12px; height: 12px; }
 * {
   box-sizing: border-box;
   scrollbar-width: thin;
@@ -791,7 +804,7 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 .runtime-summary > span { min-width: 0; }
-#session-runtime { padding: 0 16px 8px; }
+#session-runtime { padding: 0 12px 8px; }
 #composer { display: flex; flex-direction: column; }
 .message-model { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin-top: 8px; color: var(--muted); overflow-wrap: anywhere; font-size: 12px; font-variant-numeric: tabular-nums; }
 .message-model-name { color: var(--body-ink); }
@@ -1121,8 +1134,9 @@ textarea {
 #defaults-panel, #remote-panel, #models-panel { min-width: 0; }
 #defaults-editor .settings-body { padding: 0; }
 .settings-nav { display: flex; flex-direction: column; gap: 4px; }
-#remote-form { margin-top: 16px; }
-#remote-form > label { display: block; margin-bottom: 8px; color: var(--body-ink); font-size: 12px; }
+#remote-form, #connection-form { margin-top: 16px; }
+#remote-form > label, #connection-form > label { display: block; margin-bottom: 8px; color: var(--body-ink); font-size: 12px; }
+#connection-help code { font-family: var(--mono); font-size: 12px; }
 #remote-status a, #remote-url a { color: var(--accent-ink); overflow-wrap: anywhere; }
 #remote-login code { font-family: var(--mono); font-size: 12px; color: var(--ink); overflow-wrap: anywhere; }
 #remote-login button { margin-right: 8px; }
@@ -1413,7 +1427,73 @@ textarea {
 .bill-model dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 16px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .bill-model dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
 #session-runtime { overflow-wrap: anywhere; }
-#session-billing { margin-top: 8px; }
+/* 详情独立阅读，输入区高度不随详情内容增长。 */
+.session-detail-rows { display: flex; flex-direction: column; margin: 0 12px 8px; border-top: 1px solid var(--line); }
+.session-detail-row { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 4px 0; font-size: 12px; font-weight: 500; color: var(--body-ink); text-align: left; background: transparent; border: 0; }
+.session-detail-row::after { content: '↗'; margin-left: 4px; color: var(--muted); }
+.session-detail-row:hover { color: var(--ink); background: transparent; }
+@media (pointer: coarse) { .session-detail-row { min-height: 44px; } }
+#session-detail .task-body { padding: 16px 24px 24px; }
+#session-detail .session-detail-section { margin: 0 0 8px; padding: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+#session-detail .session-detail-section > summary { min-height: 44px; border-radius: 0; background: transparent; box-shadow: none; position: static; }
+#session-detail summary::-webkit-details-marker { display: none; }
+#session-detail .session-inspector-body { max-height: none; overflow: visible; padding: 8px 0 12px; }
+#session-inspector > summary, #session-billing > summary { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 4px 0; font-size: 12px; font-weight: 500; color: var(--body-ink); cursor: pointer; list-style: none; }
+#session-inspector > summary::before, #session-billing > summary::before { content: '›'; color: var(--muted); font-size: 16px; width: 12px; transition: transform .15s; }
+#session-inspector[open] > summary::before, #session-billing[open] > summary::before { transform: rotate(90deg); }
+.detail-summary-meta { margin-left: auto; font-size: 12px; color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+#session-detail .tool-filter { min-height: 40px; }
+#session-detail .bill-model > summary, #session-detail .bill-models > summary, #session-detail .bill-note > summary { min-height: 40px; }
+#session-detail .json-tree summary { min-height: 40px; }
+@media (max-width: 700px) { .shell:not(.mobile-expanded) .session-detail-rows { display: none; } }
+.inspector-caption { display: flex; justify-content: space-between; margin: 0 0 8px; font-size: 12px; }
+.inspector-tabs { gap: 16px; padding: 0; margin-bottom: 12px; }
+.inspector-tabs button { padding: 8px 0; border: 0; border-bottom: 2px solid transparent; border-radius: 0; font-size: 12px; }
+.inspector-tabs button[aria-selected="true"] { background: transparent; border-bottom-color: var(--ink); }
+#session-system-prompt { background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 0; line-height: 1.7; }
+.tool-filter { width: 100%; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); color: var(--ink); margin-bottom: 8px; font-size: 12px; }
+.inspector-tool { margin: 0; padding: 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; }
+.inspector-tool > summary { display: flex; align-items: center; gap: 12px; padding: 8px 4px; min-height: 40px; }
+.tool-name { flex: 0 0 120px; color: var(--ink); font-size: 12px; }
+.tool-brief { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted); font-weight: 400; }
+.tool-definition { padding: 0 12px 12px; }
+.tool-description { margin: 0 0 16px; color: var(--body-ink); font-size: 12px; line-height: 1.65; white-space: pre-wrap; }
+.detail-eyebrow { font-size: 13px; font-weight: 500; letter-spacing: .4px; color: var(--muted); }
+.json-tree { font-size: 12px; line-height: 1.6; margin-left: 8px; }
+.json-tree summary { display: list-item; min-height: 24px; }
+.json-shape { margin-left: 8px; color: var(--muted); font-weight: 400; }
+.json-string { color: var(--body-ink); }
+.json-number, .json-boolean { color: var(--accent-hover); }
+.detail-empty { margin: 12px 0; color: var(--muted); font-size: 12px; }
+.bill-overview { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 8px 0 16px; }
+.bill-total { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.bill-total > .detail-eyebrow { flex-basis: 100%; }
+.bill-total strong { font-size: 28px; letter-spacing: -1px; line-height: 1.3; font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
+.bill-currency, .bill-counts { font-size: 12px; color: var(--muted); }
+.bill-counts { display: grid; gap: 4px; text-align: right; }
+.bill-agents { border-top: 1px solid var(--line); }
+.bill-agent { border-bottom: 1px solid var(--line); }
+.bill-agent > summary, .bill-model > summary { display: flex; justify-content: space-between; align-items: center; gap: 16px; min-height: 48px; padding: 8px 0; cursor: pointer; }
+.bill-agent-name { display: grid; gap: 4px; min-width: 0; font-size: 12px; }
+.bill-agent-name > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bill-agent-name small { font-size: 12px; color: var(--muted); }
+.bill-agent-amount { white-space: nowrap; font-size: 13px; font-variant-numeric: tabular-nums; }
+.bill-table { border-collapse: collapse; width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
+.bill-table th { font-weight: 400; color: var(--muted); }
+.bill-table th, .bill-table td { text-align: right; padding: 8px 4px; border-bottom: 1px solid var(--line); }
+.bill-table th:first-child, .bill-table td:first-child { text-align: left; }
+.bill-models, .bill-note { font-size: 12px; color: var(--muted); margin-top: 12px; }
+.bill-models > summary, .bill-note > summary { min-height: 40px; cursor: pointer; padding: 4px 0; }
+.bill-model { padding: 0; margin: 0; border: 0; background: transparent; }
+.bill-model > summary { font-size: 12px; }
+@media (pointer: coarse) { .inspector-tabs button, #session-detail .tool-filter { min-height: 44px; } }
+.bill-note p { line-height: 1.65; }
+.task-cost { margin-left: auto; color: var(--body-ink); font-size: 12px; font-variant-numeric: tabular-nums; }
+.task-card { background: var(--raised); border-color: var(--line); border-left-color: var(--line); }
+.task-billing { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin: 16px 0; padding: 12px 0; }
+.task-billing > summary { min-height: 44px; font-size: 12px; cursor: pointer; }
+@media (max-width: 700px) { .tool-name { flex-basis: 80px; } .bill-overview { gap: 8px; } .bill-total strong { font-size: 24px; } }
+@media (prefers-reduced-motion: reduce) { #session-inspector > summary::before, #session-billing > summary::before { transition: none; } }
 .mobile-controls { display: none; }
 @media (max-width: 700px) {
   body { --sidebar-width: 0px; }

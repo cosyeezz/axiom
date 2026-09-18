@@ -1,6 +1,4 @@
 node_modules/
-.desktop-stage/
-dist/
 .env
 .env.local
 *.log

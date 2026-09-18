@@ -1,3 +1,4 @@
+import { actionIconNode } from "./icons.js";
 export function createQuestionUI({ root, reply, focusPrompt }) {
   const drafts = new Map();
   let sessionId, requests = [], connected = true, activeKey;
@@ -7,12 +8,6 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
     if (className) node.className = className;
     if (text != null) node.textContent = text;
     return node;
-  };
-  const icon = (path) => {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true');
-    const line = document.createElementNS(svg.namespaceURI, 'path'); line.setAttribute('d', path);
-    svg.append(line); return svg;
   };
   const current = () => requests[0];
   const draft = () => drafts.get(keyOf(current().toolCallId));
@@ -51,7 +46,7 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
     root.replaceChildren();
     const heading = el('div', 'question-heading');
     const emblem = el('span', 'question-emblem');
-    emblem.append(icon('M8 10h8M8 14h5M20 11a8 8 0 0 1-8 8H5l-3 3V11a9 9 0 0 1 18 0Z'));
+    emblem.append(actionIconNode('chat'));
     heading.append(emblem, el('span', '', '需要你确认'), el('span', 'question-mode', question.multiple ? '可多选' : '单选'));
     root.append(heading);
     const tabs = el('div', 'question-tabs');
@@ -80,7 +75,7 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
       const button = el('button', 'question-choice'); button.type = 'button'; button.disabled = disabled;
       button.setAttribute('role', question.multiple ? 'checkbox' : 'radio'); button.setAttribute('aria-checked', String(picked));
       button.tabIndex = index === state.focus[state.tab] ? 0 : -1;
-      const mark = el('span', 'question-mark', picked ? '✓' : ''); mark.setAttribute('aria-hidden', 'true');
+      const mark = el('span', 'question-mark'); if (picked) mark.append(actionIconNode('check')); mark.setAttribute('aria-hidden', 'true');
       const copy = el('span', 'question-copy'); copy.append(el('span', 'question-label', label));
       if (description) copy.append(el('span', 'question-option-description', description));
       button.append(mark, copy);
@@ -109,7 +104,7 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
       if (!question.multiple) state.answers[state.tab] = [];
       options.querySelectorAll('.question-choice').forEach((button, i) => {
         const picked = i === question.options.length || state.answers[state.tab].includes(question.options[i]?.label);
-        button.setAttribute('aria-checked', String(picked)); button.querySelector('.question-mark').textContent = picked ? '✓' : '';
+        button.setAttribute('aria-checked', String(picked)); button.querySelector('.question-mark').replaceChildren(...(picked ? [actionIconNode('check')] : []));
       });
       resizeInput();
       updateFooter();
@@ -136,20 +131,20 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
         button.dataset.answered = String(done);
         button.setAttribute('aria-label', `${request.questions[i].header}，${done ? '已回答' : '未回答'}`);
         const step = button.querySelector('.question-step');
-        step.replaceChildren(done ? icon('m5 12 4 4L19 6') : document.createTextNode(String(i + 1)));
+        step.replaceChildren(done ? actionIconNode('check') : document.createTextNode(String(i + 1)));
       });
       progress.dataset.complete = String(count === request.questions.length);
     }
     updateFooter(); footer.append(progress, submit); root.append(footer);
     const help = el('div', 'question-help');
-    for (const [label, paths] of [
-      ['切题', ['m14 6-6 6 6 6', 'm10 6 6 6-6 6']],
-      ['移动', ['m6 14 6-6 6 6', 'm6 10 6 6 6-6']],
-      ['选择', ['M4 9v6h16V9']],
-      ['下一题 / 提交', ['M19 5v9H5m5-5-5 5 5 5']],
+    for (const [label, names] of [
+      ['切题', ['back', 'chevron']],
+      ['移动', ['up', 'down']],
+      ['选择', ['space']],
+      ['下一题 / 提交', ['enter']],
     ]) {
       const hint = el('span', 'question-hint');
-      paths.forEach((path) => { const keycap = el('kbd'); keycap.append(icon(path)); hint.append(keycap); });
+      names.forEach((name) => { const keycap = el('kbd'); keycap.append(actionIconNode(name)); hint.append(keycap); });
       hint.append(document.createTextNode(label)); help.append(hint);
     }
     help.setAttribute('aria-label', '左右方向键切题，上下方向键移动，空格选择，Enter 下一题或提交');

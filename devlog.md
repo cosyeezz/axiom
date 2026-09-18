@@ -1,5 +1,29 @@
 # 开发记录
 
+## 2026-09-17 输入区详情入口对齐与紧凑排版
+
+- 原因：运行统计与详情入口左右内缩相差 4px，桌面入口沿用触控行高导致底部留白偏大。
+- 决策：统一为 12px 内缩；桌面行高从 44px 缩为 36px，两行共节省 16px，粗指针设备仍保留 44px 点击区域。不改变详情弹窗与账单行为。
+- 涉及：`public/style.css`、`tests/session-billing-ui.py`、`README.md`、`devlog.md`、自动生成的 `.pi/skills/codebase-map/INDEX.md`。
+- 验证：`npm test` 通过；浏览器在 320/390/768/1280px 与 390px 触控模式验证左右对齐、行高、无横向溢出及配置/账单交互均通过；合并前获取 origin/master，基线未变化。
+
+## 2026-09-17 修复桌面 CI macOS 校验 PlistBuddy 路径
+
+- 原因：首次 Pake 构建中 Windows MSI 成功，macOS 作业在 DMG 校验步骤报 `PlistBuddy: command not found`（不在 runner 默认 PATH）。
+- 决策：改用完整路径 `/usr/libexec/PlistBuddy`；重新构建后两个产物均通过校验。
+- 涉及：`.github/workflows/desktop.yml`。
+- 验证：重建 run 35210946054：Windows 8m9s 与 macOS 10m4s 双作业全绿，产物 Axiom-Windows-x4（3.3MB）/ Axiom-macOS-universal（9.1MB）已上传。
+
+## 2026-09-17 桌面端回归 Pake 壳并支持可配置连接地址
+
+- 原因：用户认为 Electron 方案过重（随包 Node 运行时、生命周期握手、electron-builder 链路），决定移除 Electron，回归 Pake 轻量壳，且连接地址不再构建期烘焙，须可配置（本机或远程均司）。
+- 决策：壳内置本地连接入口页 `desktop/connector/index.html`（pake-cli 支持本地目录打包，无后端依赖）：填 `host:port`（默认端口 4319）或完整 http(s) 地址，点「连接」后以 no-cors 探测可达即整页跳转；上次地址可达时自动直达。pake.json `appVersion` 升 0.2.0，`url` 指向 connector 目录，`forceInternalNavigation: true` 保证跳转留在壳内。网页右上角连接状态点击改为直达设置的「连接」面板（新增第 5 个 tab），断线时也可切换地址，地址校验与 connector 同源规则（拒绝非 http(s)、userinfo、非法端口）。后端配套：`AXIOM_HOST` 环境变量支持非回环监听；WS 升级放宽 loopback Host 白名单（同源 Origin 校验保留）。
+- 删除：`desktop/main.mjs`、`desktop/backend-lifecycle.mjs`、`scripts/stage-desktop.mjs`、`scripts/smoke-shell.mjs`、`scripts/smoke-desktop.mjs`、`tests/backend-lifecycle.test.js`；`package.json` 移除 `main`、`build` 段、`desktop:dev/stage/pack/build/web` 脚本与 electron/electron-builder 依赖；`src/main.js` 移除 AXIOM_DESKTOP 分支（随机端口、ready 握手扩展）；`src/update.js` 移除 checkDesktopUpdate；`src/server.js` 移除 service.desktop 字段；`public/service-settings.js` 移除 desktop 分支；同步删改 tests/{update,service-api,service-settings,app}.test.js。CI 重写为 Pake 构建（Windows MSI + macOS Universal DMG，含 DMG 完整性与双架构校验）。
+- 保留：`desktop:pake` 脚本（配置已重建可用）；`src/data-owner.js`、`src/database.js` 版本守卫、stop/prepareStop、`tests/smoke.js`（与桌面方案无关的通用能力）。
+- 文档：README 桌面段重写为 Pake 方案，旧版 v0.1.0 段落转为历史下载说明；development-plans 概述改为历史存档定位。
+- 涉及：desktop/pake.json、desktop/connector/index.html（新增）；src/{main,update,server}.js；public/{index.html,app.js,style.css,service-settings.js}；scripts/（删 3）、tests/（删 1 改 4）；.github/workflows/desktop.yml；package.json、package-lock.json、.gitignore、README.md、devlog.md。
+- 验证：npm test 697 项：695 通过、0 失败、2 平台跳过（与基线一致）；全仓无 electron/AXIOM_DESKTOP 残留引用。壳内跳转、入口页自动直达与远程直连需 CI 产物实机验收（本机无 Rust 工具链，历史上即依赖 CI 出包）。
+
 ## 2026-09-17 隔离内部任务通知与用户撤回队列
 
 - 原因：SDK 的 custom 通知与用户 Steer 共用真实队列，快照丢失角色信息，导致通知显示成 Steer，Esc 清除通知并将内部 JSON 写入输入框。
@@ -7,6 +31,13 @@
 - 设计：仅过滤队列行，沿用 Linear 既有布局和 token，无新增样式。
 - 涉及文件：`src/pi.js`、`public/app.js`、`tests/internal-task-queue.test.js`、`tests/app.test.js`、`README.md`、`devlog.md`、自动生成的 `.pi/skills/codebase-map/INDEX.md`。
 - 验证：初次定向测试因独立 worktree 缺少依赖未启动，链接现有依赖后全量测试 712 项（710 通过、2 跳过、0 失败）。覆盖双队列内部消息保序、重复撤回、图片索引、内部队列隐藏及既有通知投递回归；获取最新 origin/master 后无新增变更。未运行真实模型或浏览器手测。
+
+## 2026-09-17 全页面操作图标统一重绘
+
+- 原因：上一版置顶图标仍不够清晰，用户明确要求连同页面所有操作图标重绘。
+- 决策：新增共享 SVG 图标表，以 24×24 网格、1.75 圆角描边和 currentColor 统一轮廓。置顶改为直立钉帽、曲线肩部、独立针尖，行内和菜单同源；替换关闭、更多、重试、收藏等字体符号。沿用 Linear 的 muted/ink/accent，不新增配色；保留品牌、文件类型图示、数据仪表与工具身份图形。
+- 涉及：`public/icons.js`、`public/app.js`、`public/style.css`、文件/模型选择器、模型管理、Goal/Question 模块、`src/server.js`、测试加载器与回归、`README.md`、代码索引。
+- 验证：同步最新 master（16b99e2）后全量 730 项，728 通过、2 跳过、0 失败；侧栏浏览器回归通过（含桌面/移动端菜单、键盘关闭及复制）；明暗主题截图核对图钉与菜单轮廓。新增图标几何安全、水合幂等回归，收藏断言改为 SVG 与 aria 状态。期间共享依赖短暂缺失导致一次加载失败，依赖恢复后重新全量验证通过。
 
 ## 2026-09-17 置顶图钉视觉优化
 
@@ -2326,6 +2357,14 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 涉及文件：public/clipboard.js（新增）、public/app.js、public/markdown.js、tests/clipboard.test.js（新增）、tests/markdown.test.js、tests/git-log.test.js、tests/app.test.js、tests/helpers/public-source.js、.pi/skills/codebase-map/scripts/reindex.mjs、.pi/skills/codebase-map/INDEX.md（重建）、README.md、devlog.md、package.json（0.1.7 → 0.1.8）。
 - 决策：页面测试按「剥模块语法拼接 eval 真实源码」的既有装配方式接入新模块——publicSource 的 app 拼接序列加入 clipboard（app 页面测试自动获得 copyText），各 markdown 独立求值点改用 `publicSource("clipboard", "markdown")`，不引入新的 window 注入口。交叉复核（第二个调研子任务）后补强：writeText 被拒绝时也在同一用户手势窗口内继续 execCommand（Firefox 等存在 API 存在但拒绝、execCommand 仍可用的场景），双失败抛可操作文案「请改用系统复制菜单」而不透传内部错误。
 - 验证：worktree F:/worktrees/Axiom-clipboard-fallback 内 `npm test` 705 项全绿（703 通过、0 失败、2 既有跳过）；新增 4 项剪贴板用例覆盖 API 优先、writeText 被拒绝后 execCommand 回退、跨文档复制与可操作失败文案，markdown 按钮级补了「删除 clipboard 注入后回退仍复制原文」回归。Playwright 实测 Chromium：无 Clipboard API 与 writeText 被拒绝两种场景，代码块/工作空间复制均回退成功且清理临时输入框。
+
+## 2026-09-17 会话总账与详情阅读 v2
+
+- 内容与原因：上一版详情占用输入区过多且未计入子代理费用。改为两行轻量入口打开独立原生详情弹窗；配置提供提示词/工具注册页签、工具搜索、可折叠 JSON。账单以总额、代理分项、模型明细组织，任务卡与任务详情各显示本任务费用；字号与触控高度按 Linear 规范复核。
+- 涉及文件：src/session-billing.js、src/sessions.js、public/session-details.js、public/app.js、public/index.html、public/style.css、tests/subagent-billing.test.js（新增）、tests/session-details.test.js、tests/session-persistence.test.js、tests/app.test.js、tests/conversation-preview.mjs、tests/session-billing-ui.py、tests/conversation-ui.py、README.md、.pi/skills/codebase-map/knowledge.md、INDEX.md。
+- 决策：保留 runtime.billing 单代理语义，新增快照 billing 与 session.billing 事件统一汇总全部子任务；覆盖而非增量相加，避免重复。恢复按每个代理的完整 JSONL entries 重算，缺文件回退最后已知任务账。独立弹窗避免手机输入区内外双滚动，费用仍是估算而非实际扣款。
+- 验证：npm test 712 项（710 通过、2 项平台条件跳过）；session-billing-ui.py 在 320/390/768/1280px 验证页签、JSON、总账与任务账单，实际截图核对 $0.023 = 主代理 $0.012 + 子代理 $0.006 + $0.005；frontend-regions-ui.py 通过。用户明确选择继续修复旧 conversation-ui.py：修正 hash 路由优先级（原测试未真正切换 fixture）、撤销事务前置、移动展开及活动组展开、双层吸顶/弹窗 static 断言、过时折叠图标和等待/工具状态动画目标；支持 PREVIEW_PORT 隔离端口。最终在独立 4397 端口完整通过 1440/390/320px、浏览器错误为零。
+- 合并复验（2026-09-17）：同步 origin/master 3f181e9，随后再次合入 941b673（macOS CI 路径修复）并完整重跑以下验收；保留双方开发日志并重建索引；适配最新未锚定任务设计，conversation-ui.py 改验底部禁用运行条与动画，不再要求不存在的主轴卡片。npm ci 成功，npm test 719 项（717 通过、2 跳过、0 失败），账单四档宽度、frontend-regions-ui.py 与 conversation-ui.py 全部通过。
 
 ## 2026-09-17 会话渲染一致性修复：分页/位置/卡片位置/乐观发送
 

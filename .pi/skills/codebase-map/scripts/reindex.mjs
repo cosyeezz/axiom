@@ -22,13 +22,9 @@ const MODULE_INFO = {
   "src/data-owner.js": "写库前数据根独占：内核管道或socket持有，禁止同根双写",
   "tests/data-owner.test.js": "数据根独占、路径别名和释放重开回归",
   "tests/data-version.test.js": "数据版本超限写前拒绝与文件不变回归",
-  "desktop/backend-lifecycle.mjs": "桌面直接管理随包Node worker：身份绑定就绪与真实退出确认",
-  "desktop/main.mjs": "Electron唯一桌面入口、隔离窗口与安全退出",
-  "scripts/stage-desktop.mjs": "暂存固定Node与完整后端依赖",
-  "scripts/smoke-desktop.mjs": "随包Node空PATH隔离数据冒烟验证",
-  "scripts/smoke-shell.mjs": "Electron真实窗口与安全退出隔离冒烟验证",
+  "desktop/pake.json": "Pake 桌面壳配置：本地连接入口页、内导航与窗口参数",
+  "desktop/connector/index.html": "壳内置连接入口页：地址可配置、可达探测与整页跳转",
   "src/session-history.js": "JSONL当前分支纯读取：内存迁移不回写历史",
-  "tests/backend-lifecycle.test.js": "假进程与可控时钟验证并发启动、伪就绪、超时及退出竞态",
   "tests/task-cancel-notifications.test.js": "单子任务取消工具注册、兄弟隔离与持久化完成通知集成回归",
   "src/questions.js": "主代理 question 工具、参数校验与可取消的回答等待",
   "tests/questions.test.js": "提问等待、校验、会话隔离、子代理不可用与取消回归",
@@ -136,9 +132,10 @@ const MODULE_INFO = {
   "tests/project-skills.test.js": "项目技能来源、工作空间默认隔离、旧配置迁移与目录链接加载回归",
   "tests/session-flow.test.js": "会话落盘/恢复/删除、历史索引与队列/模型切换回归",
   "tests/": "node --test 测试（npm test）",
+  "public/icons.js": "全页面动作 SVG 图标：固定几何路径字典、静态控件与模板水合",
 };
 
-const SCAN_DIRS = ["src", "public", "tests", "scripts"];
+const SCAN_DIRS = ["src", "public", "tests", "scripts", "desktop"];
 const SKIP = new Set(["node_modules"]);
 const KEYWORDS = new Set([
   "if", "for", "while", "switch", "catch", "return", "function", "class",

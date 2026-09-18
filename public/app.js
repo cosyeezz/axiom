@@ -1,3 +1,5 @@
+import { actionIcon, initActionIcons } from "./icons.js";
+initActionIcons(document);
 import { initInspector, renderTools, renderBill, money } from "./session-details.js";
 import { createTransport } from "./transport.js";
 import { createSessionCache } from "./session-cache.js";
@@ -20,10 +22,21 @@ const questionUI = createQuestionUI({ root: document.getElementById("question-do
 const filePicker = createFilePicker(request);
 const $ = (id) => document.getElementById(id);
 initInspector($("session-inspector"));
+const sessionDetail = $("session-detail");
+function openSessionDetail(section) {
+  $("session-inspector").open = section === "inspector";
+  $("session-billing").open = section === "billing";
+  sessionDetail.showModal();
+  sessionDetail.querySelector(".task-body").scrollTop = 0;
+}
+$("session-inspector-trigger").onclick = () => openSessionDetail("inspector");
+$("session-billing-trigger").onclick = () => openSessionDetail("billing");
+$("session-detail-close").onclick = () => sessionDetail.close();
 let sessionId,
   models = [],
   config,
   runtime,
+  sessionBill,
   activeTask,
   busy = false,
   // safeStopping: 已请求安全停止、还在等轮次边界；stopAlert: 停住了但用户还没回来看。
@@ -726,16 +739,17 @@ function renderRuntime(node, value) {
   if (node.id === "session-runtime") {
     $("session-system-prompt").textContent = value?.systemPrompt ?? "系统提示词尚未加载；会话启动后可查看。";
     renderTools($("session-active-tools"), value?.tools);
-    renderBill($("session-bill-body"), value?.billing);
+    renderBill($("session-bill-body"), sessionBill ?? value?.billing);
+    $("session-bill-total").textContent = (sessionBill ?? value?.billing)?.records ? `${money((sessionBill ?? value.billing).cost.total)}${sessionBill ? " · 含子代理" : ""}` : "主代理与子代理";
     const { usage, context } = value || {};
     const input = (usage?.input ?? 0) + (usage?.cacheRead ?? 0) + (usage?.cacheWrite ?? 0);
     const cache = input > 0 && Number.isFinite(usage?.cacheRead) ? `${(usage.cacheRead / input * 100).toFixed(1)}%` : "—";
     const percent = Number.isFinite(context?.percent) ? `${context.percent.toFixed(1)}%` : "—";
-    const identity = runtimeSummary(value)[2];
+    const identity = runtimeSummary(sessionBill ? { ...value, billing: sessionBill } : value)[2];
     $("mobile-runtime").textContent = `${cache} · ${percent} · ${identity}`;
     $("mobile-runtime").setAttribute("aria-label", `缓存命中率 ${cache}，上下文占比 ${percent}，${identity}`);
   }
-  node.replaceChildren(...runtimeSummary(value).map((text) => {
+  node.replaceChildren(...runtimeSummary(node.id === "session-runtime" && sessionBill ? { ...value, billing: sessionBill } : value).map((text) => {
     const span = document.createElement("span");
     span.textContent = text;
     return span;
@@ -745,6 +759,8 @@ function renderRuntime(node, value) {
 function updateTaskRuntime(task, value) {
   if (!task) return;
   renderRuntime(task.runtime, value);
+  task.trigger.querySelector(".task-cost").textContent = value?.billing?.records ? money(value.billing.cost.total) : "用量待报告";
+  renderBill(task.node.querySelector(".task-bill-body"), value?.billing, { compact: true });
   task.systemPrompt.textContent = value?.systemPrompt ?? "系统提示词尚未加载";
 }
 function applyConfig(value) {
@@ -848,23 +864,59 @@ async function saveTaskBudget() {
 for (const id of taskBudgetInputs) $(id).addEventListener("change", () => void saveTaskBudget());
 function showSettingsPanel(panel) {
   settingsGeneration++;
-  for (const name of ["defaults", "remote", "models", "service"]) {
+  for (const name of ["connection", "defaults", "remote", "models", "service"]) {
     $(`${name}-panel`).hidden = name !== panel;
     const button = $(`settings-${name}-tab`);
     if (name === panel) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
+  if (panel === "connection") openConnectionPanel();
   if (panel === "models") void modelManager.load();
   if (panel === "remote") void remoteLoad();
 }
+$("settings-connection-tab").onclick = () => showSettingsPanel("connection");
 $("settings-defaults-tab").onclick = () => showSettingsPanel("defaults");
 $("settings-remote-tab").onclick = () => showSettingsPanel("remote");
 $("settings-models-tab").onclick = () => showSettingsPanel("models");
 $("settings-service-tab").onclick = () => showSettingsPanel("service");
-// 顶部状态可点击直达「服务与更新」；顶部只保留状态/DEV/版本，不暴露源码路径。
+// 顶部连接状态可点击直达「连接」面板（切地址）；顶部只保留状态/DEV/版本，不暴露源码路径。
 $("status").onclick = () => {
-  showSettingsPanel("service");
+  showSettingsPanel("connection");
   if (!$("settings").open) $("settings").showModal();
+};
+// 「连接」面板：切换后端地址（本地或远程均可）。解析规则与壳内连接页 desktop/connector 一致：
+// 只允许 http(s)、拒绝 userinfo 与非法端口，host:port 默认补 4319；断线时也可用（不入禁用名单）。
+const CONNECTION_KEY = "axiom.connection.address";
+function normalizeBackendAddress(raw) {
+  const text = String(raw || "").trim();
+  if (!text) return null;
+  let url;
+  try { url = new URL(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(text) ? text : `http://${text}`); }
+  catch { return null; }
+  if ((url.protocol !== "http:" && url.protocol !== "https:")
+    || !url.hostname || url.username || url.password) return null;
+  const port = url.port ? Number(url.port) : 4319;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+  const hostPart = url.port ? url.host : `${url.host}:${port}`;
+  return `${url.protocol}//${hostPart}`;
+}
+function openConnectionPanel() {
+  let saved = "";
+  try { saved = localStorage.getItem(CONNECTION_KEY) || ""; } catch {}
+  $("connection-current").textContent = `本页当前来自 ${location.origin}（${connected ? "连接正常" : "连接已断开"}）。`;
+  $("connection-address").value = saved || location.origin;
+  $("connection-feedback").textContent = "";
+}
+$("connection-form").onsubmit = (e) => {
+  e.preventDefault();
+  const origin = normalizeBackendAddress($("connection-address").value);
+  if (!origin) {
+    $("connection-feedback").textContent = "地址无效：请输入 host:port 或 http(s)://host:port";
+    return;
+  }
+  try { localStorage.setItem(CONNECTION_KEY, origin); } catch {}
+  $("connection-feedback").textContent = `正在跳转到 ${origin} …`;
+  location.href = origin;
 };
 $("open-settings").onclick = () => {
   showSettingsPanel(models.length ? "defaults" : "models");
@@ -1261,13 +1313,7 @@ function disclosureHint(label = "详情") {
     span.className = className;
     span.textContent = text;
     if (className === "when-open") {
-      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      icon.setAttribute("viewBox", "0 0 24 24");
-      icon.setAttribute("aria-hidden", "true");
-      const path = document.createElementNS(icon.namespaceURI, "path");
-      path.setAttribute("d", "M5 4h14M6 14l6-6 6 6M12 8v12");
-      icon.append(path);
-      span.prepend(icon);
+      span.insertAdjacentHTML("afterbegin", actionIcon("collapse"));
     }
     hint.append(span);
   }
@@ -1934,7 +1980,7 @@ function retryChipList(labelText, initial) {
       text.textContent = value;
       const remove = document.createElement("button");
       remove.type = "button";
-      remove.textContent = "×";
+      remove.innerHTML = actionIcon("close");
       remove.setAttribute("aria-label", `删除 ${value}`);
       remove.onclick = () => { state.splice(index, 1); render(); input.focus(); notify(); };
       chip.append(text, remove);
@@ -2052,7 +2098,7 @@ function syncRetryPrompt() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "secondary";
-    button.textContent = "↻ 重试";
+    button.innerHTML = `${actionIcon("retry")} 重试`;
     button.title = "接着上次中断的地方继续，不重发你的输入";
     button.onclick = async () => {
       button.disabled = true;
@@ -2065,7 +2111,7 @@ function syncRetryPrompt() {
     retryPrompt.hint = hint;
   }
   retryPrompt.hint.textContent = canReask ? "提问已取消，可以重新打开原问题。" : "上一次请求未正常结束。";
-  retryPrompt.button.textContent = canReask ? "↻ 重新提问" : "↻ 重试";
+  retryPrompt.button.innerHTML = `${actionIcon("retry")} ${canReask ? "重新提问" : "重试"}`;
   retryPrompt.button.title = canReask ? "直接重新调用提问工具，回答后继续原任务" : "接着上次中断的地方继续，不重发你的输入";
   retryPrompt.button.disabled = false;
   if ($("output").lastElementChild === retryPrompt) return;
@@ -2348,7 +2394,7 @@ function applyEvent(message) {
       const retryButton = document.createElement("button");
       retryButton.type = "button";
       retryButton.className = "secondary";
-      retryButton.textContent = "↻ 重试";
+      retryButton.innerHTML = `${actionIcon("retry")} 重试`;
       retryButton.title = "接着上次中断的地方继续，不重新委派任务";
       retryButton.hidden = true;
       task.retryButton = retryButton;
@@ -2395,7 +2441,7 @@ function applyEvent(message) {
     item.trigger.dataset.status = item.node.dataset.status = data.status;
     const status = { starting: "启动中", running: "运行中", completed: "已完成", failed: "失败", cancelled: "已取消" }[data.status] || data.status;
     item.status.textContent = status;
-    item.heading.textContent = `SUBAGENT · ${status}`;
+    item.heading.textContent = `子代理 · ${status}`;
     item.title.textContent = item.trigger.title = data.task;
     item.description.textContent = data.task;
     item.failure.textContent = data.error || "";
@@ -2408,6 +2454,10 @@ function applyEvent(message) {
     if (["starting", "running"].includes(data.status)) waiting(message.taskId);
     else stopActivity(message.taskId, status);
     scrollLatest();
+  }
+  if (type === "session.billing") {
+    sessionBill = data;
+    renderRuntime($("session-runtime"), runtime);
   }
   if (type === "error") error(data.message);
 }
@@ -2904,6 +2954,7 @@ function finishSnapshot(job, ctx) {
     prefetchHistory();
   });
   renderQueue(state.queue);
+  sessionBill = state.billing;
   runtime = state.runtime;
   applyConfig(state.config);
   config.compaction = state.config.compaction || compactionDefaults;
@@ -3228,7 +3279,7 @@ function renderImages() {
     enableImagePreview(preview);
     const remove = document.createElement("button");
     remove.type = "button";
-    remove.textContent = "×";
+    remove.innerHTML = actionIcon("close");
     remove.setAttribute("aria-label", `移除图片 ${index + 1}`);
     remove.disabled = imageLoading;
     remove.onclick = () => {
@@ -3695,7 +3746,7 @@ function renderSessions() {
       const pin = document.createElement("small");
       pin.className = "session-pin-icon";
       pin.setAttribute("aria-label", "已置顶");
-      pin.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4v4l-6-6h4l4-4 1-4Z"/><path d="m3 21 7-7"/></svg>';
+      pin.innerHTML = actionIcon("pin");
       button.append(pin);
     }
     button.onclick = () =>
@@ -3707,7 +3758,7 @@ function renderSessions() {
     menu.className = "session-options";
     const more = document.createElement("summary");
     more.className = "session-more";
-    more.textContent = "⋯";
+    more.innerHTML = actionIcon("more");
     more.title = `会话操作：${s.title}`;
     more.setAttribute("aria-label", more.title);
     menu.append(more);
@@ -3726,13 +3777,13 @@ function renderSessions() {
     actions.className = "session-actions";
     actions.setAttribute("popover", "manual");
     actions.setAttribute("aria-label", `会话操作：${s.title}`);
-    for (const [kind, label, path] of [
-      ["pin", pinned(s) ? "取消置顶" : "置顶", 'M16 12V4h1V2H7v2h1v8l-2 2v2h5v6h2v-6h5v-2l-2-2z'],
-      ["hide", hidden ? "移回进行中" : "标记已完成", hidden ? 'M12 20V4M5 11l7-7 7 7' : 'M5 12l4 4L19 6'],
-      ["duplicate", "复制会话", 'M9 9h11v12H9ZM15 9V3H4v12h5M14.5 14v3M13 15.5h3'],
-      ["copy", "复制文件", 'M9 9h11v12H9ZM15 9V3H4v12h5'],
-      ["rename", "重命名", 'M16 3l5 5L8 21H3v-5L16 3zM13 6l5 5M3 16l5 5'],
-      ["delete", "删除会话", 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7'],
+    for (const [kind, label, iconName] of [
+      ["pin", pinned(s) ? "取消置顶" : "置顶", "pin"],
+      ["hide", hidden ? "移回进行中" : "标记已完成", hidden ? "up" : "check"],
+      ["duplicate", "复制会话", "duplicate"],
+      ["copy", "复制文件", "copy"],
+      ["rename", "重命名", "edit"],
+      ["delete", "删除会话", "trash"],
     ]) {
       const action = document.createElement("button");
       action.type = "button";
@@ -3743,7 +3794,7 @@ function renderSessions() {
       // 复制文件与置顶是纯前端偏好，不依赖连接，断连时也保持可用；复制会话另按 duplicateBlocked 判定。
       if (kind === "duplicate") action.disabled = duplicateBlocked(s);
       else action.disabled = !["hide", "copy", "pin"].includes(kind) && (!connected || changing);
-      action.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
+      action.innerHTML = actionIcon(iconName);
       action.append(document.createTextNode(label));
       if (kind === "copy") {
         const submenu = document.createElement("div");
@@ -3752,7 +3803,7 @@ function renderSessions() {
         submenu.setAttribute("aria-label", "复制会话文件信息");
         submenu.hidden = true;
         action.setAttribute("aria-expanded", "false");
-        action.innerHTML += '<span class="session-copy-arrow" aria-hidden="true">›</span>';
+        action.innerHTML += `<span class="session-copy-arrow" aria-hidden="true">${actionIcon("chevron")}</span>`;
         for (const [part, text] of [["directory", "复制所在目录"], ["name", "复制文件名"], ["path", "复制完整路径"]]) {
           const item = document.createElement("button");
           item.type = "button";
@@ -3812,7 +3863,7 @@ function renderSessions() {
     const chevron = document.createElement("span");
     chevron.className = "workspace-chevron";
     chevron.setAttribute("aria-hidden", "true");
-    chevron.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+    chevron.innerHTML = actionIcon("chevron");
     headerTop.append(chevron);
     const nameSpan = document.createElement("span");
     nameSpan.className = "workspace-name";
@@ -3840,7 +3891,7 @@ function renderSessions() {
     newBtn.className = "workspace-new-btn icon-button";
     newBtn.title = `在「${displayName}」新建会话`;
     newBtn.setAttribute("aria-label", newBtn.title);
-    newBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+    newBtn.innerHTML = actionIcon("plus");
     newBtn.onclick = (e) => {
       e.stopPropagation();
       if (!connected || changing) return;
@@ -4006,7 +4057,7 @@ function renderContextChips() {
     chip.title = `移除${entry.kind === "skill" ? "待加载 Skill" : "引用"}：${entry.name}`;
     chip.setAttribute("aria-label", chip.title);
     const label = document.createElement("span"); label.textContent = entry.name;
-    const close = document.createElement("span"); close.textContent = "×"; close.setAttribute("aria-hidden", "true");
+    const close = document.createElement("span"); close.innerHTML = actionIcon("close"); close.setAttribute("aria-hidden", "true");
     chip.append(entry.kind === "skill" ? contextIcon("skill") : fileIcon({ ...entry, name: entry.path.split(/[\\/]/).pop() }), label, close);
     chip.onclick = () => {
       if (entry.kind === "skill") { $("composer-skill").value = ""; $("composer-skill").onchange(); }

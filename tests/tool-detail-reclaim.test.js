@@ -13,7 +13,7 @@ async function page() {
   const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
   // 与 tests/app.test.js、compaction-ui 同一套加载顺序：markdown-scan 是 memory-tags/goal-markers 的依赖。
   const source = await publicSource("markdown-scan", "memory-tags", "goal-markers", "question", "service-settings", "app");
-  const picker = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+  const picker = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "");
   const dom = new JSDOM(html, { url: "http://localhost", runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window;
   w.matchMedia = () => ({ matches: false });

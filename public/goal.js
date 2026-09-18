@@ -1,3 +1,4 @@
+import { actionIconNode } from "./icons.js";
 // 目标模式（Goal）外壳：顶部进度仪表、底部专用控制、计划确认卡、调整 Goal 专用对话框，
 // 以及按轮次折叠现有消息。
 // 只消费 snapshot.goal 与 { type: "goal", goal } 事件；消息渲染由 app.js 独占，
@@ -221,7 +222,7 @@ export function createGoalUI({ root, request, onError, readPrompt, clearPrompt }
     button.type = "button";
     if (title) button.title = title;
     if (haspopup) button.setAttribute("aria-haspopup", haspopup);
-    if (paths) button.append(icon(paths), el("span", "", label));
+    if (paths) button.append(actionIconNode(({ pause: "pause", exit: "exit", adjust: "sliders", restart: "retry", resume: "play" })[action]), el("span", "", label));
     else button.textContent = label;
     button.disabled = disabled || !connected || busy();
     button.onclick = onClick || (() => void act(action));
@@ -426,7 +427,8 @@ export function createGoalUI({ root, request, onError, readPrompt, clearPrompt }
     const head = el("div", "goal-adjust-head");
     const titles = el("div");
     titles.append(el("p", "goal-adjust-eyebrow", "调整 Goal"), el("h2", "goal-adjust-title", "修改整体目标"));
-    const close = el("button", "secondary goal-adjust-close", "✕");
+    const close = el("button", "secondary goal-adjust-close");
+    close.append(actionIconNode("close"));
     close.type = "button";
     close.setAttribute("aria-label", "关闭调整窗口");
     close.onclick = () => dialog.close?.();

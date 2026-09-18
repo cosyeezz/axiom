@@ -32,9 +32,9 @@ async function page({ skills = [] } = {}) {
     const exports = [...module.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
     w.eval(`Object.assign(window, (() => { ${module.replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`);
   }
-  const picker = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^export /gm, "");
-  const question = (await readFile(new URL("../public/question.js", import.meta.url), "utf8")).replace(/^export /gm, "");
-  const goal = (await readFile(new URL("../public/goal.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+  const picker = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "");
+  const question = (await readFile(new URL("../public/question.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "");
+  const goal = (await readFile(new URL("../public/goal.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "");
   const service = (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^export /gm, "");
   w.eval(`${picker}\n${question}\n${goal}\n${service}\n${source}\nconnected = true;`);
   const state = { sessionId: "goal-1", title: "Goal", cwd: "C:/work", status: "idle", config: { model: "test/model", thinking: "off", levels: ["off"], skills }, messages: [], tasks: [], live: {}, tools: {} };

@@ -2,15 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
+import { publicSource } from "./helpers/public-source.js";
 import { modelOverrideIn } from "../src/protocol.js";
 
 // 被测模块与 file-picker.test.js 同一装载方式：model-manager 现已 import model-auth（登录 UI），
 // 装载顺序为先剥 export 求值 model-auth.js，再去掉 import 行并剥 export 求值 model-manager.js，
 // 两个模块在同一 eval 作用域内共享符号。
 const authSource = (await readFile(new URL("../public/model-auth.js", import.meta.url), "utf8")).replace(/^export /gm, "");
-const source = (await readFile(new URL("../public/model-manager.js", import.meta.url), "utf8"))
-  .replace(/^import .*$/gm, "")
-  .replace(/^export /gm, "");
+const source = await publicSource("model-manager");
 const tick = () => new Promise(setImmediate);
 // 组件在窗口 realm 内构造对象，跨 realm 的 deepStrictEqual 会因原型不同而失败，先转成本 realm。
 const j = (value) => JSON.parse(JSON.stringify(value));
@@ -864,7 +863,8 @@ test("渲染只产出文本节点，绝无注入路径", async () => {
   assert.ok(root.textContent.includes("<img src=x onerror=alert(1)>"));
   await h.selectProvider("<img src=x onerror=alert(1)>");
   assert.ok(h.detail().textContent.includes("</span>"));
-  assert.equal(/\.innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(source), false);
+  const managerSource = await readFile(new URL("../public/model-manager.js", import.meta.url), "utf8");
+  assert.equal(/\.innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(managerSource), false);
   h.window.close();
 });
 
