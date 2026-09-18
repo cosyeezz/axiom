@@ -1833,7 +1833,9 @@ test("compaction settings edit per scope and fold transcripts in place", async (
       const last = $("output").lastElementChild;
       assert.equal(last.className, "task-notification", "任务通知以独立通知条渲染");
       assert.equal(last.hidden, false, "通知不隐藏，与用户消息区分而非逐出转写");
-      assert.match(last.textContent, /内部消息|任务通知内容/);
+      assert.equal(last.querySelector(".task-notification-line").textContent, "任务通知: 子任务完成", "只渲染固定单行文案，不展开原文");
+      assert.equal(last.querySelector("pre"), null, "不再整文渲染 JSON");
+      assert.match(last.title, /内部消息|任务通知内容/, "原文保留在 title 上供悬停查看");
       assert.equal($("output").querySelectorAll(":scope > .message.user").length, userCardsBefore, "通知不伪装成用户卡片");
       last.remove();
     }

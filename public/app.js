@@ -246,12 +246,15 @@ function saveView() {
 // 长会话里那次 scrollHeight 读会让浏览器对整份文档做一次同步布局，所以重复调用（快照后、重连后、
 // 每次 oninput）不能各自再量一遍。注意：键变了仍要真量一次，那是布局本身的成本，缓存只消除重复。
 let promptLayout = 0;
-let promptFit = { layout: -1, phone: null, value: null };
+let promptFit = { layout: -1, phone: null, value: null, collapsed: null };
+// 折叠态只换高度基线：rows=1 并交回 CSS 决定高度，不动 value，所以草稿在、Enter 仍能直接发。
+let composerCollapsed = true;
 function resizePrompt() {
-  const input = $("prompt"), phone = mobile.matches;
-  if (promptFit.layout === promptLayout && promptFit.phone === phone && promptFit.value === input.value) return;
-  promptFit = { layout: promptLayout, phone, value: input.value };
-  input.rows = phone ? 1 : 3;
+  const input = $("prompt"), phone = mobile.matches, collapsed = composerCollapsed && !phone;
+  if (promptFit.layout === promptLayout && promptFit.phone === phone && promptFit.value === input.value && promptFit.collapsed === collapsed) return;
+  promptFit = { layout: promptLayout, phone, value: input.value, collapsed };
+  input.rows = phone || collapsed ? 1 : 3;
+  if (collapsed) { input.style.height = ""; return; }
   input.style.height = "auto";
   input.style.height = (phone && !input.value ? 44 : Math.min(input.scrollHeight, 240)) + "px";
 }
@@ -359,6 +362,7 @@ $("toggle-sidebar").onclick = () =>
 $("sidebar-backdrop").onclick = () => sidebar(false);
 mobile.onchange = () => {
   sidebar(!mobile.matches);
+  applyComposerCollapsed();
   invalidatePrompt();
 };
 sidebar(!mobile.matches);
@@ -372,6 +376,56 @@ addEventListener("resize", () => {
 });
 // 目前全站用系统字体；万一以后引入 webfont，度量变化同样要重算。
 document.fonts?.addEventListener?.("loadingdone", invalidatePrompt);
+// 输入区折叠（仅桌面，手机已有 mobile-expanded 那套）：默认只留一行，点击/聚焦/输入即展开，
+// 鼠标与键盘焦点都离开后 5s 收回，把竖向空间还给会话。
+const COMPOSER_COLLAPSE_DELAY = 5000;
+let composerHovered = false, composerCollapseTimer;
+const composerWrap = document.querySelector(".composer-wrap");
+function applyComposerCollapsed() {
+  const collapsed = String(composerCollapsed && !mobile.matches);
+  $("composer").dataset.collapsed = collapsed;
+  composerWrap.dataset.collapsed = collapsed;
+  resizePrompt();
+}
+function clearComposerCollapseTimer() {
+  if (composerCollapseTimer === undefined) return;
+  clearTimeout(composerCollapseTimer);
+  composerCollapseTimer = undefined;
+}
+// 折叠会收起动作区，所以「还在用」的状态一律不收：悬停、焦点在输入区、@ 补全或上下文菜单开着、
+// 有待发图片、任务在跑（Stop/Force 在动作区里，收起就点不到了）。
+function composerBusy() {
+  return composerHovered
+    || composerWrap.contains(document.activeElement)
+    || !$("prompt-completion").hidden
+    || $("context-menu").matches?.(":popover-open")
+    || !$("image-attachments").hidden
+    || !$("stop").hidden
+    || !$("force-stop").hidden;
+}
+function expandComposer() {
+  clearComposerCollapseTimer();
+  if (!composerCollapsed) return;
+  composerCollapsed = false;
+  applyComposerCollapsed();
+}
+function collapseComposer() {
+  clearComposerCollapseTimer();
+  if (composerCollapsed || composerBusy()) return;
+  composerCollapsed = true;
+  applyComposerCollapsed();
+}
+function scheduleComposerCollapse() {
+  clearComposerCollapseTimer();
+  if (composerCollapsed) return;
+  composerCollapseTimer = setTimeout(() => { composerCollapseTimer = undefined; collapseComposer(); }, COMPOSER_COLLAPSE_DELAY);
+}
+composerWrap.addEventListener("mouseenter", () => { composerHovered = true; clearComposerCollapseTimer(); });
+composerWrap.addEventListener("mouseleave", () => { composerHovered = false; scheduleComposerCollapse(); });
+composerWrap.addEventListener("mousedown", expandComposer);
+composerWrap.addEventListener("focusin", expandComposer);
+composerWrap.addEventListener("focusout", scheduleComposerCollapse);
+applyComposerCollapsed();
 // 阅读字号是设备偏好；CSS 限定到桌面会话内容，不缩放整页。
 const fontScale = $("conversation-font-scale");
 function applyConversationFontScale(value) {
@@ -476,16 +530,17 @@ const isTaskNotification = (message) => {
   return text.startsWith(TASK_NOTIFICATION_PREFIX);
 };
 // 通知条不进对话卡片体系：无用户气泡、无思考/工具区；返回 { node } 与 bindRaw 兼容（对照原文按钮可挂）。
+// 只渲染固定单行文案，原文（taskId/resultId 等）通过 title 与 raw-io 面板查看，避免在转写里吃掉多行。
 function taskNotificationCard(message, agentId) {
   const blocks = typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content || [];
   const text = blocks.filter((b) => b?.type === "text").map((b) => b.text).join("\n");
   const node = document.createElement("article");
   node.className = "task-notification";
-  const head = document.createElement("h3");
-  head.textContent = agentId === "main" ? "任务通知" : "任务通知 · 子代理";
-  const body = document.createElement("pre");
-  body.textContent = text;
-  node.append(head, body);
+  node.title = text;
+  const line = document.createElement("span");
+  line.className = "task-notification-line";
+  line.textContent = agentId === "main" ? "任务通知: 子任务完成" : "任务通知: 子任务完成 · 子代理";
+  node.append(line);
   $("output").querySelector(".empty")?.remove();
   (tasks.get(agentId)?.output || $("output")).append(node);
   scrollLatest();
@@ -4109,6 +4164,7 @@ $("prompt").onkeyup = (e) => {
   if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) void updateCompletion();
 };
 $("prompt").oninput = (e) => {
+  expandComposer();
   const command = /^\/skill:([^\s]+)\s+/.exec($("prompt").value);
   if (command && config?.skills?.some((skill) => skill.name === command[1])) {
     selectedSkill = command[1];
