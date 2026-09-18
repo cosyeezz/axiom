@@ -29,6 +29,11 @@ try:
             page.wait_for_selector('#workspace:not([hidden])')
             if width <= 700:
                 page.locator('#mobile-expand').click()
+            else:
+                # 桌面输入区默认折叠，动作区与详情入口都收着；量对齐前先按真实路径点输入框展开。
+                page.locator('#prompt').click()
+                page.wait_for_function("() => document.getElementById('composer').dataset.collapsed === 'false'")
+                page.wait_for_timeout(120)
             rows = page.locator('.session-detail-rows').bounding_box()
             stats = page.locator('#session-runtime').bounding_box()
             assert abs(rows['x'] - (stats['x'] + 12)) <= .5, 'left alignment'

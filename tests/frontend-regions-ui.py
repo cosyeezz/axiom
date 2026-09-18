@@ -62,6 +62,13 @@ def snapshot(page):
     return page.evaluate(SNAPSHOT)
 
 
+def expand_composer(page):
+    # 桌面输入区默认折叠，#model 等控件此时不可见。真实路径是先触碰输入区再操作，
+    # 这里按同样的路径点开；焦点留在输入区内，5s 自动收回不会中途触发。
+    page.locator("#prompt").click()
+    page.wait_for_function("() => document.querySelector('.composer-wrap').dataset.collapsed === 'false'")
+
+
 def open_menu(page):
     if page.evaluate(MENU_OPEN):
         return
@@ -258,6 +265,8 @@ def check_favorites(page, failures, context, url):
     # 第二窗口变更收藏 → 广播到第一窗口的已开菜单
     other = context.new_page()
     other.goto(url)
+    other.wait_for_selector("#workspace:not([hidden])")
+    expand_composer(other)
     other.wait_for_selector("#model:enabled")
     other.locator("#model").click()
     other.wait_for_selector('.ax-mp-menu:visible .ax-mp-star[data-value="openai/gpt-5.7"]')
@@ -411,6 +420,7 @@ def main():
             page.on("console", lambda message: console_errors.append(message.text) if message.type == "error" else None)
             page.goto(url)
             page.wait_for_selector("#workspace:not([hidden])")
+            expand_composer(page)
             page.wait_for_selector("#model:enabled")
             page.wait_for_function("() => document.getElementById('model').options.length >= 24")
             page.wait_for_timeout(300)

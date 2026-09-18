@@ -95,6 +95,17 @@ def expand_composer(page):
     page.wait_for_timeout(120)
 
 
+def collapse_composer(page):
+    """走真实收回路径：鼠标移开 + 焦点离开，等 5s 定时器把输入区收回。"""
+    page.mouse.move(700, 120)
+    page.evaluate("() => document.activeElement?.blur?.()")
+    page.wait_for_function(
+        "() => document.getElementById('composer').dataset.collapsed === 'true'",
+        timeout=9000,
+    )
+    page.wait_for_timeout(150)
+
+
 def check_plain_chat(page, failures):
     open_session(page, "chat-plain", "普通会话 · 无目标")
     expand_composer(page)
@@ -310,6 +321,71 @@ def check_composer_group(page, failures):
     page.wait_for_timeout(200)
 
 
+def check_collapsed_composer(page, failures):
+    """折叠态（桌面）：图标组随动作区一起收起，只留运行摘要那一行；右上角计时不得被收。"""
+    open_session(page, "chat-plain", "普通会话 · 无目标")
+    collapse_composer(page)
+    metrics = page.evaluate(
+        """() => {
+          const seen = (node) => {
+            if (!node) return null;
+            const rect = node.getBoundingClientRect();
+            return { visible: !node.hidden && getComputedStyle(node).display !== "none" && rect.width > 0,
+                     left: rect.left, height: rect.height, lines: rect.height };
+          };
+          const timer = document.getElementById("task-timer");
+          // 计时平时由 [hidden] 控制，开跑才出现；临时拆掉 hidden，验的是「折叠规则没把它一并隐了」。
+          const restore = timer.hidden;
+          timer.hidden = false;
+          const timerSeen = seen(timer);
+          timer.hidden = restore;
+          const prompt = document.getElementById("prompt");
+          return {
+            group: seen(document.querySelector(".composer-wrap .context-bar .icon-group")),
+            icons: ["add-context", "add-image", "goal-enter"].map((id) => ({ id, ...seen(document.getElementById(id)) })),
+            runtime: seen(document.getElementById("session-runtime")),
+            runtimeText: document.getElementById("session-runtime").textContent,
+            // 单行判定看各 span 是不是同一行，比拿盒子高度减内边距靠谱。
+            runtimeTops: [...document.querySelectorAll("#session-runtime > span")]
+              .map((node) => Math.round(node.getBoundingClientRect().top)),
+            runtimeLeft: (() => {
+              const node = document.getElementById("session-runtime");
+              return node.getBoundingClientRect().left + parseFloat(getComputedStyle(node).paddingLeft);
+            })(),
+            actions: seen(document.querySelector("#composer > .actions")),
+            timer: timerSeen,
+            promptLeft: prompt.getBoundingClientRect().left + parseFloat(getComputedStyle(prompt).paddingLeft),
+          };
+        }"""
+    )
+    if metrics["group"]["visible"]:
+        failures.append(f"折叠态仍显示图标组：{metrics['group']}")
+    for icon in metrics["icons"]:
+        if icon["visible"]:
+            failures.append(f"折叠态仍显示图标 {icon['id']}：{icon}")
+    if metrics["actions"]["visible"]:
+        failures.append("折叠态不应保留动作区（模型选择/发送）")
+    if not metrics["runtime"]["visible"]:
+        failures.append(f"折叠态应保留缓存/上下文/模型那一行：{metrics['runtime']}")
+    for needle in ("缓存命中", "上下文"):
+        if needle not in metrics["runtimeText"]:
+            failures.append(f"运行摘要内容缺失：{needle} / {metrics['runtimeText'][:120]!r}")
+    # 单行：换行会让折叠高度随屏宽跳动，钉在其上沿的「回到最新」也跟着跳。
+    if len(set(metrics["runtimeTops"])) > 1:
+        failures.append(f"折叠态运行摘要换了行：{metrics['runtimeTops']}")
+    if len(metrics["runtimeTops"]) != 3:
+        failures.append(f"运行摘要应为三段（缓存/上下文/模型），实际 {len(metrics['runtimeTops'])}")
+    if abs(metrics["runtimeLeft"] - metrics["promptLeft"]) > 1:
+        failures.append(f"运行摘要未与输入行左对齐：{metrics['runtimeLeft']} vs {metrics['promptLeft']}")
+    if not metrics["timer"]["visible"]:
+        failures.append(f"折叠态不得隐藏右上角计时：{metrics['timer']}")
+    assert_no_overflow(page, "折叠态 1440", failures)
+    page.screenshot(path=str(ARTIFACTS / "14-composer-collapsed-desktop.png"))
+    # 展开后图标必须立即回来（收起只是暂隐，不是功能丢失）。
+    expand_composer(page)
+    assert_composer_group(group_metrics(page), "折叠后重新展开 1440", failures)
+
+
 def dock_metrics(page):
     return page.evaluate(
         """() => {
@@ -473,6 +549,7 @@ def main():
             # 退出会永久清掉预览里的 paused 目标，必须放在其他 paused 用例之后。
             check_paused_exit(page, failures, frames)
             check_composer_group(page, failures)
+            check_collapsed_composer(page, failures)
             browser.close()
     finally:
         process.terminate()

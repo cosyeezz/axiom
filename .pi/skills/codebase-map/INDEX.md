@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/18 06:37:06）
+# Axiom 多级代码索引（生成于 2026/9/18 07:10:20）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -72,8 +72,9 @@
 | src/tools.js | 157 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/transport.js | 37 | 统一有界 WS 发送：回执、广播、删除通知与慢客户端隔离 | createSender |
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
+| tests/__pycache__/frontend-regions-ui.cpython-312.pyc | 201 | node --test 测试（npm test） | - |
 | tests/__pycache__/goal-ui.cpython-312.pyc | 165 | node --test 测试（npm test） | - |
-| tests/activity-groups-ui.py | 201 | node --test 测试（npm test） | activityHistory, sessions |
+| tests/activity-groups-ui.py | 205 | node --test 测试（npm test） | activityHistory, sessions |
 | tests/answer-tags.test.js | 56 | node --test 测试（npm test） | open |
 | tests/app.test.js | 2059 | node --test 测试（npm test） | pickerSource, modelSources, serviceSource |
 | tests/autoscroll-ui.py | 99 | node --test 测试（npm test） | - |
@@ -95,17 +96,17 @@
 | tests/continuous-ui.py | 31 | node --test 测试（npm test） | - |
 | tests/conversation-font-ui.py | 43 | node --test 测试（npm test） | - |
 | tests/conversation-preview.mjs | 157 | node --test 测试（npm test） | markdown, message, thinking, state |
-| tests/conversation-ui.py | 280 | node --test 测试（npm test） | - |
+| tests/conversation-ui.py | 292 | node --test 测试（npm test） | - |
 | tests/data-owner.test.js | 24 | node --test 测试（npm test） | - |
 | tests/data-version.test.js | 25 | node --test 测试（npm test） | - |
 | tests/database.test.js | 149 | node --test 测试（npm test） | - |
 | tests/defaults.test.js | 185 | node --test 测试（npm test） | - |
 | tests/dev-assets.test.js | 46 | node --test 测试（npm test） | - |
-| tests/dev-vite-ui.py | 49 | node --test 测试（npm test） | - |
+| tests/dev-vite-ui.py | 52 | node --test 测试（npm test） | - |
 | tests/dev-vite.test.js | 52 | node --test 测试（npm test） | - |
 | tests/file-picker.test.js | 68 | node --test 测试（npm test） | source, tick |
 | tests/frontend-regions-preview.mjs | 64 | node --test 测试（npm test） | home, catalog, factory, sessions |
-| tests/frontend-regions-ui.py | 452 | node --test 测试（npm test） | - |
+| tests/frontend-regions-ui.py | 462 | node --test 测试（npm test） | - |
 | tests/frontend-regions.test.js | 214 | node --test 测试（npm test） | appSource, pickerSource, modelPickerSource, modelSources |
 | tests/git-log-ui.py | 39 | node --test 测试（npm test） | - |
 | tests/git-log.test.js | 53 | node --test 测试（npm test） | - |
@@ -115,7 +116,7 @@
 | tests/goal-preview.mjs | 148 | node --test 测试（npm test） | cwd, seq, text, makeState |
 | tests/goal-protocol.test.js | 15 | node --test 测试（npm test） | - |
 | tests/goal-sessions.test.js | 740 | node --test 测试（npm test） | PLAN, factoryFixture, tick, until |
-| tests/goal-ui.py | 501 | node --test 测试（npm test） | - |
+| tests/goal-ui.py | 578 | node --test 测试（npm test） | - |
 | tests/goal-ui.test.js | 432 | node --test 测试（npm test） | page, $, labels, messages |
 | tests/goal.test.js | 856 | node --test 测试（npm test） | ROUND, GOAL, PLAN, PLAN2 |
 | tests/helpers/model-concurrency-child.mjs | 93 | node --test 测试（npm test） | barrier, runOpponent |
@@ -158,7 +159,7 @@
 | tests/pi-question.test.js | 197 | node --test 测试（npm test） | - |
 | tests/project-skills.test.js | 143 | node --test 测试（npm test） | scopeKey, setup |
 | tests/prompt-resize.test.js | 285 | node --test 测试（npm test） | page |
-| tests/question-layout-ui.py | 48 | node --test 测试（npm test） | - |
+| tests/question-layout-ui.py | 52 | node --test 测试（npm test） | - |
 | tests/question-preview.mjs | 36 | node --test 测试（npm test） | factory, sessions, app, port |
 | tests/question-ui.test.js | 99 | node --test 测试（npm test） | source |
 | tests/questions.test.js | 110 | node --test 测试（npm test） | params |
@@ -180,7 +181,7 @@
 | tests/service-settings-ui.py | 60 | node --test 测试（npm test） | - |
 | tests/service-settings.test.js | 377 | node --test 测试（npm test） | source, html, setup |
 | tests/service.test.js | 684 | node --test 测试（npm test） | until, readMaybe, killTree, buildWorkspace |
-| tests/session-billing-ui.py | 70 | node --test 测试（npm test） | - |
+| tests/session-billing-ui.py | 75 | node --test 测试（npm test） | - |
 | tests/session-billing.test.js | 41 | node --test 测试（npm test） | usage |
 | tests/session-cache.test.js | 115 | node --test 测试（npm test） | clean, withDraft, withImages |
 | tests/session-created-at.test.js | 44 | node --test 测试（npm test） | factory |
@@ -1577,7 +1578,7 @@
 | validateCommit | function | 10 |
 | checkUpdate | function | 15 |
 
-### tests/activity-groups-ui.py（201 行） — node --test 测试（npm test）
+### tests/activity-groups-ui.py（205 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|

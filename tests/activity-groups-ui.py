@@ -42,12 +42,14 @@ try:
         page.on('pageerror', lambda error: errors.append(str(error)))
         # Only the isolated browser gets this test hook, not the shipped app.
         source = (root / 'public/app.js').read_text(encoding='utf-8')
+        # af51b00 把全局 event() 改名为 applyEvent()，这个钩子当时没跟上，注入后直接 ReferenceError。
         page.route('**/app.js', lambda route: route.fulfill(
-            body=source + '\nwindow.activityTestEvent = event;\n', content_type='text/javascript'))
+            body=source + '\nwindow.activityTestEvent = applyEvent;\n', content_type='text/javascript'))
         page.add_init_script("localStorage.setItem('axiom.session', 'ui-waiting')")
         page.goto('http://127.0.0.1:4328')
         page.wait_for_selector('#workspace:not([hidden])')
-        page.wait_for_function("typeof window.activityTestEvent === 'function'")
+        # 表达式写法会被 Playwright 包成 eval，页面 CSP 没放 unsafe-eval 直接抛错，一律用箭头函数。
+        page.wait_for_function("() => typeof window.activityTestEvent === 'function'")
         page.wait_for_timeout(250)
 
         def send(kind, data):
@@ -141,6 +143,8 @@ try:
         page.locator('#output').evaluate("el => { const p = document.createElement('p'); p.textContent = '滚动验证。'.repeat(2000); el.append(p); }")
         page.locator('#transcript').evaluate('el => el.scrollTop = el.scrollHeight')
         page.wait_for_timeout(150)
+        # 窄屏下跳转按钮只在展开态出现（.shell:not(.mobile-expanded) 把它们藏了），跟真实手机路径一致：先点展开。
+        page.locator('#mobile-expand').click()
         page.locator('#earliest').click()
         assert page.locator('#transcript').evaluate('el => el.scrollTop') == 0
         assert page.locator('#latest').is_visible()
@@ -178,7 +182,7 @@ try:
         # Real attach + reload: three tool/usage/thinking messages form one segment.
         page.goto('http://127.0.0.1:4328/#session=ui-activity-history')
         page.reload()
-        page.wait_for_function("document.querySelector('#output').textContent.includes('检查已完成。')")
+        page.wait_for_function("() => document.querySelector('#output').textContent.includes('检查已完成。')")
         page.wait_for_timeout(250)
         for attempt in range(2):
             assert len(groups()) == 1 and groups()[0]['tools'] == 3, groups()
@@ -188,7 +192,7 @@ try:
                    Node.DOCUMENT_POSITION_FOLLOWING)'''), 'restored thinking must precede answer'
             if attempt == 0:
                 page.reload()
-                page.wait_for_function("document.querySelector('#output').textContent.includes('检查已完成。')")
+                page.wait_for_function("() => document.querySelector('#output').textContent.includes('检查已完成。')")
                 page.wait_for_timeout(250)
         shot('08-history-reload')
         assert not errors, errors
