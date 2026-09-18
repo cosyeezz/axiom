@@ -4,9 +4,9 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Sessions } from '../src/sessions.js';
-import { bootHistoryPage, until } from './helpers/history-page.js';
+import { bootSessionPage, until } from './helpers/session-page.js';
 
-test('重启后大量子代理历史不挤走最新主会话正文，旧页仍可读子历史', async t => {
+test('重启后大量子代理历史不挤走最新主会话正文，子历史同批下发', async t => {
   const root = mkdtempSync(join(tmpdir(), 'axiom-restored-order-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const writeHistory = (name, messages) => {
@@ -27,21 +27,17 @@ test('重启后大量子代理历史不挤走最新主会话正文，旧页仍�
   sessions.get = () => item;
   sessions.goalStore = { load: () => null };
   sessions.store = { getSession: () => ({ sessionFile: file, cwd: root, selection: { model: 'test/model', levels: ['off'] }, tasks: [{ id: 'child', task: '子任务', status: 'completed', sessionFile: childFile }] }) };
-  const latest = sessions.snapshot('s', { epoch: 'instance', window: { edge: 'last', limit: 60 } });
-  assert.equal(latest.messages.at(-1).agentId, 'main');
-  assert.equal(latest.messages.at(-1).entryId, 'main-3');
-  const ids = new Set(latest.messages.map(m => m.messageId));
-  let current = latest;
-  while (current.history.prevCursor) {
-    current = await sessions.history('s', { before: current.history.prevCursor, limit: 60 }, 'instance');
-    for (const message of current.messages) { assert.ok(!ids.has(message.messageId)); ids.add(message.messageId); }
-  }
-  assert.equal(ids.size, 134, '分页不丢失或重复主子历史');
-  const page = bootHistoryPage();
+  const state = sessions.snapshot('s', { epoch: 'instance', includeSeq: true });
+  // 主轴末条仍是主会话最终回答：130 条子历史插在委派锚点后，不追加到末尾。
+  assert.equal(state.messages.at(-1).agentId, 'main');
+  assert.equal(state.messages.at(-1).entryId, 'main-3');
+  const ids = new Set(state.messages.map(m => m.messageId));
+  assert.equal(ids.size, 134, '一次下发主子历史，不重不漏');
+  const page = bootSessionPage();
   t.after(page.close);
   page.open();
   await until(() => page.app.connected(), '页面连接');
-  page.app.snapshot(latest);
+  page.app.snapshot(state);
   assert.match(page.$('output').textContent, /历史主会话最终回答/);
   assert.equal(page.$('session-tabs'), null);
 });

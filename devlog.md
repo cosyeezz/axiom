@@ -1,5 +1,17 @@
 # 开发记录
 
+## 2026-09-18 删除消息分页，整份历史 + 压缩卡按需展开
+
+- 原因：分页是负优化。上滚前插闪烁、翻页后后续消息消失、阅读锚点跑位，为治时序又堆出游标作废、旧页不推水位等一整套分支；而它本来要解的 DOM 规模问题已经被上下文自动压缩解决：压缩后历史折成摘要卡，实际滚动范围并不长。
+- 决策：
+  - 删干净分页。`session.history` 命令、before/after 游标、页预取与前插、窗口裁剪（300 条 / MOUNT_MAX）、分页条 UI、`session.history.changed` 修订机制全部移除。`session.attach` 一次下发整份历史，前端同步挂载；历史区两个按钮（回最早 / 回最新）退为纯本地滚动跳转。
+  - 压缩摘要卡改为服务端排除 + 客户端按需取：快照不包含被压缩折叠的消息（含段内子代理记录与重试卡），只给摘要；点开摘要卡才用新命令 `session.compaction.messages`（compactionId 必填）取一次原文，结果缓存、失败可重试、切会话后迟到响应丢弃。未加载的会话走只读 JSONL 投影，不创建 SDK 实例；实时压缩刚折的段原文还在页上，展开免取。
+  - 新增 `session.history.reset`（reason: recall）：撤回真正截断历史时广播，各端整份重取。增量事件表达不了「消息消失」，而旧方案是靠游标作废带过的；撤回失败不广播。
+  - 快照另带 messageIndexes / messageCount（折叠前的历史下标与总长），给目标轮次锚点和重试卡定位；越界 messageCount 收敛到历史末尾而不丢弃。tasks 恒全量，tools 仍裁剪（owned ∪ 运行中）。
+  - Markdown 渲染缓存 epoch 从「会话 + 修订号」改为 sessionId：同会话整份重挂（撤回重取、后台回前台）命中，切会话整体丢弃。后台标签页只记脏、回前台重取的优化保留。
+- 涉及：`src/session-history.js`（重写，只留 messageIdOf / toWireRecord / readSessionManager / readSessionHistory）、`src/protocol.js`、`src/sessions.js`、`src/server.js`；`public/app.js`、`public/index.html`、`public/style.css`；新增 `tests/helpers/session-page.js`、`tests/compaction-lazy.test.js`、`tests/history-projection.test.js`，删除 `tests/helpers/history-page.js`、`tests/history-dom-window.test.js`、`tests/history-prepend-records.test.js`、`tests/history-main-budget.test.js`，重写 snapshot 三份、history-reading、history-page-cache、send-optimistic、continuous-history、continuous-preview.mjs、continuous-ui.py、recall、compaction-ui、session-history 等；`README.md`、`devlog.md`、codebase-map 索引与知识库。
+- 验证：`npm test` 738 项（736 通过 / 2 平台跳过 / 0 失败）；`node tests/continuous-preview.mjs` 服务可起并响应 200；`public/` 与 `src/` grep 无分页残留。已知边界：从未压缩过的超长会话仍可能一次下发很大一帧（32 MiB 上限），未实现虚拟列表。
+
 ## 2026-09-18 供应商与模型两级配置、配置复制与有效思考等级
 
 - 原因：模型管理页把供应商连接和模型列表混在一屏，新建供应商时两件事互相牵扯；重复配置同类供应商/模型只能手抄；会话里的思考等级下拉罗列七个等级，模型并不支持的等级也能选；勾选框按白名单写 thinkingLevelMap，保存后回读的勾选状态与保存前不一致。

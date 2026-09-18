@@ -1,21 +1,19 @@
-// 分页页面测试的共享装配：真实 app.js + 真实 src/session-history.js 的服务端分页。
+// 会话页面测试的共享装配：真实 app.js + 假服务端（一次全量下发历史）。
 //
-// 为什么不再有受控分片调度：分片实现已删除，`snapshot()` 对一页做同步挂载。
-// 这里让假服务端用 `pageOf()` 真算游标/窗口，页面的「上一页/下一页/最新」按钮走
-// 真实 loadHistory/latestHistory 通路；测试只控制响应何时送达（hold）、页面是否隐藏、
-// 以及是否把渲染入口换成抛错版，不替换被测逻辑。
+// 历史不再分页：attach 一次给全量消息，页面同步挂载完整历史，两个滚动按钮只做本地跳转。
+// 这里只控制外部条件——响应何时送达（hold/release）、页面是否在后台、实例号与 seq 水位、
+// 以及渲染入口是否抛错，不替换任何被测逻辑。
 import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
 import { marked } from "marked";
 import createPurify from "dompurify";
 import { createStreamRenderer } from "../../public/stream-renderer.js";
 import { publicSource } from "./public-source.js";
-import { createHistory, pageOf, toPageRecord, touchHistory } from "../../src/session-history.js";
+import { toWireRecord } from "../../src/session-history.js";
 
-export const PAGE_SIZE = 60;
 export const CONFIG = { model: "test/model", thinking: "off", levels: ["off"], skills: [] };
 
-// 每条消息一个唯一标记，便于断言「某一页的哪几条」是否落进 DOM。
+// 每条消息一个唯一标记，便于断言具体哪几条落进了 DOM。
 export const makeRecords = (count, tag = "历史") =>
   Array.from({ length: count }, (_, index) => ({
     agentId: "main",
@@ -38,7 +36,7 @@ const markdownSource = (await readFile(new URL("../../public/markdown.js", impor
   .replace(/^import .*;\r?\n/gm, "")
   .replace(/^export /gm, "");
 
-// 无分页元数据的会话状态（老服务端 / 内存态）：事件直接落地，不走翻页停放。
+// 一份会话快照：事件直接落地，没有任何翻页停放。
 export function sessionState(sessionId, { messages = [], live = {}, seq, status = "idle" } = {}) {
   const state = { sessionId, title: sessionId, cwd: "C:\\work", status, config: structuredClone(CONFIG), messages, tasks: [], live, tools: {}, compactions: [], retries: [] };
   if (seq !== undefined) state.seq = seq;
@@ -57,7 +55,7 @@ export async function until(predicate, label, rounds = 500) {
  * - hold(req, requests)：返回 true 则响应被扣住，由 release()/releaseAll() 决定何时送达。
  * 不 hold 的响应在微任务里立刻送达（真实 transport 负责在 attach 在飞时开闸）。
  */
-export function bootHistoryPage({ sessionId = "long", title = "长会话", epoch = "epoch-1",
+export function bootSessionPage({ sessionId = "long", title = "长会话", epoch = "epoch-1",
   records = makeRecords(240), seq = 500, hold = null } = {}) {
   const dom = new JSDOM(html, { url: "http://localhost", runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
@@ -67,30 +65,29 @@ export function bootHistoryPage({ sessionId = "long", title = "长会话", epoch
   const media = { matches: false, onchange: null, addEventListener() {}, removeEventListener() {} };
   window.matchMedia = () => media;
   const frames = new Map();
+  let closed = false;
   let frameId = 0;
   window.requestAnimationFrame = (fn) => { frames.set(++frameId, fn); return frameId; };
   window.cancelAnimationFrame = (id) => frames.delete(id);
   const clock = { t: 0 };
-  // markdown.js 同时导出页级渲染缓存工厂（Phase D2），与渲染器一并注入 eval 版 app。
+  // markdown.js 同时导出页级渲染缓存工厂，与渲染器一并注入 eval 版 app。
   const markdownApi = new Function("marked", "DOMPurify", `${markdownSource}; return { renderMarkdown, createMarkdownPageCache };`)(marked, createPurify(window));
   window.renderMarkdown = markdownApi.renderMarkdown;
   window.createMarkdownPageCache = markdownApi.createMarkdownPageCache;
   window.createStreamRenderer = (render, after) =>
     createStreamRenderer(render, after, window.requestAnimationFrame, window.cancelAnimationFrame, 40, () => clock.t);
 
-  // 服务端分页与实例号：用真实 pageOf，游标语义/窗口边界都不是测试自造的。
-  const history = createHistory(sessionId);
   let instance = epoch;
-  const pageState = (window_) => {
-    const page = pageOf(records, history, { sessionId, epoch: instance, ...window_ });
-    return {
-      sessionId, cwd: "C:/work", title, status: "idle",
-      config: structuredClone(CONFIG),
-      messages: page.records.map(toPageRecord),
-      tasks: [], live: {}, tools: {}, compactions: [], retries: [],
-      instanceId: instance, revision: history.revision, history: page.meta, liveMessageIds: {},
-    };
-  };
+  // 全量快照：身份经真实 toWireRecord 投影，messageId/entryId 语义与服务端一致。
+  const fullState = () => ({
+    sessionId, cwd: "C:/work", title, status: "idle",
+    config: structuredClone(CONFIG),
+    messages: records.map(toWireRecord),
+    messageIndexes: records.map((_, index) => index),
+    messageCount: records.length,
+    tasks: [], live: {}, tools: {}, compactions: [], retries: [],
+    instanceId: instance, liveMessageIds: {},
+  });
 
   const requests = [];
   const sockets = [];
@@ -102,9 +99,7 @@ export function bootHistoryPage({ sessionId = "long", title = "长会话", epoch
       case "models.favorites.get": return { provider: [], model: [], thinking: [] };
       case "capabilities.list": return { needsTrust: false, warnings: [], skills: [], mcp: [], plugins: [] };
       case "sessions.list": return [{ id: sessionId, title, cwd: "C:/work", status: "idle", sessionFile: "C:\\axiom\\long.jsonl", updatedAt: 1 }];
-      case "session.attach": return { ...pageState({ edge: "last", limit: PAGE_SIZE }), seq };
-      case "session.history":
-        return pageState({ edge: req.edge, before: req.before, after: req.after, target: req.target, limit: req.limit || PAGE_SIZE });
+      case "session.attach": return { ...fullState(), seq };
       default: return {};
     }
   };
@@ -122,7 +117,7 @@ export function bootHistoryPage({ sessionId = "long", title = "长会话", epoch
       try { data = respond(req); } catch (e) { error = e.message; }
       const deliver = () => this.receive(error ? { type: "response", id: req.id, ok: false, error } : { type: "response", id: req.id, ok: true, data });
       if (hold?.(req, requests)) held.push(deliver);
-      else queueMicrotask(deliver);
+      else queueMicrotask(() => { if (!closed) deliver(); }); // 页面关掉后仍在飞的响应丢弃，避免测试结束后再碰 DOM。
     }
   }
   window.WebSocket = Socket;
@@ -135,8 +130,8 @@ export function bootHistoryPage({ sessionId = "long", title = "长会话", epoch
   window.eval([
     modelSources, pickerSource, pageSource, answerSource,
     `window.__app = {
-      snapshot, event, saveView, views, live, renderer, loadHistory, latestHistory,
-      switchSession, withdrawQueue,
+      snapshot, event, saveView, views, live, renderer,
+      switchSession, withdrawQueue, reattach,
       request: (type, data) => request(type, data),
       setRequest: (fn) => { request = fn; },
       session: () => sessionId,
@@ -144,11 +139,11 @@ export function bootHistoryPage({ sessionId = "long", title = "长会话", epoch
       watermark: (id) => transport.getWatermark(id),
       queue: () => transport.getSnapshotQueue(),
       transportState: () => transport.getConnectionState(),
-      historyState: () => historyState,
       mainEntries: () => mainItems.map(entry => entry.entryId),
-      historyFlags: () => ({ loading: historyLoading, dirty: historyDirty, request: historyRequest, hiddenDirty, events: historyEvents }),
+      historyEntries: () => mainItems,
+      attachFlags: () => ({ attaching, hiddenDirty }),
       setConnected: (value) => { connected = value; updateAvailability(); },
-      failPlacement: () => { const original = placeSnapshotMessage; placeSnapshotMessage = () => { throw new Error("分片渲染失败"); }; return () => { placeSnapshotMessage = original; }; },
+      failPlacement: () => { const original = placeSnapshotMessage; placeSnapshotMessage = () => { throw new Error("历史挂载失败"); }; return () => { placeSnapshotMessage = original; }; },
       pageCacheStats: () => ({ ...pageCacheCurrent().stats, bytes: pageCacheCurrent().bytes, entries: pageCacheCurrent().entries.size }),
       dispose: () => transport.dispose(),
     };`,
@@ -158,10 +153,11 @@ export function bootHistoryPage({ sessionId = "long", title = "长会话", epoch
   const texts = () => [...$("output").querySelectorAll(".message")].map((node) => node.textContent);
   const count = (text) => texts().filter((value) => value.includes(text)).length;
   return {
-    dom, window, $, app, requests, sockets, history, records,
+    dom, window, $, app, requests, sockets, records,
     texts, count,
+    // 服务端当前会下发的整份快照（测试里手工触发重建时复用同一形状）。
+    fullState: (overrides = {}) => ({ ...fullState(), seq, ...overrides }),
     messages: () => $("output").querySelectorAll(".message").length,
-    pageText: () => $("history-position").textContent,
     // 只有被 hold 住的响应留在队列里；release 让其中最先的一个送达。
     held: () => held.length,
     release: () => { held.shift()?.(); return held.length; },
@@ -169,7 +165,6 @@ export function bootHistoryPage({ sessionId = "long", title = "长会话", epoch
     open: () => sockets.at(-1).open(),
     setHidden(value) { hidden = value; window.document.dispatchEvent(new window.Event("visibilitychange")); },
     setEpoch(value) { instance = value; },
-    touchHistory: () => touchHistory(history),
     // 受控帧：快照尾部的滚动还原挂在 rAF 上，断言前手动放一帧。
     paint() {
       clock.t += 1000;
@@ -177,6 +172,13 @@ export function bootHistoryPage({ sessionId = "long", title = "长会话", epoch
       frames.clear();
       for (const fn of batch) fn();
     },
-    close: () => { try { app.dispose(); } catch {} dom.window.close(); },
+    // 关闭顺序有讲究：dispose 会拒掉在飞请求，调用方的错误处理还要摸 DOM，
+    // 所以先放一个宏任务让这些回调在活着的 window 上跑完，再销毁 JSDOM。
+    close: async () => {
+      closed = true;
+      try { app.dispose(); } catch {}
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      dom.window.close();
+    },
   };
 }

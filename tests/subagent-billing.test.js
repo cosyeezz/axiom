@@ -63,7 +63,7 @@ function factory() {
   return { create, calls };
 }
 
-test("实时总账包含子任务；冷快照、分页及恢复不漏账；缺失文件保留最后已知账", async () => {
+test("实时总账包含子任务；冷快照与恢复不漏账；缺失文件保留最后已知账", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-billing-"));
   const first = factory();
   let sessions = new Sessions(first.create, undefined, join(root, "storage"));
@@ -94,14 +94,14 @@ test("实时总账包含子任务；冷快照、分页及恢复不漏账；缺�
     const next = factory();
     sessions = new Sessions(next.create, undefined, join(root, "storage"));
     await sessions.load();
-    const cold = sessions.snapshot(id, { window: { edge: "last", limit: 1 } });
-    assert.equal(cold.messages.length, 1);
-    assert.equal(cold.tasks.length, 0);
+    // 冷快照：一次全量下发历史，总账不依赖历史条数。
+    const cold = sessions.snapshot(id);
+    assert.ok(cold.messages.length > 0);
     assert.deepEqual(cold.billing, last);
     await sessions.ensureLoaded(id);
     assert.equal(next.calls.prompts.length, 0);
     assert.equal(next.calls.resumes, 0);
-    assert.deepEqual(sessions.snapshot(id, { window: { edge: "last", limit: 1 } }).billing, last);
+    assert.deepEqual(sessions.snapshot(id).billing, last);
     await sessions.close();
     await rm(taskFile);
     sessions = new Sessions(factory().create, undefined, join(root, "storage"));

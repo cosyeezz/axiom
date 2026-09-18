@@ -10,4 +10,6 @@ export const publicSource = async (...names) =>
 // Test-only accessors for the migrated transport; no legacy state in app.js.
 function event(message) { return transport.receive(message); }
 const appliedSeq = { get: transport.getWatermark };
+// 原文对照的身份序列：rawEntries 是 eval 顶层的 let，另一次 window.eval 看不到它。
+function rawEntryIds() { return rawEntries.map((entry) => entry.entryId ?? entry.messageId); }
 ` : "");

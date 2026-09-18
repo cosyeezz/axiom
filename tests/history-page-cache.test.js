@@ -1,9 +1,9 @@
-// 页级渲染缓存的分页集成（Phase D2）：历史快照整页替换是重复渲染主场景——翻页来回、
-// 目标定位、切会话再切回都会把同一批终态 markdown 从零 lex/parse。页缓存按
-// entryId 复用旧 blocks；同 revision（epoch）内命中，切换即整体丢弃。
+// 页级渲染缓存：历史整份重挂是重复渲染的主场景——撤回后重取、后台回前台收口、
+// 切会话再切回，都会把同一批终态 markdown 从零 lex/parse。缓存按 entryId 复用旧 blocks；
+// epoch 就是 sessionId，切换会话即整体丢弃（同文不同会话不互相冒充）。
 import test from "node:test";
 import assert from "node:assert/strict";
-import { bootHistoryPage, until } from "./helpers/history-page.js";
+import { bootSessionPage, until, sessionState, makeRecords } from "./helpers/session-page.js";
 
 // 用户消息走 textContent 快路径不参与；assistant 消息含 markdown 语法走复杂渲染。
 const md = (i) => `**历史${i}**\n\n- 项甲${i}\n- 项乙${i}\n\n\`行内${i}\``;
@@ -13,59 +13,56 @@ const records = Array.from({ length: 240 }, (_, i) => ({
   message: { role: i % 2 ? "assistant" : "user", content: md(i) },
 }));
 
-test("翻页来回与目标定位命中页缓存，渲染内容等价", async (t) => {
-  const page = bootHistoryPage({ records });
+test("同会话整份重挂命中页缓存，渲染内容等价", async (t) => {
+  const page = bootSessionPage({ records });
   t.after(page.close);
   page.open();
   await until(() => page.app.connected(), "连接");
-  // attach 快照（末页 180–239）：30 条 assistant 复杂 markdown 入缓存。
-  await until(() => page.app.historyState().history.start === 180, "末页");
-  const lastHtml = [...page.$("output").querySelectorAll(".message")]
-    .filter((node) => node.querySelector(".markdown-block")).map((node) => node.innerHTML);
+  // attach 快照：120 条 assistant 复杂 markdown 入缓存。
   const afterAttach = page.app.pageCacheStats();
-  assert.ok(afterAttach.store >= 30, `复杂 markdown 应入缓存：store=${afterAttach.store}`);
+  assert.ok(afterAttach.store >= 120, `复杂 markdown 应入缓存：store=${afterAttach.store}`);
+  assert.equal(afterAttach.hit, 0, "首渲没有可命中的条目");
+  const firstHtml = [...page.$("output").querySelectorAll(".message")]
+    .filter((node) => node.querySelector(".markdown-block")).map((node) => node.innerHTML);
 
-  // 翻到首页：键不重叠，纯 miss（新一批 store）。
-  await page.app.loadHistory({ edge: "first" });
-  await until(() => page.app.historyState().history.start === 0, "首页");
-  assert.equal(page.app.pageCacheStats().hit, 0, "换页键不重叠不应命中");
-
-  // 翻回末页：同键同文，命中复用。
-  await page.app.loadHistory({ edge: "last" });
-  await until(() => page.app.historyState().history.start === 180, "回末页");
+  // 撤回后重取（reason: recall）：同会话同内容整份重挂，键不变即命中。
+  await page.app.reattach();
+  await until(() => page.app.attachFlags().attaching === false, "重取完成");
   const stats = page.app.pageCacheStats();
-  assert.ok(stats.hit >= 30, `回页应命中：hit=${stats.hit}`);
-  assert.equal(page.messages(), 60);
+  assert.ok(stats.hit >= 120, `整份重挂应命中：hit=${stats.hit}`);
+  assert.equal(page.messages(), 240);
   const backHtml = [...page.$("output").querySelectorAll(".message")]
     .filter((node) => node.querySelector(".markdown-block")).map((node) => node.innerHTML);
-  assert.deepEqual(backHtml, lastHtml, "命中复用后渲染产物与首渲等价");
+  assert.deepEqual(backHtml, firstHtml, "命中复用后渲染产物与首渲等价");
 
-  // 目标定位回首页第一条（窗口 [0,60) 与已缓存首页重合）：同 revision 继续命中。
-  await page.app.loadHistory({ target: "hist-0" });
-  await until(() => page.app.historyState().history.start === 0, "定位回首页");
-  assert.ok(page.app.pageCacheStats().hit >= stats.hit + 30, "同 revision 内跨页往返继续命中");
+  // 再来一次：同 epoch 内继续命中，不重复入缓存。
+  await page.app.reattach();
+  await until(() => page.app.attachFlags().attaching === false, "第二次重取完成");
+  const again = page.app.pageCacheStats();
+  assert.ok(again.hit >= stats.hit + 120, "同 epoch 内反复重挂继续命中");
+  assert.equal(again.entries, stats.entries, "命中不新增缓存条目");
 });
 
-test("历史修订推进后旧缓存作废（epoch 切换整体丢弃）", async (t) => {
-  const page = bootHistoryPage({ records });
+test("切换会话后旧缓存作废（epoch = sessionId，整体丢弃）", async (t) => {
+  const page = bootSessionPage({ records });
   t.after(page.close);
   page.open();
   await until(() => page.app.connected(), "连接");
-  await until(() => page.app.historyState().history.start === 180, "末页");
-  const firstStats = page.app.pageCacheStats();
-  assert.ok(firstStats.store >= 30);
+  assert.ok(page.app.pageCacheStats().store >= 120);
 
-  // 服务端历史变化（新消息入史）：revision 前进，旧页缓存整体作废。
-  page.touchHistory();
-  await page.app.loadHistory({ edge: "first" });
-  await until(() => page.app.historyState().history.start === 0, "首页");
+  // 切到另一个会话：内容同文但 entryId 归属不同会话，缓存整体丢弃。
+  const other = makeRecords(4, "别的会话").map((record, index) => ({ ...record,
+    entryId: `hist-${index}`, messageId: `hist-${index}`,
+    message: { role: "assistant", content: md(index) } }));
+  page.app.snapshot(sessionState("other", { messages: other, seq: 1 }));
+  const switched = page.app.pageCacheStats();
+  assert.equal(switched.hit, 0, "换会话不得命中同名键");
+  assert.equal(switched.entries, 4, "旧会话条目被整体丢弃");
+
+  // 切回原会话：新缓存对象里没有原会话条目，重新入缓存而不是复用旧代。
+  await page.app.reattach();
+  await until(() => page.app.attachFlags().attaching === false, "切回原会话");
   const revived = page.app.pageCacheStats();
-  // 首页键与末页键不重叠：若 epoch 未切换会累计到 60 条；恰好 30 条说明旧缓存已整体现弃。
-  assert.equal(revived.entries, 30, "旧 epoch 条目应被整体丢弃");
-  assert.equal(revived.hit, 0);
-  // 末页键在新对象里不存在：再翻回末页也不命中（同文不同代不冒充）。
-  await page.app.loadHistory({ edge: "last" });
-  await until(() => page.app.historyState().history.start === 180, "回末页");
-  assert.equal(page.app.pageCacheStats().hit, 0, "旧代条目不复用");
-  assert.ok(page.app.pageCacheStats().store >= 60, "新 epoch 重新入缓存");
+  assert.equal(revived.hit, 0, "旧代条目不复用");
+  assert.ok(revived.store >= 120, "新 epoch 重新入缓存");
 });
