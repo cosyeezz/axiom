@@ -202,6 +202,25 @@ test("桌面输入区默认折叠，交互展开，离开 5s 收回", async () =
   } finally { dom.window.close(); }
 });
 
+// 回归防守：“回到最新”钉在输入区上沿，mousedown 就展开会把按钮推走，
+// mouseup 落不回原元素、click 不触发，按钮彻底点不动。
+test("滚动按钮不算输入意图：点回到最新不展开输入区", async () => {
+  const { dom, w, input } = await page();
+  const composer = w.document.getElementById("composer");
+  const latest = w.document.getElementById("latest");
+  try {
+    assert.equal(composer.dataset.collapsed, "true");
+    latest.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true }));
+    assert.equal(composer.dataset.collapsed, "true", "滚到最新不展开，按钮不位移");
+    latest.dispatchEvent(new w.FocusEvent("focusin", { bubbles: true }));
+    assert.equal(composer.dataset.collapsed, "true", "按钮拿到焦点也不展开");
+
+    // 输入区本体的 mousedown 照旧展开。
+    input.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true }));
+    assert.equal(composer.dataset.collapsed, "false", "点输入区仍然展开");
+  } finally { dom.window.close(); }
+});
+
 test("还在用的状态不折叠：运行中、待发图片、补全打开", async () => {
   const { dom, w, input } = await page();
   const composer = w.document.getElementById("composer");
