@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/18 11:22:45）
+# Axiom 多级代码索引（生成于 2026/9/18 11:26:34）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -88,7 +88,7 @@
 | tests/compaction-ui.test.js | 283 | node --test 测试（npm test） | page |
 | tests/compaction.test.js | 1002 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
 | tests/config.test.js | 309 | node --test 测试（npm test） | - |
-| tests/context-menu-ui.py | 66 | node --test 测试（npm test） | - |
+| tests/context-menu-ui.py | 67 | node --test 测试（npm test） | - |
 | tests/continuous-history.test.js | 53 | node --test 测试（npm test） | send |
 | tests/continuous-preview.mjs | 24 | node --test 测试（npm test） | id, records, state, snapshot |
 | tests/continuous-ui.py | 31 | node --test 测试（npm test） | - |
@@ -176,7 +176,7 @@
 | tests/server.test.js | 168 | node --test 测试（npm test） | - |
 | tests/service-api.test.js | 106 | node --test 测试（npm test） | - |
 | tests/service-settings-api.test.js | 71 | node --test 测试（npm test） | - |
-| tests/service-settings-ui.py | 60 | node --test 测试（npm test） | - |
+| tests/service-settings-ui.py | 66 | node --test 测试（npm test） | - |
 | tests/service-settings.test.js | 377 | node --test 测试（npm test） | source, html, setup |
 | tests/service.test.js | 684 | node --test 测试（npm test） | until, readMaybe, killTree, buildWorkspace |
 | tests/session-billing-ui.py | 75 | node --test 测试（npm test） | - |

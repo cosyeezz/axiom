@@ -10,7 +10,7 @@ handlers = (
     'let connected=true,changing=false,sessionId="test"; '
     'const request=()=>new Promise(()=>{}); '
     + source[source.index("function contextIcon("):source.index("function renderContextChips(")]
-    + source[source.index("function renderContextResults("):source.index('$("composer-skill").onchange =')]
+    + source[source.index("function fuzzyHit("):source.index('$("composer-skill").onchange =')]
 )
 with sync_playwright() as p:
     browser = p.chromium.launch()
@@ -19,9 +19,10 @@ with sync_playwright() as p:
         page.set_content((root / "public/index.html").read_text(encoding="utf-8"))
         page.add_style_tag(content=(root / "public/style.css").read_text(encoding="utf-8"))
         page.evaluate('''() => {
+            document.querySelector('.shell').classList.add('mobile-expanded');
             document.querySelector('#workspace').hidden = false;
             document.querySelector('#sidebar').remove();
-            document.querySelector('#add-context').style.cssText = 'position:fixed;left:24px;top:600px';
+            document.querySelector('#add-context').style.cssText = 'position:fixed;left:24px;top:600px;z-index:100';
         }''')
         page.add_script_tag(content=handlers)
         page.locator('#add-context').click()
