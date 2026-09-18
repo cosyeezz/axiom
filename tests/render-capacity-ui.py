@@ -1,16 +1,17 @@
-"""渲染容量验收（Phase D1/D2）：有界 DOM 滑动窗口 + 页缓存回载，真实 Chromium。
+"""渲染容量验收：整份历史一次挂载 + 页缓存复用，真实 Chromium。
 
 Run: python tests/render-capacity-ui.py
 环境变量：CAPACITY_COUNT（默认 500）
 Requires the existing Python Playwright + Chromium installation.
 
 - 造数：源码注入法（同 tests/activity-groups-ui.py）——在 conversation-preview.mjs
-  源码里注入一条 500 条混合消息会话，并给 sessions stub 挂上真实 src/session-history.js
-  的 pageOf/createHistory 分页（attach window / session.history / target 定位全走真实游标语义）。
-- 验证：attach 链式前插到最早页（顶部预取循环），挂载窗口封顶 300（D1）；滚回底部走
-  target 整页重挂，被裁区间回来（D1 裁剪端回载闭环）；4× CPU 节流下滚动/按键响应；
-  全展开懒渲染后的 DOM 容量口径；全程无 pageerror。
+  源码里注入一条 500 条混合消息会话，sessions stub 用真实 src/session-history.js 的
+  toWireRecord 投影，attach 一次下发全部记录（分页已删除，无 window/游标语义）。
+- 验证：attach 后 500 条全部在场且首尾齐；回最早/回最新是纯本地跳转（不取数、不重建
+  节点）；4× CPU 节流下滚动/按键响应；全展开懒渲染后的 DOM 容量口径；全程无 pageerror。
 - 口径坑：思考/工具是懒渲染，details 未 open 不在 DOM——容量计数在「全展开」后取。
+- 已知边界：整份挂载下 DOM 规模随会话长度线性增长，本脚本记录实测数值而不断言硬上限；
+  生产上靠上下文自动压缩（折叠段不下发）控制规模。
 """
 from pathlib import Path
 import json
@@ -27,7 +28,7 @@ preview = preview.replace("../src/server.js", (root / "src/server.js").as_uri())
 
 COUNT = int(os.environ.get("CAPACITY_COUNT", "500"))
 INJECT = """
-import { createHistory, pageOf, toPageRecord } from "__SESSION_HISTORY__";
+import { toWireRecord } from "__SESSION_HISTORY__";
 const COUNT = __COUNT__;
 const capacityRecords = [];
 for (let i = 0; i < COUNT; i++) {
@@ -40,36 +41,24 @@ for (let i = 0; i < COUNT; i++) {
     { type: "toolCall", id: `t-${i}`, name: "read", arguments: { path: `file-${i}.txt` } } ]) });
   else capacityRecords.push({ agentId: "main", entryId, message: { role: "toolResult", toolCallId: `t-${i-1}`, toolName: "read", content: [{ type: "text", text: `工具结果 ${i}：内容行。` }] } });
 }
-const capacityHistory = createHistory("ui-capacity");
 const capacityBase = {
   sessionId: "ui-capacity", title: "渲染容量验收", cwd: process.cwd(), status: "idle",
   config: { model: "preview/axiom", thinking: "high", levels: ["off", "high"], skills: [] },
   tasks: [], compactions: [], retries: [], live: {}, tools: {}, questions: [],
 };
-const capacityPage = (page) => ({ ...capacityBase,
-  messages: page.records.map(toPageRecord),
-  instanceId: capacityEpoch, revision: capacityHistory.revision, history: page.meta, liveMessageIds: {} });
-let capacityEpoch = null;
+// 整份下发：messages 是全部记录，messageIndexes/messageCount 按折叠前历史下标给出。
+const capacityFull = () => ({ ...capacityBase,
+  messages: capacityRecords.map(toWireRecord),
+  messageIndexes: capacityRecords.map((_, i) => i + 1),
+  messageCount: capacityRecords.length,
+  instanceId: "capacity", liveMessageIds: {} });
 states.push(capacityBase);
 """.replace("__SESSION_HISTORY__", (root / "src/session-history.js").as_uri()).replace("__COUNT__", str(COUNT))
-# stub：快照/分页（只对 ui-capacity 走真实分页，其余会话保持原行为）。
+# stub：只对 ui-capacity 返回整份注入历史，其余会话保持原行为。
 # 注意：原源码对象字面量后面的同名键会覆盖前面的，所以 snapshot 必须原地替换而不是追加。
 preview = preview.replace("const sessions = {", INJECT + "\nconst sessions = {")
 preview = preview.replace("  snapshot: (id) => sessions.get(id),", """
-  snapshot: (id, opts = {}) => {
-    const s = sessions.get(id);
-    if (id !== "ui-capacity" || !opts?.window) return s;
-    capacityEpoch = opts.epoch ?? capacityEpoch;
-    const page = pageOf(capacityRecords, capacityHistory, { sessionId: id, epoch: capacityEpoch, ...opts.window });
-    return structuredClone(capacityPage(page));
-  },
-  history: (id, request) => {
-    const page = pageOf(capacityRecords, capacityHistory, {
-      sessionId: id, epoch: request.instanceId ?? capacityEpoch,
-      before: request.before, after: request.after, target: request.target, limit: request.limit,
-    });
-    return structuredClone(capacityPage(page));
-  },
+  snapshot: (id) => (id === "ui-capacity" ? structuredClone(capacityFull()) : sessions.get(id)),
 """)
 
 with socket.socket() as sock:
@@ -103,7 +92,6 @@ METRICS = """() => {
         details: output.querySelectorAll('details').length,
         outputTextChars: output.textContent.length,
         scrollHeight: document.getElementById('transcript').scrollHeight,
-        position: document.getElementById('history-position').textContent,
     };
 }"""
 
@@ -134,6 +122,9 @@ try:
         browser = p.chromium.launch()
         page = browser.new_page(viewport={"width": 1280, "height": 800})
         page.on("pageerror", lambda error: errors.append(str(error)))
+        requests = []
+        # sync API 的 framesent 直接给 payload 字符串（不是带 .payload 的对象）。
+        page.on("websocket", lambda ws: ws.on("framesent", lambda payload: requests.append(str(payload))))
         page.context.new_cdp_session(page).send("Emulation.setCPUThrottlingRate", {"rate": 4})
         started = time.perf_counter()
         for _ in range(40):
@@ -144,53 +135,43 @@ try:
                 time.sleep(0.2)
         page.wait_for_selector("#workspace:not([hidden])")
         page.wait_for_selector("#output .message")
+        # toolResult 并入前一条 toolCall 卡片，不单独成 .message：预期数按此扣除。
+        expected_messages = COUNT - COUNT // 4
+        page.wait_for_function(f"() => document.querySelectorAll('#output .message').length >= {expected_messages}",
+                               timeout=60000)
         ready_ms = (time.perf_counter() - started) * 1000
-        # 主动滚到顶部触发顶部预取；attach 后 rAF 链式前插（scrollTop≈0 满足条件）继续。
-        page.evaluate("() => { const t = document.getElementById('transcript'); t.scrollTop = 0; t.dispatchEvent(new Event('scroll')); }")
-        # 前插链式推进（每页后 scrollTop 补偿仍近顶），等待抵达最早页且挂载稳定。
-        for _ in range(40):
-            page.evaluate("() => { document.getElementById('transcript').scrollTop = 0; }")
-            try:
-                page.wait_for_function(
-                    "() => document.getElementById('history-position').textContent.startsWith('1–')",
-                    timeout=4000)
-                break
-            except Exception:
-                pass
-        else:
-            report("前插抵达最早页", False,
-                   page.evaluate("() => document.getElementById('history-position').textContent"))
-        page.wait_for_timeout(800)
-        attach = page.evaluate(METRICS)
-        report(f"attach→ready+前插到顶 {round(ready_ms)}ms", True, f"position={attach['position']}")
-
-        # D1：挂载窗口封顶（500 条会话只挂 300 条窗口）。
-        limit = 300 + 12  # 窗口上限 + 通知/重试卡等少量杂项余量
-        report(f"D1 挂载窗口有界 messages <= {limit}",
-               attach["messages"] <= limit,
-               f"messages={attach['messages']} position={attach['position']}")
-
-        # D1/D2 回载闭环：滚回底部触发 target 整页重挂，被裁区间回来。
-        # 程序化赋 scrollTop 在部分情形下不会同步跑到监听器，手动派发一次。
-        page.evaluate("""() => {
-          const el = document.getElementById('transcript');
-          el.scrollTop = el.scrollHeight;
-          el.dispatchEvent(new Event('scroll'));
-        }""")
-        page.wait_for_function(
-            "() => { const t = document.getElementById('history-position').textContent; return t && !t.startsWith('1–'); }",
-            timeout=60000)
         page.wait_for_timeout(600)
-        bottom = page.evaluate(METRICS)
-        # target 整页重挂以被裁第一条定位，服务端返回包含它的窗口（此处 241–360）；
-        # 关键不变量：窗口整体替换而非叠加，且不再是最早窗口。
-        report("D1 裁剪端回载闭环（滚底 target 重挂）",
-               bottom["messages"] < attach["messages"] and not bottom["position"].startswith("1–"),
-               f"messages={bottom['messages']} position={bottom['position']!r}")
-        # 被裁区间回来了：裁剪边界 cap-300（300 % 4 == 0 → user 卡）重新在场。
-        tail = page.evaluate(
-            "() => document.getElementById('output').textContent.includes('第 300 轮')")
-        report("被裁边界条目回载后在场", tail, "cap-300 内容在场")
+        attach = page.evaluate(METRICS)
+        report(f"attach→整份挂载 {round(ready_ms)}ms", True, f"messages={attach['messages']}")
+
+        # 整份下发：500 条一次到位，首尾都在场，没有分页补齐请求。
+        report(f"整份历史全部在场 messages == {expected_messages}",
+               attach["messages"] == expected_messages, f"messages={attach['messages']}")
+        ends = page.evaluate("""() => {
+          const text = document.getElementById('output').textContent;
+          return { first: text.includes('第 0 轮'), last: text.includes('第 496 轮') };
+        }""")
+        report("首尾两端齐（无窗口裁剪）", ends["first"] and ends["last"], json.dumps(ends))
+        attach_requests = [r for r in requests if '"session.attach"' in r]
+        report("attach 只发一次且无历史补齐请求",
+               len(attach_requests) == 1 and not any('"session.history"' in r for r in requests),
+               f"attach={len(attach_requests)} total={len(requests)}")
+
+        # 回最早/回最新是纯本地跳转：不取数、不重建节点。
+        page.evaluate("() => { window.__capNode = document.querySelector('#output .message'); }")
+        before_jump = len(requests)
+        page.click("#earliest")
+        page.wait_for_function("() => document.getElementById('transcript').scrollTop < 200", timeout=15000)
+        top = page.evaluate("() => document.getElementById('transcript').scrollTop")
+        # 回最新走 rAF + 贴底门限，4× 节流下收敛慢，轮询而不是固定等待。
+        page.click("#latest")
+        page.wait_for_function("() => document.getElementById('transcript').scrollTop > 1000", timeout=15000)
+        bottom_scroll = page.evaluate("() => document.getElementById('transcript').scrollTop")
+        after = page.evaluate(METRICS)
+        report("回最早/回最新纯本地跳转（不取数、不重建节点）",
+               len(requests) == before_jump and page.evaluate("() => window.__capNode.isConnected")
+               and after["messages"] == expected_messages and top < 200 < bottom_scroll,
+               f"top={round(top)} bottom={round(bottom_scroll)} requests+{len(requests) - before_jump}")
 
         # 交互响应（4× 节流）：滚动与按键。
         response = page.evaluate(INTERACT, 40)
@@ -198,15 +179,15 @@ try:
         report("交互响应（4× 节流）", response["scrollEvents"] > 0,
                f"scroll p50/p95={scroll['p50']}/{scroll['p95']}ms key p50/p95={key['p50']}/{key['p95']}ms")
 
-        # 全展开口径：懒渲染内容只有 open 后才进 DOM。
+        # 全展开口径：懒渲染内容只有 open 后才进 DOM。记录实测规模，不断言硬上限。
         page.evaluate("() => document.querySelectorAll('#output details').forEach((d) => { d.open = true; })")
-        page.wait_for_timeout(700)
+        page.wait_for_timeout(900)
         expanded = page.evaluate(METRICS)
-        report("全展开后 DOM 有界（300 窗口口径）",
-               expanded["messages"] <= limit,
+        report("全展开后消息数不变（懒渲染只补详情）",
+               expanded["messages"] == expected_messages,
                f"domNodes={expanded['domNodes']} outputNodes={expanded['outputNodes']} details={expanded['details']}")
 
-        metrics = {"attach": attach, "bottom": bottom, "expanded": expanded,
+        metrics = {"attach": attach, "afterJump": after, "expanded": expanded,
                    "scroll": scroll, "key": key, "readyMs": round(ready_ms)}
         browser.close()
 finally:

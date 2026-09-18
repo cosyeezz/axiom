@@ -422,8 +422,11 @@ function scheduleComposerCollapse() {
 }
 composerWrap.addEventListener("mouseenter", () => { composerHovered = true; clearComposerCollapseTimer(); });
 composerWrap.addEventListener("mouseleave", () => { composerHovered = false; scheduleComposerCollapse(); });
-composerWrap.addEventListener("mousedown", expandComposer);
-composerWrap.addEventListener("focusin", expandComposer);
+// “回到最新”钉在输入区上沿（bottom: 100% + 8px），mousedown 就展开会把按钮向上推
+// 两百多像素，mouseup 落不回原元素，click 根本不触发——滚动按钮不算写入意图。
+const composerIntent = (event) => !event.target?.closest?.("#latest");
+composerWrap.addEventListener("mousedown", (event) => { if (composerIntent(event)) expandComposer(); });
+composerWrap.addEventListener("focusin", (event) => { if (composerIntent(event)) expandComposer(); });
 composerWrap.addEventListener("focusout", scheduleComposerCollapse);
 applyComposerCollapsed();
 // 阅读字号是设备偏好；CSS 限定到桌面会话内容，不缩放整页。

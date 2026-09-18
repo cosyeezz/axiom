@@ -1,5 +1,17 @@
 # 开发记录
 
+## 2026-09-18 修复「回到最新消息」点不动，补浏览器脚本残留断言
+
+- 原因：两个独立改动合并后撞出回归。`6add51f` 让桌面输入区默认折叠、mousedown 就展开；而 `#latest` 在 `.composer-wrap` 里、CSS 钉在 `bottom: calc(100% + 8px)`。真鼠标点它时 mousedown 先把输入区从 48px 撑到 270px，按钮跟着上跃 247px，mouseup 落在空处 → click 根本不触发，按钮彻底失效。两边各自的测试都没盖住：需要两个改动同时在场。
+- 决策：
+  - 滚动按钮不算输入意图。`composer-wrap` 的 mousedown / focusin 展开判定加一道 `closest("#latest")` 门限；不改 CSS 锜点位置，也不动输入区本体的展开行为。按钮点完就 `hidden = true`，展开时机无影响。
+  - 回归防守放在 jsdom（`tests/prompt-resize.test.js`），直接断言点 `#latest` 后 `data-collapsed` 不翻，而点输入框仍展开——不依赖真浏览器就能拦住。
+  - `tests/render-capacity-ui.py` 跟上新模型重写：stub 不再引 `pageOf/createHistory`（已删），改用 `toWireRecord` 一次下发 500 条；验收改成整份挂载、首尾齐、attach 只发一次且无历史补齐请求、回最早/回最新纯本地跳转（不取数、节点不重建）、4× 节流下交互延迟、全展开后 DOM 规模只记录不断硬上限。
+  - `tests/conversation-ui.py` 旧断言“翻到所在页”改成现在的“尚未入史”提示文案。
+- 涉及：`public/app.js`（composerIntent 门限）、`tests/prompt-resize.test.js`（新用例）、`tests/render-capacity-ui.py`（重写）、`tests/conversation-ui.py`、`README.md`、`devlog.md`、codebase-map 索引。
+- 验证：`npm test` 741 项（739 通过 / 2 平台跳过 / 0 失败）；`python tests/continuous-ui.py` 修前挂在“回最新”断言、修后通过；`python tests/render-capacity-ui.py` 全红→全绿（375 条 .message，因 toolResult 并入前一条 toolCall 卡片）；`python tests/conversation-ui.py` 通过且无浏览器错误。
+- 教训：锜在可伸缩容器边缘的按钮，不能让自己的 mousedown 触发那个容器的伸缩；Playwright 只在派发前查稳定性，mousedown 之后的位移不会让它报错，点击丢了会静默通过——验收得断言“点了之后真的变了”。
+
 ## 2026-09-18 删除消息分页，整份历史 + 压缩卡按需展开
 
 - 原因：分页是负优化。上滚前插闪烁、翻页后后续消息消失、阅读锚点跑位，为治时序又堆出游标作废、旧页不推水位等一整套分支；而它本来要解的 DOM 规模问题已经被上下文自动压缩解决：压缩后历史折成摘要卡，实际滚动范围并不长。
