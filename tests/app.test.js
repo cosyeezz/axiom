@@ -1762,22 +1762,15 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     // 折叠保持阅读锚点：按保留消息的位移补偿滚动位置，不强制到底部。
     const keptAnchor = window.document.querySelectorAll("#output > .message")[2];
     let anchorTop = 500;
-    keptAnchor.getBoundingClientRect = () => ({ top: anchorTop });
-    const firstFolded = window.document.querySelectorAll("#output > .message")[0];
-    let firstHidden = false;
-    Object.defineProperty(firstFolded, "hidden", {
-      configurable: true,
-      get: () => firstHidden,
-      set: (v) => {
-        firstHidden = v;
-        anchorTop = 450; // 折叠区域塌缩，锚点上移
-        if (v) firstFolded.setAttribute("hidden", "");
-        else firstFolded.removeAttribute("hidden");
-      },
-    });
+    // 锚点位置被读两次（折叠前/后）：第二次返回上移后的值，模拟过程信息收走后上方高度塌缩。
+    keptAnchor.getBoundingClientRect = () => {
+      const top = anchorTop;
+      anchorTop = 450;
+      return { top };
+    };
     $("transcript").scrollTop = 1000;
 
-    // 成功事件后原地折叠：卡片插在被折叠首条之前，原消息 DOM 隐藏但保留。
+    // 成功事件后原地折叠：卡片插在被折叠首条之前，段内消息就地降为节选而不隐藏。
     emit("agent.compaction", {
       id: "c1",
       summary: "**早前** 讨论要点 <img src=x onerror=\"alert(1)\">",
@@ -1788,11 +1781,15 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     });
     const cards = () => window.document.querySelectorAll("#output > .compaction-card");
     assert.equal(cards().length, 1);
-    assert.equal($("output").querySelector(".skill-invocation").parentElement.hidden, true);
+    // 技能块跟用户原文一起留在页上：服务端的精简版也原样保留用户输入。
+    assert.equal($("output").querySelector(".skill-invocation").parentElement.hidden, false);
     assert.equal(cards()[0], $("output").firstElementChild, "summary card sits at the old boundary");
     assert.match($("output").lastElementChild.textContent, /回答二/, "kept messages follow the card in place");
     const visible = window.document.querySelectorAll("#output > .message:not([hidden])");
-    assert.deepEqual([...visible].map((node) => node.querySelector(":scope > .markdown").textContent.trim()), ["问题二", "回答二"]);
+    assert.deepEqual([...visible].map((node) => node.querySelector(":scope > .markdown").textContent.trim()), ["问题一", "回答一", "问题二", "回答二"], "段内输入与答复仍在原位");
+    const lite = window.document.querySelectorAll("#output > .message.compacted");
+    assert.equal(lite.length, 2, "只有被压缩的两条带节选标记");
+    assert.match(lite[0].querySelector(".message-compacted").textContent, /压缩段节选/);
     const summaryBody = cards()[0].querySelector(".compaction-summary");
     assert.match(cards()[0].querySelector("summary").textContent, /9,000.*1,200/s);
     assert.equal($("transcript").scrollTop, 950, "folding compensates the viewport anchor instead of forcing the bottom");
@@ -1804,7 +1801,6 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     assert.match(summaryBody.textContent, /早前/);
     assert.equal(summaryBody.querySelector("img"), null, "summaries render through the sanitizing pipeline");
     cards()[0].open = false;
-    delete firstFolded.hidden;
 
     // 重试过程自动聚合，成功折叠，原生 details 仍可手动展开；错误文本不能注入 HTML。
     const retry = { id: "r1", attempt: 1, maxRetries: 30, status: "waiting", delayMs: 96000, nextRetryAt: Date.now() + 96000, error: "429 <img src=x onerror=alert(1)>" };
@@ -1857,7 +1853,8 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     assert.match(cards()[0].querySelector(".compaction-summary").textContent, /早前/); assert.match(cards()[1].querySelector(".compaction-summary").textContent, /累计摘要/);
     for (const card of cards()) card.open = false;
     assert.match($("output").lastElementChild.textContent, /回答二/, "each cumulative summary keeps its own card");
-    assert.equal(window.document.querySelectorAll("#output > .message:not([hidden])").length, 1, "recent messages survive");
+    assert.equal(window.document.querySelectorAll("#output > .message:not([hidden])").length, 4, "recent messages survive");
+    assert.equal(window.document.querySelectorAll("#output > .message.compacted").length, 3, "c2 把 m3 也降为节选");
 
     // 新消息通过 agent.message.end 的 entryId 参与后续折叠。
     input("问题三");
@@ -1866,7 +1863,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     await settle();
     emit("agent.compaction", { id: "c3", summary: "包含新消息", firstKeptEntryId: "m5", compactedMessageIds: ["m4", "m5"] });
     assert.equal(cards().length, 3);
-    assert.equal(window.document.querySelectorAll("#output > .message:not([hidden])").length, 0);
+    assert.equal(window.document.querySelectorAll("#output > .message.compacted").length, 5, "三张卡覆盖全部五条，全数降为节选但仍在页上");
 
     // 重连按 compactions 恢复同一视图。
     state.compactions = [
@@ -1874,8 +1871,14 @@ test("compaction settings edit per scope and fold transcripts in place", async (
       { id: "c2", summary: "累计摘要", firstKeptEntryId: "m4", compactedMessageIds: ["m1", "m2", "m3"], tokensBefore: 1200 },
       { id: "c3", summary: "包含新消息", firstKeptEntryId: "m5", compactedMessageIds: ["m4", "m5"], tokensBefore: 1500 },
     ];
-    // 服务端不再下发被压缩折叠的消息（点开摘要卡才按需取），这里五条全被三张卡覆盖。
-    state.messages = [];
+    // 服务端把被折叠的历史裁成精简版下发（compacted 标记），完整原文点开摘要卡才取。
+    state.messages = [
+      { agentId: "main", message: { role: "user", content: "问题一" }, entryId: "m1", compacted: true },
+      { agentId: "main", message: { role: "assistant", content: "回答一" }, entryId: "m2", compacted: true },
+      { agentId: "main", message: { role: "user", content: "问题二" }, entryId: "m3", compacted: true },
+      { agentId: "main", message: { role: "assistant", content: "回答二" }, entryId: "m4", compacted: true },
+      { agentId: "main", message: { role: "user", content: "问题三" }, entryId: "m5", compacted: true },
+    ];
     sockets.at(-1).close();
     await settle();
     assert.equal($("login").hidden, false);
@@ -1885,7 +1888,8 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     paint();
     assert.equal(cards().length, 3, "reconnect restores every compaction card");
     assert.equal([...cards()].every((card) => !card.open), true, "restored cards stay folded");
-    assert.equal(window.document.querySelectorAll("#output > .message").length, 0);
+    assert.equal(window.document.querySelectorAll("#output > .message.compacted").length, 5, "刷新后的节选与实时折叠结果一致");
+    assert.equal(window.document.querySelectorAll("#output > .message .message-compacted").length, 5);
 
     // 输入校验：非法值明确报错而非静默置空或回退默认；百分比允许小数；两个阈值都为空才禁用启用。
     const probe = window.compactionEditor({ ...compactionDefaults, enabled: true }, () => "test/model");

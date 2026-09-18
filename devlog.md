@@ -1,5 +1,17 @@
 # 开发记录
 
+## 2026-09-18 压缩后保留用户输入与正式答复的精简版记录
+
+- 原因：后台压缩一旦应用，段内历史整体隐藏/不下发，页面只剩摘要卡。长会话里用户看不到自己问过什么、agent 答过什么，阅读脉络整段断掉，只能逐张卡展开找。
+- 决策：压缩段不再整段收走，而是降为「压缩段节选」留在原位。
+  - 服务端（`src/sessions.js`）：`foldCompacted` 段内记录改走新增的 `compactedRecord`——用户消息保留 text/image 块，助手消息只留 `compactedAnswer`（`stripGoalMarkers` → `stripMemoryTags` → `splitAnswer().answer`，与 `src/goal.js` 的 bodyText 同一管线，避免正则漂移）；空正文、非主代理、工具/结果轮次、旧形态任务通知一律丢弃。产物带 `compacted: true`，`toWireRecord` 透传。
+  - `foldCompacted` 改返 `visibleIds`（只收未被压缩的记录），两处快照组装改用它；锚在段内的重试卡行为不变，仍随摘要卡展开补发。折叠前下标 `messageIndexes` 与 `messageCount` 口径照旧。
+  - 前端（`public/app.js`）：快照路径 `placeSnapshotMessage` 遇 `compacted` 不重建 toolCall 条目；实时路径 `foldCompaction` 改调新增的 `liteItem`，就地清掉过程说明/思考/工具条目与 call group，两条路径渲染结果一致（刷新不变样）。`markCompacted` 手动置 `hasAnswer`，避免节选正文被 `refreshCallGroups` 当成过程说明折进 call group。
+  - 摘要卡展开取回原文时，`mountCompactionSegment` 按 `liteEntries` 就地升级同一条目而不重复插入；原文面板给节选条目加标注。
+  - 样式（`public/style.css`）：`.compacted` 用与摘要卡同一条左侧色带（`--subagent` 混 `--line`），`.message-compacted` 用现有 mono 小标签口径，不引入 linear 规范外的颜色。
+- 附带：`node_modules/@earendil-works/pi-coding-agent` 缺 `dist`（安装不完整）导致主仓测试也跑不起来，补装同版本 0.85.1 后恢复；npm 把固定版本改成 `^` 范围，已回滚 `package.json` / `package-lock.json` 保持精确钉版。
+- 涉及文件：`src/sessions.js`、`src/session-history.js`、`public/app.js`、`public/style.css`、`tests/compaction-lazy.test.js`、`tests/compaction-config.test.js`、`tests/app.test.js`、`README.md`、`devlog.md`。
+
 ## 2026-09-18 修复「回到最新消息」点不动，补浏览器脚本残留断言
 
 - 原因：两个独立改动合并后撞出回归。`6add51f` 让桌面输入区默认折叠、mousedown 就展开；而 `#latest` 在 `.composer-wrap` 里、CSS 钉在 `bottom: calc(100% + 8px)`。真鼠标点它时 mousedown 先把输入区从 48px 撑到 270px，按钮跟着上跃 247px，mouseup 落在空处 → click 根本不触发，按钮彻底失效。两边各自的测试都没盖住：需要两个改动同时在场。
