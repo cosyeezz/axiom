@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-18 清掉误提交的 Python 字节码缓存
+
+- 原因：`tests/__pycache__/goal-ui.cpython-312.pyc` 在 `54464d5` 被误提交进版本库。之后每跑一次 `python tests/goal-ui.py`，Python 就重写它，`git status` 无缘无故多一个脏文件；同目录新生的 `frontend-regions-ui.cpython-312.pyc` 又变成 untracked 干扰提交。
+- 决策：`.gitignore` 加 `__pycache__/`，`git rm --cached` 去掉已跟踪的那个 `.pyc`（只退出版本库，不影响本地运行，Python 会自己重建）。
+- 顺手修：`reindex.mjs` 的 `SKIP` 集只有 `node_modules`，所以 INDEX.md 把这个字节码当成「165 行的 node --test 测试」登记了；现加入 `__pycache__`，重建后索引 215 个文件、零残留条目。
+- 验证：`npm test` 744 项全绿；`python tests/goal-ui.py` 通过，跑完 `git status` 不再出现 `.pyc`。
+- 涉及文件：`.gitignore`、`tests/__pycache__/goal-ui.cpython-312.pyc`（删）、`.pi/skills/codebase-map/scripts/reindex.mjs`、`.pi/skills/codebase-map/INDEX.md`、`README.md`、`devlog.md`。
+
 ## 2026-09-18 折叠输入区：运行摘要与停止按钮合并到同一行
 
 - 原因：上一版折叠态运行中是上下两行（摘要一行、停止按钮又一行，约 116px），右侧大片空白白占一行高。
