@@ -9,11 +9,12 @@ import { randomUUID } from "node:crypto";
 /** 稳定消息身份：优先 JSONL 的 entryId；没有就补一个 uuid 记在记录上（同进程内稳定）。 */
 export const messageIdOf = (record) => record.entryId ?? (record.messageId ??= randomUUID());
 
-/** 记录 → 线上形状（消息体不动，身份显式带出）。 */
+/** 记录 → 线上形状（消息体不动，身份显式带出）。compacted 标记随记录带出：压缩段的精简正文，前端按节选渲染。 */
 export const toWireRecord = (record) => ({
   agentId: record.agentId,
   messageId: messageIdOf(record),
   ...(record.entryId ? { entryId: record.entryId } : {}),
+  ...(record.compacted ? { compacted: true } : {}),
   message: record.message,
 });
 

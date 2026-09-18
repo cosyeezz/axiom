@@ -1019,6 +1019,13 @@ body:has(#context-menu:popover-open) #add-context { background: var(--raised); }
 .retry-card summary { cursor: pointer; font-weight: 600; }
 .retry-card p, .retry-card li { color: var(--muted); font-size: .85rem; }
 .retry-card ol { padding-left: 24px; }
+/* 压缩段节选：输入与正式答复仍在原位，用与摘要卡同一条左侧色带表明「这段已压缩，完整原文在卡里」。 */
+.message.compacted {
+  border-left: 3px solid color-mix(in srgb, var(--subagent) 55%, var(--line));
+  padding-left: 14px;
+}
+.message.compacted:not(.user) { border-radius: 0 8px 8px 0; }
+.message-compacted { font: 500 11px/1.5 var(--mono); letter-spacing: 0.04em; color: var(--subagent); }
 .compaction-card {
   border: 1px solid var(--line);
   border-left: 3px solid var(--subagent);

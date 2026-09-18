@@ -603,7 +603,7 @@ function paintRaw() {
       previous ? previous.after(entry.node) : list.prepend(entry.node);
     previous = entry.node;
     const { message, agentId } = entry;
-    entry.label.textContent = `${String(index + 1).padStart(2, "0")} · ${isTaskNotification(message) ? "内部任务通知" : message.role === "user" ? "你的输入" : message.role === "toolResult" ? "工具结果" : message.role === "custom" ? "自定义消息" : "模型输出"}${agentId !== "main" ? " · 子代理" : ""}${rawLive.get(agentId) === entry ? " · 正在生成" : ""}`;
+    entry.label.textContent = `${String(index + 1).padStart(2, "0")} · ${isTaskNotification(message) ? "内部任务通知" : message.role === "user" ? "你的输入" : message.role === "toolResult" ? "工具结果" : message.role === "custom" ? "自定义消息" : "模型输出"}${agentId !== "main" ? " · 子代理" : ""}${entry.compacted ? " · 压缩节选（展开摘要卡可看完整原文）" : ""}${rawLive.get(agentId) === entry ? " · 正在生成" : ""}`;
     const blocks = typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content || [];
     const text = blocks.filter(b => b?.type === "text").map(b => b.text).join("\n");
     if (entry.body.textContent !== text) entry.body.textContent = text;
@@ -1918,25 +1918,47 @@ function foldCompaction(data) {
     placeCompactedTasks();
     return;
   }
-  // 实时折叠：这段消息刚刚还在页上（隐藏而非移除），展开时不必再向服务端取原文。
+  // 实时折叠：这段消息刚刚还在页上（就地转成精简节选而非移除），展开时不必再向服务端取原文。
   compactionSegments.set(data.id, Promise.resolve());
   const anchor = items.at(-1).item.node.nextElementSibling;
   const top = anchor?.getBoundingClientRect().top ?? 0;
   const first = items[0].item;
   (first.skillBlocks?.isConnected ? first.skillBlocks : first.node).before(compactionCard(data));
-  for (const { item } of items) {
-    item.node.hidden = true;
-    if (item.processGroup) item.processGroup.remove();
-    item.processGroup = undefined;
-    if (item.skillBlocks) item.skillBlocks.hidden = true;
-  }
+  // 转精简版的口径与刷新后的快照一致（服务端 foldCompacted）：只留输入与正式答复正文，
+  // 思考、过程说明、工具条目随摘要卡收走；否则刷新一下页面就变样。
+  for (const { item } of items) liteItem(item);
   placeCompactedTasks();
+  scheduleCallGroups();
   mergeThoughts($("output"));
   // 折叠改变上方高度，按保留消息的位移补偿滚动位置，保持阅读锚点而不强制到底部。
   if (anchor) {
     transcript.scrollTop += anchor.getBoundingClientRect().top - top;
     lastScrollTops.set(transcript, transcript.scrollTop);
   }
+}
+// 就地把一条已渲染的消息降为压缩段节选：正文与附件留在原处，过程信息归摘要卡。
+function liteItem(item) {
+  if (item.processGroup) item.processGroup.remove();
+  item.processGroup = undefined;
+  item.processBuffer = "";
+  item.paintedProcess = "";
+  item.processText.replaceChildren();
+  item.processText.hidden = true;
+  // 思考内容不再保留：mergeThoughts 会拿 reasoning 重建，不清空会被重新画回来；置空后绘制层自动隐藏折叠块。
+  item.reasoning = "";
+  item.ownReasoning = "";
+  item.thought.replaceChildren();
+  item.thoughtGroup?.remove();
+  item.thoughtGroup = undefined;
+  // 工具条目整批退场，连带 toolItems 映射一起清：留着会让后续查找命中已离页的节点。
+  for (const [key, tool] of [...toolItems])
+    if (item.tools.contains(tool.container)) { tool.container.remove(); toolItems.delete(key); }
+  item.tools.replaceChildren();
+  if (item.callGroup) { item.text.after(item.tools); item.callGroup.remove(); item.callGroup = undefined; }
+  item.modelInfo.replaceChildren();
+  markCompacted(item);
+  updateActivity(item);
+  renderer.flush(item);
 }
 // 首次展开摘要卡时取回被折叠的那段原文：每张卡只取一次，失败后允许重开重试。
 function loadCompactionSegment(id) {
@@ -1962,14 +1984,36 @@ function mountCompactionSegment(id, payload) {
   if (!records.length && !(payload.retries || []).length) return;
   const summaryNode = compactionNodes.get(id);
   // 原文对照按时间序插回：折叠段落在「本段之后第一条仍在页上的记录」之前。
-  let insertAt = rawEntries.length;
-  for (let index = compactions.findIndex((record) => record.id === id); index >= 0 && index < compactions.length; index++) {
-    const boundary = compactions[index].firstKeptEntryId;
-    const found = boundary ? rawEntries.findIndex((entry) => (entry.messageId || entry.entryId) === boundary) : -1;
-    if (found >= 0) { insertAt = found; break; }
+  const boundaryInsertAt = () => {
+    for (let index = compactions.findIndex((record) => record.id === id); index >= 0 && index < compactions.length; index++) {
+      const boundary = compactions[index].firstKeptEntryId;
+      const found = boundary ? rawEntries.findIndex((entry) => (entry.messageId || entry.entryId) === boundary) : -1;
+      if (found >= 0) return found;
+    }
+    return rawEntries.length;
+  };
+  // 折叠段的主消息已经以精简正文在页上（rawEntries 里带 compacted 标记）：取回原文后就地升级成完整原文，
+  // 而不是再插一条，否则同一条消息在原文面板里出现两次；没有精简对应物的记录（工具结果、子代理）按序插在其后。
+  const liteEntries = new Map();
+  for (const entry of rawEntries)
+    if (entry.compacted && entry.entryId) liteEntries.set(entry.entryId, entry);
+  const restored = [];
+  let cursor = -1;
+  for (const record of records) {
+    const existing = record.entryId ? liteEntries.get(record.entryId) : undefined;
+    if (existing) {
+      existing.message = record.message;
+      delete existing.compacted;
+      cursor = rawEntries.indexOf(existing) + 1;
+      restored.push(existing);
+      continue;
+    }
+    if (cursor < 0) cursor = boundaryInsertAt();
+    const entry = { ...record, ...(summaryNode ? { item: { node: summaryNode } } : {}) };
+    rawEntries.splice(cursor, 0, entry);
+    cursor++;
+    restored.push(entry);
   }
-  const restored = records.map((record) => ({ ...record, ...(summaryNode ? { item: { node: summaryNode } } : {}) }));
-  rawEntries.splice(insertAt, 0, ...restored);
   for (const record of records)
     if ((record.agentId || "main") === "main") trackTaskEntries(record.message, record.entryId);
   // 子代理记录补进任务弹窗：折叠段在时间上更早，渲染完整体移到已有内容之前。
@@ -2750,7 +2794,7 @@ function beginSnapshot(state, target) {
   $("latest").hidden = follow;
   return { state, restoreRetries, view };
 }
-function placeSnapshotMessage(ctx, index, { agentId, message, entryId }) {
+function placeSnapshotMessage(ctx, index, { agentId, message, entryId, compacted }) {
   ctx.restoreRetries(index);
   if (message.role === "toolResult") {
     toolState(agentId, { ...message, phase: "end" });
@@ -2772,7 +2816,8 @@ function placeSnapshotMessage(ctx, index, { agentId, message, entryId }) {
     );
     clearWaiting(agentId);
     live.set(agentId, item);
-    for (const call of Array.isArray(message.content) ? message.content : [])
+    // 精简版（压缩段节选）只带正文与附件，不重建工具条目：工具详情属于摘要卡收走的过程信息。
+    if (!compacted) for (const call of Array.isArray(message.content) ? message.content : [])
       if (call.type === "toolCall") {
         const existing = toolItems.get(`${agentId}:${call.id}`);
         // The result may have been loaded first at the window boundary. Rehome its
@@ -2790,12 +2835,26 @@ function placeSnapshotMessage(ctx, index, { agentId, message, entryId }) {
       cacheKey: `${agentId}\u0000${entryId ?? index}`,
     };
     renderMessage(item, message);
+    if (compacted) markCompacted(item);
     if (agentId === "main") {
       mainItems.push({ item, entryId });
       // 目标轮次锚点键是折叠前的历史下标：压缩折叠会让下发数组下标偏移，按服务端映射还原。
       anchorGoal(ctx.state.messageIndexes?.[index] ?? index, item, entryId);
     }
   }
+}
+function markCompacted(item) {
+  // 压缩段节选：正文已经是服务端抽好的正式答复，没有标签可解——手动当作正式答复，
+  // 否则 refreshCallGroups 会把它归成「过程说明」折进调用组（同一轮里出现带标签的后续回复时）。
+  item.compacted = true;
+  item.hasAnswer = true;
+  item.node.classList.add("compacted");
+  const note = document.createElement("span");
+  note.className = "message-compacted";
+  note.textContent = "压缩段节选";
+  note.title = "这一轮已被上下文压缩：只保留你的输入与正式答复，完整原文在顶部摘要卡里展开";
+  item.modelInfo.append(note);
+  item.modelInfo.hidden = false;
 }
 function finishSnapshot(job, ctx) {
   if (job !== snapshotJob) return;
