@@ -909,6 +909,19 @@ button.danger:hover:not(:disabled) { background: light-dark(#a92f41, #c13e50); }
   overflow: hidden;
   box-shadow: 0 8px 32px var(--shadow-soft);
 }
+/* 折叠态（仅桌面）：只留一行输入，模型选择/发送/运行摘要/快捷键提示都收起；
+   上下文工具条与图片附件不收，否则添加上下文要先多点一下。 */
+@media (min-width: 701px) {
+  #composer[data-collapsed="true"] > :is(.actions, #session-runtime, .session-detail-rows),
+  .composer-wrap[data-collapsed="true"] > .composer-footer { display: none; }
+  #composer[data-collapsed="true"] #prompt {
+    min-height: 0;
+    padding: 12px 20px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
 .workspace-location { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .workspace-location #workspace-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .workspace-location .icon-button { width: 24px; height: 24px; min-height: 24px; border: 0; background: transparent; display: grid; place-items: center; }
@@ -1734,7 +1747,7 @@ summary:hover > .disclosure-action { color: var(--ink); }
   :root[data-conversation-font-scale="200"] { --conversation-font-scale: 2; }
   :is(#output, .task-body, #raw-io-list) { font-size: calc(13px * var(--conversation-font-scale, 1)); }
   :is(#output, .task-body, #raw-io-list) :is(.task-meta, .task-badge, .skill-badge, .runtime-summary, .goal-round-head, .goal-round-index, .goal-round-status, .goal-round-toggle) { font-size: calc(11px * var(--conversation-font-scale, 1)); }
-  :is(#output, .task-body, #raw-io-list) :is(.message > h3, .markdown kbd, .code-toolbar, .code-toolbar button, .json-status, .message-model, .task-description, .task-system-prompt pre, .skill-invocation summary, .compaction-card > summary, .activity-line, .disclosure-action, .tool-target, .tool-status, .tool-detail h4, .tool-detail h4 select, .tool-truncation, .goal-round-title, .raw-message-bar, .raw-message-bar button, .raw-message summary, .raw-source-link) { font-size: calc(12px * var(--conversation-font-scale, 1)); }
+  :is(#output, .task-body, #raw-io-list) :is(.message > h3, .markdown kbd, .code-toolbar, .code-toolbar button, .json-status, .message-model, .task-description, .task-system-prompt pre, .skill-invocation summary, .compaction-card > summary, .activity-line, .disclosure-action, .tool-target, .tool-status, .tool-detail h4, .tool-detail h4 select, .tool-truncation, .goal-round-title, .raw-message-bar, .task-notification-line, .raw-message-bar button, .raw-message summary, .raw-source-link) { font-size: calc(12px * var(--conversation-font-scale, 1)); }
   :is(#output, .task-body, #raw-io-list) :is(.markdown pre, .tool-detail pre, .task-title, .skill-invocation > div, .compaction-summary, .raw-message pre) { font-size: calc(13px * var(--conversation-font-scale, 1)); }
   :is(#output, .task-body) :is(.markdown, .markdown td, .markdown th, .markdown h4, .markdown h5, .markdown h6, .thinking-content) { font-size: calc(14px * var(--conversation-font-scale, 1)); }
   :is(#output, .task-body) .markdown h3 { font-size: calc(16px * var(--conversation-font-scale, 1)); }
@@ -1771,28 +1784,30 @@ summary:hover > .disclosure-action { color: var(--ink); }
 [data-state="thinking"] .thinking-dots { animation: thinking-dots 1.2s steps(1, end) infinite; }
 @keyframes thinking-dots { 0% { clip-path: inset(0 2ch 0 0); } 33.33% { clip-path: inset(0 1ch 0 0); } 66.67% { clip-path: inset(0 0 0 0); } }
 @keyframes activity-spin { to { transform: rotate(360deg); } }
-/* 任务通知（子任务完成通知）条目：与用户消息区分的系统通知样式，不隐藏。 */
+/* 任务通知（子任务完成通知）条目：压缩为单行，左边与会话消息对齐，只显示固定文案（原文见 title / raw-io）。 */
 .task-notification {
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--accent);
-  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
-  border-radius: 8px;
-  padding: 8px 14px 10px;
-  margin: 10px auto 24px;
-  max-width: 72ch;
-}
-.task-notification h3 {
-  margin: 0 0 4px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--accent-ink);
-}
-.task-notification pre {
-  margin: 0;
-  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  min-width: 0;
   color: var(--muted);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+}
+.task-notification::before {
+  content: "";
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.task-notification-line {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 @media (prefers-reduced-motion: reduce) {
   .activity-icon, .activity-icon svg, .activity-icon::after, .tool-status::before,

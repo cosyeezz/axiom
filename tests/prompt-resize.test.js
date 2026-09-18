@@ -31,6 +31,16 @@ async function page(media = { matches: false }) {
   w.createMarkdownPageCache = markdownApi.createMarkdownPageCache;
   w.createStreamRenderer = (render, after) => createStreamRenderer(render, after, w.requestAnimationFrame, w.cancelAnimationFrame);
   w.WebSocket = class { static OPEN = 1; readyState = 1; send() {} };
+  // 折叠延时是 5s，测试里拦下这一档 setTimeout，用 __collapseTick() 手动到点，不真等。
+  const collapseTimers = [];
+  const realSetTimeout = w.setTimeout.bind(w), realClearTimeout = w.clearTimeout.bind(w);
+  w.setTimeout = (fn, delay, ...args) => {
+    if (delay !== 5000) return realSetTimeout(fn, delay, ...args);
+    collapseTimers.push(fn);
+    return -collapseTimers.length;
+  };
+  w.clearTimeout = (id) => { if (typeof id === "number" && id < 0) collapseTimers[-id - 1] = null; else realClearTimeout(id); };
+  w.__collapseTick = async () => { for (const fn of collapseTimers.splice(0)) fn?.(); };
   for (const name of ["model-picker", "model-auth", "model-manager"]) {
     const module = await readFile(new URL(`../public/${name}.js`, import.meta.url), "utf8");
     const exports = [...module.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
@@ -53,6 +63,9 @@ async function page(media = { matches: false }) {
 test("键没变时重复调用不读 scrollHeight（文档变脏也一样）", async () => {
   const { dom, w, input, reads, size, paint } = await page();
   try {
+    // 桌面默认折叠成一行（高度交回 CSS），测量路径要从展开态开始验。
+    w.expandComposer();
+    reads.count = 0;
     // 初始化时已经量过一次，`connected` 之后 snapshot/connect 的重复调用必须全是命中。
     w.resizePrompt();
     w.resizePrompt();
@@ -77,6 +90,8 @@ test("键没变时重复调用不读 scrollHeight（文档变脏也一样）", a
 test("必要的变化仍然重算：输入、视口、桌面侧栏折叠", async () => {
   const { dom, w, input, reads, size, paint } = await page();
   try {
+    w.expandComposer();
+    reads.count = 0;
     w.resizePrompt();
     assert.equal(reads.count, 0, "初始化已量过，重复调用是命中");
 
@@ -132,12 +147,96 @@ test("手机展开与断点切换仍然重算，收起时不白量", async () =>
     // 跨断点：手机 → 桌面要改 rows 与封顶规则。
     media.matches = false;
     media.onchange();
-    assert.equal(input.rows, 3, "桌面回到 3 行");
+    assert.equal(input.rows, 1, "桌面默认折叠成一行");
+    assert.equal(input.style.height, "", "折叠态高度交回 CSS");
+    w.expandComposer();
+    assert.equal(input.rows, 3, "展开后桌面回到 3 行");
     assert.equal(input.style.height, "240px", "同一 scrollHeight 封顶后仍为 240");
     assert.ok(reads.count >= 2, "断点切换要重量");
 
     media.matches = true;
     media.onchange();
     assert.equal(input.rows, 1, "回手机回到 1 行");
+  } finally { dom.window.close(); }
+});
+
+// 桌面输入区折叠：默认一行，点击/聚焦/输入展开，鼠标与键盘焦点都离开 5s 后收回。
+test("桌面输入区默认折叠，交互展开，离开 5s 收回", async () => {
+  const { dom, w, input } = await page();
+  const composer = w.document.getElementById("composer");
+  const wrap = w.document.querySelector(".composer-wrap");
+  try {
+    assert.equal(composer.dataset.collapsed, "true", "首屏就是折叠态，不占多行");
+    assert.equal(wrap.dataset.collapsed, "true", "footer 所在的外层同步折叠标记");
+    assert.equal(input.rows, 1);
+
+    // 点击展开：mousedown 先到，popover / 选择器都能正常点。
+    wrap.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true }));
+    assert.equal(composer.dataset.collapsed, "false", "点击即展开");
+    assert.equal(input.rows, 3);
+
+    // 焦点在输入框里时不收：5s 到点也得留着。
+    input.dispatchEvent(new w.FocusEvent("focusin", { bubbles: true }));
+    input.focus();
+    wrap.dispatchEvent(new w.Event("mouseleave"));
+    await w.__collapseTick();
+    assert.equal(composer.dataset.collapsed, "false", "键盘焦点还在输入区，不收");
+
+    // 焦点与鼠标都离开 → 5s 后折叠。
+    input.blur();
+    input.dispatchEvent(new w.FocusEvent("focusout", { bubbles: true }));
+    await w.__collapseTick();
+    assert.equal(composer.dataset.collapsed, "true", "失焦 5s 自动折叠");
+    assert.equal(input.rows, 1);
+
+    // 输入内容立刻展开（快捷键聚焦后直接打字的路径）。
+    input.value = "草稿";
+    input.dispatchEvent(new w.Event("input", { bubbles: true }));
+    assert.equal(composer.dataset.collapsed, "false", "输入即展开");
+
+    // 悬停期间不收，计时器被清掉。
+    wrap.dispatchEvent(new w.Event("mouseenter"));
+    input.dispatchEvent(new w.FocusEvent("focusout", { bubbles: true }));
+    await w.__collapseTick();
+    assert.equal(composer.dataset.collapsed, "false", "鼠标还在输入区上，不收");
+  } finally { dom.window.close(); }
+});
+
+test("还在用的状态不折叠：运行中、待发图片、补全打开", async () => {
+  const { dom, w, input } = await page();
+  const composer = w.document.getElementById("composer");
+  const wrap = w.document.querySelector(".composer-wrap");
+  const leave = async () => {
+    wrap.dispatchEvent(new w.Event("mouseleave"));
+    input.dispatchEvent(new w.FocusEvent("focusout", { bubbles: true }));
+    await w.__collapseTick();
+  };
+  try {
+    // Stop/Force 在动作区里，折叠就点不到了。
+    w.expandComposer();
+    w.document.getElementById("stop").hidden = false;
+    await leave();
+    assert.equal(composer.dataset.collapsed, "false", "任务运行中保留 Stop 按钮");
+    w.document.getElementById("stop").hidden = true;
+    await leave();
+    assert.equal(composer.dataset.collapsed, "true");
+
+    // @ 补全列表是 #composer 的子节点，收起会被裁掉。
+    w.expandComposer();
+    w.document.getElementById("prompt-completion").hidden = false;
+    await leave();
+    assert.equal(composer.dataset.collapsed, "false", "补全打开期间不折叠");
+    w.document.getElementById("prompt-completion").hidden = true;
+    await leave();
+    assert.equal(composer.dataset.collapsed, "true");
+
+    // 待发图片在附件区，折叠不隐附件区，但发送按钮会被收起，所以同样不收。
+    w.expandComposer();
+    w.document.getElementById("image-attachments").hidden = false;
+    await leave();
+    assert.equal(composer.dataset.collapsed, "false", "有待发图片时不折叠");
+    w.document.getElementById("image-attachments").hidden = true;
+    await leave();
+    assert.equal(composer.dataset.collapsed, "true");
   } finally { dom.window.close(); }
 });

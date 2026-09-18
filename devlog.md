@@ -2405,3 +2405,15 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 决策：D1 只裁前插方向（向下本来就是整页替换，天然有界；顶部裁剪需反向滚动锚点补偿，收益不足），代价是实时跟随新消息的方向仍无上限，长时间挂机会话 DOM 继续增长，作为已知边界记录在 README 与设计文档；被裁端回载不沿用 after 游标（服务端签发游标不可伪造，沿用会跳过被裁区间形成页隙），改以被裁第一条为 target 整页重挂；压缩摘要共享的节点不参与裁剪；D2 只缓存派生渲染产物，服务端原文始终是唯一权威。
 - 验证：worktree 内 `npm test` 749 项（747 通过、0 失败、2 既有跳过）；新增 `python tests/render-capacity-ui.py` 7/7 通过（窗口封顶 300 条 / 225 节点、滚底 target 重挂降到 90 节点、被裁边界回载在场、滚动 p95 约 0.1ms、按键 p95 约 0.2ms、全展开后仍有界、无页面错误）；`python tests/smooth-stream-browser.py` 16/16 通过确认 D3 无回归。
 - 环境事件：主检出 node_modules 里 `@earendil-works/pi-coding-agent/dist/` 曾整体缺失，导致所有 Playwright 脚本（含既有 session-billing-ui.py）集体失败；在 F:/Axiom 执行 `npm install --no-audit --no-fund` 恢复。browser-ui 脚本集体挂掉时先查该 dist 是否存在。
+
+## 2026-09-18 任务通知压缩为单行、桌面输入区默认折叠
+
+- 时间：2026-09-18。分支 `feat/compact-notification-composer`（worktree F:/worktrees/axiom-compact-notification-composer）。
+- 原因：子任务完成通知原本按卡片渲染（标题 + `pre` 原文），占多行且居中，在会话里比真实内容更显眼；底部输入区常驻完整形态（模型栏、运行统计、详情入口、快捷键提示）约 270px，长会话阅读时挤压正文。
+- 内容：
+  - 通知：`taskNotificationCard` 去掉 `h3` + `pre`，只输出固定单行 `任务通知: 子任务完成`（子代理转投补 ` · 子代理`），原文写入 `node.title` 并保留「原文对照」入口；样式从卡片改为左对齐 flex 行 + 5px 强调色圆点，左边缘与普通消息齐平，行文本 12px 并接入 `--conversation-font-scale`。
+  - 输入区折叠（仅桌面 >700px）：`composerCollapsed` 状态写到 `#composer` / `.composer-wrap` 的 `data-collapsed`，CSS 在折叠态隐藏 `.actions`、`#session-runtime`、`.session-detail-rows`、`.composer-footer`，`#prompt` 走 `rows=1` + `min-height:0` + `nowrap`（高度交回 CSS，不写 inline height）。mousedown/focusin/input 展开；mouseleave/focusout 起 5s 计时收回；`composerBusy()` 在悬停、焦点在输入区内、补全或上下文菜单打开、有待发图片、Stop/强制停止可见时拒绝折叠。`resizePrompt` 的复用键新增 `collapsed` 字段，折叠态切换会重算。手机端 `mobile-expanded` 机制不动。
+  - 实测：折叠 48px、展开 270px，失焦 5s 自动收回（Playwright 1440×900）。
+- 涉及文件：public/app.js、public/style.css、tests/app.test.js、tests/prompt-resize.test.js、README.md、.pi/skills/codebase-map/INDEX.md（重新生成）。
+- 决策：通知不再展示 taskId/resultId 原文（`title` + 原文对照够用），也不做卡片外观；折叠只改高度不动草稿，不加高度动画（避免抖动）；不用 `:not()` 一把隐藏 `#composer` 子节点，显式列出要收的块，免得连带隐藏已选 Skill 行。
+- 验证：worktree 内 `npm test` 749 项（747 通过、0 失败、2 既有跳过）；`tests/prompt-resize.test.js` 新增 2 项折叠用例，用拦 5000ms setTimeout 的 `__collapseTick()` 驱动计时，不真等 5 秒。
