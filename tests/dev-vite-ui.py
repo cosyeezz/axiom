@@ -24,6 +24,9 @@ try:
         errors = []
         page.on("pageerror", lambda e: errors.append(str(e)))
         page.goto(f"http://127.0.0.1:{port}")
+        # 桌面输入区默认折叠，#model 要先触碰输入区才出来。
+        page.wait_for_selector("#workspace:not([hidden])")
+        page.locator("#prompt").click()
         page.wait_for_selector("#model:enabled")
         page.locator("#prompt").fill("开发刷新保护草稿")
         page.evaluate("window.__samePage = 'retained'")

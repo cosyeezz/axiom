@@ -1,12 +1,25 @@
 # 开发记录
 
-## 2026-09-18 清掉误提交的 Python 字节码缓存
+## 2026-09-18 索引脚本跳过 __pycache__
 
-- 原因：`tests/__pycache__/goal-ui.cpython-312.pyc` 在 `54464d5` 被误提交进版本库。之后每跑一次 `python tests/goal-ui.py`，Python 就重写它，`git status` 无缘无故多一个脏文件；同目录新生的 `frontend-regions-ui.cpython-312.pyc` 又变成 untracked 干扰提交。
-- 决策：`.gitignore` 加 `__pycache__/`，`git rm --cached` 去掉已跟踪的那个 `.pyc`（只退出版本库，不影响本地运行，Python 会自己重建）。
-- 顺手修：`reindex.mjs` 的 `SKIP` 集只有 `node_modules`，所以 INDEX.md 把这个字节码当成「165 行的 node --test 测试」登记了；现加入 `__pycache__`，重建后索引 215 个文件、零残留条目。
-- 验证：`npm test` 744 项全绿；`python tests/goal-ui.py` 通过，跑完 `git status` 不再出现 `.pyc`。
-- 涉及文件：`.gitignore`、`tests/__pycache__/goal-ui.cpython-312.pyc`（删）、`.pi/skills/codebase-map/scripts/reindex.mjs`、`.pi/skills/codebase-map/INDEX.md`、`README.md`、`devlog.md`。
+- 原因：`.gitignore` 已忽略 `__pycache__/`（`835767e` 顺手加的），但 `reindex.mjs` 的 `SKIP` 集只有 `node_modules`。跑过 `python tests/*-ui.py` 后 Python 重建字节码，重建索引就把 `.pyc` 当成「165 行的 node --test 测试」登记进 INDEX.md，让被跟踪的索引凭空多出假条目、产生脏 diff。实测确认：造一个 pyc 再 reindex，INDEX.md 立刻多一条。
+- 决策：`SKIP` 加入 `__pycache__`，README 的 codebase-map 段注明扫描跳过 `node_modules` 与 `__pycache__`。
+- 并行处理说明：本分支原本也做了「加 .gitignore + `git rm --cached` 删误入库的 pyc」，与 `835767e` 撞同一件事；合并 master 后那部分归其所有，这里只保留索引脚本这一处独有修复。
+- 验证：重建索引 215 个文件、零 `__pycache__` 条目；`npm test` 744 项全绿；`python tests/goal-ui.py` 通过。
+- 涉及文件：`.pi/skills/codebase-map/scripts/reindex.mjs`、`.pi/skills/codebase-map/INDEX.md`、`README.md`、`devlog.md`。
+
+## 2026-09-18 修回 6 个浏览器验收脚本：折叠态、CSP eval 与模块注入
+
+- 起因：为「折叠态只留运行摘要」另开分支时逐个重跑浏览器脚本，翻出一批失败。发现远端 `master`（`c327e3f` + `b2306c4`）已实现同一需求，遂弃掉重复的产品改动，只把这批脚本修复搬过来。
+- `tests/conversation-ui.py`（真竞态，折叠高度变化暴露）：`load()` 展开全部分组会触发 transcript 自动滚到底，而 `tooltip.js` 按设计「滚动即关闭」。折叠高度变化前这次滚动落在 hover 前 8ms（`current` 尚未建立，关闭无效）侥幸躲过；变高后推迟到 43ms，正好落进 500ms 显示延迟里把提示掐死。改法是 `load()` 末尾加 `settle()`：等 `#transcript.scrollTop` 连续两帧 rAF 不变再往下跑，而不是放宽断言。教训：靠帧数差侥幸通过的断言，早晚被一次无关的布局改动撞翻。
+- `tests/session-billing-ui.py`、`tests/frontend-regions-ui.py`、`tests/dev-vite-ui.py`：都在等 `#model:enabled` 之类折叠态隐藏的元素。统一按真实交互补「先点 `#prompt` 展开」，不改产品行为。
+- `tests/activity-groups-ui.py`（三个互不相干的旧坑）：① 三处 `wait_for_function` 传表达式字符串，Playwright 会包成 `eval`，页面 CSP 没放 `unsafe-eval` 直接抛错 → 改箭头函数；② 测试钩子 `window.activityTestEvent = event` 在 `af51b00` 把全局 `event()` 改名 `applyEvent()` 后没跟，ReferenceError → 指向 `applyEvent`；③ 390px 下 `#earliest` 只在 `.mobile-expanded` 显示 → 先点 `#mobile-expand`。
+- `tests/question-layout-ui.py`：`question.js` 现在 `import { actionIconNode } from "./icons.js"`，整段拼进普通 `<script>` 报「Cannot use import statement outside a module」→ 先拼 icons.js 源码再剥掉 import/export，保持无服务器的纯样式验收。
+- `tests/goal-ui.py`：新增 `collapse_composer()`（鼠标移开 + blur，等 5s 定时器真收回）与 `check_collapsed_composer()`，验收折叠态隐藏 `+` / 图片 / 目标图标组与动作区、保留运行摘要三段且不换行、摘要左缘与输入行对齐、右上角计时未被折叠规则连带隐藏，并验展开后图标立刻回来。单行断言是必要的：换行会让折叠高度随屏宽跳动，钉在其上沿的「回到最新」跟着跳。
+- 确认属既有问题、本次不动（`master` 上同样失败，根因与输入区无关）：`tests/context-menu-ui.py`（`#context-results` 不渲染，片段式注入的 app.js 切片边界已漂）、`tests/service-settings-ui.py`（`.settings-layout` 不再滚动）。`model-selection-ui`、`model-settings-ui`、`retry-settings-ui`、`remote-ui` 需外部预览服务，未起服务不计作失败。
+- 顺手：`.gitignore` 加 `__pycache__/`，并移除此前误入库的 pyc。
+- 验证：上述 6 个脚本在 `master` 代码上全部转绿，`conversation-ui.py` 连跑三次稳定；`npm test` 739 通过 / 2 跳过。
+- 涉及文件：`tests/conversation-ui.py`、`tests/goal-ui.py`、`tests/session-billing-ui.py`、`tests/activity-groups-ui.py`、`tests/frontend-regions-ui.py`、`tests/question-layout-ui.py`、`tests/dev-vite-ui.py`、`.gitignore`、`devlog.md`。
 
 ## 2026-09-18 折叠输入区：运行摘要与停止按钮合并到同一行
 

@@ -9,7 +9,11 @@ with sync_playwright() as p:
     page.set_content('<main class="composer-wrap"><section class="question-dock" id="dock"></section></main>')
     for name in ['style.css', 'question.css']:
         page.add_style_tag(content=(root / 'public' / name).read_text(encoding='utf-8'))
-    source = (root / 'public/question.js').read_text(encoding='utf-8').replace('export function', 'function')
+    # question.js 现在 import ./icons.js，整段拼进普通 <script> 会报「import outside a module」。
+    # 这里把被依赖的模块源码先拼在前面、再去掉 import/export 关键字，维持无服务器的纯样式验收。
+    icons = (root / 'public/icons.js').read_text(encoding='utf-8')
+    source = (root / 'public/question.js').read_text(encoding='utf-8')
+    source = icons.replace('export ', '') + '\n' + source.replace('import { actionIconNode } from "./icons.js";', '').replace('export function', 'function')
     page.add_script_tag(content=source + '''
       window.ui = createQuestionUI({root:document.querySelector('#dock'),reply:async()=>{}});
       window.request = {toolCallId:'q',questions:[
