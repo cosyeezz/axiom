@@ -6,6 +6,8 @@ import { stat, mkdir, copyFile } from "node:fs/promises";
 import { constants, readFileSync } from "node:fs";
 import { createPiFactory } from "./pi.js";
 import { Database } from "./database.js";
+import { UsageService } from "./usage-service.js";
+import { shareGate } from "./shared-gate.js";
 import { claimDataRoot } from "./data-owner.js";
 import { createPiModelStorage } from "./pi-model-storage.js";
 import { Sessions } from "./sessions.js";
@@ -37,12 +39,14 @@ try {
 // 共享 SQLite 单例：会话/预设/默认配置、模型配置与凭据、远程访问配置共用一个库；
 // 关闭时机在 app.close 完全之后（stop 内），保证退出前的最后一次保存不会撞上已关闭的库。
 const database = new Database(join(home, "axiom.db"));
+const usage = await shareGate(new UsageService(database));
 const modelStorage = createPiModelStorage({ database, home });
 await modelStorage.init();
 const factory = await createPiFactory({
   cwd,
   model: process.env.AXIOM_MODEL,
   modelRuntimeOptions: modelStorage.runtimeOptions(),
+  usage,
 });
 const sessions = new Sessions(factory, join(home, "defaults.json"), join(home, "workspaces"), database);
 // 模型配置服务：权威在 modelStorage（SQLite），此处只提供协议语义。
@@ -54,6 +58,7 @@ const idleTimer = setInterval(() => {
 }, 60_000);
 idleTimer.unref();
 const service = {
+  usage,
   supervisorPid: process.ppid,
   instanceId: process.env.AXIOM_INSTANCE_ID,
   stop: process.send ? () => process.send({ type: "service.shutdown" }) : undefined,
@@ -122,6 +127,7 @@ function stop(mode = "cancel") {
     // 远程初始化的首次配置写入必须先落定，否则它会写到已关闭的库上（异常还会被吞）。
     .then(() => app.close())
     // 关库必须排在 app.close 完全之后：会话/任务的最后一笔保存发生在关闭路径内。
+    .then(() => usage.close())
     .then(() => database.close())
     .then(() => releaseDataRoot())
     .then(() => process.exit(0))

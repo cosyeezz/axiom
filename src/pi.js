@@ -1,3 +1,4 @@
+import { wrapUsageStream } from "./usage-stream.js";
 import { sessionBilling, usageRuntime } from "./session-billing.js";
 import { TITLE_INSTRUCTION } from "./prompts.js";
 import { observationPackExtension, createObservationStats, observationRuntime } from "./observation-pack.js";
@@ -13,6 +14,7 @@ import { resolveCompaction } from "./protocol.js";
 import { WRAP_UP_PROMPT, budgetSystemPrompt } from "./task-budget.js";
 import { canResume, createAutoRetry, dropFailedAssistant } from "./retry.js";
 import { createJiti } from "jiti";
+const { AssistantMessageEventStream } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai");
 const { getSupportedThinkingLevels } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai/compat");
 
 export function agentRuntime(session, observations = null) {
@@ -153,7 +155,7 @@ function memoryExtension(state, memory, policy, executionContext) {
   };
 }
 
-export async function createPiFactory({ cwd, model: requested, modelRuntimeOptions }) {
+export async function createPiFactory({ cwd, model: requested, modelRuntimeOptions, usage }) {
   // 模型目录可被模型配置页刷新（models.json 写入后）：available 用可变绑定，
   // 旧会话的 configure/压缩模型校验才能看到新目录；已绑定的模型对象本身不热更新（SDK 行为）。
   let modelRuntime = await ModelRuntime.create(modelRuntimeOptions);
@@ -223,6 +225,10 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       sessionManager: selection.sessionFile
         ? SessionManager.open(selection.sessionFile, selection.sessionDir, workspace)
         : selection.sessionDir ? SessionManager.create(workspace, selection.sessionDir) : SessionManager.inMemory(workspace),
+    });
+    if (usage) session.agent.streamFunction = wrapUsageStream(session.agent.streamFunction, {
+      service: usage, identity: selection.audit ?? { source: "unattributed" },
+      createStream: () => new AssistantMessageEventStream(),
     });
     const warnings = [...resources.catalog.warnings];
     if (resources.catalog.needsTrust)

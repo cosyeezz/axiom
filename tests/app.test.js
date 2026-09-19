@@ -899,7 +899,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.match($("create-agents").textContent, /\[当前项目\] Skill B/);
     assert.equal($("defaults-workspace").value, "", "默认编辑全局默认配置");
     assert.equal($("create-main-provider").value, "", "defaults do not take the current model implicitly");
-    assert.equal(window.document.querySelectorAll('.settings-nav button').length, 5, "连接 + 默认新会话设置 + 远程控制 + 模型与供应商 + 服务与更新");
+    assert.equal(window.document.querySelectorAll('.settings-nav button').length, 6, "连接 + 默认新会话设置 + 远程控制 + 模型与供应商 + 用量与限流 + 服务与更新");
     assert.equal($("create-subagent-mode").querySelector('option[value="inherit"]').textContent, "跟随主代理能力");
     // 思考等级只列出「当前选中模型真正支持的等级」：还没选模型时回退到当前会话的等级集合。
     assert.deepEqual([...$("create-subagent-thinking").options].map((option) => option.value), ["", "off"],

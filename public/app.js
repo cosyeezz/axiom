@@ -15,6 +15,7 @@ import "./tooltip.js";
 import { createModelPicker } from "./model-picker.js";
 import { initModelManager } from "./model-manager.js";
 import { initServiceSettings } from "./service-settings.js";
+import { createUsageAudit } from "./usage-audit.js";
 import { createQuestionUI } from "./question.js";
 import { createGoalUI } from "./goal.js";
 const questionUI = createQuestionUI({ root: document.getElementById("question-dock"), reply: (data) => request("question.reply", data), focusPrompt: () => document.getElementById("prompt").focus() });
@@ -928,14 +929,16 @@ async function saveTaskBudget() {
   }
 }
 for (const id of taskBudgetInputs) $(id).addEventListener("change", () => void saveTaskBudget());
+const usageAudit = createUsageAudit({ request, panel: document.getElementById("usage-panel") });
 function showSettingsPanel(panel) {
   settingsGeneration++;
-  for (const name of ["connection", "defaults", "remote", "models", "service"]) {
+  for (const name of ["connection", "defaults", "remote", "models", "service", "usage"]) {
     $(`${name}-panel`).hidden = name !== panel;
     const button = $(`settings-${name}-tab`);
     if (name === panel) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
+  if (panel === "usage") void usageAudit.load();
   if (panel === "connection") openConnectionPanel();
   if (panel === "models") void modelManager.load();
   if (panel === "remote") void remoteLoad();
@@ -945,6 +948,7 @@ $("settings-defaults-tab").onclick = () => showSettingsPanel("defaults");
 $("settings-remote-tab").onclick = () => showSettingsPanel("remote");
 $("settings-models-tab").onclick = () => showSettingsPanel("models");
 $("settings-service-tab").onclick = () => showSettingsPanel("service");
+$("settings-usage-tab").onclick = () => showSettingsPanel("usage");
 // 顶部连接状态可点击直达「连接」面板（切地址）；顶部只保留状态/DEV/版本，不暴露源码路径。
 $("status").onclick = () => {
   showSettingsPanel("connection");

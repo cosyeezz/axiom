@@ -17,6 +17,23 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  * 未登记的文件会在 INDEX.md 里标 ⚠ 提醒补充。
  */
 const MODULE_INFO = {
+  "tests/usage-extension.test.js": "扩展真实依赖解析和生命周期注册冒烟",
+  "extensions/usage-gate.ts": "外部pi窗口共享限流显式扩展入口",
+  "tests/shared-gate.test.js": "远程取消、迟到租约归还与配置刷新",
+  "src/shared-gate.js": "用户级共享闸门端点与远程服务适配",
+  "public/usage-audit.js": "用量与限流面板：全局汇总、会话分账、请求明细与限额配置",
+  "src/usage-store.js": "请求明细持久化与账单聚合",
+  "src/usage-service.js": "用量服务与限流配置",
+  "src/usage-stream.js": "模型请求流审计与限流包装",
+  "src/usage-backfill.js": "历史用量时间分界与指纹去重",
+  "src/request-gate.js": "FIFO并发令牌与RPM滑动窗口",
+  "src/gate-ipc.js": "共享闸门认证IPC与连接租约回收",
+  "tests/usage-store.test.js": "请求存储与账单分页回归",
+  "tests/usage-service.test.js": "用量服务配置持久化回归",
+  "tests/usage-stream.test.js": "流转发、异常终态与计费故障隔离",
+  "tests/usage-backfill.test.js": "历史回填去重与时间分界",
+  "tests/request-gate.test.js": "FIFO、RPM、租约与超时回归",
+  "tests/gate-ipc.test.js": "跨客户端共享额度与认证回归",
   "src/session-billing.js": "全会话 entries 用量与费用统计、当前上下文估算",
   "public/session-details.js": "主代理页签、安全可折叠 JSON 树与会话账单渲染",
   "src/data-owner.js": "写库前数据根独占：内核管道或socket持有，禁止同根双写",
