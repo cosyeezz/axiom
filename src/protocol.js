@@ -296,6 +296,9 @@ export const command = z.discriminatedUnion("type", [
   selection.extend({ id, type: z.literal("session.defaults.configure"), cwd: workspace }).strict(),
   z.object({ id, type: z.literal("session.defaults.list") }).strict(),
   z.object({ id, type: z.literal("session.defaults.delete"), cwd: z.string().trim().min(1).max(4096) }).strict(),
+  z.object({ id, type: z.literal("usage.backfill") }).strict(),
+  z.object({ id, type: z.literal("usage.get"), sessionId: id.optional(), provider: id.optional(), status: id.optional(), before: z.number().finite().optional(), beforeId: id.optional(), limit: z.number().int().min(1).max(100).optional() }).strict(),
+  z.object({ id, type: z.literal("usage.configure"), limits: z.record(z.string().min(1).max(200), z.object({ rpm: z.number().int().min(0).max(100000).optional(), concurrency: z.number().int().min(0).max(100000).optional() }).strict()) }).strict(),
   z.object({ id, type: z.literal("task.budget.get") }).strict(),
   z.object({ id, type: z.literal("task.budget.configure"), budget: taskBudget }).strict(),
   z

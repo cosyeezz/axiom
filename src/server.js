@@ -41,6 +41,7 @@ const assets = new Map(
     ["/question.js", "public/question.js"],
     ["/question.css", "public/question.css", "text/css"],
     ["/service-settings.js", "public/service-settings.js"],
+    ["/usage-audit.js", "public/usage-audit.js"],
     ["/file-picker.js", "public/file-picker.js"],
     ["/tooltip.js", "public/tooltip.js"],
     ["/tooltip.css", "public/tooltip.css", "text/css"],
@@ -354,6 +355,19 @@ export function createServerApp(sessions, service = {}) {
               }
               break;
             }
+            case "usage.backfill":
+              if (!service.usage?.backfill) throw new Error("请在共享闸门所属实例导入历史");
+              data = await service.usage.backfill();
+              break;
+            case "usage.get":
+              if (!service.usage) throw new Error("用量服务未启用");
+              data = await service.usage.view(request);
+              break;
+            case "usage.configure":
+              if (!service.usage) throw new Error("用量服务未启用");
+              data = await service.usage.configure(request.limits);
+              broadcast({ type: "usage.changed" });
+              break;
             case "sessions.list":
               data = sessions.list();
               break;

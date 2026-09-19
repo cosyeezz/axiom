@@ -1146,6 +1146,7 @@ export class Sessions {
           throw new Error("子任务历史文件缺失，已保留记录，拒绝重新执行原任务");
         return this.createAgent([], {
           ...item.agent.config?.(),
+          audit: { sessionId: id, agentId: job.id, source: "task" },
           ...(item.retry ? { retry: item.retry } : {}),
           ...(item.subagentModel ? { model: item.subagentModel } : {}),
           cwd,
@@ -1194,6 +1195,7 @@ export class Sessions {
           .map((entry) => entry.message);
       } })], {
         ...(this.recentConfig.get(workspaceKeyOf(cwd)) ?? {}),
+        audit: { sessionId: id, agentId: "main", source: "main" },
         ...(selection.model ? { model: selection.model } : {}),
         ...(selection.thinking ? { thinking: selection.thinking } : {}),
         capabilities: item.capabilities,

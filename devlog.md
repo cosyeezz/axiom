@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-19 请求审计与 FIFO 共享限流
+
+- 内容：新增逐请求 SQLite 记录、全局每日聚合、会话主/子代理归属、游标分页、限额配置及历史显式回填；会话删除不级联删除审计。新增纯 FIFO 并发租约/RPM 滑动窗口、用户级认证 IPC、连接断开令牌回收及外部 pi 扩展入口。
+- 原因：独立窗口分别计数不能遵守供应商总额度；JSONL 现场统计不能提供跨会话请求级审计。复用现有会话账单展示，不冒充供应商扣款。
+- 决策：无优先级、无自动清理；计费失败不阻塞终态输出；超时 fail-open，因此不是严格额度保证。Google/WS 不承诺 fetch RPM。历史以启用时间分界、entry 指纹去重，只恢复现存数据，不自动导入。共享端点失败时关闭本地限额而不是假装独立限流等于全局限流；个人扩展需显式加载，不擅改全局配置。
+- 涉及文件：src/{usage-store,usage-service,usage-stream,usage-backfill,request-gate,gate-ipc,shared-gate,main,pi,sessions,server,protocol}.js；public/{usage-audit,app}.js、index.html、style.css；extensions/usage-gate.ts；对应 tests、测试源码装配 helper、codebase-map 索引及 README.md。
+- 验证：最终全量测试 798 项，796 通过、2 跳过、0 失败；扩展实际依赖解析冒烟、远程取消与迟到租约回收测试通过。外部扩展跳过其他扩展已接管的供应商以避免覆盖。未重启运行实例、未写用户数据库、未执行历史回填。
+
 ## 2026-09-19 移植 SoL-Pi Observation Pack：大工具结果折叠 + 面板统计
 
 - 内容：大于 6KB 的纯文本工具结果前 2 次请求照原文发送，之后在 context 投影层替换为字节级稳定的占位符（头尾完整行摘录 + 取回指引）；原文按内容寻址归档，模型用 `obs_recall` 按 16KB 分页取回。会话运行摘要新增 `OP 折叠 N 项 · 每请求省 X tokens · 取回 M 次 (R%)` 一行，取回率超 50% 整行标红（判定线写死在展示逻辑，不靠人记）。归档随会话删除清理，ledger 只记状态转换。

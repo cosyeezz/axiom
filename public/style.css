@@ -40,6 +40,17 @@
   --display: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --sidebar-width: 256px;
 }
+/* 用量页复用主题 token；宽表在面板内滚动，不撑破移动端弹窗。 */
+#usage-panel { min-width: 0; }
+.usage-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+.usage-filters label { flex: 1 1 160px; display: grid; gap: 4px; }
+.usage-scroll { overflow-x: auto; max-width: 100%; margin-block: 12px; }
+.usage-scroll table { border-collapse: collapse; width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
+.usage-scroll th, .usage-scroll td { padding: 8px; text-align: left; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.usage-scroll th { color: var(--muted); font-weight: 500; }
+.usage-request { padding: 8px; border: 1px solid var(--line); border-radius: 8px; margin-block: 8px; background: var(--surface); }
+.usage-request summary { cursor: pointer; overflow-wrap: anywhere; }
+#usage-panel textarea { width: 100%; font-family: var(--mono); margin-block: 12px; }
 :root[data-theme="light"] {
   color-scheme: light;
 }
