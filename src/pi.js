@@ -255,6 +255,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
     });
     if (usage) session.agent.streamFunction = wrapUsageStream(session.agent.streamFunction, {
       service: usage, identity: selection.audit ?? { source: "unattributed" },
+      onRequestUsage: (record) => observations?.recordUsage?.(record),
       createStream: () => new AssistantMessageEventStream(),
     });
     const warnings = [...resources.catalog.warnings];

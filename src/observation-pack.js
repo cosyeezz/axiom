@@ -12,7 +12,7 @@
 // - 每请求热路径记忆化：同一工具调用的 hash / 归档校验 / 占位符只算一次。
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { appendFile, lstat, mkdir, open, readFile, writeFile } from "node:fs/promises";
+import { appendFile, lstat, mkdir, open, readFile, writeFile, link, unlink, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 /** Only tool results larger than this participate. AXIOM 定 6KB（SoL-Pi 原版 10KB）。 */
@@ -79,6 +79,8 @@ function countBufferLines(buffer) {
 export const OBSERVATION_DEFAULTS = {
   thresholdBytes: THRESHOLD_BYTES,
   fullSends: FULL_SENDS,
+  minContextTokens: 0,
+  reportFullSends: FULL_SENDS,
   placeholderExcerptBytes: PLACEHOLDER_EXCERPT_BYTES,
   foldEnabled: true,
   foldRecallEchoes: true,
@@ -95,9 +97,20 @@ function positiveInteger(value, fallback, { min = 1, max = Number.MAX_SAFE_INTEG
 }
 
 export function resolveObservationConfig(options = {}) {
+  if (!options || typeof options !== "object" || Array.isArray(options)) throw new Error("observation-pack config must be an object");
+  const allowed = new Set([...Object.keys(OBSERVATION_DEFAULTS), "agentId"]);
+  for (const key of Object.keys(options)) {
+    if (!allowed.has(key)) throw new Error(`Unknown observation-pack config: ${key}`);
+    if (["foldEnabled", "foldRecallEchoes", "strictVerify"].includes(key) && typeof options[key] !== "boolean") {
+      throw new Error(`observation-pack ${key} must be a boolean`);
+    }
+    if (key !== "agentId" && options[key] == null) throw new Error(`observation-pack ${key} must not be null`);
+  }
   const resolved = {
     thresholdBytes: positiveInteger(options.thresholdBytes, THRESHOLD_BYTES, { min: 256 }),
     fullSends: positiveInteger(options.fullSends, FULL_SENDS, { min: 0, max: 64 }),
+    minContextTokens: positiveInteger(options.minContextTokens, 0, { min: 0 }),
+    reportFullSends: positiveInteger(options.reportFullSends, options.fullSends ?? FULL_SENDS, { min: 0, max: 64 }),
     placeholderExcerptBytes: positiveInteger(options.placeholderExcerptBytes, PLACEHOLDER_EXCERPT_BYTES, { min: 64, max: RECALL_LIMITS.maxBytes }),
     foldEnabled: options.foldEnabled ?? true,
     foldRecallEchoes: options.foldRecallEchoes ?? true,
@@ -156,6 +169,7 @@ export function createObservation(message, root, config = DEFAULT_CONFIG) {
     filePath: objectPath(root, id),
     manifestFile: manifestPath(root, id),
     toolName: message.toolName,
+    toolCallId: message.toolCallId,
     text,
     bytes,
     lines: countLines(text),
@@ -165,7 +179,7 @@ export function createObservation(message, root, config = DEFAULT_CONFIG) {
 
 /**
  * 写入内容寻址路径：O_EXCL 创建，拒绝符号链接；已存在则逐字节校验后才复用。
- * 同时写 sidecar manifest（best-effort：manifest 写失败不影响原文可用性）。
+ * 先发布完整 manifest，再发布对象；失败时保持原文而不生成占位符。
  */
 export async function ensureStored(observation) {
   const directoryPath = dirname(observation.filePath);
@@ -175,10 +189,30 @@ export async function ensureStored(observation) {
     throw new Error(`Observation directory is not a regular directory for ${observation.id}`);
   }
 
+  // Publish only complete, synced files; hard-link publication never overwrites a concurrent writer.
+  const temporary = `${observation.filePath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
   let handle;
   try {
-    handle = await open(observation.filePath, CREATE_OBJECT_FLAGS, 0o600);
+    handle = await open(temporary, CREATE_OBJECT_FLAGS, 0o600);
     await handle.writeFile(observation.text, { encoding: "utf8" });
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+    await writeManifest(observation);
+    const blobDir = join(dirname(directoryPath), "blobs");
+    await mkdir(blobDir, { recursive: true, mode: 0o700 });
+    const blobStats = await lstat(blobDir);
+    if (!blobStats.isDirectory() || blobStats.isSymbolicLink()) throw new Error("Observation blob directory is not a regular directory");
+    const blobPath = join(blobDir, `${observation.contentHash}.txt`);
+    try { await link(temporary, blobPath); }
+    catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      const blobHandle = await open(blobPath, READ_OBJECT_FLAGS);
+      try {
+        if (hash(await blobHandle.readFile()) !== observation.contentHash) throw new Error(`Stored blob mismatch for ${observation.id}`);
+      } finally { await blobHandle.close(); }
+    }
+    await link(blobPath, observation.filePath);
   } catch (error) {
     if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") throw error;
     const existingHandle = await open(observation.filePath, READ_OBJECT_FLAGS);
@@ -199,36 +233,50 @@ export async function ensureStored(observation) {
     }
   } finally {
     await handle?.close();
+    await unlink(temporary).catch(() => {});
   }
-
-  await writeManifest(observation);
 }
 
 async function writeManifest(observation) {
   const manifest = JSON.stringify({
     id: observation.id,
     contentHash: observation.contentHash,
+    blobId: observation.contentHash,
+    toolCallId: observation.toolCallId,
     bytes: observation.bytes,
     lines: observation.lines,
     tool: observation.toolName,
     storedAt: new Date().toISOString(),
   });
+  const temporary = `${observation.manifestFile}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
   try {
-    await writeFile(observation.manifestFile, manifest, { encoding: "utf8", mode: 0o600 });
-  } catch (error) {
-    // manifest 只服务校验；写不进去时退回“未校验取回”，不能因此丢原文。
-    console.error(`[observation-pack] manifest write failed for ${observation.id}: ${error?.message ?? error}`);
-  }
+    await writeFile(temporary, manifest, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    try { await link(temporary, observation.manifestFile); }
+    catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      let existing;
+      try { existing = JSON.parse(await readFile(observation.manifestFile, "utf8")); } catch {}
+      if (existing?.id !== observation.id || existing?.contentHash !== observation.contentHash || existing?.bytes !== observation.bytes) {
+        // Only the original historical bytes authorize repair; recall alone never repairs.
+        const handle = await open(observation.filePath, READ_OBJECT_FLAGS);
+        try {
+          if (hash(await handle.readFile()) !== observation.contentHash) throw new Error(`Observation manifest mismatch for ${observation.id}`);
+        } finally { await handle.close(); }
+        await rename(temporary, observation.manifestFile);
+      }
+    }
+  } finally { await unlink(temporary).catch(() => {}); }
 }
 
 export async function readManifest(root, id) {
   try {
     const raw = await readFile(manifestPath(root, id), "utf8");
     const parsed = JSON.parse(raw);
-    if (typeof parsed?.contentHash !== "string" || !Number.isSafeInteger(parsed?.bytes)) return undefined;
+    if (parsed?.id !== id || !/^[a-f0-9]{64}$/.test(parsed?.contentHash ?? "") || !Number.isSafeInteger(parsed?.bytes) || parsed.bytes < 0) throw new Error(`Invalid observation manifest: ${id}`);
     return parsed;
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
   }
 }
 
@@ -249,14 +297,15 @@ export function createIntegrityVerifier() {
       await handle.close();
     }
 
-    const cacheKey = `${path}\0${stats.size}\0${stats.mtimeMs}`;
+    const manifest = await readManifest(root, id);
+    const cacheKey = `${path}\0${stats.size}\0${stats.mtimeMs}\0${stats.ctimeMs}\0${strict}\0${JSON.stringify(manifest)}`;
+    if (verified.size >= 256) verified.clear();
     const cached = verified.get(cacheKey);
     if (cached) {
       if (cached.error) throw new Error(cached.error);
       return cached.state;
     }
 
-    const manifest = await readManifest(root, id);
     if (!manifest) {
       // 旧归档没有 manifest：严格模式拒绝取回，宽松模式记为 unverified 继续。
       if (strict) {
@@ -264,7 +313,6 @@ export function createIntegrityVerifier() {
         verified.set(cacheKey, { error: message });
         throw new Error(message);
       }
-      verified.set(cacheKey, { state: "unverified" });
       return "unverified";
     }
     if (manifest.bytes !== stats.size) {
@@ -335,7 +383,7 @@ export function placeholderFor(observation, config = DEFAULT_CONFIG) {
   const head = completeLineExcerpt(observation.text, headBudget, false);
   const tail = completeLineExcerpt(observation.text, tailBudget, true);
   return [
-    `[large tool result replaced after its first ${config.fullSends} provider requests]`,
+    `[large tool result replaced after its first ${observation.toolName === "read_result" ? config.reportFullSends : config.fullSends} provider requests]`,
     `id: ${observation.id}`,
     `tool: ${observation.toolName}`,
     `original_bytes: ${observation.bytes}`,
@@ -343,9 +391,9 @@ export function placeholderFor(observation, config = DEFAULT_CONFIG) {
     `estimated_tokens: ${observation.tokens}`,
     `retrieve: call obs_recall with {"id":"${observation.id}","offset":0}; continue with returned next_offset`,
     `narrow: add "query" (keyword), or "startLine"/"lineLimit", to avoid re-reading whole pages`,
-    `[first complete lines, up to ${headBudget} bytes]`,
+    `[first excerpt, up to ${headBudget} bytes; long lines may be truncated]`,
     head,
-    `[middle omitted; last complete lines, up to ${tailBudget} bytes]`,
+    `[middle omitted; last excerpt, up to ${tailBudget} bytes; long lines may be truncated]`,
     tail,
     `[${observation.bytes} original bytes omitted]`,
   ].join("\n");
@@ -603,14 +651,14 @@ export function dropRedundantRecallEchoes(messages, config = DEFAULT_CONFIG) {
     if (!message || !isPureTextResult(message)) continue;
     const text = textFromResult(message);
     if (Buffer.byteLength(text, "utf8") <= config.thresholdBytes) continue;
-    if (parseRecallEcho(text)) continue;
+    if (message.toolName === "obs_recall" && parseRecallEcho(text)) continue;
     present.add(`obs_${hash(`${message.toolName}\0${message.toolCallId}\0${hash(text)}`).slice(0, 24)}`);
   }
   if (present.size === 0) return messages;
 
   const kept = messages.filter((message) => {
     if (!message || !isPureTextResult(message)) return true;
-    const echo = parseRecallEcho(textFromResult(message));
+    const echo = message.toolName === "obs_recall" ? parseRecallEcho(textFromResult(message)) : undefined;
     return !echo || !present.has(echo.id);
   });
   return kept.length === messages.length ? messages : kept;
@@ -629,11 +677,16 @@ export function observationPackExtension(root, stats = null, options = {}) {
     const ledger = createLedger(root, { runId, ...(agentId ? { agentId } : {}), configVersion: config.configVersion });
     const verifyObject = createIntegrityVerifier();
     const loggedFolds = new Set();
+    // Bounded across projections; exact text comparison prevents call-id/length collisions.
+    const memo = new Map();
+    let memoBytes = 0;
+    const memoBudget = 8 * 1024 * 1024;
     // 哪些投影真的折过东西（等着与供应商响应配对）。
     const foldedProjections = new Set();
-    // 每次 context 投影一个序号：fold 事件与 projection 汇总共享它，
+    // 每次 context 投影一个序号：fold、projection 与审计 request-usage 共享它，
     // 折叠批次与最早变化边界（缓存失效起点）因此可事后归因。
     let projectionSeq = 0;
+    if (stats) stats.recordUsage = (record) => ledger({ event: "request-usage", seq: projectionSeq, ...record });
 
     pi.registerTool({
       name: "obs_recall",
@@ -682,6 +735,10 @@ export function observationPackExtension(root, stats = null, options = {}) {
         }
         if (input.startLine != null && input.startLine < 1) throw new Error("obs_recall startLine is 1-based");
 
+        if (input.query != null && (input.offset != null || input.startLine != null)) throw new Error("obs_recall query cannot be combined with offset or startLine");
+        if (input.startLine != null && input.offset != null) throw new Error("obs_recall startLine cannot be combined with offset");
+        if (input.contextLines != null && input.query == null) throw new Error("obs_recall contextLines requires query");
+        if (input.limit === 0 || input.lineLimit === 0) throw new Error("obs_recall limits must be positive");
         const limits = {
           maxBytes: Math.min(input.limit ?? config.recallDefaultBytes, RECALL_LIMITS.maxBytes),
           maxLines: Math.min(input.lineLimit ?? RECALL_LIMITS.maxLines, RECALL_LIMITS.maxLines),
@@ -738,6 +795,7 @@ export function observationPackExtension(root, stats = null, options = {}) {
         return {
           content: [{ type: "text", text: content }],
           details: {
+            sliceId: hash(`${input.id}\0${chunk.mode}\0${chunk.offset ?? offset}\0${chunk.nextOffset ?? ""}\0${chunk.nextLine ?? ""}\0${hash(chunk.text)}`),
             id: input.id,
             mode: chunk.mode,
             integrity,
@@ -755,6 +813,11 @@ export function observationPackExtension(root, stats = null, options = {}) {
 
     pi.on("context", async (event) => {
       if (!config.foldEnabled) return undefined;
+      const rawEstimatedTokens = event.messages.reduce((total, message) => total + estimateTokens(JSON.stringify(message.content ?? "")), 0);
+      if (rawEstimatedTokens < config.minContextTokens && loggedFolds.size === 0) {
+        if (stats) stats.savedTokens = 0;
+        return undefined;
+      }
       const projected = [...event.messages];
       const seq = (projectionSeq += 1);
       // 每条消息此前参与的请求数 = 其后 assistant 消息数。纯推导、不累加计数器：
@@ -777,16 +840,15 @@ export function observationPackExtension(root, stats = null, options = {}) {
       let savedTokens = 0;
       let foldBatch = 0;
       let earliestFoldIndex = -1;
-      const memo = new Map(); // 每次投影内记忆化：同一工具调用只算一次 hash / 归档 / 占位符
 
       for (const index of candidateIndexes) {
         const message = event.messages[index];
         const sends = priorAssistantCounts[index] ?? 0;
-        if (sends < config.fullSends) continue;
+        if (sends < (message.toolName === "read_result" ? config.reportFullSends : config.fullSends)) continue;
 
         try {
           const text = textFromResult(message);
-          const echo = config.foldRecallEchoes ? parseRecallEcho(text) : undefined;
+          const echo = config.foldRecallEchoes && message.toolName === "obs_recall" ? parseRecallEcho(text) : undefined;
           if (echo) {
             // 取回回显折叠成指回原对象的指针：不新建归档对象，引用层数不增长。
             const bytes = Buffer.byteLength(text, "utf8");
@@ -806,11 +868,16 @@ export function observationPackExtension(root, stats = null, options = {}) {
 
           const memoKey = `${message.toolName}\0${message.toolCallId}\0${text.length}`;
           let entry = memo.get(memoKey);
-          if (!entry) {
+          if (!entry || entry.observation.text !== text) {
             const observation = createObservation(message, root, config);
             if (!observation) continue;
             entry = { observation, placeholder: placeholderFor(observation, config), stored: false };
-            memo.set(memoKey, entry);
+            if (observation.bytes <= memoBudget) {
+              if (memoBytes + observation.bytes > memoBudget || memo.size >= 256) { memo.clear(); memoBytes = 0; }
+              memoBytes -= memo.get(memoKey)?.observation.bytes ?? 0;
+              memo.set(memoKey, entry);
+              memoBytes += observation.bytes;
+            }
           }
           const { observation } = entry;
           // 归档推迟到真正要折叠时：没折叠过的候选不再每轮白写一次盘。
@@ -819,6 +886,7 @@ export function observationPackExtension(root, stats = null, options = {}) {
             entry.stored = true;
           }
 
+          await verifyObject(root, observation.id, { strict: true });
           const removedTokens = Math.max(0, observation.tokens - estimateTokens(entry.placeholder));
           projected[index] = { ...message, content: [{ type: "text", text: entry.placeholder }] };
           savedTokens += removedTokens;
@@ -863,6 +931,8 @@ export function observationPackExtension(root, stats = null, options = {}) {
           seq,
           messageCount: event.messages.length,
           candidates: candidateIndexes.length,
+          rawEstimatedTokens,
+          estimateScope: "projection-only-excludes-recall-rounds-and-cache",
           foldBatch,
           earliestFoldIndex,
           savedTokens,

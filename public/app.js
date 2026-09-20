@@ -797,11 +797,13 @@ function runtimeSummary(value = {}) {
     // 取回率 = 被重新取回过的**不同对象数** / 折叠对象数（同尺度，永不超 100%）。
     // 页数单独显示：分页读完一个对象不再被误算成多次“折错了”。
     const recalled = Number.isFinite(pack.recalledObjects) ? pack.recalledObjects : null;
-    const rate = pack.folded > 0 && Number.isFinite(pack.recallRate) ? ` (${Math.round(pack.recallRate * 100)}%)` : "";
+    const rate = pack.folded > 0
+      ? (Number.isFinite(pack.recallRate) ? ` (${Math.round(pack.recallRate * 100)}%)` : "（未知）")
+      : "（样本不足）";
     const pages = Number.isFinite(pack.recallPages) ? pack.recallPages : pack.recalls;
     const recallText = recalled != null ? `取回 ${count(recalled)} 对象${rate} · ${count(pages)} 页` : `取回 ${count(pack.recalls)}${rate}`;
     const failures = (pack.failures ?? 0) + (pack.recallFailures ?? 0);
-    lines.push(`OP 折叠 ${count(pack.folded)} 项 · 每请求省 ${count(pack.savedTokens)} tokens${failures ? ` · 失败 ${count(failures)}` : ""} · ${recallText}`);
+    lines.push(`OP 已折叠 ${count(pack.folded)} 项（会话累计） · 本次投影减少约 ${count(pack.savedTokens)} tokens（未计取回、额外轮次与缓存变化）${failures ? ` · 失败 ${count(failures)}` : ""} · ${recallText}`);
   }
   return lines;
 }
@@ -819,17 +821,15 @@ function renderRuntime(node, value) {
     $("mobile-runtime").textContent = `${cache} · ${percent} · ${identity}`;
     $("mobile-runtime").setAttribute("aria-label", `缓存命中率 ${cache}，上下文占比 ${percent}，${identity}`);
   }
-  // 报警只看“折叠后又被取回的对象占比”超半，或出现取回失败（折了取不回来是真故障）。
-  const opWarning = value?.observationPack && ((value.observationPack.folded > 0
-    && Number.isFinite(value.observationPack.recallRate) && value.observationPack.recallRate > 0.5)
-    || (value.observationPack.recallFailures ?? 0) > 0);
+  // 取回比例不能单独证明折叠过早；只有实际取回失败才标红。
+  const opWarning = (value?.observationPack?.recallFailures ?? 0) > 0;
   node.replaceChildren(...runtimeSummary(node.id === "session-runtime" && sessionBill ? { ...value, billing: sessionBill } : value).map((text) => {
     const span = document.createElement("span");
     span.textContent = text;
     if (opWarning && text.startsWith("OP ")) span.className = "op-warning";
     return span;
   }));
-  node.title = "缓存命中：最近一次模型请求的缓存读取 / 输入总量（含缓存读写）；上下文：Pi 当前估算，非累计消耗。OP：大工具结果折叠为占位符，原文归档可取回；取回率超 50% 提示折太早（标红）。";
+  node.title = "缓存命中：最近一次模型请求的缓存读取 / 输入总量（含缓存读写）；上下文：Pi 当前估算，非累计消耗。OP：折叠项为会话累计；本次投影减少量为估算，不含取回、额外轮次与缓存变化，不代表净费用节省。取回率按不同对象计数，无折叠对象时显示样本不足；比例高低不能单独判断折叠是否合理，取回失败标红。";
 }
 function updateTaskRuntime(task, value) {
   if (!task) return;
