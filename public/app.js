@@ -3879,7 +3879,7 @@ function renderSessions() {
     // + 按钮：在该工作区新建会话
     const newBtn = document.createElement("button");
     newBtn.type = "button";
-    newBtn.className = "workspace-new-btn icon-button";
+    newBtn.className = "workspace-new-btn";
     newBtn.title = `在「${displayName}」新建会话`;
     newBtn.setAttribute("aria-label", newBtn.title);
     newBtn.innerHTML = actionIcon("plus");
@@ -3890,7 +3890,7 @@ function renderSessions() {
     };
     const configBtn = document.createElement("button");
     configBtn.type = "button";
-    configBtn.className = "workspace-config-btn icon-button";
+    configBtn.className = "workspace-config-btn";
     configBtn.title = `配置工作空间：${origCwd}`;
     configBtn.setAttribute("aria-label", configBtn.title);
     configBtn.setAttribute("aria-haspopup", "dialog");
@@ -4355,8 +4355,12 @@ function renderDefaultsScope() {
   $("defaults-scope-label").textContent = defaultsMode === "session" ? "仅当前会话" : defaultsScope ? `工作空间 · ${defaultsScope}` : "全局默认";
   $("defaults-title").textContent = defaultsMode === "session" ? "当前会话配置" : defaultsScope ? "当前工作空间配置" : "默认配置";
   $("defaults-delete").hidden = defaultsMode !== "workspace";
+  $("config-subagent-title").textContent = defaultsMode === "session" ? "子代理设置 · 下次委派生效" : "子代理默认值 · 新会话采用";
+  $("config-subagent-help").textContent = defaultsMode === "session"
+    ? "子代理模型与思考在下次委派的新子任务中生效，无需重启会话；新子任务采用当前会话的压缩设置，运行中的子任务不变。"
+    : "保存新会话的子代理默认模型与思考；子代理创建时采用所在会话的压缩设置。";
   $("config-timing-help").textContent = defaultsMode === "session"
-    ? "只修改当前会话。模型、思考和压缩在下次请求生效；已发出的请求不变。子代理配置用于下次启动。"
+    ? "只修改当前会话。模型、思考和压缩在下次请求生效；已发出的请求不变。"
     : "这里保存新会话的默认值，不修改已有会话。未配置的工作空间跟随全局默认。";
 }
 async function refreshDefaultsScope() { renderDefaultsScope(); }
@@ -4622,7 +4626,7 @@ $("create-form").onsubmit = async (e) => {
     const result = await request(mode === "session" ? "session.configure" : "session.defaults.configure", data);
     if (defaultsScope !== scope || defaultsMode !== mode || (mode === "session" && target !== sessionId)) return;
     if (mode === "session") applyConfig(result);
-    $("create-feedback").textContent = mode === "session" ? "已保存 · 仅当前会话，下次请求生效；子代理设置用于下次启动" : scope
+    $("create-feedback").textContent = mode === "session" ? "已保存 · 仅当前会话，下次请求生效；子代理模型与思考下次委派生效" : scope
       ? `已保存 · ${scope} 的新会话使用此配置`
       : "已保存到本机 · 全局默认，未单独配置的目录使用此配置";
   } catch (err) {

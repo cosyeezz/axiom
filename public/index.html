@@ -330,7 +330,7 @@
             <label class="budget-field" for="task-max-turns"><span class="budget-field-label">轮次上限</span><input type="number" id="task-max-turns" min="3" max="200" step="1" aria-describedby="task-budget-help"><span class="budget-field-unit">轮</span></label>
             <label class="budget-field" for="task-wrap-up-window"><span class="budget-field-label">收尾窗口</span><input type="number" id="task-wrap-up-window" min="1" max="10" step="1" aria-describedby="task-budget-help"><span class="budget-field-unit">轮</span></label>
           </div>
-          <p id="task-budget-help">上限是软的：子代理跑到「轮次上限 − 收尾窗口」时，每轮注入一条收尾指令让子代理自己交付（不强行中断，不丢已有产出）。保存后新建的子任务立即生效；已在跑的任务保持创建时的设置。</p>
+          <p id="task-budget-help">上限是软的：子代理跑到「轮次上限 − 收尾窗口」时，每轮注入一条收尾指令让子代理自己交付（不强行中断，不丢已有产出）。保存后，新建会话中的子任务使用新预算；已有会话保持创建时的预算。</p>
         </section>
         <section aria-labelledby="subagent-title" hidden>
           <h3 id="subagent-title">子代理</h3>
@@ -339,7 +339,7 @@
             <label><span class="sr-only">子代理供应商</span><select id="subagent-provider" title="子代理供应商" aria-describedby="subagent-help"></select></label>
             <label><span class="sr-only">子代理模型</span><select id="subagent-model" title="子代理模型"></select></label>
           </div>
-          <p>思考程度沿用主代理，并按所选模型支持的等级调整。</p>
+          <p>思考程度默认跟随主代理，可单独设置，并按所选模型支持的等级调整。</p>
         </section>
         <p id="settings-feedback" role="status" aria-live="polite"></p>
         <section aria-labelledby="defaults-title">
@@ -356,7 +356,10 @@
               <p>复用本机 Pi 已启用的能力；Skills 按需读取，MCP 按配置连接。未选能力不会自动加载，但这不是权限沙箱。</p>
               <h3 id="config-hot-title">热更新项的默认值 · 新会话采用</h3><p id="config-timing-help">这里设置新会话的默认值，不改写已有会话。当前会话入口中的模型与压缩设置可在下次请求生效。</p><div id="create-agents"></div>
               <div id="create-compaction"></div>
-              <h3>需要启动新会话区</h3><p>Skills、MCP、Extensions 能力选择及自动重试在创建会话时装配。子代理设置在下次启动子代理时生效，运行中的子任务不变。</p><div id="create-subagent-settings"></div><div id="create-capabilities"></div><div id="create-retry"></div><h3>重启服务区</h3><p>会话配置没有需要重启服务的项目。服务启动参数（监听地址、端口及启动环境变量）需在服务端修改并重启；不属于工作空间或会话覆盖。</p>
+              <h3 id="config-subagent-title">子代理默认值 · 新会话采用</h3>
+              <p id="config-subagent-help">保存新会话的子代理默认模型与思考；子代理创建时采用所在会话的压缩设置。</p>
+              <div id="create-subagent-settings"></div>
+              <h3 id="config-new-session-title">需要启动新会话区</h3><p>Skills、MCP、Extensions 能力选择及自动重试在创建会话时装配。</p><div id="create-capabilities"></div><div id="create-retry"></div><h3>重启服务区</h3><p>会话配置没有需要重启服务的项目。服务启动参数（监听地址、端口及启动环境变量）需在服务端修改并重启；不属于工作空间或会话覆盖。</p>
               <p>网页支持插件的工具与指令逻辑，不提供终端专用组件；需要交互审批的操作不会自动放行。</p>
               <p id="create-feedback" role="status" aria-live="polite"></p>
             </form>

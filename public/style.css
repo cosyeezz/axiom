@@ -1,8 +1,6 @@
 /* 双主题：所有颜色 token 用 light-dark() 一次声明两套值，由 color-scheme 决定取哪一支，
    因此切换主题只需改 :root 的 color-scheme（下方 [data-theme] 规则），不需要重复整份 token 表。
    默认深色（产品基调），浅色仅在用户显式切换后生效，不跟随系统，避免既有用户被动变脸。 */
-.workspace-config-btn { flex-shrink: 0; color: var(--muted); }
-.workspace-config-btn:hover { color: var(--ink); background: var(--raised); }
 #settings.scoped .settings-nav { display: none; }
 #settings.scoped .settings-layout { grid-template-columns: minmax(0, 1fr); }
 #settings.scoped #defaults-title,
@@ -362,12 +360,12 @@ summary {
 .workspace-badge { flex-shrink: 0; font-size: 10px; font-weight: 500; margin-left: 2px; font-variant-numeric: tabular-nums; }
 .ws-badge-running { color: var(--success); }
 .ws-badge-attention { color: var(--accent-ink); }
-.workspace-new-btn { flex-shrink: 0; width: 22px; height: 22px; min-height: 0; padding: 0; border: 0; background: transparent; border-radius: 5px; color: var(--muted); cursor: pointer; display: grid; place-items: center; opacity: 0; }
-.workspace-header:hover .workspace-new-btn, .workspace-new-btn:focus-visible { opacity: 1; }
-.workspace-new-btn:hover { background: var(--raised); color: var(--ink); }
-.workspace-new-btn svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.workspace-new-btn, .workspace-config-btn { flex-shrink: 0; width: 22px; height: 22px; min-height: 0; padding: 0; border: 0; background: transparent; border-radius: 5px; color: var(--muted); cursor: pointer; display: grid; place-items: center; opacity: 0; }
+.workspace-header:hover .workspace-new-btn, .workspace-header:hover .workspace-config-btn:not(:disabled), .workspace-new-btn:focus-visible, .workspace-config-btn:focus-visible { opacity: 1; }
+.workspace-new-btn:hover:not(:disabled), .workspace-config-btn:hover:not(:disabled) { background: var(--raised); color: var(--ink); }
+.workspace-new-btn svg, .workspace-config-btn svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .workspace-content { padding-left: 10px; }
-@media (pointer: coarse) { .workspace-new-btn { opacity: 1; width: 28px; height: 28px; } }
+@media (pointer: coarse) { .workspace-new-btn, .workspace-config-btn { opacity: 1; width: 28px; height: 28px; } }
 /* 会话行：桌面 32px 紧凑行；悬停必须用 --hover —— 侧栏底就是 --surface，再用 surface 会完全看不见。 */
 .session-row { display: flex; flex-wrap: wrap; align-items: center; min-width: 0; padding-right: 2px; border-radius: 6px; position: relative; }
 .session-row > .session-item { flex-basis: 100%; padding-right: 34px; }
