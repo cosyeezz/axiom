@@ -1,11 +1,11 @@
 import { SUMMARY_SYSTEM_PROMPT, summaryRequest } from "./prompts.js";
 export { summaryRequest } from "./prompts.js";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
+import { mkdir, writeFile, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
-  convertToLlm,
   createAgentSession,
   DefaultResourceLoader,
   estimateTokens,
@@ -13,12 +13,18 @@ import {
   ModelRuntime,
   SessionManager,
   sessionEntryToContextMessages,
-  serializeConversation,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { compaction, compactionDefaults } from "./protocol.js";
 import { dropRedundantRecallEchoes } from "./observation-pack.js";
 import { cutSpans, maskCode } from "../public/markdown-scan.js";
+
+export function compactionArbitration(controller, event) {
+  if (!controller) return undefined;
+  if (event.reason === "threshold" && controller.getConfig().enabled) return { cancel: true };
+  controller.cancel();
+  return undefined;
+}
 
 // SDK usage 未知（尤其刚压缩后）时只估算现有内容，不能重新信任旧 usage。
 function contextTokens(messages) {
@@ -44,10 +50,14 @@ function prepareBackgroundCompaction(branch, keepRecentTokens) {
   const firstKeptEntry = branch[cut.firstKeptEntryIndex];
   if (!firstKeptEntry?.id) return undefined; // 会话需要迁移
   const messagesToSummarize = [];
+  const sourceEntries = [];
   for (let i = boundaryStart; i < cut.firstKeptEntryIndex; i++) {
     if (branch[i].type === "compaction") continue;
     const message = sessionEntryToContextMessages(branch[i])[0];
-    if (message) messagesToSummarize.push(message);
+    if (message) {
+      messagesToSummarize.push(message);
+      sourceEntries.push({ entryId: branch[i].id, message });
+    }
   }
   if (messagesToSummarize.length === 0) return undefined;
   // OP 口径对齐：摘要仍读原始历史（占位符会把摘要要用的原文抹掉），但 obs_recall 回显是
@@ -55,7 +65,7 @@ function prepareBackgroundCompaction(branch, keepRecentTokens) {
   // 找不到对应原文就保留（那可能是该内容在本批里唯一的副本）。corpus/快照同源，引文校验口径一致。
   const deduped = dropRedundantRecallEchoes(messagesToSummarize);
   if (deduped.length === 0) return undefined;
-  return { firstKeptEntryId: firstKeptEntry.id, messagesToSummarize: deduped, previousSummary };
+  return { firstKeptEntryId: firstKeptEntry.id, messagesToSummarize: deduped, sourceEntries, previousSummary };
 }
 
 // 配置契约：与 protocol.js 的 compaction schema 严格一致（复用同一份 zod schema 与默认值），
@@ -108,11 +118,20 @@ export function summarizedEntryIds(branch, firstKeptEntryId) {
 // 都能拆出，长度按码点算（emoji 不占两格）。
 const COMPACT_MAX = { title: 30, desc: 200 };
 const FACTS_MAX = { lines: 30, chars: 300 };
-export function parseSummaryOutput(text) {
-  const raw = text.trim();
-  const masked = maskCode(raw);
-  // 围栏里的标签是讨论内容不是协议；整份输出被围栏包住时标签全被掩码，退回原文扫描
-  const scan = masked.includes("<axiom_compact_") ? masked : raw;
+export function parseSummaryOutput(text, { strict = false } = {}) {
+  let raw = text.trim();
+  // Only unwrap a single fence enclosing the entire response. Never scan code examples.
+  const outer = raw.match(/^(`{3,}|~{3,})[^\r\n]*\r?\n([\s\S]*?)\r?\n\1\s*$/);
+  if (outer && !/^\s*(?:`{3,}|~{3,})/m.test(outer[2])) raw = outer[2].trim();
+  const scan = maskCode(raw);
+  if (strict) {
+    for (const name of ["title", "desc", "facts"]) {
+      const opens = [...scan.matchAll(new RegExp(`<axiom_compact_${name}>`, "g"))];
+      const closes = [...scan.matchAll(new RegExp(`</axiom_compact_${name}>`, "g"))];
+      if (opens.length > 1 || closes.length > 1 || opens.length !== closes.length)
+        throw new Error(`Invalid summary: duplicate or unbalanced ${name} block`);
+    }
+  }
   const spans = [];
   const field = (name) => {
     const open = `<axiom_compact_${name}>`;
@@ -136,15 +155,24 @@ export function parseSummaryOutput(text) {
       spans.push([hit.index, hit.index + hit[0].length]);
     const at = scan.indexOf(open);
     const end = at < 0 ? -1 : scan.indexOf(close, at + open.length);
-    if (at < 0 || end < 0) return undefined; // 无块或配不成对：只剥标记本身，内容不进 facts
+    if (at < 0 || end < 0) {
+      if (strict) throw new Error("Invalid summary: missing or unclosed facts block");
+      return undefined;
+    }
     spans.push([at, end + close.length]);
     const lines = raw
       .slice(at + open.length, end)
       .split("\n")
       .map((line) => line.trim())
-      .filter(Boolean)
-      .filter((line) => [...line].length <= FACTS_MAX.chars);
-    return lines.length > 0 ? lines.slice(0, FACTS_MAX.lines) : undefined;
+      .filter(Boolean);
+    if (strict) {
+      if (!lines.length || lines.length > FACTS_MAX.lines || lines.some((line) => [...line].length > FACTS_MAX.chars))
+        throw new Error("Invalid summary: facts must contain 1–30 lines of at most 300 characters (or NONE)");
+      if (lines.length === 1 && lines[0] === "NONE") return [];
+      return lines;
+    }
+    const bounded = lines.filter((line) => [...line].length <= FACTS_MAX.chars).slice(0, FACTS_MAX.lines);
+    return bounded.length ? bounded : undefined;
   };
   const facts = factsField();
   const title = field("title");
@@ -190,14 +218,8 @@ export function validateFacts(facts, conversationText, previousSummary) {
       }
       continue;
     }
-    const inPrevious = previousSummary ? factMatch(fact, previousSummary) : null;
-    if (inPrevious) {
-      if (!seen.has(inPrevious.quote)) {
-        seen.add(inPrevious.quote);
-        verified.push({ quote: inPrevious.quote, line: null });
-      }
-      continue;
-    }
+    // A previous summary is model narration, not independent source evidence.
+    // Legacy summaries remain readable, but cannot establish a verified quotation.
     missed.push(fact);
   }
   return missed.length > 0 ? { ok: false, missed, facts: verified } : { ok: true, facts: verified };
@@ -206,24 +228,41 @@ export function validateFacts(facts, conversationText, previousSummary) {
 // 原文快照：与摘要模型所见逐字一致的会话渲染，按内容哈希命名，落在 session 文件旁。
 // 先落盘再替换上下文，任何后续降级都保证原文可回读（journal 虽全量留档，但 JSONL 不适合直接 grep/read）。
 // 无持久 session 文件（内存会话）或写盘失败时跳过，不阻断压缩——引文校验与快照互不依赖。
-function writeConversationSnapshot(session, conversationText) {
+function snapshotLocation(session, conversationText) {
+  const sessionFile = session.sessionManager.getSessionFile?.() ?? session.sessionFile;
+  if (!sessionFile) return null;
+  return join(`${sessionFile}.sources`, `snapshot-${createHash("sha256").update(conversationText).digest("hex")}-${globalThis.crypto.randomUUID()}.txt`);
+}
+
+async function writeConversationSnapshot(path, conversationText) {
+  if (!path) return;
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  const staging = `${path}.${globalThis.crypto.randomUUID()}.tmp`;
   try {
-    const sessionFile = session.sessionManager.getSessionFile?.() ?? session.sessionFile;
-    if (!sessionFile) return null;
-    const dir = join(dirname(sessionFile), "compaction-snapshots");
-    mkdirSync(dir, { recursive: true });
-    const path = join(dir, `snapshot-${createHash("sha256").update(conversationText).digest("hex").slice(0, 16)}.txt`);
-    writeFileSync(path, conversationText, "utf8");
-    return path;
-  } catch {
-    return null;
+    await writeFile(staging, conversationText, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    await rename(staging, path);
+  } finally {
+    await rm(staging, { force: true });
   }
+}
+
+// JSON preserves complete message bodies, including image blocks and source entry identities.
+// A readable text section keeps exact text quotations searchable without JSON escaping.
+export function renderCompactionSources(messages, entryIds = [], { includeJson = true } = {}) {
+  return messages.map((message, index) => {
+    const text = typeof message.content === "string" ? message.content :
+      (message.content ?? []).map((block) => block.type === "text" ? block.text : block.type === "thinking" ? block.thinking : block.type === "toolCall" ? `${block.name} ${JSON.stringify(block.arguments)}` : "[non-text attachment preserved in source archive]").join("\n");
+    return `ENTRY ${entryIds[index] ?? index} ROLE ${message.role}\n${text}${includeJson ? `\nSOURCE_JSON ${JSON.stringify(message)}` : ""}`;
+  }).join("\n\n");
 }
 
 // 把已核验引文拼进摘要正文（行号指向快照），回读指引一并写入——写在摘要里而不是系统提示词：
 // 路径每次压缩都不同，且指引正好出现在模型需要它的位置（引文旁边），随会话持久化、resume 后仍在。
 function appendVerifiedFacts(summary, verifiedFacts, snapshotPath) {
-  if (!verifiedFacts?.length) return { summary, extra: {} };
+  if (!verifiedFacts?.length) return {
+    summary: snapshotPath ? `${summary}\n完整来源快照: ${snapshotPath}` : summary,
+    extra: snapshotPath ? { snapshotPath } : {},
+  };
   const lines = [
     "",
     "已核验引文（逐字复制自压缩前对话，行号对应原文快照）:",
@@ -239,12 +278,17 @@ function appendVerifiedFacts(summary, verifiedFacts, snapshotPath) {
   };
 }
 
-export async function summarizeWithPiSession({ messages, previousSummary, model, thinking, modelRuntime, signal }) {
+export async function summarizeWithPiSession({ messages, previousSummary, model, thinking, modelRuntime, signal, wrapSummaryStream }) {
+  const prompt = summaryRequest(renderCompactionSources(messages, [], { includeJson: false }), previousSummary);
+  const maxOutput = Math.min(4096, model?.maxTokens ?? 4096);
+  const inputBudget = Math.min(48000, Math.max(0, (model?.contextWindow ?? 64000) - maxOutput - 2048));
+  if (Math.ceil((prompt.length + SUMMARY_SYSTEM_PROMPT.length) / 3) > inputBudget)
+    throw new Error("Summary input exceeds bounded model budget");
   throwIfAborted(signal); // 创建前检查
   const agentDir = mkdtempSync(join(tmpdir(), "axiom-compaction-"));
   let session;
   try {
-    const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
+    const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false, provider: { maxRetries: 0 } } });
     const loader = new DefaultResourceLoader({
       cwd: agentDir,
       agentDir,
@@ -272,11 +316,15 @@ export async function summarizeWithPiSession({ messages, previousSummary, model,
         settingsManager,
       })
     ).session;
+    const stream = session.agent.streamFunction;
+    session.agent.streamFunction = wrapSummaryStream ? wrapSummaryStream(stream) : stream;
+    const governed = session.agent.streamFunction;
+    session.agent.streamFunction = (target, context, options) => governed(target, context, { ...options, maxTokens: maxOutput });
     throwIfAborted(signal); // 创建后检查（等待 loader 期间可能已被取消）
     const onAbort = () => void session.abort(); // 真实中断后台 LLM，不跑自然完成
     signal?.addEventListener("abort", onAbort, { once: true });
     try {
-      await session.prompt(summaryRequest(serializeConversation(convertToLlm(messages)), previousSummary), {
+      await session.prompt(prompt, {
         expandPromptTemplates: false,
       });
     } finally {
@@ -290,7 +338,7 @@ export async function summarizeWithPiSession({ messages, previousSummary, model,
       .trim();
     if (last?.stopReason !== "stop" || !summary)
       throw new Error(`Summarization failed (stopReason=${last?.stopReason ?? "none"})`);
-    return { ...parseSummaryOutput(summary), usage: last.usage };
+    return { ...parseSummaryOutput(summary, { strict: true }), usage: last.usage };
   } finally {
     try {
       session?.dispose();
@@ -321,6 +369,8 @@ export function createBackgroundCompaction({
   available = [],
   config,
   summarize = summarizeWithPiSession,
+  wrapSummaryStream,
+  previewMessages = (messages) => messages,
   onEvent,
 }) {
   let current = normalizeCompaction(config);
@@ -328,6 +378,8 @@ export function createBackgroundCompaction({
   let controller = null; // 在途摘要的 AbortController
   let disposed = false;
   let status = null;
+  let configVersion = 0;
+  const attempts = new Map();
   function report(phase, message) {
     status = { status: phase, startedAt: phase === "summarizing" ? Date.now() : status?.startedAt, ...(message ? { message } : {}) };
     try { onEvent?.({ type: "agent.compaction.status", data: { ...status } }); } catch {}
@@ -340,6 +392,7 @@ export function createBackgroundCompaction({
     } catch {}
     controller = null;
     pending = null;
+    attempts.clear();
   }
 
   function resolveModel() {
@@ -350,7 +403,7 @@ export function createBackgroundCompaction({
   }
 
   function isFresh(flight) {
-    if (!flight.leafId) return false;
+    if (!flight.leafId || flight.configVersion !== configVersion) return false;
     const branch = session.sessionManager.getBranch();
     const leafIndex = branch.findIndex((entry) => entry.id === flight.leafId);
     if (leafIndex < 0) return false; // 分支已切换
@@ -366,7 +419,8 @@ export function createBackgroundCompaction({
       model,
       thinking: current.thinking,
       modelRuntime,
-      signal: controller.signal,
+      wrapSummaryStream,
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(120000)]),
     });
   }
 
@@ -382,10 +436,16 @@ export function createBackgroundCompaction({
       const branch = session.sessionManager.getBranch();
       const preparation = prepareBackgroundCompaction(branch, current.keepRecentTokens);
       if (!preparation || preparation.messagesToSummarize.length === 0) return;
+      const sourceKey = createHash("sha256").update(JSON.stringify([preparation.messagesToSummarize, preparation.previousSummary, current])).digest("hex");
+      const attempt = attempts.get(sourceKey) ?? { count: 0, at: 0 };
+      if (attempt.count >= 3 || (attempt.count > 0 && Date.now() - attempt.at < 30000)) return;
+      attempts.set(sourceKey, { count: attempt.count + 1, at: Date.now() });
+      if (attempts.size > 128) attempts.delete(attempts.keys().next().value);
       const flight = {
+        configVersion,
         promise: runFlight(preparation),
         // 校验语料：与摘要模型所见逐字一致（同一渲染函数、同一消息内容）；快照与引文行号都指向这份文本
-        corpus: serializeConversation(convertToLlm(preparation.messagesToSummarize)),
+        corpus: renderCompactionSources(preparation.sourceEntries.map((entry) => entry.message), preparation.sourceEntries.map((entry) => entry.entryId)),
         previousSummary: preparation.previousSummary,
         firstKeptEntryId: preparation.firstKeptEntryId,
         compactedMessageIds: summarizedEntryIds(branch, preparation.firstKeptEntryId),
@@ -441,6 +501,8 @@ export function createBackgroundCompaction({
     const flight = pending;
     pending = null; // 先占位再验证，防重入双写
     controller = null;
+    let snapshotPath = null;
+    let committed = false;
     const skip = (message) => { report("skipped", message); return null; };
     if (disposed || !current.enabled || !isFresh(flight)) return skip("历史已变化，本次摘要作废，保留原文");
     try {
@@ -450,19 +512,32 @@ export function createBackgroundCompaction({
       const keptIndex = branch.findIndex((entry) => entry.id === flight.firstKeptEntryId);
       if (keptIndex < 0) return skip("保留边界已变化，保留原文");
       // 提交时重算压缩前占用：usage 可能过期（上次压缩后未回应），不可信时回退估算
-      const freshUsage = session.getContextUsage?.();
-      const tokensBefore = freshUsage?.tokens ?? contextTokens(session.messages);
+      // Compare the same conservative history representation on both sides, never
+      // compare provider usage (which includes OP and prompt overhead) to raw history.
+      const overhead = Math.ceil((session.systemPrompt?.length ?? 0) / 4) + Math.ceil(JSON.stringify(session.agent.state.tools ?? []).length / 4);
+      const estimateContext = (messages) => overhead + contextTokens(previewMessages(messages));
+      const tokensBefore = estimateContext(session.messages);
       // 引文附录 + 原文快照：先落盘再拼装（快照失败不阻断压缩），附录计入压缩后体积估算。
       // 同一对话内容 → 同一哈希文件，拒绝重试不产生重复快照。
-      const snapshotPath = writeConversationSnapshot(session, flight.corpus);
+      snapshotPath = snapshotLocation(session, flight.corpus);
       const assembled = appendVerifiedFacts(summary, flight.verifiedFacts, snapshotPath);
       // 提交前验证：压缩后上下文（摘要 + 保留切点之后的消息）必须真的变小。
       // usage 在压缩后必然过期，这里按 estimateTokens 全量求和。
       const keptMessages = branch.slice(keptIndex).filter((entry) => entry.type !== "compaction").flatMap(sessionEntryToContextMessages);
-      const estimatedAfter =
-        estimateTokens({ role: "compactionSummary", summary: assembled.summary }) +
-        keptMessages.reduce((sum, message) => sum + estimateTokens(message), 0);
+      const estimatedAfter = estimateContext([
+        { role: "compactionSummary", summary: assembled.summary }, ...keptMessages,
+      ]);
       if (estimatedAfter >= tokensBefore) return skip("摘要未缩小上下文，保留原文");
+      try {
+        await writeConversationSnapshot(snapshotPath, flight.corpus);
+      } catch {
+        report("archive_unavailable", "完整来源归档失败，保留原文");
+        return null;
+      }
+      if (disposed || !current.enabled || !isFresh(flight)) {
+        if (snapshotPath) await rm(snapshotPath, { force: true });
+        return skip("归档期间历史已变化，保留原文");
+      }
       const details = {
         ...(flight.value.progress ? { progress: flight.value.progress } : {}),
         ...assembled.extra,
@@ -475,6 +550,7 @@ export function createBackgroundCompaction({
         false,
         flight.value.usage,
       );
+      committed = true;
       const messages = session.sessionManager.buildSessionContext().messages;
       session.agent.state.messages = messages;
       const data = {
@@ -491,6 +567,7 @@ export function createBackgroundCompaction({
       report("applied");
       return data;
     } catch {
+      if (snapshotPath && !committed) await rm(snapshotPath, { force: true }).catch(() => {});
       report("failed", "后台摘要应用失败");
       return null;
     }
@@ -520,6 +597,7 @@ export function createBackgroundCompaction({
         throw new Error("Unknown compaction model");
       const changed = JSON.stringify(normalized) !== JSON.stringify(current);
       current = normalized;
+      if (changed) { configVersion += 1; attempts.clear(); }
       if (changed || !current.enabled) cancel(); // 配置变化作废/取消旧任务
     },
     dispose() {

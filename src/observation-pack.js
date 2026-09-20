@@ -236,24 +236,35 @@ export async function readManifest(root, id) {
  * 按 manifest 校验归档完整性。等长改写在 readRecallChunk 的 size 检查下不可见，
  * 只有全文哈希能发现。结果按 (path, size, mtimeMs) 缓存：同一进程内每个对象最多算一次。
  */
+const fileVersion = (stat) => `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+
 export function createIntegrityVerifier() {
   const verified = new Map();
-  return async function verifyObject(root, id, { strict = false } = {}) {
+  return async function verifyObject(root, id, { strict = false, snapshot = false } = {}) {
     const path = objectPath(root, id);
     const handle = await open(path, READ_OBJECT_FLAGS);
-    let stats;
+    let stats, bytes;
     try {
       stats = await handle.stat();
       if (!stats.isFile()) throw new Error("Stored observation is not a regular file");
+      bytes = await handle.readFile();
+      if (fileVersion(stats) !== fileVersion(await handle.stat())) throw new Error("Observation changed while reading");
     } finally {
       await handle.close();
     }
 
-    const cacheKey = `${path}\0${stats.size}\0${stats.mtimeMs}`;
+    const manifestStat = await lstat(manifestPath(root, id)).catch((error) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    if (manifestStat && (!manifestStat.isFile() || manifestStat.isSymbolicLink())) throw new Error("Invalid observation manifest file");
+    const cacheKey = `${path}\0${fileVersion(stats)}\0${manifestStat ? fileVersion(manifestStat) : "missing"}\0${strict}`;
+    if (verified.size > 256) verified.clear();
     const cached = verified.get(cacheKey);
     if (cached) {
       if (cached.error) throw new Error(cached.error);
-      return cached.state;
+      if (cached.digest !== hash(bytes)) throw new Error(`Observation ${id} content hash changed`);
+      return snapshot ? { integrity: cached.state, bytes } : cached.state;
     }
 
     const manifest = await readManifest(root, id);
@@ -264,22 +275,24 @@ export function createIntegrityVerifier() {
         verified.set(cacheKey, { error: message });
         throw new Error(message);
       }
-      verified.set(cacheKey, { state: "unverified" });
-      return "unverified";
+      if (manifestStat) throw new Error(`Observation ${id} has a malformed manifest`);
+      verified.set(cacheKey, { state: "unverified", digest: hash(bytes) });
+      return snapshot ? { integrity: "unverified", bytes } : "unverified";
     }
+    if (manifest.id !== id || !/^[a-f0-9]{64}$/.test(manifest.contentHash)) throw new Error(`Observation ${id} has an invalid manifest`);
     if (manifest.bytes !== stats.size) {
       const message = `Observation ${id} size does not match its manifest (${stats.size} vs ${manifest.bytes})`;
       verified.set(cacheKey, { error: message });
       throw new Error(message);
     }
-    const actual = hash(await readFile(path));
+    const actual = hash(bytes);
     if (actual !== manifest.contentHash) {
       const message = `Observation ${id} content hash does not match its manifest`;
       verified.set(cacheKey, { error: message });
       throw new Error(message);
     }
-    verified.set(cacheKey, { state: "verified" });
-    return "verified";
+    verified.set(cacheKey, { state: "verified", digest: actual });
+    return snapshot ? { integrity: "verified", bytes } : "verified";
   };
 }
 
@@ -385,8 +398,17 @@ export function recallPointerFor(echo, bytes) {
 // 但默认读取量小于硬上限，避免“确认一个符号”也拉回满页。
 // ---------------------------------------------------------------------------
 
+function bufferHandle(bytes) {
+  return {
+    stat: async () => ({ isFile: () => true, size: bytes.length }),
+    read: async (buffer, start, length, position) => ({ bytesRead: bytes.copy(buffer, start, position, position + length) }),
+    readFile: async () => bytes.toString("utf8"),
+    close: async () => {},
+  };
+}
+
 export async function readRecallChunk(path, offset, limits) {
-  const handle = await open(path, READ_OBJECT_FLAGS);
+  const handle = Buffer.isBuffer(path) ? bufferHandle(path) : await open(path, READ_OBJECT_FLAGS);
   try {
     const fileStats = await handle.stat();
     if (!fileStats.isFile()) throw new Error("Stored observation is not a regular file");
@@ -430,7 +452,7 @@ export async function readRecallChunk(path, offset, limits) {
 }
 
 async function readWholeObject(path) {
-  const handle = await open(path, READ_OBJECT_FLAGS);
+  const handle = Buffer.isBuffer(path) ? bufferHandle(path) : await open(path, READ_OBJECT_FLAGS);
   try {
     const fileStats = await handle.stat();
     if (!fileStats.isFile()) throw new Error("Stored observation is not a regular file");
@@ -620,6 +642,27 @@ export function dropRedundantRecallEchoes(messages, config = DEFAULT_CONFIG) {
 // 扩展：context 投影 + obs_recall 工具。归档目录由调用方注入（会话存储布局）。
 // ---------------------------------------------------------------------------
 
+// Read-only projection used by compaction estimates. Never archives, logs, or changes counters.
+export function previewObservationMessages(messages, root, options = {}) {
+  if (!root) return messages;
+  const config = resolveObservationConfig(options);
+  if (!config.foldEnabled) return messages;
+  let assistants = 0;
+  const projected = [...messages];
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message?.role === "assistant") assistants += 1;
+    if (!message || !isPureTextResult(message) || assistants < config.fullSends) continue;
+    const text = textFromResult(message);
+    if (Buffer.byteLength(text, "utf8") <= config.thresholdBytes) continue;
+    const echo = config.foldRecallEchoes ? parseRecallEcho(text) : undefined;
+    const observation = echo ? null : createObservation(message, root, config);
+    const pointer = echo ? recallPointerFor(echo, Buffer.byteLength(text, "utf8")) : placeholderFor(observation, config);
+    projected[i] = { ...message, content: [{ type: "text", text: pointer }] };
+  }
+  return projected;
+}
+
 export function observationPackExtension(root, stats = null, options = {}) {
   if (!root) throw new Error("observation-pack requires an archive directory");
   const config = resolveObservationConfig(options);
@@ -629,6 +672,7 @@ export function observationPackExtension(root, stats = null, options = {}) {
     const ledger = createLedger(root, { runId, ...(agentId ? { agentId } : {}), configVersion: config.configVersion });
     const verifyObject = createIntegrityVerifier();
     const loggedFolds = new Set();
+    const projectionCache = new Map();
     // 哪些投影真的折过东西（等着与供应商响应配对）。
     const foldedProjections = new Set();
     // 每次 context 投影一个序号：fold 事件与 projection 汇总共享它，
@@ -692,8 +736,9 @@ export function observationPackExtension(root, stats = null, options = {}) {
         let integrity = "unverified";
         try {
           // 取回前按 manifest 校验：等长改写 size 检查看不出来，只有全文哈希能发现。
-          integrity = await verifyObject(root, input.id, { strict: config.strictVerify });
-          const path = objectPath(root, input.id);
+          const verified = await verifyObject(root, input.id, { strict: config.strictVerify, snapshot: true });
+          integrity = verified.integrity;
+          const path = verified.bytes; // All modes read exactly the bytes whose hash was verified.
           if (input.query != null) {
             chunk = await searchRecall(path, input.query, input.contextLines ?? RECALL_DEFAULT_CONTEXT_LINES, limits);
           } else if (input.startLine != null) {
@@ -777,7 +822,7 @@ export function observationPackExtension(root, stats = null, options = {}) {
       let savedTokens = 0;
       let foldBatch = 0;
       let earliestFoldIndex = -1;
-      const memo = new Map(); // 每次投影内记忆化：同一工具调用只算一次 hash / 归档 / 占位符
+      const memo = projectionCache; // bounded, session-local cache; source equality and file metadata invalidate it
 
       for (const index of candidateIndexes) {
         const message = event.messages[index];
@@ -804,18 +849,25 @@ export function observationPackExtension(root, stats = null, options = {}) {
             continue;
           }
 
-          const memoKey = `${message.toolName}\0${message.toolCallId}\0${text.length}`;
+          // Tool identity alone is not a content version: compare actual text as well.
+          const memoKey = `${message.toolName}\0${message.toolCallId}`;
           let entry = memo.get(memoKey);
+          if (entry && entry.observation.text !== text) entry = undefined;
           if (!entry) {
             const observation = createObservation(message, root, config);
             if (!observation) continue;
             entry = { observation, placeholder: placeholderFor(observation, config), stored: false };
             memo.set(memoKey, entry);
+            if (memo.size > 256) memo.delete(memo.keys().next().value);
           }
           const { observation } = entry;
-          // 归档推迟到真正要折叠时：没折叠过的候选不再每轮白写一次盘。
+          if (entry.stored) {
+            const stat = await lstat(observation.filePath);
+            if (!stat.isFile() || stat.isSymbolicLink() || fileVersion(stat) !== entry.version) entry.stored = false;
+          }
           if (!entry.stored) {
             await ensureStored(observation);
+            entry.version = fileVersion(await lstat(observation.filePath));
             entry.stored = true;
           }
 

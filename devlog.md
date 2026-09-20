@@ -1,5 +1,14 @@
 # 开发记录
 
+## 2026-09-20 压缩审查 F01–F14 完整性与治理修复
+
+- 内容：为后台/原生阈值压缩建立所有权仲裁，保留 SDK overflow/manual 恢复；后台摘要接入共享 usage/gate 并持久化 purpose；统一收益比较的 OP 纯预览口径。摘要限制输入/输出、120 秒总时限及同源三次/30 秒尝试预算，关闭 SDK 双层 retry。
+- 证据与协议：完整消息文本与 JSON 快照移至 session 私有 `.sources`，异步 staging 发布、应用前 freshness 复核、失败保留原文；无 facts 也保存来源引用，删除与复制维护所有权。strict 新协议拒绝缺失/坏 facts 与超限，显式 NONE，旧历史兼容；禁止前摘叙述升级为原始证据，代码示例不拆协议。
+- OP：复用最新 master 已实现的 UTF-8 offset 对齐和 recall 回显指针；补跨请求有界缓存、内容/文件变化失效、manifest 校验模式与版本隔离，并让取回分页使用已验证的同一字节快照，消除校验/读路径错配。
+- 决策：旧共享 compaction-snapshots 无可靠所有权，不能全目录清除；新档案采用私有目录消除新增孤儿风险。token 采用保守估算，超限不静默截断；未执行真实付费模型请求或性能收益宣称。
+- 涉及文件：src/compaction.js、src/compaction-sources.js、src/observation-pack.js、src/pi.js、src/prompts.js、src/sessions.js、src/usage-stream.js，压缩/OP/usage 回归测试及 README.md、codebase-map 文档。
+- 验证：最终 `npm test` 全量 819 项，817 通过、0 失败、2 跳过；索引重建 238 个文件、0 个未登记，`git diff --check` 通过。
+
 ## 2026-09-20 Observation Pack 加固：取回粒度、完整性校验、指标口径与策略开关
 
 - 内容：按外部审查报告 OP-01～OP-14 逐条核验后落地修复。指标口径改同尺度（取回率＝被重新取回过的不同对象数 ÷ 折叠对象数，封顶 1，另报页数/失败数/回显折叠数）；`obs_recall` 加 `limit`（默认 4KB，小于 16KB 硬上限）、`startLine`/`lineLimit` 行范围、`query`+`contextLines` 大小写不敏感检索；取回回显不再归档成新对象而是折成指回原对象的小指针；对象旁写 sidecar manifest 并在取回前校验全文哈希（等长篡改可检出，结果按 size+mtime 缓存）；取回起点落在多字节字符中间时前移到字符边界并如实回报 offset；单行超摘录预算时 placeholder 退回 UTF-8 安全的字节截断，不再出现头尾摘录全空；折叠年龄改为纯推导（删掉可变 sentCounts）；归档推迟到首次真正折叠时才写盘；ledger 补 `runId`/`agentId`/`configVersion`、投影汇总（含最早折叠位置＝前缀缓存最早失效点）、供应商响应事件与取回失败事件；阈值等 8 项策略提为可配置并可经 `AXIOM_OBSERVATION_PACK`（JSON）覆盖；压缩前丢弃「同批既有原文又有其取回回显」的纯冗余回显。

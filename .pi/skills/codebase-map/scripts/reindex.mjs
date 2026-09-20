@@ -17,6 +17,10 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  * 未登记的文件会在 INDEX.md 里标 ⚠ 提醒补充。
  */
 const MODULE_INFO = {
+  "src/compaction-sources.js": "私有压缩来源目录复制与引用重映射",
+  "tests/compaction-integrity.test.js": "摘要仲裁、严格事实协议与无损来源回归",
+  "tests/compaction-sources.test.js": "复制来源独立性与删除原会话隔离回归",
+  "tests/observation-integrity.test.js": "OP纯预览、跨请求缓存及内容变更失效回归",
   "tests/usage-extension.test.js": "扩展真实依赖解析和生命周期注册冒烟",
   "extensions/usage-gate.ts": "外部pi窗口共享限流显式扩展入口",
   "tests/shared-gate.test.js": "远程取消、迟到租约归还与配置刷新",

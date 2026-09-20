@@ -16,7 +16,7 @@ export function wrapUsageStream(original, { service, identity = {}, createStream
         usage: message.usage, error: message.errorMessage ?? null,
       }));
       try {
-        requestId = await safe(() => service.store.begin({ ...identity, provider: model.provider, model: model.id, api: model.api }));
+        requestId = await safe(() => service.store.begin({ ...identity, source: identity.purpose ? `${identity.source ?? "unattributed"}:${identity.purpose}` : identity.source, provider: model.provider, model: model.id, api: model.api }));
         if (service.refresh) await safe(() => service.refresh());
         try { lease = await service.gate.acquire(model.provider, { signal: options.signal }); }
         catch (error) { if (options.signal?.aborted) throw error; }

@@ -1,7 +1,7 @@
 import { wrapUsageStream } from "./usage-stream.js";
 import { sessionBilling, usageRuntime } from "./session-billing.js";
 import { TITLE_INSTRUCTION } from "./prompts.js";
-import { observationPackExtension, createObservationStats, observationRuntime, resolveObservationConfig } from "./observation-pack.js";
+import { observationPackExtension, createObservationStats, observationRuntime, resolveObservationConfig, previewObservationMessages } from "./observation-pack.js";
 import {
   createAgentSession,
   estimateTokens,
@@ -9,7 +9,7 @@ import {
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { capabilityLoader, discoverCapabilities, refreshProjectSkills, MAIN_EXCLUDED_SKILLS } from "./capabilities.js";
-import { createBackgroundCompaction, entryIdFor, normalizeCompaction, summarizedEntryIds } from "./compaction.js";
+import { createBackgroundCompaction, compactionArbitration, entryIdFor, normalizeCompaction, summarizedEntryIds } from "./compaction.js";
 import { resolveCompaction } from "./protocol.js";
 import { WRAP_UP_PROMPT, budgetSystemPrompt } from "./task-budget.js";
 import { canResume, createAutoRetry, dropFailedAssistant } from "./retry.js";
@@ -221,7 +221,11 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
     // 原文归档在 selection.observationsDir，面板统计挂 agentRuntime。
     // 策略经环境变量注入（见 observationPackOptions），ledger 记 agentId 区分主/子代理。
     const observations = selection.observationsDir ? createObservationStats() : null;
-    const extraFactories = [];
+    const compactionArbiter = { controller: null };
+    const extraFactories = [{
+      name: "axiom-compaction-arbiter",
+      factory: (pi) => pi.on("session_before_compact", (event) => compactionArbitration(compactionArbiter.controller, event)),
+    }];
     if (memoryState || typeof executionContext === "function")
       extraFactories.push(memoryExtension(memoryState, memory, policy, executionContext));
     if (selection.observationsDir)
@@ -342,8 +346,15 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       modelRuntime,
       available,
       config: initialCompaction,
+      previewMessages: (messages) => previewObservationMessages(messages, selection.observationsDir, observationPackOptions()),
+      wrapSummaryStream: usage ? (stream) => wrapUsageStream(stream, {
+        service: usage,
+        identity: { ...(selection.audit ?? { source: "unattributed" }), purpose: "compaction" },
+        createStream: () => new AssistantMessageEventStream(),
+      }) : undefined,
       onEvent: emitAxiom,
     });
+    compactionArbiter.controller = compactionCtrl;
     const retry = createAutoRetry({
       session,
       emit: emitAxiom,

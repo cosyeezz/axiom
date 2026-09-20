@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { copySourceArchive, rewriteSourceRefs } from "./compaction-sources.js";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { realpath, stat, readFile, mkdir, writeFile, copyFile, rm, readdir } from "node:fs/promises";
@@ -929,7 +930,9 @@ export class Sessions {
     try { header = JSON.parse(lines[0]); }
     catch { throw new Error("会话历史文件损坏，无法复制"); }
     const mainCopy = join(storageDir, `${newId}.jsonl`);
-    await writeFile(mainCopy, [JSON.stringify({ ...header, id: newId, cwd }), ...lines.slice(1)].join("\n"), { mode: 0o600 });
+    const sourceMappings = [[file, mainCopy], ...(saved?.tasks || []).filter((task) => task.sessionFile && existsSync(task.sessionFile)).map((task) => [task.sessionFile, join(tasksDir, `${task.id}.jsonl`)])];
+    await copySourceArchive(file, mainCopy);
+    await writeFile(mainCopy, [JSON.stringify({ ...header, id: newId, cwd }), ...lines.slice(1).map((line) => JSON.stringify(rewriteSourceRefs(JSON.parse(line), sourceMappings)))].join("\n"), { mode: 0o600 });
     // 子任务历史：逐个复制到副本自己的 -tasks 目录；文件缺失（历史已丢失）的旧任务保留
     // 记录但不再引用源路径——副本绝不能读回源会话的文件，否则删除源会把副本变成坏引用。
     const tasks = [];
@@ -937,8 +940,11 @@ export class Sessions {
       const record = { ...task };
       if (record.sessionFile && existsSync(record.sessionFile)) {
         const target = join(tasksDir, `${record.id}.jsonl`);
-        try { await copyFile(record.sessionFile, target); }
-        catch (error) { throw new Error(`复制子任务历史失败：${error.message}`); }
+        try {
+          await copySourceArchive(record.sessionFile, target);
+          const taskLines = (await readFile(record.sessionFile, "utf8")).split("\n").filter((line) => line.trim());
+          await writeFile(target, taskLines.map((line) => JSON.stringify(rewriteSourceRefs(JSON.parse(line), sourceMappings))).join("\n"), { mode: 0o600 });
+        } catch (error) { throw new Error(`复制子任务历史失败：${error.message}`); }
         record.sessionFile = target;
       } else delete record.sessionFile;
       // 副本不接管未完成的子任务；通知也一律视为已消费：用户在源会话已看过结果，
@@ -2068,7 +2074,10 @@ export class Sessions {
         this.deleteRecords(id);
         const storageDir = this.storagePath && join(this.storagePath, createHash("sha256").update(process.platform === "win32" ? item.cwd.toLowerCase() : item.cwd).digest("hex"));
         if (storageDir) {
-          if (item.sessionFile) await rm(item.sessionFile, { force: true });
+          if (item.sessionFile) {
+            await rm(item.sessionFile, { force: true });
+            await rm(`${item.sessionFile}.sources`, { recursive: true, force: true });
+          }
           await rm(join(storageDir, `${id}-tasks`), { recursive: true, force: true });
           await rm(join(storageDir, `${id}-observations`), { recursive: true, force: true });
           await rm(join(storageDir, `${id}.json`), { force: true });
@@ -2094,7 +2103,11 @@ export class Sessions {
       // 删除顺序：先删库记录再清理文件；若中途崩溃，标记过的旧 JSON 不会复活会话。
       this.deleteRecords(id);
       if (item.storageDir) {
-        if (item.agent.sessionFile?.()) await rm(item.agent.sessionFile(), { force: true });
+        const sessionFile = item.agent.sessionFile?.();
+        if (sessionFile) {
+          await rm(sessionFile, { force: true });
+          await rm(`${sessionFile}.sources`, { recursive: true, force: true });
+        }
         await rm(join(item.storageDir, `${id}-tasks`), { recursive: true, force: true });
         await rm(join(item.storageDir, `${id}-observations`), { recursive: true, force: true });
         // 旧版磁盘快照兜底清理（已迁移标记的目录不会再被扫描）。

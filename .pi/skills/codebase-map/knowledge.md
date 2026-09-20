@@ -693,3 +693,9 @@
 - 根因：runtime.billing 只代表单代理，当前页任务不覆盖全会话；两个详情各自设置 vh 上限仍会叠加高度。
 - 修复：src/session-billing.js combinedBilling 纯函数合并主代理及全部任务；src/sessions.js 快照和 session.billing 事件同口径，恢复从各自 JSONL getEntries 重算，缺文件回退持久化的最后已知账；public/index.html/app.js/style.css 将详情移入独立原生 dialog，内容只由弹窗主体滚动。
 - 防再犯：不在前端按消息/任务页累计费用，不改变 runtime.billing 的单代理语义；测试同时覆盖实时、冷快照、分页、恢复和缺文件。新增前端辅助函数避免与 eval 测试拼接模块的顶层名称冲突；浏览器需验证真实 ESM 加载、移动端展开态、焦点和关闭返回。
+
+### 2026-09-20 压缩证据与请求治理
+- 症状：摘要旁路计费、旧摘要冒充证据、截断快照、OP 重复扫描。
+- 根因：压缩所有权、请求账、证据来源和投影口径分离。
+- 修复：compaction.js 严格 facts/完整私有快照/预算；pi.js 仲裁与 usage 注入；compaction-sources.js 复制来源；observation-pack.js 纯预览和缓存失效、校验后同字节取回。
+- 防再犯：新候选严格、旧记录兼容；校验与读取不能打开不同对象；收益预览不可有副作用；失败请求也入账。

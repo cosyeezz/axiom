@@ -24,6 +24,20 @@ function fixture(original, { brokenAudit = false, rpm = 0 } = {}) {
   }, gate: { limits: { p: { rpm } }, acquire: async () => ({ release() { released++; } }), cooldown() {} } };
   return { run: wrapUsageStream(original, { service, createStream }), records, released: () => released, attempts: () => attempts };
 }
+test("摘要 purpose 持久到 source，失败候选仍只记一笔请求", async () => {
+  const starts = [], finishes = [];
+  let releases = 0;
+  const service = { store: { begin(value) { starts.push(value); return "summary-request"; }, admit() {}, finish(id, value) { finishes.push({ id, ...value }); } }, gate: { limits: {}, acquire: async () => ({ release() { releases++; } }) } };
+  const run = wrapUsageStream(() => { const stream = createStream(); stream.push({ type: "done", message }); return stream; }, { service, identity: { source: "main", purpose: "compaction", sessionId: "s" }, createStream });
+  await run(model, {}).result();
+  await Promise.resolve();
+  assert.equal(starts.length, 1);
+  assert.equal(starts[0].source, "main:compaction");
+  assert.equal(finishes.length, 1);
+  assert.equal(finishes[0].usage.cost.total, 1);
+  assert.equal(releases, 1);
+});
+
 test("完整转发终态、result和usage，归还令牌", async () => {
   const f = fixture(() => { const stream = createStream(); stream.push({ type: "done", message }); return stream; });
   const out = f.run(model, {}); const events = []; for await (const event of out) events.push(event);

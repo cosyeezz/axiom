@@ -51,7 +51,7 @@ test("增量展示与完整交接分离，格式异常只丢元数据不污染�
   // 代码围栏里的标签是讨论内容不是协议；整份输出被围栏包住时退回原文扫描，元数据照样拆出
   const fenced = "```\n<axiom_compact_title>示例</axiom_compact_title>\n```";
   assert.deepEqual(parseSummaryOutput(`${fenced}\n${tags}`), { progress, summary: fenced });
-  assert.deepEqual(parseSummaryOutput(`\`\`\`markdown\n${text}\n\`\`\``), { progress, summary: `\`\`\`markdown\n${body}\n\`\`\`` });
+  assert.deepEqual(parseSummaryOutput(`\`\`\`markdown\n${text}\n\`\`\``), { progress, summary: body });
   for (const value of ["旧摘要", `AXIOM_PROGRESS ${JSON.stringify(progress)}\n旧格式摘要`])
     assert.deepEqual(parseSummaryOutput(value), { summary: value });
   const request = summaryRequest("本次新增发现", "历史约束");
@@ -220,7 +220,8 @@ async function startFakeLlmServer({ hold } = {}) {
             choices: [{ index: 0, delta, finish_reason: finish }],
           })}\n\n`,
         );
-      chunk({ role: "assistant", content: "ok" }, null);
+      const isSummary = body.includes("axiom_compact_facts");
+      chunk({ role: "assistant", content: isSummary ? "ok\n<axiom_compact_facts>NONE</axiom_compact_facts>" : "ok" }, null);
       chunk({}, "stop");
       res.write("data: [DONE]\n\n");
       res.end();
@@ -724,7 +725,7 @@ test("summarizeWithPiSession: signal 取消会真实中断后台 LLM 的 HTTP �
     const controller = new AbortController();
     const promise = summarizeWithPiSession({
       messages: [userMsg("hello")],
-      model: fakeModel(`http://127.0.0.1:${fake.port}/v1`),
+      model: { ...fakeModel(`http://127.0.0.1:${fake.port}/v1`), contextWindow: 64000 },
       thinking: "off",
       modelRuntime,
       signal: controller.signal,
@@ -748,10 +749,11 @@ test("真实 SDK loop：prompt 触发 turn_end 后台摘要，下一次 prompt �
   try {
     const { session, modelRuntime } = await createLoopSession(dir, fake.port);
     const events = [];
+    session.model.contextWindow = 64000;
     compaction = createBackgroundCompaction({
       session,
       modelRuntime, // 摘要会话复用同一 runtime（临时 auth）
-      config: enabledConfig,
+      config: { ...enabledConfig, tokenThreshold: 700 },
       onEvent: (event) => events.push(event),
     });
     session.subscribe((event) => {
@@ -891,7 +893,8 @@ test("validateFacts: 逐字对账（行号/漏检/前摘命中/bullet 降级/ded
   assert.equal(bad.facts.length, 1, "其余引文仍核验记账");
 
   const fromPrev = validateFacts(["/old/config.json"], "", "上轮已确认路径 /old/config.json");
-  assert.deepEqual(fromPrev.facts, [{ quote: "/old/config.json", line: null }], "仅前摘命中：无行号");
+  assert.equal(fromPrev.ok, false, "上轮摘要叙述不能升级为原始证据");
+  assert.deepEqual(fromPrev.facts, []);
   const preferConv = validateFacts(["/src/a.js"], corpus, "前摘里也有 /src/a.js");
   assert.equal(preferConv.facts[0].line, 1, "会话原文优先于前摘");
 
@@ -936,14 +939,14 @@ test("合法 facts：附录随摘要进上下文，原文快照落盘，details 
     // 附录：摘要原文在前，随后带行号的引文清单
     assert.ok(data.summary.startsWith("S:2\n"), "摘要原文在前");
     assert.ok(data.summary.includes("已核验引文"));
-    assert.ok(data.summary.includes(`- line=1 ${JSON.stringify("a".repeat(80))}`));
-    assert.ok(data.summary.includes(`- line=3 ${JSON.stringify("b".repeat(80))}`));
-    assert.ok(data.snapshotPath.endsWith(`.txt`) && data.snapshotPath.includes("compaction-snapshots"));
+    assert.ok(data.summary.includes(`- line=2 ${JSON.stringify("a".repeat(80))}`));
+    assert.ok(data.summary.includes(`- line=6 ${JSON.stringify("b".repeat(80))}`));
+    assert.ok(data.snapshotPath.endsWith(`.txt`) && data.snapshotPath.includes(".sources"));
     // 快照：真实存在且内容是渲染原文（行号指向它）
     assert.ok(existsSync(data.snapshotPath));
     const snapshot = readFileSync(data.snapshotPath, "utf8");
-    assert.ok(snapshot.includes("[User]: " + "a".repeat(80)));
-    assert.ok(snapshot.includes("[Assistant]: " + "b".repeat(80)));
+    assert.ok(snapshot.includes("ROLE user\n" + "a".repeat(80)));
+    assert.ok(snapshot.includes("ROLE assistant\n" + "b".repeat(80)));
     assert.ok(data.summary.includes(`原文快照: ${data.snapshotPath}`), "回读指引随附录写入");
     // 落盘 details 同构
     const leaf = session.sessionManager.getLeafEntry();
@@ -988,13 +991,17 @@ test("编造引文：整份摘要作废不落盘，下个 turn_end 自然重试"
     assert.ok(!session.sessionManager.getBranch().some((entry) => entry.type === "compaction"));
     assert.equal(compaction.getStatus().status, "failed");
     assert.ok(events.some((e) => e.type === "agent.compaction.status" && /逐字/.test(e.data.message)));
-    // 失败释放 flight，下个 turn_end 重新发起并通过
+    // 同源失败进入冷却，不允许每一轮立即付费重试。配置变更显式重置预算。
+    await compaction.onTurnEnd();
+    await settle();
+    assert.equal(calls.length, 1);
+    compaction.setConfig({ ...enabledConfig, tokenThreshold: 1 });
     await compaction.onTurnEnd();
     await settle();
     assert.equal(calls.length, 2);
     const data = await compaction.maybeApply();
     assert.ok(data, "重试应成功");
-    assert.ok(data.summary.includes(`- line=3 ${JSON.stringify("b".repeat(80))}`));
+    assert.ok(data.summary.includes(`- line=6 ${JSON.stringify("b".repeat(80))}`));
   } finally {
     compaction?.dispose();
     cleanup();
