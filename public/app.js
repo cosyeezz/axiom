@@ -655,7 +655,7 @@ function updateSettingsAvailability() {
   for (const fieldset of $("create-capabilities").children) fieldset.disabled = unavailable || defaultsMode === "session";
   for (const node of $("create-compaction").querySelectorAll("input, select, button")) node.disabled = unavailable;
   for (const node of $("create-retry").querySelectorAll("input, textarea, select, button")) node.disabled = unavailable || defaultsMode === "session";
-  for (const id of ["open-workspace-config", "open-session-config", "defaults-delete"]) $(id).disabled = unavailable;
+  $("defaults-delete").disabled = unavailable;
   const remoteLocked = remoteView.local === false;
   for (const id of ["remote-enabled", "remote-email", "remote-save"])
     $(id).disabled = unavailable || remoteLocked;
@@ -966,6 +966,8 @@ $("settings-service-tab").onclick = () => showSettingsPanel("service");
 $("settings-usage-tab").onclick = () => showSettingsPanel("usage");
 // 顶部连接状态可点击直达「连接」面板（切地址）；顶部只保留状态/DEV/版本，不暴露源码路径。
 $("status").onclick = () => {
+  defaultsMode = "global"; defaultsScope = ""; defaultsTarget = null;
+  renderDefaultsScope();
   showSettingsPanel("connection");
   if (!$("settings").open) $("settings").showModal();
 };
@@ -1005,6 +1007,7 @@ $("connection-form").onsubmit = (e) => {
 };
 $("open-settings").onclick = () => {
   defaultsMode = "global"; defaultsScope = ""; defaultsTarget = null;
+  renderDefaultsScope();
   showSettingsPanel(models.length ? "defaults" : "models");
   region("设置与详情", updateSettingsAvailability);
   if (!$("settings").open) $("settings").showModal();
@@ -3768,7 +3771,7 @@ function renderSessions() {
       ["hide", hidden ? "移回进行中" : "标记已完成", hidden ? "up" : "check"],
       ["duplicate", "复制会话", "duplicate"],
       ["copy", "复制文件", "copy"],
-      ["configure", "配置", "edit"],
+      ["configure", "配置", "settings"],
       ["rename", "重命名", "edit"],
       ["delete", "删除会话", "trash"],
     ]) {
@@ -3891,7 +3894,7 @@ function renderSessions() {
     configBtn.title = `配置工作空间：${origCwd}`;
     configBtn.setAttribute("aria-label", configBtn.title);
     configBtn.setAttribute("aria-haspopup", "dialog");
-    configBtn.innerHTML = actionIcon("edit");
+    configBtn.innerHTML = actionIcon("settings");
     configBtn.disabled = !connected || changing;
     configBtn.onclick = (event) => {
       event.preventDefault(); event.stopPropagation();
@@ -4331,9 +4334,23 @@ let creationLoad = 0;
 // 配置按入口限定作用域：全局默认、当前工作空间、当前会话。
 let defaultsScope = "", defaultsMode = "global", defaultsTarget = null;
 function renderDefaultsScope() {
+  const scoped = defaultsMode !== "global";
+  $("settings").classList.toggle("scoped", scoped);
+  $("selection-copy-title").closest("section").hidden = scoped;
+  $("defaults-preview").closest("section").hidden = scoped;
+  const panel = $("defaults-panel");
+  const editor = $("defaults-title").closest("section");
+  if (scoped) panel.prepend(editor);
+  else panel.append(editor);
+  $("settings").querySelector(".settings-nav").hidden = scoped;
+  $("settings-title").textContent = defaultsMode === "session" ? "当前会话配置" : defaultsMode === "workspace" ? "工作空间配置" : "设置";
+  $("defaults-workspace-help").textContent = defaultsMode === "session"
+    ? "仅保存到当前会话，不修改工作空间配置或全局默认。"
+    : defaultsMode === "workspace" ? "仅保存到下方工作空间，用于该空间之后的新会话；不修改全局默认或已有会话。"
+    : "未单独配置的工作空间使用全局默认。工作空间配置从侧栏工作空间右侧进入；会话配置从侧栏会话下拉菜单进入。";
   $("queue-type").closest("section").hidden = defaultsMode !== "session";
   $("task-budget-title").closest("section").hidden = defaultsMode !== "global";
-  $("create-defaults-help").hidden = defaultsMode === "session";
+  $("create-defaults-help").hidden = scoped;
   $("config-hot-title").textContent = defaultsMode === "session" ? "热更新区 · 下次请求" : "热更新项的默认值 · 新会话采用";
   $("defaults-scope-label").textContent = defaultsMode === "session" ? "仅当前会话" : defaultsScope ? `工作空间 · ${defaultsScope}` : "全局默认";
   $("defaults-title").textContent = defaultsMode === "session" ? "当前会话配置" : defaultsScope ? "当前工作空间配置" : "默认配置";
@@ -4522,18 +4539,16 @@ async function openSessionConfiguration(target) {
   if (sessionId === target && connected && !changing) await openScopedConfiguration("session");
 }
 async function openScopedConfiguration(mode, workspace = currentCwd) {
-  $("session-config-menu").open = false;
   if (!connected || changing || !sessionId) return;
   defaultsMode = mode;
   defaultsScope = workspace;
   defaultsTarget = sessionId;
-  $("session-config-menu").open = false;
+  renderDefaultsScope();
   showSettingsPanel("defaults");
   if (!$("settings").open) $("settings").showModal();
   await openDefaults();
 }
-$("open-workspace-config").onclick = () => openScopedConfiguration("workspace");
-$("open-session-config").onclick = () => openScopedConfiguration("session");
+
 
 $("defaults-delete").onclick = async () => {
   const scope = defaultsScope;

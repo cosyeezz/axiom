@@ -969,6 +969,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     await settle();
     assert.equal($("defaults-panel").hidden, false, "设置默认打开默认新会话面板");
     assert.equal(configuredPaths(), "全局默认");
+    assert.equal($("settings-title").textContent, "设置");
+    assert.equal($("settings").querySelector(".settings-nav").hidden, false);
+    for (const id of ["open-workspace-config", "open-session-config", "session-config-menu"]) assert.equal($(id), null, "不遗留页头配置入口");
     assert.equal($("defaults-delete").hidden, true, "全局默认没有可删除的目录配置");
     const switchedBefore = sessionsSwitched();
     $("settings").close();
@@ -979,6 +982,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     workspaceConfig.click();
     assert.equal(workspaceGroup.open, wasOpen, "配置按钮不切换工作空间折叠状态");
     await settle();
+    assert.equal($("settings-title").textContent, "工作空间配置");
+    assert.equal($("settings").querySelector(".settings-nav").hidden, true);
+    assert.match($("defaults-workspace-help").textContent, /不修改全局默认/);
     const workspace = states[0].cwd;
     assert.equal(sessionsSwitched(), switchedBefore, "切换配置范围不 attach、不新建会话");
     assert.equal(window.sessionState().sessionId, "a", "当前会话不变");
@@ -1012,6 +1018,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     sessionConfig.click();
     await settle();
     assert.equal($("defaults-scope-label").textContent, "仅当前会话");
+    assert.equal($("settings-title").textContent, "当前会话配置");
+    assert.equal($("settings").querySelector(".settings-nav").hidden, true);
+    assert.match($("defaults-workspace-help").textContent, /不修改工作空间配置或全局默认/);
     assert.equal($("create-capabilities").querySelector("fieldset").disabled, true);
     $("create-main-thinking").value = "off";
     $("create-main-thinking").dispatchEvent(new window.Event("change", { bubbles: true }));
@@ -2031,7 +2040,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     assert.equal($("defaults-scope-label").textContent, "全局默认");
     assert.equal($("defaults-delete").hidden, true, "全局默认没有可删除的目录配置");
     $("settings").close();
-    $("open-workspace-config").click();
+    $("sessions").querySelector(".workspace-group.current .workspace-config-btn").click();
     await settle();
     const scopedCompaction = () => $("create-compaction");
     assert.equal(scopedCompaction().querySelector("input[type=checkbox]").checked, true, "目录配置加载自己的压缩开关");

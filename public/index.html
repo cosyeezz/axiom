@@ -53,8 +53,8 @@
             ☰
           </button>
           <div class="header-title">
-            <div class="title-row"><button type="button" id="session-alert" class="session-attention-dot" title="任务已停下，点击知道了" aria-label="任务已停下，点击标记为已查看" hidden></button><h1 id="session-title">新会话</h1><details id="session-config-menu"><summary aria-label="会话菜单">▾</summary><button type="button" id="open-session-config" class="secondary">配置当前会话</button></details></div>
-            <div class="workspace-location"><span id="workspace-label"></span><button id="copy-workspace" class="icon-button" title="复制工作空间路径" aria-label="复制工作空间路径"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h11v12H9ZM15 9V3H4v12h5"/></svg></button><button id="reveal-workspace" class="icon-button" title="在资源管理器中打开" aria-label="在资源管理器中打开工作空间"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l3 3h9v4M3 7v13h16l3-9H7l-4 9"/></svg></button><button type="button" id="open-workspace-config" class="icon-button" title="当前工作空间配置" aria-label="当前工作空间配置">⚙</button><span id="workspace-feedback" class="sr-only" role="status"></span></div>
+            <div class="title-row"><button type="button" id="session-alert" class="session-attention-dot" title="任务已停下，点击知道了" aria-label="任务已停下，点击标记为已查看" hidden></button><h1 id="session-title">新会话</h1></div>
+            <div class="workspace-location"><span id="workspace-label"></span><button id="copy-workspace" class="icon-button" title="复制工作空间路径" aria-label="复制工作空间路径"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h11v12H9ZM15 9V3H4v12h5"/></svg></button><button id="reveal-workspace" class="icon-button" title="在资源管理器中打开" aria-label="在资源管理器中打开工作空间"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l3 3h9v4M3 7v13h16l3-9H7l-4 9"/></svg></button><span id="workspace-feedback" class="sr-only" role="status"></span></div>
           </div>
           <div class="service-controls">
             <select id="conversation-font-scale" aria-label="会话字号" title="会话字号：仅调整会话内容">
@@ -349,7 +349,7 @@
             <p id="defaults-scope-label">全局默认</p>
             <button type="button" id="defaults-delete" class="secondary" hidden>恢复全局默认</button>
           </div>
-          <p id="defaults-workspace-help">未单独配置的工作空间使用全局默认。工作空间配置请从路径右侧进入；当前会话配置请从标题下拉菜单进入。</p>
+          <p id="defaults-workspace-help">未单独配置的工作空间使用全局默认。工作空间配置从侧栏工作空间右侧进入；会话配置从侧栏会话下拉菜单进入。</p>
           <div id="defaults-editor">
             <form id="create-form" class="settings-body">
               <p id="create-defaults-help">自动保存成功后，符合此配置范围的新会话使用这些设置。默认主代理模型沿用最近成功调整的主模型；能力清单按对应工作目录读取；自定义技能按来源保存：全局技能跨项目共用，项目技能仅用于当前工作目录。修改默认配置只影响新会话，不会自动改为全部能力，也不覆写已有会话。</p>
