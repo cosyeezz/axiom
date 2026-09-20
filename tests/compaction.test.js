@@ -14,6 +14,7 @@ import { compactionDefaults } from "../src/protocol.js";
 import { createObservation } from "../src/observation-pack.js";
 import {
   createBackgroundCompaction,
+  describeCompactionError,
   entryIdFor,
   normalizeCompaction,
   overCompactionThreshold,
@@ -24,6 +25,22 @@ import {
   validateFacts,
   DEFAULT_COMPACTION_CONFIG,
 } from "../src/compaction.js";
+
+test("压缩错误摘要单行限长，隐藏常见凭据，不传递堆栈", () => {
+  assert.equal(describeCompactionError(new Error("401 Unauthorized\n检查配置")), "401 Unauthorized 检查配置");
+  assert.equal(describeCompactionError(null), "未知错误");
+  assert.equal(describeCompactionError(""), "未知错误");
+  for (const text of ["https://user:secret@host/path", "key=secret", "api_key: secret", '"apiKey":"secret"', "Bearer secret", "sk-secret", "AIzaSecret", "x".repeat(24)]) {
+    const result = describeCompactionError(text);
+    assert.ok(result.includes("[已脱敏]"), result);
+    assert.ok(!result.includes("secret"), result);
+  }
+  assert.equal(describeCompactionError("错误".repeat(200)).length, 200);
+  assert.equal(describeCompactionError("🙂".repeat(201)), "🙂".repeat(200));
+  const error = new Error("safe reason");
+  error.stack = "private stack";
+  assert.equal(describeCompactionError(error), "safe reason");
+});
 
 test("增量展示与完整交接分离，格式异常只丢元数据不污染正文", () => {
   const progress = { title: "确认通知缺口", description: "发现已通知不等于已读，尚未修复。" };
@@ -467,7 +484,8 @@ test("单 flight：同一段时间多次 turn_end 只发起一次摘要", async 
   }
 });
 
-test("摘要失败：保留原文，不落盘，及时报告失败", async () => {
+test("摘要失败：保留原因与原文，指数冷却并允许配置修正后重试", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1000 });
   const { session, cleanup } = await createTestSession();
   let compaction;
   try {
@@ -490,10 +508,59 @@ test("摘要失败：保留原文，不落盘，及时报告失败", async () =>
     assert.ok(!session.sessionManager.getBranch().some((entry) => entry.type === "compaction"));
     assert.equal(events.filter((e) => e.type === "agent.compaction").length, 0);
     assert.equal(compaction.getStatus().status, "failed");
-    // 失败后 flight 释放，可以再次触发
+    assert.match(compaction.getStatus().message, /boom.*30 秒/);
+    const starts = () => events.filter((e) => e.data.status === "summarizing").length;
     await compaction.onTurnEnd();
     await settle();
+    assert.equal(starts(), 1, "冷却期间不重复请求");
+    t.mock.timers.tick(30000);
+    await compaction.onTurnEnd();
+    await settle();
+    assert.equal(starts(), 2);
+    assert.match(compaction.getStatus().message, /60 秒/);
+    for (const [elapsed, next] of [[60000, 120], [120000, 240], [240000, 300], [300000, 300]]) {
+      t.mock.timers.tick(elapsed);
+      await compaction.onTurnEnd();
+      await settle();
+      assert.match(compaction.getStatus().message, new RegExp(`${next} 秒`));
+    }
+    compaction.setConfig({ ...enabledConfig, thinking: "low" });
+    await compaction.onTurnEnd();
+    await settle();
+    assert.match(compaction.getStatus().message, /30 秒/);
+    assert.equal(starts(), 7);
     assert.equal(await compaction.maybeApply(), null);
+  } finally {
+    compaction?.dispose();
+    cleanup();
+  }
+});
+
+test("启动与应用失败展示具体原因，冷却期间保留失败状态", async () => {
+  const { session, cleanup } = await createTestSession();
+  let compaction;
+  try {
+    seed(session, [userMsg(big("a")), assistantMsg(big("b")), userMsg(big("c"))]);
+    compaction = createBackgroundCompaction({ session, config: { ...enabledConfig, model: "missing/model" } });
+    await compaction.onTurnEnd();
+    assert.match(compaction.getStatus().message, /无法启动.*Unknown compaction model.*30 秒/);
+    compaction.setConfig(enabledConfig);
+    compaction.dispose();
+    compaction = createBackgroundCompaction({ session, config: enabledConfig, summarize: async () => ({ summary: "short" }) });
+    await compaction.onTurnEnd();
+    await settle();
+    const before = session.messages.slice();
+    const original = session.sessionManager.appendCompaction;
+    session.sessionManager.appendCompaction = () => { throw new Error("disk unavailable"); };
+    try {
+      assert.equal(await compaction.maybeApply(), null);
+      assert.match(compaction.getStatus().message, /应用失败.*disk unavailable.*30 秒/);
+      assert.deepEqual(session.messages, before);
+      await compaction.onTurnEnd();
+      assert.equal(compaction.getStatus().status, "failed");
+    } finally {
+      session.sessionManager.appendCompaction = original;
+    }
   } finally {
     compaction?.dispose();
     cleanup();
@@ -715,6 +782,38 @@ async function createLoopSession(dir, port) {
   });
   return { session, modelRuntime };
 }
+
+test("summarizeWithPiSession: 真实 HTTP 401 保留模型错误并隐藏密钥", async () => {
+  let requests = 0;
+  const server = createServer((_req, res) => {
+    requests++;
+    res.writeHead(401, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: { message: "Unauthorized: incorrect API key sk-private-secret", type: "invalid_request_error" } }));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const dir = mkdtempSync(join(tmpdir(), "axiom-compaction-error-"));
+  let session;
+  try {
+    const created = await createLoopSession(dir, server.address().port);
+    session = created.session;
+    await assert.rejects(summarizeWithPiSession({
+      messages: [userMsg("hello")],
+      model: session.model,
+      thinking: "off",
+      modelRuntime: created.modelRuntime,
+    }), (error) => {
+      assert.match(error.message, /stopReason=error/);
+      assert.match(error.message, /Unauthorized/);
+      assert.ok(!error.message.includes("sk-private-secret"));
+      return true;
+    });
+    assert.equal(requests, 1, "401 不在 SDK 中重复请求");
+  } finally {
+    session?.dispose();
+    await new Promise((resolve) => server.close(resolve));
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("summarizeWithPiSession: signal 取消会真实中断后台 LLM 的 HTTP 请求", async () => {
   const fake = await startHangingLlmServer();
@@ -961,7 +1060,8 @@ test("合法 facts：附录随摘要进上下文，原文快照落盘，details 
   }
 });
 
-test("编造引文：整份摘要作废不落盘，下个 turn_end 自然重试", async () => {
+test("编造引文：整份摘要作废不落盘，冷却后回合边界重试", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1000 });
   const { session, cleanup } = await createTestSession();
   let compaction;
   try {
@@ -974,6 +1074,7 @@ test("编造引文：整份摘要作废不落盘，下个 turn_end 自然重试"
       config: enabledConfig,
       summarize: async ({ messages }) => {
         calls.push(messages.length);
+        if (calls.length > 2) throw new Error("failed again");
         return calls.length === 1
           ? { summary: "S:3", facts: ["a".repeat(80), "这条引文在原文中不存在"], usage: { input: 10, output: 5 } }
           : { summary: "S:3", facts: ["b".repeat(80)], usage: { input: 10, output: 5 } };
@@ -988,13 +1089,21 @@ test("编造引文：整份摘要作废不落盘，下个 turn_end 自然重试"
     assert.ok(!session.sessionManager.getBranch().some((entry) => entry.type === "compaction"));
     assert.equal(compaction.getStatus().status, "failed");
     assert.ok(events.some((e) => e.type === "agent.compaction.status" && /逐字/.test(e.data.message)));
-    // 失败释放 flight，下个 turn_end 重新发起并通过
+    await compaction.onTurnEnd();
+    assert.equal(calls.length, 1, "引文核验失败也受冷却保护");
+    t.mock.timers.tick(30000);
+    // 冷却后在回合边界重新发起并通过
     await compaction.onTurnEnd();
     await settle();
     assert.equal(calls.length, 2);
     const data = await compaction.maybeApply();
     assert.ok(data, "重试应成功");
     assert.ok(data.summary.includes(`- line=3 ${JSON.stringify("b".repeat(80))}`));
+    seed(session, [userMsg(big("d")), assistantMsg(big("e")), userMsg(big("f"))]);
+    await compaction.onTurnEnd();
+    await settle();
+    assert.equal(compaction.getStatus().status, "failed");
+    assert.match(compaction.getStatus().message, /30 秒/, "成功应用后失败计数清零");
   } finally {
     compaction?.dispose();
     cleanup();

@@ -289,7 +289,7 @@ export async function summarizeWithPiSession({ messages, previousSummary, model,
       .join("\n")
       .trim();
     if (last?.stopReason !== "stop" || !summary)
-      throw new Error(`Summarization failed (stopReason=${last?.stopReason ?? "none"})`);
+      throw new Error(`Summarization failed (stopReason=${last?.stopReason ?? "none"}): ${describeCompactionError(last?.errorMessage || (!summary ? "模型未返回摘要正文" : "模型未正常完成摘要"))}`);
     return { ...parseSummaryOutput(summary), usage: last.usage };
   } finally {
     try {
@@ -315,6 +315,19 @@ export async function summarizeWithPiSession({ messages, previousSummary, model,
  * - 取消：cancel()（setConfig 变化 / dispose 时自动调用，pi wrapper 的 abort 也应调用）
  *   通过 AbortController 信号中断后台真实 LLM 请求。
  */
+// 错误仅展示单行摘要，不传播堆栈；先脱敏再截断，避免截断凭据后无法识别。
+export function describeCompactionError(error) {
+  const message = String(error?.message ?? error ?? "未知错误")
+    .replace(/\bhttps?:\/\/[^\s@/]+@/gi, "https://[已脱敏]@")
+    .replace(/\bBearer\s+[^\s"',;]+/gi, "Bearer [已脱敏]")
+    .replace(/((?:[?&]|\b)(?:api[-_]?key|key|token|authorization)\s*["']?\s*[:=]\s*["']?)[^\s"'&,;]+/gi, "$1[已脱敏]")
+    .replace(/\b(?:sk-[\w-]+|AIza[\w-]+)\b/g, "[已脱敏]")
+    .replace(/[A-Za-z0-9+/=_-]{20,}/g, "[已脱敏]")
+    .replace(/[\s\x00-\x1f\x7f]+/g, " ")
+    .trim();
+  return message ? Array.from(message).slice(0, 200).join("") : "未知错误";
+}
+
 export function createBackgroundCompaction({
   session,
   modelRuntime,
@@ -328,6 +341,14 @@ export function createBackgroundCompaction({
   let controller = null; // 在途摘要的 AbortController
   let disposed = false;
   let status = null;
+  let failures = 0;
+  let retryAt = 0;
+  function resetRetry() { failures = 0; retryAt = 0; }
+  function fail(message, error) {
+    const delay = Math.min(300000, 30000 * 2 ** Math.min(failures++, 4));
+    retryAt = Date.now() + delay;
+    report("failed", `${message}${error == null ? "" : `（${describeCompactionError(error)}）`}；${delay / 1000} 秒后可在后续回合重试`);
+  }
   function report(phase, message) {
     status = { status: phase, startedAt: phase === "summarizing" ? Date.now() : status?.startedAt, ...(message ? { message } : {}) };
     try { onEvent?.({ type: "agent.compaction.status", data: { ...status } }); } catch {}
@@ -371,7 +392,7 @@ export function createBackgroundCompaction({
   }
 
   function onTurnEnd() {
-    if (disposed || pending || !current.enabled) return;
+    if (disposed || pending || !current.enabled || Date.now() < retryAt) return;
     try {
       // 阈值判断优先用 SDK 的 getContextUsage（感知「压缩后 usage 过期」并返回 null）；
       // 拿不到真实 usage 时回退到 chars/4 估算。
@@ -413,7 +434,7 @@ export function createBackgroundCompaction({
             if (!checked.ok) {
               pending = null;
               controller = null;
-              report("failed", `事实核验未通过（${checked.missed.length} 条引文无法逐字找到），保留原文`);
+              fail(`事实核验未通过（${checked.missed.length} 条引文无法逐字找到），保留原文`);
               return;
             }
             flight.verifiedFacts = checked.facts;
@@ -422,17 +443,17 @@ export function createBackgroundCompaction({
           flight.settled = true;
           report("ready");
         },
-        () => {
+        (error) => {
           if (pending !== flight) return;
           pending = null;
           controller = null;
-          report("failed", "后台摘要生成失败，保留原文");
+          fail("后台摘要生成失败，保留原文", error);
         },
       );
-    } catch {
+    } catch (error) {
       pending = null;
       controller = null;
-      report("failed", "无法启动后台摘要，保留原文");
+      fail("无法启动后台摘要，保留原文", error);
     }
   }
 
@@ -493,10 +514,11 @@ export function createBackgroundCompaction({
         estimatedTokensAfter: estimatedAfter,
       };
       try { onEvent?.({ type: "agent.compaction", data }); } catch {}
+      resetRetry();
       report("applied");
       return data;
-    } catch {
-      report("failed", "后台摘要应用失败");
+    } catch (error) {
+      fail("后台摘要应用失败", error);
       return null;
     }
   }
@@ -525,7 +547,10 @@ export function createBackgroundCompaction({
         throw new Error("Unknown compaction model");
       const changed = JSON.stringify(normalized) !== JSON.stringify(current);
       current = normalized;
-      if (changed || !current.enabled) cancel(); // 配置变化作废/取消旧任务
+      if (changed || !current.enabled) {
+        cancel(); // 配置变化作废/取消旧任务，并允许修正配置后立即重试
+        resetRetry();
+      }
     },
     dispose() {
       disposed = true;
