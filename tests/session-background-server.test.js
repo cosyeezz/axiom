@@ -64,3 +64,47 @@ test("create responds during slow startup, prompt waits, empty draft does not pe
     await rm(root, { recursive: true, force: true });
   }
 });
+
+// 回归防守：后台装配的存在性检查读的是 Sessions 内部 items Map，替身实现（浏览器预览桩、
+// 局部测试桩）没有这个字段。之前直接 sessions.items.has(id) 会在 setImmediate 里抛未捕获
+// TypeError 整进程崩掉，连回执都已经发出去了，客户端只看到连接断开。
+test("Sessions 替身缺少 items 时 session.attach 不崩进程", { timeout: 10000 }, async () => {
+  const state = { sessionId: "preview", cwd: process.cwd(), title: "预览", status: "idle", messages: [], compactions: [], tasks: {}, config: {} };
+  let loaded = 0;
+  const sessions = {
+    list: () => [{ id: state.sessionId, cwd: state.cwd, title: state.title, status: state.status, updatedAt: Date.now() }],
+    get: () => state,
+    ensureLoaded: async () => { loaded++; return state; },
+    snapshot: () => state,
+    subscribe: () => () => {},
+    close: async () => {},
+  };
+  const app = createServerApp(sessions);
+  app.server.listen(0, "127.0.0.1");
+  await once(app.server, "listening");
+  let ws;
+  const crashes = [];
+  const onCrash = (error) => crashes.push(error);
+  process.on("uncaughtException", onCrash);
+  try {
+    ws = new WebSocket(`ws://127.0.0.1:${app.server.address().port}/ws`, ["axiom"]);
+    await once(ws, "open");
+    const reply = await new Promise((resolve) => {
+      const listen = (raw) => {
+        const msg = JSON.parse(raw);
+        if (msg.type === "response" && msg.id === "attach") { ws.off("message", listen); resolve(msg); }
+      };
+      ws.on("message", listen);
+      ws.send(JSON.stringify({ id: "attach", type: "session.attach", sessionId: state.sessionId }));
+    });
+    assert.equal(reply.ok, true);
+    // setImmediate 里的后台装配跑完再断言：没有崩溃，且替身照旧被调用。
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.deepEqual(crashes.map((error) => error.message), []);
+    assert.equal(loaded > 0, true, "缺 items 不阻止后台装配");
+    assert.equal(ws.readyState, WebSocket.OPEN);
+  } finally {
+    process.off("uncaughtException", onCrash);
+    ws?.terminate(); await app.close();
+  }
+});

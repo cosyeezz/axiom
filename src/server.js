@@ -503,7 +503,8 @@ export function createServerApp(sessions, service = {}) {
           if (["session.create", "session.attach"].includes(request.type)) {
             const id = data.sessionId;
             setImmediate(() => {
-              if (closing || !sessions.items.has(id)) return;
+              // 只有确知会话已被移除才跳过；Sessions 替身（预览/测试桩）没有 items 时照旧走后台装配。
+              if (closing || sessions.items?.has(id) === false) return;
               void sessions.ensureLoaded(id).catch(error => send({ type: "error", sessionId: id,
                 data: { message: `会话后台启动失败：${error.message}` } }));
             });
