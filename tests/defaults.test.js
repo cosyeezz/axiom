@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { compactionDefaults } from "../src/protocol.js";
 import { Sessions } from "../src/sessions.js";
 
-test("保存默认压缩配置只直推同一工作目录的已加载会话，不等重启；单会话失败不影响保存", async () => {
+test("保存全局与工作空间默认压缩配置不改写已存在会话", async () => {
   const dir = await realpath(await mkdtemp(join(tmpdir(), "axiom-compaction-push-")));
   const factory = () => {};
   factory.catalog = () => [{ key: "p/main", levels: ["off", "high"] }, { key: "p/summary", levels: ["off"] }];
@@ -38,10 +38,7 @@ test("保存默认压缩配置只直推同一工作目录的已加载会话，�
     const compaction = { ...compactionDefaults, enabled: true, model: "p/summary", tokenThreshold: 50000 };
     await sessions.configureDefaults(dir, { compaction });
 
-    assert.equal(pushed.length, 1);
-    assert.equal(pushed[0].id, "live");
-    assert.equal(pushed[0].model, "p/main"); // configure 必须带原模型，不能隐式改模型
-    assert.deepEqual(pushed[0].compaction, compaction);
+    assert.equal(pushed.length, 0, "工作空间默认值不推送到已有会话");
     assert.deepEqual((await sessions.workspaceDefaults(dir)).compaction, compaction); // 单会话报错不回滚默认值
 
     // 不带 compaction 的保存不应骚扰已加载会话
@@ -52,7 +49,7 @@ test("保存默认压缩配置只直推同一工作目录的已加载会话，�
     // 全局配置只推给没有目录配置的会话
     pushed.length = 0;
     await sessions.configureDefaults(undefined, { compaction });
-    assert.deepEqual(pushed.map((entry) => entry.id), ["elsewhere"]);
+    assert.deepEqual(pushed, [], "全局默认值也不推送到已有会话");
   } finally {
     sessions.items.clear(); // 假会话不具备完整 remove 契约，本例只测推送循环
     await sessions.close();

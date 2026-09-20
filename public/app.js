@@ -650,9 +650,12 @@ function updateSettingsAvailability() {
   const unavailable = !connected || changing;
   $("settings-feedback").textContent = unavailable
     ? (changing ? "正在保存或切换配置…" : "连接断开，暂时无法修改配置")
-    : "更改自动保存，模型在下一次请求生效";
-  for (const fieldset of $("create-agents").children) fieldset.disabled = unavailable;
-  for (const id of ["defaults-workspace", "defaults-directory", "defaults-delete"]) $(id).disabled = unavailable;
+    : defaultsMode === "session" ? "更改自动保存，仅当前会话下次请求生效" : "更改自动保存为默认值，仅新会话生效";
+  for (const fieldset of [...$("create-agents").children, ...$("create-subagent-settings").children]) fieldset.disabled = unavailable;
+  for (const fieldset of $("create-capabilities").children) fieldset.disabled = unavailable || defaultsMode === "session";
+  for (const node of $("create-compaction").querySelectorAll("input, select, button")) node.disabled = unavailable;
+  for (const node of $("create-retry").querySelectorAll("input, textarea, select, button")) node.disabled = unavailable || defaultsMode === "session";
+  for (const id of ["open-workspace-config", "open-session-config", "defaults-delete"]) $(id).disabled = unavailable;
   const remoteLocked = remoteView.local === false;
   for (const id of ["remote-enabled", "remote-email", "remote-save"])
     $(id).disabled = unavailable || remoteLocked;
@@ -952,7 +955,10 @@ function showSettingsPanel(panel) {
   if (panel === "remote") void remoteLoad();
 }
 $("settings-connection-tab").onclick = () => showSettingsPanel("connection");
-$("settings-defaults-tab").onclick = () => showSettingsPanel("defaults");
+$("settings-defaults-tab").onclick = () => {
+  defaultsMode = "global"; defaultsScope = ""; defaultsTarget = null;
+  showSettingsPanel("defaults"); void openDefaults(); void loadTaskBudget();
+};
 $("settings-remote-tab").onclick = () => showSettingsPanel("remote");
 $("settings-models-tab").onclick = () => showSettingsPanel("models");
 $("settings-service-tab").onclick = () => showSettingsPanel("service");
@@ -997,6 +1003,7 @@ $("connection-form").onsubmit = (e) => {
   location.href = origin;
 };
 $("open-settings").onclick = () => {
+  defaultsMode = "global"; defaultsScope = ""; defaultsTarget = null;
   showSettingsPanel(models.length ? "defaults" : "models");
   region("设置与详情", updateSettingsAvailability);
   if (!$("settings").open) $("settings").showModal();
@@ -4306,20 +4313,21 @@ $("import-session").onclick = async () => {
 };
 
 let creationLoad = 0;
-// 默认新会话配置：全局一份，外加每个已配置工作目录一份；下拉只切换编辑对象，不切换当前会话。
-let defaultsScope = "", defaultsWorkspaces = [];
+// 配置按入口限定作用域：全局默认、当前工作空间、当前会话。
+let defaultsScope = "", defaultsMode = "global", defaultsTarget = null;
 function renderDefaultsScope() {
-  options($("defaults-workspace"), [["", "全局默认（所有未单独配置的工作目录）"], ...defaultsWorkspaces.map((path) => [path, path])], defaultsScope);
-  $("defaults-delete").hidden = !defaultsScope;
+  $("queue-type").closest("section").hidden = defaultsMode !== "session";
+  $("task-budget-title").closest("section").hidden = defaultsMode !== "global";
+  $("create-defaults-help").hidden = defaultsMode === "session";
+  $("config-hot-title").textContent = defaultsMode === "session" ? "热更新区 · 下次请求" : "热更新项的默认值 · 新会话采用";
+  $("defaults-scope-label").textContent = defaultsMode === "session" ? "仅当前会话" : defaultsScope ? `工作空间 · ${defaultsScope}` : "全局默认";
+  $("defaults-title").textContent = defaultsMode === "session" ? "当前会话配置" : defaultsScope ? "当前工作空间配置" : "默认配置";
+  $("defaults-delete").hidden = defaultsMode !== "workspace";
+  $("config-timing-help").textContent = defaultsMode === "session"
+    ? "只修改当前会话。模型、思考和压缩在下次请求生效；已发出的请求不变。子代理配置用于下次启动。"
+    : "这里保存新会话的默认值，不修改已有会话。未配置的工作空间跟随全局默认。";
 }
-async function refreshDefaultsScope() {
-  const active = settingsTicket();
-  const { workspaces } = await request("session.defaults.list");
-  if (!active()) return;
-  defaultsWorkspaces = workspaces ?? [];
-  if (defaultsScope && !defaultsWorkspaces.includes(defaultsScope)) defaultsScope = "";
-  renderDefaultsScope();
-}
+async function refreshDefaultsScope() { renderDefaultsScope(); }
 
 function createAgentPicker(role, title, catalog, initial) {
   const fieldset = document.createElement("fieldset");
@@ -4399,8 +4407,15 @@ function createAgentPicker(role, title, catalog, initial) {
     pickers.append(details);
   }
   mode.onchange = () => { pickers.hidden = mode.value !== "custom"; };
-  fieldset.append(pickers);
-  $("create-agents").append(fieldset);
+  const capabilityFieldset = document.createElement("fieldset");
+  capabilityFieldset.className = "capability-agent";
+  const capabilityLegend = document.createElement("legend");
+  capabilityLegend.textContent = `${title}能力`;
+  capabilityFieldset.append(capabilityLegend, mode.parentElement, pickers);
+  // 当前会话不能重新装配主代理能力；展示只读值，不假装保存成功。
+  capabilityFieldset.disabled = defaultsMode === "session";
+  $("create-capabilities").append(capabilityFieldset);
+  $(role === "subagent" ? "create-subagent-settings" : "create-agents").append(fieldset);
   return () => ({
     model: model.value || null,
     thinking: thinking.value || null,
@@ -4429,7 +4444,7 @@ async function loadCreation() {
   const active = settingsTicket();
   const current = creation;
   const load = ++creationLoad;
-  const scope = defaultsScope;
+  const scope = defaultsScope, mode = defaultsMode, target = defaultsTarget;
   current.loading = true;
   current.main = null;
   disposePickers($("create-agents"));
@@ -4437,16 +4452,21 @@ async function loadCreation() {
   $("create-agents").replaceChildren();
   $("create-compaction").replaceChildren();
   $("create-retry").replaceChildren();
+  $("create-capabilities").replaceChildren();
+  disposePickers($("create-subagent-settings"));
+  $("create-subagent-settings").replaceChildren();
   $("create-feedback").textContent = "正在读取本机 Pi 能力…";
   try {
     const [catalog, selected] = await Promise.all([
       request("capabilities.list", scope ? { cwd: scope } : {}),
-      request("session.defaults.get", scope ? { cwd: scope } : {}),
+      mode === "session" ? Promise.resolve({ ...config, capabilities: config.capabilitySelection }) : request("session.defaults.get", scope ? { cwd: scope } : {}),
     ]);
     // 期间切了配置范围就丢弃这次结果：否则另一个目录的配置会画进当前表单并接着被自动保存回去。
-    if (!active() || creation !== current || load !== creationLoad || scope !== defaultsScope) return;
+    if (!active() || creation !== current || load !== creationLoad || scope !== defaultsScope || mode !== defaultsMode || (mode === "session" && target !== sessionId)) return;
     current.loading = false;
     $("create-agents").replaceChildren();
+    $("create-capabilities").replaceChildren();
+    $("create-subagent-settings").replaceChildren();
     current.main = createAgentPicker("main", "主代理", catalog, { model: selected.model, thinking: selected.thinking, capabilities: selected.capabilities });
     current.subagent = createAgentPicker("subagent", "子代理", catalog, { model: selected.subagentModel, thinking: selected.subagentThinking, capabilities: selected.subagentCapabilities });
     current.compaction = compactionEditor(selected.compaction || compactionDefaults, () => $("create-main-model").value);
@@ -4454,9 +4474,11 @@ async function loadCreation() {
     $("create-main-model").addEventListener("change", current.compaction.fillThinking);
     current.retry = retryEditor(selected.retry);
     $("create-retry").replaceChildren(current.retry.node);
+    for (const node of $("create-retry").querySelectorAll("input, textarea, select, button")) node.disabled = mode === "session";
+    $("create-retry").hidden = mode === "session";
     current.catalog = catalog;
     updateDefaultsPreview();
-    $("create-feedback").textContent = catalog.warnings.join("\n");
+    $("create-feedback").textContent = [mode === "session" ? "能力装配和重试策略为只读；如需调整，请在工作空间配置中设置后新建会话。" : "", ...catalog.warnings].filter(Boolean).join("\n");
   } catch (e) {
     if (active() && creation === current && load === creationLoad) $("create-feedback").textContent = `加载失败：${e.message}`;
   }
@@ -4478,38 +4500,20 @@ async function openDefaults() {
   if (active()) await loadCreation();
 }
 
-// 下拉只决定编辑哪份配置，不切换当前会话。
-$("defaults-workspace").onchange = async () => {
-  if (!connected || changing) return;
-  defaultsScope = $("defaults-workspace").value;
-  $("defaults-delete").hidden = !defaultsScope;
-  await loadCreation();
-};
-
-$("defaults-directory").onclick = async () => {
-  if (!connected || changing) return;
-  const current = creation;
-  try {
-    const entry = await filePicker.open({ title: "选择要单独配置的工作目录", mode: "folder", path: defaultsScope || currentCwd });
-    if (!entry || creation !== current || !connected || changing) return;
-    const { path } = entry;
-    const previousWorkspaces = [...defaultsWorkspaces];
-    changing = true;
-    updateAvailability();
-    // 新目录从全局默认复制一份独立配置；已配置的目录直接加载自己的，绝不覆盖。
-    if (!defaultsWorkspaces.includes(path)) {
-      // 空补丁让服务端按真实目录复制有效配置，目录别名不会覆盖已有选择。
-      await request("session.defaults.configure", { cwd: path });
-      await refreshDefaultsScope();
-    }
-    const pathKey = (value) => /^[a-z]:[\\/]|^[\\/]{2}/i.test(value) ? value.replaceAll("\\", "/").toLowerCase() : value;
-    defaultsScope = defaultsWorkspaces.find((value) => pathKey(value) === pathKey(path))
-      || defaultsWorkspaces.find((value) => !previousWorkspaces.includes(value)) || "";
-    renderDefaultsScope();
-    await loadCreation();
-  } catch (e) { $("create-feedback").textContent = `选择目录失败：${e.message}`; }
-  finally { changing = false; updateAvailability(); }
-};
+// 入口决定作用域，不再在全局默认页列举或选择其他工作空间。
+async function openScopedConfiguration(mode) {
+  $("session-config-menu").open = false;
+  if (!connected || changing || !sessionId) return;
+  defaultsMode = mode;
+  defaultsScope = currentCwd;
+  defaultsTarget = sessionId;
+  $("session-config-menu").open = false;
+  showSettingsPanel("defaults");
+  if (!$("settings").open) $("settings").showModal();
+  await openDefaults();
+}
+$("open-workspace-config").onclick = () => openScopedConfiguration("workspace");
+$("open-session-config").onclick = () => openScopedConfiguration("session");
 
 $("defaults-delete").onclick = async () => {
   const scope = defaultsScope;
@@ -4520,10 +4524,10 @@ $("defaults-delete").onclick = async () => {
   button.disabled = true;
   try {
     await request("session.defaults.delete", { cwd: scope });
-    if (defaultsScope !== scope) return;
-    defaultsScope = "";
+    if (defaultsScope !== scope || defaultsMode !== "workspace") return;
     await refreshDefaultsScope();
     await loadCreation();
+    if (defaultsScope === scope && defaultsMode === "workspace") $("create-feedback").textContent = "已恢复全局默认；再次修改会为此工作空间保存独立配置。";
   } catch (e) {
     if (defaultsScope === scope) $("create-feedback").textContent = `删除失败：${e.message}`;
   } finally { changing = false; updateAvailability(); }
@@ -4533,7 +4537,7 @@ function updateDefaultsPreview() {
   if (!creation?.main) return;
   const main = creation.main(), child = creation.subagent();
   const compaction = creation.compaction?.read();
-  const retry = creation.retry?.read();
+  const retry = defaultsMode === "session" ? null : creation.retry?.read();
   const retryLine = retry && (retry.retryable.length || retry.nonRetryable.length)
     ? `\n\n自动重试 · 强制重试 ${retry.retryable.length} 条 · 强制不重试 ${retry.nonRetryable.length} 条`
     : "";
@@ -4565,20 +4569,29 @@ $("create-form").onsubmit = async (e) => {
     return;
   }
   // 保存目标在提交瞬间锁定：之后切配置范围也不会把这份选择写进别的目录。
-  const scope = defaultsScope;
-  const data = { ...defaultsSelection(), ...(scope ? { cwd: scope } : {}) };
+  const scope = defaultsScope, mode = defaultsMode, target = defaultsTarget;
+  if (mode === "session" && target !== sessionId) {
+    $("create-feedback").textContent = "当前会话已改变，本次修改未保存。请关闭并重新打开当前会话配置。";
+    return;
+  }
+  const selection = defaultsSelection();
+  const data = mode === "session"
+    ? { sessionId: target, model: selection.model || config.model, thinking: selection.thinking || config.thinking,
+        subagentModel: selection.subagentModel, subagentThinking: selection.subagentThinking, compaction: selection.compaction }
+    : { ...selection, ...(scope ? { cwd: scope } : {}) };
   defaultsSaving = true;
   changing = true;
   updateAvailability();
   $("create-feedback").textContent = "正在保存…";
   try {
-    await request("session.defaults.configure", data);
-    if (defaultsScope !== scope) return;
-    $("create-feedback").textContent = scope
+    const result = await request(mode === "session" ? "session.configure" : "session.defaults.configure", data);
+    if (defaultsScope !== scope || defaultsMode !== mode || (mode === "session" && target !== sessionId)) return;
+    if (mode === "session") applyConfig(result);
+    $("create-feedback").textContent = mode === "session" ? "已保存 · 仅当前会话，下次请求生效；子代理设置用于下次启动" : scope
       ? `已保存 · ${scope} 的新会话使用此配置`
       : "已保存到本机 · 全局默认，未单独配置的目录使用此配置";
   } catch (err) {
-    if (defaultsScope === scope) $("create-feedback").textContent = `保存失败，当前选择未生效：${err.message}。请重新选择以重试。`;
+    if (defaultsScope === scope && defaultsMode === mode && (mode !== "session" || target === sessionId)) $("create-feedback").textContent = `保存失败，当前选择未生效：${err.message}。请重新选择以重试。`;
   } finally {
     defaultsSaving = false;
     changing = false;

@@ -579,8 +579,7 @@ export class Sessions {
     const scope = workspaceKeyOf(cwd || resolve(workspace));
     this.database?.delete(DEFAULTS_NS, WORKSPACE_PREFIX + scope);
     this.workspaceSelections.delete(scope);
-    // 目录配置已删 → 该目录已加载会话立即回落全局压缩配置，别的目录的会话不动。
-    await this.pushCompaction((itemScope) => itemScope === scope, this.defaultSelection.compaction ?? compactionDefaults);
+    // 回落只影响未来新会话，已有会话保留创建时或单独保存的配置。
     return { deleted: true, cwd };
   }
   async workspaceDefaults(workspace = this.createAgent.cwd || process.cwd()) {
@@ -641,10 +640,8 @@ export class Sessions {
       this.database?.set(DEFAULTS_NS, "global", next);
       this.defaultSelection = next;
     }
-    // 压缩配置按目录隔离：目录保存只推该目录的已加载会话，全局保存只推没目录配置的会话；
-    // 改完直推，不再等重启。
-    if (selection.compaction)
-      await this.pushCompaction((itemScope) => scoped ? itemScope === scope : !this.workspaceSelections.has(itemScope), next.compaction);
+    // 默认配置只影响以后创建的会话，不能覆盖已有会话的独立设置。
+    // 当前会话的热更新统一走 session.configure。
     return result;
   }
   // 压缩配置直推：只改选中会话的压缩部分，等级由实际模型适配，单会话失败不影响调用方。
@@ -742,7 +739,7 @@ export class Sessions {
       if (saved.sessionFile && !existsSync(saved.sessionFile))
         throw new Error(`会话历史文件缺失，已保留数据库记录：${saved.sessionFile}`);
       saved.selection ??= {};
-      saved.selection.compaction = structuredClone(this.defaultsFor(saved.cwd).compaction ?? compactionDefaults);
+      saved.selection.compaction ??= structuredClone(this.defaultsFor(saved.cwd).compaction ?? compactionDefaults);
       await this.create(saved.cwd, saved.selection, saved);
       return this.get(id);
     })().finally(() => { item.loading = null; });

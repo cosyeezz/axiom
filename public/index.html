@@ -53,8 +53,8 @@
             ☰
           </button>
           <div class="header-title">
-            <div class="title-row"><button type="button" id="session-alert" class="session-attention-dot" title="任务已停下，点击知道了" aria-label="任务已停下，点击标记为已查看" hidden></button><h1 id="session-title">新会话</h1></div>
-            <div class="workspace-location"><span id="workspace-label"></span><button id="copy-workspace" class="icon-button" title="复制工作空间路径" aria-label="复制工作空间路径"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h11v12H9ZM15 9V3H4v12h5"/></svg></button><button id="reveal-workspace" class="icon-button" title="在资源管理器中打开" aria-label="在资源管理器中打开工作空间"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l3 3h9v4M3 7v13h16l3-9H7l-4 9"/></svg></button><span id="workspace-feedback" class="sr-only" role="status"></span></div>
+            <div class="title-row"><button type="button" id="session-alert" class="session-attention-dot" title="任务已停下，点击知道了" aria-label="任务已停下，点击标记为已查看" hidden></button><h1 id="session-title">新会话</h1><details id="session-config-menu"><summary aria-label="会话菜单">▾</summary><button type="button" id="open-session-config" class="secondary">配置当前会话</button></details></div>
+            <div class="workspace-location"><span id="workspace-label"></span><button id="copy-workspace" class="icon-button" title="复制工作空间路径" aria-label="复制工作空间路径"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h11v12H9ZM15 9V3H4v12h5"/></svg></button><button id="reveal-workspace" class="icon-button" title="在资源管理器中打开" aria-label="在资源管理器中打开工作空间"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l3 3h9v4M3 7v13h16l3-9H7l-4 9"/></svg></button><button type="button" id="open-workspace-config" class="icon-button" title="当前工作空间配置" aria-label="当前工作空间配置">⚙</button><span id="workspace-feedback" class="sr-only" role="status"></span></div>
           </div>
           <div class="service-controls">
             <select id="conversation-font-scale" aria-label="会话字号" title="会话字号：仅调整会话内容">
@@ -283,7 +283,7 @@
       <div class="settings-layout">
       <nav class="settings-nav" aria-label="设置分类">
         <button id="settings-connection-tab" type="button" class="secondary" aria-controls="connection-panel">连接</button>
-        <button id="settings-defaults-tab" type="button" class="secondary" aria-current="page" aria-controls="defaults-panel">默认新会话设置</button>
+        <button id="settings-defaults-tab" type="button" class="secondary" aria-current="page" aria-controls="defaults-panel">默认配置</button>
         <button id="settings-remote-tab" type="button" class="secondary" aria-controls="remote-panel">远程控制</button>
         <button id="settings-models-tab" type="button" class="secondary" aria-controls="models-panel">模型与供应商</button>
         <button id="settings-usage-tab" type="button" class="secondary" aria-controls="usage-panel">用量与限流</button>
@@ -321,11 +321,11 @@
         </section>
         <section>
           <h3>会话能力</h3>
-          <p>与下方选择实时同步；自动保存成功后用于新会话。</p>
+          <p>当前配置预览；具体保存范围与生效时间以下方提示为准。</p>
           <p id="defaults-preview"></p>
         </section>
         <section aria-labelledby="task-budget-title">
-          <h3 id="task-budget-title">子代理轮次预算</h3>
+          <h3 id="task-budget-title">需要启动新会话区 · 子代理轮次预算（全局）</h3>
           <div class="selectors settings-selectors">
             <label class="budget-field" for="task-max-turns"><span class="budget-field-label">轮次上限</span><input type="number" id="task-max-turns" min="3" max="200" step="1" aria-describedby="task-budget-help"><span class="budget-field-unit">轮</span></label>
             <label class="budget-field" for="task-wrap-up-window"><span class="budget-field-label">收尾窗口</span><input type="number" id="task-wrap-up-window" min="1" max="10" step="1" aria-describedby="task-budget-help"><span class="budget-field-unit">轮</span></label>
@@ -344,20 +344,19 @@
         <p id="settings-feedback" role="status" aria-live="polite"></p>
         <section aria-labelledby="defaults-title">
           <h3 id="defaults-title">默认新会话设置</h3>
-          <p>每个工作目录可以保存一套独立配置，未单独配置的目录使用「全局默认」。选择后自动保存到本机，用于之后的新会话；自动压缩按配置范围应用，已在运行的会话保持自己的设置。</p>
+          <p>更改自动保存到当前入口指定的范围。全局默认供未配置的工作空间使用；工作空间默认只用于新会话；会话配置只影响当前会话。</p>
           <div class="selectors settings-selectors">
-            <label for="defaults-workspace"><span>配置范围</span><select id="defaults-workspace" aria-describedby="defaults-workspace-help"></select></label>
-            <button type="button" id="defaults-directory" class="secondary">选择目录…</button>
-            <button type="button" id="defaults-delete" class="secondary" hidden>删除此目录配置</button>
+            <p id="defaults-scope-label">全局默认</p>
+            <button type="button" id="defaults-delete" class="secondary" hidden>恢复全局默认</button>
           </div>
-          <p id="defaults-workspace-help">下拉只切换要编辑的配置，不切换当前会话。选择目录会从全局默认复制一份独立配置；删除后该目录回落全局默认。已有会话不会被改写。</p>
+          <p id="defaults-workspace-help">未单独配置的工作空间使用全局默认。工作空间配置请从路径右侧进入；当前会话配置请从标题下拉菜单进入。</p>
           <div id="defaults-editor">
             <form id="create-form" class="settings-body">
               <p id="create-defaults-help">自动保存成功后，符合此配置范围的新会话使用这些设置。默认主代理模型沿用最近成功调整的主模型；能力清单按对应工作目录读取；自定义技能按来源保存：全局技能跨项目共用，项目技能仅用于当前工作目录。修改默认配置只影响新会话，不会自动改为全部能力，也不覆写已有会话。</p>
               <p>复用本机 Pi 已启用的能力；Skills 按需读取，MCP 按配置连接。未选能力不会自动加载，但这不是权限沙箱。</p>
-              <div id="create-agents"></div>
+              <h3 id="config-hot-title">热更新项的默认值 · 新会话采用</h3><p id="config-timing-help">这里设置新会话的默认值，不改写已有会话。当前会话入口中的模型与压缩设置可在下次请求生效。</p><div id="create-agents"></div>
               <div id="create-compaction"></div>
-              <div id="create-retry"></div>
+              <h3>需要启动新会话区</h3><p>Skills、MCP、Extensions 能力选择及自动重试在创建会话时装配。子代理设置在下次启动子代理时生效，运行中的子任务不变。</p><div id="create-subagent-settings"></div><div id="create-capabilities"></div><div id="create-retry"></div><h3>重启服务区</h3><p>会话配置没有需要重启服务的项目。服务启动参数（监听地址、端口及启动环境变量）需在服务端修改并重启；不属于工作空间或会话覆盖。</p>
               <p>网页支持插件的工具与指令逻辑，不提供终端专用组件；需要交互审批的操作不会自动放行。</p>
               <p id="create-feedback" role="status" aria-live="polite"></p>
             </form>

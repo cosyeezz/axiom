@@ -84,7 +84,7 @@ test("compaction settings, message IDs and successful records survive restart; f
   }
 });
 
-test("restored sessions pick up the latest default compaction; other selection survives restart", async () => {
+test("session compaction remains independent of later default changes and survives restart", async () => {
   const dir = await mkdtemp(join(tmpdir(), "axiom-compaction-"));
   const selections = [];
   const factory = async (_tools, selection) => {
@@ -110,14 +110,14 @@ test("restored sessions pick up the latest default compaction; other selection s
     await sessions.configureDefaults(dir, { compaction: old });
     const id = await sessions.create(dir, { model: "p/main", thinking: "off" });
     await sessions.configureDefaults(dir, { compaction: latest });
-    // 保存默认值即推给已加载会话：压缩配置是全局的，不再等重启才生效
-    assert.deepEqual(sessions.snapshot(id).config.compaction, latest);
+    assert.deepEqual(sessions.snapshot(id).config.compaction, old, "默认值不覆盖当前会话");
+    const next = await sessions.create(dir, { model: "p/main" });
+    assert.deepEqual(sessions.snapshot(next).config.compaction, latest, "新会话采用最新默认值");
     restored = new Sessions(factory, defaultsPath, storagePath);
     await restored.loadDefaults();
     await restored.load();
     await restored.ensureLoaded(id);
-    // 重启后：恢复会话同样用最新默认压缩配置，其余配置不变
-    assert.deepEqual(restored.snapshot(id).config.compaction, latest);
+    assert.deepEqual(restored.snapshot(id).config.compaction, old, "恢复后仍保留会话配置");
     assert.equal(restored.snapshot(id).config.model, "p/main");
     assert.equal(restored.snapshot(id).config.thinking, "off");
     assert.equal(restored.snapshot(id).config.queueType, "steer");
@@ -128,7 +128,7 @@ test("restored sessions pick up the latest default compaction; other selection s
   }
 });
 
-test("删除目录配置后该目录已加载会话立即回落全局压缩配置，其他目录不受影响", async () => {
+test("删除目录默认配置只影响新会话，不覆盖已有会话", async () => {
   const dir = await mkdtemp(join(tmpdir(), "axiom-compaction-"));
   const a = join(dir, "a"), b = join(dir, "b");
   await mkdir(a);
@@ -156,9 +156,10 @@ test("删除目录配置后该目录已加载会话立即回落全局压缩配�
     const idA = await sessions.create(a), idB = await sessions.create(b);
     assert.deepEqual(sessions.snapshot(idA).config.compaction, compactionA);
     assert.deepEqual(sessions.snapshot(idB).config.compaction, compactionB);
-    // 删掉 a 的目录配置：a 的已加载会话立即回落全局压缩配置，其余配置与 b 的会话都不动
     await sessions.deleteDefaults(a);
-    assert.deepEqual(sessions.snapshot(idA).config.compaction, globalCompaction);
+    assert.deepEqual(sessions.snapshot(idA).config.compaction, compactionA);
+    const next = await sessions.create(a);
+    assert.deepEqual(sessions.snapshot(next).config.compaction, globalCompaction);
     assert.equal(sessions.snapshot(idA).config.model, "p/a");
     assert.deepEqual(sessions.snapshot(idB).config.compaction, compactionB);
   } finally {
