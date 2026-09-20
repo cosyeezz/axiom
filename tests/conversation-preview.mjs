@@ -131,7 +131,13 @@ states.push({ ...state, sessionId: "ui-billing", title: "账单验收 · 主代�
     groups: [{ model: "preview/axiom", tokens: { input: 1800, output: 500, cacheRead: 7200, cacheWrite: 0 }, cost: totalCost }],
     agents: [{ id: "main", billing: mainBill }, ...billedTasks.map(t => ({ id: t.id, task: t.task, billing: t.runtime.billing }))] } });
 const sessions = {
-  createAgent: { catalog: () => [{ provider: "preview", id: "axiom", key: "preview/axiom", name: "Axiom Preview", levels: ["off", "high"] }] },
+  createAgent: {
+    catalog: () => [{ provider: "preview", id: "axiom", key: "preview/axiom", name: "Axiom Preview", levels: ["off", "high"] }],
+    capabilities: async () => ({ skills: [], mcp: [], plugins: [], warnings: [] }),
+  },
+  workspaceDefaults: async () => sessions.getDefaults(),
+  getDefaults: () => ({ model: null, subagentModel: null, thinking: null, subagentThinking: null, compaction: null, retry: null, capabilities: null, subagentCapabilities: "inherit" }),
+  getTaskBudget: () => ({ maxTurns: 20, wrapUpWindow: 2 }),
   list: () => states.map((s) => ({ id: s.sessionId, cwd: s.cwd, title: s.title, status: s.status, updatedAt: Date.now(), sessionFile: `preview-${s.sessionId}.jsonl` })),
   get: (id) => states.find((s) => s.sessionId === id) || state,
   ensureLoaded: async (id) => sessions.get(id),

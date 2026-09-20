@@ -2588,3 +2588,12 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 涉及文件：public/style.css、devlog.md。
 - 决策：DOM id 与事件语义（`#prompt`/`#composer`、onsubmit/onkeydown/onpaste、aria-autocomplete）完全不动——输入框交互逻辑约 500 行集中在 app.js，改结构风险不成比例；token 层不动（暗色 `--surface #0f1011`/`--line #23252a`/`--accent #5e6ad2` 本就是 linear 体系，差异只在组件级规则）；textarea 20px padding 保持（linear text-input 的 8px12px 针对单行表单输入，大面积对话输入保持产品级呼吸感，规范未覆盖处保持同气质）。
 - 验证：worktree 内 `npm ci` 后 `npm test` 798 项（796 通过、0 失败、2 既有跳过）。
+
+## 2026-09-20 配置入口收敛与作用域弹窗隔离
+
+- 时间：2026-09-20；分支 `feat/config-scope-dialog`。
+- 原因：页头遗留入口重复，工作空间与会话配置复用全局设置展示容易误导保存范围。
+- 内容：移除页头配置入口及死绑定，侧栏统一齿轮图标；作用域弹窗隐藏全局导航与无关区块，使用独立标题和保存范围说明，配置表单置于首位。返回全局设置时恢复导航和布局。
+- 验证补齐：预览 fixture 增加能力与默认配置读取存根；新增 Python Playwright Chromium 桌面／窄屏验收，截图人工检查；全量测试 816 项，814 通过、0 失败、2 既有跳过。
+- 涉及文件：public/app.js、public/index.html、public/style.css、tests/app.test.js、tests/conversation-preview.mjs、tests/config-scope-ui.py、README.md、devlog.md。
+- 边界：此次不实现 MCP／插件在已有会话中的重新装配，不将入口与展示修复等同于该能力完成。

@@ -3,9 +3,11 @@
    默认深色（产品基调），浅色仅在用户显式切换后生效，不跟随系统，避免既有用户被动变脸。 */
 .workspace-config-btn { flex-shrink: 0; color: var(--muted); }
 .workspace-config-btn:hover { color: var(--ink); background: var(--raised); }
-#session-config-menu { position: relative; }
-#session-config-menu > summary { cursor: pointer; color: var(--muted); padding: 4px 8px; border-radius: 4px; }
-#session-config-menu > button { position: absolute; top: 100%; left: 0; z-index: 20; white-space: nowrap; background: var(--surface); border: 1px solid var(--line); }
+#settings.scoped .settings-nav { display: none; }
+#settings.scoped .settings-layout { grid-template-columns: minmax(0, 1fr); }
+#settings.scoped #defaults-title,
+#settings.scoped #defaults-title + p,
+#settings.scoped #create-defaults-help + p { display: none; }
 #create-capabilities { display: grid; gap: 16px; }
 #create-capabilities fieldset:disabled { opacity: .65; }
 :root {
