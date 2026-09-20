@@ -280,3 +280,87 @@ test("换会话后迟到的压缩段原文被丢弃，不污染新会话", async
     assert.deepEqual([...w.rawEntryIds()], []);
   } finally { dom.window.close(); }
 });
+
+// 后台压缩可视化：条幅可点进详情，详情里能看到内部流程并取消当次摘要。
+test("压缩条幅点击进详情：步骤流、流式尾部、取消按钮与历史切换", async () => {
+  const { dom, w } = await page();
+  try {
+    const $ = (id) => w.document.getElementById(id);
+    const progress = $("compaction-progress");
+    const dialog = $("compaction-run");
+    const run = (over = {}) => ({
+      id: "run-1", status: "summarizing", startedAt: Date.UTC(2026, 0, 1, 3, 4, 5), endedAt: null,
+      model: "fake/model", thinking: "off",
+      trigger: { tokens: 120000, contextWindow: 200000, tokenThreshold: 100000, percentThreshold: 50, keepRecentTokens: 5000, estimated: false },
+      steps: [{ step: "trigger", text: "触发后台压缩 · 上下文 120,000 tokens", at: Date.UTC(2026, 0, 1, 3, 4, 5) }, { step: "session", text: "摘要会话就绪 · fake/model", at: Date.UTC(2026, 0, 1, 3, 4, 6) }],
+      stream: { chars: 6, preview: "正在写摘要", thinkingChars: 0 },
+      usage: { input: 10, output: 4 }, error: null, result: null, ...over,
+    });
+
+    // 旧服务端（没有 runs）：条幅只展示，不做成按钮，避免点进去是空的
+    w.event({ sessionId: "activity", type: "agent.compaction.status", agentId: "main", data: { status: "summarizing" } });
+    assert.equal(progress.querySelector("button"), null);
+
+    w.event({ sessionId: "activity", type: "agent.compaction.status", agentId: "main", data: { status: "summarizing", runId: "run-1", runs: [run()] } });
+    const open = progress.querySelector("button.compaction-progress-open");
+    assert.ok(open, "有 run 详情时整行变成可点按钮");
+    assert.match(open.getAttribute("aria-label"), /点击查看过程/);
+    assert.equal(open.getAttribute("aria-controls"), "compaction-run");
+    assert.ok(progress.querySelector(".task-run-spin"), "在途仍有转圈");
+
+    open.dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+    assert.equal(dialog.open, true);
+    assert.match($("compaction-run-title").textContent, /生成中/);
+    assert.match($("compaction-run-meta").textContent, /fake\/model/);
+    assert.match($("compaction-run-trigger").textContent, /120,000 \/ 200,000 tokens/);
+    assert.match($("compaction-run-trigger").textContent, /100,000 tokens 或 50%/);
+    assert.equal($("compaction-run-steps").querySelectorAll("li").length, 2);
+    assert.match($("compaction-run-steps").textContent, /摘要会话就绪/);
+    assert.equal($("compaction-run-stream-wrap").hidden, false);
+    assert.equal($("compaction-run-stream").textContent, "正在写摘要");
+    assert.equal($("compaction-run-error").hidden, true);
+    // 在途可取消
+    assert.equal($("compaction-run-cancel").hidden, false);
+    assert.equal($("compaction-run-cancel").disabled, false);
+    assert.equal($("compaction-run-pick-label").hidden, true, "只有一条记录时不显示历史选择");
+
+    // 取消：发 session.compaction.cancel，带上当前 runId
+    const calls = [];
+    w.eval("request = (type, args) => { window.__calls.push({ type, args }); return Promise.resolve({ cancelled: true }); }");
+    w.__calls = calls;
+    $("compaction-run-cancel").dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(JSON.stringify(calls), JSON.stringify([{ type: "session.compaction.cancel", args: { sessionId: "activity", runId: "run-1" } }]));
+
+    // 服务端回「没赶上」时用返回的状态对齐，不留下假的可取消按钮
+    calls.length = 0;
+    w.eval("request = (type, args) => { window.__calls.push({ type, args }); return Promise.resolve({ cancelled: false, status: { status: 'applied', runId: null, runs: [window.__applied] } }); }");
+    w.__applied = run({ status: "applied", endedAt: Date.UTC(2026, 0, 1, 3, 4, 9), result: { compactionId: "c1", tokensBefore: 120000, estimatedTokensAfter: 40000, summaryChars: 900, facts: 3 } });
+    $("compaction-run-cancel").dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal($("compaction-run-cancel").hidden, true, "终态没有取消按钮");
+    assert.match($("compaction-run-trigger").textContent, /120,000 → 40,000 tokens/);
+    assert.match($("compaction-run-title").textContent, /已应用/);
+
+    // 失败的 run：错误可见；多条记录可切换回看
+    w.event({ sessionId: "activity", type: "agent.compaction.status", agentId: "main", data: {
+      status: "summarizing", runId: "run-2",
+      runs: [run({ id: "run-1", status: "failed", endedAt: Date.UTC(2026, 0, 1, 3, 4, 9), error: "boom" }), run({ id: "run-2" })],
+    } });
+    assert.equal(dialog.open, true, "事件刷新不关掉已打开的详情");
+    assert.equal($("compaction-run-pick-label").hidden, false);
+    const pick = $("compaction-run-pick");
+    assert.deepEqual([...pick.options].map((o) => o.value), ["run-1", "run-2"]);
+    assert.equal(pick.value, "run-2", "默认跟当前在途那一条");
+    pick.value = "run-1";
+    pick.dispatchEvent(new w.Event("change"));
+    assert.equal($("compaction-run-error").hidden, false);
+    assert.equal($("compaction-run-error").textContent, "boom");
+    assert.equal($("compaction-run-cancel").hidden, true, "历史记录不能取消");
+
+    // 快照没有压缩状态（切会话/新会话）：条幅收起、详情关闭
+    w.snapshot({ sessionId: "activity", title: "Activity", cwd: "C:/work", status: "idle", config: { model: "test/model", thinking: "off", levels: ["off"], skills: [] }, messages: [], tasks: [], live: {}, tools: {} });
+    assert.equal(progress.hidden, true);
+    assert.equal(dialog.open, false);
+  } finally { dom.window.close(); }
+});

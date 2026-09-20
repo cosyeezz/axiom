@@ -334,6 +334,8 @@ export const command = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("session.attach"), sessionId: id }).strict(),
   // 压缩卡按需展开：attach 下发的历史不含被摘要折叠的消息，点开摘要卡时才取这一段原文。
   z.object({ id, type: z.literal("session.compaction.messages"), sessionId: id, compactionId: z.string().min(1).max(256) }).strict(),
+  // 取消当前在途的后台摘要（压缩进程面板的取消按钮）；runId 用于对得上哪一次，防陈旧 id 误杀新任务。
+  z.object({ id, type: z.literal("session.compaction.cancel"), sessionId: id, runId: z.string().min(1).max(256).optional() }).strict(),
   // 运行中重新发现项目技能（composer 打开技能列表时调用）；返回 { skills: [{name, description}] }。
   z.object({ id, type: z.literal("session.skills.refresh"), sessionId: id }).strict(),
   z.object({ id, type: z.literal("session.close"), sessionId: id }).strict(),

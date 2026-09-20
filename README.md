@@ -406,6 +406,10 @@ pi 会话 .jsonl（~/.pi/agent/sessions/...）
 
 输入框上方显示后台压缩的真实阶段：正在生成摘要、摘要就绪等待安全点、已应用、失败、跳过或取消，不显示虚构百分比。失败时显示失败阶段、原因摘要和本次重试冷却时长；摘要压平换行、限制长度并屏蔽常见凭据格式，不显示堆栈。状态按主会话隔离，切换会话和重连可恢复当前状态；服务重启不会继续显示已中断的后台任务。
 
+条幅整行可点，打开「后台压缩」详情弹窗，结构与子代理详情一致：顶部是摘要模型、思考等级、开始时间与耗时；「触发与配置」列出触发时的上下文估算、窗口、两个阈值与近期保留量（真实用量不可用时标注为估算），应用后补上压缩前后的估算 token 与引文条数；「过程」是带时间的步骤流（触发、计划、摘要会话就绪、模型输出开始/结束、事实核验、就绪、应用、失败、取消），失败原因单独置顶；「模型正在写的摘要」折叠展示流式输出尾部（最多 1500 字符，约每 0.5 秒推送一次，不逐 token 广播）。内存只保留最近 5 次记录，两次以上时可在弹窗里切换回看；记录不落盘，服务重启即清空。
+
+详情里的「取消本次摘要」只作用于当前这一次：生成中是中断后台模型请求，摘要就绪（还没应用）是丢弃这份结果，历史记录和终态没有该按钮。取消保留原文、不计失败次数，之后 60 秒内不自动重试，冷却结束后在满足阈值的回合边界照常重试。按钮与真实状态存在竞争时以服务端返回状态为准，不会因为点晚了而报错。
+
 ```text
 完整 turn 结束 -> 达到任一阈值 -> 固定快照 -> 后台生成摘要
 主会话继续输出/执行工具 -------------------> 摘要待应用
@@ -421,9 +425,9 @@ pi 会话 .jsonl（~/.pi/agent/sessions/...）
 
 压缩摘要附带三层引文核验（借鉴 SoL-Pi EPR 的证据纪律）：`<axiom_compact_facts>` 里每行一条引文，要求逐字复制自本次输入原文或上次摘要，内容选路径、命令、标识符、报错行、用户明确决定等不可出错的事实，5–30 行、每行不超过 300 字符。应用前程序把每条引文在与摘要模型所见逐字一致的会话渲染文本里逐字对账（模型多余加的 bullet 前缀会降级剥掉再匹配；行号由程序计算，不信任模型自报）；校验语料含上次摘要，引用旧摘要内容同样合法。模型没输出该块时静默跳过这一层、摘要照旧应用（与其他元数据的 fail-open 哲学一致）；但只要给出引文，一条无法逐字找到即整份摘要作废、保留原文，待失败冷却结束后在后续回合边界重试——不作「删掉坏行留其余」，防止十条里编一条蒙混过关。全部通过后，引文以「已核验引文」附录（`line=N` 指向原文快照）随摘要进入后续上下文，并在会话文件旁的 `compaction-snapshots/` 目录落一份与渲染逐字一致的原文快照（按内容哈希命名，重试不重复落盘），摘要末尾附回读指引：需要精确原文或更多上下文时用 grep 在快照搜关键词、或按行号 read。快照仅对持久会话写入、写失败不阻断压缩；附录计入压缩后的体积校验；已核验引文（含行号行）可被下一轮摘要继续引用，但提示词明令不复制附录标记本身，避免随 previousSummary 回注自我强化。
 
-协议：`session.create`、`session.configure`、`session.defaults.configure` 支持 `compaction: {enabled,tokenThreshold,percentThreshold,model,thinking,keepRecentTokens}`，两个阈值和 model 可为 `null`。配置返回实际 compaction；快照包含 `compactions`，消息记录包含 `entryId`，被压缩折叠的记录额外带 `compacted: true`（精简版，完整原文按 `compactionId` 另取）。成功事件 `agent.compaction` 包含摘要 ID、正文、保留边界和 `compactedMessageIds`，客户端按消息 ID 折叠而非按时间猜测。进度事件 `agent.compaction.status` 与快照 `compactionStatus` 使用相同阶段数据。未启用此功能时仍保留 Pi 原生窗口保护。
+协议：`session.create`、`session.configure`、`session.defaults.configure` 支持 `compaction: {enabled,tokenThreshold,percentThreshold,model,thinking,keepRecentTokens}`，两个阈值和 model 可为 `null`。配置返回实际 compaction；快照包含 `compactions`，消息记录包含 `entryId`，被压缩折叠的记录额外带 `compacted: true`（精简版，完整原文按 `compactionId` 另取）。成功事件 `agent.compaction` 包含摘要 ID、正文、保留边界和 `compactedMessageIds`，客户端按消息 ID 折叠而非按时间猜测。进度事件 `agent.compaction.status` 与快照 `compactionStatus` 使用相同阶段数据，并附 `runId` 与最近 5 条 `runs`（阶段、触发参数、步骤时间线、流式尾部、用量、错误、结果）；老客户端只读外层 `status/message/startedAt` 仍可用。`session.compaction.cancel {sessionId, runId?}` 取消当前这一次摘要，返回 `{cancelled, reason, status}`：`runId` 对不上、任务已结束或会话未加载时只回 `cancelled: false`，不报错。未启用此功能时仍保留 Pi 原生窗口保护。
 
-界面回归：运行 `node tests/conversation-preview.mjs` 后，在已有 Python Playwright/Chromium 的环境执行 `python tests/compaction-ui.py`，检查两层摘要、子代理详情、输入区进度与桌面/390px/320px 布局；样例不调用模型或读取用户历史。
+界面回归：运行 `node tests/conversation-preview.mjs` 后，在已有 Python Playwright/Chromium 的环境执行 `python tests/compaction-ui.py`，检查两层摘要、子代理详情、输入区进度条幅点开摘要进程详情（步骤时间线、流式尾部、取消按钮、历史切换）与桌面/390px/320px 布局；样例不调用模型或读取用户历史。条幅排在输入区上方，点它不算“要写入”：不触发输入区展开，否则条幅会在 mousedown 与 mouseup 之间被顶走、click 根本不触发（与“回到最新”按钮同一道防守）。
 
 ## 会话与子代理运行信息
 

@@ -223,6 +223,33 @@
       </div>
     </dialog>
     <div id="task-overlays"></div>
+    <!-- 后台摘要进程：点输入框上方的压缩条幅进来，结构与子代理详情一致（顶部摘要 + 可滚动记录）。 -->
+    <dialog id="compaction-run" class="task-dialog compaction-run-dialog" aria-labelledby="compaction-run-title">
+      <div class="task-top">
+        <header>
+          <h2 id="compaction-run-title">后台压缩</h2>
+          <form method="dialog"><button class="secondary" aria-label="关闭后台压缩详情" autofocus>✕</button></form>
+        </header>
+        <div id="compaction-run-meta" class="runtime-summary" role="status" aria-live="polite"></div>
+        <nav class="task-navigation compaction-run-actions" aria-label="后台压缩操作">
+          <label id="compaction-run-pick-label" hidden>历史
+            <select id="compaction-run-pick" aria-label="选择要查看的压缩记录"></select>
+          </label>
+          <button type="button" id="compaction-run-cancel" class="danger" hidden>取消本次摘要</button>
+        </nav>
+      </div>
+      <div class="task-body" role="region" aria-label="后台压缩执行记录" tabindex="0">
+        <p id="compaction-run-error" class="task-error" role="alert" hidden></p>
+        <h3>触发与配置</h3>
+        <div id="compaction-run-trigger" class="compaction-run-facts"></div>
+        <h3>过程</h3>
+        <ol id="compaction-run-steps" class="compaction-run-steps"></ol>
+        <details id="compaction-run-stream-wrap" class="compaction-run-stream" hidden>
+          <summary>模型正在写的摘要（尾部）</summary>
+          <pre id="compaction-run-stream"></pre>
+        </details>
+      </div>
+    </dialog>
     <template id="task-template">
       <button type="button" class="task-card" aria-haspopup="dialog">
         <span class="task-meta"><span class="task-badge">子代理</span><span class="task-status"></span><span class="task-cost"></span><span class="task-open" aria-hidden="true">查看详情 ↗</span></span>

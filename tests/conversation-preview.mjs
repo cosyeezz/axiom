@@ -97,7 +97,41 @@ states.push(longState);
 const compactState = structuredClone(state);
 compactState.sessionId = "ui-compaction";
 compactState.title = "压缩验收 · 摘要分层与后台进度";
-compactState.compactionStatus = { status: "summarizing", startedAt: Date.now() };
+const compactRunStart = Date.now() - 12000;
+compactState.compactionStatus = {
+  status: "summarizing",
+  startedAt: compactRunStart,
+  runId: "run-preview-2",
+  // 两条 run：一条已失败可回看，一条在途可取消，足以覆盖弹窗里全部分支。
+  runs: [
+    {
+      id: "run-preview-1", status: "failed", startedAt: compactRunStart - 90000, endedAt: compactRunStart - 60000,
+      model: "anthropic/claude-haiku", thinking: "off",
+      trigger: { tokens: 118000, contextWindow: 200000, tokenThreshold: 100000, percentThreshold: 50, keepRecentTokens: 5000, estimated: true },
+      steps: [
+        { step: "trigger", text: "触发后台压缩 · 上下文 118,000 / 200,000 tokens（估算）", at: compactRunStart - 90000 },
+        { step: "session", text: "摘要会话就绪 · anthropic/claude-haiku · thinking=off", at: compactRunStart - 89000 },
+        { step: "failed", text: "后台摘要失败（429 Too Many Requests）；30 秒后可在后续回合重试", at: compactRunStart - 60000 },
+      ],
+      stream: { chars: 0, preview: "", thinkingChars: 0 },
+      usage: null, error: "429 Too Many Requests", result: null,
+    },
+    {
+      id: "run-preview-2", status: "summarizing", startedAt: compactRunStart, endedAt: null,
+      model: "anthropic/claude-haiku", thinking: "off",
+      trigger: { tokens: 121500, contextWindow: 200000, tokenThreshold: 100000, percentThreshold: 50, keepRecentTokens: 5000, estimated: false },
+      steps: [
+        { step: "trigger", text: "触发后台压缩 · 上下文 121,500 / 200,000 tokens", at: compactRunStart },
+        { step: "plan", text: "已固定快照 · 待摘要 24 条消息，保留近期 6 条", at: compactRunStart + 200 },
+        { step: "session", text: "摘要会话就绪 · anthropic/claude-haiku · thinking=off", at: compactRunStart + 900 },
+        { step: "request", text: "发出摘要请求 · 约 96,400 字符原文", at: compactRunStart + 1000 },
+        { step: "stream_start", text: "模型开始回写摘要", at: compactRunStart + 3400 },
+      ],
+      stream: { chars: 420, preview: "## Goal\n把压缩过程做成可观察的进程视图。\n\n## Progress\n后端已记录步骤时间线，前端", thinkingChars: 0 },
+      usage: { input: 24100, output: 120 }, error: null, result: null,
+    },
+  ],
+};
 compactState.tasks = [
   { id: "compact-a", task: "第一阶段：检查约束与路径", status: "completed" },
   { id: "compact-b", task: "第二阶段：验证连续压缩", status: "completed" },
@@ -144,6 +178,20 @@ const sessions = {
   list: () => states.map((s) => ({ id: s.sessionId, cwd: s.cwd, title: s.title, status: s.status, updatedAt: Date.now(), sessionFile: `preview-${s.sessionId}.jsonl` })),
   get: (id) => states.find((s) => s.sessionId === id) || state,
   ensureLoaded: async (id) => sessions.get(id),
+  // 展开摘要卡取回原文：按 compactedMessageIds 回放该段主消息与子代理消息，没有这个桩验收时会报错。
+  compactionMessages: async (id, compactionId) => {
+    const item = sessions.get(id);
+    const record = (item.compactions || []).find((entry) => entry.id === compactionId);
+    if (!record) throw new Error("找不到该压缩摘要");
+    const hidden = new Set(record.compactedMessageIds || []);
+    const picked = [];
+    let inside = false;
+    for (const entry of item.messages) {
+      if ((entry.agentId ?? "main") === "main") inside = !!entry.entryId && hidden.has(entry.entryId);
+      if (inside) picked.push(entry);
+    }
+    return structuredClone({ sessionId: id, compactionId, messages: picked, tools: {}, retries: [] });
+  },
   snapshot: (id) => sessions.get(id),
   configure: async (id, selection) => {
     const s = sessions.get(id);

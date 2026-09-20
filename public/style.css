@@ -1082,6 +1082,16 @@ body:has(#context-menu:popover-open) #add-context { background: var(--raised); }
 .compaction-tasks .task-card { margin: 0; }
 #compaction-progress { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 #compaction-progress[data-status="failed"] { color: var(--danger); }
+/* 条幅本身可点：整行都是按钮，内边距由容器提供，按钮只负责热区与悬停反馈。 */
+#compaction-progress .compaction-progress-open {
+  display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; min-height: 0;
+  margin: -7px -10px; padding: 7px 10px; border: 0; border-radius: 8px;
+  background: none; color: inherit; font: inherit; font-weight: 400; text-align: left;
+}
+#compaction-progress .compaction-progress-open:hover { background: var(--hover); color: var(--ink); }
+#compaction-progress[data-status="failed"] .compaction-progress-open:hover { color: var(--danger); }
+#compaction-progress .compaction-progress-text { min-width: 0; }
+#compaction-progress .compaction-progress-hint { margin-left: auto; flex-shrink: 0; color: var(--accent-ink); }
 /* 安全停止提示条：结构跟压缩进度条一致，只把色调换成 --success 表示「在正常收尾」。 */
 #safe-stop-progress { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 7px 10px; border: 1px solid color-mix(in srgb, var(--success) 30%, var(--line)); border-radius: 8px; background: color-mix(in srgb, var(--success) 8%, var(--surface)); color: var(--success); font-size: 12px; }
 .safe-stop-icon { width: 14px; height: 14px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
@@ -1097,6 +1107,24 @@ body:has(#context-menu:popover-open) #add-context { background: var(--raised); }
   .safe-stop-icon, .safe-stop-dots i { animation-name: none; }
 }
 #compaction-progress .task-run-spin { flex-shrink: 0; }
+/* 后台摘要进程弹窗：布局跟 .task-dialog，只把强调色从 --subagent 换回 --accent（这不是子代理）。 */
+.compaction-run-dialog { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+.compaction-run-dialog .task-top h2 { color: var(--accent-ink); }
+/* 历史下拉 + 取消按钮同行；窄屏放不下时按钮换行，不让它顶出弹窗边框。 */
+.compaction-run-actions { align-items: center; flex-wrap: wrap; }
+.compaction-run-actions label { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.compaction-run-actions select { min-height: 36px; max-width: 260px; }
+.compaction-run-actions #compaction-run-cancel { min-height: 36px; padding: 4px 12px; margin-left: auto; font-size: 12px; white-space: nowrap; }
+.compaction-run-facts { margin: 8px 0 20px; color: var(--body-ink); font-size: 13px; font-variant-numeric: tabular-nums; }
+.compaction-run-facts p { margin: 4px 0; overflow-wrap: anywhere; }
+.compaction-run-steps { margin: 8px 0 0; padding: 0; list-style: none; }
+.compaction-run-steps li { display: flex; gap: 12px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.compaction-run-steps li:first-child { border-top: 0; }
+.compaction-run-steps time { flex-shrink: 0; color: var(--muted); font: 12px/1.6 var(--mono); font-variant-numeric: tabular-nums; }
+.compaction-run-steps span { min-width: 0; color: var(--body-ink); overflow-wrap: anywhere; }
+.compaction-run-stream { margin-top: 20px; border: 1px solid var(--line); border-radius: 8px; }
+.compaction-run-stream summary { padding: 8px 12px; color: var(--muted); font-size: 12px; cursor: pointer; }
+.compaction-run-stream pre { margin: 0; padding: 12px; border-top: 1px solid var(--line); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); font: 13px/1.7 var(--mono); }
 .compaction-settings .selectors { flex-wrap: wrap; overflow: visible; margin-top: 8px; }
 .compaction-settings input,
 .compaction-settings select { width: 100%; min-width: 0; }

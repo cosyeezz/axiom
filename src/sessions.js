@@ -2011,6 +2011,16 @@ export class Sessions {
     item.emit({ type: "session.state", data: { status: item.status, runId: item.runId, safeStop: true } });
   }
 
+  // 用户从压缩进程面板取消本次后台摘要：只动后台摘要，不影响主会话运行。
+  // 没在跑也不报错（前后端状态天然有竞争），回当前状态让前端对齐。
+  async cancelCompaction(id, runId) {
+    const item = this.get(id);
+    if (item.loading) await item.loading.catch(() => {});
+    if (!item.loaded || !item.agent?.cancelCompaction)
+      return { cancelled: false, reason: "not-loaded", status: null };
+    return item.agent.cancelCompaction(runId);
+  }
+
   async cancel(id) {
     const item = this.get(id);
     if (item.loading) {

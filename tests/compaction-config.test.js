@@ -167,3 +167,40 @@ test("删除目录默认配置只影响新会话，不覆盖已有会话", async
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("session.compaction.cancel：协议校验 + 未加载会话安全返回 + 透传到 agent", async () => {
+  // 协议：sessionId 必填，runId 可选且有长度上限（前端可能带着陈旧 id 来）
+  const base = { id: "1", type: "session.compaction.cancel" };
+  assert.ok(command.safeParse({ ...base, sessionId: "s1" }).success);
+  assert.ok(command.safeParse({ ...base, sessionId: "s1", runId: "run-1" }).success);
+  for (const patch of [{}, { sessionId: "" }, { sessionId: "s1", runId: "" }, { sessionId: "s1", runId: "x".repeat(257) }, { sessionId: "s1", extra: 1 }])
+    assert.equal(command.safeParse({ ...base, ...patch }).success, false);
+
+  const dir = await mkdtemp(join(tmpdir(), "axiom-compaction-"));
+  const calls = [];
+  const factory = async (_tools, selection) => {
+    let config = { model: "p/main", thinking: "off", compaction: { ...compactionDefaults }, ...selection };
+    for (const key of ["memory", "executionContext", "shouldPause"]) delete config[key];
+    return {
+      config: () => config, configure: async (value) => (config = { ...config, ...value }),
+      historyEntries: () => [], compactions: () => [],
+      cancelCompaction: (runId) => { calls.push(runId); return { cancelled: true, reason: null, status: { status: "cancelled", runId, runs: [] } }; },
+      subscribe: () => () => {}, abort: async () => {}, dispose: async () => {},
+    };
+  };
+  factory.catalog = () => [{ key: "p/main", levels: ["off"] }];
+  const sessions = new Sessions(factory, join(dir, "defaults.json"), join(dir, "sessions"));
+  try {
+    const id = await sessions.create(dir);
+    assert.deepEqual(await sessions.cancelCompaction(id, "run-1"), { cancelled: true, reason: null, status: { status: "cancelled", runId: "run-1", runs: [] } });
+    assert.deepEqual(calls, ["run-1"]);
+    // 懒加载会话还没起 agent：不报错，只说明没取消
+    const idle = await sessions.create(dir);
+    sessions.get(idle).loaded = false;
+    sessions.get(idle).agent = null;
+    assert.deepEqual(await sessions.cancelCompaction(idle, "run-9"), { cancelled: false, reason: "not-loaded", status: null });
+  } finally {
+    await sessions.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

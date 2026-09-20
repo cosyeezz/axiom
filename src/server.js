@@ -430,6 +430,9 @@ export function createServerApp(sessions, service = {}) {
             case "session.compaction.messages":
               data = await sessions.compactionMessages(request.sessionId, request.compactionId);
               break;
+            case "session.compaction.cancel":
+              data = await sessions.cancelCompaction(request.sessionId, request.runId);
+              break;
             case "session.skills.refresh":
               data = { skills: await sessions.refreshSkills(request.sessionId) };
               break;

@@ -131,6 +131,9 @@ const compactionNodes = new Map(), taskEntries = new Map();
 // 压缩摘要卡按需展开：attach 下发的历史不含被折叠的消息，点开才取这一段原文。
 // 值是取数 Promise（每张卡只取一次）；实时压缩折叠的卡直接标记为已加载（消息本来就在页上）。
 const compactionSegments = new Map();
+// 后台压缩的可观测状态：条幅与详情弹窗共用这一份（最后一次 agent.compaction.status 的载荷）。
+// compactionRunPick 记住用户在弹窗里手选的历史 run，不被新事件抽走。
+let compactionStatus = null, compactionRunPick = null;
 let images = [], imageLoading = false;
 let completionVersion = 0, completionToken, completionEntries = [], completionIndex = 0;
 let selectedSkill = "", contextFiles = [], pickingWorkspace = false, currentCwd = "";
@@ -425,7 +428,8 @@ composerWrap.addEventListener("mouseenter", () => { composerHovered = true; clea
 composerWrap.addEventListener("mouseleave", () => { composerHovered = false; scheduleComposerCollapse(); });
 // “回到最新”钉在输入区上沿（bottom: 100% + 8px），mousedown 就展开会把按钮向上推
 // 两百多像素，mouseup 落不回原元素，click 根本不触发——滚动按钮不算写入意图。
-const composerIntent = (event) => !event.target?.closest?.("#latest");
+// 压缩进度条幅同理：它排在输入区上方，展开会把它顶走，点开摘要详情也不是写入意图。
+const composerIntent = (event) => !event.target?.closest?.("#latest, #compaction-progress");
 composerWrap.addEventListener("mousedown", (event) => { if (composerIntent(event)) expandComposer(); });
 composerWrap.addEventListener("focusin", (event) => { if (composerIntent(event)) expandComposer(); });
 composerWrap.addEventListener("focusout", scheduleComposerCollapse);
@@ -1849,22 +1853,135 @@ function renderMessage(item, message) {
   updateActivity(item, ["error", "aborted", "length"].includes(message.stopReason) ? (message.errorMessage || "响应中断") : undefined);
   renderer.flush(item);
 }
+const compactionLabels = { summarizing: "后台压缩：正在生成摘要…", ready: "后台压缩：摘要已就绪，等待下一次请求前应用", applied: "后台压缩：已完成", failed: "后台压缩：失败，保留原文", skipped: "后台压缩：已跳过", cancelled: "后台压缩：已取消" };
+const compactionRunPhases = { summarizing: "生成中", ready: "待应用", applied: "已应用", failed: "失败", skipped: "已跳过", cancelled: "已取消" };
+const compactionCount = (value) => (Number.isFinite(value) ? value.toLocaleString("en-US") : "—");
+const compactionClock = (at) => (Number.isFinite(at) ? new Date(at).toLocaleTimeString("zh-CN", { hour12: false }) : "—");
+const compactionSpan = (from, to) => (Number.isFinite(from) ? `${Math.max(0, Math.round(((to ?? Date.now()) - from) / 1000))}s` : "—");
+const compactionRuns = () => (Array.isArray(compactionStatus?.runs) ? compactionStatus.runs : []);
+// 条幅与弹窗展示同一条 run：用户手选优先，否则跟当前在途的，再否则看最后一条。
+function compactionRun() {
+  const runs = compactionRuns();
+  return runs.find((run) => run.id === compactionRunPick) || runs.find((run) => run.id === compactionStatus?.runId) || runs.at(-1) || null;
+}
 function renderCompactionStatus(data) {
+  compactionStatus = data && compactionLabels[data.status] ? data : null;
   const node = $("compaction-progress");
-  const labels = { summarizing: "后台压缩：正在生成摘要…", ready: "后台压缩：摘要已就绪，等待下一次请求前应用", applied: "后台压缩：已完成", failed: "后台压缩：失败，保留原文", skipped: "后台压缩：已跳过", cancelled: "后台压缩：已取消" };
   node.replaceChildren();
-  node.hidden = !labels[data?.status];
-  node.dataset.status = data?.status || "";
-  if (node.hidden) return;
-  if (data.status === "summarizing") {
+  node.hidden = !compactionStatus;
+  node.dataset.status = compactionStatus?.status || "";
+  if (!compactionStatus) {
+    compactionRunPick = null;
+    $("compaction-run").close();
+    return;
+  }
+  const spin = compactionStatus.status === "summarizing";
+  const text = `${compactionLabels[compactionStatus.status]}${compactionStatus.message ? ` · ${compactionStatus.message}` : ""}`;
+  const parts = [];
+  if (spin) {
     const icon = document.createElement("span");
     icon.className = "task-run-spin";
     icon.setAttribute("aria-hidden", "true");
-    node.append(icon);
+    parts.push(icon);
   }
   const label = document.createElement("span");
-  label.textContent = `${labels[data.status]}${data.message ? ` · ${data.message}` : ""}`;
-  node.append(label);
+  label.className = "compaction-progress-text";
+  label.textContent = text;
+  parts.push(label);
+  // 没有 run 详情（旧服务端 / 恢复出来的陈旧状态）就不做成按钮，避免点进去是空的。
+  if (!compactionRuns().length) {
+    node.append(...parts);
+    return;
+  }
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = "compaction-progress-open";
+  open.setAttribute("aria-haspopup", "dialog");
+  open.setAttribute("aria-controls", "compaction-run");
+  open.title = "查看后台摘要的执行过程，在途时可取消";
+  open.setAttribute("aria-label", `${text}（点击查看过程）`);
+  const hint = document.createElement("span");
+  hint.className = "compaction-progress-hint";
+  hint.setAttribute("aria-hidden", "true");
+  hint.textContent = "查看过程 ↗";
+  open.append(...parts, hint);
+  open.onclick = () => openCompactionRun();
+  node.append(open);
+  if ($("compaction-run").open) renderCompactionRun();
+}
+function openCompactionRun() {
+  compactionRunPick = null; // 从条幅进来总是看“当下这一次”
+  renderCompactionRun();
+  const dialog = $("compaction-run");
+  if (!dialog.open) dialog.showModal();
+}
+function renderCompactionRun() {
+  const dialog = $("compaction-run");
+  const run = compactionRun();
+  const runs = compactionRuns();
+  if (!run) {
+    dialog.close();
+    return;
+  }
+  const phase = compactionRunPhases[run.status] || run.status;
+  dialog.dataset.status = run.status;
+  $("compaction-run-title").textContent = `后台压缩 · ${phase}`;
+  const trigger = run.trigger || {};
+  $("compaction-run-meta").replaceChildren(...[
+    `模型 ${run.model || "主代理模型"}`,
+    `thinking ${run.thinking ?? "off"}`,
+    `开始 ${compactionClock(run.startedAt)}`,
+    `耗时 ${compactionSpan(run.startedAt, run.endedAt)}`,
+    `输出 ${compactionCount(run.stream?.chars)} 字符`,
+    run.usage ? `摘要 usage ${compactionCount((run.usage.input ?? 0) + (run.usage.cacheRead ?? 0) + (run.usage.cacheWrite ?? 0))} in / ${compactionCount(run.usage.output)} out` : null,
+  ].filter(Boolean).map((text) => {
+    const span = document.createElement("span");
+    span.textContent = text;
+    return span;
+  }));
+  $("compaction-run-trigger").replaceChildren(...[
+    `触发时上下文 ${compactionCount(trigger.tokens)}${trigger.contextWindow ? ` / ${compactionCount(trigger.contextWindow)}` : ""} tokens${trigger.estimated ? "（估算）" : ""}`,
+    `阈值 ${[trigger.tokenThreshold ? `${compactionCount(trigger.tokenThreshold)} tokens` : null, trigger.percentThreshold ? `${trigger.percentThreshold}%` : null].filter(Boolean).join(" 或 ") || "未设"}`,
+    `保留最近 ${compactionCount(trigger.keepRecentTokens)} tokens`,
+    run.result ? `结果：${compactionCount(run.result.tokensBefore)} → ${compactionCount(run.result.estimatedTokensAfter)} tokens（估算）· 引文 ${compactionCount(run.result.facts)} 条` : null,
+  ].filter(Boolean).map((text) => {
+    const line = document.createElement("p");
+    line.textContent = text;
+    return line;
+  }));
+  $("compaction-run-steps").replaceChildren(...(run.steps || []).map((step) => {
+    const item = document.createElement("li");
+    const time = document.createElement("time");
+    time.textContent = compactionClock(step.at);
+    const text = document.createElement("span");
+    text.textContent = step.text || step.step;
+    item.append(time, text);
+    return item;
+  }));
+  const stream = (run.stream?.preview || "").trim();
+  $("compaction-run-stream-wrap").hidden = !stream;
+  $("compaction-run-stream").textContent = stream;
+  if (stream && run.status === "summarizing") $("compaction-run-stream-wrap").open = true;
+  $("compaction-run-error").textContent = run.error || "";
+  $("compaction-run-error").hidden = !run.error;
+  // 取消只对“当前这一次”开放：ready 也算在途（结果还未应用，取消就是丢弃）。
+  const cancellable = run.id === compactionStatus?.runId && ["summarizing", "ready"].includes(run.status);
+  const cancel = $("compaction-run-cancel");
+  cancel.hidden = !cancellable;
+  cancel.disabled = !cancellable || !connected || changing || sessionMissing || cancel.dataset.busy === "1";
+  cancel.dataset.runId = run.id;
+  cancel.title = run.status === "ready" ? "丢弃这份已生成但未应用的摘要，保留原文" : "中断后台摘要请求，保留原文";
+  const pick = $("compaction-run-pick");
+  $("compaction-run-pick-label").hidden = runs.length < 2;
+  if (runs.length >= 2) {
+    pick.replaceChildren(...runs.map((item, index) => {
+      const option = document.createElement("option");
+      option.value = item.id;
+      option.textContent = `#${index + 1} ${compactionClock(item.startedAt)} · ${compactionRunPhases[item.status] || item.status}`;
+      return option;
+    }));
+    pick.value = run.id;
+  }
 }
 function trackTaskEntries(message, entryId) {
   if (message.isError || message.role !== "toolResult" || message.toolName?.replace(/^functions\./, "") !== "delegate") return;
@@ -3503,6 +3620,40 @@ $("session-alert").onclick = () => {
   region("输入操作", updateComposer);
 };
 $("stop").onclick = () => void stopSession("safe");
+// 后台压缩详情：选历史 run 只换展示，取消只作用于当前在途的那一次。
+$("compaction-run-pick").onchange = (e) => {
+  compactionRunPick = e.target.value || null;
+  renderCompactionRun();
+};
+$("compaction-run-cancel").onclick = async () => {
+  const button = $("compaction-run-cancel");
+  const target = sessionId;
+  const runId = button.dataset.runId;
+  if (button.dataset.busy === "1") return;
+  button.dataset.busy = "1";
+  button.disabled = true;
+  try {
+    const result = await request("session.compaction.cancel", { sessionId: target, ...(runId ? { runId } : {}) });
+    // 取消成功会有 status 事件推回来；这里只处理“没赶上”的情况。
+    if (result && result.cancelled === false && sessionId === target) {
+      if (result.status) renderCompactionStatus(result.status);
+      else renderCompactionRun();
+    }
+  } catch (e) {
+    if (sessionId === target) error(e);
+  } finally {
+    delete button.dataset.busy;
+    if ($("compaction-run").open) renderCompactionRun();
+  }
+};
+// 与子代理详情一致：点弹窗外（真正落在 backdrop 上）关闭。
+$("compaction-run").onclick = (e) => {
+  const dialog = $("compaction-run");
+  if (e.target !== dialog) return;
+  const rect = dialog.getBoundingClientRect();
+  if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) dialog.close();
+};
+$("compaction-run").onclose = () => { compactionRunPick = null; };
 $("force-stop").onclick = () => {
   $("force-stop-dialog").showModal();
   $("force-stop-cancel").focus(); // 默认落在取消上：回车不应该直接把本轮产出丢掉

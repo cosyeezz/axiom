@@ -239,10 +239,16 @@ function appendVerifiedFacts(summary, verifiedFacts, snapshotPath) {
   };
 }
 
-export async function summarizeWithPiSession({ messages, previousSummary, model, thinking, modelRuntime, signal }) {
+// 后台摘要跑在一个独立的临时 pi 会话里，过程原先完全不可见。onProgress 把该会话的生命周期
+// 事件（建会话、发请求、流式产出、收尾）原样上报给控制器，控制器再转成 UI 可读的步骤流。
+// 上报失败绝不影响摘要本身：每次回调都包 try/catch。
+export async function summarizeWithPiSession({ messages, previousSummary, model, thinking, modelRuntime, signal, onProgress }) {
+  const progress = (event) => { try { onProgress?.(event); } catch {} };
   throwIfAborted(signal); // 创建前检查
+  progress({ kind: "note", step: "prepare", text: "准备摘要运行环境（临时目录 + 无工具会话）" });
   const agentDir = mkdtempSync(join(tmpdir(), "axiom-compaction-"));
   let session;
+  let unsubscribe;
   try {
     const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
     const loader = new DefaultResourceLoader({
@@ -273,10 +279,28 @@ export async function summarizeWithPiSession({ messages, previousSummary, model,
       })
     ).session;
     throwIfAborted(signal); // 创建后检查（等待 loader 期间可能已被取消）
+    progress({ kind: "note", step: "session", text: `摘要会话就绪 · ${model?.name || model?.id || "主代理模型"} · thinking=${thinking ?? "off"}` });
+    // 订阅只做上报：读取 SDK 已累积好的消息内容，不自己拼 delta，避免与流式协议细节耦合。
+    unsubscribe = session.subscribe?.((event) => {
+      if (event.type === "message_start" && event.message?.role === "assistant")
+        progress({ kind: "note", step: "stream_start", text: "模型开始回写摘要" });
+      if (event.type === "message_update" && event.message?.role === "assistant") {
+        const blocks = Array.isArray(event.message.content) ? event.message.content : [];
+        progress({
+          kind: "stream",
+          text: blocks.filter((block) => block?.type === "text").map((block) => block.text || "").join("\n"),
+          thinking: blocks.filter((block) => block?.type === "thinking").map((block) => block.thinking || "").join("\n"),
+        });
+      }
+      if (event.type === "message_end" && event.message?.role === "assistant")
+        progress({ kind: "note", step: "stream_end", text: `模型输出结束 · stopReason=${event.message.stopReason ?? "none"}`, usage: event.message.usage });
+    });
     const onAbort = () => void session.abort(); // 真实中断后台 LLM，不跑自然完成
     signal?.addEventListener("abort", onAbort, { once: true });
     try {
-      await session.prompt(summaryRequest(serializeConversation(convertToLlm(messages)), previousSummary), {
+      const request = summaryRequest(serializeConversation(convertToLlm(messages)), previousSummary);
+      progress({ kind: "note", step: "request", text: `发出摘要请求 · 约 ${request.length.toLocaleString("en-US")} 字符原文` });
+      await session.prompt(request, {
         expandPromptTemplates: false,
       });
     } finally {
@@ -290,8 +314,13 @@ export async function summarizeWithPiSession({ messages, previousSummary, model,
       .trim();
     if (last?.stopReason !== "stop" || !summary)
       throw new Error(`Summarization failed (stopReason=${last?.stopReason ?? "none"}): ${describeCompactionError(last?.errorMessage || (!summary ? "模型未返回摘要正文" : "模型未正常完成摘要"))}`);
-    return { ...parseSummaryOutput(summary), usage: last.usage };
+    const parsed = parseSummaryOutput(summary);
+    progress({ kind: "note", step: "parsed", text: `摘要解析完成 · 正文 ${parsed.summary?.length ?? 0} 字符 · 引文 ${parsed.facts?.length ?? 0} 条` });
+    return { ...parsed, usage: last.usage };
   } finally {
+    try {
+      unsubscribe?.();
+    } catch {}
     try {
       session?.dispose();
     } catch {}
@@ -313,8 +342,19 @@ export async function summarizeWithPiSession({ messages, previousSummary, model,
  *   通过的引文以附录（带行号）随摘要进上下文，原文快照落盘可 grep/read 回读。
  * - 失效检查：分支切换或快照之后落了别的压缩条目 → 结果作废，原文不动；摘要失败同样原文不动。
  * - 取消：cancel()（setConfig 变化 / dispose 时自动调用，pi wrapper 的 abort 也应调用）
- *   通过 AbortController 信号中断后台真实 LLM 请求。
+ *   通过 AbortController 信号中断后台真实 LLM 请求；cancelRun(runId) 是用户从 UI 主动取消，
+ *   额外压一段冷却期，避免下一个 turn_end 立马又跑起来。
+ * - 可观测：每次摘要是一条 run 记录（阶段、步骤时间线、流式正文尾部、usage、错误），
+ *   随 agent.compaction.status 下发。内存保留最近 RUN_HISTORY 条，进程重启不留存。
  */
+// 运行记录上限：只为“出事了可以回头看”，不做长期审计；预览只留尾部，避免流式期间 payload 越跑越大。
+const RUN_HISTORY = 5;
+const RUN_PREVIEW_CHARS = 1500;
+const RUN_STEPS = 40;
+// 流式正文频率很高：节流后再广播，避免每个 token 都走一轮 WebSocket 广播。
+const RUN_STREAM_INTERVAL = 500;
+// 用户主动取消后的冷却：立即重试等于取消按钮无效；也不能永不重试，上下文还是会溢。
+const CANCEL_COOLDOWN = 60000;
 // 错误仅展示单行摘要，不传播堆栈；先脱敏再截断，避免截断凭据后无法识别。
 export function describeCompactionError(error) {
   const message = String(error?.message ?? error ?? "未知错误")
@@ -343,24 +383,115 @@ export function createBackgroundCompaction({
   let status = null;
   let failures = 0;
   let retryAt = 0;
+  let runs = []; // 最近几次摘要的可观测记录（旧→新）
+  let activeRun = null; // 当前在途/待应用的 run，终态后置 null
+  let runSeq = 0;
+  let streamTimer = null;
+  let lastStreamEmit = 0;
   function resetRetry() { failures = 0; retryAt = 0; }
+  // 下发载荷：外层字段保持原样（老前端只认 status/message/startedAt），run 详情另开字段。
+  function statusPayload() {
+    if (!status) return null;
+    return { ...status, runId: activeRun?.id ?? null, runs: structuredClone(runs) };
+  }
+  function emitStatus(immediate = true) {
+    if (immediate) {
+      if (streamTimer) { clearTimeout(streamTimer); streamTimer = null; }
+      lastStreamEmit = Date.now();
+      try { onEvent?.({ type: "agent.compaction.status", data: statusPayload() }); } catch {}
+      return;
+    }
+    if (streamTimer) return;
+    const wait = Math.max(0, RUN_STREAM_INTERVAL - (Date.now() - lastStreamEmit));
+    streamTimer = setTimeout(() => { streamTimer = null; emitStatus(true); }, wait);
+    streamTimer.unref?.();
+  }
+  function startRun(info) {
+    activeRun = {
+      id: `run-${Date.now().toString(36)}-${++runSeq}`,
+      status: "summarizing",
+      startedAt: Date.now(),
+      endedAt: null,
+      model: info.model,
+      thinking: info.thinking,
+      trigger: info.trigger,
+      steps: [],
+      stream: { chars: 0, preview: "", thinkingChars: 0 },
+      usage: null,
+      error: null,
+      result: null,
+    };
+    runs = [...runs, activeRun].slice(-RUN_HISTORY);
+    // 外层 status 与 run 同时置为 summarizing：后续 note/流式上报都基于这个状态广播。
+    status = { status: "summarizing", startedAt: activeRun.startedAt };
+    return activeRun;
+  }
+  // 步骤时间线：与上一条完全重复则不追加，避免同一句话刷屏。
+  function note(run, step, text) {
+    if (!run) return;
+    const last = run.steps.at(-1);
+    if (last && last.step === step && last.text === text) return;
+    run.steps = [...run.steps, { step, text: text == null ? "" : String(text).slice(0, 400), at: Date.now() }].slice(-RUN_STEPS);
+  }
   function fail(message, error) {
     const delay = Math.min(300000, 30000 * 2 ** Math.min(failures++, 4));
     retryAt = Date.now() + delay;
+    if (activeRun) activeRun.error = error == null ? message : describeCompactionError(error);
     report("failed", `${message}${error == null ? "" : `（${describeCompactionError(error)}）`}；${delay / 1000} 秒后可在后续回合重试`);
   }
   function report(phase, message) {
     status = { status: phase, startedAt: phase === "summarizing" ? Date.now() : status?.startedAt, ...(message ? { message } : {}) };
-    try { onEvent?.({ type: "agent.compaction.status", data: { ...status } }); } catch {}
+    if (activeRun) {
+      activeRun.status = phase;
+      if (message) activeRun.message = message;
+      note(activeRun, phase, message || phase);
+      // ready 是“算完了等安全点应用”，还没结束；其余非 summarizing 阶段都是终态。
+      if (phase !== "summarizing" && phase !== "ready") {
+        activeRun.endedAt = Date.now();
+        activeRun = null;
+      }
+    }
+    emitStatus(true);
+  }
+  // 摘要会话的内部进展：note 进时间线（立即广播），stream 只更新尾部预览（节流广播）。
+  function onFlightProgress(run, event) {
+    if (!run || runs.indexOf(run) < 0) return;
+    if (event?.kind === "stream") {
+      const text = String(event.text ?? "");
+      run.stream = {
+        chars: text.length,
+        preview: text.length > RUN_PREVIEW_CHARS ? text.slice(-RUN_PREVIEW_CHARS) : text,
+        thinkingChars: String(event.thinking ?? "").length,
+      };
+      emitStatus(false);
+      return;
+    }
+    if (event?.usage) run.usage = event.usage;
+    note(run, event?.step || "note", event?.text);
+    emitStatus(true);
   }
 
-  function cancel() {
-    if (pending) report("cancelled", "后台摘要已取消，保留原文");
+  function cancel(reason) {
+    if (pending) {
+      if (activeRun) note(activeRun, "cancel", reason || "后台摘要已取消");
+      report("cancelled", reason || "后台摘要已取消，保留原文");
+    }
     try {
       controller?.abort();
     } catch {}
     controller = null;
     pending = null;
+  }
+
+  // 用户从 UI 取消：只能取消当前这一次（带 runId 时还要对得上，防前端拿陈旧 id 误杀新任务）。
+  // 不抛错：按钮与真实状态天然有竞争，返回结果让前端自己对齐。
+  function cancelRun(runId) {
+    if (!pending || !activeRun || (runId && runId !== activeRun.id))
+      return { cancelled: false, reason: "no-active-run", status: statusPayload() };
+    retryAt = Date.now() + CANCEL_COOLDOWN;
+    failures = 0;
+    cancel(`已按你的要求取消本次后台摘要，保留原文；${CANCEL_COOLDOWN / 1000} 秒内不再自动重试`);
+    return { cancelled: true, reason: null, status: statusPayload() };
   }
 
   function resolveModel() {
@@ -378,9 +509,10 @@ export function createBackgroundCompaction({
     return !branch.slice(leafIndex + 1).some((entry) => entry.type === "compaction"); // 期间出现过新压缩 → 作废
   }
 
-  function runFlight(preparation) {
+  function runFlight(preparation, run) {
     const model = resolveModel(); // 快照时同步捕获 model/thinking，配置漂移不影响在途 flight
     controller = new AbortController();
+    if (run) run.model = model?.name || model?.id || run.model;
     return summarize({
       messages: structuredClone(preparation.messagesToSummarize), // 冻结快照，防消息对象后续被原地改写
       previousSummary: preparation.previousSummary,
@@ -388,6 +520,7 @@ export function createBackgroundCompaction({
       thinking: current.thinking,
       modelRuntime,
       signal: controller.signal,
+      onProgress: (event) => onFlightProgress(run, event),
     });
   }
 
@@ -403,21 +536,38 @@ export function createBackgroundCompaction({
       const branch = session.sessionManager.getBranch();
       const preparation = prepareBackgroundCompaction(branch, current.keepRecentTokens);
       if (!preparation || preparation.messagesToSummarize.length === 0) return;
+      // 校验语料：与摘要模型所见逐字一致（同一渲染函数、同一消息内容）；快照与引文行号都指向这份文本
+      const corpus = serializeConversation(convertToLlm(preparation.messagesToSummarize));
+      const run = startRun({
+        model: current.model || session.model?.name || session.model?.id || "主代理模型",
+        thinking: current.thinking,
+        trigger: {
+          tokens,
+          contextWindow,
+          tokenThreshold: current.tokenThreshold ?? null,
+          percentThreshold: current.percentThreshold ?? null,
+          keepRecentTokens: current.keepRecentTokens ?? null,
+          estimated: usage?.tokens == null, // 真实 usage 不可用时是 chars/4 估算
+        },
+      });
+      note(run, "trigger", `触发后台压缩 · 上下文 ${tokens.toLocaleString("en-US")}${contextWindow ? ` / ${contextWindow.toLocaleString("en-US")}` : ""} tokens${usage?.tokens == null ? "（估算）" : ""}`);
+      note(run, "plan", `待摘要 ${preparation.messagesToSummarize.length} 条消息 · 语料 ${corpus.length.toLocaleString("en-US")} 字符${preparation.previousSummary ? " · 含上轮摘要" : ""}`);
       const flight = {
-        promise: runFlight(preparation),
-        // 校验语料：与摘要模型所见逐字一致（同一渲染函数、同一消息内容）；快照与引文行号都指向这份文本
-        corpus: serializeConversation(convertToLlm(preparation.messagesToSummarize)),
+        promise: runFlight(preparation, run),
+        corpus,
         previousSummary: preparation.previousSummary,
         firstKeptEntryId: preparation.firstKeptEntryId,
         compactedMessageIds: summarizedEntryIds(branch, preparation.firstKeptEntryId),
         leafId: session.sessionManager.getLeafEntry()?.id ?? null,
         settled: false,
+        run,
       };
       pending = flight;
-      report("summarizing");
+      emitStatus(true);
       flight.promise.then(
         (value) => {
           if (pending !== flight) return;
+          if (value?.usage) run.usage = value.usage;
           if (!value?.summary?.trim()) {
             pending = null;
             controller = null;
@@ -430,6 +580,7 @@ export function createBackgroundCompaction({
             .map((fact) => (typeof fact === "string" ? fact.trim() : ""))
             .filter(Boolean);
           if (facts.length > 0) {
+            note(run, "verify", `事实核验：逐字对账 ${facts.length} 条引文`);
             const checked = validateFacts(facts, flight.corpus, flight.previousSummary);
             if (!checked.ok) {
               pending = null;
@@ -438,6 +589,7 @@ export function createBackgroundCompaction({
               return;
             }
             flight.verifiedFacts = checked.facts;
+            note(run, "verify_ok", `引文全部通过（${checked.facts.length} 条）`);
           }
           flight.value = value;
           flight.settled = true;
@@ -487,6 +639,7 @@ export function createBackgroundCompaction({
         estimateTokens({ role: "compactionSummary", summary: assembled.summary }) +
         keptMessages.reduce((sum, message) => sum + estimateTokens(message), 0);
       if (estimatedAfter >= tokensBefore) return skip("摘要未缩小上下文，保留原文");
+      note(flight.run, "apply", `安全点应用摘要 · ${tokensBefore.toLocaleString("en-US")} → ${estimatedAfter.toLocaleString("en-US")} tokens（估算）`);
       const details = {
         rawEstimatedTokensBefore: tokensBefore,
         projectedTokensBefore,
@@ -515,6 +668,7 @@ export function createBackgroundCompaction({
       };
       try { onEvent?.({ type: "agent.compaction", data }); } catch {}
       resetRetry();
+      if (flight.run) flight.run.result = { compactionId: id, tokensBefore, estimatedTokensAfter: estimatedAfter, summaryChars: assembled.summary.length, facts: flight.verifiedFacts?.length ?? 0 };
       report("applied");
       return data;
     } catch (error) {
@@ -539,8 +693,9 @@ export function createBackgroundCompaction({
     onTurnEnd,
     maybeApply,
     cancel, // pi wrapper 在会话 abort / dispose 时调用，中断后台真实 LLM
+    cancelRun, // 用户从 UI 主动取消本次摘要
     getConfig: () => ({ ...current }),
-    getStatus: () => status ? { ...status } : null,
+    getStatus: () => statusPayload(),
     setConfig(next) {
       const normalized = normalizeCompaction(next);
       if (normalized.model && !available.some((m) => `${m.provider}/${m.id}` === normalized.model))
@@ -555,6 +710,7 @@ export function createBackgroundCompaction({
     dispose() {
       disposed = true;
       cancel(); // 中断在途摘要，结果不再落地
+      if (streamTimer) { clearTimeout(streamTimer); streamTimer = null; }
     },
   };
 }

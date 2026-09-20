@@ -221,6 +221,24 @@ test("滚动按钮不算输入意图：点回到最新不展开输入区", async
   } finally { dom.window.close(); }
 });
 
+// 同一类回归：后台压缩条幅也排在输入区上方，mousedown 就展开会把条幅向上顶两百多像素，
+// mouseup 落到别的元素上，click 不触发（真浏览器里重现过），摘要详情弹窗就点不开。
+test("压缩条幅不算输入意图：点进摘要详情不展开输入区", async () => {
+  const { dom, w, input } = await page();
+  const composer = w.document.getElementById("composer");
+  const progress = w.document.getElementById("compaction-progress");
+  try {
+    assert.equal(composer.dataset.collapsed, "true");
+    progress.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true }));
+    assert.equal(composer.dataset.collapsed, "true", "点条幅不展开，条幅不位移");
+    progress.dispatchEvent(new w.FocusEvent("focusin", { bubbles: true }));
+    assert.equal(composer.dataset.collapsed, "true", "条幅拿到焦点也不展开");
+
+    input.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true }));
+    assert.equal(composer.dataset.collapsed, "false", "点输入区仍然展开");
+  } finally { dom.window.close(); }
+});
+
 test("还在用的状态不折叠：待发图片、补全打开；运行中照常折叠", async () => {
   const { dom, w, input } = await page();
   const composer = w.document.getElementById("composer");

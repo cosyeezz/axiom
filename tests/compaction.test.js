@@ -902,6 +902,14 @@ test("真实 SDK loop：prompt 触发 turn_end 后台摘要，下一次 prompt �
     const branch = session.sessionManager.getBranch();
     assert.equal(branch.filter((entry) => entry.type === "compaction").length, 1);
     assert.equal(branch.at(-1).type, "message");
+    // 过程可视：run 的步骤流接的是真 SDK 事件（不只是测试桩调 onProgress）
+    const run = compaction.getStatus().runs.at(-1);
+    assert.equal(run.status, "applied");
+    for (const step of ["trigger", "plan", "session", "request", "stream_start", "stream_end", "parsed", "ready", "apply", "applied"])
+      assert.ok(run.steps.some((item) => item.step === step), `缺步骤 ${step}`);
+    assert.ok(run.stream.chars > 0, "流式文本有计数");
+    assert.match(run.stream.preview, /ok/);
+    assert.ok(run.model, "记录实际摘要模型");
   } finally {
     compaction?.dispose();
     await fake.close();
@@ -1156,6 +1164,160 @@ test("OP×compaction：摘要读原始全文，但同批里 obs_recall 回显作
     const texts = summarized.flatMap((m) => (Array.isArray(m.content) ? m.content : []).filter((b) => b.type === "text").map((b) => b.text));
     assert.ok(texts.some((t) => t.includes("SOURCE-MARKER")), "原始全文仍进摘要（摘要读原始历史，不吃折叠投影）");
     assert.ok(!texts.some((t) => t.startsWith("[obs_recall id=")), "指向同批原文的取回回显被丢弃");
+  } finally {
+    compaction?.dispose();
+    cleanup();
+  }
+});
+
+// 后台压缩可视化：每次摘要是一条 run 记录（阶段、步骤时间线、流式尾部、usage、错误），
+// 随 agent.compaction.status 下发；用户可从 UI 取消当前这一次。
+test("run 记录：步骤时间线与流式尾部随状态下发，终态保留结果", async () => {
+  const { session, cleanup } = await createTestSession();
+  let compaction;
+  try {
+    seed(session, [userMsg(big("a")), assistantMsg(big("b")), userMsg(big("c"))]);
+    const events = [];
+    compaction = createBackgroundCompaction({
+      session,
+      modelRuntime: null,
+      config: enabledConfig,
+      // 真实 summarize 会通过 onProgress 上报内部流程，这里照同样的协议发几条。
+      summarize: async ({ onProgress }) => {
+        onProgress({ kind: "note", step: "session", text: "摘要会话就绪 · fake" });
+        onProgress({ kind: "stream", text: "部分摘要正文", thinking: "想" });
+        onProgress({ kind: "note", step: "stream_end", text: "模型输出结束 · stopReason=stop", usage: { input: 7, output: 3 } });
+        return { summary: "S", usage: { input: 7, output: 3 } };
+      },
+      onEvent: (event) => events.push(event),
+    });
+
+    await compaction.onTurnEnd();
+    await settle();
+
+    const status = compaction.getStatus();
+    assert.equal(status.status, "ready");
+    assert.equal(status.runs.length, 1);
+    const run = status.runs[0];
+    assert.equal(run.id, status.runId);
+    assert.equal(run.status, "ready");
+    assert.equal(run.endedAt, null, "ready 还没结束（等安全点应用）");
+    assert.deepEqual(run.usage, { input: 7, output: 3 });
+    // 触发信息够回答「为什么压」：真实 usage 不可用时标记为估算
+    assert.equal(run.trigger.percentThreshold, 70);
+    assert.equal(run.trigger.keepRecentTokens, 200);
+    assert.ok(run.trigger.tokens >= 700);
+    // 时间线覆盖触发 → 计划 → 摘要会话 → 输出结束 → ready
+    const steps = run.steps.map((step) => step.step);
+    assert.deepEqual(steps, ["trigger", "plan", "session", "stream_end", "ready"]);
+    assert.ok(run.steps.every((step) => Number.isFinite(step.at)));
+    assert.match(run.steps[1].text, /待摘要 2 条消息/);
+    // 流式只留尾部预览与计数，不把全文塞进每个事件
+    assert.equal(run.stream.preview, "部分摘要正文");
+    assert.equal(run.stream.chars, "部分摘要正文".length);
+    assert.equal(run.stream.thinkingChars, 1);
+
+    assert.ok(await compaction.maybeApply());
+    const applied = compaction.getStatus();
+    assert.equal(applied.status, "applied");
+    assert.equal(applied.runId, null, "终态后没有在途 run");
+    const done = applied.runs[0];
+    assert.equal(done.status, "applied");
+    assert.ok(Number.isFinite(done.endedAt));
+    assert.equal(typeof done.result.compactionId, "string");
+    assert.ok(done.result.estimatedTokensAfter < done.result.tokensBefore);
+    // 事件里带 runs：前端拿事件就能直接渲染详情，不用另外取数
+    const last = events.filter((e) => e.type === "agent.compaction.status").at(-1);
+    assert.equal(last.data.runs.at(-1).status, "applied");
+  } finally {
+    compaction?.dispose();
+    cleanup();
+  }
+});
+
+test("run 记录：失败原因落在 run.error，历史只留最近 5 条", async () => {
+  const { session, cleanup } = await createTestSession();
+  let compaction;
+  try {
+    seed(session, [userMsg(big("a")), assistantMsg(big("b")), userMsg(big("c"))]);
+    compaction = createBackgroundCompaction({
+      session,
+      modelRuntime: null,
+      config: { ...enabledConfig, model: null },
+      summarize: async () => { throw new Error("boom sk-secret"); },
+    });
+    for (let i = 0; i < 7; i++) {
+      await compaction.onTurnEnd();
+      await settle();
+      // setConfig 只在配置真的变了时清冷却：交替两个值，让下一轮立马能再试。
+      compaction.setConfig({ ...enabledConfig, keepRecentTokens: i % 2 === 0 ? 210 : 200 });
+    }
+    const runs = compaction.getStatus().runs;
+    assert.equal(runs.length, 5, "只保留最近 5 条");
+    const failed = runs.find((run) => run.status === "failed");
+    assert.ok(failed, "失败的 run 仍可回看");
+    assert.match(failed.error, /boom/);
+    assert.ok(!failed.error.includes("sk-secret"), "错误已脱敏");
+  } finally {
+    compaction?.dispose();
+    cleanup();
+  }
+});
+
+test("cancelRun：中断在途摘要、压冷却期，陈旧 runId 不误杀新任务", async (t) => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"] });
+  const { session, cleanup } = await createTestSession();
+  let compaction;
+  try {
+    seed(session, [userMsg(big("a")), assistantMsg(big("b")), userMsg(big("c"))]);
+    const signals = [];
+    let release;
+    compaction = createBackgroundCompaction({
+      session,
+      modelRuntime: null,
+      config: enabledConfig,
+      summarize: ({ signal }) => {
+        signals.push(signal);
+        return new Promise((resolve) => { release = () => resolve({ summary: "S", usage: {} }); });
+      },
+    });
+
+    // 没有在途任务时取消是安全的空操作
+    assert.deepEqual(compaction.cancelRun(), { cancelled: false, reason: "no-active-run", status: null });
+
+    await compaction.onTurnEnd();
+    await settle();
+    const runId = compaction.getStatus().runId;
+    assert.ok(runId);
+
+    // 陈旧 runId 不动在途任务
+    assert.equal(compaction.cancelRun("run-stale").cancelled, false);
+    assert.equal(compaction.getStatus().status, "summarizing");
+    assert.equal(signals[0].aborted, false);
+
+    const result = compaction.cancelRun(runId);
+    assert.equal(result.cancelled, true);
+    assert.equal(result.status.status, "cancelled");
+    assert.equal(signals[0].aborted, true, "真实中断后台 LLM");
+    const cancelled = compaction.getStatus().runs.at(-1);
+    assert.equal(cancelled.status, "cancelled");
+    assert.match(cancelled.message, /按你的要求取消/);
+    assert.ok(cancelled.steps.some((step) => step.step === "cancel"));
+
+    // 迟到结果不落地
+    release();
+    await settle();
+    assert.equal(await compaction.maybeApply(), null);
+    assert.ok(!session.sessionManager.getBranch().some((entry) => entry.type === "compaction"));
+
+    // 冷却期内不自动重跑，冷却过后恢复
+    await compaction.onTurnEnd();
+    await settle();
+    assert.equal(signals.length, 1, "60 秒冷却内不再自动重试");
+    t.mock.timers.tick(60000);
+    await compaction.onTurnEnd();
+    await settle();
+    assert.equal(signals.length, 2);
   } finally {
     compaction?.dispose();
     cleanup();
