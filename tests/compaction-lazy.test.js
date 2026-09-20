@@ -137,6 +137,7 @@ test("未加载会话也能按段取原文：走 JSONL 只读投影，不唤起 
   try {
     const id = await sessions.create(root);
     const item = sessions.get(id);
+    item.emit({ type: "agent.message.end", data: { entryId: "m1", message: { role: "user", content: "折叠掉的提问" } } });
     item.sessionFile = file;
     sessions.saveChange(item, { session: { sessionFile: file } });
     item.emit({ type: "agent.compaction", data: { id: "c1", summary: "摘要", compactedMessageIds: ["m1"], firstKeptEntryId: "m2" } });

@@ -83,6 +83,7 @@ test("首轮未自报不固化：兑底标题剥占位符，下一条消息重�
   try {
     const id = await sessions.create(root);
     await sessions.prompt(id, "[image1] 查一下ASCII图的渲染逻辑和相关历史提交");
+    sessions.get(id).emit({ type: "agent.message.end", data: { entryId: "u1", message: { role: "user", content: "查一下" } } });
     await sessions.get(id).work;
     // 首轮没自报：兑底标题落库且剥掉 [image1] 占位符，titleRequested 不固化
     assert.equal(sessions.get(id).title, "查一下ASCII图的渲染逻辑和相关历史提交".slice(0, 60));
@@ -135,6 +136,7 @@ test("first prompt title only, manual title wins, records persist across restart
   try {
     const id = await sessions.create(root);
     await sessions.prompt(id, "实现预算");
+    sessions.get(id).emit({ type: "agent.message.end", data: { entryId: "u1", message: { role: "user", content: "实现预算" } } });
     await sessions.get(id).work;
     assert.equal(agents[0].calls[0].text, "实现预算");
     assert.equal(agents[0].calls[0].wantsTitle, true, "首条消息必须索要标题");

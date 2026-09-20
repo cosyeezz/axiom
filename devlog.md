@@ -7,8 +7,18 @@
 - 改动：每次后台摘要记为一条 run（阶段、触发参数、步骤时间线、流式尾部预览、用量、错误、结果），随原有 `agent.compaction.status` 下发；`summarizeWithPiSession` 新增 `onProgress`，订阅临时摘要会话的 message_update 取已累加文本，上报失败不影响摘要本身。条幅整行可点开「后台压缩」弹窗（布局沿用子代理详情，强调色换回 `--accent`），弹窗里可取消当前这一次（新增 `session.compaction.cancel`）。
 - 决策：外层 status/message/startedAt 不动，只另加 `runId`/`runs`，老客户端不受影响；run 只存内存最近 5 条、不落盘（过程日志不值得占会话文件）；流式只保留尾部 1500 字符并按 500ms 节流广播，不逐 token 推；`cancelRun` 不抛错而返回 `{cancelled,reason,status}`（按钮与真实状态天然有竞争），带 runId 时必须对得上才动手，避免陈旧 id 误杀新任务；取消后冷却 60 秒且不计失败次数，既不立马重试也不永不重试；`ready`（算完待应用）也允许取消，语义是丢弃这份结果。
 - 真浏览器验收又抓出一个 jsdom 看不到的 bug：条幅在 `.composer-wrap` 里，按下它会触发输入区展开，整个输入区变高 253px 把条幅向上顶走，mouseup 落到 `.composer-wrap` 上，click 只在公共祖先触发——按钮点不动。修法沿用仓库里已有的同类防守（“回到最新”按钮）：把 `#compaction-progress` 也排除在 `composerIntent` 之外，并在 `tests/prompt-resize.test.js` 加一条回归锁住。预览桩 `tests/conversation-preview.mjs` 同时补上 `compactionMessages`（之前展开摘要卡就报错）与带 runs 的验收数据。
-- 验证：新增后端 run 记录/历史上限/失败脉敏、`cancelRun` 中断真实 signal 与冷却、协议与 Sessions 透传、jsdom 下条幅点击→弹窗→取消请求→历史切换、以及条幅不触发输入区展开共 6 项测试；全量 `npm test` 830 用例 828 通过、2 跳过；`python tests/compaction-ui.py` 在 1440/390/320px 下验过条幅→弹窗→取消/历史与无横向溢出。`git fetch origin` 因 SSH 不通失败，基线为本地 master `4495977`。
+- 验证：新增后端 run 记录/历史上限/失败脉敏、`cancelRun` 中断真实 signal 与冷却、协议与 Sessions 透传、jsdom 下条幅点击→弹窗→取消请求→历史切换、以及条幅不触发输入区展开共 6 项测试；全量 `npm test` 830 用例 828 通过、2 跳过；`python tests/compaction-ui.py` 在 1440/390/320px 下验过条幅→弹窗→取消/历史与无横向溢出。合入最新 master `3649532`（会话首屏与后台启动解耦）后重新跑全量测试，只有 devlog 文本冲突，两条记录并存。
 - 文件：`src/compaction.js`、`src/pi.js`、`src/protocol.js`、`src/server.js`、`src/sessions.js`、`public/app.js`、`public/index.html`、`public/style.css`、`tests/compaction.test.js`、`tests/compaction-ui.test.js`、`tests/compaction-config.test.js`、`tests/prompt-resize.test.js`、`tests/conversation-preview.mjs`、`tests/compaction-ui.py`、`README.md`、`devlog.md`。
+
+## 2026-09-20 会话首屏与后台启动解耦
+
+- 时间：2026-09-20；分支 `feat/session-background-start`。
+- 原因：打开与配置不应让 UI 等待进程装配；没有用户消息的新会话不应持久化空壳。
+- 改动：新会话使用内存草稿快照，打开回执先发出再后台初始化；空会话持久化门槛改为存在用户消息，已有落盘会话保留；释放空闲实例仍保留内存草稿。发送回执与乐观消息增加会话身份隔离。
+- 验证：`npm test` 全量 830 项，828 通过、2 跳过、0 失败；慢启动 WebSocket 集成验证首屏回执先于进程就绪、发送等待就绪后执行。新增并发加载去重、首消息落盘与慢配置期间乐观发送成功/失败测试。更新持久化测试夹具，让模拟代理真实发出用户消息而非假定空会话落盘；修正测试 helper 的请求覆写递归及对应切换测试。
+- 交付：SSH 同步曾报 `Connection closed by UNKNOWN port 65535`，改用单次命令 HTTPS URL 重写后成功同步最新远端 master，不更改仓库或全局连接配置；按用户要求重新验证后提交、推送工作分支并合并推送 master。
+- 交互：后台准备完成只推送配置事件，不重建消息列表；发送时立即展示等待动画，配置请求串行完成后再发 prompt，配置失败保留草稿。保留现有视觉样式与 token，不新增样式。
+- 涉及文件：`src/sessions.js`、`src/server.js`、`public/app.js`、`tests/session-background-start.test.js`、相关会话测试、`README.md`、`devlog.md`。
 
 ## 2026-09-20 连续编辑能力与创建扫描复用
 

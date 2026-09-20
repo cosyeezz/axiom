@@ -1,7 +1,44 @@
 // 发送链路乐观 UI：立即上屏、原位升级、失败态（确定/未知）、快照重建收敛。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bootSessionPage, until } from './helpers/session-page.js';
+import { bootSessionPage, until, settle } from './helpers/session-page.js';
+
+test('配置在飞时发送立即上屏，实际请求等待配置', async t => {
+  const page = bootSessionPage({ hold: req => req.type === 'session.configure' });
+  t.after(page.close); page.open();
+  await until(() => page.app.connected(), '连接');
+  page.$('prompt').value = '等待配置';
+  page.$('model').dispatchEvent(new page.window.Event('change'));
+  await until(() => page.held() === 1, '配置在飞');
+  await until(() => !page.$('send').disabled, '发送可用');
+  const before = page.messages();
+  page.$('composer').requestSubmit();
+  assert.equal(page.messages(), before + 1);
+  page.paint(); await settle();
+  assert.ok(!page.requests.some(req => req.type === 'prompt'));
+  page.release();
+  await until(() => page.requests.some(req => req.type === 'prompt'), '发送');
+  assert.equal(page.requests.find(req => req.type === 'prompt').text, '等待配置');
+});
+
+test('配置失败不发消息，撤销乐观卡并保留草稿', async t => {
+  const page = bootSessionPage({ hold: req => req.type === 'session.configure',
+    respond: (req, base) => { if (req.type === 'session.configure') throw new Error('保存失败'); return base(req); } });
+  t.after(page.close); page.open();
+  await until(() => page.app.connected(), '连接');
+  page.$('model').dispatchEvent(new page.window.Event('change'));
+  await until(() => page.held() === 1, '配置在飞');
+  page.$('prompt').value = '保留草稿';
+  const before = page.messages();
+  page.$('composer').requestSubmit();
+  assert.equal(page.messages(), before + 1);
+  page.paint(); await settle(); page.release();
+  await until(() => !page.$('output').querySelector('.message-status'), '失败撤卡');
+  assert.equal(page.messages(), before);
+  assert.ok(!page.requests.some(req => req.type === 'prompt'));
+  assert.equal(page.$('prompt').value, '保留草稿');
+  assert.match(page.$('error').textContent, /保存失败/);
+});
 
 const userEnd = (runId, messageId, content, seq) => ({
   sessionId: 'long', type: 'agent.message.end', agentId: 'main', runId, seq,
@@ -18,7 +55,7 @@ test('发送即时上屏「发送中」，确认事件原位升级不另建卡',
   page.$('composer').requestSubmit();
   // 同步渲染乐观卡：未等任何网络往返。
   assert.equal(page.messages(), before + 1, '乐观卡立即上屏');
-  assert.match(page.$('output').lastElementChild.textContent, /马上看到我/);
+  assert.match(page.$('output').querySelector('.message-status').parentElement.textContent, /马上看到我/);
   const status = page.$('output').querySelector('.message-status');
   assert.ok(status, '有发送中状态行');
   assert.match(status.textContent, /发送中/);

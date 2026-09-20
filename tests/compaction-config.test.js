@@ -113,6 +113,7 @@ test("session compaction remains independent of later default changes and surviv
     assert.deepEqual(sessions.snapshot(id).config.compaction, old, "默认值不覆盖当前会话");
     const next = await sessions.create(dir, { model: "p/main" });
     assert.deepEqual(sessions.snapshot(next).config.compaction, latest, "新会话采用最新默认值");
+    sessions.get(id).emit({ type: "agent.message.end", data: { entryId: "u1", message: { role: "user", content: "old" } } });
     restored = new Sessions(factory, defaultsPath, storagePath);
     await restored.loadDefaults();
     await restored.load();
