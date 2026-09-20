@@ -17,6 +17,9 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  * 未登记的文件会在 INDEX.md 里标 ⚠ 提醒补充。
  */
 const MODULE_INFO = {
+  "public/composer-controls.js": "紧凑输入区：三级搜索模型菜单、固定运行操作与焦点管理",
+  "public/composer-controls.css": "输入区扁平按钮、级联菜单、分组信息与窄屏布局",
+  "tests/composer-controls.test.js": "级联搜索提交和运行操作默认值回归",
   "tests/usage-extension.test.js": "扩展真实依赖解析和生命周期注册冒烟",
   "extensions/usage-gate.ts": "外部pi窗口共享限流显式扩展入口",
   "tests/shared-gate.test.js": "远程取消、迟到租约归还与配置刷新",

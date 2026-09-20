@@ -1,3 +1,4 @@
+import { mountComposerControls } from "./composer-controls.js";
 import { actionIcon, initActionIcons } from "./icons.js";
 initActionIcons(document);
 import { initInspector, renderTools, renderBill, money } from "./session-details.js";
@@ -252,13 +253,13 @@ function saveView() {
 let promptLayout = 0;
 let promptFit = { layout: -1, phone: null, value: null, collapsed: null };
 // 折叠态只换高度基线：rows=1 并交回 CSS 决定高度，不动 value，所以草稿在、Enter 仍能直接发。
-let composerCollapsed = true;
+let composerCollapsed = false;
+let compactComposer;
 function resizePrompt() {
   const input = $("prompt"), phone = mobile.matches, collapsed = composerCollapsed && !phone;
   if (promptFit.layout === promptLayout && promptFit.phone === phone && promptFit.value === input.value && promptFit.collapsed === collapsed) return;
   promptFit = { layout: promptLayout, phone, value: input.value, collapsed };
-  input.rows = phone || collapsed ? 1 : 3;
-  if (collapsed) { input.style.height = ""; return; }
+  input.rows = 1;
   input.style.height = "auto";
   input.style.height = (phone && !input.value ? 44 : Math.min(input.scrollHeight, 240)) + "px";
 }
@@ -416,13 +417,12 @@ function expandComposer() {
 function collapseComposer() {
   clearComposerCollapseTimer();
   if (composerCollapsed || composerBusy()) return;
-  composerCollapsed = true;
+  composerCollapsed = false;
   applyComposerCollapsed();
 }
 function scheduleComposerCollapse() {
   clearComposerCollapseTimer();
-  if (composerCollapsed) return;
-  composerCollapseTimer = setTimeout(() => { composerCollapseTimer = undefined; collapseComposer(); }, COMPOSER_COLLAPSE_DELAY);
+  // Content controls height; idle/hover never collapses the composer.
 }
 composerWrap.addEventListener("mouseenter", () => { composerHovered = true; clearComposerCollapseTimer(); });
 composerWrap.addEventListener("mouseleave", () => { composerHovered = false; scheduleComposerCollapse(); });
@@ -719,6 +719,7 @@ function updateComposer() {
   $("session-alert").hidden = !stopAlert;
   $("send").hidden = busy;
   syncRetryPrompt();
+  compactComposer?.refresh();
 }
 function options(select, entries, selected) {
   if (selected && !entries.some(([value]) => value === selected))
@@ -811,20 +812,7 @@ function runtimeSummary(value = {}) {
     : Number.isFinite(context?.tokens) ? `${count(context.tokens)} tokens · 窗口未配置` : "等待首条消息";
   const split = model?.indexOf("/") ?? -1;
   const identity = split >= 0 ? `${model.slice(0, split)} · ${model.slice(split + 1)}` : model || "模型待加载";
-  const lines = [`缓存命中 ${cache}`, `上下文 ${contextText}${context?.estimated ? " · 估算" : ""}`, `${identity} · ${thinking || "未知"}${value.billing?.records ? ` · 会话 ${money(value.billing.cost.total)}${value.billing.unpriced ? "（部分未计价）" : ""}` : ""}`];
-  const pack = value.observationPack;
-  if (pack && Number.isFinite(pack.folded)) {
-    // 取回率 = 被重新取回过的**不同对象数** / 折叠对象数（同尺度，永不超 100%）。
-    // 页数单独显示：分页读完一个对象不再被误算成多次“折错了”。
-    const recalled = Number.isFinite(pack.recalledObjects) ? pack.recalledObjects : null;
-    const rate = pack.folded > 0
-      ? (Number.isFinite(pack.recallRate) ? ` (${Math.round(pack.recallRate * 100)}%)` : "（未知）")
-      : "（样本不足）";
-    const pages = Number.isFinite(pack.recallPages) ? pack.recallPages : pack.recalls;
-    const recallText = recalled != null ? `取回 ${count(recalled)} 对象${rate} · ${count(pages)} 页` : `取回 ${count(pack.recalls)}${rate}`;
-    const failures = (pack.failures ?? 0) + (pack.recallFailures ?? 0);
-    lines.push(`OP 已折叠 ${count(pack.folded)} 项（会话累计） · 本次投影减少约 ${count(pack.savedTokens)} tokens（未计取回、额外轮次与缓存变化）${failures ? ` · 失败 ${count(failures)}` : ""} · ${recallText}`);
-  }
+  const lines = [`cache ${input > 0 ? (usage.cacheRead / input * 100).toFixed(0) + '%' : '—'}`, `context ${context?.contextWindow > 0 ? `${count(context.tokens)}/${count(context.contextWindow)} · ${Number.isFinite(context.percent) ? context.percent.toFixed(0) + '%' : '—'}` : '—'}`, `${identity} · ${thinking || '—'}`];
   return lines;
 }
 function renderRuntime(node, value) {
@@ -849,7 +837,7 @@ function renderRuntime(node, value) {
     if (opWarning && text.startsWith("OP ")) span.className = "op-warning";
     return span;
   }));
-  node.title = "缓存命中：最近一次模型请求的缓存读取 / 输入总量（含缓存读写）；上下文：Pi 当前估算，非累计消耗。OP：折叠项为会话累计；本次投影减少量为估算，不含取回、额外轮次与缓存变化，不代表净费用节省。取回率按不同对象计数，无折叠对象时显示样本不足；比例高低不能单独判断折叠是否合理，取回失败标红。";
+  node.title = "cache：最近一次请求的缓存读取占输入总量比例；context：当前上下文估算，非累计消耗。";
 }
 function updateTaskRuntime(task, value) {
   if (!task) return;
@@ -900,7 +888,7 @@ async function configure(thinking, source = "composer") {
     const value = await request("session.configure", {
       sessionId: target,
       ...selection,
-      queueType: $("queue-type").value,
+
     });
     if (sessionId !== target || seq !== configureSeq) return;
     applyConfig(value);
@@ -3268,7 +3256,7 @@ $("subagent-provider").onchange = () => {
 $("subagent-model").onchange = () => {
   void configure(undefined, "subagent");
 };
-$("queue-type").onchange = () => { void configure(undefined, "queue"); };
+// Queue mode is a transient composer action, not a saved preference.
 $("thinking").onchange = () => {
   void configure($("thinking").value);
 };
@@ -3282,7 +3270,7 @@ $("composer").onsubmit = async (e) => {
   closeCompletion();
   if (sentImages.length > 4) return error(new Error("每条消息最多发送 4 张图片，请移除多余附件后分批发送"));
   const wasBusy = busy;
-  const queueType = e.submitter?.dataset.queue || config?.queueType || "steer";
+  const queueType = e.submitter?.dataset.queue || compactComposer?.queue() || "steer";
   busy = true;
   region("输入操作", updateComposer);
   $("error").textContent = "";
@@ -4828,3 +4816,16 @@ async function saveCreation(e) {
     updateAvailability();
   }
 };
+
+compactComposer = mountComposerControls({
+  state: () => ({ busy, safeStopping, sessionId, model: config?.model, thinking: config?.thinking, available: connected && !changing && !!config }),
+  providers: providerEntries,
+  models: modelEntries,
+  levels: effectiveLevels,
+  selectModel: async (key, thinking) => {
+    $("agent-role").value = "main";
+    $("provider").value = models.find((item) => item.key === key)?.provider || "";
+    fillModels(key);
+    await configure(thinking);
+  },
+});

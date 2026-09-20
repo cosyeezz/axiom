@@ -2652,3 +2652,10 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 验证补齐：预览 fixture 增加能力与默认配置读取存根；新增 Python Playwright Chromium 桌面／窄屏验收，截图人工检查；全量测试 816 项，814 通过、0 失败、2 既有跳过。
 - 涉及文件：public/app.js、public/index.html、public/style.css、tests/app.test.js、tests/conversation-preview.mjs、tests/config-scope-ui.py、README.md、devlog.md。
 - 边界：此次不实现 MCP／插件在已有会话中的重新装配，不将入口与展示修复等同于该能力完成。
+
+## 2026-09-20T10:53 输入区紧凑布局与级联模型选择
+
+- 原因：减少输入区常驻控件，避免文字长度与运行状态导致按钮挤动。
+- 改动：新增 public/composer-controls.js/css；调整 public/app.js、index.html；src/server.js 注册静态资源。单行自增高、三级搜索、固定扁平 split button、SVG 图标、分组信息换行、动态快捷提示。隐藏旧默认追加配置，不再由 composer 保存该偏好。
+- 决策：保留 stop/force 既有后端语义；不执行未经确认的历史回滚。焦点管理避开搜索和弹窗。
+- 验证：新增 tests/composer-controls.test.js；更新 tests/prompt-resize.test.js 与 tests/helpers/public-source.js；27 项针对性回归通过。浏览器已检查三级搜索、配置提交、44/64/84px 输入高度增长和信息分组。README 同步。
