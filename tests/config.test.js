@@ -202,7 +202,7 @@ test("configuration applies to the main agent and is inherited by delegated chil
     assert.equal(sessions.snapshot(reset).config.model, "a/b");
     assert.equal(sessions.snapshot(reset).config.thinking, "high");
     assert.deepEqual(sessions.snapshot(reset).config.capabilitySelection, all.capabilities);
-    assert.deepEqual(sessions.snapshot(normal).config, normalConfig, "changing defaults leaves existing sessions intact");
+    assert.deepEqual(sessions.snapshot(normal).config, { ...normalConfig, canReconfigure: false }, "changing defaults leaves existing sessions intact; started tasks only lock assembly");
     assert.equal(command.safeParse({ id: "1", type: "session.defaults.get" }).success, true);
     assert.equal(command.safeParse({ id: "1", type: "session.defaults.configure", ...defaults }).success, true);
     assert.equal(command.safeParse({ id: "1", type: "session.defaults.configure", ...all }).success, true);

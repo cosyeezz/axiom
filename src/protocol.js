@@ -312,6 +312,9 @@ export const command = z.discriminatedUnion("type", [
       thinking,
       compaction: compaction.optional(),
       queueType: queueType.optional(),
+      capabilities: capabilities.optional(),
+      subagentCapabilities: z.union([capabilities, z.literal("inherit")]).optional(),
+      retry: retryPatterns.nullable().optional(),
     })
     .strict(),
   z.object({ id, type: z.literal("sessions.list") }).strict(),

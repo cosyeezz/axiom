@@ -652,9 +652,9 @@ function updateSettingsAvailability() {
     ? (changing ? "正在保存或切换配置…" : "连接断开，暂时无法修改配置")
     : defaultsMode === "session" ? "更改自动保存，仅当前会话下次请求生效" : "更改自动保存为默认值，仅新会话生效";
   for (const fieldset of [...$("create-agents").children, ...$("create-subagent-settings").children]) fieldset.disabled = unavailable;
-  for (const fieldset of $("create-capabilities").children) fieldset.disabled = unavailable || defaultsMode === "session";
+  for (const fieldset of $("create-capabilities").children) fieldset.disabled = unavailable || (defaultsMode === "session" && config.canReconfigure !== true);
   for (const node of $("create-compaction").querySelectorAll("input, select, button")) node.disabled = unavailable;
-  for (const node of $("create-retry").querySelectorAll("input, textarea, select, button")) node.disabled = unavailable || defaultsMode === "session";
+  for (const node of $("create-retry").querySelectorAll("input, textarea, select, button")) node.disabled = unavailable || (defaultsMode === "session" && config.canReconfigure !== true);
   $("defaults-delete").disabled = unavailable;
   const remoteLocked = remoteView.local === false;
   for (const id of ["remote-enabled", "remote-email", "remote-save"])
@@ -2233,7 +2233,7 @@ function retryEditor(initial) {
   const black = retryChipList("强制不重试（命中关键词立即停止）", initial.nonRetryable || []);
   const hint = document.createElement("p");
   hint.className = "compaction-hint";
-  hint.textContent = "按错误消息里的子串匹配（不区分大小写）；黑名单优先于白名单，二者都优先于内建判定（内建默认重试 429、5xx、网络与流中断等）。仅对新建会话生效。";
+  hint.textContent = "按错误消息里的子串匹配（不区分大小写）；黑名单优先于白名单，二者都优先于内建判定（内建默认重试 429、5xx、网络与流中断等）。会话配置可在首次发送前修改；保存为默认值时仅对新会话生效。";
   node.append(legend, white.node, black.node, hint);
   return {
     node,
@@ -2522,6 +2522,10 @@ function applyEvent(message) {
     // 停稳了才判断能不能续：message.end 总先于 idle 到达，此时 lastMainMessage 已是本轮结果。
     if (data.status === "running") interrupted = false;
     else if (data.status === "idle") interrupted = canReask || canResumeMessage(lastMainMessage);
+    if (data.status === "running" && config?.canReconfigure === true) {
+      config.canReconfigure = false;
+      region("设置与详情", () => { renderDefaultsScope(); updateSettingsAvailability(); });
+    }
     region("输入操作", updateComposer);
   }
   if (type === "agent.message.start" && data.message.role === "assistant") {
@@ -4355,6 +4359,10 @@ function renderDefaultsScope() {
   $("defaults-scope-label").textContent = defaultsMode === "session" ? "仅当前会话" : defaultsScope ? `工作空间 · ${defaultsScope}` : "全局默认";
   $("defaults-title").textContent = defaultsMode === "session" ? "当前会话配置" : defaultsScope ? "当前工作空间配置" : "默认配置";
   $("defaults-delete").hidden = defaultsMode !== "workspace";
+  $("config-new-session-title").textContent = defaultsMode === "session" && config.canReconfigure === true ? "首次发送前可修改" : "需要启动新会话区";
+  $("config-assembly-help").textContent = defaultsMode === "session" && config.canReconfigure === true
+    ? "当前会话尚未发送消息，能力选择与自动重试可修改；保存成功后用于首次请求，不改变全局或工作空间默认。"
+    : "Skills、MCP、Extensions 能力选择及自动重试在创建会话时装配；已开始的会话不能修改这些配置。";
   $("config-subagent-title").textContent = defaultsMode === "session" ? "子代理设置 · 下次委派生效" : "子代理默认值 · 新会话采用";
   $("config-subagent-help").textContent = defaultsMode === "session"
     ? "子代理模型与思考在下次委派的新子任务中生效，无需重启会话；新子任务采用当前会话的压缩设置，运行中的子任务不变。"
@@ -4449,7 +4457,7 @@ function createAgentPicker(role, title, catalog, initial) {
   capabilityLegend.textContent = `${title}能力`;
   capabilityFieldset.append(capabilityLegend, mode.parentElement, pickers);
   // 当前会话不能重新装配主代理能力；展示只读值，不假装保存成功。
-  capabilityFieldset.disabled = defaultsMode === "session";
+  capabilityFieldset.disabled = defaultsMode === "session" && config.canReconfigure !== true;
   $("create-capabilities").append(capabilityFieldset);
   $(role === "subagent" ? "create-subagent-settings" : "create-agents").append(fieldset);
   return () => ({
@@ -4510,11 +4518,11 @@ async function loadCreation() {
     $("create-main-model").addEventListener("change", current.compaction.fillThinking);
     current.retry = retryEditor(selected.retry);
     $("create-retry").replaceChildren(current.retry.node);
-    for (const node of $("create-retry").querySelectorAll("input, textarea, select, button")) node.disabled = mode === "session";
-    $("create-retry").hidden = mode === "session";
+    for (const node of $("create-retry").querySelectorAll("input, textarea, select, button")) node.disabled = mode === "session" && config.canReconfigure !== true;
+    $("create-retry").hidden = mode === "session" && config.canReconfigure !== true;
     current.catalog = catalog;
     updateDefaultsPreview();
-    $("create-feedback").textContent = [mode === "session" ? "能力装配和重试策略为只读；如需调整，请在工作空间配置中设置后新建会话。" : "", ...catalog.warnings].filter(Boolean).join("\n");
+    $("create-feedback").textContent = [mode === "session" && config.canReconfigure !== true ? "会话已经开始，能力装配和重试策略不可修改；请配置默认值后新建会话。" : "", ...catalog.warnings].filter(Boolean).join("\n");
   } catch (e) {
     if (active() && creation === current && load === creationLoad) $("create-feedback").textContent = `加载失败：${e.message}`;
   }
@@ -4576,7 +4584,7 @@ function updateDefaultsPreview() {
   if (!creation?.main) return;
   const main = creation.main(), child = creation.subagent();
   const compaction = creation.compaction?.read();
-  const retry = defaultsMode === "session" ? null : creation.retry?.read();
+  const retry = defaultsMode === "session" && config.canReconfigure !== true ? null : creation.retry?.read();
   const retryLine = retry && (retry.retryable.length || retry.nonRetryable.length)
     ? `\n\n自动重试 · 强制重试 ${retry.retryable.length} 条 · 强制不重试 ${retry.nonRetryable.length} 条`
     : "";
@@ -4616,7 +4624,8 @@ $("create-form").onsubmit = async (e) => {
   const selection = defaultsSelection();
   const data = mode === "session"
     ? { sessionId: target, model: selection.model || config.model, thinking: selection.thinking || config.thinking,
-        subagentModel: selection.subagentModel, subagentThinking: selection.subagentThinking, compaction: selection.compaction }
+        subagentModel: selection.subagentModel, subagentThinking: selection.subagentThinking, compaction: selection.compaction,
+        ...(config.canReconfigure === true ? { capabilities: selection.capabilities, subagentCapabilities: selection.subagentCapabilities, retry: selection.retry } : {}) }
     : { ...selection, ...(scope ? { cwd: scope } : {}) };
   defaultsSaving = true;
   changing = true;

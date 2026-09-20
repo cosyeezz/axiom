@@ -1,5 +1,15 @@
 # 开发记录
 
+## 2026-09-20 空会话首次发送前支持能力配置
+
+- 时间：2026-09-20；分支 `feat/empty-session-config`。
+- 原因：新会话尚无消息时能力和重试仍被统一禁用，用户无法在首次请求前配置。
+- 内容：后端下发 canReconfigure，空会话保存能力/重试时先装配候选并落盘，成功后替换实例、保留会话 ID 与订阅，失败保留原实例。首次执行标记持久化到 selection，保护发送并发与重启恢复；前端按后端判据解锁选择器并携带配置。
+- 协议闭环：session.configure 补齐能力与重试字段；协议校验失败保留合法请求 ID，避免前端一直等待保存回执。
+- 验证：新增装配成功、失败回滚、持久化失败、订阅保留、发送互斥、重启恢复及协议测试；真实 Chromium 空会话编辑保存、深浅色与窄屏截图验收通过。
+- 涉及文件：src/sessions.js、src/protocol.js、src/server.js、public/app.js、public/index.html、tests/empty-session-config.test.js、tests/empty-session-config-ui.py、tests/conversation-preview.mjs、tests/config.test.js、README.md、devlog.md。
+- 边界：不实现已开始会话的能力重新装配；模型与思考保持原热更新路径。
+
 ## 2026-09-20 配置按钮对齐与子代理生效分区修正
 
 - 时间：2026-09-20；分支 `feat/config-affordance`。

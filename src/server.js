@@ -276,9 +276,11 @@ export function createServerApp(sessions, service = {}) {
     });
     ws.on("message", (raw) => {
       const work = (async () => {
-        let request;
+        let request, requestId;
         try {
-          request = command.parse(JSON.parse(raw.toString()));
+          const input = JSON.parse(raw.toString());
+          if (typeof input?.id === "string" && input.id.length <= 200) requestId = input.id;
+          request = command.parse(input);
           if (stopping && request.type !== "service.status") throw new Error("服务正在维护，请在设置中查看进度");
           if (!(await reauth())) {
             ws.terminate(); // 撤权/变更后旧远程连接立即失效
@@ -497,7 +499,7 @@ export function createServerApp(sessions, service = {}) {
         } catch (error) {
           send({
             type: "response",
-            id: request?.id,
+            id: request?.id ?? requestId,
             ok: false,
             error: String(error.message ?? error),
           });

@@ -787,7 +787,7 @@ export class Sessions {
         subagentThinking: item.subagentThinking, queueType: item.queueType, retry: item.retry,
         // 轮次预算随会话创建定死（create 从 selection.taskBudget 读回）：不落进 selection
         // 就无从区分「创建时的预算」与「当前全局值」，重开会话即被热更成新全局值。
-        taskBudget: item.taskBudget,
+        taskBudget: item.taskBudget, executionStarted: item.executionStarted,
         trustProject: item.trustProject, useDefaults: false } : item.selection };
   }
 
@@ -992,12 +992,14 @@ export class Sessions {
       // 老记录无 createdAt，回退 updatedAt 兜底（历史文件未存创建时间，无法还原真实值）。
       createdAt: saved?.createdAt || saved?.updatedAt || Date.now(),
       updatedAt: saved?.updatedAt || Date.now(),
+      lastUsedAt: Date.now(),
       // 重启即中断：上次未结算的运行段不补算，只保留已结算的累计用时。
       elapsedMs: saved?.elapsedMs || 0,
       runningSince: null,
       seq: this.items.get(id)?.seq ?? 0,
       status: "idle",
       listeners: this.items.get(id)?.listeners ?? new Set(),
+      executionStarted: selection.executionStarted ?? !!(saved?.sessionFile || saved?.messages?.length || saved?.retries?.length || saved?.tasks?.length),
       messages: saved?.messages || [],
       compactions: saved?.compactions || [],
       retries: (saved?.retries || []).map((savedRecord) => {
@@ -1664,7 +1666,8 @@ export class Sessions {
       } });
       return structuredClone({ sessionId: id, cwd: item.cwd, title: item.title, seq: item.seq ?? 0,
         instanceId: options.epoch ?? null, liveMessageIds: {},
-        status: "idle", safeStop: false, runtime: restoredRuntime, billing: combinedBilling(restoredRuntime.billing, tasks), config: saved.selection ?? {},
+        status: "idle", safeStop: false, runtime: restoredRuntime, billing: combinedBilling(restoredRuntime.billing, tasks), config: { ...saved.selection, canReconfigure: !saved.sessionFile && !messages.length && !tasks.length
+          && !compactions.length && !saved.retries?.length && saved.selection?.executionStarted !== true && !goal.active },
         messages: fold.records.map(toWireRecord),
         messageIndexes: fold.indexes, messageCount: messages.length,
         compactions, retries: historyRetries(saved.retries ?? [], visibleIds, fold.keptBefore, messages.length),
@@ -1689,6 +1692,7 @@ export class Sessions {
       billing: combinedBilling(item.agent.runtime?.()?.billing, [...item.tasks.jobs.values()]),
       queue: item.agent.queue?.(),
       config: {
+        canReconfigure: this.canReconfigure(item),
         queueType: item.queueType,
         ...item.agent.config?.(), subagentModel: item.subagentModel,
         subagentThinking: item.subagentThinking,
@@ -1776,9 +1780,29 @@ export class Sessions {
     return () => item.listeners.delete(listener);
   }
 
+  canReconfigure(item, afterConfigure = false) {
+    return item.loaded && item.status === "idle" && !item.executionStarted && (afterConfigure || !item.configuring) && !item.closing
+      && !item.messages.length && !item.compactions.length && !item.retries.length
+      && !item.tasks.jobs.size && !item.goal.active && !landedSessionFile(item);
+  }
+
   async configure(id, selection) {
     const item = await this.ensureLoaded(id);
     if (!["idle", "running"].includes(item.status) || item.configuring) throw new Error("Session is busy");
+    if (["capabilities", "subagentCapabilities", "retry"].some((key) => Object.hasOwn(selection, key))) {
+      if (!this.canReconfigure(item)) throw new Error("能力与重试配置仅可在首次发送消息前修改");
+      item.configuring = true;
+      const rebuild = (async () => {
+        const saved = this.sessionData(item);
+        await this.create(item.cwd, { ...saved.selection, ...selection, useDefaults: false }, saved);
+        item.unsubscribe?.();
+        try { await item.agent.dispose(); } catch (error) { console.warn("旧会话实例清理失败", error); }
+        return this.snapshot(id).config;
+      })();
+      item.releasing = rebuild;
+      try { return await rebuild; }
+      finally { item.configuring = false; item.releasing = null; }
+    }
     const { subagentModel = item.subagentModel, subagentThinking = item.subagentThinking, model, thinking } = selection;
     if (
       subagentModel !== null &&
@@ -1797,6 +1821,7 @@ export class Sessions {
       item.queueType = selection.queueType || item.queueType;
       await this.persist(item);
       return {
+        canReconfigure: this.canReconfigure(item, true),
         queueType: item.queueType,
         ...item.agent.config?.(), ...config, subagentModel,
         runtime: item.agent.runtime?.(),
@@ -1813,6 +1838,7 @@ export class Sessions {
 
   // 运行骨架（prompt 与手动重试共用）：runId/status 广播 → result() 取错 → 收尾持久化与 idle 复位。
   startRun(item, run) {
+    item.executionStarted = true;
     // 通知在下一次运行开始时恢复：goal 被暂停/退出时仍要冻结，安全停止期间也暂停，防止通知把刚停下的会话又拉起来。
     item.notificationsPaused = this.goalNotificationsBlocked(item) || false;
     item.safeStopping = false;
@@ -1825,6 +1851,7 @@ export class Sessions {
     });
     item.work = (async () => {
       try {
+        await this.persist(item);
         await run();
         const text = item.agent.result();
         if (item.goal.active) item.goalResult = { text, runId: item.runId };
@@ -1870,6 +1897,7 @@ export class Sessions {
   async prompt(id, text, queueType, images) {
     if (!text.trim() && !images?.length) throw new Error("请求内容不能为空：请输入文本或附加图片");
     const item = this.get(id).loaded ? this.get(id) : await this.ensureLoaded(id);
+    if (item.configuring || item.closing || item.releasing) throw new Error("Session is busy");
     if (/^\/goal(?:\s|$)/.test(text.trim())) {
       const result = await this.goalAction(id, "enter", text.trim().replace(/^\/goal\s*/, ""));
       return result.runId;
@@ -1887,7 +1915,7 @@ export class Sessions {
       await item.agent.enqueue(text, queueType || item.queueType, images);
       return item.runId;
     }
-    if (item.status !== "idle" || item.configuring || item.closing) throw new Error("Session is busy");
+    if (item.status !== "idle" || item.configuring || item.closing || item.releasing) throw new Error("Session is busy");
     // 用户显式输入：退出目标模式后的通知/续跑冻结到此为止，恢复正常会话行为。
     item.goalExited = false;
     const goal = item.goal.snapshot();

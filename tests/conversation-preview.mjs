@@ -130,6 +130,9 @@ states.push({ ...state, sessionId: "ui-billing", title: "账单验收 · 主代�
   billing: { records: 4, unpriced: 0, incomplete: false, cost: totalCost,
     groups: [{ model: "preview/axiom", tokens: { input: 1800, output: 500, cacheRead: 7200, cacheWrite: 0 }, cost: totalCost }],
     agents: [{ id: "main", billing: mainBill }, ...billedTasks.map(t => ({ id: t.id, task: t.task, billing: t.runtime.billing }))] } });
+if (process.env.PREVIEW_EMPTY === "1") {
+  for (const s of states) Object.assign(s, { status: "idle", messages: [], tasks: [], live: {}, tools: {}, config: { ...s.config, canReconfigure: true } });
+}
 const sessions = {
   createAgent: {
     catalog: () => [{ provider: "preview", id: "axiom", key: "preview/axiom", name: "Axiom Preview", levels: ["off", "high"] }],
@@ -142,6 +145,11 @@ const sessions = {
   get: (id) => states.find((s) => s.sessionId === id) || state,
   ensureLoaded: async (id) => sessions.get(id),
   snapshot: (id) => sessions.get(id),
+  configure: async (id, selection) => {
+    const s = sessions.get(id);
+    s.config = { ...s.config, ...selection, capabilitySelection: selection.capabilities ?? s.config.capabilitySelection };
+    return s.config;
+  },
   // 复制会话预览：新 id + 标题原词接序号（与后端一致），内容原样，方便浏览器验收点击验证。
   duplicate: async (id) => {
     const source = sessions.get(id);
