@@ -66,6 +66,7 @@ test("会话级预算随会话落库：全局值改了，重开旧会话仍用�
   let sessions = new Sessions(factory, undefined, undefined, database);
   try {
     const id = await sessions.create(root, { taskBudget: { maxTurns: 30, wrapUpWindow: 3 } });
+    sessions.get(id).emit({ type: "agent.message.end", data: { entryId: "u1", message: { role: "user", content: "seed" } } });
     assert.deepEqual(sessions.get(id).taskBudget, { maxTurns: 30, wrapUpWindow: 3 });
     // 预算必须进 selection JSON 列；否则重开时无从区分「创建时的预算」与「当前全局值」。
     assert.deepEqual(sessions.store.getSession(id).selection.taskBudget, { maxTurns: 30, wrapUpWindow: 3 });

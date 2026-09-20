@@ -617,8 +617,18 @@ function paintRaw() {
   }
   if (atBottom) list.scrollTop = list.scrollHeight;
 }
+const configuringSessions = new Map();
 function request(type, data = {}) {
-  return transport.request({ type, ...data });
+  if (type !== "session.configure") return transport.request({ type, ...data });
+  const previous = configuringSessions.get(data.sessionId);
+  const work = previous ? previous.catch(() => {}).then(() => transport.request({ type, ...data }))
+    : transport.request({ type, ...data });
+  configuringSessions.set(data.sessionId, work);
+  queueMicrotask(() => region("输入操作", updateComposer));
+  void work.finally(() => {
+    if (configuringSessions.get(data.sessionId) === work) configuringSessions.delete(data.sessionId);
+  }).catch(() => {});
+  return work;
 }
 // 区域只持有 DOM 更新职责，业务数据仍由 sessionId/config/models 等现有来源提供。
 // 仅包 UI 更新，不包事件归并/快照：权威数据失败必须继续向调用方传播。
@@ -683,7 +693,7 @@ function duplicateBlocked(session) {
   return !connected || changing || !session || session.status !== "idle" || !session.sessionFile;
 }
 function updateComposer() {
-  const unavailable = !connected || changing;
+  const unavailable = !connected || (changing && !configuringSessions.has(sessionId));
   questionUI.setConnected(!unavailable && !sessionMissing);
   goalUI.setConnected(!unavailable && !sessionMissing);
   $("queue-type").disabled = unavailable;
@@ -2471,6 +2481,7 @@ function applyEvent(message) {
     toolState(agentId, { ...data.message, phase: "end" });
   }
   if (type === "session.queue" && agentId === "main") renderQueue(data);
+  if (type === "session.config") { applyConfig(data); updateAvailability(); }
   if (type === "session.title") {
     $("session-title").textContent = data.title || "新会话";
     updatePageTitle();
@@ -2485,6 +2496,7 @@ function applyEvent(message) {
     clearWaiting(agentId);
     // 乐观卡对账：事件信封带 runId（无 runId 时单槽假设），命中则原位升级，不另建卡。
     const claimed = agentId === "main" && pendingUser &&
+      pendingUser.session === sessionId &&
       (!message.runId || !pendingUser.runId || message.runId === pendingUser.runId);
     const item = claimed ? pendingUser.item : card("你", tasks.get(agentId));
     if (claimed) {
@@ -3149,7 +3161,7 @@ $("composer").onsubmit = async (e) => {
   const files = [...contextFiles], skill = selectedSkill, sentImages = [...images];
   const body = [draft.trim(), files.length ? `工作空间引用（按需读取；文件夹不代表已读取全部内容）：\n${files.map((file) => `- ${file.directory ? "文件夹" : "文件"}：${JSON.stringify(file.path)}`).join("\n")}` : ""].filter(Boolean).join("\n\n");
   const text = skill ? `/skill:${skill} ${body}` : body;
-  if ((!draft.trim() && !skill && !sentImages.length && !files.length) || imageLoading || changing || sessionMissing || !connected) return;
+  if ((!draft.trim() && !skill && !sentImages.length && !files.length) || imageLoading || (changing && !configuringSessions.has(sessionId)) || sessionMissing || !connected) return;
   closeCompletion();
   if (sentImages.length > 4) return error(new Error("每条消息最多发送 4 张图片，请移除多余附件后分批发送"));
   const wasBusy = busy;
@@ -3164,11 +3176,15 @@ $("composer").onsubmit = async (e) => {
   try {
     // 乐观上屏：空闲时立即显示「发送中」卡；忙碌排队走队列行反馈。
     const optimistic = !wasBusy;
-    if (optimistic) mountPendingUser(text, sentImages);
+    if (optimistic) { mountPendingUser(text, sentImages); waiting("main"); }
     // 先让浏览器绘制乐观卡，再做请求序列化重活（大文本/图片 stringify 同步占主线程）。
+    const configuration = configuringSessions.get(sendingSession);
     if (optimistic) await nextPaint();
+    if (configuration) await configuration;
+    while (configuringSessions.has(sendingSession)) await configuringSessions.get(sendingSession);
+    if (sessionId !== sendingSession) throw new Error("会话已切换，消息尚未发送");
     const reply = await request("prompt", { sessionId: sendingSession, text, ...(sentImages.length ? { images: sentImages } : {}), ...(wasBusy ? { queueType } : {}) });
-    settlePendingUser(reply?.runId);
+    if (sessionId === sendingSession) settlePendingUser(reply?.runId);
     if (sessionId === sendingSession) {
       images = images.filter((image) => !sentImages.includes(image));
       renderImages();
@@ -3194,6 +3210,7 @@ $("composer").onsubmit = async (e) => {
     if (sessionId === sendingSession) {
       // 确定失败（response_error）：撤卡保草稿；结果未知（断线/超时等 unknown）：保留卡并标未确认。
       failPendingUser(!!e.unknown);
+      if (!wasBusy) clearWaiting("main");
       error(e);
       busy = wasBusy;
       region("输入操作", updateComposer);

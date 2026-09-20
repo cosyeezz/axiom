@@ -735,13 +735,15 @@ export class Sessions {
     if (!item.loading) item.loading = (async () => {
       // 元数据会话也可能有改名失败；换成 SDK 实例前先清空旧对象的失败队列。
       if (item.pendingWrites?.length) await this.persist(item, {});
-      const saved = this.store.getSession(id);
+      const saved = item.draft ?? this.store.getSession(id);
       if (saved.sessionFile && !existsSync(saved.sessionFile))
         throw new Error(`会话历史文件缺失，已保留数据库记录：${saved.sessionFile}`);
       saved.selection ??= {};
       saved.selection.compaction ??= structuredClone(this.defaultsFor(saved.cwd).compaction ?? compactionDefaults);
       await this.create(saved.cwd, saved.selection, saved);
-      return this.get(id);
+      const loaded = this.get(id);
+      loaded.emit({ type: "session.config", data: this.configData(loaded) });
+      return loaded;
     })().finally(() => { item.loading = null; });
     return item.loading;
   }
@@ -795,13 +797,18 @@ export class Sessions {
   // 事务边界复用存储层 change()（回滚自身的异常在那里被吞掉，不会掩盖原始错误）。
   async persist(item, change = { session: this.sessionData(item) }) {
     if (!this.store) return;
+    if (!this.store.hasSession(item.id) && !item.messages?.some(record => record.message?.role === "user")) return;
     // 失败的增量留待下次写入/关闭重试，不能指望全量快照偶然补救。
     item.pendingWrites ||= [];
     item.pendingWrites.push({ change });
     while (item.pendingWrites.length) {
       const head = item.pendingWrites[0];
       try {
-        this.store.change(() => this.writeChange(item, head.change));
+        this.store.change(() => {
+          if (!this.store.hasSession(item.id)) this.store.insertSession({ ...this.sessionData(item),
+            compactions: item.compactions, retries: item.retries, tasks: item.tasks.snapshot() });
+          this.writeChange(item, head.change);
+        });
       } catch (error) {
         // 环境性失败（忙/锁/只读/磁盘满/IO）重试有意义：保留队头与增量顺序原样上抛，
         // 由下次写入或关闭重放——顺序不能乱，否则旧快照会覆盖更新的字段值。
@@ -868,6 +875,7 @@ export class Sessions {
     item.titleManual = true;
     item.titlePending = false;
     item.updatedAt = Date.now();
+    if (item.draft) Object.assign(item.draft, { title, titleManual: true, updatedAt: item.updatedAt });
     await this.persist(item, { session: { title, titleManual: true, updatedAt: item.updatedAt } });
     return { sessionId: id, title };
   }
@@ -960,7 +968,7 @@ export class Sessions {
     });
   }
 
-  async create(workspace, selection = {}, saved) {
+  async create(workspace, selection = {}, saved, deferStart = false) {
     const inherited = ["capabilities", "subagentCapabilities"].filter((key) =>
       saved || (selection.useDefaults !== false && selection[key] === undefined));
     // 单次创建复用默认值过滤与选择校验的扫描；不跨请求缓存，不复用不同信任级别。
@@ -973,6 +981,13 @@ export class Sessions {
     const { cwd, catalog, warnings } = await this.validateSelection(resolvedWorkspace, selection, inherited, selection.trustProject === true ? undefined : capabilityCatalog);
     for (const warning of warnings) console.warn(`${cwd}：${warning}`);
     const id = saved?.id || randomUUID();
+    if (deferStart && !saved) {
+      const draft = { id, cwd, selection, title: "新会话", titleManual: false,
+        titleRequested: false, createdAt: Date.now(), updatedAt: Date.now() };
+      this.items.set(id, { ...draft, draft, loaded: false, status: "idle",
+        runningSince: null, tasks: { jobs: new Map() }, listeners: new Set() });
+      return id;
+    }
     const storageDir = this.storagePath && join(this.storagePath, createHash("sha256").update(process.platform === "win32" ? cwd.toLowerCase() : cwd).digest("hex"));
     if (storageDir) await mkdir(storageDir, { recursive: true });
     const importedFile = saved?.importText != null && storageDir ? join(storageDir, `${id}.jsonl`) : null;
@@ -1075,12 +1090,13 @@ export class Sessions {
         endIdentity = { messageId, ...(entryId ? { entryId } : {}), ...(liveId && liveId !== messageId ? { liveId } : {}) };
         delete item.live[agentId];
         if (agentId === "main") {
-          const sessionFile = item.agent?.sessionFile?.();
+          const sessionFile = landedSessionFile(item);
           if (sessionFile && sessionFile !== item.sessionFile) {
             item.sessionFile = sessionFile;
             this.saveChange(item, { session: { sessionFile } });
           }
         }
+        if (event.data.message?.role === "user") this.saveChange(item, { session: this.sessionData(item) });
       }
       if (event.type === "agent.compaction" && agentId === "main") {
         if (!item.compactions.some((entry) => entry.id === event.data.id)) item.compactions.push(event.data);
@@ -1331,10 +1347,10 @@ export class Sessions {
     item.unsubscribe = item.agent.subscribe((event) =>
       item.emit({ ...event, agentId: "main", runId: item.runId }),
     );
-      if (this.store && !this.store.hasSession(id)) {
+      if (this.store && !this.store.hasSession(id) && item.messages.some(record => record.message?.role === "user")) {
         this.store.insertSession({ ...this.sessionData(item), compactions: item.compactions,
           retries: item.retries, tasks: item.tasks.snapshot() });
-      } else if (this.store) {
+      } else if (this.store?.hasSession(id)) {
         // 恢复时的中断状态与 JSONL 对账只写一次，不进入日常保存热路径。
         // 整段一次 persist（数组增量走同一 SAVEPOINT）：逐条独立成事务时，中途失败会留下
         // 半截归一化结果（任务已改写、事件没写）；同时把写放大从 1+N 次事务压到 1 次。
@@ -1635,10 +1651,21 @@ export class Sessions {
   // 一次全量下发历史（不分页）：被压缩摘要折叠掉的消息除外，那段由前端点开摘要卡时按需取。
   // 未加载时按数据库元数据 + JSONL 构建只读投影：浏览历史不得持久化恢复状态或启动任务
   //（Goal 恢复仅在内存投影）。
+  configData(item) {
+    return {
+      canReconfigure: this.canReconfigure(item), queueType: item.queueType,
+      ...item.agent.config?.(), subagentModel: item.subagentModel,
+      subagentThinking: item.subagentThinking,
+      subagentResolvedCapabilities: item.subagentResolvedCapabilities,
+      capabilitySelection: item.capabilities, subagentCapabilities: item.subagentCapabilities,
+      runtime: item.agent.runtime?.(),
+    };
+  }
+
   snapshot(id, options = {}) {
     const item = this.get(id);
     if (!item.loaded) {
-      const saved = this.store.getSession(id);
+      const saved = item.draft ?? this.store.getSession(id);
       let messages = [];
       const tasks = structuredClone(saved.tasks ?? []);
       const manager = saved.sessionFile ? readSessionManager(saved.sessionFile, saved.cwd) : null;
@@ -1670,7 +1697,9 @@ export class Sessions {
       } });
       return structuredClone({ sessionId: id, cwd: item.cwd, title: item.title, seq: item.seq ?? 0,
         instanceId: options.epoch ?? null, liveMessageIds: {},
-        status: "idle", safeStop: false, runtime: restoredRuntime, billing: combinedBilling(restoredRuntime.billing, tasks), config: { ...saved.selection, canReconfigure: !saved.sessionFile && !messages.length && !tasks.length
+        status: "idle", safeStop: false, runtime: restoredRuntime, billing: combinedBilling(restoredRuntime.billing, tasks), config: { ...saved.selection, capabilitySelection: selection.capabilities ?? null,
+          subagentCapabilities: selection.subagentCapabilities ?? null, queueType: selection.queueType || "steer",
+          canReconfigure: !saved.sessionFile && !messages.length && !tasks.length
           && !compactions.length && !saved.retries?.length && saved.selection?.executionStarted !== true && !goal.active },
         messages: fold.records.map(toWireRecord),
         messageIndexes: fold.indexes, messageCount: messages.length,
@@ -1695,15 +1724,7 @@ export class Sessions {
       runtime: item.agent.runtime?.(),
       billing: combinedBilling(item.agent.runtime?.()?.billing, [...item.tasks.jobs.values()]),
       queue: item.agent.queue?.(),
-      config: {
-        canReconfigure: this.canReconfigure(item),
-        queueType: item.queueType,
-        ...item.agent.config?.(), subagentModel: item.subagentModel,
-        subagentThinking: item.subagentThinking,
-        subagentResolvedCapabilities: item.subagentResolvedCapabilities,
-        capabilitySelection: item.capabilities,
-        subagentCapabilities: item.subagentCapabilities,
-      },
+      config: this.configData(item),
       runId: item.runId,
       messages: fold.records.map(toWireRecord),
       // 折叠前的下标与总数：前端按历史下标登记目标轮次锚点，压缩折叠不能让计数漂移。
@@ -2073,8 +2094,8 @@ export class Sessions {
         await this.persist(item);
         await item.agent.dispose();
         item.unsubscribe();
-        const saved = this.store.getSession(item.id);
-        this.items.set(item.id, { ...saved, loaded: false, status: "idle", runningSince: null,
+        const saved = this.store.getSession(item.id) ?? this.sessionData(item);
+        this.items.set(item.id, { ...saved, ...(!this.store.hasSession(item.id) ? { draft: saved } : {}), loaded: false, status: "idle", runningSince: null,
           seq: item.seq, tasks: { jobs: new Map() }, listeners: item.listeners });
       })();
       try { await item.releasing; }

@@ -23,7 +23,8 @@ async function fixture(t) {
     state.instances.push(selected);
     return {
       config: () => ({ model: 'test/one', thinking: 'off', retry: selected.retry }),
-      subscribe: (fn) => { state.sink = fn; return () => {}; }, prompt: async () => {}, enqueue: async () => {},
+      subscribe: (fn) => { state.sink = fn; return () => {}; },
+      prompt: async text => state.sink({ type: 'agent.message.end', data: { message: { role: 'user', content: text } } }), enqueue: async () => {},
       queue: () => ({ steering: [], followUp: [] }), withdraw: () => ({}),
       abort: async () => {}, result: () => 'ok', dispose: async () => { state.disposed++; },
       sessionFile: () => join(root, 'pending.jsonl'), historyEntries: () => [],
@@ -39,7 +40,7 @@ async function fixture(t) {
     await sessions.load();
   } };
 }
-test('empty session reassembles selected capabilities and retry, keeping identity and persistence', async t => {
+test('empty session reassembles selected capabilities and retry, keeping identity without persisting an empty draft', async t => {
   const f = await fixture(t);
   assert.equal(f.sessions.snapshot(f.id).config.canReconfigure, true);
   const result = await f.sessions.configure(f.id, { capabilities: chosen, subagentCapabilities: chosen, retry: { retryable: ['temporary'] } });
@@ -47,10 +48,9 @@ test('empty session reassembles selected capabilities and retry, keeping identit
   assert.deepEqual(result.capabilitySelection, chosen);
   assert.deepEqual(f.state.instances.at(-1).retry, { retryable: ['temporary'] });
   assert.equal(f.state.disposed, 1);
+  assert.equal(f.sessions.store.hasSession(f.id), false);
   await f.reopen();
-  assert.equal(f.sessions.snapshot(f.id).config.canReconfigure, true);
-  await f.sessions.ensureLoaded(f.id);
-  assert.deepEqual(f.sessions.snapshot(f.id).config.capabilitySelection, chosen);
+  assert.throws(() => f.sessions.get(f.id), /Unknown session/);
 });
 test('persist failure during rebuild keeps the old agent and allows retry', async t => {
   const f = await fixture(t), old = f.sessions.get(f.id).agent;

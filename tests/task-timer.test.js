@@ -6,10 +6,14 @@ import { join } from "node:path";
 import { Sessions } from "../src/sessions.js";
 
 // 每轮至少 12ms，保证每个运行段的累计时长可观测。
+let emit;
 const factory = async () => ({
   config: () => ({ model: "test/one", thinking: "off" }),
-  subscribe: () => () => {},
-  prompt: () => new Promise((resolve) => setTimeout(resolve, 12)),
+  subscribe(listener) { emit = listener; return () => {}; },
+  prompt: (text) => {
+    emit?.({ type: "agent.message.end", data: { message: { role: "user", content: text } } });
+    return new Promise((resolve) => setTimeout(resolve, 12));
+  },
   result: () => "ok",
   abort: async () => {},
   dispose: async () => {},

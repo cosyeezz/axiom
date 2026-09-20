@@ -13,8 +13,12 @@ function factoryFixture() {
     let finish;
     const agent = {
       calls: [], notifies: [], config: () => ({ model: "test/model" }),
-      subscribe: () => () => {},
-      prompt(text) { this.calls.push(text); return new Promise((resolve) => { finish = resolve; }); },
+      subscribe(listener) { agent.listener = listener; return () => {}; },
+      prompt(text) {
+        this.calls.push(text);
+        agent.listener?.({ type: "agent.message.end", data: { message: { role: "user", content: text } } });
+        return new Promise((resolve) => { finish = resolve; });
+      },
       // running 通道通知：SDK sendCustomMessage 的投影，不进入 prompt 调用序列。
       notifyTask(text) { this.notifies.push(text); return Promise.resolve(); },
       enqueue() { throw new Error("system notifications must not enter withdrawable queues"); },

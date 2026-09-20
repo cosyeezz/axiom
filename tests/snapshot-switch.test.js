@@ -175,14 +175,15 @@ for (const pendingB of [false, true]) test(`召回 attach 挂起中切到 B（B$
   const pendingAttachA = new Promise((resolve) => { releaseAttachA = resolve; });
   let releaseAttachB;
   const pendingAttachB = new Promise((resolve) => { releaseAttachB = resolve; });
-  app.setRequest(async (type, data = {}) => {
+  const fakeRequest = async (type, data = {}) => {
     if (type === "sessions.list") return [];
     if (type === "queue.withdraw") return { steering: [], followUp: [], recalled: { entryId: "u1", text: "召回文本" } };
     if (type === "session.attach" && data.sessionId === "a") { attachAStarted = true; return pendingAttachA; }
     if (type === "session.attach" && pendingB) return pendingAttachB;
     if (type === "session.attach") return structuredClone(states[data.sessionId]);
     return {};
-  });
+  };
+  app.setRequest(fakeRequest);
   app.setConnected(true);
   await app.snapshot(structuredClone(states.a));
   assert.equal(app.session(), "a");
@@ -194,7 +195,7 @@ for (const pendingB of [false, true]) test(`召回 attach 挂起中切到 B（B$
   assert.equal(app.session(), "a");
 
   // 用户此刻切到 B：与真实 switchSession 一致（attach 期间只置 changing，尚未改 sessionId）。
-  const switching = app.switchSession(() => app.request("session.attach", { sessionId: "b" }));
+  const switching = app.switchSession(() => fakeRequest("session.attach", { sessionId: "b" }));
   if (!pendingB) {
     await switching;
     assert.equal(app.session(), "b");

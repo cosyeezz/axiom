@@ -4,7 +4,22 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Sessions } from "../src/sessions.js";
+import { Sessions as BaseSessions } from "../src/sessions.js";
+// 本文件测试已存在的持久化会话；空草稿契约由 session-background-start 覆盖。
+class Sessions extends BaseSessions {
+  async create(workspace, selection, saved) {
+    if (saved) return super.create(workspace, selection, saved);
+    const id = await super.create(workspace, selection);
+    const item = this.get(id);
+    item.messages.push({ agentId: "main", message: { role: "user", content: "seed" } });
+    try { await this.persist(item); }
+    catch (error) {
+      item.unsubscribe?.(); await item.agent.dispose(); this.items.delete(id);
+      throw error;
+    }
+    return id;
+  }
+}
 import { Database } from "../src/database.js";
 
 const factory = async () => ({
@@ -26,7 +41,7 @@ test("打开冷会话只读历史；显式加载保留订阅与事件水位", as
     sessions = new Sessions(create, undefined, join(root, "storage"));
     await sessions.load();
     const before = calls, events = [];
-    const unsubscribe = sessions.subscribe(id, event => events.push(event));
+    const unsubscribe = sessions.subscribe(id, event => { if (event.type === 'test') events.push(event); });
     sessions.get(id).seq = 7;
     assert.equal(sessions.snapshot(id).seq, 7);
     assert.equal(calls, before);

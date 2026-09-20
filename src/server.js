@@ -398,7 +398,7 @@ export function createServerApp(sessions, service = {}) {
               data = await sessions.deleteDefaults(request.cwd);
               break;
             case "session.create": {
-              const id = await sessions.create(request.cwd, request);
+              const id = await sessions.create(request.cwd, request, undefined, true);
               if (ws.readyState !== WebSocket.OPEN) {
                 await sessions.remove(id);
                 return;
@@ -496,6 +496,15 @@ export function createServerApp(sessions, service = {}) {
               break;
           }
           send({ type: "response", id: request.id, ok: true, data });
+          // 首屏回执先发出；进程准备失败作为会话事件报告，不阻塞打开 UI。
+          if (["session.create", "session.attach"].includes(request.type)) {
+            const id = data.sessionId;
+            setImmediate(() => {
+              if (closing || !sessions.items.has(id)) return;
+              void sessions.ensureLoaded(id).catch(error => send({ type: "error", sessionId: id,
+                data: { message: `会话后台启动失败：${error.message}` } }));
+            });
+          }
         } catch (error) {
           send({
             type: "response",

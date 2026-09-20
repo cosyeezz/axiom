@@ -67,6 +67,7 @@ test("项目技能完整存进目录配置：保存、改 thinking、重启、�
     assert.equal((await second.workspaceDefaults(alias)).thinking, "high");
     // 新建会话真的带上项目技能（create 取 workspaceDefaults），且别名目录归一到同一份配置。
     const id = await second.create(alias);
+    second.get(id).emit({ type: "agent.message.end", data: { entryId: "u1", message: { role: "user", content: "seed" } } });
     assert.deepEqual(second.get(id).capabilities, selected);
     assert.deepEqual(second.snapshot(id).config.capabilitySelection, selected);
     // 真实 loader 集成：选中的项目技能与全局技能都被加载。

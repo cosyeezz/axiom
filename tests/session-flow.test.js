@@ -476,6 +476,7 @@ test("session.duplicate copies histories into a fresh identity with a sequenced 
     await assert.rejects(sessions.duplicate(id), /还没有历史文件/, "未落盘的历史不可复制");
     // 模拟历史落盘：首条消息后文件写盘（工厂闭包指向真实文件），冲库后路径入 store。
     sessionFilePath = mainFile;
+    sessions.get(id).messages.push({ agentId: "main", entryId: "u1", message: { role: "user", content: "帮我整理周报" } });
     await sessions.persist(sessions.get(id));
     sessions.store.saveTask(id, {
       id: "task-a", task: "检索旧周报", status: "completed", text: "子任务结论",
@@ -556,7 +557,7 @@ test("session.duplicate copies histories into a fresh identity with a sequenced 
   } finally { await restored?.close(); await sessions?.close(); await rm(root, { recursive: true, force: true }); }
 });
 
-test("尚未落盘的 JSONL 路径不落库，空会话重启后仍能打开", async () => {
+test("空会话不落库，首条用户消息后建档且未落盘路径不写入",  async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-empty-session-"));
   const storage = join(root, "storage");
   // 真实 SessionManager 懒创建 JSONL：路径创建时即确定，文件要等第一条消息才写出来。
@@ -574,6 +575,9 @@ test("尚未落盘的 JSONL 路径不落库，空会话重启后仍能打开", a
     sessions = new Sessions(factory, undefined, storage);
     const id = await sessions.create(root);
     assert.equal(existsSync(join(root, "pending.jsonl")), false, "前提：此刻还没有 JSONL 文件");
+    assert.equal(sessions.store.hasSession(id), false);
+    sessions.get(id).messages.push({ agentId: "main", message: { role: "user", content: "first" } });
+    await sessions.persist(sessions.get(id));
     // 落库的只能是真文件；否则重启后 ensureLoaded 会按「历史文件缺失」永久拒绝加载这条会话。
     assert.equal(sessions.store.getSession(id).sessionFile ?? null, null);
     assert.equal(sessions.list()[0].sessionFile, null, "列表同源，前端据此提示「发送首条消息后生成」");

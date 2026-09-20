@@ -25,6 +25,7 @@ test("createdAt 稳定：重命名/发消息不变，落盘后恢复，老记录
     await new Promise((resolve) => setTimeout(resolve, 5));
     await sessions.rename(id, "renamed");
     await sessions.prompt(id, "hello");
+    sessions.get(id).emit({ type: "agent.message.end", data: { entryId: "u1", message: { role: "user", content: "hello" } } });
     assert.equal(sessions.list().find((s) => s.id === id).createdAt, created);
     await sessions.close();
 

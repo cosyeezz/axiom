@@ -19,8 +19,12 @@ test("cancel_task preserves siblings and delivers its persisted result after the
     let finish;
     const agent = {
       tools, calls: [], aborts: 0,
-      config: () => ({ model: "test/model" }), subscribe: () => () => {},
-      prompt(text) { this.calls.push(text); return new Promise((resolve) => { finish = resolve; }); },
+      config: () => ({ model: "test/model" }), subscribe(listener) { agent.listener = listener; return () => {}; },
+      prompt(text) {
+        this.calls.push(text);
+        agent.listener?.({ type: "agent.message.end", data: { message: { role: "user", content: text } } });
+        return new Promise((resolve) => { finish = resolve; });
+      },
       result: () => "done", dispose: async () => {}, finish: () => finish?.(),
       async abort() { this.aborts++; finish?.(); },
     };

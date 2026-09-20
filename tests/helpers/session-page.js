@@ -56,7 +56,7 @@ export async function until(predicate, label, rounds = 500) {
  * 不 hold 的响应在微任务里立刻送达（真实 transport 负责在 attach 在飞时开闸）。
  */
 export function bootSessionPage({ sessionId = "long", title = "长会话", epoch = "epoch-1",
-  records = makeRecords(240), seq = 500, hold = null } = {}) {
+  records = makeRecords(240), seq = 500, hold = null, respond: respondOverride = null } = {}) {
   const dom = new JSDOM(html, { url: "http://localhost", runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   const $ = (id) => window.document.getElementById(id);
@@ -92,7 +92,7 @@ export function bootSessionPage({ sessionId = "long", title = "长会话", epoch
   const requests = [];
   const sockets = [];
   const held = [];
-  const respond = (req) => {
+  const defaultRespond = (req) => {
     switch (req.type) {
       case "service.status": return { managed: false, error: "", version: "9.9.9" };
       case "models.list": return [{ key: "test/model", provider: "test", name: "Model" }];
@@ -103,6 +103,7 @@ export function bootSessionPage({ sessionId = "long", title = "长会话", epoch
       default: return {};
     }
   };
+  const respond = req => respondOverride ? respondOverride(req, defaultRespond) : defaultRespond(req);
   class Socket {
     static OPEN = 1;
     readyState = 0;
@@ -132,7 +133,7 @@ export function bootSessionPage({ sessionId = "long", title = "长会话", epoch
     `window.__app = {
       snapshot, event, saveView, views, live, renderer,
       switchSession, withdrawQueue, reattach,
-      request: (type, data) => request(type, data),
+      request,
       setRequest: (fn) => { request = fn; },
       session: () => sessionId,
       connected: () => connected,

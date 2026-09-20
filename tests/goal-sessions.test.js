@@ -30,8 +30,12 @@ function factoryFixture() {
       enableTools(names) { for (const name of names) agent.activeTools.add(name); },
       disableTools(names) { for (const name of names) agent.activeTools.delete(name); },
       config: () => ({ model: "test/model" }),
-      subscribe: () => () => {},
-      prompt(text) { this.calls.push(text); return new Promise((resolve) => { finish = resolve; }); },
+      subscribe(listener) { agent.listener = listener; return () => {}; },
+      prompt(text) {
+        this.calls.push(text);
+        agent.listener?.({ type: "agent.message.end", data: { message: { role: "user", content: text } } });
+        return new Promise((resolve) => { finish = resolve; });
+      },
       enqueue() { throw new Error("system notifications must not enter withdrawable queues"); },
       result: () => agent.resultText,
       dispose: async () => {},
