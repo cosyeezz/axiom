@@ -1,11 +1,18 @@
-// Observation Pack：大工具结果先全文发送 FULL_SENDS 次，之后在 context 投影层
-// 替换为字节级稳定的占位符；原文按内容寻址归档，模型用 obs_recall 分页取回。
+// Observation Pack：大工具结果先全文发送 fullSends 次，之后在 context 投影层
+// 替换为字节级稳定的占位符；原文按内容寻址归档，模型用 obs_recall 取回。
 // 移植自 SoL-Pi extensions/observation-pack（NVIDIA，MIT），适配点见 devlog 2026-09-19。
 // 关键不变量：不改写持久历史（投影层 structuredClone 之后的消息数组）、
 // 折叠失败 fail-open（原文照发）、占位符为纯函数输出（前缀缓存逐字节稳定）。
+//
+// 2026-09-19 加固（见 devlog）：
+// - 取回回显不再被当成新观察归档，而是折叠为指回原对象的指针（消除 O→placeholder→recall→placeholder 的多层引用）。
+// - 发送次数改为纯推导（其后 assistant 消息数），投影幂等：取消/重试/重复投影不再虚增材料年龄。
+// - 取回支持 limit/行范围/关键词三种定位，硬上限不再等于默认读取量。
+// - 归档写 sidecar manifest，取回时按 manifest 校验内容哈希（等长篡改可检出）。
+// - 每请求热路径记忆化：同一工具调用的 hash / 归档校验 / 占位符只算一次。
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { appendFile, lstat, mkdir, open } from "node:fs/promises";
+import { appendFile, lstat, mkdir, open, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 /** Only tool results larger than this participate. AXIOM 定 6KB（SoL-Pi 原版 10KB）。 */
@@ -29,6 +36,13 @@ const RECALL_LIMITS = {
   maxBytes: RECALL_MAX_BYTES - RECALL_HEADER_RESERVE_BYTES,
   maxLines: RECALL_MAX_LINES - RECALL_HEADER_LINES,
 };
+/** 默认单次取回正文预算：小于硬上限，避免“只想确认一行”也拉回满页。 */
+const RECALL_DEFAULT_BYTES = 4 * 1024;
+/** 行定位 / 关键词检索需要整文件入内存，超过这个尺寸退回字节分页。 */
+const RECALL_SCAN_MAX_BYTES = 8 * 1024 * 1024;
+const RECALL_DEFAULT_CONTEXT_LINES = 2;
+const RECALL_MAX_CONTEXT_LINES = 20;
+const RECALL_MAX_QUERY_BYTES = 512;
 
 export function hash(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -56,6 +70,46 @@ function countBufferLines(buffer) {
   return lines;
 }
 
+// ---------------------------------------------------------------------------
+// 策略配置：阈值 / 全文次数 / 工作集 / 取回预算 / 校验强度可注入，
+// 每项都能单独回滚到原常量。configVersion 进 ledger，便于按策略版本分段归因。
+// ---------------------------------------------------------------------------
+
+/** 关闭新折叠时仍保留 obs_recall：上下文或摘要里可能还存在旧占位符。 */
+export const OBSERVATION_DEFAULTS = {
+  thresholdBytes: THRESHOLD_BYTES,
+  fullSends: FULL_SENDS,
+  placeholderExcerptBytes: PLACEHOLDER_EXCERPT_BYTES,
+  foldEnabled: true,
+  foldRecallEchoes: true,
+  strictVerify: false,
+  recallDefaultBytes: RECALL_DEFAULT_BYTES,
+};
+
+function positiveInteger(value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
+  if (value == null) return fallback;
+  if (!Number.isSafeInteger(value) || value < min || value > max) {
+    throw new Error(`observation-pack config expects an integer in [${min}, ${max}], received ${value}`);
+  }
+  return value;
+}
+
+export function resolveObservationConfig(options = {}) {
+  const resolved = {
+    thresholdBytes: positiveInteger(options.thresholdBytes, THRESHOLD_BYTES, { min: 256 }),
+    fullSends: positiveInteger(options.fullSends, FULL_SENDS, { min: 0, max: 64 }),
+    placeholderExcerptBytes: positiveInteger(options.placeholderExcerptBytes, PLACEHOLDER_EXCERPT_BYTES, { min: 64, max: RECALL_LIMITS.maxBytes }),
+    foldEnabled: options.foldEnabled ?? true,
+    foldRecallEchoes: options.foldRecallEchoes ?? true,
+    strictVerify: options.strictVerify ?? false,
+    recallDefaultBytes: positiveInteger(options.recallDefaultBytes, RECALL_DEFAULT_BYTES, { min: 256, max: RECALL_LIMITS.maxBytes }),
+  };
+  const fingerprint = hash(JSON.stringify(Object.entries(resolved).sort(([a], [b]) => (a < b ? -1 : 1)))).slice(0, 12);
+  return Object.freeze({ ...resolved, configVersion: fingerprint });
+}
+
+const DEFAULT_CONFIG = resolveObservationConfig();
+
 export function isPureTextResult(message) {
   return (
     message.role === "toolResult" &&
@@ -75,6 +129,11 @@ export function objectPath(root, id) {
   return join(root, "objects", `${id}.txt`);
 }
 
+/** sidecar manifest：持久化完整 contentHash 与字节数，取回时据此校验等长篡改。 */
+export function manifestPath(root, id) {
+  return join(root, "objects", `${id}.json`);
+}
+
 export function isObservationId(id) {
   return OBSERVATION_ID_PATTERN.test(id);
 }
@@ -83,10 +142,10 @@ export function isObservationId(id) {
  * 会话内内容寻址：id = hash(toolName, toolCallId, contentHash)。resume 沿用同一目录；
  * 分支重建自己的对象（历史未被改写，原文可再归档）。
  */
-export function createObservation(message, root) {
+export function createObservation(message, root, config = DEFAULT_CONFIG) {
   const text = textFromResult(message);
   const bytes = Buffer.byteLength(text, "utf8");
-  if (bytes <= THRESHOLD_BYTES) return undefined;
+  if (bytes <= config.thresholdBytes) return undefined;
   if (!root) throw new Error("Observation archive directory is unavailable");
 
   const contentHash = hash(text);
@@ -95,6 +154,7 @@ export function createObservation(message, root) {
     id,
     contentHash,
     filePath: objectPath(root, id),
+    manifestFile: manifestPath(root, id),
     toolName: message.toolName,
     text,
     bytes,
@@ -105,6 +165,7 @@ export function createObservation(message, root) {
 
 /**
  * 写入内容寻址路径：O_EXCL 创建，拒绝符号链接；已存在则逐字节校验后才复用。
+ * 同时写 sidecar manifest（best-effort：manifest 写失败不影响原文可用性）。
  */
 export async function ensureStored(observation) {
   const directoryPath = dirname(observation.filePath);
@@ -139,6 +200,110 @@ export async function ensureStored(observation) {
   } finally {
     await handle?.close();
   }
+
+  await writeManifest(observation);
+}
+
+async function writeManifest(observation) {
+  const manifest = JSON.stringify({
+    id: observation.id,
+    contentHash: observation.contentHash,
+    bytes: observation.bytes,
+    lines: observation.lines,
+    tool: observation.toolName,
+    storedAt: new Date().toISOString(),
+  });
+  try {
+    await writeFile(observation.manifestFile, manifest, { encoding: "utf8", mode: 0o600 });
+  } catch (error) {
+    // manifest 只服务校验；写不进去时退回“未校验取回”，不能因此丢原文。
+    console.error(`[observation-pack] manifest write failed for ${observation.id}: ${error?.message ?? error}`);
+  }
+}
+
+export async function readManifest(root, id) {
+  try {
+    const raw = await readFile(manifestPath(root, id), "utf8");
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.contentHash !== "string" || !Number.isSafeInteger(parsed?.bytes)) return undefined;
+    return parsed;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 按 manifest 校验归档完整性。等长改写在 readRecallChunk 的 size 检查下不可见，
+ * 只有全文哈希能发现。结果按 (path, size, mtimeMs) 缓存：同一进程内每个对象最多算一次。
+ */
+export function createIntegrityVerifier() {
+  const verified = new Map();
+  return async function verifyObject(root, id, { strict = false } = {}) {
+    const path = objectPath(root, id);
+    const handle = await open(path, READ_OBJECT_FLAGS);
+    let stats;
+    try {
+      stats = await handle.stat();
+      if (!stats.isFile()) throw new Error("Stored observation is not a regular file");
+    } finally {
+      await handle.close();
+    }
+
+    const cacheKey = `${path}\0${stats.size}\0${stats.mtimeMs}`;
+    const cached = verified.get(cacheKey);
+    if (cached) {
+      if (cached.error) throw new Error(cached.error);
+      return cached.state;
+    }
+
+    const manifest = await readManifest(root, id);
+    if (!manifest) {
+      // 旧归档没有 manifest：严格模式拒绝取回，宽松模式记为 unverified 继续。
+      if (strict) {
+        const message = `Observation ${id} has no manifest; refusing to recall under strictVerify`;
+        verified.set(cacheKey, { error: message });
+        throw new Error(message);
+      }
+      verified.set(cacheKey, { state: "unverified" });
+      return "unverified";
+    }
+    if (manifest.bytes !== stats.size) {
+      const message = `Observation ${id} size does not match its manifest (${stats.size} vs ${manifest.bytes})`;
+      verified.set(cacheKey, { error: message });
+      throw new Error(message);
+    }
+    const actual = hash(await readFile(path));
+    if (actual !== manifest.contentHash) {
+      const message = `Observation ${id} content hash does not match its manifest`;
+      verified.set(cacheKey, { error: message });
+      throw new Error(message);
+    }
+    verified.set(cacheKey, { state: "verified" });
+    return "verified";
+  };
+}
+
+function trimUtf8End(buffer, limit) {
+  let end = limit;
+  while (end > 0 && end < buffer.length && ((buffer[end] ?? 0) & 0xc0) === 0x80) end -= 1;
+  return end;
+}
+
+/** 起点落在多字节字符中间时前移到下一个字符首字节，避免开头出现替换字符。 */
+function alignUtf8Start(buffer, start) {
+  let aligned = start;
+  while (aligned < buffer.length && ((buffer[aligned] ?? 0) & 0xc0) === 0x80) aligned += 1;
+  return aligned;
+}
+
+function excerptByBytes(text, budgetBytes, fromEnd) {
+  const buffer = Buffer.from(text, "utf8");
+  if (buffer.length <= budgetBytes) return text;
+  if (fromEnd) {
+    const start = alignUtf8Start(buffer, buffer.length - budgetBytes);
+    return buffer.subarray(start).toString("utf8");
+  }
+  return buffer.subarray(0, trimUtf8End(buffer, budgetBytes)).toString("utf8");
 }
 
 function completeLineExcerpt(text, budgetBytes, fromEnd) {
@@ -158,22 +323,26 @@ function completeLineExcerpt(text, budgetBytes, fromEnd) {
     index += fromEnd ? -1 : 1;
   }
 
+  // 首行就超预算（单行大结果：压缩 JSON / 无换行日志）时按字节截断兜底，
+  // 否则占位符会退化成“只剩元数据、零内容”。
+  if (selected.length === 0) return excerptByBytes(text, budgetBytes, fromEnd);
   return selected.join("");
 }
 
-export function placeholderFor(observation) {
-  const headBudget = Math.floor(PLACEHOLDER_EXCERPT_BYTES / 2);
-  const tailBudget = PLACEHOLDER_EXCERPT_BYTES - headBudget;
+export function placeholderFor(observation, config = DEFAULT_CONFIG) {
+  const headBudget = Math.floor(config.placeholderExcerptBytes / 2);
+  const tailBudget = config.placeholderExcerptBytes - headBudget;
   const head = completeLineExcerpt(observation.text, headBudget, false);
   const tail = completeLineExcerpt(observation.text, tailBudget, true);
   return [
-    `[large tool result replaced after its first ${FULL_SENDS} provider requests]`,
+    `[large tool result replaced after its first ${config.fullSends} provider requests]`,
     `id: ${observation.id}`,
     `tool: ${observation.toolName}`,
     `original_bytes: ${observation.bytes}`,
     `original_lines: ${observation.lines}`,
     `estimated_tokens: ${observation.tokens}`,
     `retrieve: call obs_recall with {"id":"${observation.id}","offset":0}; continue with returned next_offset`,
+    `narrow: add "query" (keyword), or "startLine"/"lineLimit", to avoid re-reading whole pages`,
     `[first complete lines, up to ${headBudget} bytes]`,
     head,
     `[middle omitted; last complete lines, up to ${tailBudget} bytes]`,
@@ -182,11 +351,39 @@ export function placeholderFor(observation) {
   ].join("\n");
 }
 
-function trimUtf8End(buffer, limit) {
-  let end = limit;
-  while (end > 0 && end < buffer.length && ((buffer[end] ?? 0) & 0xc0) === 0x80) end -= 1;
-  return end;
+// ---------------------------------------------------------------------------
+// 取回回显：obs_recall 的输出本身是「某个原对象的投影视图」，不是新资料。
+// 折叠它时不再归档成新对象，而是换成指回原对象的指针，避免引用层数增长。
+// ---------------------------------------------------------------------------
+
+const RECALL_ECHO_PATTERN = /^\[obs_recall id=(obs_[a-f0-9]{24})\b([^\]]*)\]/u;
+
+export function parseRecallEcho(text) {
+  const match = RECALL_ECHO_PATTERN.exec(text);
+  if (!match) return undefined;
+  const id = match[1];
+  if (!isObservationId(id)) return undefined;
+  const fields = match[2] ?? "";
+  const pick = (name) => {
+    const found = new RegExp(`${name}=(\\d+)`, "u").exec(fields);
+    return found ? Number(found[1]) : undefined;
+  };
+  return { id, offset: pick("offset"), nextOffset: pick("next_offset") };
 }
+
+export function recallPointerFor(echo, bytes) {
+  const range = echo.offset != null && echo.nextOffset != null ? ` bytes ${echo.offset}..${echo.nextOffset}` : "";
+  const resume = echo.nextOffset != null ? `,"offset":${echo.nextOffset}` : "";
+  return [
+    `[recall view of ${echo.id}${range} dropped from context; ${bytes} bytes]`,
+    `re-read: call obs_recall with {"id":"${echo.id}"${resume}} (add "query"/"startLine" to narrow)`,
+  ].join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// 取回：字节分页（默认）/ 行范围 / 关键词检索。三者共享同一硬上限，
+// 但默认读取量小于硬上限，避免“确认一个符号”也拉回满页。
+// ---------------------------------------------------------------------------
 
 export async function readRecallChunk(path, offset, limits) {
   const handle = await open(path, READ_OBJECT_FLAGS);
@@ -198,10 +395,14 @@ export async function readRecallChunk(path, offset, limits) {
     const available = Math.max(0, fileStats.size - offset);
     const buffer = Buffer.alloc(Math.min(available, limits.maxBytes + 4));
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, offset);
-    let end = Math.min(bytesRead, limits.maxBytes);
+
+    // 起点可能落在多字节字符中间（模型按上次 next_offset 之外的值试探时）：
+    // 前移到字符边界并如实回报实际起点，chunk 里不留替换字符。
+    const start = alignUtf8Start(buffer.subarray(0, bytesRead), 0);
+    let end = Math.min(bytesRead, start + limits.maxBytes);
     let newlineCount = 0;
 
-    for (let index = 0; index < end; index += 1) {
+    for (let index = start; index < end; index += 1) {
       if (buffer[index] !== 0x0a) continue;
       newlineCount += 1;
       if (newlineCount === limits.maxLines) {
@@ -211,41 +412,165 @@ export async function readRecallChunk(path, offset, limits) {
     }
 
     end = trimUtf8End(buffer, end);
-    const chunk = buffer.subarray(0, end);
-    const nextOffset = offset + chunk.length;
+    const chunk = buffer.subarray(start, Math.max(start, end));
+    const nextOffset = offset + start + chunk.length;
     return {
+      mode: "bytes",
       text: chunk.toString("utf8"),
       bytes: chunk.length,
       lines: countBufferLines(chunk),
+      offset: offset + start,
       nextOffset,
       eof: nextOffset >= fileStats.size,
+      size: fileStats.size,
     };
   } finally {
     await handle.close();
   }
 }
 
+async function readWholeObject(path) {
+  const handle = await open(path, READ_OBJECT_FLAGS);
+  try {
+    const fileStats = await handle.stat();
+    if (!fileStats.isFile()) throw new Error("Stored observation is not a regular file");
+    if (fileStats.size > RECALL_SCAN_MAX_BYTES) {
+      throw new Error(`Observation is ${fileStats.size} bytes; line and query modes cap at ${RECALL_SCAN_MAX_BYTES}. Use offset paging instead.`);
+    }
+    return { text: await handle.readFile("utf8"), size: fileStats.size };
+  } finally {
+    await handle.close();
+  }
+}
+
+function splitLines(text) {
+  const lines = text.split("\n");
+  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  return lines;
+}
+
+/** 行范围读取：1 基起始行 + 行数，按字节预算截断。 */
+export async function readRecallLines(path, startLine, lineLimit, limits) {
+  const { text, size } = await readWholeObject(path);
+  const lines = splitLines(text);
+  if (startLine > lines.length) {
+    throw new Error(`startLine ${startLine} exceeds observation line count ${lines.length}`);
+  }
+  const begin = startLine - 1;
+  const selected = [];
+  let bytes = 0;
+  let index = begin;
+  while (index < lines.length && selected.length < lineLimit && selected.length < limits.maxLines) {
+    const candidate = `${lines[index]}\n`;
+    const candidateBytes = Buffer.byteLength(candidate, "utf8");
+    if (bytes + candidateBytes > limits.maxBytes && selected.length > 0) break;
+    if (bytes + candidateBytes > limits.maxBytes) {
+      selected.push(`${excerptByBytes(lines[index], limits.maxBytes, false)}\n`);
+      bytes = limits.maxBytes;
+      index += 1;
+      break;
+    }
+    selected.push(candidate);
+    bytes += candidateBytes;
+    index += 1;
+  }
+  return {
+    mode: "lines",
+    text: selected.join(""),
+    bytes,
+    lines: selected.length,
+    startLine,
+    nextLine: index + 1,
+    totalLines: lines.length,
+    eof: index >= lines.length,
+    size,
+  };
+}
+
+/** 关键词检索：大小写不敏感子串，命中行带上下文，按字节预算截断。 */
+export async function searchRecall(path, query, contextLines, limits) {
+  const { text, size } = await readWholeObject(path);
+  const lines = splitLines(text);
+  const needle = query.toLowerCase();
+  const blocks = [];
+  let bytes = 0;
+  let matches = 0;
+  let emittedThrough = 0; // 已输出到的行号（1 基），用于合并相邻命中窗口
+  let truncated = false;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!lines[index].toLowerCase().includes(needle)) continue;
+    matches += 1;
+    const from = Math.max(emittedThrough + 1, index + 1 - contextLines);
+    const to = Math.min(lines.length, index + 1 + contextLines);
+    if (to < from) continue;
+    const rendered = [];
+    for (let line = from; line <= to; line += 1) rendered.push(`${line}: ${lines[line - 1]}\n`);
+    const block = (from > emittedThrough + 1 && emittedThrough > 0 ? "...\n" : "") + rendered.join("");
+    const blockBytes = Buffer.byteLength(block, "utf8");
+    const blockLines = countLines(block);
+    if (bytes + blockBytes > limits.maxBytes || countLines(blocks.join("")) + blockLines > limits.maxLines) {
+      truncated = true;
+      break;
+    }
+    blocks.push(block);
+    bytes += blockBytes;
+    emittedThrough = to;
+  }
+
+  return {
+    mode: "query",
+    text: blocks.join(""),
+    bytes,
+    lines: countLines(blocks.join("")),
+    matches,
+    totalLines: lines.length,
+    truncated,
+    lastLine: emittedThrough,
+    eof: !truncated,
+    size,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // 度量：进程内统计（面板显示）+ ledger（长期审计，只记状态转换不逐请求记账）。
+// recallRate 的分子分母必须同尺度：被取回过的**不同对象数** / 折叠过的**不同对象数**。
+// 页数单独计（recallPages），分页读完一个对象不再被误算成“取回率 700%”。
 // ---------------------------------------------------------------------------
 
 export function createObservationStats() {
-  return { foldedIds: new Set(), savedTokens: 0, recalls: 0, failures: 0 };
+  return {
+    foldedIds: new Set(),
+    recalledIds: new Set(),
+    savedTokens: 0,
+    recalls: 0,
+    recallPages: 0,
+    recallFailures: 0,
+    echoFolds: 0,
+    failures: 0,
+  };
 }
 
 export function observationRuntime(stats) {
   if (!stats) return undefined;
   const folded = stats.foldedIds.size;
+  const recalledObjects = stats.recalledIds.size;
   return {
     folded,
     savedTokens: stats.savedTokens,
+    // recalls 保留“成功取回调用次数”语义（面板展示用），recallPages 与之同义但命名更准确。
     recalls: stats.recalls,
+    recallPages: stats.recallPages,
+    recalledObjects,
+    recallFailures: stats.recallFailures,
+    echoFolds: stats.echoFolds,
     failures: stats.failures,
-    recallRate: folded ? stats.recalls / folded : 0,
+    // 有多少折叠对象事后被重新取回：>1 不可能，可直接用于判断折叠是否折错了东西。
+    recallRate: folded ? Math.min(1, recalledObjects / folded) : 0,
   };
 }
 
-function createLedger(root) {
+function createLedger(root, base) {
   let directoryReady = false;
   return async (entry) => {
     try {
@@ -253,7 +578,11 @@ function createLedger(root) {
         await mkdir(root, { recursive: true, mode: 0o700 });
         directoryReady = true;
       }
-      await appendFile(join(root, "ledger.jsonl"), `${JSON.stringify({ timestamp: new Date().toISOString(), ...entry })}\n`, "utf8");
+      await appendFile(
+        join(root, "ledger.jsonl"),
+        `${JSON.stringify({ timestamp: new Date().toISOString(), ...base, ...entry })}\n`,
+        "utf8",
+      );
     } catch (error) {
       // 度量失败不影响机制本身。
       console.error(`[observation-pack] ledger write failed: ${error?.message ?? error}`);
@@ -262,24 +591,76 @@ function createLedger(root) {
 }
 
 // ---------------------------------------------------------------------------
+// 摘要口径：obs_recall 回显是原对象的字节切片。当同一批待摘要消息里既有原始
+// 工具输出、又有它的取回回显时，回显是纯冗余（逐字包含在原文里），可安全丢弃。
+// 找不到对应原文时一律保留：那份回显可能是该内容在本批里唯一的副本。
+// ---------------------------------------------------------------------------
+
+export function dropRedundantRecallEchoes(messages, config = DEFAULT_CONFIG) {
+  if (!Array.isArray(messages) || messages.length === 0) return messages;
+  const present = new Set();
+  for (const message of messages) {
+    if (!message || !isPureTextResult(message)) continue;
+    const text = textFromResult(message);
+    if (Buffer.byteLength(text, "utf8") <= config.thresholdBytes) continue;
+    if (parseRecallEcho(text)) continue;
+    present.add(`obs_${hash(`${message.toolName}\0${message.toolCallId}\0${hash(text)}`).slice(0, 24)}`);
+  }
+  if (present.size === 0) return messages;
+
+  const kept = messages.filter((message) => {
+    if (!message || !isPureTextResult(message)) return true;
+    const echo = parseRecallEcho(textFromResult(message));
+    return !echo || !present.has(echo.id);
+  });
+  return kept.length === messages.length ? messages : kept;
+}
+
+// ---------------------------------------------------------------------------
 // 扩展：context 投影 + obs_recall 工具。归档目录由调用方注入（会话存储布局）。
 // ---------------------------------------------------------------------------
 
-export function observationPackExtension(root, stats = null) {
+export function observationPackExtension(root, stats = null, options = {}) {
   if (!root) throw new Error("observation-pack requires an archive directory");
+  const config = resolveObservationConfig(options);
+  const agentId = options.agentId ?? null;
   return (pi) => {
-    const sentCounts = new Map();
-    const ledger = createLedger(root);
+    const runId = hash(`${Date.now()}\0${Math.random()}`).slice(0, 8);
+    const ledger = createLedger(root, { runId, ...(agentId ? { agentId } : {}), configVersion: config.configVersion });
+    const verifyObject = createIntegrityVerifier();
+    const loggedFolds = new Set();
+    // 哪些投影真的折过东西（等着与供应商响应配对）。
+    const foldedProjections = new Set();
+    // 每次 context 投影一个序号：fold 事件与 projection 汇总共享它，
+    // 折叠批次与最早变化边界（缓存失效起点）因此可事后归因。
+    let projectionSeq = 0;
 
     pi.registerTool({
       name: "obs_recall",
       label: "Recall Observation",
-      description: "Read a stored large tool result by observation id and byte offset.",
+      description:
+        "Read a stored large tool result. Default reads a small page from `offset`; " +
+        "prefer `query` (keyword) or `startLine`/`lineLimit` to pull only what you need.",
       parameters: {
         type: "object",
         properties: {
           id: { type: "string", description: "Observation id from a placeholder" },
           offset: { type: "integer", minimum: 0, description: "Byte offset, default 0" },
+          limit: {
+            type: "integer",
+            minimum: 1,
+            maximum: RECALL_LIMITS.maxBytes,
+            description: `Max body bytes to return, default ${config.recallDefaultBytes}`,
+          },
+          startLine: { type: "integer", minimum: 1, description: "1-based start line; overrides offset" },
+          lineLimit: { type: "integer", minimum: 1, maximum: RECALL_LIMITS.maxLines, description: "Lines to return with startLine" },
+          query: { type: "string", description: "Case-insensitive substring; returns matching lines with context" },
+          contextLines: {
+            type: "integer",
+            minimum: 0,
+            maximum: RECALL_MAX_CONTEXT_LINES,
+            description: `Context lines around each query match, default ${RECALL_DEFAULT_CONTEXT_LINES}`,
+          },
         },
         required: ["id"],
         additionalProperties: false,
@@ -287,45 +668,85 @@ export function observationPackExtension(root, stats = null) {
       async execute(_toolCallId, params) {
         const input = params ?? {};
         if (!isObservationId(input.id)) throw new Error(`Unknown observation id: ${input.id}`);
-        if (input.offset != null && !Number.isSafeInteger(input.offset)) {
-          throw new Error("obs_recall offset must be a non-negative integer");
-        }
-        const offset = input.offset ?? 0;
-        let chunk;
-        try {
-          chunk = await readRecallChunk(objectPath(root, input.id), offset, RECALL_LIMITS);
-        } catch (error) {
-          if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-            throw new Error(`Unknown observation id: ${input.id}`);
+        for (const field of ["offset", "limit", "startLine", "lineLimit", "contextLines"]) {
+          const value = input[field];
+          if (value != null && (!Number.isSafeInteger(value) || value < 0)) {
+            throw new Error(`obs_recall ${field} must be a non-negative integer`);
           }
-          throw error;
         }
-        const header = [
-          `[obs_recall id=${input.id} offset=${offset} next_offset=${chunk.nextOffset} eof=${chunk.eof}]`,
-          `[chunk_bytes=${chunk.bytes} chunk_lines=${chunk.lines}; use next_offset to continue]`,
-        ].join("\n");
+        if (input.query != null && (typeof input.query !== "string" || input.query.length === 0)) {
+          throw new Error("obs_recall query must be a non-empty string");
+        }
+        if (input.query != null && Buffer.byteLength(input.query, "utf8") > RECALL_MAX_QUERY_BYTES) {
+          throw new Error(`obs_recall query must be at most ${RECALL_MAX_QUERY_BYTES} bytes`);
+        }
+        if (input.startLine != null && input.startLine < 1) throw new Error("obs_recall startLine is 1-based");
+
+        const limits = {
+          maxBytes: Math.min(input.limit ?? config.recallDefaultBytes, RECALL_LIMITS.maxBytes),
+          maxLines: Math.min(input.lineLimit ?? RECALL_LIMITS.maxLines, RECALL_LIMITS.maxLines),
+        };
+        const offset = input.offset ?? 0;
+
+        let chunk;
+        let integrity = "unverified";
+        try {
+          // 取回前按 manifest 校验：等长改写 size 检查看不出来，只有全文哈希能发现。
+          integrity = await verifyObject(root, input.id, { strict: config.strictVerify });
+          const path = objectPath(root, input.id);
+          if (input.query != null) {
+            chunk = await searchRecall(path, input.query, input.contextLines ?? RECALL_DEFAULT_CONTEXT_LINES, limits);
+          } else if (input.startLine != null) {
+            chunk = await readRecallLines(path, input.startLine, input.lineLimit ?? RECALL_LIMITS.maxLines, limits);
+          } else {
+            chunk = await readRecallChunk(path, offset, limits);
+          }
+        } catch (error) {
+          const missing = error instanceof Error && "code" in error && error.code === "ENOENT";
+          const reason = missing ? `Unknown observation id: ${input.id}` : error instanceof Error ? error.message : String(error);
+          if (stats) stats.recallFailures += 1;
+          // 取回失败同样记账：只记成功会让“折叠后取不回来”在审计里完全隐形。
+          await ledger({ event: "recall-failed", id: input.id, mode: input.query != null ? "query" : input.startLine != null ? "lines" : "bytes", reason });
+          throw missing ? new Error(reason) : error;
+        }
+
+        const header = renderRecallHeader(input.id, chunk, integrity);
         const content = `${header}\n${chunk.text}`;
         if (Buffer.byteLength(content, "utf8") > RECALL_MAX_BYTES || countLines(content) > RECALL_MAX_LINES) {
           throw new Error("Recall output exceeded its hard limit");
         }
-        if (stats) stats.recalls += 1;
+        if (stats) {
+          stats.recalls += 1;
+          stats.recallPages += 1;
+          stats.recalledIds.add(input.id);
+        }
         await ledger({
           event: "recall",
           id: input.id,
-          offset,
+          mode: chunk.mode,
+          integrity,
+          offset: chunk.mode === "bytes" ? chunk.offset : undefined,
+          startLine: chunk.startLine,
+          query: input.query != null ? `len:${input.query.length}` : undefined,
+          matches: chunk.matches,
           bytes: chunk.bytes,
           lines: chunk.lines,
           nextOffset: chunk.nextOffset,
+          nextLine: chunk.nextLine,
           eof: chunk.eof,
         });
         return {
           content: [{ type: "text", text: content }],
           details: {
             id: input.id,
-            offset,
+            mode: chunk.mode,
+            integrity,
+            offset: chunk.offset ?? offset,
             bytes: chunk.bytes,
             lines: chunk.lines,
             nextOffset: chunk.nextOffset,
+            nextLine: chunk.nextLine,
+            matches: chunk.matches,
             eof: chunk.eof,
           },
         };
@@ -333,8 +754,11 @@ export function observationPackExtension(root, stats = null) {
     });
 
     pi.on("context", async (event) => {
+      if (!config.foldEnabled) return undefined;
       const projected = [...event.messages];
-      // 每条消息此前参与的请求数 = 其后 assistant 消息数；重启后无需持久状态即可恢复计数。
+      const seq = (projectionSeq += 1);
+      // 每条消息此前参与的请求数 = 其后 assistant 消息数。纯推导、不累加计数器：
+      // 取消、重试、同一逻辑请求多次投影都不会虚增材料年龄，重启后也无需持久状态。
       const priorAssistantCounts = new Array(event.messages.length);
       let assistantCount = 0;
       for (let index = event.messages.length - 1; index >= 0; index -= 1) {
@@ -342,38 +766,81 @@ export function observationPackExtension(root, stats = null) {
         if (event.messages[index]?.role === "assistant") assistantCount += 1;
       }
 
-      let savedTokens = 0;
+      // 先筛候选（超阈值的纯文本工具结果），折叠判定与 ledger 统计共用这一份索引。
+      const candidateIndexes = [];
       for (let index = 0; index < event.messages.length; index += 1) {
         const message = event.messages[index];
         if (!message || !isPureTextResult(message)) continue;
+        if (Buffer.byteLength(textFromResult(message), "utf8") > config.thresholdBytes) candidateIndexes.push(index);
+      }
+
+      let savedTokens = 0;
+      let foldBatch = 0;
+      let earliestFoldIndex = -1;
+      const memo = new Map(); // 每次投影内记忆化：同一工具调用只算一次 hash / 归档 / 占位符
+
+      for (const index of candidateIndexes) {
+        const message = event.messages[index];
+        const sends = priorAssistantCounts[index] ?? 0;
+        if (sends < config.fullSends) continue;
 
         try {
-          const observation = createObservation(message, root);
-          if (!observation) continue;
-          await ensureStored(observation);
-
-          const previousSends = sentCounts.get(observation.id) ?? priorAssistantCounts[index] ?? 0;
-          if (previousSends < FULL_SENDS) {
-            sentCounts.set(observation.id, previousSends + 1);
+          const text = textFromResult(message);
+          const echo = config.foldRecallEchoes ? parseRecallEcho(text) : undefined;
+          if (echo) {
+            // 取回回显折叠成指回原对象的指针：不新建归档对象，引用层数不增长。
+            const bytes = Buffer.byteLength(text, "utf8");
+            const pointer = recallPointerFor(echo, bytes);
+            projected[index] = { ...message, content: [{ type: "text", text: pointer }] };
+            savedTokens += Math.max(0, estimateTokens(text) - estimateTokens(pointer));
+            foldBatch += 1;
+            if (earliestFoldIndex < 0) earliestFoldIndex = index;
+            if (stats) stats.echoFolds += 1;
+            const foldKey = `echo:${echo.id}:${echo.offset ?? "?"}:${message.toolCallId}`;
+            if (!loggedFolds.has(foldKey)) {
+              loggedFolds.add(foldKey);
+              await ledger({ event: "fold-echo", seq, id: echo.id, offset: echo.offset, nextOffset: echo.nextOffset, bytes, toolCallId: message.toolCallId });
+            }
             continue;
           }
 
-          const placeholder = placeholderFor(observation);
-          const removedTokens = Math.max(0, observation.tokens - estimateTokens(placeholder));
-          projected[index] = { ...message, content: [{ type: "text", text: placeholder }] };
-          sentCounts.set(observation.id, previousSends + 1);
+          const memoKey = `${message.toolName}\0${message.toolCallId}\0${text.length}`;
+          let entry = memo.get(memoKey);
+          if (!entry) {
+            const observation = createObservation(message, root, config);
+            if (!observation) continue;
+            entry = { observation, placeholder: placeholderFor(observation, config), stored: false };
+            memo.set(memoKey, entry);
+          }
+          const { observation } = entry;
+          // 归档推迟到真正要折叠时：没折叠过的候选不再每轮白写一次盘。
+          if (!entry.stored) {
+            await ensureStored(observation);
+            entry.stored = true;
+          }
+
+          const removedTokens = Math.max(0, observation.tokens - estimateTokens(entry.placeholder));
+          projected[index] = { ...message, content: [{ type: "text", text: entry.placeholder }] };
           savedTokens += removedTokens;
+          foldBatch += 1;
+          if (earliestFoldIndex < 0) earliestFoldIndex = index;
           if (stats) stats.foldedIds.add(observation.id);
-          // 只在首次折叠（全文发送结束）时记一笔：ledger 记状态转换，不逐请求重复记账。
-          if (previousSends === FULL_SENDS) {
+          // 首次折叠记一笔状态转换。用本地集合判定，不依赖“恰好等于 fullSends”：
+          // 从历史恢复时 sends 可能已经大于阈值，旧写法会整段漏记 fold。
+          if (!loggedFolds.has(observation.id)) {
+            loggedFolds.add(observation.id);
             await ledger({
               event: "fold",
+              seq,
               id: observation.id,
+              contentHash: observation.contentHash,
               tool: observation.toolName,
+              toolCallId: message.toolCallId,
+              sends,
               originalBytes: observation.bytes,
               originalLines: observation.lines,
               originalTokens: observation.tokens,
-              placeholderBytes: Buffer.byteLength(placeholder, "utf8"),
+              placeholderBytes: Buffer.byteLength(entry.placeholder, "utf8"),
               removedTokens,
             });
           }
@@ -382,12 +849,55 @@ export function observationPackExtension(root, stats = null) {
           const reason = error instanceof Error ? error.message : String(error);
           console.error(`[observation-pack] fail-open for tool result: ${reason}`);
           if (stats) stats.failures += 1;
-          await ledger({ event: "fail-open", tool: message.toolName, reason });
+          await ledger({ event: "fail-open", seq, tool: message.toolName, toolCallId: message.toolCallId, reason });
         }
       }
 
       if (stats) stats.savedTokens = savedTokens;
+      // 投影汇总：最早折叠位置就是本次请求的前缀缓存最早失效点，折叠批次是本轮扰动规模。
+      // 与持久化的 usage（cacheRead/cacheWrite）对齐后，缓存代价才能真正归因到折叠事件。
+      if (foldBatch > 0) {
+        foldedProjections.add(seq);
+        await ledger({
+          event: "projection",
+          seq,
+          messageCount: event.messages.length,
+          candidates: candidateIndexes.length,
+          foldBatch,
+          earliestFoldIndex,
+          savedTokens,
+        });
+      }
       return { messages: projected };
     });
+
+    // 供应商真正受理后才记录：projection 事件只说明“构造过这个投影”，
+    // 二者对照即可分辨被取消/失败/重试的投影，不把它们当成已发送。
+    // 只对真折过东西的投影记一笔，否则每请求一行会把 ledger 洗成请求日志。
+    pi.on("after_provider_response", async (event) => {
+      const seq = projectionSeq;
+      if (!foldedProjections.delete(seq)) return;
+      await ledger({ event: "provider-response", seq, status: event?.status ?? null });
+    });
   };
+}
+
+function renderRecallHeader(id, chunk, integrity) {
+  const verified = integrity === "verified" ? " integrity=verified" : integrity === "unverified" ? " integrity=unverified" : "";
+  if (chunk.mode === "query") {
+    return [
+      `[obs_recall id=${id} mode=query matches=${chunk.matches} total_lines=${chunk.totalLines} truncated=${chunk.truncated}${verified}]`,
+      `[chunk_bytes=${chunk.bytes} chunk_lines=${chunk.lines}; line numbers are 1-based; use startLine to read around a match]`,
+    ].join("\n");
+  }
+  if (chunk.mode === "lines") {
+    return [
+      `[obs_recall id=${id} mode=lines start_line=${chunk.startLine} next_line=${chunk.nextLine} total_lines=${chunk.totalLines} eof=${chunk.eof}${verified}]`,
+      `[chunk_bytes=${chunk.bytes} chunk_lines=${chunk.lines}; use next_line to continue]`,
+    ].join("\n");
+  }
+  return [
+    `[obs_recall id=${id} offset=${chunk.offset} next_offset=${chunk.nextOffset} eof=${chunk.eof}${verified}]`,
+    `[chunk_bytes=${chunk.bytes} chunk_lines=${chunk.lines}; use next_offset to continue]`,
+  ].join("\n");
 }

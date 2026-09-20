@@ -17,6 +17,7 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { compaction, compactionDefaults } from "./protocol.js";
+import { dropRedundantRecallEchoes } from "./observation-pack.js";
 import { cutSpans, maskCode } from "../public/markdown-scan.js";
 
 // SDK usage 未知（尤其刚压缩后）时只估算现有内容，不能重新信任旧 usage。
@@ -49,7 +50,12 @@ function prepareBackgroundCompaction(branch, keepRecentTokens) {
     if (message) messagesToSummarize.push(message);
   }
   if (messagesToSummarize.length === 0) return undefined;
-  return { firstKeptEntryId: firstKeptEntry.id, messagesToSummarize, previousSummary };
+  // OP 口径对齐：摘要仍读原始历史（占位符会把摘要要用的原文抹掉），但 obs_recall 回显是
+  // 原对象的字节切片。同一批里既有原文又有回显时回显是纯冗余，去掉可省摘要输入而不丢信息；
+  // 找不到对应原文就保留（那可能是该内容在本批里唯一的副本）。corpus/快照同源，引文校验口径一致。
+  const deduped = dropRedundantRecallEchoes(messagesToSummarize);
+  if (deduped.length === 0) return undefined;
+  return { firstKeptEntryId: firstKeptEntry.id, messagesToSummarize: deduped, previousSummary };
 }
 
 // 配置契约：与 protocol.js 的 compaction schema 严格一致（复用同一份 zod schema 与默认值），

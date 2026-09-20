@@ -11,6 +11,7 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { compactionDefaults } from "../src/protocol.js";
+import { createObservation } from "../src/observation-pack.js";
 import {
   createBackgroundCompaction,
   entryIdFor,
@@ -994,6 +995,58 @@ test("编造引文：整份摘要作废不落盘，下个 turn_end 自然重试"
     const data = await compaction.maybeApply();
     assert.ok(data, "重试应成功");
     assert.ok(data.summary.includes(`- line=3 ${JSON.stringify("b".repeat(80))}`));
+  } finally {
+    compaction?.dispose();
+    cleanup();
+  }
+});
+
+test("OP×compaction：摘要读原始全文，但同批里 obs_recall 回显作为纯冗余被丢弃", async () => {
+  const { session, cleanup } = await createTestSession();
+  let compaction;
+  try {
+    const source = "SOURCE-MARKER " + "r".repeat(9000); // 超过 OP 6KiB 阈值，是个真实可折叠对象
+    const id = createObservation(
+      { role: "toolResult", toolCallId: "t1", toolName: "bash", content: [{ type: "text", text: source }] },
+      "/tmp/unused",
+    ).id;
+    const echo = `[obs_recall id=${id} offset=0 next_offset=4096 eof=false]\n[chunk_bytes=4096 chunk_lines=1]\n${source.slice(0, 7000)}`;
+
+    const calls = [];
+    seed(session, [
+      userMsg(big("a")),
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "t1", name: "bash", arguments: { command: "ls" } }],
+        stopReason: "toolUse",
+        timestamp: Date.now() + seq++,
+      },
+      { role: "toolResult", toolCallId: "t1", toolName: "bash", content: [{ type: "text", text: source }] },
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "r1", name: "obs_recall", arguments: { id } }],
+        stopReason: "toolUse",
+        timestamp: Date.now() + seq++,
+      },
+      { role: "toolResult", toolCallId: "r1", toolName: "obs_recall", content: [{ type: "text", text: echo }] },
+      assistantMsg("done"),
+    ]);
+    compaction = createBackgroundCompaction({
+      session,
+      modelRuntime: null,
+      config: enabledConfig,
+      summarize: async ({ messages }) => {
+        calls.push(messages);
+        return { summary: `S:${messages.length}`, progress: { title: "t", description: "d" }, usage: { input: 1, output: 1 } };
+      },
+    });
+    await compaction.onTurnEnd();
+    await settle();
+    assert.equal(calls.length, 1);
+    const summarized = calls[0];
+    const texts = summarized.flatMap((m) => (Array.isArray(m.content) ? m.content : []).filter((b) => b.type === "text").map((b) => b.text));
+    assert.ok(texts.some((t) => t.includes("SOURCE-MARKER")), "原始全文仍进摘要（摘要读原始历史，不吃折叠投影）");
+    assert.ok(!texts.some((t) => t.startsWith("[obs_recall id=")), "指向同批原文的取回回显被丢弃");
   } finally {
     compaction?.dispose();
     cleanup();
