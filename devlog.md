@@ -1,5 +1,14 @@
 # 开发记录
 
+## 2026-09-20 OP 二轮复核修复
+
+- 原因：独立复核发现正文伪装回显、布尔配置误用、归档中断窗口、压缩 raw/projected 尺度混用及成本文案误导。
+- 内容：限定回显工具来源；严格配置与互斥定位校验；临时文件完整写入同步后通过硬链接原子发布，损坏 manifest 拒绝；内容 blob 与调用引用分离且兼容旧 ID，增加取回 sliceId；跨投影有界缓存与文件变化校验；压力门槛、read_result 保留期可配置；压缩前后使用相同原始估算尺度；修正面板文案及警示。
+- 决策：保留现有默认折叠年龄与旧无 manifest 归档兼容，不承诺净费用下降。启用审计时通过 request-usage 关联审计 requestId 与投影 seq、真实 usage；不将局部估算当净收益。不支持硬链接的文件系统保持 fail-open，不用非原子复制牺牲正确性。暂不实现基于预测净成本的自动调度或会话策略持久化。
+- 涉及文件：src/observation-pack.js、src/compaction.js、src/pi.js、src/usage-stream.js、public/app.js、tests/observation-pack.test.js、tests/app.test.js、README.md、devlog.md。
+- 验证：独立只读复审后补齐旧 manifest 自愈、缓存覆盖记账和费用日志非阻塞防重；同步最新 origin/master 后全量 npm test 816 项，814 通过、0 失败、2 平台跳过。
+
+
 ## 2026-09-20 Observation Pack 加固：取回粒度、完整性校验、指标口径与策略开关
 
 - 内容：按外部审查报告 OP-01～OP-14 逐条核验后落地修复。指标口径改同尺度（取回率＝被重新取回过的不同对象数 ÷ 折叠对象数，封顶 1，另报页数/失败数/回显折叠数）；`obs_recall` 加 `limit`（默认 4KB，小于 16KB 硬上限）、`startLine`/`lineLimit` 行范围、`query`+`contextLines` 大小写不敏感检索；取回回显不再归档成新对象而是折成指回原对象的小指针；对象旁写 sidecar manifest 并在取回前校验全文哈希（等长篡改可检出，结果按 size+mtime 缓存）；取回起点落在多字节字符中间时前移到字符边界并如实回报 offset；单行超摘录预算时 placeholder 退回 UTF-8 安全的字节截断，不再出现头尾摘录全空；折叠年龄改为纯推导（删掉可变 sentCounts）；归档推迟到首次真正折叠时才写盘；ledger 补 `runId`/`agentId`/`configVersion`、投影汇总（含最早折叠位置＝前缀缓存最早失效点）、供应商响应事件与取回失败事件；阈值等 8 项策略提为可配置并可经 `AXIOM_OBSERVATION_PACK`（JSON）覆盖；压缩前丢弃「同批既有原文又有其取回回显」的纯冗余回显。

@@ -1,5 +1,16 @@
 # Axiom
 
+## OP 复核修复
+
+- 仅 `obs_recall` 工具结果参与回显折叠与摘要去重，普通工具正文中的标记不再被当作归档来源。
+- 新归档先完整写入、同步，再原子发布；manifest 损坏直接拒绝取回。同内容跨调用共享 `blobs/<SHA256>.txt` 硬链接，旧 observation ID 与取回路径兼容，取回 details 增加稳定 `sliceId`。
+- `AXIOM_OBSERVATION_PACK` 严格检查布尔类型和未知字段。新增 `minContextTokens`（默认 0，原始消息粗估低于门槛不新增折叠）与 `reportFullSends`（默认跟随 fullSends，单独保护 read_result 报告）。默认行为兼容；可按任务启用压力门槛和较长报告保留期。
+- 元数据/占位符跨投影缓存限制为 256 项、8 MiB 原文预算，取回校验缓存限制 256 项；文件变化仍重新校验。摘要应用前后按原始历史估算比较，投影 usage 单独保留。
+- 启用请求审计时，OP ledger 的 `request-usage` 将实际 input/cacheRead/cacheWrite/费用、审计 requestId 与投影 seq 配对；未启用审计时不伪造请求级成本。该关联用于分析，不自动宣称因果节省。
+- 面板显示“本次投影减少约 … tokens”，不等于净成本节省；不包含取回、额外轮次、缓存变化。无折叠样本显示“样本不足”，只有取回失败标红。
+- `query`、`startLine`、`offset` 定位模式互斥，`contextLines` 必须与 query 使用，零页预算拒绝。原始旧归档无 manifest 时仍支持宽松读取并标 unverified；严格校验可拒绝。
+
+
 ## 桌面壳（Pake，2026-09-17）
 
 桌面端基于 [Pake](https://github.com/tw93/Pake) 轻量壳（Tauri/WebView），不再使用 Electron。壳内置本地「连接入口页」（`desktop/connector/`）：服务地址不在构建期烘焙，启动后可配置本机或远程地址（`host:port`，默认端口 4319，也接受完整 `http(s)://` 地址），点连接后整页跳转到该地址加载网页工作台；已连接页面的右上角连接状态可点击直达设置的「连接」面板切换地址，断线时也可用。

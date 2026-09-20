@@ -451,7 +451,10 @@ export function createBackgroundCompaction({
       if (keptIndex < 0) return skip("保留边界已变化，保留原文");
       // 提交时重算压缩前占用：usage 可能过期（上次压缩后未回应），不可信时回退估算
       const freshUsage = session.getContextUsage?.();
-      const tokensBefore = freshUsage?.tokens ?? contextTokens(session.messages);
+      // Compare like with like: provider usage may describe OP's projected view,
+      // whereas estimatedAfter describes raw retained history.
+      const tokensBefore = contextTokens(session.messages);
+      const projectedTokensBefore = freshUsage?.tokens ?? null;
       // 引文附录 + 原文快照：先落盘再拼装（快照失败不阻断压缩），附录计入压缩后体积估算。
       // 同一对话内容 → 同一哈希文件，拒绝重试不产生重复快照。
       const snapshotPath = writeConversationSnapshot(session, flight.corpus);
@@ -464,6 +467,8 @@ export function createBackgroundCompaction({
         keptMessages.reduce((sum, message) => sum + estimateTokens(message), 0);
       if (estimatedAfter >= tokensBefore) return skip("摘要未缩小上下文，保留原文");
       const details = {
+        rawEstimatedTokensBefore: tokensBefore,
+        projectedTokensBefore,
         ...(flight.value.progress ? { progress: flight.value.progress } : {}),
         ...assembled.extra,
       };

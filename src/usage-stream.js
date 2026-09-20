@@ -1,12 +1,17 @@
 import { retryAfterMs } from "./request-gate.js";
 
 // 工厂由 SDK 同版本 pi-ai 提供，避免构造第二套不兼容的流。
-export function wrapUsageStream(original, { service, identity = {}, createStream }) {
+export function wrapUsageStream(original, { service, identity = {}, createStream, onRequestUsage }) {
   const safe = async work => { try { return await work(); } catch { service.auditFailures = (service.auditFailures ?? 0) + 1; return undefined; } };
   return function(model, context, options = {}) {
     const out = createStream();
     void (async () => {
-      let lease, requestId, finalMessage;
+      let lease, requestId, finalMessage, usageReported = false;
+      const reportUsage = async message => {
+        if (usageReported) return;
+        usageReported = true;
+        try { await onRequestUsage?.({ requestId: requestId ?? null, usage: message.usage, status: message.stopReason, provider: model.provider, model: model.id }); } catch {}
+      };
       const failure = error => ({ role: "assistant", content: [], api: model.api, provider: model.provider,
         model: model.id, timestamp: Date.now(), stopReason: options.signal?.aborted ? "aborted" : "error",
         errorMessage: error?.message ?? String(error), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0,
@@ -46,7 +51,8 @@ export function wrapUsageStream(original, { service, identity = {}, createStream
         for await (const event of source) {
           if (event.type === "done" || event.type === "error") {
             finalMessage = event.type === "done" ? event.message : event.error;
-            if (requestId) void record(finalMessage);
+            if (requestId && !usageReported) void record(finalMessage);
+            void reportUsage(finalMessage);
           }
           out.push(event);
         }
@@ -57,6 +63,7 @@ export function wrapUsageStream(original, { service, identity = {}, createStream
         if (!finalMessage) {
           finalMessage = failure(error);
           if (requestId) void record(finalMessage);
+          void reportUsage(finalMessage);
           out.push({ type: "error", reason: finalMessage.stopReason, error: finalMessage });
         }
         out.end(finalMessage);
