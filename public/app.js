@@ -666,6 +666,7 @@ function updateNavigation() {
   const unavailable = !connected || changing;
   $("open-workspace").disabled = unavailable || pickingWorkspace;
   $("reveal-workspace").disabled = unavailable;
+  for (const button of $("sessions").querySelectorAll(".workspace-config-btn")) button.disabled = unavailable;
   $("copy-workspace").disabled = !$("workspace-label").textContent;
   $("new").disabled = unavailable || !models.length;
   for (const button of $("sessions").querySelectorAll(".session-actions button")) {
@@ -3767,6 +3768,7 @@ function renderSessions() {
       ["hide", hidden ? "移回进行中" : "标记已完成", hidden ? "up" : "check"],
       ["duplicate", "复制会话", "duplicate"],
       ["copy", "复制文件", "copy"],
+      ["configure", "配置", "edit"],
       ["rename", "重命名", "edit"],
       ["delete", "删除会话", "trash"],
     ]) {
@@ -3775,7 +3777,7 @@ function renderSessions() {
       action.className = `session-${kind}`;
       action.title = label;
       action.setAttribute("aria-label", `${label}：${s.title}`);
-      if (["rename", "delete"].includes(kind)) action.setAttribute("aria-haspopup", "dialog");
+      if (["configure", "rename", "delete"].includes(kind)) action.setAttribute("aria-haspopup", "dialog");
       // 复制文件与置顶是纯前端偏好，不依赖连接，断连时也保持可用；复制会话另按 duplicateBlocked 判定。
       if (kind === "duplicate") action.disabled = duplicateBlocked(s);
       else action.disabled = !["hide", "copy", "pin"].includes(kind) && (!connected || changing);
@@ -3817,7 +3819,8 @@ function renderSessions() {
         menu.open = false;
         actions.hidePopover?.();
         more.focus();
-        if (kind === "duplicate") void switchSession(() => request("session.duplicate", { sessionId: s.id }));
+        if (kind === "configure") void openSessionConfiguration(s.id);
+        else if (kind === "duplicate") void switchSession(() => request("session.duplicate", { sessionId: s.id }));
         else if (kind === "hide") void setSessionHidden(s.id, !hidden);
         else if (kind === "pin") void setSessionPinned(s.id, !pinned(s));
         else openSessionAction(kind, s);
@@ -3882,7 +3885,19 @@ function renderSessions() {
       if (!connected || changing) return;
       switchSession(() => request("session.create", { cwd: ncwd }));
     };
-    headerTop.append(newBtn);
+    const configBtn = document.createElement("button");
+    configBtn.type = "button";
+    configBtn.className = "workspace-config-btn icon-button";
+    configBtn.title = `配置工作空间：${origCwd}`;
+    configBtn.setAttribute("aria-label", configBtn.title);
+    configBtn.setAttribute("aria-haspopup", "dialog");
+    configBtn.innerHTML = actionIcon("edit");
+    configBtn.disabled = !connected || changing;
+    configBtn.onclick = (event) => {
+      event.preventDefault(); event.stopPropagation();
+      void openScopedConfiguration("workspace", origCwd);
+    };
+    headerTop.append(configBtn, newBtn);
     wsHeader.append(headerTop);
     // 第二行：完整路径
     const pathSpan = document.createElement("span");
@@ -4501,11 +4516,16 @@ async function openDefaults() {
 }
 
 // 入口决定作用域，不再在全局默认页列举或选择其他工作空间。
-async function openScopedConfiguration(mode) {
+async function openSessionConfiguration(target) {
+  if (!connected || changing) return;
+  if (sessionId !== target) await switchSession(() => request("session.attach", { sessionId: target }));
+  if (sessionId === target && connected && !changing) await openScopedConfiguration("session");
+}
+async function openScopedConfiguration(mode, workspace = currentCwd) {
   $("session-config-menu").open = false;
   if (!connected || changing || !sessionId) return;
   defaultsMode = mode;
-  defaultsScope = currentCwd;
+  defaultsScope = workspace;
   defaultsTarget = sessionId;
   $("session-config-menu").open = false;
   showSettingsPanel("defaults");

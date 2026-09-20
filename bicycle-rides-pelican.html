@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>反向出行 · Bicycle rides pelican</title>
+<style>
+:root{color-scheme:dark;--bg:#010102;--surface:#131416;--ink:#f7f8f8;--muted:#8a8f98;--accent:#5e6ad2;--line:#23252a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,"Segoe UI","Microsoft YaHei",sans-serif}main{max-width:1440px;margin:auto;padding:32px 5vw 24px;min-height:100svh;display:flex;flex-direction:column}header,footer,.controls{display:flex;align-items:center;justify-content:space-between;gap:24px}header{font-size:12px;letter-spacing:.12em;color:var(--muted)}.mark{display:flex;align-items:center;gap:10px;color:var(--ink)}.mark:before{content:"";width:16px;height:16px;background:var(--accent);border-radius:50%;box-shadow:7px 0 0 -3px var(--ink)}.intro{margin-top:64px}.eyebrow{font-size:11px;letter-spacing:.2em;color:var(--accent)}h1{font-size:clamp(36px,5.5vw,72px);font-weight:500;letter-spacing:-.045em;margin:16px 0}p{font-size:14px;line-height:1.8;color:var(--muted);margin:0}.stage{flex:1;display:grid;place-items:center;min-height:320px;position:relative}.stage svg{display:block;width:100%;max-width:1050px;overflow:visible}.caption{position:absolute;left:0;bottom:24px;font:10px/1.8 monospace;letter-spacing:.12em;color:var(--muted)}footer{border-top:1px solid var(--line);padding-top:20px;font-size:12px;color:var(--muted)}button{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);padding:10px 18px;border-radius:8px;cursor:pointer}button:hover{border-color:var(--accent)}button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:5px}.controls{gap:16px}label{display:flex;align-items:center;gap:10px}input{accent-color:var(--accent);width:80px}.motion{animation-play-state:running}.paused .motion{animation-play-state:paused!important}.float{animation:bob 1s ease-in-out infinite}.wheel{animation:spin 1.8s linear infinite}.leg-a{animation:step 1s ease-in-out infinite;transform-origin:450px 365px}.leg-b{animation:step 1s ease-in-out -.5s infinite;transform-origin:535px 365px}.wing{animation:flap 1s ease-in-out infinite;transform-origin:530px 315px}.scarf{animation:wave 1s ease-in-out infinite;transform-origin:600px 226px}.road{animation:drift 1s linear infinite}.spark{animation:twinkle 3s ease-in-out infinite}.shadow{animation:shadow 1s ease-in-out infinite;transform-origin:510px 462px}@keyframes bob{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-12px) rotate(1deg)}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes step{0%,100%{transform:rotate(23deg)}50%{transform:rotate(-23deg)}}@keyframes flap{0%,100%{transform:rotate(-6deg)}50%{transform:rotate(9deg)}}@keyframes wave{50%{transform:skewY(-10deg) scaleX(.9)}}@keyframes drift{to{transform:translateX(-120px)}}@keyframes twinkle{50%{opacity:.25}}@keyframes shadow{50%{transform:scaleX(.85);opacity:.4}}@media(max-width:600px){main{padding:24px}.intro{margin-top:48px}header>span{display:none}.stage{min-height:340px;margin:0 -16px}.caption{left:16px;bottom:10px}footer{align-items:flex-start;flex-direction:column;gap:20px}.controls{width:100%;justify-content:space-between}h1{font-size:42px}}
+</style>
+</head>
+<body>
+<main>
+<header><div class="mark">逆行事务所 / ODD MOTION</div><span>ANIMATED STUDY — 001</span></header>
+<section class="intro"><div class="eyebrow">A SMALL REVERSAL OF THE ORDINARY</div><h1>今天，换你载我。</h1><p>一辆自行车，一只鹈鹕。一次不讲道理的出行。</p></section>
+<div class="stage">
+<svg viewBox="0 0 1000 540" role="img" aria-labelledby="art-title art-desc">
+<title id="art-title">自行车骑着鹈鹕</title><desc id="art-desc">紫色自行车坐在几何鹈鹕背上，双轮空转。鹈鹕带着长喙与摆动的翅膀，迈着大步向前走。</desc>
+<defs>
+<pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M48 0H0V48" fill="none" stroke="#23252a" stroke-width=".6"/></pattern>
+<radialGradient id="halo"><stop stop-color="#5e6ad2" stop-opacity=".13"/><stop offset="1" stop-color="#5e6ad2" stop-opacity="0"/></radialGradient>
+<clipPath id="road-mask"><path d="M170 457H840V485H170z"/></clipPath>
+<g id="wheel"><circle r="58" fill="#010102" stroke="#f7f8f8" stroke-width="3"/><circle r="49" fill="none" stroke="#23252a"/><g stroke="#8a8f98" stroke-width="1.3"><path d="M-49 0H49M0-49V49M-35-35L35 35M-35 35L35-35"/></g><circle r="5" fill="#f7f8f8"/></g>
+</defs>
+<ellipse cx="510" cy="280" rx="380" ry="255" fill="url(#halo)"/>
+<circle cx="510" cy="267" r="199" fill="url(#grid)" opacity=".5"/>
+<circle cx="510" cy="267" r="199" fill="none" stroke="#23252a" stroke-dasharray="2 9"/>
+<g fill="none" stroke="#5e6ad2" class="motion spark"><path d="M212 218h16m-8-8v16M758 125h12m-6-6v12M808 330h18m-9-9v18"/><circle cx="283" cy="351" r="4"/><circle cx="666" cy="87" r="3"/></g>
+<ellipse class="motion shadow" cx="510" cy="462" rx="174" ry="12" fill="#5e6ad2" opacity=".14"/>
+<path d="M165 476H837" stroke="#23252a"/>
+<g clip-path="url(#road-mask)"><g class="motion road" stroke="#8a8f98" stroke-width="2" opacity=".45"><path d="M180 469h28m92 0h28m92 0h28m92 0h28m92 0h28m92 0h28m92 0h28"/></g></g>
+<!-- The legs belong to the pelican; the bicycle is the passenger. -->
+<g class="motion leg-b" fill="none" stroke="#5e6ad2" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"><path d="M535 365l-7 45 28 33"/><path d="M556 443l27 6h-38"/></g>
+<g class="motion leg-a" fill="none" stroke="#8a8f98" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"><path d="M450 365l-13 48 8 35"/><path d="M445 448l30 5h-43"/></g>
+<g class="motion float" style="transform-origin:510px 330px">
+<!-- Folded tail, bowl-shaped body, long pelican neck and oversized bill. -->
+<path d="M373 297l-64-39 26 65 61 15" fill="#8a8f98"/>
+<path d="M352 285Q448 259 556 282L594 219Q603 203 620 222L603 302Q589 384 476 384 381 383 352 285Z" fill="#f7f8f8"/>
+<path d="M391 331Q473 365 548 330Q520 384 467 383Q415 379 391 331" fill="#8a8f98" opacity=".35"/>
+<g class="motion wing"><path d="M530 308Q458 282 382 315Q431 377 530 308" fill="#8a8f98"/><path d="M402 317Q454 338 505 315" fill="none" stroke="#f7f8f8" stroke-width="2"/></g>
+<path d="M568 290Q582 250 579 220Q564 177 594 151Q619 132 645 153Q666 173 651 202L623 237 608 291" fill="#f7f8f8"/>
+<path d="M641 188L799 207 648 246Q623 238 618 217Z" fill="#5e6ad2"/>
+<path d="M641 188L802 207 636 211" fill="#8a8f98"/>
+<path d="M638 211l142-4" fill="none" stroke="#010102" stroke-width="2"/>
+<circle cx="624" cy="173" r="6" fill="#010102"/><circle cx="625.5" cy="171.5" r="1.7" fill="#f7f8f8"/>
+<path d="M579 217l39 10-5 12-37-11" fill="#5e6ad2"/>
+<path class="motion scarf" d="M600 226Q561 207 538 224l-38-10 16 24-13 15Q549 239 600 239Z" fill="#5e6ad2"/>
+<!-- Bicycle perched on the back, with deliberately airborne spinning wheels. -->
+<g transform="translate(0 -5)">
+<g transform="translate(383 234)"><g class="motion wheel"><use href="#wheel"/></g></g>
+<g transform="translate(544 234)"><g class="motion wheel"><use href="#wheel"/></g></g>
+<g fill="none" stroke="#5e6ad2" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><path d="M383 234l48-84 37 84H383l119-78-34 78M431 150l71 6 42 78M431 150l-9-25M502 156l-11-35h26"/></g>
+<path d="M404 125h34" stroke="#f7f8f8" stroke-width="8" stroke-linecap="round"/>
+<path d="M511 121h14q14 0 10 13" fill="none" stroke="#f7f8f8" stroke-width="5" stroke-linecap="round"/>
+<g transform="translate(468 234)"><g class="motion wheel"><circle r="12" fill="#010102" stroke="#f7f8f8" stroke-width="2"/><path d="M-16-12L16 12m-24-24h-14m30 24h14" stroke="#f7f8f8" stroke-width="4" stroke-linecap="round"/></g></g>
+</g>
+</g>
+<g fill="#8a8f98" font-family="monospace" font-size="10" letter-spacing="2"><text x="180" y="125">PASSENGER / 01</text><text x="749" y="386">PILOT / 02</text></g>
+<g stroke="#8a8f98" opacity=".4" fill="none"><path d="M292 132l52 33M744 370l-54-35"/><circle cx="344" cy="165" r="2"/><circle cx="690" cy="335" r="2"/></g>
+</svg>
+<div class="caption">NO DESTINATION.<br>JUST A DIFFERENT WAY TO GO.</div>
+</div>
+<footer><span>001 — 反向出行 <span aria-hidden="true"> / </span> SVG 动态习作</span><div class="controls"><label for="speed">步速 <input id="speed" type="range" min="0.5" max="2" step="0.25" value="1"><output id="rate" for="speed">1×</output></label><button id="toggle" type="button" aria-pressed="false">暂停动画</button></div></footer>
+</main>
+<script>
+const toggle = document.querySelector('#toggle');
+const speed = document.querySelector('#speed');
+const rate = document.querySelector('#rate');
+const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+function setPaused(paused) {
+  document.body.classList.toggle('paused', paused);
+  toggle.setAttribute('aria-pressed', String(paused));
+  toggle.textContent = paused ? '播放动画' : '暂停动画';
+}
+setPaused(reduced.matches);
+reduced.addEventListener('change', event => setPaused(event.matches));
+toggle.addEventListener('click', () => setPaused(!document.body.classList.contains('paused')));
+const motions = [...document.querySelectorAll('.motion')].map(element => ({element, duration: parseFloat(getComputedStyle(element).animationDuration), delay: parseFloat(getComputedStyle(element).animationDelay)}));
+speed.addEventListener('input', () => {
+  const value = Number(speed.value);
+  rate.value = `${value}×`;
+  for (const {element, duration, delay} of motions) {
+    element.style.animationDuration = `${duration / value}s`;
+    element.style.animationDelay = `${delay / value}s`;
+  }
+});
+</script>
+</body>
+</html>
