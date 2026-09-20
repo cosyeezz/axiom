@@ -914,9 +914,8 @@ button.danger:hover:not(:disabled) { background: light-dark(#a92f41, #c13e50); }
 #composer {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 8px 32px var(--shadow-soft);
 }
 /* 折叠态（仅桌面）：一行输入 + 一行「运行摘要（缓存/上下文/模型）靠左 · 两个停止按钮靠右」，
    右上角任务计时也保留；左上角 + / 图片 / 目标三个图标、模型选择、发送按钮、
@@ -1027,9 +1026,10 @@ body:has(#context-menu:popover-open) #add-context { background: var(--raised); }
 #context-results button > span { overflow: hidden; }
 #context-results button > span > span, #context-results small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #context-error { font-size: 12px; color: var(--muted); }
-#prompt-completion { max-height: 220px; overflow-y: auto; padding: 6px; margin: 0 8px 8px; border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent); border-radius: 8px; background: var(--raised); font-size: 12px; }
+#prompt-completion { max-height: 220px; overflow-y: auto; padding: 6px; margin: 0 8px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); font-size: 12px; }
 #prompt-completion [role="option"] { display: flex; border-radius: 5px; }
-#prompt-completion [aria-selected="true"], #prompt-completion [role="option"]:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+#prompt-completion [role="option"]:hover { background: var(--hover); }
+#prompt-completion [aria-selected="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 #prompt-completion button { background: transparent; color: var(--ink); text-align: left; padding: 8px; border: 0; }
 #prompt-completion button:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 #prompt-completion button + button { flex-shrink: 0; color: var(--muted); }
@@ -1112,11 +1112,10 @@ body:has(#context-menu:popover-open) #add-context { background: var(--raised); }
 .retry-chip button:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
 .retry-chip button:focus-visible { outline: 1px solid var(--accent-ink); }
 .retry-settings input[type="text"] { width: 100%; min-width: 0; margin-top: 6px; }
+/* linear 规范：focus ring 2px primary-focus 50%，不做大光晕；无卡片阴影。 */
 #composer:focus-within {
-  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
-  box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--accent) 5%, transparent),
-    0 8px 32px var(--shadow-soft);
+  border-color: var(--accent-ink);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-ink) 50%, transparent);
 }
 textarea:focus-visible {
   outline: none;
@@ -1601,7 +1600,6 @@ textarea {
     overflow-y: auto;
     overscroll-behavior: contain;
   }
-  #composer { border-radius: 12px; }
   #prompt {
     font-size: 14px;
     line-height: 20px;

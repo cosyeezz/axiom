@@ -2535,3 +2535,16 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 涉及文件：tests/context-menu-ui.py、tests/service-settings-ui.py、.pi/skills/codebase-map/INDEX.md（重新生成）、devlog.md。
 - 决策：零产品代码改动，只修脚本的过期假设；不动断言语义（断言描述的行为在产品里都成立），滚动断言用「候选容器至少一个滚了」而非按视口宽度猜分支，与 CSS 媒体查询解耦；`fuzzyHit` 切片边界取函数头唯一字符串，纯函数无外部依赖，带上后不引入额外 stub。
 - 验证：worktree 内 `npm test` 744 项（742 通过、0 失败、2 既有跳过）；`python tests/context-menu-ui.py` 通过（1100 与 390 两轮全部断言）；`python tests/service-settings-ui.py` 四视口（1440×900、390×900、320×900、844×390）全部 PASS。
+
+## 2026-09-20 输入框视觉层对齐 linear 设计规范
+
+- 时间：2026-09-20。分支 `feat/composer-redesign`（worktree F:/worktrees/axiom-composer-redesign）。
+- 原因：计划接入 OpenDesign（open-design.ai）驱动整体 UI 重构、先从输入框起步；OpenDesign 本机未安装（`od` 实为 Git coreutils 同名工具、daemon 7456 端口不通），先按项目设计系统（`.pi/skills/design` 的 linear 规范）完成输入框视觉层重构，后续装好 OpenDesign 后再走其迁移管线对齐标准化 token。
+- 内容（`public/style.css` 四处，纯 CSS，零 JS 改动）：
+  - `#composer`：圆角 16px→12px（linear 卡片规范 `{rounded.lg}` 12px + 1px hairline）；删除 `box-shadow: 0 8px 32px var(--shadow-soft)`（规范明确「无阴影，层级靠 surface ladder + hairline 分层」，薰衣草不作装饰）。
+  - `#composer:focus-within`：大光晕（3px accent 5% + 8px32px 阴影）改为规范 focus ring——`border-color: var(--accent-ink)` + `box-shadow: 0 0 0 2px accent-ink 50%`，accent-ink 在明暗两套里各自取最清晰强调色。
+  - `#prompt-completion` 补全浮层：边框 `accent 20%`→`var(--line)`（hairline；accent 不用于装饰）；hover 从 accent 16% 拆为中性 `var(--hover)`，`aria-selected` 保留 accent 16%（选中属 focus 语义）。
+  - 移动端删冗余规则 `#composer { border-radius: 12px; }`（桌面已统一 12px）。
+- 涉及文件：public/style.css、devlog.md。
+- 决策：DOM id 与事件语义（`#prompt`/`#composer`、onsubmit/onkeydown/onpaste、aria-autocomplete）完全不动——输入框交互逻辑约 500 行集中在 app.js，改结构风险不成比例；token 层不动（暗色 `--surface #0f1011`/`--line #23252a`/`--accent #5e6ad2` 本就是 linear 体系，差异只在组件级规则）；textarea 20px padding 保持（linear text-input 的 8px12px 针对单行表单输入，大面积对话输入保持产品级呼吸感，规范未覆盖处保持同气质）。
+- 验证：worktree 内 `npm ci` 后 `npm test` 798 项（796 通过、0 失败、2 既有跳过）。
