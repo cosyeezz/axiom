@@ -656,6 +656,8 @@ function updateSettingsAvailability() {
   for (const node of $("create-compaction").querySelectorAll("input, select, button")) node.disabled = unavailable;
   for (const node of $("create-retry").querySelectorAll("input, textarea, select, button")) node.disabled = unavailable || (defaultsMode === "session" && config.canReconfigure !== true);
   $("defaults-delete").disabled = unavailable;
+  $("assembly-actions").hidden = defaultsMode !== "session" || !creation?.assemblyDirty;
+  $("apply-assembly").disabled = unavailable || config?.canReconfigure !== true;
   const remoteLocked = remoteView.local === false;
   for (const id of ["remote-enabled", "remote-email", "remote-save"])
     $(id).disabled = unavailable || remoteLocked;
@@ -4361,7 +4363,7 @@ function renderDefaultsScope() {
   $("defaults-delete").hidden = defaultsMode !== "workspace";
   $("config-new-session-title").textContent = defaultsMode === "session" && config.canReconfigure === true ? "首次发送前可修改" : "需要启动新会话区";
   $("config-assembly-help").textContent = defaultsMode === "session" && config.canReconfigure === true
-    ? "当前会话尚未发送消息，能力选择与自动重试可修改；保存成功后用于首次请求，不改变全局或工作空间默认。"
+    ? "当前会话尚未发送消息。能力与重试可连续修改，点击「应用能力与重试配置」后统一装配；仅作用于本会话。"
     : "Skills、MCP、Extensions 能力选择及自动重试在创建会话时装配；已开始的会话不能修改这些配置。";
   $("config-subagent-title").textContent = defaultsMode === "session" ? "子代理设置 · 下次委派生效" : "子代理默认值 · 新会话采用";
   $("config-subagent-help").textContent = defaultsMode === "session"
@@ -4521,6 +4523,7 @@ async function loadCreation() {
     for (const node of $("create-retry").querySelectorAll("input, textarea, select, button")) node.disabled = mode === "session" && config.canReconfigure !== true;
     $("create-retry").hidden = mode === "session" && config.canReconfigure !== true;
     current.catalog = catalog;
+    updateSettingsAvailability();
     updateDefaultsPreview();
     $("create-feedback").textContent = [mode === "session" && config.canReconfigure !== true ? "会话已经开始，能力装配和重试策略不可修改；请配置默认值后新建会话。" : "", ...catalog.warnings].filter(Boolean).join("\n");
   } catch (e) {
@@ -4602,12 +4605,19 @@ function updateDefaultsPreview() {
       [["skills", "Skills"], ["mcp", "MCP"], ["plugins", "Extensions"]].map(([kind, label]) => `${label}：${(capabilities?.[kind] || creation.catalog[kind].map((entry) => entry.id)).map(capabilityName).join("、") || "无"}`).join("\n");
   }).join("\n\n") + compactionLine + retryLine;
 }
-$("create-form").onchange = () => {
+$("create-form").onchange = (event) => {
   if (!creation?.main) return;
   updateDefaultsPreview();
+  if (defaultsMode === "session" && event.target.closest("#create-capabilities, #create-retry")) {
+    creation.assemblyDirty = true;
+    updateSettingsAvailability();
+    return;
+  }
   $("create-form").requestSubmit();
 };
-$("create-form").onsubmit = async (e) => {
+$("apply-assembly").onclick = () => saveCreation({ preventDefault() {}, submitter: $("apply-assembly") });
+$("create-form").onsubmit = saveCreation;
+async function saveCreation(e) {
   e.preventDefault();
   if (!creation?.main || creation.loading || changing || defaultsSaving || !connected) return;
   const invalid = creation.compaction?.error?.();
@@ -4621,11 +4631,14 @@ $("create-form").onsubmit = async (e) => {
     $("create-feedback").textContent = "当前会话已改变，本次修改未保存。请关闭并重新打开当前会话配置。";
     return;
   }
+  const applying = mode === "session" && e.submitter?.id === "apply-assembly";
+  if (applying && config.canReconfigure !== true) return;
+  const editor = creation;
   const selection = defaultsSelection();
   const data = mode === "session"
     ? { sessionId: target, model: selection.model || config.model, thinking: selection.thinking || config.thinking,
         subagentModel: selection.subagentModel, subagentThinking: selection.subagentThinking, compaction: selection.compaction,
-        ...(config.canReconfigure === true ? { capabilities: selection.capabilities, subagentCapabilities: selection.subagentCapabilities, retry: selection.retry } : {}) }
+        ...(applying ? { capabilities: selection.capabilities, subagentCapabilities: selection.subagentCapabilities, retry: selection.retry } : {}) }
     : { ...selection, ...(scope ? { cwd: scope } : {}) };
   defaultsSaving = true;
   changing = true;
@@ -4635,6 +4648,7 @@ $("create-form").onsubmit = async (e) => {
     const result = await request(mode === "session" ? "session.configure" : "session.defaults.configure", data);
     if (defaultsScope !== scope || defaultsMode !== mode || (mode === "session" && target !== sessionId)) return;
     if (mode === "session") applyConfig(result);
+    if (applying && creation === editor) editor.assemblyDirty = false;
     $("create-feedback").textContent = mode === "session" ? "已保存 · 仅当前会话，下次请求生效；子代理模型与思考下次委派生效" : scope
       ? `已保存 · ${scope} 的新会话使用此配置`
       : "已保存到本机 · 全局默认，未单独配置的目录使用此配置";

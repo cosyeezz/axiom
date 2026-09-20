@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-20 连续编辑能力与创建扫描复用
+
+- 时间：2026-09-20；分支 `feat/session-config-lifecycle`。
+- 原因：每次勾选自动提交导致空会话重复装配、表单立即禁用，不能连续编辑。
+- 改动：能力与重试先保留草稿，显式应用一次装配；热字段自动保存不带能力草稿；应用按钮不参与隐式 Enter 提交。单次创建复用一次能力目录做默认过滤和校验，不跨请求缓存。新会话仍在点击时初始化，未改为首条消息懒装配，也不将 pi TUI 的 MCP 拆链推断作为本应用耗时结论。
+- 验证：真实 Sessions + 慢模拟代理的 Chromium 连续两项选择、应用后再次修改应用；全量 823 通过、2 跳过。独立只读复审逻辑通过，修复初始 config 未定义的回归。
+- 文件：`public/app.js`、`public/index.html`、`src/sessions.js`、`tests/empty-session-config-ui.py`、`tests/empty-session-config-preview.mjs`、`README.md`、`devlog.md`。
+
 ## 2026-09-20 空会话首次发送前支持能力配置
 
 - 时间：2026-09-20；分支 `feat/empty-session-config`。

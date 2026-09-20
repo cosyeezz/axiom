@@ -582,13 +582,13 @@ export class Sessions {
     // 回落只影响未来新会话，已有会话保留创建时或单独保存的配置。
     return { deleted: true, cwd };
   }
-  async workspaceDefaults(workspace = this.createAgent.cwd || process.cwd()) {
+  async workspaceDefaults(workspace = this.createAgent.cwd || process.cwd(), capabilityCatalog) {
     const cwd = await realpath(workspace);
     const scope = workspaceKeyOf(cwd);
     const record = this.workspaceSelections.get(scope);
     const next = structuredClone(record?.selection ?? this.defaultSelection);
     if (!this.createAgent.capabilities) return next;
-    const catalog = await this.createAgent.capabilities(cwd);
+    const catalog = await (capabilityCatalog ?? this.createAgent.capabilities(cwd));
     for (const role of ["capabilities", "subagentCapabilities"]) {
       const selection = next[role];
       if (!selection || selection === "inherit") continue;
@@ -656,7 +656,7 @@ export class Sessions {
       } catch {}
     }
   }
-  async validateSelection(workspace = this.createAgent.cwd || process.cwd(), selection, inherited = []) {
+  async validateSelection(workspace = this.createAgent.cwd || process.cwd(), selection, inherited = [], capabilityCatalog) {
     const cwd = await realpath(workspace);
     if (!(await stat(cwd)).isDirectory()) throw new Error("工作空间必须是目录");
     // 恢复已有会话（create 注入 selection.sessionFile）：历史模型允许暂未鉴权但已定义，
@@ -674,7 +674,7 @@ export class Sessions {
     let catalog;
     const warnings = [];
     if (this.createAgent.capabilities) {
-      catalog = await this.createAgent.capabilities(cwd, selection.trustProject === true);
+      catalog = await (capabilityCatalog ?? this.createAgent.capabilities(cwd, selection.trustProject === true));
       for (const key of ["capabilities", "subagentCapabilities"]) {
         if (key === "subagentCapabilities" && selection[key] === "inherit") continue;
         const resolved = resolveCapabilities(selection[key], catalog, { allowUnavailable: inherited.includes(key), warnings });
@@ -963,10 +963,14 @@ export class Sessions {
   async create(workspace, selection = {}, saved) {
     const inherited = ["capabilities", "subagentCapabilities"].filter((key) =>
       saved || (selection.useDefaults !== false && selection[key] === undefined));
-    selection = structuredClone({ ...(selection.useDefaults === false ? {} : await this.workspaceDefaults(workspace)), ...selection });
+    // 单次创建复用默认值过滤与选择校验的扫描；不跨请求缓存，不复用不同信任级别。
+    const resolvedWorkspace = await realpath(workspace || this.createAgent.cwd || process.cwd());
+    const capabilityCatalog = this.createAgent.capabilities && selection.trustProject !== true
+      ? await this.createAgent.capabilities(resolvedWorkspace, false) : undefined;
+    selection = structuredClone({ ...(selection.useDefaults === false ? {} : await this.workspaceDefaults(resolvedWorkspace, capabilityCatalog)), ...selection });
     // 恢复已有会话时告知 validateSelection 放行历史模型（后续建 agent 本就传 sessionFile）。
     if (saved?.sessionFile) selection.sessionFile = saved.sessionFile;
-    const { cwd, catalog, warnings } = await this.validateSelection(workspace, selection, inherited);
+    const { cwd, catalog, warnings } = await this.validateSelection(resolvedWorkspace, selection, inherited, selection.trustProject === true ? undefined : capabilityCatalog);
     for (const warning of warnings) console.warn(`${cwd}：${warning}`);
     const id = saved?.id || randomUUID();
     const storageDir = this.storagePath && join(this.storagePath, createHash("sha256").update(process.platform === "win32" ? cwd.toLowerCase() : cwd).digest("hex"));
