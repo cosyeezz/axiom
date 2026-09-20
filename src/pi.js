@@ -1,7 +1,7 @@
 import { wrapUsageStream } from "./usage-stream.js";
 import { sessionBilling, usageRuntime } from "./session-billing.js";
 import { TITLE_INSTRUCTION } from "./prompts.js";
-import { observationPackExtension, createObservationStats, observationRuntime } from "./observation-pack.js";
+import { observationPackExtension, createObservationStats, observationRuntime, resolveObservationConfig } from "./observation-pack.js";
 import {
   createAgentSession,
   estimateTokens,
@@ -16,6 +16,26 @@ import { canResume, createAutoRetry, dropFailedAssistant } from "./retry.js";
 import { createJiti } from "jiti";
 const { AssistantMessageEventStream } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai");
 const { getSupportedThinkingLevels } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai/compat");
+
+// Observation Pack 策略开关：AXIOM_OBSERVATION_PACK 收 JSON（如 {"foldEnabled":false}），
+// 非法值直接抛错而不静默回默认，避免“以为关了其实没关”。每进程解析一次。
+let observationPackEnv;
+function observationPackOptions() {
+  if (observationPackEnv !== undefined) return observationPackEnv;
+  const raw = process.env.AXIOM_OBSERVATION_PACK;
+  if (!raw) return (observationPackEnv = {});
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("AXIOM_OBSERVATION_PACK 不是合法 JSON");
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("AXIOM_OBSERVATION_PACK 需要是 JSON 对象");
+  }
+  resolveObservationConfig(parsed); // 立即校验取值范围，启动即失败而非运行时才发现
+  return (observationPackEnv = parsed);
+}
 
 export function agentRuntime(session, observations = null) {
   return {
@@ -197,14 +217,21 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
     settingsManager.applyOverrides({ retry: { provider: { maxRetries: 0 } } });
     // executionContext 与记忆共用 context 钩子；任一存在即装配（子代理也要注入执行上下文）。
     const executionContext = selection.executionContext;
-    // Observation Pack：大工具结果先全文发送 FULL_SENDS 次，之后投影为稳定占位符；
+    // Observation Pack：大工具结果先全文发送 fullSends 次，之后投影为稳定占位符；
     // 原文归档在 selection.observationsDir，面板统计挂 agentRuntime。
+    // 策略经环境变量注入（见 observationPackOptions），ledger 记 agentId 区分主/子代理。
     const observations = selection.observationsDir ? createObservationStats() : null;
     const extraFactories = [];
     if (memoryState || typeof executionContext === "function")
       extraFactories.push(memoryExtension(memoryState, memory, policy, executionContext));
     if (selection.observationsDir)
-      extraFactories.push({ name: "axiom-observation-pack", factory: observationPackExtension(selection.observationsDir, observations) });
+      extraFactories.push({
+        name: "axiom-observation-pack",
+        factory: observationPackExtension(selection.observationsDir, observations, {
+          ...observationPackOptions(),
+          agentId: selection.audit?.agentId ?? null,
+        }),
+      });
     const { loader, selected: capabilities } = capabilityLoader(resources, selection.capabilities, customTools,
       extraFactories,
       policy ? budgetSystemPrompt(policy) : null);

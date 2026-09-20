@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-20 Observation Pack 加固：取回粒度、完整性校验、指标口径与策略开关
+
+- 内容：按外部审查报告 OP-01～OP-14 逐条核验后落地修复。指标口径改同尺度（取回率＝被重新取回过的不同对象数 ÷ 折叠对象数，封顶 1，另报页数/失败数/回显折叠数）；`obs_recall` 加 `limit`（默认 4KB，小于 16KB 硬上限）、`startLine`/`lineLimit` 行范围、`query`+`contextLines` 大小写不敏感检索；取回回显不再归档成新对象而是折成指回原对象的小指针；对象旁写 sidecar manifest 并在取回前校验全文哈希（等长篡改可检出，结果按 size+mtime 缓存）；取回起点落在多字节字符中间时前移到字符边界并如实回报 offset；单行超摘录预算时 placeholder 退回 UTF-8 安全的字节截断，不再出现头尾摘录全空；折叠年龄改为纯推导（删掉可变 sentCounts）；归档推迟到首次真正折叠时才写盘；ledger 补 `runId`/`agentId`/`configVersion`、投影汇总（含最早折叠位置＝前缀缓存最早失效点）、供应商响应事件与取回失败事件；阈值等 8 项策略提为可配置并可经 `AXIOM_OBSERVATION_PACK`（JSON）覆盖；压缩前丢弃「同批既有原文又有其取回回显」的纯冗余回显。
+- 原因：报告 14 条经 4 个只读子代理逐条对本地代码核验，全部成立（无一条凭空编造），其中 OP-04/OP-12 部分成立、OP-07 属既有取舍。真正会伤到运行效果的是：分页取回把取回率算成 >100% 触发误报警（分子是页级调用次数、分母是对象数，口径不同尺度）、16KB 页即默认读取量让「确认一个符号」也拉回满页、取回回显超阈值后被当新材料再折一层形成多层引用、等长篡改的归档会被当证据返回、单行大结果的占位符摘录可能全空、可变计数器让取消/重试虚增材料年龄、恢复场景（sends 已超阈值）整段漏记 fold。
+- 决策：不做 OP-07 的 blob/reference/slice 三层重构（架构级改动，等真实出现重复大结果的证据再说），不做 OP-04 的成批/延后折叠调度（需要 A/B 数据支撑），不让摘要吃折叠投影（摘要读原始历史是正确行为，只去掉纯冗余回显）。审查报告建议的「近期工作集保护」（最后 N 条候选永不折叠）在实现后被移除：现有「其后 assistant 消息数 ≥ fullSends」的年龄规则已经意味着模型有过两次机会处理该结果，再叠一层保护既无实测证据支撑，又会把「只有一条大结果的会话」变成永不折叠，还破坏了既有测试语义。关闭折叠时 `obs_recall` 仍注册，旧会话的旧占位符不会变成取不回的断点；无 manifest 的旧归档默认宽松放行并标 `integrity=unverified`，`strictVerify` 才拒绝。配置取值非法直接抛错，不静默回默认。
+- 涉及文件：`src/observation-pack.js`（重写）、`src/pi.js`（注入 agentId 与配置、解析 `AXIOM_OBSERVATION_PACK`）、`src/compaction.js`（摘要前去冗余回显）、`public/app.js`（面板新口径与报警条件）、`tests/observation-pack.test.js`（10 → 22 项）、`tests/observation-pack-flow.test.js`（头部新增 `integrity=` 字段）、`tests/compaction.test.js`（新增 OP×压缩交叉用例）、`README.md`、`devlog.md`。
+- 验证：`npm test` 全量 811 项 809 通过、0 失败（2 项存量跳过）。新增用例覆盖配置校验与 configVersion 指纹、`foldEnabled: false` 下仍可取回、回显折成指针且不新建归档对象、limit/startLine/query 三种取回粒度、manifest 等长篡改被拒与无 manifest 的宽松/严格分支、UTF-8 起点对齐、单行超预算的摘录兜底、同批重复投影逐字节一致、未折叠不写盘、恢复场景不漏记 fold、`dropRedundantRecallEchoes` 找不到原文时保留。未重启运行实例，未改 `src/sessions.js`（agentId 从既有 `selection.audit` 取）。
+
 ## 2026-09-19 请求审计与 FIFO 共享限流
 
 - 内容：新增逐请求 SQLite 记录、全局每日聚合、会话主/子代理归属、游标分页、限额配置及历史显式回填；会话删除不级联删除审计。新增纯 FIFO 并发租约/RPM 滑动窗口、用户级认证 IPC、连接断开令牌回收及外部 pi 扩展入口。

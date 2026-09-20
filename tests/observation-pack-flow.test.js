@@ -128,11 +128,13 @@ test("端到端：三次请求折叠、面板统计、obs_recall 取回、归档
           script = [{ tool: 'obs_recall', id: 'call_2', args: { id } }, { text: '取回完毕' }];
           await agent.prompt('取回');
           const recalled = flat(requests[5]);
-          assert.match(recalled, new RegExp('\\\\[obs_recall id=' + id + ' offset=0 next_offset=\\\\d+ eof=(true|false)\\\\]'), 'recall header');
+          assert.match(recalled, new RegExp('\\\\[obs_recall id=' + id + ' offset=0 next_offset=\\\\d+ eof=(true|false)( integrity=\\\\w+)?\\\\]'), 'recall header');
           assert.match(recalled, /chunk_bytes=\\d+ chunk_lines=\\d+/, 'chunk stats');
           const ledger2 = await (await import('node:fs/promises')).readFile(join(obsDir, 'ledger.jsonl'), 'utf8');
           assert.match(ledger2, /"event":"recall"/, 'recall event logged');
           assert.equal(agent.runtime().observationPack.recalls, 1, 'recalls counter');
+          assert.equal(agent.runtime().observationPack.recalledObjects, 1, 'distinct recalled objects');
+          assert.equal(agent.runtime().observationPack.recallRate, 1, 'recallRate 同尺度封顶');
         } finally { await agent.dispose(); }
   `);
 });
