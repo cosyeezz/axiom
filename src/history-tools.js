@@ -1,3 +1,4 @@
+import { convertToLlm, serializeConversation, sessionEntryToContextMessages } from '@earendil-works/pi-coding-agent';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { canonical, contentHash, historyError } from './raw-history.js';
 
@@ -24,6 +25,7 @@ export function createHistoryReader({ records, allowed, maxBytes = 16384, secret
   };
   const partText = (record, part) => {
     if (part === 'sourceEntry') return canonical(record.sourceEntry);
+    if (part === 'summaryEvidence') return serializeConversation(convertToLlm(sessionEntryToContextMessages(record.sourceEntry)));
     const content = record.sourceEntry.message?.content;
     if (part === 'part_0' && typeof content === 'string') return content;
     const match = /^part_(\d+)$/.exec(part);

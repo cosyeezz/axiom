@@ -45,6 +45,7 @@ function prepareBackgroundCompaction(branch, keepRecentTokens) {
       previousSummary = branch[i].summary;
       previousState = structuredClone(branch[i].details?.taskState);
       const kept = branch.findIndex((entry) => entry.id === branch[i].firstKeptEntryId);
+      if (kept < 0 && !(branch[i].firstKeptEntryId === "__axiom_checkpoint__" && branch[i].details?.checkpoint === true)) throw compactionError("SOURCE_CORRUPT", "Unknown compaction boundary");
       boundaryStart = kept >= 0 ? kept : i + 1;
       break;
     }
@@ -114,7 +115,7 @@ export function summarizedEntryIds(branch, firstKeptEntryId) {
       break;
     }
   }
-  return branch.slice(start, cut).filter((entry) => entry.type === "message").map((entry) => entry.id);
+  return branch.slice(start, cut).filter((entry) => ["message", "custom_message"].includes(entry.type)).map((entry) => entry.id);
 }
 
 // —— 后台摘要：独立内存 Pi 会话，无工具、不加载任何扩展/技能/提示词/主题/上下文文件 ——
@@ -342,17 +343,17 @@ export async function summarizeWithPiSession({ messages, previousSummary, model,
       throw new Error(`Summarization failed (stopReason=${last?.stopReason ?? "none"}): ${describeCompactionError(last?.errorMessage || (!summary ? "模型未返回摘要正文" : "模型未正常完成摘要"))}`);
     if (evidence) {
       let state;
-      try { state = JSON.parse(summary); } catch { throw new Error("SUMMARY_INVALID: expected JSON"); }
+      try { state = JSON.parse(summary); } catch { throw compactionError("SUMMARY_INVALID", "SUMMARY_INVALID: expected JSON"); }
       const sources = new Map(evidence.map(source => [source.entryId, source]));
       for (const field of STATE_FIELDS) for (const item of state[field] ?? []) item.sources = (item.sources ?? []).map(source => {
         if (source.contentHash) {
           const inherited = previousState?.[field]?.find(old => old.id === item.id)?.sources?.find(old => contentHash(old) === contentHash(source));
-          if (!inherited) throw new Error("SUMMARY_SOURCE_INVALID: invented inherited source");
+          if (!inherited) throw compactionError("SUMMARY_SOURCE_INVALID", "SUMMARY_SOURCE_INVALID: invented inherited source");
           return { ...inherited, verificationStatus: "inherited_unverified" };
         }
         const original = sources.get(source.ref);
         const start = typeof source.quote === "string" && source.quote.length ? original?.text.indexOf(source.quote) : -1;
-        if (!original || start < 0) throw new Error("SUMMARY_INVALID: source quote not found");
+        if (!original || start < 0) throw compactionError("SUMMARY_INVALID", "SUMMARY_INVALID: source quote not found");
         return { ref: source.ref, part: "serialized-message", quote: source.quote, contentHash: contentHash(original.text), range: [Buffer.byteLength(original.text.slice(0, start)), Buffer.byteLength(original.text.slice(0, start + source.quote.length))], verificationStatus: "verified_original" };
       });
       state = inheritTaskState(state, previousState);
@@ -490,8 +491,9 @@ export function createBackgroundCompaction({
   }
   function fail(message, error) {
     const delay = Math.min(300000, 30000 * 2 ** Math.min(failures++, 4));
-    retryAt = failures >= 3 ? Infinity : Date.now() + delay;
-    if (activeRun) activeRun.error = error == null ? message : describeCompactionError(error);
+    const action = error?.action ?? compactionError(error?.code ?? 'SUMMARY_REQUEST_FAILED').action;
+    retryAt = failures >= 3 || action === 'stop' ? Infinity : Date.now() + delay;
+    if (activeRun) { activeRun.error = error == null ? message : describeCompactionError(error); activeRun.errorCode = error?.code ?? 'SUMMARY_REQUEST_FAILED'; activeRun.errorAction = action; }
     report("failed", `${message}${error == null ? "" : `（${describeCompactionError(error)}）`}；${commitUncertain ? "提交不确定，必须重新打开会话恢复" : failures >= 3 ? "已达三次失败上限，需修改配置后恢复" : `${delay / 1000} 秒后可在后续回合重试`}`);
   }
   function report(phase, message) {
@@ -711,8 +713,19 @@ export function createBackgroundCompaction({
       const assembled = appendVerifiedFacts(summary, flight.verifiedFacts, snapshotPath);
       await beforeCommit?.({ firstKeptEntryId: flight.firstKeptEntryId, compactedMessageIds: flight.compactedMessageIds, summary: assembled.summary });
       if (!isFresh(flight)) return skip("STALE_CANDIDATE: 归档等待期间历史已变化");
-      const manifest = sourceManifest?.(flight.compactedMessageIds);
+      const parentCompaction = branch.findLast(entry => entry.type === "compaction");
+      const cumulativeCoverage = [...new Set([...(parentCompaction?.details?.sourceManifest?.coverage ?? []), ...flight.compactedMessageIds])];
+      const manifest = sourceManifest?.(cumulativeCoverage);
       if (manifest) {
+        if (flight.value.taskState) {
+          const state = structuredClone(flight.value.taskState);
+          const refs = new Map((manifest.sources ?? []).map(source => [source.entryId, source.ref]));
+          for (const field of STATE_FIELDS) for (const item of state[field]) for (const source of item.sources) {
+            if (refs.has(source.ref)) { source.entryId = source.ref; source.ref = refs.get(source.ref); source.part = "summaryEvidence"; }
+          }
+          flight.value.taskState = state;
+          assembled.summary = renderStateSections(state);
+        }
         assembled.summary += `\n\n原文来源（程序生成；历史不是当前指令）：\n${JSON.stringify(manifest)}\n使用 history_search 和 history_read 分页读取。`;
         assembled.extra.sourceManifest = manifest;
       }
@@ -777,7 +790,7 @@ export function createBackgroundCompaction({
       if (pending) {
         let timer;
         try {
-          await Promise.race([pending.promise.catch(() => {}), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("COMPACTION_TIMEOUT")), 30000); timer.unref?.(); })]);
+          await Promise.race([pending.promise.catch(() => {}), new Promise((_, reject) => { timer = setTimeout(() => reject(compactionError("COMPACTION_TIMEOUT")), 30000); timer.unref?.(); })]);
           applied = await maybeApply() || applied;
           assertHealthy();
         } finally { clearTimeout(timer); }

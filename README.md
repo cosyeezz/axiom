@@ -427,15 +427,15 @@ pi 会话 .jsonl（~/.pi/agent/sessions/...）
 
 每次成功压缩保存独立记录，前端只把本次覆盖的历史降为「压缩段节选」，保留近期和后台期间新增消息，不重建整个会话或清空输入。节选口径：用户输入连同图片附件原样保留，助手只保留 `<axiom_display>` 内的正式答复正文；思考、过程说明、工具调用与结果、子代理记录、内部任务通知随摘要卡收走，纯过程轮次整条不再展示。节选条目带左侧色带与「压缩段节选」底注，完整原文仍可在摘要卡展开或原文面板查看；实时折叠与刷新后快照走同一口径，刷新前后画面一致。被压缩的委托记录所对应的子代理入口收进该次摘要，展开摘要后仍能打开原有子代理详情；多次压缩在历史顶部逐层排列，关联不明的旧任务保守保留。归属依据真实委托工具结果的任务 ID，而非时间猜测。重连/重启恢复相同归属，未完成的后台摘要不会恢复；Pi JSONL 仍保留原文。
 
-压缩摘要附带三层引文核验（借鉴 SoL-Pi EPR 的证据纪律）：`<axiom_compact_facts>` 里每行一条引文，要求逐字复制自本次输入原文或上次摘要，内容选路径、命令、标识符、报错行、用户明确决定等不可出错的事实，5–30 行、每行不超过 300 字符。应用前程序把每条引文在与摘要模型所见逐字一致的会话渲染文本里逐字对账（模型多余加的 bullet 前缀会降级剥掉再匹配；行号由程序计算，不信任模型自报）；校验语料含上次摘要，引用旧摘要内容同样合法。模型没输出该块时静默跳过这一层、摘要照旧应用（与其他元数据的 fail-open 哲学一致）；但只要给出引文，一条无法逐字找到即整份摘要作废、保留原文，待失败冷却结束后在后续回合边界重试——不作「删掉坏行留其余」，防止十条里编一条蒙混过关。全部通过后，引文以「已核验引文」附录（`line=N` 指向原文快照）随摘要进入后续上下文，并在会话文件旁的 `compaction-snapshots/` 目录落一份与渲染逐字一致的原文快照（按内容哈希命名，重试不重复落盘），摘要末尾附回读指引：需要精确原文或更多上下文时用 grep 在快照搜关键词、或按行号 read。快照仅对持久会话写入、写失败不阻断压缩；附录计入压缩后的体积校验；已核验引文（含行号行）可被下一轮摘要继续引用，但提示词明令不复制附录标记本身，避免随 previousSummary 回注自我强化。
+生产摘要使用结构化状态 patch：目标、约束、决策、进度、证据、未知项、下一步和来源目录。遗漏旧项由程序继承，并降级标记为继承未核验；新增引文逐字核对，伪造引用或格式错误整份拒绝。只有明确匹配当前用户原文的约束变更可获授权，模糊更新保守拒绝。摘要输入独立预算化并记录纳入／省略范围；完整原文不截断。提交前确认归档屏障、工具激活、分支与覆盖哈希，再追加 journal 并确认持久化；不确定提交锁死会话。请求前和后台触发共用预算，输出预留和误差预留独立计算，失败有三次上限。checkpoint 共用持久提交入口。旧 facts/snapshot 解析只为兼容保留，不作为新归档完整性的证明。
 
-协议：`session.create`、`session.configure`、`session.defaults.configure` 支持 `compaction: {enabled,tokenThreshold,percentThreshold,model,thinking,keepRecentTokens}`，两个阈值和 model 可为 `null`。配置返回实际 compaction；快照包含 `compactions`，消息记录包含 `entryId`，被压缩折叠的记录额外带 `compacted: true`（精简版，完整原文按 `compactionId` 另取）。成功事件 `agent.compaction` 包含摘要 ID、正文、保留边界和 `compactedMessageIds`，客户端按消息 ID 折叠而非按时间猜测。进度事件 `agent.compaction.status` 与快照 `compactionStatus` 使用相同阶段数据，并附 `runId` 与最近 5 条 `runs`（阶段、触发参数、步骤时间线、流式尾部、用量、错误、结果）；老客户端只读外层 `status/message/startedAt` 仍可用。`session.compaction.cancel {sessionId, runId?}` 取消当前这一次摘要，返回 `{cancelled, reason, status}`：`runId` 对不上、任务已结束或会话未加载时只回 `cancelled: false`，不报错。未启用此功能时仍保留 Pi 原生窗口保护。
+协议：`session.create`、`session.configure`、`session.defaults.configure` 支持 `compaction: {enabled,tokenThreshold,percentThreshold,model,thinking,keepRecentTokens}`，两个阈值和 model 可为 `null`。配置返回实际 compaction；快照包含 `compactions`，消息记录包含 `entryId`，被压缩折叠的记录额外带 `compacted: true`（精简版，完整原文按 `compactionId` 另取）。成功事件 `agent.compaction` 包含摘要 ID、正文、保留边界和 `compactedMessageIds`，客户端按消息 ID 折叠而非按时间猜测。进度事件 `agent.compaction.status` 与快照 `compactionStatus` 使用相同阶段数据，并附 `runId` 与最近 5 条 `runs`（阶段、触发参数、步骤时间线、流式尾部、用量、错误、结果）；老客户端只读外层 `status/message/startedAt` 仍可用。`session.compaction.cancel {sessionId, runId?}` 取消当前这一次摘要，返回 `{cancelled, reason, status}`：`runId` 对不上、任务已结束或会话未加载时只回 `cancelled: false`，不报错。关闭自动压缩时仍执行安全窗口预检，超窗明确报错，不秘密启用 SDK 压缩。
 
 界面回归：运行 `node tests/conversation-preview.mjs` 后，在已有 Python Playwright/Chromium 的环境执行 `python tests/compaction-ui.py`，检查两层摘要、子代理详情、输入区进度条幅点开摘要进程详情（步骤时间线、流式尾部、取消按钮、历史切换）与桌面/390px/320px 布局；样例不调用模型或读取用户历史。条幅排在输入区上方，点它不算“要写入”：不触发输入区展开，否则条幅会在 mousedown 与 mouseup 之间被顶走、click 根本不触发（与“回到最新”按钮同一道防守）。
 
 ## 会话与子代理运行信息
 
-- 发送按钮显示「发送」，不带上箭头。底部操作行上方显示运行摘要：缓存命中、上下文用量/窗口及占比、当前实际供应商 · 模型 · 等级，例如 `zai-coding-cn · glm-5.3-flash · max`，不加「思考」前缀；有大工具结果折叠时另起一行 `OP 折叠 …`（见「大工具结果折叠」节）。主/子模型等级选项也直接显示 `off/high/max` 等实际值，保留无障碍标签。桌面一行排列，窄屏自动换行。
+- 发送按钮显示「发送」，不带上箭头。底部操作行上方显示运行摘要：缓存命中、上下文用量/窗口及占比、当前实际供应商 · 模型 · 等级，例如 `zai-coding-cn · glm-5.3-flash · max`，不加「思考」前缀；不再显示 OP 折叠统计。主/子模型等级选项也直接显示 `off/high/max` 等实际值，保留无障碍标签。桌面一行排列，窄屏自动换行。
 - 缓存命中按最近一次模型回答的 `cacheRead / (input + cacheRead + cacheWrite)` 计算，并显示命中 token 数；没有用量或输入总量为零时显示「暂无数据」，不伪造 0%。上下文直接使用 Pi `getContextUsage()` 的当前估算，不是累计 token 消耗；压缩后尚无可靠统计时显示「待更新」。
 - 主会话用柔紫色底、左侧色条和描边「子代理」徽章突出子任务卡片，显示状态、简短标题和本任务费用；点击打开独立原生浮层，不在对话中堆叠详情，也不因新任务自动弹出抢焦点。浮层以右侧会话内容区居中、宽度保留 880px 上限，位置和遮罩避开左侧配置栏与顶部会话标题；侧栏收起、窗口缩放和手机布局同步适配。
 - 浮层顶部固定显示缓存、上下文、供应商/模型/等级及「回到最上」「回到最下」按钮，仅下方任务说明、系统提示词、任务账单、失败原因和消息滚动。回到最上暂停跟随，回到最下恢复跟随新输出；手动向上阅读不被刷新拉回底部。支持关闭按钮、点击会话区遮罩、Esc 和焦点返回，不会停止运行中的主/子代理。
@@ -458,21 +458,15 @@ pi 会话 .jsonl（~/.pi/agent/sessions/...）
 - 协议：新增 `goal.action`，`action` 取 `enter | confirm | adjust | pause | resume | restart | exit`，可带 `text`（进入目标或调整计划时的说明）。
 - 边界与不承诺：目标模式不是沙箱，不改变工具权限、目录信任与插件执行范围。不承诺「绝对无漏洞」或产出必然正确；验收证据只表示模型给了可核对材料，是否真的达标仍由用户判断。模型可能漏标、误标或提前宣告完成，上下文压缩仍可能丢细节，长目标建议拆小并及时调整或暂停。
 
-## 大工具结果折叠（Observation Pack）
+## 历史归档与旧引用兼容
 
-大于 6KB 的纯文本工具结果在前 2 次模型请求中照原文发送，之后在 context 投影层替换为短小的稳定占位符（含头尾完整行摘录与取回指引）；原文按内容寻址归档到会话目录，模型随时可用 `obs_recall` 工具取回。机制移植自 SoL-Pi（NVIDIA，MIT），主代理与子代理各自生效。
+OP 自动折叠已移除，消息不再按年龄或发送次数改写。`AXIOM_OBSERVATION_PACK` 仅产生弃用警告，不能重新启用旧策略。`src/legacy-observation.js` 仅提供旧 `obs_recall` 只读兼容，不产生对象、投影计数或 ledger；旧写入实现仅留在测试夹具。
 
-- 不改写持久历史：折叠只发生在发给模型前的投影层，会话 JSONL 与 UI 历史始终是原文；关掉该路径（`foldEnabled: false` 或移除扩展）后旧会话照常恢复，`obs_recall` 仍注册，旧占位符不会变成取不回的断点。折叠失败 fail-open：原文照发，绝不丢观察结果。占位符是纯函数输出，同一结果的占位符逐字节稳定，不额外破坏前缀缓存。
-- 取回粒度：`obs_recall` 默认只回 4KB（硬上限仍为 16KB / 400 行），可用 `limit` 调整；更推荐 `query`（大小写不敏感子串检索，返回命中行与上下文并带行号）或 `startLine`/`lineLimit`（行范围），避开为了确认一个符号而把大文件整页拉回。模式优先级 query > startLine > offset。
-- 取回回显不递归折叠：`obs_recall` 的输出本身是「原对象的一个视图」，它变旧时换成指回原对象的小指针（带 `re-read` 指引），不再归档成新对象，因此不会出现「指针指向指针」的多层引用与重复磁盘副本。
-- 与后台压缩互不干扰：压缩输入取自 JSONL 原文，占位符不进摘要。仅当同一批待摘要消息里既有原文、又有它的取回回显时，回显作为纯冗余被丢弃；找不到对应原文就一律保留。
-- 原文归档在 `<会话存储目录>/<id>-observations/objects/`，删除会话时随 `<id>-tasks` 同批清理；创建用 O_EXCL + 哈希校验，拒符号链接。每个对象另写 sidecar manifest（`<id>.json`：contentHash/bytes/lines），取回前按它校验全文哈希，等长篡改也会被拒而不是当证据返回（校验结果按文件 size+mtime 缓存，不每页重算）。旧归档没有 manifest 时默认宽松放行并在头部标 `integrity=unverified`，`strictVerify: true` 下改为拒绝。
-- `ledger.jsonl` 记状态转换与归因：首次折叠、回显折叠、取回、取回失败、fail-open，加上每次投影的汇总（投影序号、候选数、折叠批次、最早折叠位置＝前缀缓存最早失效点）与供应商响应记录，二者对照可分辨被取消/失败/重试的投影。每条带 `runId`/`agentId`/`configVersion`，主代理（`main`）与子代理（任务 id）写同一目录也能分开归因。
-- 重启/恢复无需持久计数：某条结果已参与过几次请求完全由其后 assistant 消息数推导（不再累加可变计数器），因此被取消或重试的请求不会虚增材料年龄，同一批消息重复投影结果逐字节一致。未被折叠的候选不提前写盘，首次真正折叠时才落档。
-- 会话运行摘要新增一行 `OP 折叠 N 项 · 每请求省 X tokens · 取回 M 对象 (R%) · P 页`；取回率是同尺度口径（被重新取回过的不同对象数 ÷ 折叠对象数，永不超 100%），分页读完一个对象不再误报「折太早」；取回率超 50% 或出现取回失败时整行标红。面板为进程内实时值，重启归零，长期数据看 ledger。
-- 策略可配置：阈值、全文发送次数、摘录预算、默认取回字节数、是否折叠、是否折叠回显、是否严格校验都不再是硬编码常量。调试时可用环境变量 `AXIOM_OBSERVATION_PACK`（JSON 对象）覆盖，例：`AXIOM_OBSERVATION_PACK='{"foldEnabled":false}'` 关掉折叠、`'{"thresholdBytes":12288,"fullSends":3}'` 放宽折叠。取值非法时直接报错而不静默回默认，避免「以为改了其实没改」。
-- 与 SoL-Pi 原版的差异：阈值 6KB（原 10KB，按本仓子代理报告分布实测）；归档目录由会话存储布局注入而非 SDK 会话推导；无 EPR 收据守卫（本仓未引入 EPR）；无 TUI 渲染耦合；另加上述 manifest 校验、回显指针化、检索/行范围取回与配置开关。
-- 验证：`node --test tests/observation-pack.test.js`（占位符字节稳定性、重启种子、分页拼接与原文一致、篡改拒用、fail-open、配置校验、回显指针、取回粒度、manifest 完整性、UTF-8 边界、投影幂等、ledger 归因、投影与供应商响应配对等 22 项）与 `node --test tests/observation-pack-flow.test.js`（端到端）；OP×压缩交叉用例在 `tests/compaction.test.js`。
+每个持久会话在 `<journal>.history/` 维护 `raw.jsonl`（原始 message/custom_message）和 `control.jsonl`（摘要与控制节点）。SDK journal 是执行状态唯一权威；归档按 `(sourceJournalId, entryId)` 幂等追加、fsync 确认，同身份异内容拒绝。SDK 0.85.1 的持久化适配器保证首条用户消息立即落盘，写失败锁存并要求重新打开会话。归档保留 journal 的完整结构，不使用摘要序列化器；journal 之外未提供的完整工具产物不伪称已保存。
+
+`history_search` / `history_read` 仅读取当前代理、当前来源链允许的条目，返回稳定 `hist:` 引用、哈希、来源角色与分页信息；游标签名并重新核验权限。原始 `sourceEntry` 和正文 part 可读；`summaryEvidence` 是用于核对摘要引文的派生文本，不代替原文。分页预算计算整个响应，UTF-8 字符不会被拆坏。历史材料不代表当前指令或授权。
+
+迁移盘点：`node scripts/legacy-history-dryrun.mjs <directory>`，只读源文件，输出缺失附件、身份冲突与不可映射引用，不自动回填或删除生产数据。
 
 ## 消息执行过程
 
@@ -659,7 +653,10 @@ sessions.js 主会话、订阅、快照、取消
   tools.js  委派、凭证读取、追加指令的参数和适配
   tasks.js  子任务状态、并行执行、结果
 pi.js       Pi SDK 创建、事件适配与释放
-observation-pack.js 大工具结果折叠投影、归档、完整性校验与按需取回（含面板统计）
+legacy-observation.js 旧归档只读兼容
+raw-history.js / history-journal.js 原文与控制记录持久归档
+history-tools.js 受限检索与分页读取
+compaction-state.js / compaction-input.js / compaction-budget.js 累计状态、输入选择与统一预算
 compaction.js 后台摘要、检查点校验与安全轮次提交
 capabilities.js 原生能力发现、内存配置、MCP 快照与选择加载
 ```

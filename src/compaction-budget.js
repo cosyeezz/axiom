@@ -15,6 +15,6 @@ export function requestBudget({ model, messages = [], systemPrompt = '', tools =
 
 export function compactionError(code, message = code, cause) {
   const action = ['COMMIT_UNCERTAIN', 'SOURCE_CORRUPT', 'ARCHIVE_IDENTITY_CONFLICT', 'SCOPE_DENIED', 'CONSTRAINT_LOST'].includes(code) ? 'stop'
-    : ['STALE_CANDIDATE', 'NO_VALID_CUT', 'WINDOW_UNSAFE', 'SUMMARY_INVALID'].includes(code) ? 'replan' : 'retry';
+    : ['STALE_CANDIDATE', 'NO_VALID_CUT', 'WINDOW_UNSAFE', 'SUMMARY_INVALID', 'SUMMARY_SCHEMA_INVALID', 'SUMMARY_SOURCE_INVALID', 'SUMMARY_QUOTE_MISMATCH', 'SUMMARY_TRANSITION_INVALID', 'SUMMARY_AUTHORITY_REQUIRED'].includes(code) ? 'replan' : 'retry';
   return Object.assign(new Error(message, cause ? { cause } : undefined), { code, action });
 }

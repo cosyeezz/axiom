@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, openSync, fsyncSync, closeSync, writeSync } from 'node:fs';
+import { existsSync, readFileSync, openSync, fsyncSync, closeSync, writeSync, mkdirSync } from 'node:fs';
+import { claimJournalOwner } from './data-owner.js';
 import { createRawArchive, contentHash, historyError } from './raw-history.js';
 
 /** Only disk-confirmed journal entries are eligible for archival. SDK getEntries includes volatile entries. */
@@ -65,6 +66,8 @@ export function confirmDurableAppend(file, entryId) {
 }
 
 export async function createJournalArchive({ file, directory = `${file}.history`, agentId = null }) {
+  mkdirSync(directory, { recursive: true });
+  const release = await claimJournalOwner(directory);
   let archive, sessionId;
   const sync = async () => {
     const journal = readDurableJournal(file);
@@ -86,6 +89,6 @@ export async function createJournalArchive({ file, directory = `${file}.history`
     reconcile,
     async barrier() { await reconcile(); if (!archive) throw historyError('SOURCE_MISSING', 'Journal has no durable entries yet'); archive.barrier(); },
     records: () => archive?.records() ?? [],
-    async close() { closed = true; await queue; await archive?.close(); if (failure) throw failure; },
+    async close() { if (closed) return; closed = true; try { await queue; await archive?.close(); if (failure) throw failure; } finally { await release(); } },
   };
 }

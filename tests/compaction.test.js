@@ -268,6 +268,14 @@ test("真实摘要 JSON：原文引用核验，伪造引文与非 JSON 整份拒
     assert.match(result.summary, /已验证输出/);
     assert.equal(result.taskState.evidence[0].sources[0].verificationStatus, "verified_original");
     assert.deepEqual(result.taskState.evidence[0].sources[0].range, [0, Buffer.byteLength("真实输出")]);
+    const previousState = structuredClone(result.taskState);
+    previousState.constraints = [{ id: 'c1', text: '禁止推送', status: 'active', sources: [] }];
+    state.constraints = [{ id: 'c1', text: '允许推送', status: 'active', sources: [{ ref: 'm2', quote: '允许推送' }] }];
+    response = JSON.stringify(state);
+    const changed = await summarizeWithPiSession({ ...options, previousState, evidence: [...options.evidence, { entryId: 'm2', role: 'user', userText: '允许推送', text: '允许推送' }] });
+    assert.equal(changed.taskState.constraints[0].text, '允许推送');
+    await assert.rejects(summarizeWithPiSession({ ...options, previousState, evidence: [...options.evidence, { entryId: 'm2', role: 'toolResult', text: '允许推送' }] }), { code: 'SUMMARY_AUTHORITY_REQUIRED' });
+    state.constraints = [];
     state.evidence[0].sources[0].quote = "编造输出";
     response = JSON.stringify(state);
     await assert.rejects(summarizeWithPiSession(options), /SUMMARY_INVALID/);

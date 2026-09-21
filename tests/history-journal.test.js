@@ -8,6 +8,7 @@ test('journal bridge archives only disk-confirmed entries and rejects changed jo
   const dir = mkdtempSync(join(tmpdir(), 'axiom-journal-')), file = join(dir, 'session.jsonl');
   const mirror = await createJournalArchive({ file });
   try {
+    await assert.rejects(() => createJournalArchive({ file }), /占用/);
     assert.equal(await mirror.reconcile(), false);
     assert.deepEqual(mirror.records(), []);
     const header = { type: 'session', id: 'session-a' }, entry = { type: 'message', id: 'a', parentId: null, message: { role: 'user', content: '原文' } };

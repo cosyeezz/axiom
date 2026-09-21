@@ -6,9 +6,7 @@ import { mkdtemp, rm, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// 子进程隔离凭据 + 真实 SDK + 本地 fake SSE 供应商：验证 Observation Pack 的完整接线——
-// 扩展经 selection.observationsDir 装载、大工具结果前两次请求全文、第三次折叠为占位符、
-// 归档落盘、obs_recall 可被模型调用并分页取回、runtime() 面板统计与 ledger 事件。
+// 隔离凭据 + 真实 SDK + 本地 SSE：旧引用只读、完整历史与 checkpoint 恢复。
 const PREAMBLE = `
       import assert from 'node:assert/strict';
       import { writeFile } from 'node:fs/promises';
@@ -104,6 +102,35 @@ test("端到端：停止自动折叠，旧归档只读取回且无 ledger", asyn
       assert.ok(flat(requests.at(-1)).includes('[obs_recall id=' + id));
       assert.equal(await readFile(join(obsDir, 'objects', id + '.txt'), 'utf8'), bigText);
       await assert.rejects(access(join(obsDir, 'ledger.jsonl')));
+    } finally { await agent.dispose(); }
+  `);
+});
+
+test('持久会话 checkpoint 来源可取回，恢复后尾部完整且控制记录不混入 raw', async () => {
+  await run(`
+    const { readFile, mkdir } = await import('node:fs/promises');
+    const sessionDir = join(cwd, 'journals');
+    await mkdir(sessionDir);
+    let agent = await factory([], { sessionDir });
+    let file;
+    try {
+      script = [{ text: '原始答复' }]; await agent.prompt('原始证据 ALPHA');
+      await agent.checkpoint('保留目标与证据');
+      file = agent.sessionFile();
+      script = [{ text: '尾部答复' }]; await agent.prompt('未压缩尾部 BETA');
+    } finally { await agent.dispose(); }
+    const raw = (await readFile(file + '.history/raw.jsonl', 'utf8')).trim().split(NL).map(JSON.parse);
+    assert.ok(raw.every(record => ['message', 'custom_message'].includes(record.sourceEntry.type)));
+    assert.ok(JSON.stringify(raw).includes('ALPHA')); assert.ok(JSON.stringify(raw).includes('BETA'));
+    const control = (await readFile(file + '.history/control.jsonl', 'utf8')).trim().split(NL).map(JSON.parse);
+    const checkpoint = control.find(record => record.sourceEntry.type === 'compaction');
+    const ref = checkpoint.sourceEntry.details.sourceManifest.sources[0].ref;
+    agent = await factory([], { sessionFile: file, sessionDir });
+    try {
+      script = [{ tool: 'history_read', args: { ref } }, { text: '原文已核验' }];
+      await agent.prompt('核验原文');
+      assert.ok(flat(requests.at(-1)).includes('ALPHA'));
+      assert.ok(flat(requests.at(-1)).includes('BETA'));
     } finally { await agent.dispose(); }
   `);
 });

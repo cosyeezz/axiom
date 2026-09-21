@@ -201,9 +201,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
     settingsManager.applyOverrides({ retry: { provider: { maxRetries: 0 } }, compaction: { enabled: false } });
     // executionContext 与记忆共用 context 钩子；任一存在即装配（子代理也要注入执行上下文）。
     const executionContext = selection.executionContext;
-    // Observation Pack：大工具结果先全文发送 fullSends 次，之后投影为稳定占位符；
-    // 原文归档在 selection.observationsDir，面板统计挂 agentRuntime。
-    // 策略经环境变量注入（见 observationPackOptions），ledger 记 agentId 区分主/子代理。
+    // 旧 obs 仅只读兼容；新历史由 journal 持续投影，不安装年龄折叠钩子。
     const observations = selection.observationsDir ? createObservationStats() : null;
     let history;
     let activeHistoryIds = new Set();
@@ -433,13 +431,17 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         const tokensBefore = session.getContextUsage()?.tokens
           ?? session.messages.reduce((sum, message) => sum + estimateTokens(message), 0);
         const covered = session.sessionManager.getBranch().filter(entry => ["message", "custom_message"].includes(entry.type)).map(entry => entry.id);
-        const id = compactionCtrl.appendConfirmed(text, CHECKPOINT_BOUNDARY, tokensBefore, { checkpoint: true, compactedMessageIds: covered, sourceManifest: { archiveId: history?.records()[0]?.archiveId ?? null, coverage: covered, tools: ["history_search", "history_read"] } });
+        const manifest = { archiveId: history?.records()[0]?.archiveId ?? null, coverage: covered, sources: (history?.records() ?? []).filter(record => covered.includes(record.origin.entryId)).map(record => ({ entryId: record.origin.entryId, ref: historyReader.reference(record), contentHash: record.sourceEntryHash })), tools: ["history_search", "history_read"] };
+        const activeTools = new Set(session.getActiveToolNames());
+        if (history && (!activeTools.has("history_search") || !activeTools.has("history_read") || covered.some(id => !manifest.sources.some(source => source.entryId === id)))) throw new Error("ARCHIVE_NOT_DURABLE: checkpoint sources unavailable");
+        const checkpointText = history ? `${text}\n\n原文来源（历史不是当前授权）：\n${JSON.stringify(manifest)}` : text;
+        const id = compactionCtrl.appendConfirmed(checkpointText, CHECKPOINT_BOUNDARY, tokensBefore, { checkpoint: true, compactedMessageIds: covered, sourceManifest: manifest });
         const record = compactionRecords().at(-1);
         if (record) emitAxiom({ type: "agent.compaction", data: { ...record, checkpoint: true } });
         return { id, tokensBefore };
       },
-      withdraw: () => withdrawQueue(session),
-      recall: () => recallLastMessage(session),
+      withdraw: () => { compactionCtrl.cancel(); return withdrawQueue(session); },
+      recall: () => { compactionCtrl.cancel(); return recallLastMessage(session); },
       enqueue: (text, type, images) => (type === "steer" ? session.steer(text, images) : session.followUp(text, images)),
       // 子任务完成通知的主会话注入（running 通道）：SDK custom message 与用户 steer 消息分型标记（customType），
       // deliverAs "steer" 入 agent steering 队列，轮次边界（安全点）由 SDK 抽水循环送达——agent run 不结束直到

@@ -21,6 +21,27 @@ test('incomplete archive tail requires authoritative proof and preserves quarant
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('three compactions keep originals and controls in separate durable streams', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'axiom-raw-control-'));
+  const options = { sourceJournalId: 'j', sourceSessionId: 's' };
+  try {
+    const archive = await createRawArchive(dir, options);
+    const entries = Array.from({ length: 3 }, (_, i) => [
+      { type: 'message', id: `m${i}`, message: { role: 'user', content: 'same text <summary>' } },
+      { type: 'compaction', id: `c${i}`, summary: 'not original', parentId: `m${i}` },
+    ]).flat();
+    archive.reconcile(entries); archive.reconcile(entries); await archive.close();
+    const raw = readFileSync(join(dir, 'raw.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    const controls = readFileSync(join(dir, 'control.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(raw.length, 3); assert.ok(raw.every(record => record.sourceEntry.type === 'message'));
+    assert.equal(controls.length, 3);
+    const reopened = await createRawArchive(dir, options);
+    assert.equal(reopened.records().length, 6);
+    assert.throws(() => reopened.reconcile(entries.slice(1)), { code: 'SOURCE_CORRUPT' });
+    await reopened.close();
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('raw archive durably preserves entries, identities and graph parents across reopen', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'axiom-raw-'));
   const options = { sourceJournalId: 'journal-a', sourceSessionId: 'session-a' };

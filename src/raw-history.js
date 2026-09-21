@@ -10,6 +10,7 @@ export function canonical(value) {
   return JSON.stringify(value);
 }
 export const contentHash = value => `sha256:${createHash('sha256').update(typeof value === 'string' ? value : canonical(value)).digest('hex')}`;
+const isOriginal = entry => ['message', 'custom_message'].includes(entry?.type);
 const keyOf = origin => canonical([origin.sourceJournalId, origin.entryId]);
 function writeAll(fd, data) {
   const bytes = Buffer.from(data); let offset = 0;
@@ -24,11 +25,12 @@ export async function createRawArchive(directory, { sourceJournalId, sourceSessi
   if (lstatSync(directory).isSymbolicLink()) throw historyError('SCOPE_DENIED');
   let release;
   try { release = await claimArchiveOwner(directory); } catch (error) { throw historyError('ARCHIVE_NOT_DURABLE', error.message); }
-  const path = join(directory, 'raw.jsonl');
-  const records = new Map(); let fd, failure, closed = false;
+  const rawPath = join(directory, 'raw.jsonl');
+  const controlPath = join(directory, 'control.jsonl');
+  const records = new Map(); let fd, controlFd, failure, closed = false;
   const archiveId = createHash('sha256').update(sourceJournalId).digest('hex').slice(0, 24);
   try {
-    if (existsSync(path)) {
+    for (const path of [rawPath, controlPath]) if (existsSync(path)) {
       if (lstatSync(path).isSymbolicLink()) throw historyError('SCOPE_DENIED');
       const data = readFileSync(path);
       let complete = data;
@@ -53,8 +55,9 @@ export async function createRawArchive(directory, { sourceJournalId, sourceSessi
         try { writeAll(recovered, complete); } finally { closeSync(recovered); }
       }
     }
-    fd = openSync(path, 'a');
-  } catch (error) { await release(); throw error; }
+    fd = openSync(rawPath, 'a');
+    controlFd = openSync(controlPath, 'a');
+  } catch (error) { if (fd !== undefined) closeSync(fd); await release(); throw error; }
   const assertOpen = () => { if (failure || closed) throw failure ?? historyError('ARCHIVE_NOT_DURABLE', 'Archive closed'); };
   return {
     archiveId,
@@ -65,12 +68,22 @@ export async function createRawArchive(directory, { sourceJournalId, sourceSessi
       const key = keyOf(origin), hash = contentHash(sourceEntry), prior = records.get(key);
       if (prior) { if (prior.sourceEntryHash !== hash) throw historyError('ARCHIVE_IDENTITY_CONFLICT'); return prior; }
       const record = { schemaVersion: 1, canonicalVersion: 1, archiveId, seq: records.size + 1, origin, sourceEntry: JSON.parse(JSON.stringify(sourceEntry)), sourceEntryHash: hash, capturedAt: new Date().toISOString() };
-      try { writeAll(fd, `${JSON.stringify(record)}\n`); } catch (error) { failure = historyError('ARCHIVE_NOT_DURABLE', error.message); throw failure; }
+      try { writeAll(isOriginal(sourceEntry) ? fd : controlFd, `${JSON.stringify(record)}\n`); } catch (error) { failure = historyError('ARCHIVE_NOT_DURABLE', error.message); throw failure; }
       records.set(key, record); return record;
     },
-    reconcile(entries) { for (const entry of entries) this.record(entry); this.barrier(); },
-    barrier() { assertOpen(); try { fsyncSync(fd); } catch (error) { failure = historyError('ARCHIVE_NOT_DURABLE', error.message); throw failure; } },
+    reconcile(entries) {
+      assertOpen();
+      const current = new Map(entries.map(entry => [entry.id, contentHash(entry)]));
+      for (const record of records.values()) {
+        const hash = current.get(record.origin.entryId);
+        if (hash === undefined) throw historyError('SOURCE_CORRUPT', 'Authoritative journal removed an archived identity');
+        if (hash !== record.sourceEntryHash) throw historyError('ARCHIVE_IDENTITY_CONFLICT');
+      }
+      for (const entry of entries) this.record(entry);
+      this.barrier();
+    },
+    barrier() { assertOpen(); try { fsyncSync(fd); fsyncSync(controlFd); } catch (error) { failure = historyError('ARCHIVE_NOT_DURABLE', error.message); throw failure; } },
     records: () => [...records.values()],
-    async close() { if (closed) return; try { this.barrier(); } finally { closed = true; try { closeSync(fd); } finally { await release(); } } },
+    async close() { if (closed) return; try { this.barrier(); } finally { closed = true; try { closeSync(fd); closeSync(controlFd); } finally { await release(); } } },
   };
 }

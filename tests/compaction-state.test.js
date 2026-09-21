@@ -5,7 +5,7 @@ import { contentHash } from '../src/raw-history.js';
 const empty = () => ({ schemaVersion: 1, ...Object.fromEntries(STATE_FIELDS.map(field => [field, []])) });
 test('cumulative state cannot silently drop constraints; byte evidence must match', () => {
   const previous = empty(); previous.constraints.push({ id: 'c1', text: '禁止推送', status: 'active', sources: [] });
-  assert.throws(() => validateTaskState(empty(), { previous }), { code: 'SUMMARY_STATE_LOSS' });
+  assert.throws(() => validateTaskState(empty(), { previous }), { code: 'CONSTRAINT_LOST' });
   assert.deepEqual(validateTaskState(previous), previous);
   const next = structuredClone(previous); next.constraints[0].text = '允许推送';
   assert.throws(() => validateTaskState(next, { previous }), { code: 'SUMMARY_TRANSITION_INVALID' });

@@ -46,7 +46,7 @@ export function validateTaskState(value, { previous, resolveEvidence = () => nul
   if (previous) for (const field of ['goals', 'constraints', 'decisions', 'uncertainties']) for (const old of previous[field] ?? []) {
     if (field !== 'constraints' && !['active', 'blocked', 'uncertain', 'not_started'].includes(old.status)) continue;
     const next = value[field].find(item => item.id === old.id);
-    if (!next) throw historyError('SUMMARY_STATE_LOSS', old.id);
+    if (!next) throw historyError('CONSTRAINT_LOST', old.id);
     if (next.status !== old.status || next.text !== old.text) {
       if (!next.sources.length) throw historyError('SUMMARY_TRANSITION_INVALID', old.id);
       if (field === 'constraints' && !authorizeConstraintChange({ previous: old, next })) throw historyError('SUMMARY_AUTHORITY_REQUIRED', old.id);
@@ -56,7 +56,7 @@ export function validateTaskState(value, { previous, resolveEvidence = () => nul
 }
 
 export function renderStateSections(state) {
-  return STATE_FIELDS.map(field => `## ${field}\n${state[field].map(item => `- [${item.id}] (${item.status}) ${item.text}${item.sources.length ? '\n  来源: ' + item.sources.map(source => `${source.ref} (${source.verificationStatus ?? 'verified_original'})${source.quote ? ': ' + JSON.stringify(source.quote) : ''}`).join('; ') : ''}`).join('\n')}`).join('\n\n');
+  return STATE_FIELDS.map(field => `## ${field}\n${state[field].map(item => `- [${item.id}] (${item.status}) ${item.text}${item.sources.length ? '\n  来源: ' + item.sources.map(source => `${source.ref}${source.part ? ' part=' + source.part : ''} (${source.verificationStatus ?? 'verified_original'})${source.quote ? ': ' + JSON.stringify(source.quote) : ''}`).join('; ') : ''}`).join('\n')}`).join('\n\n');
 }
 
 export function renderTaskState(state, sourceManifest) {

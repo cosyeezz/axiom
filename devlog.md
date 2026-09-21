@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-21 原文重构验收补强（工作分支检查点）
+
+- `src/raw-history.js` 将原文与控制记录分为 raw/control 两流，检测来源身份删除与改写；`history-journal.js` / `data-owner.js` 在首消息前取得会话写锁。
+- `compaction.js` / `compaction-state.js` / `history-tools.js` 补齐稳定证据引用、summaryEvidence 可回读、累计 coverage、custom_message 覆盖、约束用户授权与错误分级；checkpoint 同协议并检查来源和工具激活，撤回取消旧候选。
+- `compaction-input.js` 避免 userText 绕过预算，记录纳入／省略范围；README 同步移除旧 OP 描述。专项测试增加三次分流、十轮继承、授权拒绝、真实 SDK checkpoint 重开取回等。
+- 最新全量 861 tests / 859 pass / 0 fail / 2 平台跳过；未执行付费模型质量评测，不声称 T01—T60 全部闭环。远端又新增手动压缩入口，需合入并重验，尚未最终交付。
+
+
 ## 2026-09-21 原文归档重构恢复中
 
 - 工作分支 `feat/op-removal-compaction`，独立 worktree；依据主检出 `docs/Axiom-OP移除与自动压缩重构实施方案-v2.md` 实施，未完成不得交付。

@@ -22,6 +22,16 @@ test('search pages enumerate repeated occurrences, freeze append scope and reaut
   assert.throws(() => reader.search({ query: '中文', limit: 1, cursor: first.cursor }), { code: 'SCOPE_DENIED' });
 });
 
+test('summaryEvidence reproduces the source text and hash used by state validation', () => {
+  const sourceEntry = { type: 'message', id: 'a', message: { role: 'user', content: '保留约束😀', timestamp: 1 } };
+  const record = { archiveId: 'a'.repeat(24), origin: { sourceJournalId: 'j', entryId: 'a' }, sourceEntry, sourceEntryHash: contentHash(sourceEntry) };
+  const reader = createHistoryReader({ records: () => [record], allowed: () => true });
+  const result = reader.read({ ref: reader.reference(record), part: 'summaryEvidence' });
+  assert.match(result.text, /保留约束😀/);
+  assert.equal(result.contentHash, contentHash(result.text));
+  assert.equal(result.part, 'summaryEvidence');
+});
+
 test('history pages preserve Unicode and count the full envelope; cursors are authenticated', () => {
   const sourceEntry = { id: 'a', message: { role: 'toolResult', content: '中文😀\r\n'.repeat(300) + 'end' } };
   const record = { archiveId: 'a'.repeat(24), origin: { sourceJournalId: 'j', entryId: 'a' }, sourceEntry, sourceEntryHash: contentHash(sourceEntry) };

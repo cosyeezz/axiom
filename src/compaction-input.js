@@ -3,6 +3,7 @@ import { contentHash } from './raw-history.js';
 /** Bounded view only; never used to serialize the raw archive. Ranges are UTF-8 bytes. */
 export function selectSummaryInput(evidence, maxBytes) {
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 256) throw Object.assign(new Error('No summary input budget'), { code: 'WINDOW_UNSAFE' });
+  evidence = evidence.map(({ userText, ...item }) => item);
   const overhead = Buffer.byteLength(JSON.stringify(evidence.map(item => ({ ...item, text: '' }))));
   const available = maxBytes - overhead;
   if (available < evidence.length * 64) throw Object.assign(new Error('Too many messages for safe summary selection'), { code: 'WINDOW_UNSAFE' });
