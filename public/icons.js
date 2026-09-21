@@ -1,3 +1,35 @@
+// Composer-only artwork: fixed SVG geometry, 24px grid and theme-aware duotones.
+const artwork = Object.freeze({
+  context: ['M6 3h9a2 2 0 0 1 2 2v12H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z', 'M8 7h5M8 10h3M7 20h5', 'M17 12v9m-4.5-4.5h9'],
+  image: ['M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z', 'm3 16 5-5 5 5 3-3 5 5', 'M17 8a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z'],
+  compact: ['M5 10h14v4H5z', 'M5 3H3v18h2M19 3h2v18h-2', 'M12 2v5m-2-2 2 2 2-2M12 22v-5m-2 2 2-2 2 2'],
+  target: ['M20 12a8 8 0 1 1-8-8 8 8 0 0 1 8 8Z', 'M16 12a4 4 0 1 1-4-4', 'm12 12 8-8M16 4h4v4'],
+  info: ['M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z', 'M8 7h8M8 11h3M8 15h2', 'M15 11v6m-2-4h4m-4 2h4'],
+  send: ['m3 11 18-8-8 18-3-7-7-3Z', 'm10 14 11-11', 'm10 14 3 7'],
+  stop: ['M12 3 4 6v6c0 4 4 7 8 9 4-2 8-5 8-9V6l-8-3Z', '', 'M9 9h6v6H9z'],
+  force: ['m8 3-5 5v8l5 5h8l5-5V8l-5-5H8Z', '', 'm9 9 6 6m0-6-6 6'],
+  steer: ['M4 14h6v7H4z', 'M7 14V9a4 4 0 0 1 4-4h9', 'm16 2 4 3-4 3'],
+  followUp: ['M3 4h14v4H3z', 'M3 12h10M3 17h7', 'M17 12v8m-3-3 3 3 3-3'],
+  skill: ['m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z', '', 'M19 3v4m-2-2h4'],
+  file: ['M6 3h8l5 5v13H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z', 'M14 3v5h5', 'M8 12h7M8 16h5'],
+  folder: ['M3 8V5h6l3 3h9v12H3V8Z', 'M3 8h9', 'M7 13h10m-10 3h6'],
+});
+const tones = { image: 'success', target: 'success', stop: 'success', force: 'danger' };
+
+export function composerIcon(name) {
+  if (!Object.hasOwn(artwork, name)) throw new Error(`Unknown composer icon: ${name}`);
+  const [surface, detail, accent] = artwork[name];
+  return `<svg class="action-icon composer-icon" data-icon="${name}" data-tone="${tones[name] || 'accent'}" viewBox="0 0 24 24" fill="none" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g stroke="var(--composer-icon-ink)"><path d="${surface}" fill="var(--composer-icon-color)" fill-opacity=".16"/>${detail ? `<path d="${detail}"/>` : ''}</g><path d="${accent}" stroke="var(--composer-icon-color)"/></svg>`;
+}
+
+export function composerIconNode(name) {
+  // Parsing is limited to the fixed allowlist above; no caller-provided markup.
+  const template = document.createElement('template');
+  template.innerHTML = composerIcon(name);
+  return template.content.firstElementChild;
+}
+
+
 // Axiom action icons: one 24px grid, rounded 1.75px strokes, no font glyphs.
 // Only trusted, fixed geometry is interpolated; callers never supply SVG markup.
 export const actionIconPaths = Object.freeze({
@@ -51,16 +83,18 @@ export function initActionIcons(root) {
   const replace = (selector, name, glyph) => {
     for (const el of root.querySelectorAll(selector)) {
       const svg = el.querySelector('svg');
-      if (svg && !glyph) { svg.outerHTML = actionIcon(name); continue; }
-      if (glyph) el.innerHTML = el.innerHTML.replace(glyph, actionIcon(name));
-      else el.innerHTML = actionIcon(name);
+      const composerName = ({ 'add-context': 'context', 'add-image': 'image', 'goal-enter': 'target', 'compact-session': 'compact', stop: 'stop', 'force-stop': 'force' })[el.id] || el.dataset.context;
+      const markup = composerName ? composerIcon(composerName) : actionIcon(name);
+      if (svg && !glyph) { svg.outerHTML = markup; continue; }
+      if (glyph) el.innerHTML = el.innerHTML.replace(glyph, markup);
+      else el.innerHTML = markup;
     }
   };
   for (const [selector, name] of [
     ['#open-workspace, #reveal-workspace', 'folderOpen'], ['#import-session', 'import'],
     ['.search-wrap', 'search'], ['#open-settings', 'settings'], ['#copy-workspace', 'copy'],
     ['#open-raw-io', 'code'], ['#add-context', 'plus'], ['#add-image', 'image'],
-    ['#goal-enter', 'target'], ['[data-context="skill"]', 'skill'],
+    ['#goal-enter', 'target'], ['#compact-session', 'vertical'], ['[data-context="skill"]', 'skill'],
     ['[data-context="file"]', 'file'], ['[data-context="folder"]', 'folder'],
   ]) replace(selector, name);
   for (const [selector, name, glyph] of [
