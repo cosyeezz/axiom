@@ -17,6 +17,14 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  * 未登记的文件会在 INDEX.md 里标 ⚠ 提醒补充。
  */
 const MODULE_INFO = {
+  "src/compaction-input.js": "摘要预算视图，UTF-8首尾范围与省略标记，不用于原文归档",
+  "src/compaction-budget.js": "统一完整请求预算、高低水位及压缩错误分级",
+  "src/raw-history.js": "完整原文耐久归档、身份幂等与恢复校验",
+  "src/history-journal.js": "磁盘 journal 原文投影、持久屏障与提交确认",
+  "src/history-tools.js": "鉴权历史检索、原文分页及游标签名",
+  "src/compaction-state.js": "累计任务状态与来源校验、候选身份",
+  "src/legacy-observation.js": "旧观察归档只读分页兼容，不折叠或写入",
+  "scripts/legacy-history-dryrun.mjs": "旧历史只读盘点，不迁移或写入",
   "tests/usage-extension.test.js": "扩展真实依赖解析和生命周期注册冒烟",
   "extensions/usage-gate.ts": "外部pi窗口共享限流显式扩展入口",
   "tests/shared-gate.test.js": "远程取消、迟到租约归还与配置刷新",

@@ -1,5 +1,16 @@
 # 开发记录
 
+## 2026-09-21 原文归档重构恢复中
+
+- 工作分支 `feat/op-removal-compaction`，独立 worktree；依据主检出 `docs/Axiom-OP移除与自动压缩重构实施方案-v2.md` 实施，未完成不得交付。
+- 发现此前 tracked 实现缺失，原因尚未确定；reflog 的旧 reset 不能证明因果。恢复调查未找到可直接复用副本。当前文件及差异已备份至 worktree 父目录 `Axiom-op-removal-compaction-recovery-files.tar.gz` 与 `Axiom-op-removal-compaction-recovery-tracked.patch`，主检出用户草稿未改。
+- 幸存新增文件：raw-history、history-tools、history-journal、compaction-state、legacy-observation 及专项测试、只读历史盘点脚本。恢复 `src/data-owner.js` 的内核归档写锁导出；五个基础测试文件共10项通过。完整生产接线与全量验收仍需重建并重跑。
+- 已由主代理直接恢复：历史工具/归档生命周期接线、SDK压缩关闭、JSON摘要及来源核验、提交持久屏障与不确定锁存、三次失败封顶、工具切点配对、摘要usage包装与重试禁用。恢复后压缩专项38项与全量通过；后续统一预算模块仍继续验收。
+- 生产旧OP折叠模块移至 `tests/fixtures/legacy-observation-writer.js` 仅作旧格式测试夹具；生产改用 `legacy-observation.js` 只读分页。UI删除OP指标和警告，保持现有Linear设计token，不新增样式。主/子历史读取限制当前分支与agent身份。
+- 新增 `compaction-budget.js` 统一完整请求预算与错误分级，提交/请求守卫共用；高低水位触发仍待完整接入。完整方案尚未完成，不提交/合并。
+- 继续验证：完整请求水位触发、低水位滞回、摘要输入窗口检查已接入；累计状态遗漏自动继承并以10轮测试防退化；SDK固定版本日志适配器使首个用户消息立即fsync，新增真实SDK重开验证。生产来源清单包含可读取hist引用，生成前归档屏障核对覆盖范围。错误码统一INVALID_CURSOR，窗口错误WINDOW_UNSAFE。最新全量通过（后续改动持续重验）。
+- 调查副作用：只读子任务误用 `git fsck --lost-found`，在主仓库 `.git/lost-found/` 新增对象副本，未删除既有对象；暂保留恢复线索，不清理他人数据。
+
 ## 2026-09-20 后台压缩过程可视与取消当次摘要
 
 - 时间：2026-09-20；分支 `feat/compaction-visibility`。

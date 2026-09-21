@@ -18,7 +18,7 @@ import {
   placeholderFor,
   readRecallChunk,
   resolveObservationConfig,
-} from "../src/observation-pack.js";
+} from "./fixtures/legacy-observation-writer.js";
 
 // 生成大于阈值的多行文本：行长度可预测，方便断言摘录与分页边界。
 function bigText(targetBytes) {

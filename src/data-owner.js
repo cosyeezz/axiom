@@ -3,10 +3,12 @@ import { createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
 
 // 内核持有的命名管道/抽象 socket 随进程退出释放，不猜 PID、不删除他人的锁文件。
-export async function claimDataRoot(root) {
+export async function claimDataRoot(root) { return claimOwner(root, "data"); }
+export async function claimArchiveOwner(root) { return claimOwner(root, "archive"); }
+async function claimOwner(root, namespace) {
   let canonical = await realpath(root);
   if (process.platform === "win32") canonical = canonical.toLowerCase();
-  const key = createHash("sha256").update(canonical).digest("hex").slice(0, 32);
+  const key = createHash("sha256").update(namespace === "data" ? canonical : `archive:${canonical}`).digest("hex").slice(0, 32);
   const server = createServer((socket) => socket.destroy());
   // Windows 管道与 Linux 抽象 socket 不留陈旧文件；macOS 用 loopback 独占端口，
   // 哈希碰撞只会保守拒绝启动，不会放行双写。

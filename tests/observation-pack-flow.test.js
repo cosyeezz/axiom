@@ -85,57 +85,26 @@ const run = async (body) => {
   }
 };
 
-test("端到端：三次请求折叠、面板统计、obs_recall 取回、归档与 ledger", async () => {
+test("端到端：停止自动折叠，旧归档只读取回且无 ledger", async () => {
   await run(`
-        const agent = await factory([bigprobe], { observationsDir: obsDir });
-        try {
-          assert.ok(schemas.length === 0 || schemas[0] === undefined, 'sanity');
-          script = [{ tool: 'bigprobe' }, { text: '收工' }];
-          await agent.prompt('读大文件');
-          assert.equal(requests.length, 2);
-          assert.ok(schemas[0].includes('bigprobe'), 'custom tool sent');
-          assert.ok(schemas[0].includes('obs_recall'), 'extension tool registered and active');
-          assert.ok(flat(requests[1]).includes('MIDDLE-MARKER-XYZ'), 'request 2: first full send');
-
-          script = [{ text: '第二答' }];
-          await agent.prompt('继续');
-          assert.ok(flat(requests[2]).includes('MIDDLE-MARKER-XYZ'), 'request 3: second full send');
-
-          script = [{ text: '第三答' }];
-          await agent.prompt('再来');
-          const folded = flat(requests[3]);
-          assert.doesNotMatch(folded, /MIDDLE-MARKER-XYZ/, 'request 4: middle content folded away');
-          assert.match(folded, /\\[large tool result replaced after its first 2 provider requests\\]/, 'placeholder present');
-          assert.match(folded, /retrieve: call obs_recall with .{0,16}id/, 'retrieve hint present');
-          const id = /obs_[a-f0-9]{24}/.exec(folded)[0];
-
-          // 面板统计：折 1 项、每请求省 > 0、无失败
-          const pack = agent.runtime().observationPack;
-          assert.ok(pack, 'observationPack in runtime');
-          assert.equal(pack.folded, 1);
-          assert.ok(pack.savedTokens > 0);
-          assert.equal(pack.failures, 0);
-
-          // 归档与 ledger
-          const objects = await (await import('node:fs/promises')).readdir(join(obsDir, 'objects'));
-          assert.ok(objects.includes(id + '.txt'), 'archived object on disk');
-          const archived = await (await import('node:fs/promises')).readFile(join(obsDir, 'objects', id + '.txt'), 'utf8');
-          assert.ok(archived.includes('MIDDLE-MARKER-XYZ'), 'archive holds the original bytes');
-          const ledger = await (await import('node:fs/promises')).readFile(join(obsDir, 'ledger.jsonl'), 'utf8');
-          assert.match(ledger, /"event":"fold"/, 'fold event logged');
-
-          // 模型主动取回：obs_recall 分页回原文
-          script = [{ tool: 'obs_recall', id: 'call_2', args: { id } }, { text: '取回完毕' }];
-          await agent.prompt('取回');
-          const recalled = flat(requests[5]);
-          assert.match(recalled, new RegExp('\\\\[obs_recall id=' + id + ' offset=0 next_offset=\\\\d+ eof=(true|false)( integrity=\\\\w+)?\\\\]'), 'recall header');
-          assert.match(recalled, /chunk_bytes=\\d+ chunk_lines=\\d+/, 'chunk stats');
-          const ledger2 = await (await import('node:fs/promises')).readFile(join(obsDir, 'ledger.jsonl'), 'utf8');
-          assert.match(ledger2, /"event":"recall"/, 'recall event logged');
-          assert.equal(agent.runtime().observationPack.recalls, 1, 'recalls counter');
-          assert.equal(agent.runtime().observationPack.recalledObjects, 1, 'distinct recalled objects');
-          assert.equal(agent.runtime().observationPack.recallRate, 1, 'recallRate 同尺度封顶');
-        } finally { await agent.dispose(); }
+    const { mkdir, readFile, access } = await import('node:fs/promises');
+    const id = 'obs_' + 'a'.repeat(24);
+    await mkdir(join(obsDir, 'objects'), { recursive: true });
+    await writeFile(join(obsDir, 'objects', id + '.txt'), bigText);
+    const agent = await factory([bigprobe], { observationsDir: obsDir });
+    try {
+      script = [{ tool: 'bigprobe' }, { text: '收工' }];
+      await agent.prompt('读大文件');
+      for (let i = 0; i < 3; i++) { script = [{ text: '继续' }]; await agent.prompt('继续'); }
+      assert.ok(flat(requests.at(-1)).includes('MIDDLE-MARKER-XYZ'));
+      assert.ok(schemas[0].includes('history_search'));
+      assert.ok(schemas[0].includes('history_read'));
+      script = [{ tool: 'obs_recall', args: { id } }, { text: '完成' }];
+      await agent.prompt('取回旧归档');
+      assert.ok(flat(requests.at(-1)).includes('[obs_recall id=' + id));
+      assert.equal(await readFile(join(obsDir, 'objects', id + '.txt'), 'utf8'), bigText);
+      await assert.rejects(access(join(obsDir, 'ledger.jsonl')));
+    } finally { await agent.dispose(); }
   `);
 });
 

@@ -1,4 +1,4 @@
-import { SUMMARY_SYSTEM_PROMPT, summaryRequest } from "./prompts.js";
+import { SUMMARY_SYSTEM_PROMPT, summaryRequest, taskStateRequest } from "./prompts.js";
 export { summaryRequest } from "./prompts.js";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -17,7 +17,14 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { compaction, compactionDefaults } from "./protocol.js";
-import { dropRedundantRecallEchoes } from "./observation-pack.js";
+import { confirmDurableAppend } from "./history-journal.js";
+import { STATE_FIELDS, validateTaskState, inheritTaskState, renderStateSections } from "./compaction-state.js";
+import { selectSummaryInput } from "./compaction-input.js";
+import { requestBudget, compactionError } from "./compaction-budget.js";
+import { contentHash } from "./raw-history.js";
+import { wrapUsageStream } from "./usage-stream.js";
+import { createJiti } from "jiti";
+const { AssistantMessageEventStream } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai");
 import { cutSpans, maskCode } from "../public/markdown-scan.js";
 
 // SDK usage 未知（尤其刚压缩后）时只估算现有内容，不能重新信任旧 usage。
@@ -32,30 +39,41 @@ function prepareBackgroundCompaction(branch, keepRecentTokens) {
   if (branch.length > 0 && branch[branch.length - 1].type === "compaction") return undefined;
   let boundaryStart = 0;
   let previousSummary;
+  let previousState;
   for (let i = branch.length - 1; i >= 0; i--) {
     if (branch[i].type === "compaction") {
       previousSummary = branch[i].summary;
+      previousState = structuredClone(branch[i].details?.taskState);
       const kept = branch.findIndex((entry) => entry.id === branch[i].firstKeptEntryId);
       boundaryStart = kept >= 0 ? kept : i + 1;
       break;
     }
   }
   const cut = findCutPoint(branch, boundaryStart, branch.length, keepRecentTokens);
+  const calls = new Map();
+  for (let i = boundaryStart; i < branch.length; i++) {
+    const message = branch[i].message;
+    if (message?.role === "assistant" && Array.isArray(message.content)) for (const block of message.content) if (block.type === "toolCall") calls.set(block.id, i);
+    if (message?.role === "toolResult" && i >= cut.firstKeptEntryIndex) {
+      const start = calls.get(message.toolCallId);
+      if (start !== undefined && start < cut.firstKeptEntryIndex) cut.firstKeptEntryIndex = start;
+    }
+  }
   const firstKeptEntry = branch[cut.firstKeptEntryIndex];
   if (!firstKeptEntry?.id) return undefined; // 会话需要迁移
   const messagesToSummarize = [];
+  const evidence = [];
   for (let i = boundaryStart; i < cut.firstKeptEntryIndex; i++) {
     if (branch[i].type === "compaction") continue;
     const message = sessionEntryToContextMessages(branch[i])[0];
-    if (message) messagesToSummarize.push(message);
+    if (message) {
+      messagesToSummarize.push(message);
+      evidence.push({ entryId: branch[i].id, role: message.role, userText: message.role === "user" ? (typeof message.content === "string" ? message.content : message.content.filter(block => block.type === "text").map(block => block.text).join("\n")) : undefined, text: serializeConversation(convertToLlm([message])) });
+    }
   }
   if (messagesToSummarize.length === 0) return undefined;
-  // OP 口径对齐：摘要仍读原始历史（占位符会把摘要要用的原文抹掉），但 obs_recall 回显是
-  // 原对象的字节切片。同一批里既有原文又有回显时回显是纯冗余，去掉可省摘要输入而不丢信息；
-  // 找不到对应原文就保留（那可能是该内容在本批里唯一的副本）。corpus/快照同源，引文校验口径一致。
-  const deduped = dropRedundantRecallEchoes(messagesToSummarize);
-  if (deduped.length === 0) return undefined;
-  return { firstKeptEntryId: firstKeptEntry.id, messagesToSummarize: deduped, previousSummary };
+  // A recall is a real historical event, not disposable duplicate text.
+  return { firstKeptEntryId: firstKeptEntry.id, messagesToSummarize, previousSummary, previousState, evidence };
 }
 
 // 配置契约：与 protocol.js 的 compaction schema 严格一致（复用同一份 zod schema 与默认值），
@@ -242,15 +260,16 @@ function appendVerifiedFacts(summary, verifiedFacts, snapshotPath) {
 // 后台摘要跑在一个独立的临时 pi 会话里，过程原先完全不可见。onProgress 把该会话的生命周期
 // 事件（建会话、发请求、流式产出、收尾）原样上报给控制器，控制器再转成 UI 可读的步骤流。
 // 上报失败绝不影响摘要本身：每次回调都包 try/catch。
-export async function summarizeWithPiSession({ messages, previousSummary, model, thinking, modelRuntime, signal, onProgress }) {
+export async function summarizeWithPiSession({ messages, previousSummary, model, thinking, modelRuntime, signal, onProgress, evidence, previousState, usage, audit }) {
   const progress = (event) => { try { onProgress?.(event); } catch {} };
   throwIfAborted(signal); // 创建前检查
   progress({ kind: "note", step: "prepare", text: "准备摘要运行环境（临时目录 + 无工具会话）" });
   const agentDir = mkdtempSync(join(tmpdir(), "axiom-compaction-"));
   let session;
   let unsubscribe;
+  let summaryInputManifest;
   try {
-    const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
+    const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false, provider: { maxRetries: 0 } } });
     const loader = new DefaultResourceLoader({
       cwd: agentDir,
       agentDir,
@@ -278,6 +297,7 @@ export async function summarizeWithPiSession({ messages, previousSummary, model,
         settingsManager,
       })
     ).session;
+    if (usage) session.agent.streamFunction = wrapUsageStream(session.agent.streamFunction, { service: usage, identity: { sessionId: audit?.sessionId ?? null, agentId: audit?.agentId ?? "main", source: "compaction" }, createStream: () => new AssistantMessageEventStream() });
     throwIfAborted(signal); // 创建后检查（等待 loader 期间可能已被取消）
     progress({ kind: "note", step: "session", text: `摘要会话就绪 · ${model?.name || model?.id || "主代理模型"} · thinking=${thinking ?? "off"}` });
     // 订阅只做上报：读取 SDK 已累积好的消息内容，不自己拼 delta，避免与流式协议细节耦合。
@@ -298,8 +318,14 @@ export async function summarizeWithPiSession({ messages, previousSummary, model,
     const onAbort = () => void session.abort(); // 真实中断后台 LLM，不跑自然完成
     signal?.addEventListener("abort", onAbort, { once: true });
     try {
-      const request = summaryRequest(serializeConversation(convertToLlm(messages)), previousSummary);
+      const inputBudget = requestBudget({ model: session.model, systemPrompt: session.systemPrompt, tools: [] });
+      const stateBytes = Buffer.byteLength(JSON.stringify({ previousState, previousSummary }));
+      const selectedEvidence = evidence ? selectSummaryInput(evidence, Math.floor((inputBudget.hard - inputBudget.fixed) * 2) - stateBytes - 1024) : undefined;
+      summaryInputManifest = selectedEvidence?.map(({ text, ...metadata }) => metadata);
+      const request = evidence ? taskStateRequest({ previousState, previousSummary, messages: selectedEvidence }) : summaryRequest(serializeConversation(convertToLlm(messages)), previousSummary);
       progress({ kind: "note", step: "request", text: `发出摘要请求 · 约 ${request.length.toLocaleString("en-US")} 字符原文` });
+      const summaryBudget = requestBudget({ model: session.model, messages: [{ role: "user", content: request }], systemPrompt: session.systemPrompt, tools: [] });
+      if (!summaryBudget.safe) throw compactionError("WINDOW_UNSAFE", "摘要输入超过摘要模型安全窗口，保留原文");
       await session.prompt(request, {
         expandPromptTemplates: false,
       });
@@ -314,6 +340,26 @@ export async function summarizeWithPiSession({ messages, previousSummary, model,
       .trim();
     if (last?.stopReason !== "stop" || !summary)
       throw new Error(`Summarization failed (stopReason=${last?.stopReason ?? "none"}): ${describeCompactionError(last?.errorMessage || (!summary ? "模型未返回摘要正文" : "模型未正常完成摘要"))}`);
+    if (evidence) {
+      let state;
+      try { state = JSON.parse(summary); } catch { throw new Error("SUMMARY_INVALID: expected JSON"); }
+      const sources = new Map(evidence.map(source => [source.entryId, source]));
+      for (const field of STATE_FIELDS) for (const item of state[field] ?? []) item.sources = (item.sources ?? []).map(source => {
+        if (source.contentHash) {
+          const inherited = previousState?.[field]?.find(old => old.id === item.id)?.sources?.find(old => contentHash(old) === contentHash(source));
+          if (!inherited) throw new Error("SUMMARY_SOURCE_INVALID: invented inherited source");
+          return { ...inherited, verificationStatus: "inherited_unverified" };
+        }
+        const original = sources.get(source.ref);
+        const start = typeof source.quote === "string" && source.quote.length ? original?.text.indexOf(source.quote) : -1;
+        if (!original || start < 0) throw new Error("SUMMARY_INVALID: source quote not found");
+        return { ref: source.ref, part: "serialized-message", quote: source.quote, contentHash: contentHash(original.text), range: [Buffer.byteLength(original.text.slice(0, start)), Buffer.byteLength(original.text.slice(0, start + source.quote.length))], verificationStatus: "verified_original" };
+      });
+      state = inheritTaskState(state, previousState);
+      state = validateTaskState(state, { previous: previousState, resolveEvidence: source => sources.get(source.ref)?.text, authorizeConstraintChange: ({ next }) => next.sources.some(source => source.verificationStatus === "verified_original" && sources.get(source.ref)?.role === "user" && sources.get(source.ref)?.userText?.trim() === next.text.trim() && source.quote === next.text) });
+      progress({ kind: "note", step: "parsed", text: "task-state 解析完成" });
+      return { summary: renderStateSections(state), taskState: state, summaryInputManifest, facts: [], usage: last.usage };
+    }
     const parsed = parseSummaryOutput(summary);
     progress({ kind: "note", step: "parsed", text: `摘要解析完成 · 正文 ${parsed.summary?.length ?? 0} 字符 · 引文 ${parsed.facts?.length ?? 0} 条` });
     return { ...parsed, usage: last.usage };
@@ -374,15 +420,24 @@ export function createBackgroundCompaction({
   available = [],
   config,
   summarize = summarizeWithPiSession,
+  beforeCommit,
+  confirmCommit = confirmDurableAppend,
+  sourceManifest,
+  usage,
+  audit,
   onEvent,
 }) {
   let current = normalizeCompaction(config);
   let pending = null; // { promise, settled, value?, error?, firstKeptEntryId, compactedMessageIds, leafId }
   let controller = null; // 在途摘要的 AbortController
   let disposed = false;
+  let commitUncertain;
+  const assertHealthy = () => { if (commitUncertain) throw commitUncertain; };
+  const lockCommit = cause => (commitUncertain = Object.assign(new Error("压缩提交不确定，须重新打开会话恢复"), { code: "COMMIT_UNCERTAIN", cause }));
   let status = null;
   let failures = 0;
   let retryAt = 0;
+  let lastAppliedBudgetTokens = null;
   let runs = []; // 最近几次摘要的可观测记录（旧→新）
   let activeRun = null; // 当前在途/待应用的 run，终态后置 null
   let runSeq = 0;
@@ -435,9 +490,9 @@ export function createBackgroundCompaction({
   }
   function fail(message, error) {
     const delay = Math.min(300000, 30000 * 2 ** Math.min(failures++, 4));
-    retryAt = Date.now() + delay;
+    retryAt = failures >= 3 ? Infinity : Date.now() + delay;
     if (activeRun) activeRun.error = error == null ? message : describeCompactionError(error);
-    report("failed", `${message}${error == null ? "" : `（${describeCompactionError(error)}）`}；${delay / 1000} 秒后可在后续回合重试`);
+    report("failed", `${message}${error == null ? "" : `（${describeCompactionError(error)}）`}；${commitUncertain ? "提交不确定，必须重新打开会话恢复" : failures >= 3 ? "已达三次失败上限，需修改配置后恢复" : `${delay / 1000} 秒后可在后续回合重试`}`);
   }
   function report(phase, message) {
     status = { status: phase, startedAt: phase === "summarizing" ? Date.now() : status?.startedAt, ...(message ? { message } : {}) };
@@ -505,8 +560,8 @@ export function createBackgroundCompaction({
     if (!flight.leafId) return false;
     const branch = session.sessionManager.getBranch();
     const leafIndex = branch.findIndex((entry) => entry.id === flight.leafId);
-    if (leafIndex < 0) return false; // 分支已切换
-    return !branch.slice(leafIndex + 1).some((entry) => entry.type === "compaction"); // 期间出现过新压缩 → 作废
+    if (leafIndex < 0 || contentHash(branch.slice(0, leafIndex + 1)) !== flight.sourceHash) return false; // 分支或快照内容变化
+    return !branch.slice(leafIndex + 1).some((entry) => entry.type === "compaction" || entry.customType === "axiom-control"); // 期间出现过新压缩 → 作废
   }
 
   function runFlight(preparation, run) {
@@ -516,12 +571,27 @@ export function createBackgroundCompaction({
     return summarize({
       messages: structuredClone(preparation.messagesToSummarize), // 冻结快照，防消息对象后续被原地改写
       previousSummary: preparation.previousSummary,
+      evidence: preparation.evidence,
+      previousState: preparation.previousState,
       model,
       thinking: current.thinking,
       modelRuntime,
+      usage,
+      audit,
       signal: controller.signal,
       onProgress: (event) => onFlightProgress(run, event),
     });
+  }
+
+  function appendConfirmed(summary, boundary, tokensBefore, details, usage) {
+    assertHealthy();
+    try {
+      const id = session.sessionManager.appendCompaction(summary, boundary, tokensBefore, details, false, usage);
+      const file = session.sessionManager.getSessionFile?.();
+      if (file) confirmCommit(file, id);
+      session.agent.state.messages = session.sessionManager.buildSessionContext().messages;
+      return id;
+    } catch (cause) { throw lockCommit(cause); }
   }
 
   function onTurnEnd() {
@@ -530,12 +600,17 @@ export function createBackgroundCompaction({
       // 阈值判断优先用 SDK 的 getContextUsage（感知「压缩后 usage 过期」并返回 null）；
       // 拿不到真实 usage 时回退到 chars/4 估算。
       const usage = session.getContextUsage?.();
-      const tokens = usage?.tokens ?? contextTokens(session.messages);
-      const contextWindow = usage?.contextWindow ?? session.model?.contextWindow ?? 0;
-      if (!overCompactionThreshold(tokens, contextWindow, current)) return;
+      const budget = requestBudget({ model: session.model, messages: session.messages, systemPrompt: session.systemPrompt, tools: session.agent.state.tools, config: current });
+      const tokens = Math.max(usage?.tokens ?? 0, budget.tokens);
+      const contextWindow = session.model?.contextWindow ?? 0;
+      if (tokens < budget.start) { lastAppliedBudgetTokens = null; return; }
+      if (lastAppliedBudgetTokens !== null && tokens < budget.hard && tokens - lastAppliedBudgetTokens < Math.max(128, budget.start - budget.target)) return;
       const branch = session.sessionManager.getBranch();
       const preparation = prepareBackgroundCompaction(branch, current.keepRecentTokens);
-      if (!preparation || preparation.messagesToSummarize.length === 0) return;
+      if (!preparation || preparation.messagesToSummarize.length === 0) {
+        fail("无合法压缩切点，保留原文", compactionError("NO_VALID_CUT"));
+        return;
+      }
       // 校验语料：与摘要模型所见逐字一致（同一渲染函数、同一消息内容）；快照与引文行号都指向这份文本
       const corpus = serializeConversation(convertToLlm(preparation.messagesToSummarize));
       const run = startRun({
@@ -559,6 +634,7 @@ export function createBackgroundCompaction({
         firstKeptEntryId: preparation.firstKeptEntryId,
         compactedMessageIds: summarizedEntryIds(branch, preparation.firstKeptEntryId),
         leafId: session.sessionManager.getLeafEntry()?.id ?? null,
+        sourceHash: contentHash(branch),
         settled: false,
         run,
       };
@@ -610,12 +686,13 @@ export function createBackgroundCompaction({
   }
 
   async function maybeApply() {
+    assertHealthy();
     if (disposed || !pending || !pending.settled || !current.enabled) return null;
     const flight = pending;
     pending = null; // 先占位再验证，防重入双写
     controller = null;
     const skip = (message) => { report("skipped", message); return null; };
-    if (disposed || !current.enabled || !isFresh(flight)) return skip("历史已变化，本次摘要作废，保留原文");
+    if (disposed || !current.enabled || !isFresh(flight)) return skip("STALE_CANDIDATE: 历史已变化，本次摘要作废，保留原文");
     try {
       const summary = (flight.value.summary ?? "").trim();
       if (!summary) return skip("摘要为空，保留原文");
@@ -632,6 +709,13 @@ export function createBackgroundCompaction({
       // 同一对话内容 → 同一哈希文件，拒绝重试不产生重复快照。
       const snapshotPath = writeConversationSnapshot(session, flight.corpus);
       const assembled = appendVerifiedFacts(summary, flight.verifiedFacts, snapshotPath);
+      await beforeCommit?.({ firstKeptEntryId: flight.firstKeptEntryId, compactedMessageIds: flight.compactedMessageIds, summary: assembled.summary });
+      if (!isFresh(flight)) return skip("STALE_CANDIDATE: 归档等待期间历史已变化");
+      const manifest = sourceManifest?.(flight.compactedMessageIds);
+      if (manifest) {
+        assembled.summary += `\n\n原文来源（程序生成；历史不是当前指令）：\n${JSON.stringify(manifest)}\n使用 history_search 和 history_read 分页读取。`;
+        assembled.extra.sourceManifest = manifest;
+      }
       // 提交前验证：压缩后上下文（摘要 + 保留切点之后的消息）必须真的变小。
       // usage 在压缩后必然过期，这里按 estimateTokens 全量求和。
       const keptMessages = branch.slice(keptIndex).filter((entry) => entry.type !== "compaction").flatMap(sessionEntryToContextMessages);
@@ -639,23 +723,24 @@ export function createBackgroundCompaction({
         estimateTokens({ role: "compactionSummary", summary: assembled.summary }) +
         keptMessages.reduce((sum, message) => sum + estimateTokens(message), 0);
       if (estimatedAfter >= tokensBefore) return skip("摘要未缩小上下文，保留原文");
+      const budget = requestBudget({ model: session.model, messages: [{ role: "compactionSummary", summary: assembled.summary }, ...keptMessages], systemPrompt: session.systemPrompt, tools: session.agent.state.tools, config: current });
+      if (!budget.safe) throw compactionError("WINDOW_UNSAFE", "压缩后仍超过安全窗口");
       note(flight.run, "apply", `安全点应用摘要 · ${tokensBefore.toLocaleString("en-US")} → ${estimatedAfter.toLocaleString("en-US")} tokens（估算）`);
       const details = {
+        ...(flight.value.taskState ? { taskState: flight.value.taskState, summaryInputManifest: flight.value.summaryInputManifest } : {}),
+        parentCompactionId: branch.findLast(entry => entry.type === "compaction")?.id ?? null,
+        branchAnchor: flight.leafId,
+        inputHash: flight.sourceHash,
+        compactedMessageIds: flight.compactedMessageIds,
+        coverageHash: contentHash(flight.compactedMessageIds.map(id => branch.find(entry => entry.id === id))),
         rawEstimatedTokensBefore: tokensBefore,
         projectedTokensBefore,
         ...(flight.value.progress ? { progress: flight.value.progress } : {}),
         ...assembled.extra,
       };
-      const id = session.sessionManager.appendCompaction(
-        assembled.summary,
-        flight.firstKeptEntryId,
-        tokensBefore,
-        Object.keys(details).length > 0 ? details : undefined,
-        false,
-        flight.value.usage,
-      );
-      const messages = session.sessionManager.buildSessionContext().messages;
-      session.agent.state.messages = messages;
+      await beforeCommit?.({ firstKeptEntryId: flight.firstKeptEntryId, compactedMessageIds: flight.compactedMessageIds, summary: assembled.summary });
+      if (disposed || !current.enabled || !isFresh(flight)) return skip("持久屏障等待期间历史已变化，保留原文");
+      const id = appendConfirmed(assembled.summary, flight.firstKeptEntryId, tokensBefore, details, flight.value.usage);
       const data = {
         id,
         summary: assembled.summary,
@@ -668,6 +753,7 @@ export function createBackgroundCompaction({
       };
       try { onEvent?.({ type: "agent.compaction", data }); } catch {}
       resetRetry();
+      lastAppliedBudgetTokens = budget.tokens > budget.target ? budget.tokens : null;
       if (flight.run) flight.run.result = { compactionId: id, tokensBefore, estimatedTokensAfter: estimatedAfter, summaryChars: assembled.summary.length, facts: flight.verifiedFacts?.length ?? 0 };
       report("applied");
       return data;
@@ -680,8 +766,24 @@ export function createBackgroundCompaction({
   // 安全点：包在 SDK 原生 prepareNextTurnWithContext（阈值压缩 + 系统提示刷新）之外。
   const previousPrepare = session.agent.prepareNextTurnWithContext?.bind(session.agent);
   session.agent.prepareNextTurnWithContext = async (turn, signal) => {
+    assertHealthy();
     const snapshot = previousPrepare ? await previousPrepare(turn, signal) : undefined;
-    const applied = await maybeApply();
+    let applied = await maybeApply();
+    assertHealthy();
+    const context = snapshot?.context ?? turn.context;
+    const budgetNow = () => requestBudget({ model: session.model, messages: applied ? session.messages : context.messages, systemPrompt: context.systemPrompt, tools: context.tools, config: current });
+    if (!budgetNow().safe) {
+      if (current.enabled && !pending && Date.now() >= retryAt) onTurnEnd();
+      if (pending) {
+        let timer;
+        try {
+          await Promise.race([pending.promise.catch(() => {}), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("COMPACTION_TIMEOUT")), 30000); timer.unref?.(); })]);
+          applied = await maybeApply() || applied;
+          assertHealthy();
+        } finally { clearTimeout(timer); }
+      }
+      if (!budgetNow().safe) throw compactionError("WINDOW_UNSAFE", "上下文超过安全窗口，保留原文并停止请求");
+    }
     if (!applied) return snapshot;
     return {
       ...(snapshot ?? {}),
@@ -692,6 +794,9 @@ export function createBackgroundCompaction({
   return {
     onTurnEnd,
     maybeApply,
+    assertHealthy,
+    lockCommit,
+    appendConfirmed,
     cancel, // pi wrapper 在会话 abort / dispose 时调用，中断后台真实 LLM
     cancelRun, // 用户从 UI 主动取消本次摘要
     getConfig: () => ({ ...current }),

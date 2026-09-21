@@ -11,7 +11,7 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { compactionDefaults } from "../src/protocol.js";
-import { createObservation } from "../src/observation-pack.js";
+import { createObservation } from "./fixtures/legacy-observation-writer.js";
 import {
   createBackgroundCompaction,
   describeCompactionError,
@@ -129,7 +129,7 @@ const fakeModel = (baseUrl = "http://127.0.0.1:9") => ({
   reasoning: false,
   input: ["text"],
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-  contextWindow: 1000,
+  contextWindow: 4096,
   maxTokens: 100,
 });
 
@@ -177,8 +177,8 @@ async function waitFor(condition, timeoutMs = 5000) {
 
 const enabledConfig = {
   enabled: true,
-  tokenThreshold: null,
-  percentThreshold: 70, // contextWindow 1000 → 700 触发
+  tokenThreshold: 700,
+  percentThreshold: null, // 独立于模型窗口的固定触发阈值
   model: null,
   thinking: "off",
   keepRecentTokens: 200,
@@ -215,7 +215,7 @@ async function startHangingLlmServer() {
 
 // OpenAI completions 兼容的流式伪服务：每个请求返回一条 "ok" 助手回复（SSE）。
 // hold(index) 可对第 index 个请求返回一个 promise，测试手动放行以控制时序。
-async function startFakeLlmServer({ hold } = {}) {
+async function startFakeLlmServer({ hold, reply = () => "ok" } = {}) {
   const requests = [];
   const completed = [];
   const server = createServer((req, res) => {
@@ -237,7 +237,7 @@ async function startFakeLlmServer({ hold } = {}) {
             choices: [{ index: 0, delta, finish_reason: finish }],
           })}\n\n`,
         );
-      chunk({ role: "assistant", content: "ok" }, null);
+      chunk({ role: "assistant", content: reply(JSON.parse(body)) }, null);
       chunk({}, "stop");
       res.write("data: [DONE]\n\n");
       res.end();
@@ -253,6 +253,35 @@ async function startFakeLlmServer({ hold } = {}) {
     close: () => new Promise((resolve) => server.close(resolve)),
   };
 }
+
+test("真实摘要 JSON：原文引用核验，伪造引文与非 JSON 整份拒绝", async () => {
+  const state = { schemaVersion: 1, goals: [], constraints: [], decisions: [], progress: [], evidence: [{ id: "e1", status: "completed", text: "已验证输出", sources: [{ ref: "m1", quote: "真实输出" }] }], uncertainties: [], nextActions: [], sourceDirectory: [] };
+  let response = JSON.stringify(state);
+  const fake = await startFakeLlmServer({ reply: () => response });
+  const dir = mkdtempSync(join(tmpdir(), "axiom-state-http-"));
+  let session;
+  try {
+    const runtime = await createLoopSession(dir, fake.port);
+    session = runtime.session;
+    const options = { messages: [userMsg("真实输出")], evidence: [{ entryId: "m1", role: "user", text: "真实输出" }], model: session.model, modelRuntime: runtime.modelRuntime, thinking: "off" };
+    const result = await summarizeWithPiSession(options);
+    assert.match(result.summary, /已验证输出/);
+    assert.equal(result.taskState.evidence[0].sources[0].verificationStatus, "verified_original");
+    assert.deepEqual(result.taskState.evidence[0].sources[0].range, [0, Buffer.byteLength("真实输出")]);
+    state.evidence[0].sources[0].quote = "编造输出";
+    response = JSON.stringify(state);
+    await assert.rejects(summarizeWithPiSession(options), /SUMMARY_INVALID/);
+    response = "ok";
+    await assert.rejects(summarizeWithPiSession(options), /SUMMARY_INVALID/);
+    state.evidence[0].sources[0] = { ref: "invented", part: "part_0", contentHash: "forged", range: [0, 1], verificationStatus: "inherited_unverified" };
+    response = JSON.stringify(state);
+    await assert.rejects(summarizeWithPiSession(options), /SUMMARY_SOURCE_INVALID/);
+  } finally {
+    session?.dispose();
+    await fake.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 // —— 配置契约：严格 schema，不再宽松吞非法值 ——
 
@@ -290,6 +319,30 @@ test("overCompactionThreshold: 绝对与占比阈值任一命中即触发，全 
 });
 
 // —— 真实 SDK 会话 + 后台压缩主流程 ——
+
+test("原文持久屏障失败时不提交压缩、不替换上下文", async () => {
+  const { session, cleanup } = await createTestSession();
+  let compaction;
+  try {
+    seed(session, [userMsg(big("a")), assistantMsg(big("b")), userMsg(big("c"))]);
+    const before = JSON.stringify(session.messages);
+    let commits = 0;
+    compaction = createBackgroundCompaction({
+      session, modelRuntime: null, config: enabledConfig, summarize: fakeSummarize([]),
+      beforeCommit(commit) {
+        commits++;
+        assert.ok(commit.compactedMessageIds.length);
+        assert.ok(commit.firstKeptEntryId);
+        throw new Error("ARCHIVE_NOT_DURABLE");
+      },
+    });
+    await compaction.onTurnEnd(); await settle();
+    assert.equal(await compaction.maybeApply(), null);
+    assert.equal(commits, 1);
+    assert.equal(JSON.stringify(session.messages), before);
+    assert.equal(session.sessionManager.getBranch().filter(entry => entry.type === "compaction").length, 0);
+  } finally { compaction?.dispose(); await cleanup(); }
+});
 
 test("turn_end 快照后摘要，安全点应用：保留 recent 与快照后新增消息，事件与落盘一致", async () => {
   const { session, cleanup } = await createTestSession();
@@ -403,13 +456,14 @@ test("split turn 不跳过：切点落在回合中间时直接摘要 boundarySta
 
 test("真实 SDK 钩子链：prepareNextTurnWithContext 在原生钩子之后应用压缩结果", async () => {
   const { session, cleanup } = await createTestSession();
+  session.agent.state.model = { ...session.model, contextWindow: 4096 }; 
   let compaction;
   try {
     seed(session, [userMsg(big("a")), assistantMsg(big("b")), userMsg(big("c"))]);
     compaction = createBackgroundCompaction({
       session,
       modelRuntime: null,
-      config: enabledConfig,
+      config: { ...enabledConfig, tokenThreshold: 700, percentThreshold: null },
       summarize: fakeSummarize([]),
     });
 
@@ -437,6 +491,7 @@ test("真实 SDK 钩子链：prepareNextTurnWithContext 在原生钩子之后应
 
 test("真实 SDK 钩子链：无待应用结果时透传原生快照，不改动上下文", async () => {
   const { session, cleanup } = await createTestSession();
+  session.agent.state.model = { ...session.model, contextWindow: 4096 };
   let compaction;
   try {
     seed(session, [userMsg("hi"), assistantMsg("hello")]);
@@ -460,6 +515,37 @@ test("真实 SDK 钩子链：无待应用结果时透传原生快照，不改动
     compaction?.dispose();
     cleanup();
   }
+});
+
+test("压缩写入异常锁存不确定状态，不切上下文且改配置不能解锁", async () => {
+  const { session, cleanup } = await createTestSession();
+  let compaction;
+  try {
+    seed(session, [userMsg(big("a")), assistantMsg(big("b")), userMsg(big("c"))]);
+    const original = session.messages.slice();
+    session.sessionManager.appendCompaction = () => { throw new Error("injected disk failure"); };
+    compaction = createBackgroundCompaction({ session, config: enabledConfig, summarize: fakeSummarize([]) });
+    compaction.onTurnEnd();
+    await settle();
+    await compaction.maybeApply();
+    assert.deepEqual(session.messages, original);
+    assert.throws(() => compaction.assertHealthy(), { code: "COMMIT_UNCERTAIN" });
+    compaction.setConfig({ ...enabledConfig, tokenThreshold: 701 });
+    await assert.rejects(() => compaction.maybeApply(), { code: "COMMIT_UNCERTAIN" });
+    await assert.rejects(() => session.agent.prepareNextTurnWithContext({ context: { messages: [], tools: [], systemPrompt: "" } }), { code: "COMMIT_UNCERTAIN" });
+  } finally { compaction?.dispose(); cleanup(); }
+});
+
+test("固定系统提示与工具超过小窗口时，禁止发出无效请求", async () => {
+  const { session, cleanup } = await createTestSession();
+  session.agent.state.model = { ...session.model, contextWindow: 1000 };
+  let compaction;
+  try {
+    seed(session, [userMsg("hi"), assistantMsg("hello")]);
+    compaction = createBackgroundCompaction({ session, modelRuntime: null, config: enabledConfig, summarize: fakeSummarize([]) });
+    await assert.rejects(() => session.agent.prepareNextTurnWithContext({ message: assistantMsg("turn"), toolResults: [], context: { systemPrompt: "s", messages: session.messages.slice(), tools: [] }, newMessages: [] }), { code: "WINDOW_UNSAFE" });
+    assert.equal(session.sessionManager.getBranch().filter(entry => entry.type === "compaction").length, 0);
+  } finally { compaction?.dispose(); cleanup(); }
 });
 
 test("单 flight：同一段时间多次 turn_end 只发起一次摘要", async () => {
@@ -518,17 +604,22 @@ test("摘要失败：保留原因与原文，指数冷却并允许配置修正�
     await settle();
     assert.equal(starts(), 2);
     assert.match(compaction.getStatus().message, /60 秒/);
-    for (const [elapsed, next] of [[60000, 120], [120000, 240], [240000, 300], [300000, 300]]) {
+    t.mock.timers.tick(60000);
+    await compaction.onTurnEnd();
+    await settle();
+    assert.equal(starts(), 3);
+    assert.match(compaction.getStatus().message, /boom.*已达三次失败上限/);
+    for (const elapsed of [120000, 240000, 300000]) {
       t.mock.timers.tick(elapsed);
       await compaction.onTurnEnd();
       await settle();
-      assert.match(compaction.getStatus().message, new RegExp(`${next} 秒`));
     }
+    assert.equal(starts(), 3, "到达上限后不再自动重试");
     compaction.setConfig({ ...enabledConfig, thinking: "low" });
     await compaction.onTurnEnd();
     await settle();
     assert.match(compaction.getStatus().message, /30 秒/);
-    assert.equal(starts(), 7);
+    assert.equal(starts(), 4);
     assert.equal(await compaction.maybeApply(), null);
   } finally {
     compaction?.dispose();
@@ -554,7 +645,8 @@ test("启动与应用失败展示具体原因，冷却期间保留失败状态",
     session.sessionManager.appendCompaction = () => { throw new Error("disk unavailable"); };
     try {
       assert.equal(await compaction.maybeApply(), null);
-      assert.match(compaction.getStatus().message, /应用失败.*disk unavailable.*30 秒/);
+      assert.match(compaction.getStatus().message, /应用失败.*提交不确定.*重新打开/);
+      assert.throws(() => compaction.assertHealthy(), { code: "COMMIT_UNCERTAIN" });
       assert.deepEqual(session.messages, before);
       await compaction.onTurnEnd();
       assert.equal(compaction.getStatus().status, "failed");
@@ -759,7 +851,7 @@ async function createLoopSession(dir, port) {
           baseUrl: `http://127.0.0.1:${port}/v1`,
           api: "openai-completions",
           apiKey: "sk-test",
-          models: [{ id: "test-model", name: "Test Model", contextWindow: 1000, maxTokens: 100 }],
+          models: [{ id: "test-model", name: "Test Model", contextWindow: 4096, maxTokens: 100 }],
         },
       },
     }),
@@ -841,7 +933,8 @@ test("summarizeWithPiSession: signal 取消会真实中断后台 LLM 的 HTTP �
 // —— 真实 SDK loop 端到端：真实 prompt → turn_end 钩子 → 真实摘要会话 → 安全点自动应用 ——
 
 test("真实 SDK loop：prompt 触发 turn_end 后台摘要，下一次 prompt 在安全点自动应用", async () => {
-  const fake = await startFakeLlmServer();
+  const taskState = { schemaVersion: 1, goals: [], constraints: [], decisions: [], progress: [{ id: "p1", status: "completed", text: "收到 ok", sources: [] }], evidence: [], uncertainties: [], nextActions: [], sourceDirectory: [] };
+  const fake = await startFakeLlmServer({ reply: body => JSON.stringify(body).includes("sourceDirectory") && JSON.stringify(body).includes("Return ONLY a JSON object") ? JSON.stringify(taskState) : "ok" });
   const dir = mkdtempSync(join(tmpdir(), "axiom-compaction-loop-"));
   let compaction;
   try {
@@ -884,12 +977,13 @@ test("真实 SDK loop：prompt 触发 turn_end 后台摘要，下一次 prompt �
     assert.equal(fake.requests.length, 3);
     const data = events.find((event) => event.type === "agent.compaction")?.data;
     assert.ok(data, "应发出 agent.compaction 事件");
-    assert.equal(data.summary, "ok");
+    assert.match(data.summary, /## goals/);
+    assert.match(data.summary, /收到 ok/);
     assert.ok(data.estimatedTokensAfter < data.tokensBefore);
 
     const state = session.messages;
     assert.equal(state[0].role, "compactionSummary");
-    assert.equal(state[0].summary, "ok");
+    assert.match(state[0].summary, /收到 ok/);
     assert.ok(
       state.some(
         (message) =>
@@ -901,6 +995,7 @@ test("真实 SDK loop：prompt 触发 turn_end 后台摘要，下一次 prompt �
     );
     const branch = session.sessionManager.getBranch();
     assert.equal(branch.filter((entry) => entry.type === "compaction").length, 1);
+    assert.deepEqual(branch.find(entry => entry.type === "compaction").details.taskState, taskState);
     assert.equal(branch.at(-1).type, "message");
     // 过程可视：run 的步骤流接的是真 SDK 事件（不只是测试桩调 onProgress）
     const run = compaction.getStatus().runs.at(-1);
@@ -1118,7 +1213,7 @@ test("编造引文：整份摘要作废不落盘，冷却后回合边界重试",
   }
 });
 
-test("OP×compaction：摘要读原始全文，但同批里 obs_recall 回显作为纯冗余被丢弃", async () => {
+test("OP×compaction：摘要读原始全文，同批 obs_recall 回显作为真实取回事件保留", async () => {
   const { session, cleanup } = await createTestSession();
   let compaction;
   try {
@@ -1163,7 +1258,7 @@ test("OP×compaction：摘要读原始全文，但同批里 obs_recall 回显作
     const summarized = calls[0];
     const texts = summarized.flatMap((m) => (Array.isArray(m.content) ? m.content : []).filter((b) => b.type === "text").map((b) => b.text));
     assert.ok(texts.some((t) => t.includes("SOURCE-MARKER")), "原始全文仍进摘要（摘要读原始历史，不吃折叠投影）");
-    assert.ok(!texts.some((t) => t.startsWith("[obs_recall id=")), "指向同批原文的取回回显被丢弃");
+    assert.ok(texts.some((t) => t.startsWith("[obs_recall id=")), "真实取回事件不去重，原文与回显并存");
   } finally {
     compaction?.dispose();
     cleanup();
@@ -1204,7 +1299,7 @@ test("run 记录：步骤时间线与流式尾部随状态下发，终态保留�
     assert.equal(run.endedAt, null, "ready 还没结束（等安全点应用）");
     assert.deepEqual(run.usage, { input: 7, output: 3 });
     // 触发信息够回答「为什么压」：真实 usage 不可用时标记为估算
-    assert.equal(run.trigger.percentThreshold, 70);
+    assert.equal(run.trigger.tokenThreshold, 700);
     assert.equal(run.trigger.keepRecentTokens, 200);
     assert.ok(run.trigger.tokens >= 700);
     // 时间线覆盖触发 → 计划 → 摘要会话 → 输出结束 → ready

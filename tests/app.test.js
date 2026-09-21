@@ -823,12 +823,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.match(window.runtimeSummary({ usage: { input: 0, cacheRead: 0 } })[0], /供应商未报告缓存用量/);
     assert.match(window.runtimeSummary({ context: { tokens: null, contextWindow: 10000, percent: null } })[1], /— \/ 10,000 tokens · 待更新/);
     const opSummary = window.runtimeSummary({ observationPack: { folded: 3, savedTokens: 1200, recalledObjects: 2, recallRate: 2 / 3, recallPages: 7 } })[3];
-    assert.match(opSummary, /OP 已折叠 3 项（会话累计）/);
-    assert.match(opSummary, /本次投影减少约 1,200 tokens（未计取回、额外轮次与缓存变化）/);
-    assert.match(opSummary, /取回 2 对象 \(67%\) · 7 页/);
+    assert.equal(opSummary, undefined, "旧 OP 载荷不再展示");
     const coldOp = window.runtimeSummary({ observationPack: { folded: 0, savedTokens: 0, recalledObjects: 0, recallRate: 0, recallPages: 0 } })[3];
-    assert.match(coldOp, /样本不足/);
-    assert.doesNotMatch(coldOp, /\(0%\)/);
+    assert.equal(coldOp, undefined);
     assert.equal($("session-runtime").previousElementSibling.className, "actions");
     assert.equal($("subagent-model").value, "");
     assert.equal($("subagent-model").disabled, true);
