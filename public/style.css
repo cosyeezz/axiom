@@ -993,7 +993,7 @@ button.danger:hover:not(:disabled) { background: light-dark(#a92f41, #c13e50); }
 #github-link { display: grid; place-items: center; text-decoration: none; }
 #github-link svg { width: 17px; height: 17px; fill: currentColor; }
 #add-context { display: grid; place-items: center; width: 28px; height: 28px; min-height: 28px; border: 0; border-radius: 7px; background: transparent; }
-#add-context svg { width: 18px; height: 18px; color: var(--muted); }
+#add-context svg:not(.composer-icon) { width: 18px; height: 18px; color: var(--muted); }
 #add-context:hover:not(:disabled), #add-context:focus-visible { background: var(--raised); }
 #add-context:hover svg, body:has(#context-menu:popover-open) #add-context svg { color: var(--ink); }
 body:has(#context-menu:popover-open) #add-context { background: var(--raised); }
@@ -1008,20 +1008,30 @@ body:has(#context-menu:popover-open) #add-context { background: var(--raised); }
 .context-chip { display: flex; align-items: center; gap: 6px; padding: 5px 9px; max-width: 240px; flex-shrink: 0; border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent); background: color-mix(in srgb, var(--accent) 6%, transparent); color: var(--ink); border-radius: 8px; font-size: 12px; }
 .context-chip span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .context-chip span:last-child { color: var(--muted); }
-.context-bar svg, #context-menu svg, #context-picker svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; flex-shrink: 0; color: var(--body-ink); }
-/* Scoped duotone artwork follows semantic theme tokens, including portalled menus. */
+.context-bar svg:not(.composer-icon), #context-menu svg:not(.composer-icon), #context-picker svg:not(.composer-icon) { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; flex-shrink: 0; color: var(--body-ink); }
+/* One glyph size and one stroke weight for the whole composer row, and one colour:
+   these icons are all neutral. Hue is not what tells them apart. */
 .context-bar .icon-group { border-color: transparent; background: transparent; box-shadow: none; }
-.composer-icon {
-  --composer-icon-color: var(--accent);
-  --composer-icon-ink: color-mix(in srgb, var(--composer-icon-color) 72%, var(--ink));
-  width: 20px; height: 20px; flex-shrink: 0;
+svg.composer-icon { width: 20px; height: 20px; flex-shrink: 0; vertical-align: middle; color: var(--body-ink); }
+/* Menu rows and the split button pair 12px text, so their glyphs step down to 16px. */
+#context-menu > button svg.composer-icon, .composer-operation-menu svg.composer-icon, .composer-split svg.composer-icon { width: 16px; height: 16px; }
+/* The session-info button sits outside .icon-group, so it needs the same box and centring
+   or its glyph sinks below the row baseline and overflows the button. */
+.context-bar .icon-button, .context-bar .composer-session-info {
+  display: grid; place-items: center;
+  width: 28px; height: 28px; min-height: 28px; padding: 0;
+  border: 0; border-radius: 6px; background: transparent;
 }
-.composer-icon[data-tone="success"] { --composer-icon-color: var(--success); }
-.composer-icon[data-tone="danger"] { --composer-icon-color: var(--danger); }
-.composer-icon[data-tone="accent"] { --composer-icon-color: var(--accent-ink); }
-#add-context .composer-icon, .context-bar .icon-button .composer-icon, #context-menu .composer-icon { width: 20px; height: 20px; stroke-width: 1.65; }
-.context-bar .icon-button { width: 28px; height: 28px; min-height: 28px; padding: 4px; border: 0; background: transparent; }
-.context-bar .icon-button:hover:not(:disabled), .context-bar .icon-button:focus-visible { background: var(--raised); }
+/* --raised sits only 1.33:1 from the composer surface in dark and 1.06:1 in light, i.e.
+   effectively invisible. Use the same accent wash the rest of .icon-button already uses. */
+.context-bar .icon-button:hover:not(:disabled), .context-bar .icon-button:focus-visible,
+.context-bar .composer-session-info:hover:not(:disabled), .context-bar .composer-session-info:focus-visible { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.context-bar .icon-button:active:not(:disabled),
+.context-bar .composer-session-info:active:not(:disabled) { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.context-bar .icon-group > *:hover:not(:disabled) .composer-icon,
+.context-bar .composer-session-info:hover:not(:disabled) .composer-icon { color: var(--ink); }
+/* Icons are neutral, so the destructive run action keeps its warning in the text colour. */
+.composer-operation-menu button[data-operation="force"] { color: var(--danger); }
 #context-menu { position: fixed; inset: auto; left: max(8px, 5vw); bottom: 260px; margin: 0; width: 176px; padding: 4px; border: 1px solid var(--line); border-radius: 9px; background: var(--raised); color: var(--ink); box-shadow: 0 8px 24px var(--shadow-mid); }
 #context-menu { overflow: visible; }
 #context-menu > [aria-expanded="true"] { background: color-mix(in srgb, var(--accent) 10%, transparent); }
@@ -1050,7 +1060,8 @@ body:has(#context-menu:popover-open) #add-context { background: var(--raised); }
 #prompt-completion [role="option"]:hover { background: var(--hover); }
 #prompt-completion [aria-selected="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 #prompt-completion button { background: transparent; color: var(--ink); text-align: left; padding: 8px; border: 0; }
-#prompt-completion button:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+#prompt-completion button:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; display: flex; align-items: center; gap: 8px; }
+#prompt-completion button svg.composer-icon { width: 16px; height: 16px; color: var(--muted); }
 #prompt-completion button + button { flex-shrink: 0; color: var(--muted); }
 .skill-invocation { border: 1px solid color-mix(in srgb, var(--info) 45%, var(--line)); border-left: 3px solid var(--info); border-radius: 8px; padding: 4px 12px; margin-bottom: 12px; background: color-mix(in srgb, var(--info) 8%, var(--surface)); }
 .skill-invocation summary { color: var(--ink); font-size: 12px; cursor: pointer; min-height: 44px; }

@@ -20,15 +20,19 @@ test('shared SVG action icons have safe fixed geometry and a consistent grid', (
   assert.throws(() => actionIcon('<script>'), /Unknown action icon/);
 });
 
-test('composer artwork uses safe layered SVGs and semantic colors', () => {
+test('composer artwork is safe, monochrome and inherits currentColor', () => {
   for (const name of ['context', 'image', 'compact', 'target', 'info', 'send', 'stop', 'force', 'steer', 'followUp', 'skill', 'file', 'folder']) {
     const dom = new JSDOM(composerIcon(name));
     const svg = dom.window.document.querySelector('svg');
     assert.equal(svg.getAttribute('viewBox'), '0 0 24 24');
     assert.equal(svg.getAttribute('aria-hidden'), 'true');
     assert.equal(svg.getAttribute('focusable'), 'false');
-    assert.ok(svg.querySelector('[fill-opacity=".16"]'));
-    assert.ok(svg.querySelector('[stroke="var(--composer-icon-color)"]'));
+    assert.equal(svg.getAttribute('stroke'), 'currentColor');
+    assert.equal(svg.getAttribute('stroke-width'), '1.75');
+    // Hue must never distinguish one composer tool from another.
+    assert.equal(svg.getAttribute('data-tone'), null, `${name} must not carry a tone`);
+    assert.doesNotMatch(svg.outerHTML, /fill-opacity|var\(--/, `${name} must stay monochrome`);
+    assert.equal(svg.querySelectorAll('[fill]:not([fill="none"])').length, 0, name);
     assert.equal(svg.querySelectorAll('script, image, use, foreignObject').length, 0);
     dom.window.close();
   }

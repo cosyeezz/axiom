@@ -1,25 +1,34 @@
-// Composer-only artwork: fixed SVG geometry, 24px grid and theme-aware duotones.
+// Composer artwork: 24px grid, 1.75px round strokes, >=1px safe area, r=2 corners.
+// Monochrome throughout — hue never distinguishes one tool from another, because a
+// multi-hue row reads as false hierarchy and carries no meaning for colour-blind users.
+// Destructive intent is carried by button styling and wording, not by icon colour.
 const artwork = Object.freeze({
-  context: ['M6 3h9a2 2 0 0 1 2 2v12H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z', 'M8 7h5M8 10h3M7 20h5', 'M17 12v9m-4.5-4.5h9'],
-  image: ['M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z', 'm3 16 5-5 5 5 3-3 5 5', 'M17 8a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z'],
-  compact: ['M5 10h14v4H5z', 'M5 3H3v18h2M19 3h2v18h-2', 'M12 2v5m-2-2 2 2 2-2M12 22v-5m-2 2 2-2 2 2'],
-  target: ['M20 12a8 8 0 1 1-8-8 8 8 0 0 1 8 8Z', 'M16 12a4 4 0 1 1-4-4', 'm12 12 8-8M16 4h4v4'],
-  info: ['M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z', 'M8 7h8M8 11h3M8 15h2', 'M15 11v6m-2-4h4m-4 2h4'],
-  send: ['m3 11 18-8-8 18-3-7-7-3Z', 'm10 14 11-11', 'm10 14 3 7'],
-  stop: ['M12 3 4 6v6c0 4 4 7 8 9 4-2 8-5 8-9V6l-8-3Z', '', 'M9 9h6v6H9z'],
-  force: ['m8 3-5 5v8l5 5h8l5-5V8l-5-5H8Z', '', 'm9 9 6 6m0-6-6 6'],
-  steer: ['M4 14h6v7H4z', 'M7 14V9a4 4 0 0 1 4-4h9', 'm16 2 4 3-4 3'],
-  followUp: ['M3 4h14v4H3z', 'M3 12h10M3 17h7', 'M17 12v8m-3-3 3 3 3-3'],
-  skill: ['m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z', '', 'M19 3v4m-2-2h4'],
-  file: ['M6 3h8l5 5v13H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z', 'M14 3v5h5', 'M8 12h7M8 16h5'],
-  folder: ['M3 8V5h6l3 3h9v12H3V8Z', 'M3 8h9', 'M7 13h10m-10 3h6'],
+  // 回形针：比裸 + 号更明确「附加上下文」，且与相邻矩形类图形区分。
+  context: ['m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48'],
+  // 图片：沿用原有「边框 + 山景 + 太阳」语汇，按 24 网格重排。
+  image: ['M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z', 'M9 11a2 2 0 1 0 0-4 2 2 0 0 0 0 4', 'm21 15-4-4a2 2 0 0 0-3 0L4 21'],
+  // 压缩：四角向中心收拢（lucide shrink / ISC）。Continue.dev 的「Compact conversation」
+  // 与 Zed 的 `/compact` 用的就是这个语汇；它的笔画间隙足够宽，16px 下不会糊成一团。
+  compact: ['m15 15 6 6m-6-6v4.8m0-4.8h4.8', 'M9 19.8V15m0 0H4.2M9 15l-6 6', 'M15 4.2V9m0 0h4.8M15 9l6-6', 'M9 4.2V9m0 0H4.2M9 9 3 3'],
+  // 目标：同心靶心，圆形按光学规则取 d20 / d12 / d4。
+  target: ['M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20', 'M12 6a6 6 0 1 0 0 12 6 6 0 0 0 0-12', 'M12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4'],
+  info: ['M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20', 'M12 16v-5', 'M12 8h.01'],
+  send: ['M22 2 11 13', 'M22 2l-7 20-4-9-9-4z'],
+  // 安全停止沿用改动前的方块语汇（不再是绿色盾牌），强停沿用叉，两者对齐到同一光学尺寸。
+  stop: ['M7.5 6h9a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 16.5v-9A1.5 1.5 0 0 1 7.5 6z'],
+  force: ['m6 6 12 12M18 6 6 18'],
+  steer: ['M5 19v-8a4 4 0 0 1 4-4h10', 'm15 3 4 4-4 4'],
+  followUp: ['M4 7h16M4 12h9M4 17h6', 'M17 14v6m-3-3 3 3 3-3'],
+  skill: ['M11.52 2.37a.5.5 0 0 1 .96 0L14.06 8.5A2 2 0 0 0 15.5 9.94l6.13 1.58a.5.5 0 0 1 0 .96L15.5 14.06a2 2 0 0 0-1.44 1.44l-1.58 6.13a.5.5 0 0 1-.96 0L9.94 15.5A2 2 0 0 0 8.5 14.06l-6.13-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5z'],
+  file: ['M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z', 'M14 2v4a2 2 0 0 0 2 2h4', 'M8 13h8M8 17h5'],
+  folder: ['M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z'],
 });
-const tones = { image: 'success', target: 'success', stop: 'success', force: 'danger' };
+const tones = Object.freeze({});
 
 export function composerIcon(name) {
   if (!Object.hasOwn(artwork, name)) throw new Error(`Unknown composer icon: ${name}`);
-  const [surface, detail, accent] = artwork[name];
-  return `<svg class="action-icon composer-icon" data-icon="${name}" data-tone="${tones[name] || 'accent'}" viewBox="0 0 24 24" fill="none" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g stroke="var(--composer-icon-ink)"><path d="${surface}" fill="var(--composer-icon-color)" fill-opacity=".16"/>${detail ? `<path d="${detail}"/>` : ''}</g><path d="${accent}" stroke="var(--composer-icon-color)"/></svg>`;
+  const body = artwork[name].map((d) => `<path d="${d}"/>`).join('');
+  return `<svg class="action-icon composer-icon" data-icon="${name}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${body}</svg>`;
 }
 
 export function composerIconNode(name) {

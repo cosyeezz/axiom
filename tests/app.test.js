@@ -709,6 +709,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     const completionKey = (key) => $("prompt").dispatchEvent(new window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
     input("/pony");
     assert.match($("prompt-completion").textContent, /ponytail/);
+    // 补全菜单与「添加上下文」菜单用同一套图形，按条目类型区分。
+    assert.equal($("prompt-completion").querySelector("svg.composer-icon").dataset.icon, "skill");
     const beforeCompletion = requests.filter((req) => req.type === "prompt").length;
     completionKey("Enter");
     assert.equal($("prompt").value, "");
@@ -724,6 +726,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("prompt-completion").hidden, true);
     input("@"); await settle();
     assert.match($("prompt-completion").textContent, /文件夹：src/);
+    assert.equal($("prompt-completion").querySelector("svg.composer-icon").dataset.icon, "folder");
     completionKey("Enter");
     assert.equal($("prompt").required, false, "folder-only reference can submit");
     $("composer").requestSubmit(); paint(); await settle();
@@ -731,6 +734,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     input("参考 @sr"); await settle(); completionKey("ArrowRight"); await settle();
     assert.equal($("prompt").value, '参考 @"src/');
     assert.match($("prompt-completion").textContent, /文件：src\/app.js/);
+    assert.equal($("prompt-completion").querySelector("svg.composer-icon").dataset.icon, "file");
     completionKey("Tab");
     assert.equal($("prompt").value, "参考 ");
     assert.match($("context-chips").textContent, /src\/app.js/);

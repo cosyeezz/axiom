@@ -37,17 +37,39 @@ try:
             page.wait_for_timeout(250)
             icons = page.locator('.context-bar .composer-icon')
             assert icons.count() == 5
-            metrics = icons.evaluate_all('''nodes => nodes.map(svg => ({
-                width: svg.getBoundingClientRect().width,
-                height: svg.getBoundingClientRect().height,
-                stroke: getComputedStyle(svg).strokeWidth,
-                color: getComputedStyle(svg.lastElementChild).stroke,
-                background: getComputedStyle(svg.closest('button')).backgroundColor
-            }))''')
+            metrics = icons.evaluate_all('''nodes => nodes.map(svg => {
+                const box = svg.getBoundingClientRect();
+                const button = svg.closest('button').getBoundingClientRect();
+                return {
+                    width: box.width,
+                    height: box.height,
+                    stroke: getComputedStyle(svg).strokeWidth,
+                    color: getComputedStyle(svg).color,
+                    background: getComputedStyle(svg.closest('button')).backgroundColor,
+                    offsetY: Math.round(((box.top + box.bottom) / 2 - (button.top + button.bottom) / 2) * 10) / 10,
+                    overflow: Math.round(Math.max(0, box.bottom - button.bottom) * 10) / 10,
+                };
+            })''')
             assert all(m['width'] == 20 and m['height'] == 20 for m in metrics), metrics
-            assert all(m['stroke'] == '1.65px' for m in metrics), metrics
+            assert all(m['stroke'] == '1.75px' for m in metrics), metrics
             assert len(set(m['background'] for m in metrics)) == 1, metrics
-            assert all(m['color'] not in ['none', 'rgb(0, 0, 0)'] for m in metrics), metrics
+            # Every glyph is optically centred in its own button, including the one
+            # that lives outside .icon-group, and none bleeds past the button edge.
+            assert all(m['offsetY'] == 0 for m in metrics), metrics
+            assert all(m['overflow'] == 0 for m in metrics), metrics
+            # Toolbar hue stays single: colour is not what tells these tools apart.
+            assert len(set(m['color'] for m in metrics)) == 1, metrics
+            # Hover must be actually perceptible against the composer surface. --raised was
+            # only 1.33:1 in dark and 1.06:1 in light, i.e. invisible.
+            button = page.locator('#compact-session')
+            rest = button.evaluate("el => getComputedStyle(el).backgroundColor")
+            button.hover()
+            page.wait_for_timeout(120)
+            hover = button.evaluate("el => getComputedStyle(el).backgroundColor")
+            assert hover != rest, (theme, rest, hover)
+            assert 'rgba' not in hover or not hover.endswith(', 0)'), (theme, hover)
+            page.mouse.move(0, 0)
+            page.wait_for_timeout(120)
             page.locator('.composer-wrap').screenshot(path=str(artifacts / f'{theme}.png'))
         page.set_viewport_size({'width': 390, 'height': 844})
         page.wait_for_timeout(250)
