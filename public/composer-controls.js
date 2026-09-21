@@ -94,8 +94,8 @@ export function mountComposerControls({ state, providers, models, levels, select
   const labels = { stop: '等待安全点后停止', force: '立即强制停止', steer: '发送介入指令', followUp: '当前轮结束后发送' };
   for (const name of Object.keys(labels)) {
     const option = document.createElement('button'); option.type = 'button'; option.append(icon(name), document.createTextNode(name));
-    option.title = labels[name]; option.setAttribute('role', 'menuitemradio'); option.dataset.operation = name;
-    option.onclick = () => { operation = name; close(menu); refresh(); }; menu.append(option);
+    option.title = labels[name]; option.setAttribute('role', 'menuitem'); option.dataset.operation = name;
+    option.onclick = () => { operation = name; close(menu); refresh(); if (state().busy) primary.click(); }; menu.append(option);
   }
   arrow.onclick = () => open(menu, split);
   primary.onclick = () => {
@@ -116,9 +116,13 @@ export function mountComposerControls({ state, providers, models, levels, select
     primary.replaceChildren(icon(current.busy ? operation : 'send'), document.createTextNode(current.busy ? operation : '发送')); primary.title = current.busy ? labels[operation] : '发送消息';
     const underlying = current.busy ? $(operation === 'stop' ? 'stop' : operation === 'force' ? 'force-stop' : operation === 'steer' ? 'send-steer' : 'send-followup') : $('send');
     primary.disabled = underlying.disabled || (current.busy && operation === 'stop' && current.safeStopping);
-    $('composer-action-help').textContent = current.busy ? `Enter ${operation === 'followUp' ? 'followUp' : 'steer'} · 按钮执行 ${operation} · 双按 Esc stop` : 'Enter 发送 · 运行操作从右侧下拉选择 · 双按 Esc stop';
+    $('composer-action-help').textContent = current.busy ? `Enter ${operation === 'followUp' ? 'followUp' : 'steer'} · 按钮执行 ${operation} · 双按 Esc stop` : 'Enter 发送 · 右侧下拉点击即执行 · 双按 Esc stop';
     arrow.disabled = !current.busy;
-    for (const item of menu.children) item.setAttribute('aria-checked', String(item.dataset.operation === operation));
+    for (const item of menu.children) {
+      const name = item.dataset.operation;
+      const target = $(name === 'stop' ? 'stop' : name === 'force' ? 'force-stop' : name === 'steer' ? 'send-steer' : 'send-followup');
+      item.disabled = !current.busy || target.disabled || (name === 'stop' && current.safeStopping);
+    }
   }
 
   window.addEventListener('resize', () => { for (const [panel, anchor] of [[modelPanel, trigger], [menu, split]]) if (panel.matches(':popover-open')) position(panel, anchor); });

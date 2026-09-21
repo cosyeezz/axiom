@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-20 输入区运行操作下拉点击即执行
+
+- 分支：`feat/dropdown-instant-action`。
+- 原因：下拉项原先只切换主按钮操作，用户还需再次点击主按钮才能生效。
+- 决策：点击 stop / force / steer / followUp 后关闭菜单并立即复用主按钮执行入口；保留强停确认、队列提交以及主按钮重用行为。菜单使用 menuitem 动作语义，并同步底层禁用状态与安全停止状态，避免不可用操作及空闲时误发送。沿用现有设计样式与 token，不新增视觉样式。
+- 涉及文件：`public/composer-controls.js`、`public/index.html`、`tests/composer-controls.test.js`、`README.md`、`devlog.md`。
+- 验证：定向测试 6/6 通过；全量 `npm test` 878 项，876 通过、2 跳过、0 失败；`git diff --check` 通过。独立工作区初次测试缺少 jsdom，执行 `npm ci --ignore-scripts` 后重新验证通过。
+
 ## 2026-09-20 发送时同步清空输入框
 
 - 分支：`feat/composer-clear`。
