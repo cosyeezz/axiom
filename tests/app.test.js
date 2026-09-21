@@ -1948,7 +1948,9 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     await settle();
     assert.equal($("session-compaction"), null, "current-session compaction settings are removed");
     const editor = $("create-compaction");
-    const selects = editor.querySelectorAll("select");
+    const providerSelect = editor.querySelector('[data-model-kind="provider"]');
+    const selects = [editor.querySelector('[data-model-kind="model"]'), editor.querySelector('[data-model-kind="thinking"]')];
+    assert.equal(providerSelect.value, "", "compaction provider defaults to following the main model");
     assert.equal(selects[0].value, "", "compaction model defaults to following the main model");
     $("provider").value = "other";
     $("provider").dispatchEvent(new window.Event("change"));
@@ -1962,6 +1964,9 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     $("model").dispatchEvent(new window.Event("change"));
     await settle();
     assert.equal(requests.findLast((r) => r.type === "session.configure").compaction, undefined);
+    providerSelect.value = "other";
+    providerSelect.dispatchEvent(new window.Event("change"));
+    assert.ok([...selects[0].options].every((option) => option.value.startsWith("other/")), "compaction models are filtered by provider");
     selects[0].value = "other/child";
     selects[0].dispatchEvent(new window.Event("change"));
     assert.deepEqual([...selects[1].options].map((option) => option.value), ["off", "medium", "high"], "thinking levels follow the compaction model");

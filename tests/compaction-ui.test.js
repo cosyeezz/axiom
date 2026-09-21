@@ -51,6 +51,11 @@ test("手动压缩必须确认，携带所选模式，切会话后拒绝旧确�
     $("compact-session").click();
     assert.equal($("manual-compaction").open, true);
     assert.equal(calls.length, 0);
+    $("manual-compaction-mode").dispatchEvent(new w.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    const menu = $("manual-compaction").querySelector('[role="menu"]');
+    assert.ok(menu, "manual mode uses the shared custom picker");
+    assert.equal(menu.querySelectorAll(".ax-mp-star").length, 0, "modes cannot be favorited");
+    menu.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     $("manual-compaction-mode").value = "sync";
     $("manual-compaction-mode").dispatchEvent(new w.Event("change"));
     assert.match($("manual-compaction-hint").textContent, /安全停止/);

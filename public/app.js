@@ -89,6 +89,7 @@ let modelFavorites = { provider: [], model: [], thinking: [] };
 // 思考收藏键带模型上下文，符合后端 provider/model:level 契约（model id 含冒号时后端按最后一个冒号切分）；
 // 无模型上下文（“默认主代理模型”“跟随主代理”等空值）返回空串，菜单不提供星标。
 function favoriteKey(kind, value, select) {
+  if (!["provider", "model", "thinking"].includes(kind)) return "";
   if (kind !== "thinking") return value;
   const model = select.closest(".selectors")?.querySelector('select[data-model-kind="model"]')?.value;
   return model ? `${model}:${value}` : "";
@@ -107,6 +108,7 @@ for (const id of ["provider", "model", "thinking", "subagent-provider", "subagen
   $(id).dataset.modelKind = kind;
   modelPicker.enhance($(id), kind);
 }
+modelPicker.enhance($("manual-compaction-mode"), "mode");
 const modelManager = initModelManager({ root: $("models-panel"), request, onSaved: refreshModelCatalog });
 const serviceUi = initServiceSettings({ request, isReady: () => connected });
 let compactions = [], mainItems = [];
@@ -2250,10 +2252,15 @@ function compactionEditor(initial, mainModel) {
   keep.value = initial.asyncKeepRecentTokens;
   const syncKeep = field("同步压缩保留 tokens", Object.assign(document.createElement("input"), { type: "number", min: "1", max: "100000000" }));
   syncKeep.value = initial.syncKeepRecentTokens;
+  const provider = field("压缩供应商", document.createElement("select"));
+  provider.dataset.modelKind = "provider";
+  modelPicker.enhance(provider, "provider");
+  const initialProvider = models.find((m) => m.key === initial.model)?.provider || initial.model?.split("/")[0] || "";
+  options(provider, [["", "跟随主代理"], ...providerEntries()], initialProvider);
   const model = field("压缩模型", document.createElement("select"));
   model.dataset.modelKind = "model";
   modelPicker.enhance(model, "model");
-  options(model, [["", "跟随主代理模型"], ...modelEntries()], initial.model || "");
+  options(model, initialProvider ? modelEntries(initialProvider) : [["", "跟随主代理模型"]], initial.model || "");
   const thinking = field("压缩思考等级", document.createElement("select"));
   thinking.dataset.modelKind = "thinking";
   modelPicker.enhance(thinking, "thinking");
@@ -2284,6 +2291,11 @@ function compactionEditor(initial, mainModel) {
     const levels = effectiveLevels(model.value || mainModel());
     const current = thinking.value || initial.thinking;
     options(thinking, levels.map((v) => [v, v]), levels.includes(current) ? current : "off");
+  };
+  provider.onchange = () => {
+    const entries = provider.value ? modelEntries(provider.value) : [["", "跟随主代理模型"]];
+    options(model, entries, entries.some(([key]) => key === model.value) ? model.value : entries[0]?.[0] || "");
+    fillThinking();
   };
   model.onchange = fillThinking;
   fillThinking();
@@ -4620,7 +4632,7 @@ function createAgentPicker(role, title, catalog, initial) {
     node.id = `create-${role}-${name}`;
     node.title = labelText;
     label.append(text, node);
-    if (["provider", "model", "thinking"].includes(name)) {
+    if (["provider", "model", "thinking", "mode"].includes(name)) {
       node.dataset.modelKind = name;
       modelPicker.enhance(node, name);
     }
