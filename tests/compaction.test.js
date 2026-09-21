@@ -314,6 +314,11 @@ test("真实摘要 JSON：原文引用核验，伪造引文与非 JSON 整份拒
     assert.match(result.summary, /已验证输出/);
     assert.equal(result.taskState.evidence[0].sources[0].verificationStatus, "verified_original");
     assert.deepEqual(result.taskState.evidence[0].sources[0].range, [0, Buffer.byteLength("真实输出")]);
+    response = `\`\`\`json\n${JSON.stringify(state)}\n\`\`\``;
+    const fenced = await summarizeWithPiSession(options);
+    assert.deepEqual(fenced.taskState, result.taskState);
+    response = 'null';
+    await assert.rejects(summarizeWithPiSession(options), { code: 'SUMMARY_SCHEMA_INVALID' });
     const previousState = structuredClone(result.taskState);
     previousState.constraints = [{ id: 'c1', text: '禁止推送', status: 'active', sources: [] }];
     state.constraints = [{ id: 'c1', text: '允许推送', status: 'active', sources: [{ ref: 'm2', quote: '允许推送' }] }];
@@ -323,7 +328,7 @@ test("真实摘要 JSON：原文引用核验，伪造引文与非 JSON 整份拒
     await assert.rejects(summarizeWithPiSession({ ...options, previousState, evidence: [...options.evidence, { entryId: 'm2', role: 'toolResult', text: '允许推送' }] }), { code: 'SUMMARY_AUTHORITY_REQUIRED' });
     state.constraints = [];
     state.evidence[0].sources[0].quote = "编造输出";
-    response = JSON.stringify(state);
+    response = `\`\`\`json\n${JSON.stringify(state)}\n\`\`\``;
     await assert.rejects(summarizeWithPiSession(options), /SUMMARY_INVALID/);
     response = "ok";
     await assert.rejects(summarizeWithPiSession(options), /SUMMARY_INVALID/);
@@ -1397,6 +1402,8 @@ test("run 记录：步骤时间线与流式尾部随状态下发，终态保留�
 
 test("run 记录：失败原因落在 run.error，历史只留最近 5 条", async () => {
   const { session, cleanup } = await createTestSession();
+  const diagnosticDir = mkdtempSync(join(tmpdir(), 'axiom-diagnostic-test-'));
+  session.sessionManager.getSessionFile = () => join(diagnosticDir, 'session.jsonl');
   let compaction;
   try {
     seed(session, [userMsg(big("a")), assistantMsg(big("b")), userMsg(big("c"))]);
@@ -1418,9 +1425,17 @@ test("run 记录：失败原因落在 run.error，历史只留最近 5 条", asy
     assert.ok(failed, "失败的 run 仍可回看");
     assert.match(failed.error, /boom/);
     assert.ok(!failed.error.includes("sk-secret"), "错误已脱敏");
+    const diagnosticText = readFileSync(`${session.sessionManager.getSessionFile()}.compaction-diagnostics.json`, 'utf8');
+    const diagnostics = JSON.parse(diagnosticText);
+    assert.equal(diagnostics.length, 5);
+    assert.equal(diagnostics.at(-1).errorCode, 'SUMMARY_REQUEST_FAILED');
+    assert.ok(!diagnosticText.includes('sk-secret'));
+    assert.ok(!diagnosticText.includes('boom'));
+    assert.ok(diagnostics.at(-1).steps.some(step => step.step === 'failed'));
   } finally {
     compaction?.dispose();
     cleanup();
+    rmSync(diagnosticDir, { recursive: true, force: true });
   }
 });
 

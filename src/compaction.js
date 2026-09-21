@@ -21,6 +21,7 @@ import { confirmDurableAppend } from "./history-journal.js";
 import { STATE_FIELDS, validateTaskState, inheritTaskState, renderStateSections } from "./compaction-state.js";
 import { selectSummaryInput } from "./compaction-input.js";
 import { requestBudget, compactionError } from "./compaction-budget.js";
+import { parseTaskStateOutput } from "./compaction-output.js";
 import { contentHash } from "./raw-history.js";
 import { wrapUsageStream } from "./usage-stream.js";
 import { createJiti } from "jiti";
@@ -342,8 +343,7 @@ export async function summarizeWithPiSession({ messages, previousSummary, model,
     if (last?.stopReason !== "stop" || !summary)
       throw new Error(`Summarization failed (stopReason=${last?.stopReason ?? "none"}): ${describeCompactionError(last?.errorMessage || (!summary ? "模型未返回摘要正文" : "模型未正常完成摘要"))}`);
     if (evidence) {
-      let state;
-      try { state = JSON.parse(summary); } catch { throw compactionError("SUMMARY_INVALID", "SUMMARY_INVALID: expected JSON"); }
+      let state = parseTaskStateOutput(summary);
       const sources = new Map(evidence.map(source => [source.entryId, source]));
       for (const field of STATE_FIELDS) for (const item of state[field] ?? []) item.sources = (item.sources ?? []).map(source => {
         if (source.contentHash) {
@@ -506,6 +506,21 @@ export function createBackgroundCompaction({
       // ready 是“算完了等安全点应用”，还没结束；其余非 summarizing 阶段都是终态。
       if (phase !== "summarizing" && phase !== "ready") {
         activeRun.endedAt = Date.now();
+        // Persist bounded, content-free diagnostics beside the session. Never
+        // write model output, prompts, quotes or provider error text here.
+        try {
+          const file = session.sessionManager.getSessionFile?.();
+          if (file) {
+            const records = runs.filter(run => run.endedAt).map(run => ({
+              id: run.id, status: run.status, startedAt: run.startedAt, endedAt: run.endedAt,
+              model: run.model, thinking: run.thinking, trigger: run.trigger,
+              errorCode: run.errorCode ?? null, errorAction: run.errorAction ?? null,
+              outputChars: run.stream.chars, result: run.result,
+              steps: run.steps.map(({ step, at }) => ({ step, at })),
+            }));
+            writeFileSync(`${file}.compaction-diagnostics.json`, JSON.stringify(records, null, 2), { mode: 0o600 });
+          }
+        } catch { /* Diagnostics must not change commit or failure semantics. */ }
         activeRun = null;
       }
     }

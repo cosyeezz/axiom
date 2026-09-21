@@ -18,6 +18,7 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  */
 const MODULE_INFO = {
   "src/compaction-input.js": "摘要预算视图，UTF-8首尾范围与省略标记，不用于原文归档",
+  "src/compaction-output.js": "摘要 JSON 边界解析与引用处理前的结构预校验",
   "src/compaction-budget.js": "统一完整请求预算、高低水位及压缩错误分级",
   "src/raw-history.js": "完整原文耐久归档、身份幂等与恢复校验",
   "src/history-journal.js": "磁盘 journal 原文投影、持久屏障与提交确认",
