@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/20 21:48:24）
+# Axiom 多级代码索引（生成于 2026/9/20 21:53:38）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -88,7 +88,7 @@
 | src/update.js | 41 | 检查更新：本地安装（提交 SHA/版本）比对 GitHub 公开仓库 master，npm 安装实例可自动重装 | repo, npmSpec, commitFile, validateCommit |
 | src/usage-backfill.js | 23 | 历史用量时间分界与指纹去重 | backfillEntries |
 | src/usage-service.js | 56 | 用量服务与限流配置 | UsageService |
-| src/usage-store.js | 294 | 请求明细持久化与账单聚合 | TABLES, INDEXES, OPEN_STATUS, TOKEN_COLUMNS |
+| src/usage-store.js | 295 | 请求明细持久化与账单聚合 | TABLES, INDEXES, OPEN_STATUS, TOKEN_COLUMNS |
 | src/usage-stream.js | 75 | 模型请求流审计与限流包装 | wrapUsageStream |
 | tests/activity-groups-ui.py | 205 | node --test 测试（npm test） | activityHistory, sessions |
 | tests/answer-tags.test.js | 56 | node --test 测试（npm test） | open |
@@ -149,7 +149,7 @@
 | tests/helpers/model-concurrency-child.mjs | 93 | node --test 测试（npm test） | barrier, runOpponent |
 | tests/helpers/public-source.js | 16 | node --test 测试（npm test） | publicSource, event, appliedSeq, rawEntryIds |
 | tests/helpers/session-page.js | 186 | node --test 测试（npm test） | CONFIG, makeRecords, html, pickerSource |
-| tests/history-journal.test.js | 66 | node --test 测试（npm test） | - |
+| tests/history-journal.test.js | 82 | node --test 测试（npm test） | - |
 | tests/history-page-cache.test.js | 71 | node --test 测试（npm test） | md, records |
 | tests/history-projection.test.js | 137 | node --test 测试（npm test） | fakeSource, mainRecord, subRecord, delegateAnchor |
 | tests/history-reading.test.js | 136 | node --test 测试（npm test） | pageState |
@@ -196,7 +196,7 @@
 | tests/question-preview.mjs | 36 | node --test 测试（npm test） | factory, sessions, app, port |
 | tests/question-ui.test.js | 99 | node --test 测试（npm test） | source |
 | tests/questions.test.js | 110 | node --test 测试（npm test） | params |
-| tests/raw-history.test.js | 92 | node --test 测试（npm test） | - |
+| tests/raw-history.test.js | 109 | node --test 测试（npm test） | - |
 | tests/realtime-transport.test.js | 125 | node --test 测试（npm test） | rig, flush |
 | tests/recall.test.js | 208 | node --test 测试（npm test） | user, assistant, thinking, fixture |
 | tests/remote-ui.py | 51 | node --test 测试（npm test） | - |
@@ -262,7 +262,7 @@
 | tests/usage-extension.test.js | 14 | node --test 测试（npm test） | - |
 | tests/usage-service.test.js | 25 | node --test 测试（npm test） | - |
 | tests/usage-store.test.js | 283 | node --test 测试（npm test） | withStore, usage, complete |
-| tests/usage-stream.test.js | 62 | node --test 测试（npm test） | createStream, model, message, fixture |
+| tests/usage-stream.test.js | 63 | node --test 测试（npm test） | createStream, model, message, fixture |
 | tests/workspace-isolation.test.js | 80 | node --test 测试（npm test） | - |
 | tests/workspace-picker.test.js | 99 | node --test 测试（npm test） | - |
 | tests/workspace-tabs.test.js | 284 | node --test 测试（npm test） | appSource, pickerSource, modelSources, html |
@@ -1851,7 +1851,7 @@
 | backfill | method | 33 |
 | close | method | 54 |
 
-### src/usage-store.js（294 行） — 请求明细持久化与账单聚合
+### src/usage-store.js（295 行） — 请求明细持久化与账单聚合
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1863,17 +1863,17 @@
 | number | const | 102 |
 | UsageStore | class | 104 |
 | constructor | method | 108 |
-| begin | method | 122 |
-| admit | method | 133 |
-| attempt | method | 141 |
-| finish | method | 153 |
-| importHistorical | method | 174 |
-| recordGateEvent | method | 191 |
-| billingBySession | method | 200 |
-| billingGlobal | method | 219 |
-| listRequests | method | 238 |
-| openRequests | method | 272 |
-| recentGateEvents | method | 283 |
+| begin | method | 123 |
+| admit | method | 134 |
+| attempt | method | 142 |
+| finish | method | 154 |
+| importHistorical | method | 175 |
+| recordGateEvent | method | 192 |
+| billingBySession | method | 201 |
+| billingGlobal | method | 220 |
+| listRequests | method | 239 |
+| openRequests | method | 273 |
+| recentGateEvents | method | 284 |
 
 ### src/usage-stream.js（75 行） — 模型请求流审计与限流包装
 
@@ -3249,7 +3249,7 @@
 | usage | function | 24 |
 | complete | function | 38 |
 
-### tests/usage-stream.test.js（62 行） — node --test 测试（npm test）
+### tests/usage-stream.test.js（63 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|

@@ -7,6 +7,23 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRawArchive, contentHash } from '../src/raw-history.js';
 
+test('multimodal, cancelled and custom entries survive reopen without field loss', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'axiom-multimodal-'));
+  const options = { sourceJournalId: 'j', sourceSessionId: 's' };
+  const entries = [
+    { id: 'image', type: 'message', message: { role: 'user', content: [{ type: 'text', text: '图片' }, { type: 'image', data: 'AAECAw==', mimeType: 'image/png' }] } },
+    { id: 'cancelled', parentId: 'image', type: 'message', message: { role: 'assistant', stopReason: 'aborted', errorMessage: 'cancelled', content: [{ type: 'thinking', thinking: 'partial', thinkingSignature: 'signature' }] } },
+    { id: 'custom', parentId: 'cancelled', type: 'custom_message', customType: 'subagent-notice', content: 'unverified report', display: true, details: { agentId: 'child' } },
+  ];
+  try {
+    let archive = await createRawArchive(dir, options);
+    archive.reconcile(entries); await archive.close();
+    archive = await createRawArchive(dir, options);
+    try { assert.deepEqual(archive.records().map(record => record.sourceEntry), entries); }
+    finally { await archive.close(); }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('another process cannot acquire an archive writer held by this process', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'axiom-owner-process-'));
   const archive = await createRawArchive(dir, { sourceJournalId: 'j', sourceSessionId: 's' });

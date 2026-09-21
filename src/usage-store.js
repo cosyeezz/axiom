@@ -109,6 +109,7 @@ export class UsageStore {
     this.#database = database;
     database.exec(Object.values(TABLES).join(";\n"));
     database.exec(INDEXES);
+    if (!database.prepare('PRAGMA table_info(llm_requests)').all().some(column => column.name === 'usage_known')) database.exec('ALTER TABLE llm_requests ADD COLUMN usage_known INTEGER NOT NULL DEFAULT 0');
   }
 
   #sql(text) {
@@ -150,7 +151,7 @@ export class UsageStore {
 
   // 请求终结：写入结果与用量。usage 形状同 pi-ai 的 Usage（可缺字段）。
   // 终态首写为准，迟到的取消/失败通知不得覆盖已记费用。
-  finish(requestId, { status = "error", error = null, usage = null, endedAt = Date.now() } = {}) {
+  finish(requestId, { status = "error", error = null, usage = null, usageKnown = !!usage, endedAt = Date.now() } = {}) {
     const tokens = Object.fromEntries(Object.keys(TOKEN_COLUMNS).map((key) => [key, number(usage?.[key])]));
     const cost = Object.fromEntries(Object.keys(COST_COLUMNS).map((key) => [key, number(usage?.cost?.[key])]));
     // 有 usage 但 cost.total 不是有限数 → 该请求未计价，单独标记；无 usage 不算未计价（失败请求本就没有用量）。
@@ -160,13 +161,13 @@ export class UsageStore {
          status = ?, error = ?, ended_at = ?,
          input = ?, output = ?, cache_read = ?, cache_write = ?, cache_write_1h = ?, reasoning = ?, total_tokens = ?,
          cost_input = ?, cost_output = ?, cost_cache_read = ?, cost_cache_write = ?, cost_total = ?,
-         unpriced = ?
+         unpriced = ?, usage_known = ?
        WHERE request_id = ? AND status = 'running'`,
     ).run(
       status, error, endedAt,
       tokens.input, tokens.output, tokens.cacheRead, tokens.cacheWrite, tokens.cacheWrite1h, tokens.reasoning, tokens.totalTokens,
       cost.input, cost.output, cost.cacheRead, cost.cacheWrite, cost.total,
-      unpriced, requestId,
+      unpriced, usageKnown ? 1 : 0, requestId,
     );
   }
 
@@ -248,7 +249,7 @@ export class UsageStore {
               cache_write_1h AS cacheWrite1h, reasoning, total_tokens AS totalTokens,
               cost_input AS costInput, cost_output AS costOutput,
               cost_cache_read AS costCacheRead, cost_cache_write AS costCacheWrite,
-              cost_total AS costTotal, unpriced,
+              cost_total AS costTotal, unpriced, usage_known AS usageKnown,
               queued_at AS sortAt
          FROM llm_requests
         WHERE (? IS NULL OR session_id = ?)

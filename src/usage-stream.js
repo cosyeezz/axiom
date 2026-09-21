@@ -14,11 +14,11 @@ export function wrapUsageStream(original, { service, identity = {}, createStream
       };
       const failure = error => ({ role: "assistant", content: [], api: model.api, provider: model.provider,
         model: model.id, timestamp: Date.now(), stopReason: options.signal?.aborted ? "aborted" : "error",
-        errorMessage: error?.message ?? String(error), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0,
+        errorMessage: error?.message ?? String(error), usageKnown: false, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0,
           totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } });
       const record = message => safe(() => service.store.finish(requestId, {
         status: message.stopReason === "aborted" ? "aborted" : message.stopReason === "error" ? "error" : "ok",
-        usage: message.usage, error: message.errorMessage ?? null,
+        usage: message.usage, usageKnown: message.usageKnown ?? !!message.usage, error: message.errorMessage ?? null,
       }));
       try {
         requestId = await safe(() => service.store.begin({ ...identity, provider: model.provider, model: model.id, api: model.api }));

@@ -34,6 +34,7 @@ test("同步抛错产生可解析的错误终态", async () => {
   const f = fixture(() => { throw new Error("provider failed"); });
   assert.equal((await f.run(model, {}).result()).errorMessage, "provider failed");
   await Promise.resolve(); assert.equal(f.released(), 1);
+  assert.equal(f.records[0].usageKnown, false);
 });
 test("缺失终态不会等待源result永久挂起", async () => {
   const f = fixture(() => { const stream = createStream(); stream.end(); return stream; });
