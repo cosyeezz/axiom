@@ -100,7 +100,7 @@ test("移除应用内标签后侧栏切换保留草稿，不删除或取消会�
     assert.equal(page.requests.some(r => ["session.delete", "session.cancel"].includes(r.type)), false);
     await page.window.eval('switchSession(() => request("session.attach", { sessionId: "s-tab" }))');
     assert.equal(page.$("prompt").value, "B的草稿");
-  } finally { STATES.delete("s-tab"); page.dom.window.close(); }
+  } finally { await page.drain(); STATES.delete("s-tab"); page.dom.window.close(); }
 });
 
 test("快照只在会话 hash 变化时更新 History，不重复触发同文档导航", async () => {

@@ -45,6 +45,7 @@ export function assertPromptImages(images) {
 export const compactionDefaults = {
   enabled: true, tokenThreshold: 100000, percentThreshold: 50,
   model: null, thinking: "off", keepRecentTokens: 5000,
+  syncKeepRecentTokens: 20000, asyncKeepRecentTokens: 5000,
 };
 export const compaction = z.object({
   enabled: z.boolean(),
@@ -53,6 +54,8 @@ export const compaction = z.object({
   model: id.nullable(),
   thinking: thinking.unwrap(),
   keepRecentTokens: z.number().int().positive().max(100000000),
+  syncKeepRecentTokens: z.number().int().positive().max(100000000).optional(),
+  asyncKeepRecentTokens: z.number().int().positive().max(100000000).optional(),
 }).strict().refine((value) => !value.enabled || value.tokenThreshold !== null || value.percentThreshold !== null,
   "启用自动压缩时至少设置一个触发阈值");
 // 压缩等级是偏好，不应阻断首次建会话/恢复/换模型；不兼容时使用模型最低支持等级。
@@ -336,6 +339,7 @@ export const command = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("session.compaction.messages"), sessionId: id, compactionId: z.string().min(1).max(256) }).strict(),
   // 取消当前在途的后台摘要（压缩进程面板的取消按钮）；runId 用于对得上哪一次，防陈旧 id 误杀新任务。
   z.object({ id, type: z.literal("session.compaction.cancel"), sessionId: id, runId: z.string().min(1).max(256).optional() }).strict(),
+  z.object({ id, type: z.literal("session.compaction.start"), sessionId: id, mode: z.enum(["sync", "async"]) }).strict(),
   // 运行中重新发现项目技能（composer 打开技能列表时调用）；返回 { skills: [{name, description}] }。
   z.object({ id, type: z.literal("session.skills.refresh"), sessionId: id }).strict(),
   z.object({ id, type: z.literal("session.close"), sessionId: id }).strict(),

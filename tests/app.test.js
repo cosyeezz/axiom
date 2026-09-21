@@ -1937,7 +1937,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     assert.equal(probe.valid(), true, "decimal percent within range is valid");
     assert.deepEqual(probe.read().percentThreshold, 55.5);
     probeFields()[2].value = "2.5"; fireProbe();
-    assert.match(probe.error(), /保留最近 tokens 需为大于 0 的整数/);
+    assert.match(probe.error(), /保留 tokens 需为 1–100000000 的整数/);
     probeFields()[2].value = ""; fireProbe();
     assert.deepEqual(probe.read().keepRecentTokens, 5000, "empty keep falls back to the default");
     probeFields()[0].value = ""; probeFields()[1].value = ""; fireProbe();

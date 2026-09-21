@@ -524,17 +524,18 @@ export function createBackgroundCompaction({
     });
   }
 
-  function onTurnEnd() {
-    if (disposed || pending || !current.enabled || Date.now() < retryAt) return;
+  function onTurnEnd({ manual = false, mode = "async" } = {}) {
+    if (disposed || pending || (!manual && (!current.enabled || Date.now() < retryAt))) return;
+    const keepRecentTokens = mode === "sync" ? (current.syncKeepRecentTokens ?? compactionDefaults.syncKeepRecentTokens) : (current.asyncKeepRecentTokens ?? current.keepRecentTokens);
     try {
       // 阈值判断优先用 SDK 的 getContextUsage（感知「压缩后 usage 过期」并返回 null）；
       // 拿不到真实 usage 时回退到 chars/4 估算。
       const usage = session.getContextUsage?.();
       const tokens = usage?.tokens ?? contextTokens(session.messages);
       const contextWindow = usage?.contextWindow ?? session.model?.contextWindow ?? 0;
-      if (!overCompactionThreshold(tokens, contextWindow, current)) return;
+      if (!manual && !overCompactionThreshold(tokens, contextWindow, current)) return;
       const branch = session.sessionManager.getBranch();
-      const preparation = prepareBackgroundCompaction(branch, current.keepRecentTokens);
+      const preparation = prepareBackgroundCompaction(branch, keepRecentTokens);
       if (!preparation || preparation.messagesToSummarize.length === 0) return;
       // 校验语料：与摘要模型所见逐字一致（同一渲染函数、同一消息内容）；快照与引文行号都指向这份文本
       const corpus = serializeConversation(convertToLlm(preparation.messagesToSummarize));
@@ -546,7 +547,8 @@ export function createBackgroundCompaction({
           contextWindow,
           tokenThreshold: current.tokenThreshold ?? null,
           percentThreshold: current.percentThreshold ?? null,
-          keepRecentTokens: current.keepRecentTokens ?? null,
+          keepRecentTokens,
+          manual, mode,
           estimated: usage?.tokens == null, // 真实 usage 不可用时是 chars/4 估算
         },
       });
@@ -554,6 +556,7 @@ export function createBackgroundCompaction({
       note(run, "plan", `待摘要 ${preparation.messagesToSummarize.length} 条消息 · 语料 ${corpus.length.toLocaleString("en-US")} 字符${preparation.previousSummary ? " · 含上轮摘要" : ""}`);
       const flight = {
         promise: runFlight(preparation, run),
+        manual, mode,
         corpus,
         previousSummary: preparation.previousSummary,
         firstKeptEntryId: preparation.firstKeptEntryId,
@@ -610,12 +613,12 @@ export function createBackgroundCompaction({
   }
 
   async function maybeApply() {
-    if (disposed || !pending || !pending.settled || !current.enabled) return null;
+    if (disposed || !pending || !pending.settled || (!pending.manual && !current.enabled)) return null;
     const flight = pending;
     pending = null; // 先占位再验证，防重入双写
     controller = null;
     const skip = (message) => { report("skipped", message); return null; };
-    if (disposed || !current.enabled || !isFresh(flight)) return skip("历史已变化，本次摘要作废，保留原文");
+    if (disposed || (!flight.manual && !current.enabled) || !isFresh(flight)) return skip("历史已变化，本次摘要作废，保留原文");
     try {
       const summary = (flight.value.summary ?? "").trim();
       if (!summary) return skip("摘要为空，保留原文");
@@ -690,6 +693,24 @@ export function createBackgroundCompaction({
   };
 
   return {
+    async runNow(mode = "async") {
+      if (disposed) throw new Error("会话已关闭");
+      if (!["sync", "async"].includes(mode)) throw new Error("未知压缩模式");
+      if (pending) throw new Error("已有压缩任务，请等待完成或先取消");
+      onTurnEnd({ manual: true, mode });
+      const flight = pending;
+      if (!flight) throw new Error("当前历史不足以压缩，或压缩无法启动；请检查保留 tokens 与压缩模型配置");
+      if (mode === "sync") {
+        await flight.promise.catch(() => {});
+        await maybeApply();
+      } else {
+        // 没有下一轮请求时也在空闲安全点应用；运行中由 prepare hook 接管。
+        flight.promise.then(() => {
+          if (!session.isStreaming) return maybeApply();
+        }, () => {}).catch(() => {});
+      }
+      return statusPayload();
+    },
     onTurnEnd,
     maybeApply,
     cancel, // pi wrapper 在会话 abort / dispose 时调用，中断后台真实 LLM

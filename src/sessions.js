@@ -1375,7 +1375,7 @@ export class Sessions {
 
   async goalAction(id, action, text) {
     const item = await this.ensureLoaded(id);
-    if (item.closing || item.configuring || item.cancelling) throw new Error("会话正在切换状态");
+    if (item.compacting || item.closing || item.configuring || item.cancelling) throw new Error("会话正在切换状态");
     // 退出目标模式：只允许在没有在飞工作时发生（UI 需先暂停并等安全点落定）。
     // 清掉目标记录回到普通会话，历史与产物原样保留；goal_* 工具停用，通知冻结到用户下次显式输入。
     if (action === "exit") {
@@ -1432,7 +1432,7 @@ export class Sessions {
   }
 
   async advanceGoal(item) {
-    if (item.closing || item.cancelling || item.configuring || item.status !== "idle" || item.notifying) return;
+    if (item.compacting || item.closing || item.cancelling || item.configuring || item.status !== "idle" || item.notifying) return;
     if (hasRunningTasks(item)) return;
     let goal = item.goal.snapshot();
     if (!goal) return;
@@ -1490,7 +1490,7 @@ export class Sessions {
   }
 
   async deliverTaskNotifications(item) {
-    if (item.notifying || item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item) || item.configuring) return;
+    if (item.compacting || item.notifying || item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item) || item.configuring) return;
     const jobs = [...item.tasks.jobs.values()].filter((job) => job.resultId && !job.notified)
       .map(({ id, resultId, status }) => ({ id, resultId, status }));
     if (!jobs.length) return;
@@ -1813,7 +1813,7 @@ export class Sessions {
 
   async configure(id, selection) {
     const item = await this.ensureLoaded(id);
-    if (!["idle", "running"].includes(item.status) || item.configuring) throw new Error("Session is busy");
+    if (!["idle", "running"].includes(item.status) || item.configuring || item.compacting) throw new Error("Session is busy");
     if (["capabilities", "subagentCapabilities", "retry"].some((key) => Object.hasOwn(selection, key))) {
       if (!this.canReconfigure(item)) throw new Error("能力与重试配置仅可在首次发送消息前修改");
       item.configuring = true;
@@ -1912,7 +1912,7 @@ export class Sessions {
   // 可续判定在启动前同步做完：不可续时直接报错给回执，不留 running → idle 的空转。
   async retry(id) {
     const item = this.get(id).loaded ? this.get(id) : await this.ensureLoaded(id);
-    if (item.status !== "idle" || item.configuring || item.closing) throw new Error("Session is busy");
+    if (item.status !== "idle" || item.configuring || item.closing || item.compacting) throw new Error("Session is busy");
     if (item.goal.active && this.goalNotificationsBlocked(item)) throw new Error("Goal 已暂停或等待确认，请使用 Goal 恢复按钮");
     if (item.agent.canReask?.()) return this.startRun(item, () => item.agent.reask());
     if (!item.agent.resumable()) throw new Error("没有可重试的请求：上一次运行已正常结束");
@@ -1922,7 +1922,7 @@ export class Sessions {
   async prompt(id, text, queueType, images) {
     if (!text.trim() && !images?.length) throw new Error("请求内容不能为空：请输入文本或附加图片");
     const item = this.get(id).loaded ? this.get(id) : await this.ensureLoaded(id);
-    if (item.configuring || item.closing || item.releasing) throw new Error("Session is busy");
+    if (item.compacting || item.configuring || item.closing || item.releasing) throw new Error("Session is busy");
     if (/^\/goal(?:\s|$)/.test(text.trim())) {
       const result = await this.goalAction(id, "enter", text.trim().replace(/^\/goal\s*/, ""));
       return result.runId;
@@ -2034,6 +2034,23 @@ export class Sessions {
 
   // 用户从压缩进程面板取消本次后台摘要：只动后台摘要，不影响主会话运行。
   // 没在跑也不报错（前后端状态天然有竞争），回当前状态让前端对齐。
+  async startCompaction(id, mode) {
+    if (!["sync", "async"].includes(mode)) throw new Error("未知压缩模式");
+    const item = await this.ensureLoaded(id);
+    if (item.compacting || item.configuring || item.closing || item.releasing || item.cancelling) throw new Error("会话正在切换状态");
+    if (mode === "sync" && (item.status !== "idle" || item.notifying || hasRunningTasks(item)))
+      throw new Error("同步压缩前请先安全停止主会话，并等待子任务结束；运行中可使用异步压缩");
+    item.compacting = mode === "sync";
+    try { return await item.agent.compactNow(mode); }
+    finally {
+      if (mode === "sync") {
+        item.compacting = false;
+        this.scheduleGoal(item);
+        void this.deliverTaskNotifications(item);
+      }
+    }
+  }
+
   async cancelCompaction(id, runId) {
     const item = this.get(id);
     if (item.loading) await item.loading.catch(() => {});
@@ -2094,7 +2111,7 @@ export class Sessions {
     if (!this.store) return;
     for (const item of this.items.values()) {
       const queue = item.agent?.queue?.();
-      if (!item.loaded || item.loading || item.releasing || item.closing || item.cancelling || item.configuring ||
+      if (!item.loaded || item.loading || item.releasing || item.closing || item.cancelling || item.configuring || item.compacting ||
           item.status !== "idle" || item.notifying || item.goalScheduled || item.notificationScheduled ||
           hasRunningTasks(item) || item.questions.snapshot().length || item.pendingWrites?.length ||
           queue?.steering?.length || queue?.followUp?.length ||
