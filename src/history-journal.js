@@ -89,6 +89,7 @@ export async function createJournalArchive({ file, directory = `${file}.history`
     reconcile,
     async barrier() { await reconcile(); if (!archive) throw historyError('SOURCE_MISSING', 'Journal has no durable entries yet'); archive.barrier(); },
     records: () => archive?.records() ?? [],
+    readArtifact: (record, part) => { if (!archive) throw historyError('SOURCE_MISSING'); return archive.readArtifact(record, part); },
     async close() { if (closed) return; closed = true; try { await queue; await archive?.close(); if (failure) throw failure; } finally { await release(); } },
   };
 }

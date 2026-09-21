@@ -810,6 +810,7 @@ export function createBackgroundCompaction({
 
   return {
     async runNow(mode = "async") {
+      assertHealthy();
       if (disposed) throw new Error("会话已关闭");
       if (!["sync", "async"].includes(mode)) throw new Error("未知压缩模式");
       if (pending) throw new Error("已有压缩任务，请等待完成或先取消");

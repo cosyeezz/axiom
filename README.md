@@ -471,9 +471,9 @@ pi 会话 .jsonl（~/.pi/agent/sessions/...）
 
 OP 自动折叠已移除，消息不再按年龄或发送次数改写。`AXIOM_OBSERVATION_PACK` 仅产生弃用警告，不能重新启用旧策略。`src/legacy-observation.js` 仅提供旧 `obs_recall` 只读兼容，不产生对象、投影计数或 ledger；旧写入实现仅留在测试夹具。
 
-每个持久会话在 `<journal>.history/` 维护 `raw.jsonl`（原始 message/custom_message）和 `control.jsonl`（摘要与控制节点）。SDK journal 是执行状态唯一权威；归档按 `(sourceJournalId, entryId)` 幂等追加、fsync 确认，同身份异内容拒绝。SDK 0.85.1 的持久化适配器保证首条用户消息立即落盘，写失败锁存并要求重新打开会话。归档保留 journal 的完整结构，不使用摘要序列化器；journal 之外未提供的完整工具产物不伪称已保存。
+每个持久会话在 `<journal>.history/` 维护 `raw.jsonl`（原始 message/custom_message）和 `control.jsonl`（摘要与控制节点）。SDK journal 是执行状态唯一权威；归档按 `(sourceJournalId, entryId)` 幂等追加、fsync 确认，同身份异内容拒绝。SDK 0.85.1 的持久化适配器保证首条用户消息立即落盘，写失败锁存并要求重新打开会话。归档保留 journal 的完整结构，不使用摘要序列化器；SDK 工具结果通过 `details.fullOutputPath` 声明的完整文本产物同步到 `artifacts/`，哈希校验后可用 `artifact_0` 分页读取；原临时文件消失不影响读取，归档产物缺失则拒绝屏障。内嵌图片／二进制内容保留在原始消息结构中；未声明的外部产物不伪称已保存。剩余磁盘小于 16 MiB 时阻止新增归档，不自动删除历史。
 
-`history_search` / `history_read` 仅读取当前代理、当前来源链允许的条目，返回稳定 `hist:` 引用、哈希、来源角色与分页信息；游标签名并重新核验权限。原始 `sourceEntry` 和正文 part 可读；`summaryEvidence` 是用于核对摘要引文的派生文本，不代替原文。分页预算计算整个响应，UTF-8 字符不会被拆坏。历史材料不代表当前指令或授权。
+`history_search` / `history_read` 仅读取当前代理、当前来源链允许的条目，返回稳定 `hist:` 引用、哈希、来源角色与分页信息；游标签名并重新核验权限；检索快照最多缓存 128 组，重启或快照淘汰后旧游标明确失效，稳定 ref 仍可重新读取。原始 `sourceEntry` 和正文 part 可读；`summaryEvidence` 是用于核对摘要引文的派生文本，不代替原文。分页预算计算整个响应，UTF-8 字符不会被拆坏。历史材料不代表当前指令或授权。
 
 迁移盘点：`node scripts/legacy-history-dryrun.mjs <directory>`，只读源文件，输出缺失附件、身份冲突与不可映射引用，不自动回填或删除生产数据。
 

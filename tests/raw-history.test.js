@@ -1,9 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync, appendFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, appendFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRawArchive, contentHash } from '../src/raw-history.js';
+
+test('full tool artifacts remain readable after temporary output disappears', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'axiom-artifact-'));
+  try {
+    const output = join(dir, 'output.txt'); writeFileSync(output, '完整产物😀');
+    const archive = await createRawArchive(join(dir, 'history'), { sourceJournalId: 'j', sourceSessionId: 's' });
+    try {
+      const entry = { id: 'a', type: 'message', message: { role: 'toolResult', content: 'truncated', details: { fullOutputPath: output } } };
+      const record = archive.record(entry); rmSync(output);
+      archive.reconcile([entry]);
+      assert.equal(archive.readArtifact(record, 'artifact_0'), '完整产物😀');
+      rmSync(join(dir, 'history', 'artifacts', record.artifacts[0].hash.slice(7)));
+      assert.throws(() => archive.reconcile([entry]), { code: 'SOURCE_MISSING' });
+    } finally { await archive.close(); }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
 
 test('incomplete archive tail requires authoritative proof and preserves quarantined bytes', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'axiom-raw-tail-'));
