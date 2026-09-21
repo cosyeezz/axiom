@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/20 21:36:00）
+# Axiom 多级代码索引（生成于 2026/9/20 21:38:55）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -58,7 +58,7 @@
 | src/database.js | 122 | 共享 SQLite 连接、小配置 KV、WAL 与一致性备份 | nodeOk, DATA_VERSION, assertDataVersion, Database |
 | src/gate-ipc.js | 97 | 共享闸门认证IPC与连接租约回收 | MAX_LINE, authenticated, serveGate, connectGate |
 | src/goal.js | 988 | Goal：会话级目标状态、轮次计划、验收门与持久化 | GOAL_PHASES, GOAL_ACTIONS, ROUND_STATUSES, GOAL_MAX_SEGMENTS |
-| src/history-journal.js | 96 | 磁盘 journal 原文投影、持久屏障与提交确认 | readDurableJournal, installDurableJournal, confirmDurableAppend, createJournalArchive |
+| src/history-journal.js | 109 | 磁盘 journal 原文投影、持久屏障与提交确认 | readDurableJournal, installDurableJournal, confirmDurableAppend, createJournalArchive |
 | src/history-tools.js | 103 | 鉴权历史检索、原文分页及游标签名 | createHistoryReader |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
 | src/legacy-observation.js | 525 | 旧观察归档只读分页兼容，不折叠或写入 | THRESHOLD_BYTES, FULL_SENDS, PLACEHOLDER_EXCERPT_BYTES, OBSERVATION_ID_PATTERN |
@@ -148,7 +148,7 @@
 | tests/helpers/model-concurrency-child.mjs | 93 | node --test 测试（npm test） | barrier, runOpponent |
 | tests/helpers/public-source.js | 16 | node --test 测试（npm test） | publicSource, event, appliedSeq, rawEntryIds |
 | tests/helpers/session-page.js | 186 | node --test 测试（npm test） | CONFIG, makeRecords, html, pickerSource |
-| tests/history-journal.test.js | 53 | node --test 测试（npm test） | - |
+| tests/history-journal.test.js | 66 | node --test 测试（npm test） | - |
 | tests/history-page-cache.test.js | 71 | node --test 测试（npm test） | md, records |
 | tests/history-projection.test.js | 137 | node --test 测试（npm test） | fakeSource, mainRecord, subRecord, delegateAnchor |
 | tests/history-reading.test.js | 136 | node --test 测试（npm test） | pageState |
@@ -1294,15 +1294,15 @@
 | remove | method | 631 |
 | supplyObjective | method | 671 |
 
-### src/history-journal.js（96 行） — 磁盘 journal 原文投影、持久屏障与提交确认
+### src/history-journal.js（109 行） — 磁盘 journal 原文投影、持久屏障与提交确认
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| readDurableJournal | function | 6 |
-| installDurableJournal | function | 27 |
-| confirmDurableAppend | function | 58 |
-| createJournalArchive | function | 68 |
-| mkdirSync | method | 69 |
+| readDurableJournal | function | 7 |
+| installDurableJournal | function | 28 |
+| confirmDurableAppend | function | 59 |
+| createJournalArchive | function | 69 |
+| mkdirSync | method | 70 |
 
 ### src/history-tools.js（103 行） — 鉴权历史检索、原文分页及游标签名
 

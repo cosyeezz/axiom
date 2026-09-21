@@ -1,5 +1,5 @@
 import { convertToLlm, serializeConversation, sessionEntryToContextMessages } from '@earendil-works/pi-coding-agent';
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { canonical, contentHash, historyError } from './raw-history.js';
 
 // Production callers provide a persistent per-owner secret. References never contain paths.
@@ -18,7 +18,14 @@ export function createHistoryReader({ records, allowed, readArtifact, maxBytes =
   const reference = record => `hist:${record.archiveId}:${Buffer.from(JSON.stringify(record.origin)).toString('base64url')}`;
   const resolve = ref => {
     if (!ref || typeof ref !== 'string' || !/^hist:[a-f0-9]{24}:[A-Za-z0-9_-]+$/.test(ref)) throw historyError('REF_INVALID');
-    const record = records().find(r => reference(r) === ref);
+    const record = records().find(r => reference(r) === ref) ?? records().find(r => {
+      if (!r.copiedFrom) return false;
+      try {
+        const [, archiveId, encoded] = ref.split(':');
+        const origin = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+        return archiveId === createHash('sha256').update(r.copiedFrom.sourceJournalId).digest('hex').slice(0, 24) && origin.sourceJournalId === r.copiedFrom.sourceJournalId && origin.entryId === r.copiedFrom.entryId && origin.agentId === r.origin.agentId;
+      } catch { return false; }
+    });
     if (!record) throw historyError('SOURCE_MISSING');
     if (!allowed(record)) throw historyError('SCOPE_DENIED');
     if (contentHash(record.sourceEntry) !== record.sourceEntryHash) throw historyError('HASH_MISMATCH');

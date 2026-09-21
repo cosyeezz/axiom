@@ -19,7 +19,7 @@ function writeAll(fd, data) {
 }
 
 /** A journal projection, never an alternative authority for execution state. */
-export async function createRawArchive(directory, { sourceJournalId, sourceSessionId, agentId = null, authoritativeEntries } = {}) {
+export async function createRawArchive(directory, { sourceJournalId, sourceSessionId, agentId = null, authoritativeEntries, copiedFrom = null } = {}) {
   if (!sourceJournalId || !sourceSessionId) throw historyError('SOURCE_MISSING');
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   if (lstatSync(directory).isSymbolicLink()) throw historyError('SCOPE_DENIED');
@@ -43,7 +43,7 @@ export async function createRawArchive(directory, { sourceJournalId, sourceSessi
       }
       for (const line of complete.toString('utf8').split('\n').filter(Boolean)) {
         let record; try { record = JSON.parse(line); } catch { throw historyError('SOURCE_CORRUPT'); }
-        if (record.schemaVersion !== 1 || record.sourceEntryHash !== contentHash(record.sourceEntry)) throw historyError('SOURCE_CORRUPT');
+        if ((path === rawPath) !== isOriginal(record.sourceEntry) || record.schemaVersion !== 1 || record.sourceEntryHash !== contentHash(record.sourceEntry)) throw historyError('SOURCE_CORRUPT');
         if (record.origin?.sourceJournalId !== sourceJournalId || record.archiveId !== archiveId || record.origin.sourceSessionId !== sourceSessionId) throw historyError('ARCHIVE_IDENTITY_CONFLICT', 'Archive directory contains foreign journal records');
         const key = keyOf(record.origin), prior = records.get(key);
         if (prior && prior.sourceEntryHash !== record.sourceEntryHash) throw historyError('ARCHIVE_IDENTITY_CONFLICT');
@@ -54,7 +54,7 @@ export async function createRawArchive(directory, { sourceJournalId, sourceSessi
         for (const record of records.values()) if (record.origin.sourceJournalId !== sourceJournalId || authoritative.get(record.origin.entryId) !== record.sourceEntryHash) throw historyError('SOURCE_CORRUPT', 'Journal cannot prove archive prefix');
         const quarantine = `${path}.incomplete-${Date.now()}`;
         renameSync(path, quarantine);
-        const recovered = openSync(path, 'wx');
+        const recovered = openSync(path, 'wx', 0o600);
         try { writeAll(recovered, complete); } finally { closeSync(recovered); }
       }
     }
@@ -82,7 +82,7 @@ export async function createRawArchive(directory, { sourceJournalId, sourceSessi
         if (!existsSync(target)) { const artifactFd = openSync(target, 'wx', 0o600); try { writeAll(artifactFd, bytes); } finally { closeSync(artifactFd); } }
         artifacts.push({ part: 'artifact_0', hash: `sha256:${hash}`, bytes: bytes.length });
       }
-      const record = { artifacts, schemaVersion: 1, canonicalVersion: 1, archiveId, seq: records.size + 1, origin, sourceEntry: JSON.parse(JSON.stringify(sourceEntry)), sourceEntryHash: hash, capturedAt: new Date().toISOString() };
+      const record = { ...(copiedFrom?.has(sourceEntry.id) ? { copiedFrom: copiedFrom.get(sourceEntry.id) } : {}), artifacts, schemaVersion: 1, canonicalVersion: 1, archiveId, seq: records.size + 1, origin, sourceEntry: JSON.parse(JSON.stringify(sourceEntry)), sourceEntryHash: hash, capturedAt: new Date().toISOString() };
       try { writeAll(isOriginal(sourceEntry) ? fd : controlFd, `${JSON.stringify(record)}\n`); } catch (error) { failure = historyError('ARCHIVE_NOT_DURABLE', error.message); throw failure; }
       records.set(key, record); return record;
     },

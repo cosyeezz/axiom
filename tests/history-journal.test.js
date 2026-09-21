@@ -45,6 +45,19 @@ test('durable compaction acknowledgement requires the exact complete tail', () =
     assert.throws(() => confirmDurableAppend(file, 'c1'), { code: 'COMMIT_UNCERTAIN' });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+test('fork projection preserves copied identity without granting arbitrary parent access', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'axiom-fork-'));
+  try {
+    const parent = join(dir, 'parent.jsonl'), child = join(dir, 'child.jsonl');
+    const entry = { type: 'message', id: 'm', message: { role: 'user', content: 'same event' } };
+    writeFileSync(parent, [{ type: 'session', id: 'parent' }, entry].map(JSON.stringify).join('\n') + '\n');
+    writeFileSync(child, [{ type: 'session', id: 'child', parentSession: parent }, entry].map(JSON.stringify).join('\n') + '\n');
+    const archive = await createJournalArchive({ file: child });
+    try { await archive.barrier(); assert.deepEqual(archive.records()[0].copiedFrom, { sourceJournalId: 'parent', entryId: 'm' }); }
+    finally { await archive.close(); }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('journal incomplete tail is never treated as valid history', () => {
   const dir = mkdtempSync(join(tmpdir(), 'axiom-journal-'));
   try { const file = join(dir, 'session.jsonl'); writeFileSync(file, '{'); assert.throws(() => readDurableJournal(file), { code: 'SOURCE_CORRUPT' }); }

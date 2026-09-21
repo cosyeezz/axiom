@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, openSync, fsyncSync, closeSync, writeSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, openSync, fsyncSync, closeSync, writeSync, mkdirSync, realpathSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { claimJournalOwner } from './data-owner.js';
 import { createRawArchive, contentHash, historyError } from './raw-history.js';
 
@@ -74,7 +75,19 @@ export async function createJournalArchive({ file, directory = `${file}.history`
     if (!journal) return false; // A new SDK session has not committed its first assistant yet.
     if (sessionId && sessionId !== journal.header.id) throw historyError('ARCHIVE_IDENTITY_CONFLICT');
     sessionId = journal.header.id;
-    if (!archive) archive = await createRawArchive(directory, { sourceJournalId: sessionId, sourceSessionId: sessionId, agentId, authoritativeEntries: journal.entries });
+    if (!archive) {
+      const copiedFrom = new Map();
+      if (journal.header.parentSession) {
+        const parentPath = resolve(dirname(file), journal.header.parentSession);
+        // Parent pointers are metadata, not permission to traverse arbitrary files.
+        if (dirname(parentPath) !== dirname(resolve(file)) || (existsSync(parentPath) && dirname(realpathSync(parentPath)) !== dirname(realpathSync(file)))) throw historyError('SCOPE_DENIED', 'Fork parent is outside the session directory');
+        const parent = readDurableJournal(parentPath);
+        if (!parent) throw historyError('SOURCE_MISSING', 'Fork parent unavailable');
+        const parents = new Map(parent.entries.map(entry => [entry.id, contentHash(entry)]));
+        for (const entry of journal.entries) if (parents.get(entry.id) === contentHash(entry)) copiedFrom.set(entry.id, { sourceJournalId: parent.header.id, entryId: entry.id });
+      }
+      archive = await createRawArchive(directory, { sourceJournalId: sessionId, sourceSessionId: sessionId, agentId, authoritativeEntries: journal.entries, copiedFrom });
+    }
     archive.reconcile(journal.entries);
     return true;
   };
