@@ -1,5 +1,17 @@
 # 开发记录
 
+## 2026-09-20 输入区图标按业界规范重做（含前两轮返工修正）
+
+- 时间：2026-09-20；分支 `feat/icon-redesign`。
+- 背景与事故：第一轮彩色 duotone（`8594256`）被用户否定。此后我曾向用户报告两轮「已合并到 master」（声称提交 `4e4ac21`、`7f3a821`），但事后核查发现这两个提交在仓库中不存在，第二轮改动仅以未提交状态留在 worktree，第三轮根本未落盘；用户看到的一直是第一轮的版本。本次将两轮成果一次性真实落盘并核对提交号。
+- 造型：改以主流图标库官方几何为依据（Lucide ISC / Tabler・Phosphor・Heroicons MIT / Material・Remix Apache-2.0），不再凭自己造型直觉。回形针=上下文、山景=图片、同心靶心=目标、纸飞机=发送、凹边四角星=Skill；stop 恢复改动前的方块语汇（原绿色盾牌语义错误，绿色在本项目一直表示运行中/成功）。
+- 压缩图标：前四版都是「中线 + 箭头/人字形收拢」同一家族且均被否决，20px 下糊成一团。改用四角向内收拢（lucide shrink），依据是 Continue.dev 的「Compact conversation——Summarize conversation to reduce context length」与 Zed 的 `/compact` 用的就是此语汇；实测包围盬 18×18，体量与同排邻居匹配，16px 不糊。已排除 archive（存档盒语义不对）与 Phosphor arrows-in-line-vertical（属被否决的中线家族）。
+- 配色：改为全中性，删除 `tones` 映射与 `data-tone`。依据是 Phosphor/Material 的官方用色规则（单色相双不透明度）与 Linear/Notion/VS Code/Figma 的实际做法；同排多色相制造虚假层级且对色觉障碍无效。因图标转中性，force 丢了唯一警示线索，补上菜单条目 `--danger` 文字色（`#force-stop` 本身已有 `class="danger"`，菜单条目没有）。
+- 对齐与 hover：实测确认用户所说不对齐属实——会话信息按钮在 `.icon-group` 之外，未继承居中，图形下沉 9.4px、溢出按钮下边 5.4px，且同排混用 17/18/20px 与 1.5/1.65 两种线宽。根因是 `svg.action-icon`、`.context-bar svg`、`#add-context svg` 三条规则优先级压过 `.composer-icon`；已统一盒模型与选择器。hover 原用 `--raised`，实测深色 1.33:1、浅色 1.06:1（几乎看不到），改为 `--accent` 12% / 按下 20%，向全站 `.icon-button` 对齐。
+- 补全菜单：`/`（Skill）与 `@`（文件/文件夹）条目按类型加图标，复用 `composerIcon`；`.completion-option` 已是 flex+gap，只需限定图形尺寸，无新增布局规则。
+- 涉及文件：`public/{icons.js,app.js,style.css,composer-controls.css}`、`tests/{icons.test.js,app.test.js,composer-icons-ui.py}`、`README.md`、`devlog.md`。
+- 验证：全量 `npm test` 873 项，871 通过、2 跳过、0 失败。断言锁定「无 data-tone、无硬编码色、stroke 走 currentColor」与补全菜单图标类型；真实 Chromium 复验深浅主题与 390px 窄屏，同排 5 个图标尺寸/线宽/居中偏移一致、无溢出、无横向滚动，并新增 hover 必须可见的断言。
+
 ## 2026-09-21 配置变更与旧 checkpoint 兼容
 
 - `src/pi.js` 在模型/压缩配置和工具集变化前取消旧候选，防止提交使用过时请求配置；`src/compaction.js` 接受旧 checkpoint 哨兵，不要求新 details 标记。

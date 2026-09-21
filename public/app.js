@@ -1,5 +1,5 @@
 import { mountComposerControls } from "./composer-controls.js";
-import { actionIcon, initActionIcons } from "./icons.js";
+import { actionIcon, composerIcon, initActionIcons } from "./icons.js";
 initActionIcons(document);
 import { initInspector, renderTools, renderBill, money } from "./session-details.js";
 import { createTransport } from "./transport.js";
@@ -4493,7 +4493,9 @@ async function updateCompletion() {
       const option = document.createElement("div");
       option.id = `completion-${index}`; option.setAttribute("role", "option");
       const label = document.createElement("button"); label.type = "button"; label.tabIndex = -1;
-      label.textContent = skill ? `/${entry.name} — ${entry.description || "Skill"}` : `${entry.directory ? "文件夹" : "文件"}：${entry.path}`;
+      // 补全菜单复用「添加上下文」菜单的同一套图形，两个入口视觉语言一致。
+      label.insertAdjacentHTML("afterbegin", composerIcon(skill ? "skill" : entry.directory ? "folder" : "file"));
+      label.append(skill ? `/${entry.name} — ${entry.description || "Skill"}` : `${entry.directory ? "文件夹" : "文件"}：${entry.path}`);
       label.onclick = () => chooseCompletion(entry);
       option.append(label);
       if (entry.directory) {
