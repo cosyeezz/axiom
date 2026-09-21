@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
+import { composerIcon } from '../public/icons.js';
 import { actionIcon, actionIconPaths, initActionIcons } from '../public/icons.js';
 
 test('shared SVG action icons have safe fixed geometry and a consistent grid', () => {
@@ -19,6 +20,22 @@ test('shared SVG action icons have safe fixed geometry and a consistent grid', (
   assert.throws(() => actionIcon('<script>'), /Unknown action icon/);
 });
 
+test('composer artwork uses safe layered SVGs and semantic colors', () => {
+  for (const name of ['context', 'image', 'compact', 'target', 'info', 'send', 'stop', 'force', 'steer', 'followUp', 'skill', 'file', 'folder']) {
+    const dom = new JSDOM(composerIcon(name));
+    const svg = dom.window.document.querySelector('svg');
+    assert.equal(svg.getAttribute('viewBox'), '0 0 24 24');
+    assert.equal(svg.getAttribute('aria-hidden'), 'true');
+    assert.equal(svg.getAttribute('focusable'), 'false');
+    assert.ok(svg.querySelector('[fill-opacity=".16"]'));
+    assert.ok(svg.querySelector('[stroke="var(--composer-icon-color)"]'));
+    assert.equal(svg.querySelectorAll('script, image, use, foreignObject').length, 0);
+    dom.window.close();
+  }
+  assert.throws(() => composerIcon('<script>'), /Unknown composer icon/);
+  assert.throws(() => composerIcon('constructor'), /Unknown composer icon/);
+});
+
 test('all static action controls and dialog templates get SVGs without changing labels', async () => {
   const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
   const dom = new JSDOM(html);
@@ -26,6 +43,9 @@ test('all static action controls and dialog templates get SVGs without changing 
   initActionIcons(doc);
   for (const id of ['new', 'open-workspace', 'import-session', 'open-settings', 'toggle-sidebar', 'copy-workspace', 'reveal-workspace', 'open-raw-io', 'toggle-theme', 'add-context', 'add-image', 'goal-enter', 'context-back', 'context-close', 'stop', 'force-stop', 'image-preview-close']) {
     assert.ok(doc.getElementById(id).querySelector('svg.action-icon'), id);
+  }
+  for (const id of ['add-context', 'add-image', 'compact-session', 'goal-enter']) {
+    assert.ok(doc.getElementById(id).querySelector('svg.composer-icon'), `${id} uses colored artwork`);
   }
   assert.equal(doc.querySelector('#new').textContent.trim(), '新会话');
   assert.equal(doc.querySelector('#add-image').getAttribute('aria-label'), '上传图片');

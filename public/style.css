@@ -1009,6 +1009,19 @@ body:has(#context-menu:popover-open) #add-context { background: var(--raised); }
 .context-chip span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .context-chip span:last-child { color: var(--muted); }
 .context-bar svg, #context-menu svg, #context-picker svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; flex-shrink: 0; color: var(--body-ink); }
+/* Scoped duotone artwork follows semantic theme tokens, including portalled menus. */
+.context-bar .icon-group { border-color: transparent; background: transparent; box-shadow: none; }
+.composer-icon {
+  --composer-icon-color: var(--accent);
+  --composer-icon-ink: color-mix(in srgb, var(--composer-icon-color) 72%, var(--ink));
+  width: 20px; height: 20px; flex-shrink: 0;
+}
+.composer-icon[data-tone="success"] { --composer-icon-color: var(--success); }
+.composer-icon[data-tone="danger"] { --composer-icon-color: var(--danger); }
+.composer-icon[data-tone="accent"] { --composer-icon-color: var(--accent-ink); }
+#add-context .composer-icon, .context-bar .icon-button .composer-icon, #context-menu .composer-icon { width: 20px; height: 20px; stroke-width: 1.65; }
+.context-bar .icon-button { width: 28px; height: 28px; min-height: 28px; padding: 4px; border: 0; background: transparent; }
+.context-bar .icon-button:hover:not(:disabled), .context-bar .icon-button:focus-visible { background: var(--raised); }
 #context-menu { position: fixed; inset: auto; left: max(8px, 5vw); bottom: 260px; margin: 0; width: 176px; padding: 4px; border: 1px solid var(--line); border-radius: 9px; background: var(--raised); color: var(--ink); box-shadow: 0 8px 24px var(--shadow-mid); }
 #context-menu { overflow: visible; }
 #context-menu > [aria-expanded="true"] { background: color-mix(in srgb, var(--accent) 10%, transparent); }

@@ -31,6 +31,14 @@
 - 继续验证：完整请求水位触发、低水位滞回、摘要输入窗口检查已接入；累计状态遗漏自动继承并以10轮测试防退化；SDK固定版本日志适配器使首个用户消息立即fsync，新增真实SDK重开验证。生产来源清单包含可读取hist引用，生成前归档屏障核对覆盖范围。错误码统一INVALID_CURSOR，窗口错误WINDOW_UNSAFE。最新全量通过（后续改动持续重验）。
 - 调查副作用：只读子任务误用 `git fsck --lost-found`，在主仓库 `.git/lost-found/` 新增对象副本，未删除既有对象；暂保留恢复线索，不清理他人数据。
 
+## 2026-09-20 输入区统一双色 SVG 图标
+
+- 时间：2026-09-20；分支 `feat/composer-svg-icons`。
+- 内容：重绘上下文、图片、手动压缩、目标、会话账单及发送/运行操作图标，扩展上下文菜单同套图形。
+- 决策与原因：按整组而非单图标设计，统一 24px 画布、20px 工具栏尺寸、1.65px 线宽和 16% 透明色面；移除工具栏分组底板，工具按钮统一透明背景，使用 `--accent-ink`、`--success`、`--danger` 及 `--ink` 适配明暗主题，不改变业务交互。图标定义集中在既有 icons.js，避免新增模块破坏测试脚本拼接入口。
+- 涉及文件：`public/{icons.js,composer-controls.js,style.css}`、`tests/{icons.test.js,composer-controls.test.js,composer-icons-ui.py}`、`README.md`、`devlog.md`。
+- 验证：全量 `npm test` 844 项，842 通过、2 跳过、0 失败；真实 Chromium 验证深浅主题图标尺寸、线宽、按钮背景一致性及移动端无横向溢出，并生成截图核对。
+
 ## 2026-09-20 手动会话压缩与分模式保留量
 
 - 时间：2026-09-20；分支 `feat/manual-compaction`。
