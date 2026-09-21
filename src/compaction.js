@@ -45,7 +45,7 @@ function prepareBackgroundCompaction(branch, keepRecentTokens) {
       previousSummary = branch[i].summary;
       previousState = structuredClone(branch[i].details?.taskState);
       const kept = branch.findIndex((entry) => entry.id === branch[i].firstKeptEntryId);
-      if (kept < 0 && !(branch[i].firstKeptEntryId === "__axiom_checkpoint__" && branch[i].details?.checkpoint === true)) throw compactionError("SOURCE_CORRUPT", "Unknown compaction boundary");
+      if (kept < 0 && branch[i].firstKeptEntryId !== "__axiom_checkpoint__") throw compactionError("SOURCE_CORRUPT", "Unknown compaction boundary");
       boundaryStart = kept >= 0 ? kept : i + 1;
       break;
     }

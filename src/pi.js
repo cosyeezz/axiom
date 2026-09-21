@@ -461,6 +461,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         if (thinking && !getSupportedThinkingLevels(selected).includes(thinking)) throw new Error("Unsupported thinking level");
         const previous = session.model;
         const previousThinking = session.thinkingLevel;
+        compactionCtrl.cancel();
         if (selected !== session.model) await session.setModel(selected);
         const levels = session.getAvailableThinkingLevels();
         if (thinking && !levels.includes(thinking)) {
@@ -479,11 +480,13 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       },
       // 激活已注册工具（如进入 Goal 模式启用 goal_*）：与当前激活集合并，未知名称由 SDK 忽略。
       enableTools: (names) => {
+        compactionCtrl.cancel();
         session.setActiveToolsByName([...new Set([...session.getActiveToolNames(), ...names])]);
         emitAxiom({ type: "agent.runtime", data: agentRuntime(session, observations) });
       },
       // 停用已激活工具（如退出 Goal 模式禁用 goal_*）：与当前激活集求差，未知名称无副作用。
       disableTools: (names) => {
+        compactionCtrl.cancel();
         session.setActiveToolsByName(session.getActiveToolNames().filter((name) => !names.includes(name)));
         emitAxiom({ type: "agent.runtime", data: agentRuntime(session, observations) });
       },

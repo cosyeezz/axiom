@@ -1,5 +1,10 @@
 # 开发记录
 
+## 2026-09-21 配置变更与旧 checkpoint 兼容
+
+- `src/pi.js` 在模型/压缩配置和工具集变化前取消旧候选，防止提交使用过时请求配置；`src/compaction.js` 接受旧 checkpoint 哨兵，不要求新 details 标记。
+- 全量测试通过。最终集成前再次同步远端主分支。
+
 ## 2026-09-21 多模态原文与未知用量标记
 
 - `tests/raw-history.test.js` 验证内嵌图片、取消后的 thinking/signature、自定义子代理通知跨重开字段不丢失。
