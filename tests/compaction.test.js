@@ -317,6 +317,12 @@ test("真实摘要 JSON：原文引用核验，伪造引文与非 JSON 整份拒
     response = `\`\`\`json\n${JSON.stringify(state)}\n\`\`\``;
     const fenced = await summarizeWithPiSession(options);
     assert.deepEqual(fenced.taskState, result.taskState);
+    response = JSON.stringify({ schemaVersion: 1, evidence: state.evidence });
+    const sparse = await summarizeWithPiSession(options);
+    assert.deepEqual(sparse.taskState, result.taskState, '省略空字段不影响来源核验');
+    response = JSON.stringify({ schemaVersion: 1, progress: [{ id: 'p1', text: '待核验进展', status: 'uncertain' }] });
+    const noSources = await summarizeWithPiSession(options);
+    assert.deepEqual(noSources.taskState.progress[0].sources, []);
     response = 'null';
     await assert.rejects(summarizeWithPiSession(options), { code: 'SUMMARY_SCHEMA_INVALID' });
     const previousState = structuredClone(result.taskState);

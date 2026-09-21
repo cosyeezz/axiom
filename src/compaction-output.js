@@ -15,12 +15,23 @@ export function parseTaskStateOutput(output) {
   }
   // Check shape before source hydration; semantic and evidence validation still
   // happens afterwards. Malformed model output must not become a TypeError.
-  if (!value || typeof value !== 'object' || Array.isArray(value) || value.schemaVersion !== 1 ||
-      Object.keys(value).some(key => key !== 'schemaVersion' && !STATE_FIELDS.includes(key)) ||
-      STATE_FIELDS.some(field => !Array.isArray(value[field]) || value[field].some(item =>
-        !item || typeof item !== 'object' || Array.isArray(item) || !Array.isArray(item.sources) ||
-        item.sources.some(source => !source || typeof source !== 'object' || Array.isArray(source))))) {
-    throw compactionError('SUMMARY_SCHEMA_INVALID', 'SUMMARY_SCHEMA_INVALID: invalid task-state shape');
+  const object = item => item !== null && typeof item === 'object' && !Array.isArray(item);
+  const invalid = reason => { throw compactionError('SUMMARY_SCHEMA_INVALID', `任务状态结构无效 (${reason})`); };
+  if (!object(value)) invalid('root: expected object');
+  if (value.schemaVersion !== 1) invalid('schemaVersion: expected 1');
+  // Never echo unknown model keys or output text in diagnostics.
+  if (Object.keys(value).some(key => key !== 'schemaVersion' && !STATE_FIELDS.includes(key))) invalid('root: unknown field');
+  for (const field of STATE_FIELDS) {
+    // Omission means no new items, not deletion: prior state is inherited later.
+    if (!Object.hasOwn(value, field)) value[field] = [];
+    if (!Array.isArray(value[field])) invalid(`${field}: expected array`);
+    for (const [index, item] of value[field].entries()) {
+      const path = `${field}[${index}]`;
+      if (!object(item)) invalid(`${path}: expected object`);
+      if (!Object.hasOwn(item, 'sources')) item.sources = [];
+      if (!Array.isArray(item.sources)) invalid(`${path}.sources: expected array`);
+      if (item.sources.some(source => !object(source))) invalid(`${path}.sources: expected objects`);
+    }
   }
   return value;
 }

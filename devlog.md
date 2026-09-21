@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-21 压缩任务状态省略项兼容与结构诊断
+
+- 分支：`feat/compaction-schema`。
+- 背景：用户重启后手动压缩报 `invalid task-state shape`，确认 JSON 解析后在结构校验失败，但未保存具体字段，不能确认现场是哪项偏差。
+- 决策：仅将省略的分类数组及条目 sources 补为空数组，随后仍完整继承旧状态并校验来源、引文、约束变更授权；不接受 null、错误类型、未知顶层字段或错误版本。用固定 schema 路径说明错误原因，不回显未知模型字段与正文，避免通用错误码被脱敏后只剩模糊提示。
+- 涉及文件：`src/compaction-output.js`、`tests/compaction-output.test.js`、`tests/compaction.test.js`、`README.md`、`devlog.md`。
+- 验证：定向测试 51/51；增加模拟 HTTP 摘要输出的省略项成功用例，来源核验结果不变；全量 `npm test` 882 项，880 通过、2 跳过、0 失败。覆盖旧约束继承、无来源变更拒绝及无效来源拒绝。尚未对用户当前会话进行真实模型端到端重试，不宣称已确认现场输出的具体偏差。
+
 ## 2026-09-21 修复大工具结果阻断压缩切点
 
 - 分支：`feat/compaction-recovery`。
