@@ -596,8 +596,10 @@ export function createBackgroundCompaction({
     } catch (cause) { throw lockCommit(cause); }
   }
 
-  function onTurnEnd() {
-    if (disposed || pending || !current.enabled || Date.now() < retryAt) return;
+  function onTurnEnd({ manual = false, mode = "async" } = {}) {
+    if (commitUncertain) return;
+    if (disposed || pending || (!manual && (!current.enabled || Date.now() < retryAt))) return;
+    const keepRecentTokens = mode === "sync" ? (current.syncKeepRecentTokens ?? compactionDefaults.syncKeepRecentTokens) : (current.asyncKeepRecentTokens ?? current.keepRecentTokens);
     try {
       // 阈值判断优先用 SDK 的 getContextUsage（感知「压缩后 usage 过期」并返回 null）；
       // 拿不到真实 usage 时回退到 chars/4 估算。
@@ -605,10 +607,10 @@ export function createBackgroundCompaction({
       const budget = requestBudget({ model: session.model, messages: session.messages, systemPrompt: session.systemPrompt, tools: session.agent.state.tools, config: current });
       const tokens = Math.max(usage?.tokens ?? 0, budget.tokens);
       const contextWindow = session.model?.contextWindow ?? 0;
-      if (tokens < budget.start) { lastAppliedBudgetTokens = null; return; }
-      if (lastAppliedBudgetTokens !== null && tokens < budget.hard && tokens - lastAppliedBudgetTokens < Math.max(128, budget.start - budget.target)) return;
+      if (!manual && tokens < budget.start) { lastAppliedBudgetTokens = null; return; }
+      if (!manual && lastAppliedBudgetTokens !== null && tokens < budget.hard && tokens - lastAppliedBudgetTokens < Math.max(128, budget.start - budget.target)) return;
       const branch = session.sessionManager.getBranch();
-      const preparation = prepareBackgroundCompaction(branch, current.keepRecentTokens);
+      const preparation = prepareBackgroundCompaction(branch, keepRecentTokens);
       if (!preparation || preparation.messagesToSummarize.length === 0) {
         fail("无合法压缩切点，保留原文", compactionError("NO_VALID_CUT"));
         return;
@@ -623,7 +625,8 @@ export function createBackgroundCompaction({
           contextWindow,
           tokenThreshold: current.tokenThreshold ?? null,
           percentThreshold: current.percentThreshold ?? null,
-          keepRecentTokens: current.keepRecentTokens ?? null,
+          keepRecentTokens,
+          manual, mode,
           estimated: usage?.tokens == null, // 真实 usage 不可用时是 chars/4 估算
         },
       });
@@ -631,6 +634,7 @@ export function createBackgroundCompaction({
       note(run, "plan", `待摘要 ${preparation.messagesToSummarize.length} 条消息 · 语料 ${corpus.length.toLocaleString("en-US")} 字符${preparation.previousSummary ? " · 含上轮摘要" : ""}`);
       const flight = {
         promise: runFlight(preparation, run),
+        manual, mode,
         corpus,
         previousSummary: preparation.previousSummary,
         firstKeptEntryId: preparation.firstKeptEntryId,
@@ -689,12 +693,12 @@ export function createBackgroundCompaction({
 
   async function maybeApply() {
     assertHealthy();
-    if (disposed || !pending || !pending.settled || !current.enabled) return null;
+    if (disposed || !pending || !pending.settled || (!pending.manual && !current.enabled)) return null;
     const flight = pending;
     pending = null; // 先占位再验证，防重入双写
     controller = null;
     const skip = (message) => { report("skipped", message); return null; };
-    if (disposed || !current.enabled || !isFresh(flight)) return skip("STALE_CANDIDATE: 历史已变化，本次摘要作废，保留原文");
+    if (disposed || (!flight.manual && !current.enabled) || !isFresh(flight)) return skip("STALE_CANDIDATE: 历史已变化，本次摘要作废，保留原文");
     try {
       const summary = (flight.value.summary ?? "").trim();
       if (!summary) return skip("摘要为空，保留原文");
@@ -752,7 +756,7 @@ export function createBackgroundCompaction({
         ...assembled.extra,
       };
       await beforeCommit?.({ firstKeptEntryId: flight.firstKeptEntryId, compactedMessageIds: flight.compactedMessageIds, summary: assembled.summary });
-      if (disposed || !current.enabled || !isFresh(flight)) return skip("持久屏障等待期间历史已变化，保留原文");
+      if (disposed || (!flight.manual && !current.enabled) || !isFresh(flight)) return skip("持久屏障等待期间历史已变化，保留原文");
       const id = appendConfirmed(assembled.summary, flight.firstKeptEntryId, tokensBefore, details, flight.value.usage);
       const data = {
         id,
@@ -805,6 +809,24 @@ export function createBackgroundCompaction({
   };
 
   return {
+    async runNow(mode = "async") {
+      if (disposed) throw new Error("会话已关闭");
+      if (!["sync", "async"].includes(mode)) throw new Error("未知压缩模式");
+      if (pending) throw new Error("已有压缩任务，请等待完成或先取消");
+      onTurnEnd({ manual: true, mode });
+      const flight = pending;
+      if (!flight) throw new Error("当前历史不足以压缩，或压缩无法启动；请检查保留 tokens 与压缩模型配置");
+      if (mode === "sync") {
+        await flight.promise.catch(() => {});
+        await maybeApply();
+      } else {
+        // 没有下一轮请求时也在空闲安全点应用；运行中由 prepare hook 接管。
+        flight.promise.then(() => {
+          if (!session.isStreaming) return maybeApply();
+        }, () => {}).catch(() => {});
+      }
+      return statusPayload();
+    },
     onTurnEnd,
     maybeApply,
     assertHealthy,

@@ -42,6 +42,30 @@ async function page() {
   return { dom, w, emit, restore, paint, output: w.document.getElementById("output") };
 }
 
+test("手动压缩必须确认，携带所选模式，切会话后拒绝旧确认", async () => {
+  const { dom, w, restore } = await page();
+  try {
+    const calls = [];
+    w.request = async (type, data) => { calls.push({ type, data }); return { status: "summarizing" }; };
+    const $ = id => w.document.getElementById(id);
+    $("compact-session").click();
+    assert.equal($("manual-compaction").open, true);
+    assert.equal(calls.length, 0);
+    $("manual-compaction-mode").value = "sync";
+    $("manual-compaction-mode").dispatchEvent(new w.Event("change"));
+    assert.match($("manual-compaction-hint").textContent, /安全停止/);
+    await $("manual-compaction-form").onsubmit({ preventDefault() {} });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].type, "session.compaction.start");
+    assert.equal(calls[0].data.mode, "sync");
+    $("compact-session").click();
+    restore({ sessionId: "other" });
+    await $("manual-compaction-form").onsubmit({ preventDefault() {} });
+    assert.equal(calls.length, 1);
+    assert.match($("manual-compaction-error").textContent, /会话已切换/);
+  } finally { dom.window.close(); }
+});
+
 test("压缩状态隔离、两层子代理归档、快照与迟到任务更新", async () => {
   const { dom, w, emit, restore, output } = await page();
   try {

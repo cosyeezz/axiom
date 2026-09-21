@@ -74,7 +74,7 @@ const goalUI = typeof createGoalUI === "function"
       focusPrompt: () => $("prompt").focus(),
     })
   : { show() {}, setConnected() {}, anchors() {} };
-const compactionDefaults = { enabled: true, tokenThreshold: 100000, percentThreshold: 50, model: null, thinking: "off", keepRecentTokens: 5000 };
+const compactionDefaults = { enabled: true, tokenThreshold: 100000, percentThreshold: 50, model: null, thinking: "off", keepRecentTokens: 5000, syncKeepRecentTokens: 20000, asyncKeepRecentTokens: 5000 };
 // 子代理轮次预算默认值，与 src/task-budget.js 的 taskBudgetDefaults 保持一致。
 const taskBudgetDefaults = { maxTurns: 20, wrapUpWindow: 2 };
 // 有效思考等级：只展示目标模型真正支持的等级（目录条目的 levels 由 SDK 的
@@ -2211,7 +2211,7 @@ function mountCompactionSegment(id, payload) {
   scrollLatest();
 }
 function compactionEditor(initial, mainModel) {
-  initial = { ...compactionDefaults, ...initial };
+  initial = { ...compactionDefaults, ...initial, asyncKeepRecentTokens: initial?.asyncKeepRecentTokens ?? initial?.keepRecentTokens ?? compactionDefaults.asyncKeepRecentTokens };
   const number = (input, max, fractional = false) => {
     const text = input.value.trim();
     if (!text) return null;
@@ -2223,7 +2223,7 @@ function compactionEditor(initial, mainModel) {
   const node = document.createElement("fieldset");
   node.className = "capability-agent compaction-settings";
   const legend = document.createElement("legend");
-  legend.textContent = "自动压缩";
+  legend.textContent = "会话压缩";
   const toggle = document.createElement("label");
   toggle.className = "compaction-toggle";
   const enabled = Object.assign(document.createElement("input"), { type: "checkbox" });
@@ -2243,8 +2243,10 @@ function compactionEditor(initial, mainModel) {
   token.value = initial.tokenThreshold ?? "";
   const percent = field("百分比阈值", Object.assign(document.createElement("input"), { type: "number", min: "0", max: "100", step: "any", placeholder: "不启用" }));
   percent.value = initial.percentThreshold ?? "";
-  const keep = field("保留最近 tokens", Object.assign(document.createElement("input"), { type: "number", min: "1" }));
-  keep.value = initial.keepRecentTokens;
+  const keep = field("异步压缩保留 tokens", Object.assign(document.createElement("input"), { type: "number", min: "1", max: "100000000" }));
+  keep.value = initial.asyncKeepRecentTokens;
+  const syncKeep = field("同步压缩保留 tokens", Object.assign(document.createElement("input"), { type: "number", min: "1", max: "100000000" }));
+  syncKeep.value = initial.syncKeepRecentTokens;
   const model = field("压缩模型", document.createElement("select"));
   model.dataset.modelKind = "model";
   modelPicker.enhance(model, "model");
@@ -2253,20 +2255,23 @@ function compactionEditor(initial, mainModel) {
   thinking.dataset.modelKind = "thinking";
   modelPicker.enhance(thinking, "thinking");
   const read = () => {
-    const kept = number(keep, Number.MAX_SAFE_INTEGER);
+    const kept = number(keep, 100000000);
+    const syncKept = number(syncKeep, 100000000);
     return {
       enabled: enabled.checked,
       tokenThreshold: number(token, Number.MAX_SAFE_INTEGER),
       percentThreshold: number(percent, 100, true),
       model: model.value || null,
       thinking: thinking.value,
-      keepRecentTokens: kept == null ? compactionDefaults.keepRecentTokens : kept,
+      keepRecentTokens: kept ?? compactionDefaults.asyncKeepRecentTokens,
+      asyncKeepRecentTokens: kept ?? compactionDefaults.asyncKeepRecentTokens,
+      syncKeepRecentTokens: syncKept ?? compactionDefaults.syncKeepRecentTokens,
     };
   };
   const error = () => {
     if (Number.isNaN(number(token, Number.MAX_SAFE_INTEGER))) return "Token 阈值需为大于 0 的整数";
     if (Number.isNaN(number(percent, 100, true))) return "百分比阈值需为大于 0 且不超过 100 的数值";
-    if (Number.isNaN(number(keep, Number.MAX_SAFE_INTEGER))) return "保留最近 tokens 需为大于 0 的整数";
+    if (Number.isNaN(number(keep, 100000000)) || Number.isNaN(number(syncKeep, 100000000))) return "保留 tokens 需为 1–100000000 的整数";
     const value = read();
     return value.enabled && value.tokenThreshold == null && value.percentThreshold == null
       ? "启用自动压缩时至少设置一个触发阈值" : "";
@@ -2281,7 +2286,7 @@ function compactionEditor(initial, mainModel) {
   fillThinking();
   const hint = document.createElement("p");
   hint.className = "compaction-hint";
-  hint.textContent = "两个阈值至少填一个（先到先触发，可同时设置）；较早对话折叠为摘要卡片，保留最近内容，压缩固定不使用工具。";
+  hint.textContent = "自动压缩至少设置一个阈值（先到先触发）；关闭自动压缩不影响手动触发。保留 tokens 指压缩后保留的最近原始上下文，不是摘要长度或输出预算。异步压缩不暂停主会话，期间新增消息另行保留，默认保底 5000 tokens；同步压缩暂停主会话推进，默认保留 20000 tokens，以维持任务连续性。实际保留量受消息边界影响；历史不足时不会强行压缩。压缩固定不使用工具。";
   node.append(legend, toggle, selectors, hint);
   return { node, read, valid, error, fillThinking };
 }
@@ -3630,6 +3635,39 @@ $("session-alert").onclick = () => {
 };
 $("stop").onclick = () => void stopSession("safe");
 // 后台压缩详情：选历史 run 只换展示，取消只作用于当前在途的那一次。
+let manualCompactionSession = null;
+function updateManualCompactionHint() {
+  const sync = $("manual-compaction-mode").value === "sync";
+  $("manual-compaction-hint").textContent = sync
+    ? "同步压缩期间暂停主会话。运行中的会话请先安全停止并等待子任务结束，再确认。默认保留 20000 tokens，实际使用会话配置。"
+    : "异步压缩期间主会话继续运行，新增消息会保留。默认保底保留 5000 tokens，实际使用会话配置。";
+}
+$("compact-session").onclick = () => {
+  if (!sessionId || !connected || changing || sessionMissing) return;
+  manualCompactionSession = sessionId;
+  $("manual-compaction-error").textContent = "";
+  updateManualCompactionHint();
+  $("manual-compaction").showModal();
+};
+$("manual-compaction-mode").onchange = updateManualCompactionHint;
+$("manual-compaction-cancel").onclick = () => $("manual-compaction").close();
+$("manual-compaction-form").onsubmit = async (event) => {
+  event.preventDefault();
+  const button = $("manual-compaction-confirm");
+  if (button.disabled) return;
+  if (manualCompactionSession !== sessionId || !connected || changing || sessionMissing) {
+    $("manual-compaction-error").textContent = "会话已切换或连接已断开，请重新打开确认窗口。";
+    return;
+  }
+  const target = manualCompactionSession;
+  button.disabled = true;
+  $("manual-compaction").close();
+  try {
+    const status = await request("session.compaction.start", { sessionId: target, mode: $("manual-compaction-mode").value });
+    if (sessionId === target && status) renderCompactionStatus(status);
+  } catch (e) { if (sessionId === target) error(e); }
+  finally { button.disabled = false; }
+};
 $("compaction-run-pick").onchange = (e) => {
   compactionRunPick = e.target.value || null;
   renderCompactionRun();

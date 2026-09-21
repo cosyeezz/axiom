@@ -123,7 +123,7 @@ test("输入区图标组：+ / 图片 / 目标共用一条描边，尺寸与焦�
     assert.ok(group, "输入区图标组存在");
     assert.equal(group.getAttribute("role"), "group");
     assert.equal(group.getAttribute("aria-label"), "输入区图标");
-    assert.deepEqual([...group.children].map((node) => node.id), ["add-context", "add-image", "goal-enter"], "三枚图标同组");
+    assert.deepEqual([...group.children].map((node) => node.id), ["add-context", "add-image", "compact-session", "goal-enter"], "四枚图标同组");
     const style = document.createElement("style");
     style.textContent = css;
     document.head.append(style);
@@ -131,7 +131,7 @@ test("输入区图标组：+ / 图片 / 目标共用一条描边，尺寸与焦�
     // jsdom 解析不了 border 简写里的 var()，整组描边改从 CSS 文本断言，子项用计算值断言尺寸与去边框。
     assert.match(css, /\.icon-group \{[^}]*border: 1px solid var\(--line\)/, "整组共用一条发丝描边");
     assert.match(css, /\.icon-group \{[^}]*border-radius: 8px/, "Linear rounded.md");
-    for (const id of ["add-context", "add-image", "goal-enter"]) {
+    for (const id of ["add-context", "add-image", "compact-session", "goal-enter"]) {
       assert.equal(computed(`#${id}`).width, "28px", `${id} 统一尺寸`);
       assert.equal(computed(`#${id}`).height, "28px", `${id} 统一尺寸`);
       assert.equal(computed(`#${id}`).borderTopWidth, "0px", `${id} 不再各自带边框（含原先的 Goal 专属边框）`);

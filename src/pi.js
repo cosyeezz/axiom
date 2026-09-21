@@ -410,6 +410,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       compactionStatus: () => compactionCtrl.getStatus(),
       // 用户从 UI 取消当前后台摘要；取消后原文不动，只丢弃本次结果。
       cancelCompaction: (runId) => compactionCtrl.cancelRun(runId),
+      compactNow: (mode) => compactionCtrl.runNow(mode),
       queue: queueState,
       // 上次 prompt 是否在 shouldPause 的安全点停下（非失败）：外层据此区分“已保存的暂停”与异常。
       paused: () => paused,

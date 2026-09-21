@@ -104,6 +104,7 @@
               <div class="icon-group" role="group" aria-label="输入区图标">
                 <button type="button" id="add-context" class="icon-button" popovertarget="context-menu" title="添加上下文" aria-label="添加 Skill、文件或文件夹"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
                 <button type="button" id="add-image" class="icon-button" title="上传图片，也可在输入框粘贴截图" aria-label="上传图片"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h18v18H3ZM3 17l6-6 4 4 3-3 5 5M15 7h2"/></svg></button>
+                <button type="button" id="compact-session" class="icon-button" title="手动压缩会话" aria-label="手动压缩会话" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3h16M4 21h16M12 5v5m-3-3 3 3 3-3M12 19v-5m-3 3 3-3 3 3M5 12h14"/></svg></button>
                 <button type="button" id="goal-enter" class="icon-button" title="进入目标模式：先澄清目标与验收标准，确认计划后多轮执行" aria-label="进入目标模式"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18ZM12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8ZM12 11.1a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z"/></svg></button>
               </div>
               <input id="image-files" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
@@ -222,6 +223,16 @@
           <summary>会话账单</summary><div id="session-bill-body" class="session-inspector-body"></div>
         </details>
       </div>
+    </dialog>
+    <dialog id="manual-compaction" aria-labelledby="manual-compaction-title">
+      <form id="manual-compaction-form">
+        <h2 id="manual-compaction-title">压缩当前会话？</h2>
+        <p class="compaction-hint">使用自研压缩机制，将较早对话折叠为摘要，保留最近上下文。失败或取消不会删除原文。</p>
+        <label>压缩方式<select id="manual-compaction-mode"><option value="async">异步 · 主会话继续运行</option><option value="sync">同步 · 压缩期间暂停主会话</option></select></label>
+        <p id="manual-compaction-hint" class="compaction-hint"></p>
+        <p id="manual-compaction-error" role="alert"></p>
+        <div class="dialog-actions"><button type="button" id="manual-compaction-cancel" class="secondary">取消</button><button type="submit" id="manual-compaction-confirm">确认压缩</button></div>
+      </form>
     </dialog>
     <div id="task-overlays"></div>
     <!-- 后台摘要进程：点输入框上方的压缩条幅进来，结构与子代理详情一致（顶部摘要 + 可滚动记录）。 -->

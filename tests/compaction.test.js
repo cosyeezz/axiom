@@ -184,6 +184,52 @@ const enabledConfig = {
   keepRecentTokens: 200,
 };
 
+test("manual sync compaction bypasses disabled auto and uses its larger retention", async () => {
+  const { session, cleanup } = await createTestSession();
+  let ctrl;
+  try {
+    seed(session, Array.from({ length: 12 }, (_, i) => i % 2 ? assistantMsg(big("a")) : userMsg(big("u"))));
+    session.agent.state.model = { ...session.model, contextWindow: 8192 };
+    ctrl = createBackgroundCompaction({ session, config: { ...enabledConfig, enabled: false, syncKeepRecentTokens: 2000, asyncKeepRecentTokens: 200 }, summarize: fakeSummarize() });
+    await ctrl.runNow("sync");
+    assert.equal(ctrl.getStatus().status, "applied", JSON.stringify(ctrl.getStatus()));
+    assert.equal(ctrl.getStatus().runs.at(-1).trigger.keepRecentTokens, 2000);
+    assert.equal(ctrl.getStatus().runs.at(-1).trigger.manual, true);
+  } finally { ctrl?.dispose(); cleanup(); }
+});
+
+test("manual async bypasses threshold, rejects duplicate and applies at idle", async () => {
+  const { session, cleanup } = await createTestSession();
+  let ctrl;
+  let resolve;
+  try {
+    seed(session, Array.from({ length: 12 }, (_, i) => i % 2 ? assistantMsg(big("a")) : userMsg(big("u"))));
+    ctrl = createBackgroundCompaction({ session, config: { ...enabledConfig, enabled: false, asyncKeepRecentTokens: 200 }, summarize: () => new Promise(r => { resolve = r; }) });
+    const started = await ctrl.runNow("async");
+    assert.equal(started.status, "summarizing");
+    assert.equal(started.runs.at(-1).trigger.keepRecentTokens, 200);
+    await assert.rejects(ctrl.runNow("async"), /已有压缩任务/);
+    resolve({ summary: "Short summary" });
+    await settle();
+    assert.equal(ctrl.getStatus().status, "applied");
+  } finally { ctrl?.dispose(); cleanup(); }
+});
+
+test("manual sync failure preserves messages and permits retry", async () => {
+  const { session, cleanup } = await createTestSession();
+  let ctrl;
+  try {
+    seed(session, Array.from({ length: 12 }, (_, i) => i % 2 ? assistantMsg(big("a")) : userMsg(big("u"))));
+    const before = session.messages.slice();
+    ctrl = createBackgroundCompaction({ session, config: { ...enabledConfig, syncKeepRecentTokens: 200 }, summarize: async () => { throw new Error("offline"); } });
+    await ctrl.runNow("sync");
+    assert.equal(ctrl.getStatus().status, "failed");
+    assert.deepEqual(session.messages, before);
+    await ctrl.runNow("sync");
+    assert.equal(ctrl.getStatus().runs.length, 2);
+  } finally { ctrl?.dispose(); cleanup(); }
+});
+
 function fakeSummarize(log) {
   return async ({ messages, previousSummary }) => {
     log?.push({ count: messages.length, previousSummary });
