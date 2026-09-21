@@ -1,8 +1,11 @@
+import { composerIconNode } from './icons.js';
+
 // Compact composer controls. Existing session handlers remain the authority.
 export function mountComposerControls({ state, providers, models, levels, selectModel }) {
   const $ = (id) => document.getElementById(id);
   const paths = { chevron: 'm8 10 4 4 4-4', next: 'm10 6 6 6-6 6', back: 'm14 6-6 6 6 6', check: 'm5 12 4 4L19 6', stop: 'M7 7h10v10H7z', force: 'm7 7 10 10M17 7 7 17', steer: 'M5 19V9a4 4 0 0 1 4-4h10m-4-4 4 4-4 4', followUp: 'M5 6h14M5 12h14M5 18h8m3-3 3 3-3 3', send: 'M12 20V4m-6 6 6-6 6 6', info: 'M12 8h.01M12 11v6M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0' };
   function icon(name) {
+    if (['stop', 'force', 'steer', 'followUp', 'send', 'info'].includes(name)) return composerIconNode(name);
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true'); svg.classList.add('composer-control-icon');
     const path = document.createElementNS(svg.namespaceURI, 'path'); path.setAttribute('d', paths[name]); svg.append(path); return svg;

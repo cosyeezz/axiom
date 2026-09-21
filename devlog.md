@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-20 输入区统一双色 SVG 图标
+
+- 时间：2026-09-20；分支 `feat/composer-svg-icons`。
+- 内容：重绘上下文、图片、手动压缩、目标、会话账单及发送/运行操作图标，扩展上下文菜单同套图形。
+- 决策与原因：按整组而非单图标设计，统一 24px 画布、20px 工具栏尺寸、1.65px 线宽和 16% 透明色面；移除工具栏分组底板，工具按钮统一透明背景，使用 `--accent-ink`、`--success`、`--danger` 及 `--ink` 适配明暗主题，不改变业务交互。图标定义集中在既有 icons.js，避免新增模块破坏测试脚本拼接入口。
+- 涉及文件：`public/{icons.js,composer-controls.js,style.css}`、`tests/{icons.test.js,composer-controls.test.js,composer-icons-ui.py}`、`README.md`、`devlog.md`。
+- 验证：全量 `npm test` 844 项，842 通过、2 跳过、0 失败；真实 Chromium 验证深浅主题图标尺寸、线宽、按钮背景一致性及移动端无横向溢出，并生成截图核对。
+
 ## 2026-09-20 手动会话压缩与分模式保留量
 
 - 时间：2026-09-20；分支 `feat/manual-compaction`。
