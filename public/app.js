@@ -306,17 +306,20 @@ function forgetGrowth(el) { growthWatch.delete(el); growthObserver?.unobserve(el
 for (const event of ["wheel", "touchstart", "touchmove", "keydown", "pointerdown"])
   transcript.addEventListener(event, () => noteScrollIntent(transcript), { capture: true, passive: true });
 const renderer = createStreamRenderer(renderMarkdown, scrollLatest);
-// 渲染缓存（Phase D2）：epoch = 会话，切走切回命中复用；缓存键含 entryId，JSONL 条目不可变，
-// 压缩/撤回不会让同 entryId 的产物失效。预算见 createMarkdownPageCache。
-let markdownPageCache, markdownPageEpoch = "";
+// 渲染缓存（Phase D2）：跨会话共用一份，切走切回直接把已渲染节点 move 回来（旧页销毁后节点
+// detach，正好满足复用条件）。原来按会话号重建，等于切回必然全量 miss，与“切回命中”的意图相反。
+// 键含会话与 entryId，JSONL 条目不可变，压缩/撤回不会让同 entryId 的产物失效；万一键撞上也安全，
+// 命中要求原文逐字相等，不等即当 miss 重渲染。预算见 createMarkdownPageCache。
+let markdownPageCache;
 function pageCacheCurrent() {
-  const epoch = sessionId ?? "";
-  if (epoch !== markdownPageEpoch) {
-    markdownPageEpoch = epoch;
-    markdownPageCache = createMarkdownPageCache();
-  }
-  return markdownPageCache;
+  return (markdownPageCache ??= createMarkdownPageCache());
 }
+// entryId 缺失时回退 messageId/下标，两者只在单个会话内唯一，因此键必须带会话号隔开。
+function pageCacheKey(agentId, id) { return `${sessionId ?? ""}\u0000${agentId}\u0000${id}`; }
+// 空态占位：只会在 #output 无子节点时存在一个。原来每次追加消息都 `#output.querySelector(".empty")`，
+// 挂载长历史时逐条扫整棵已长大的子树，是 O(n²)（300 条累计扫 134 万节点）。改持引用 O(1) 摘除。
+let emptyPlaceholder = null;
+function clearEmptyState() { emptyPlaceholder?.remove(); emptyPlaceholder = null; }
 window.addEventListener("pagehide", (event) => { if (!event.persisted) renderer.dispose(); });
 // 只监听用户意图，不监听程序触发的 scroll，以免贴底刷新自我延迟。
 for (const event of ["wheel", "touchstart", "touchmove", "pointerdown", "keydown", "input"])
@@ -549,7 +552,7 @@ function taskNotificationCard(message, agentId) {
   line.className = "task-notification-line";
   line.textContent = agentId === "main" ? "任务通知: 子任务完成" : "任务通知: 子任务完成 · 子代理";
   node.append(line);
-  $("output").querySelector(".empty")?.remove();
+  clearEmptyState();
   (tasks.get(agentId)?.output || $("output")).append(node);
   scrollLatest();
   return { node };
@@ -684,7 +687,9 @@ function updateNavigation() {
   $("reveal-workspace").disabled = unavailable;
   for (const button of $("sessions").querySelectorAll(".workspace-config-btn")) button.disabled = unavailable;
   $("copy-workspace").disabled = !$("workspace-label").textContent;
-  $("new").disabled = unavailable || !models.length;
+  // 新建会话按钮只看「能不能新建」：连接在、有模型就可点。不与 changing 绑定，
+  // 否则每次新建/切换都会把按钮刷成灰色，观感像卡住；重复点击由 switchSession 自己挡。
+  $("new").disabled = !connected || !models.length;
   for (const button of $("sessions").querySelectorAll(".session-actions button")) {
     if (button.classList.contains("session-duplicate"))
       button.disabled = duplicateBlocked(allSessions.find((s) => s.id === button.closest(".session-row")?.dataset.sessionId));
@@ -1652,7 +1657,7 @@ function toolState(agentId, data) {
   scrollLatest();
 }
 function card(title, task) {
-  $("output").querySelector(".empty")?.remove();
+  clearEmptyState();
   const node = document.createElement("article");
   node.className = title === "你" ? "message user" : "message";
   const heading = document.createElement("h3");
@@ -2189,7 +2194,7 @@ function mountCompactionSegment(id, payload) {
       }
     live.delete(agentId);
     bindRaw(item, entry);
-    item.markdownOptions = { pageCache: pageCacheCurrent(), cacheKey: `${agentId}\u0000${entry.entryId ?? entry.messageId}` };
+    item.markdownOptions = { pageCache: pageCacheCurrent(), cacheKey: pageCacheKey(agentId, entry.entryId ?? entry.messageId) };
     renderMessage(item, message);
   }
   for (const tool of Object.values(payload.tools || {}))
@@ -2441,7 +2446,7 @@ function syncRetryPrompt() {
   retryPrompt.button.title = canReask ? "直接重新调用提问工具，回答后继续原任务" : "接着上次中断的地方继续，不重发你的输入";
   retryPrompt.button.disabled = false;
   if ($("output").lastElementChild === retryPrompt) return;
-  $("output").querySelector(".empty")?.remove();
+  clearEmptyState();
   $("output").append(retryPrompt);
   scrollLatest();
 }
@@ -2495,7 +2500,7 @@ function renderRetry(agentId = "main", data, historical = false) {
     status.setAttribute("role", "status");
     node.append(summary, status, history);
     const output = tasks.get(agentId)?.output || $("output");
-    output.querySelector(".empty")?.remove();
+    clearEmptyState();
     // anchorEntryId 是精确锚点：有它就能归位（压缩折叠段的重试卡只带锚点，没有下标）。
     const unknown = agentId === "main" && historical && !data.anchorEntryId
       && (!Number.isInteger(data.messageCount) || data.messageCount < 0);
@@ -2766,7 +2771,7 @@ function applyEvent(message) {
         if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom)
           node.close();
       };
-      $("output").querySelector(".empty")?.remove();
+      clearEmptyState();
       $("output").append(trigger);
       $("task-overlays").append(node);
       tasks.set(message.taskId, task);
@@ -2897,6 +2902,7 @@ function beginSnapshot(state, target) {
   canReask = !!state.canReask;
   interrupted = !busy && (canReask || canResumeMessage(lastMainMessage));
   $("output").replaceChildren();
+  emptyPlaceholder = null;
   live.clear();
   toolItems.clear();
   waitingItems.clear();
@@ -2984,10 +2990,10 @@ function placeSnapshotMessage(ctx, index, { agentId, message, entryId, compacted
     // 绑定与下标同构的原文条目：rawEntries 与 state.messages 顺序一致。
     bindRaw(item, rawEntries[index]);
     // 页级渲染缓存（Phase D2）：历史快照是整页替换主场景，同一消息反复从零 lex/parse；
-    // 键含会话与修订（随 epoch 切换失效），entryId 跨页稳定。实时流与半成品流不缓存。
+    // 键含会话与 agent，entryId 跨页稳定。实时流与半成品流不缓存。
     item.markdownOptions = {
       pageCache: pageCacheCurrent(),
-      cacheKey: `${agentId}\u0000${entryId ?? index}`,
+      cacheKey: pageCacheKey(agentId, entryId ?? index),
     };
     renderMessage(item, message);
     if (compacted) markCompacted(item);
@@ -3062,6 +3068,7 @@ function finishSnapshot(job, ctx) {
     empty.innerHTML =
       '<span class="empty-mark" aria-hidden="true">A</span><p class="eyebrow">你的本地 AI 工作台</p><h2>把想法，变成下一步。</h2><p>描述目标，让 Axiom 协同思考与执行。</p><div class="empty-hints"><span>梳理代码</span><span>排查问题</span><span>实现想法</span></div>';
     $("output").append(empty);
+    emptyPlaceholder = empty;
   }
   lastScrollTops.delete(transcript);
   scrollFrame = requestAnimationFrame(() => {
@@ -3680,12 +3687,15 @@ async function stopSession(mode) {
   }
 }
 let refreshing;
-function refreshSessions() {
-  if (refreshing) return refreshing;
-  refreshing = updateSessions().finally(() => {
-    refreshing = undefined;
+// force：切换会话后必须发起「切换之后才开始」的请求。复用切换前在途的那次，拿回来的是
+// 旧会话视角的列表（新会话还不在里面），既校正不了侧栏，也会被下面的过期判定丢掉。
+function refreshSessions({ force = false } = {}) {
+  if (refreshing && !force) return refreshing;
+  const pending = updateSessions().finally(() => {
+    if (refreshing === pending) refreshing = undefined;
   });
-  return refreshing;
+  refreshing = pending;
+  return pending;
 }
 // ponytail: 可见页面每 5 秒刷新后台状态；需要即时通知时再增加列表事件订阅。
 setInterval(() => {
@@ -3728,8 +3738,29 @@ function updatePageTitle() {
   const workspace = currentCwd.replaceAll("\\", "/").replace(/\/$/, "").split("/").pop() || currentCwd;
   document.title = `${$("session-title").textContent} · ${workspace} — Axiom`;
 }
+// 新建会话后先本地补上侧栏行，避开「页面已打开、列表里还没这个会话」的空窗。
+// 只负责让行立刻可见，字段以 sessions.list 为权威，下一次刷新会整行盖写。
+function insertSessionRow(state) {
+  if (!state?.sessionId || allSessions.some((s) => s.id === state.sessionId)) return;
+  const now = Date.now();
+  allSessions = [...allSessions, {
+    id: state.sessionId,
+    title: state.title || "新会话",
+    cwd: state.cwd ?? currentCwd,
+    status: state.status ?? "idle",
+    sessionFile: state.sessionFile ?? null,
+    createdAt: state.createdAt ?? now,
+    updatedAt: state.updatedAt ?? now,
+    elapsedMs: state.elapsedMs ?? 0,
+    runningSince: state.runningSince ?? null,
+  }];
+}
 async function updateSessions() {
+  // 请求发出时的当前会话：回执到达时若已经切走，这份列表就是旧会话视角的过期快照。
+  // 拿它判断「当前会话是否还存在」会误判成历史已删除，把用户从刚打开的会话里弹出去。
+  const target = sessionId;
   const sessions = await request("sessions.list");
+  if (sessionId !== target) return;
   renderTaskTimer(sessions);
   // updatedAt 决定排序与未读判定，必须进比较键，否则「跑完」这类只动 updatedAt 的变化不会重渲染列表。
   const listState = (items) => JSON.stringify(items.map(({ id, title, cwd, status, sessionFile, createdAt, updatedAt, elapsedMs, runningSince }) => ({ id, title, cwd, status, sessionFile, createdAt, updatedAt, elapsedMs, runningSince })));
@@ -3784,9 +3815,13 @@ async function switchSession(action) {
     const state = await action();
     if (sessionMissing) views.set(state.sessionId, { draft: $("prompt").value, contextFiles: [...contextFiles], images: [...images], selectedSkill, follow: true, scroll: 0 });
     await snapshot(state);
+    // 乐观插入：新建的会话立刻出现在侧栏，不等 sessions.list 回执（下一次刷新会用服务端数据校正）。
+    insertSessionRow(state);
     renderSessions();
     if (mobile.matches) sidebar(false);
-    await refreshSessions();
+    // 列表校正不挡解锁：这次 sessions.list 往返只为把侧栏字段换成服务端权威值，
+    // 放后台跑；UI 在快照渲染完就恢复可交互，不再多等一个往返。
+    void refreshSessions({ force: true }).catch(error);
   } catch (e) {
     error(e);
   } finally {

@@ -1,5 +1,14 @@
 # 开发记录
 
+## 2026-09-20 新建反馈与会话切换性能
+
+- 时间：2026-09-20；分支 `feat/session-switch-perf`。
+- 原因：新建期间按钮置灰、侧栏等待额外列表往返；长历史挂载逐条查询整个输出区域的空态节点，累计工作量呈平方增长，且切换会话会清空 Markdown 缓存。
+- 改动：创建回执到达立即插入侧栏，列表后台校正；按钮不随 changing 置灰，重复点击仍由守卫拦截；列表过期响应按会话丢弃，旧请求结束不清掉新请求引用。空态改为直接引用摘除；缓存跨会话保留，键含会话/代理/消息身份，LRU 上限调整为 2000 条、8MiB 原文预算；复制按钮不再捕获旧消息容器。
+- 决策：不重新引入消息分页，不改服务端闲置释放策略。实测服务端冷路径约 58ms，并非主要瓶颈；894 条消息在 jsdom 中冷开约 65.7s→4.3s、切回约 68.6s→1.96s，切回命中 447 条。以上是测试环境相对测量，不代表真实浏览器绝对耗时。新行在创建回执后出现，而不是在服务端尚未确认时虚构会话。
+- 验证：新增新建反馈/重复点击/列表校正及空态复杂度回归；更新跨会话命中、预算断言，修复模拟列表缺 id 与导入缺状态的问题；压缩摘要测试改等 toggle 事件，避免零延时定时器竞态。全量 `npm test` 通过（839 用例，837 通过、2 跳过）；交付前再同步主分支并复验。
+- 文件：`public/app.js`、`public/markdown.js`、`tests/app.test.js`、`tests/history-page-cache.test.js`、`tests/markdown-page-cache.test.js`、`tests/model-onboarding-ui.test.js`、`tests/new-session-feedback.test.js`、`tests/transcript-empty-state.test.js`、`README.md`、`devlog.md`。
+
 ## 2026-09-20 后台压缩过程可视与取消当次摘要
 
 - 时间：2026-09-20；分支 `feat/compaction-visibility`。

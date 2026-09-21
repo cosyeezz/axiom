@@ -295,7 +295,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
             break;
           case "session.import":
             lastImport = req;
+            // 与后端一致：importSession 走 create()，返回前会话已进 items，sessions.list 立即含它。
             data = { sessionId: "imported", title: "imported", cwd: req.cwd, status: "idle", config, messages: [], tasks: [], live: {} };
+            states.push(structuredClone(data));
             break;
           case "session.duplicate":
             // 与后端一致：标题原词接序号，任务历史随副本保留，运行状态归零。
@@ -1821,8 +1823,9 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     assert.equal(cards()[0].open, false, "compaction cards stay folded by default");
     // 摘要正文懒渲染：折叠态不建内容，展开（toggle 异步派发）才渲染。
     assert.equal(summaryBody.textContent, "", "folded cards render nothing inside");
+    const expanded = new Promise((resolve) => cards()[0].addEventListener("toggle", resolve, { once: true }));
     cards()[0].open = true;
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await expanded;
     assert.match(summaryBody.textContent, /早前/);
     assert.equal(summaryBody.querySelector("img"), null, "summaries render through the sanitizing pipeline");
     cards()[0].open = false;

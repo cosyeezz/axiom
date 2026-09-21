@@ -101,21 +101,21 @@ test("复用后的块更新（元素级 diff）与首次渲染行为一致", asy
   } finally { window.close(); }
 });
 
-test("LRU：条目上限 300 与字节预算 4MB，插入序逐出", async () => {
+test("LRU：条目上限 2000 与字节预算 8MB，插入序逐出", async () => {
   const { window, createMarkdownPageCache } = await loadRenderer();
   try {
     const pageCache = createMarkdownPageCache();
     // 直接走 store/get（纯 Map 逻辑），验证上限与逐出统计。
-    for (let i = 0; i < 305; i++) {
+    for (let i = 0; i < 2005; i++) {
       pageCache.store(`k${i}`, { text: "x".repeat(10), linksKey: "", blocks: [{ key: "a", node: null }] });
     }
-    assert.equal(pageCache.entries.size, 300);
+    assert.equal(pageCache.entries.size, 2000);
     assert.equal(pageCache.stats.evict, 5);
     assert.ok(!pageCache.entries.has("k0"));
-    assert.ok(pageCache.entries.has("k304"));
+    assert.ok(pageCache.entries.has("k2004"));
     // 字节预算：单条超预算时逐出全部旧条目，仅留这一条（严格大于才逐）。
-    pageCache.store("big", { text: "x".repeat(4 << 20), linksKey: "", blocks: [] });
-    assert.ok(pageCache.bytes <= 4 << 20);
+    pageCache.store("big", { text: "x".repeat(8 << 20), linksKey: "", blocks: [] });
+    assert.ok(pageCache.bytes <= 8 << 20);
     assert.equal(pageCache.entries.size, 1);
     assert.ok(pageCache.entries.has("big"));
   } finally { window.close(); }

@@ -9,8 +9,11 @@ const cache = new WeakMap();
 // 随元素销毁失效，导致同一消息反复从零 lex/parse/sanitize。页缓存按调用方键存终态渲染
 // 产物（blocks 节点强引用，旧元素销毁后节点自动 detached 可 move 复用）。只缓存终态复杂
 // markdown：流式/半成品不传键，纯文本与 >24K literal 走自己的快路径不参与。
-const PAGE_CACHE_ENTRY_LIMIT = 300;
-const PAGE_CACHE_BYTE_LIMIT = 4 << 20;
+// 上限要能装下「当前会话 + 刚切走的几个会话」：单个长会话已可达 400+ 条可缓存消息，
+// 旧的 300 条连一个会话都装不下，挂载过程中就自我淘汰，切回必然全量 miss。
+// bytes 按原文长度计，只是节点内存的代理量，不是精确占用。
+const PAGE_CACHE_ENTRY_LIMIT = 2000;
+const PAGE_CACHE_BYTE_LIMIT = 8 << 20;
 export function createMarkdownPageCache() {
   return {
     entries: new Map(), // key → { text, linksKey, blocks }，插入序即 LRU 序
@@ -398,7 +401,7 @@ export function renderMarkdown(element, text = "", options = {}) {
       copy.setAttribute("aria-live", "polite");
       copy.onclick = async () => {
         try {
-          await copyText(code.textContent, element.ownerDocument.defaultView);
+          await copyText(code.textContent, copy.ownerDocument.defaultView);
           copy.textContent = "已复制";
         } catch { copy.textContent = "复制失败，请选中复制"; }
         copy.onblur = () => { copy.textContent = "复制"; };
