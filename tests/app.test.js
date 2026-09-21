@@ -295,7 +295,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
             break;
           case "session.import":
             lastImport = req;
+            // 与后端一致：importSession 走 create()，返回前会话已进 items，sessions.list 立即含它。
             data = { sessionId: "imported", title: "imported", cwd: req.cwd, status: "idle", config, messages: [], tasks: [], live: {} };
+            states.push(structuredClone(data));
             break;
           case "session.duplicate":
             // 与后端一致：标题原词接序号，任务历史随副本保留，运行状态归零。
@@ -816,16 +818,13 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     sockets[1].receive({ type: "session.state", sessionId: onScreen, data: { status: "idle" } });
     assert.ok(JSON.parse(window.localStorage.getItem("axiom.sessionSeen"))[onScreen] > 0, "the session on screen is marked seen when it finishes");
     input("");
-    assert.match($("session-runtime").textContent, /缓存命中 尚无已报告用量的请求.*上下文 等待首条消息.*test · model · off/);
+    assert.match($("session-runtime").textContent, /cache —.*context —.*test · model · off/);
     assert.equal($("thinking").selectedOptions[0].textContent, "off");
     assert.equal(window.runtimeSummary({ model: "zai-coding-cn/glm-5.3-flash", thinking: "max" })[2], "zai-coding-cn · glm-5.3-flash · max");
-    assert.match(window.runtimeSummary({ usage: { input: 100, cacheRead: 0, cacheWrite: 0 } })[0], /0.0%/);
-    assert.match(window.runtimeSummary({ usage: { input: 0, cacheRead: 0 } })[0], /供应商未报告缓存用量/);
-    assert.match(window.runtimeSummary({ context: { tokens: null, contextWindow: 10000, percent: null } })[1], /— \/ 10,000 tokens · 待更新/);
-    const opSummary = window.runtimeSummary({ observationPack: { folded: 3, savedTokens: 1200, recalledObjects: 2, recallRate: 2 / 3, recallPages: 7 } })[3];
-    assert.equal(opSummary, undefined, "旧 OP 载荷不再展示");
-    const coldOp = window.runtimeSummary({ observationPack: { folded: 0, savedTokens: 0, recalledObjects: 0, recallRate: 0, recallPages: 0 } })[3];
-    assert.equal(coldOp, undefined);
+    assert.match(window.runtimeSummary({ usage: { input: 100, cacheRead: 0, cacheWrite: 0 } })[0], /0%/);
+    assert.match(window.runtimeSummary({ usage: { input: 0, cacheRead: 0 } })[0], /cache —/);
+    assert.match(window.runtimeSummary({ context: { tokens: null, contextWindow: 10000, percent: null } })[1], /—\/10,000 · —/);
+    assert.equal(window.runtimeSummary({ observationPack: { folded: 3 } }).length, 3, 'OP 不再占用信息栏');
     assert.equal($("session-runtime").previousElementSibling.className, "actions");
     assert.equal($("subagent-model").value, "");
     assert.equal($("subagent-model").disabled, true);
@@ -1051,7 +1050,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("task-overlays").contains(historicalTask), true);
     assert.equal(historicalTask.open, false);
     assert.equal(historicalTask.querySelector(".message > .markdown").textContent, "");
-    assert.match(historicalTask.querySelector(".runtime-summary").textContent, /80.0%.*1,200 \/ 10,000 tokens · 12.0%.*other · child · high/);
+    assert.match(historicalTask.querySelector(".runtime-summary").textContent, /80%.*1,200\/10,000 · 12%.*other · child · high/);
     assert.equal(historicalTask.querySelector(".task-top .runtime-summary")?.parentElement.nextElementSibling.className, "task-body");
     assert.equal(historicalTask.querySelector(".task-system-prompt pre").textContent, "Historical system prompt");
     assert.equal(historicalTask.querySelector(".task-description").textContent, "Historical task");
@@ -1328,9 +1327,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       context: { tokens: 1200, contextWindow: 10000, percent: 12 },
     };
     emit("agent.runtime", runtime, { agentId: "child" });
-    assert.match($("session-runtime").textContent, /尚无已报告用量的请求/);
+    assert.match($("session-runtime").textContent, /cache —/);
     emit("agent.runtime", { ...runtime, model: "test/model" });
-    assert.match($("session-runtime").textContent, /80.0%.*test · model · high/);
+    assert.match($("session-runtime").textContent, /80%.*test · model · high/);
     assert.equal($("session-system-prompt").textContent, runtime.systemPrompt);
     assert.equal($("session-active-tools").querySelector(".inspector-tool .tool-name").textContent, "read");
     assert.equal($("session-active-tools").querySelector(".inspector-tool p").textContent, runtime.tools[0].description);
@@ -1356,7 +1355,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     const trigger = window.document.querySelector(".task-card");
     const task = $(trigger.getAttribute("aria-controls"));
     assert.equal(renders, beforeHidden, "closed overlays skip Markdown parsing");
-    assert.match(task.querySelector(".runtime-summary").textContent, /80.0%.*other · child/);
+    assert.match(task.querySelector(".runtime-summary").textContent, /80%.*other · child/);
     assert.equal(trigger.querySelector(".runtime-summary"), null, "runtime information is pinned in the overlay, not duplicated in the transcript");
     assert.equal(task.querySelector(".task-system-prompt pre").textContent, runtime.systemPrompt);
     assert.equal(task.querySelector(".task-system-prompt img"), null, "system prompts are plain text, not executable markup");
@@ -1455,7 +1454,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("task-runs").children.length, 1);
     row("b").querySelector(".session-item").click();
     await settle();
-    assert.match($("session-runtime").textContent, /尚无已报告用量的请求/, "switching sessions clears previous usage");
+    assert.match($("session-runtime").textContent, /cache —/, "switching sessions clears previous usage");
     assert.doesNotMatch($("session-system-prompt").textContent, /System instructions/, "switching sessions clears previous prompt");
     assert.equal($("session-active-tools").textContent, "工具信息尚未加载。");
     assert.equal($("task-runs").hidden, true, "switching sessions resets the run summary");
@@ -1554,7 +1553,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     sockets.at(-1).receive({ type: "response", id: heldConfig.id, ok: true, data: { ...config, queueType: "followUp" } });
     await settle();
     assert.equal($("queue-type").value, "steer", "late response from another session leaves current settings alone");
-    $("queue-type").onchange();
+    $("model").onchange();
     await settle();
     assert.equal(heldConfig.sessionId, "a");
     sockets.at(-1).receive({ type: "response", id: heldConfig.id, ok: true, data: { ...config, queueType: "followUp" } });
@@ -1824,8 +1823,9 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     assert.equal(cards()[0].open, false, "compaction cards stay folded by default");
     // 摘要正文懒渲染：折叠态不建内容，展开（toggle 异步派发）才渲染。
     assert.equal(summaryBody.textContent, "", "folded cards render nothing inside");
+    const expanded = new Promise((resolve) => cards()[0].addEventListener("toggle", resolve, { once: true }));
     cards()[0].open = true;
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await expanded;
     assert.match(summaryBody.textContent, /早前/);
     assert.equal(summaryBody.querySelector("img"), null, "summaries render through the sanitizing pipeline");
     cards()[0].open = false;

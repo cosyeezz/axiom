@@ -57,7 +57,7 @@ const harness = async () => {
           case "models.list": data = catalog; break;
           case "models.favorites.get": data = { provider: [], model: [], thinking: [] }; break;
           case "models.config.get": data = { fingerprint: "f1", path: "models.json", providers: [], catalog }; break;
-          case "sessions.list": data = sessions.map((s) => ({ ...s, updatedAt: Date.now() })); break;
+          case "sessions.list": data = sessions.map((s) => ({ ...s, id: s.sessionId, updatedAt: Date.now() })); break;
           case "session.attach": data = sessions.find((s) => s.sessionId === req.sessionId); break;
           case "session.create": { const state = newState(); sessions.push(state); data = state; break; }
           case "session.defaults.list": data = { workspaces: [] }; break;

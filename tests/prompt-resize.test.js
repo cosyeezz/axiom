@@ -148,9 +148,9 @@ test("手机展开与断点切换仍然重算，收起时不白量", async () =>
     media.matches = false;
     media.onchange();
     assert.equal(input.rows, 1, "桌面默认折叠成一行");
-    assert.equal(input.style.height, "", "折叠态高度交回 CSS");
+    assert.equal(input.style.height, "240px", "跨断点保持内容高度");
     w.expandComposer();
-    assert.equal(input.rows, 3, "展开后桌面回到 3 行");
+    assert.equal(input.rows, 1, "桌面也保持单行基线");
     assert.equal(input.style.height, "240px", "同一 scrollHeight 封顶后仍为 240");
     assert.ok(reads.count >= 2, "断点切换要重量");
 
@@ -160,143 +160,19 @@ test("手机展开与断点切换仍然重算，收起时不白量", async () =>
   } finally { dom.window.close(); }
 });
 
-// 桌面输入区折叠：默认一行，点击/聚焦/输入展开，鼠标与键盘焦点都离开 5s 后收回。
-test("桌面输入区默认折叠，交互展开，离开 5s 收回", async () => {
-  const { dom, w, input } = await page();
-  const composer = w.document.getElementById("composer");
-  const wrap = w.document.querySelector(".composer-wrap");
+test("输入区始终按内容显示，不再悬停展开或超时折叠", async () => {
+  const { dom, w, input, size } = await page();
   try {
-    assert.equal(composer.dataset.collapsed, "true", "首屏就是折叠态，不占多行");
-    assert.equal(wrap.dataset.collapsed, "true", "footer 所在的外层同步折叠标记");
+    size(44); input.value = "一行"; w.resizePrompt();
     assert.equal(input.rows, 1);
-
-    // 点击展开：mousedown 先到，popover / 选择器都能正常点。
-    wrap.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true }));
-    assert.equal(composer.dataset.collapsed, "false", "点击即展开");
-    assert.equal(input.rows, 3);
-
-    // 焦点在输入框里时不收：5s 到点也得留着。
-    input.dispatchEvent(new w.FocusEvent("focusin", { bubbles: true }));
-    input.focus();
-    wrap.dispatchEvent(new w.Event("mouseleave"));
-    await w.__collapseTick();
-    assert.equal(composer.dataset.collapsed, "false", "键盘焦点还在输入区，不收");
-
-    // 焦点与鼠标都离开 → 5s 后折叠。
-    input.blur();
-    input.dispatchEvent(new w.FocusEvent("focusout", { bubbles: true }));
-    await w.__collapseTick();
-    assert.equal(composer.dataset.collapsed, "true", "失焦 5s 自动折叠");
-    assert.equal(input.rows, 1);
-
-    // 输入内容立刻展开（快捷键聚焦后直接打字的路径）。
-    input.value = "草稿";
-    input.dispatchEvent(new w.Event("input", { bubbles: true }));
-    assert.equal(composer.dataset.collapsed, "false", "输入即展开");
-
-    // 悬停期间不收，计时器被清掉。
-    wrap.dispatchEvent(new w.Event("mouseenter"));
-    input.dispatchEvent(new w.FocusEvent("focusout", { bubbles: true }));
-    await w.__collapseTick();
-    assert.equal(composer.dataset.collapsed, "false", "鼠标还在输入区上，不收");
+    assert.equal(input.style.height, "44px");
+    size(64); input.value = `一行
+二行`; w.resizePrompt();
+    assert.equal(input.style.height, "64px");
+    w.collapseComposer();
+    assert.equal(input.style.height, "64px");
+    assert.equal(w.document.getElementById("composer").dataset.collapsed, "false");
+    size(44); input.value = "一行"; w.resizePrompt();
+    assert.equal(input.style.height, "44px");
   } finally { dom.window.close(); }
-});
-
-// 回归防守：“回到最新”钉在输入区上沿，mousedown 就展开会把按钮推走，
-// mouseup 落不回原元素、click 不触发，按钮彻底点不动。
-test("滚动按钮不算输入意图：点回到最新不展开输入区", async () => {
-  const { dom, w, input } = await page();
-  const composer = w.document.getElementById("composer");
-  const latest = w.document.getElementById("latest");
-  try {
-    assert.equal(composer.dataset.collapsed, "true");
-    latest.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true }));
-    assert.equal(composer.dataset.collapsed, "true", "滚到最新不展开，按钮不位移");
-    latest.dispatchEvent(new w.FocusEvent("focusin", { bubbles: true }));
-    assert.equal(composer.dataset.collapsed, "true", "按钮拿到焦点也不展开");
-
-    // 输入区本体的 mousedown 照旧展开。
-    input.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true }));
-    assert.equal(composer.dataset.collapsed, "false", "点输入区仍然展开");
-  } finally { dom.window.close(); }
-});
-
-// 同一类回归：后台压缩条幅也排在输入区上方，mousedown 就展开会把条幅向上顶两百多像素，
-// mouseup 落到别的元素上，click 不触发（真浏览器里重现过），摘要详情弹窗就点不开。
-test("压缩条幅不算输入意图：点进摘要详情不展开输入区", async () => {
-  const { dom, w, input } = await page();
-  const composer = w.document.getElementById("composer");
-  const progress = w.document.getElementById("compaction-progress");
-  try {
-    assert.equal(composer.dataset.collapsed, "true");
-    progress.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true }));
-    assert.equal(composer.dataset.collapsed, "true", "点条幅不展开，条幅不位移");
-    progress.dispatchEvent(new w.FocusEvent("focusin", { bubbles: true }));
-    assert.equal(composer.dataset.collapsed, "true", "条幅拿到焦点也不展开");
-
-    input.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true }));
-    assert.equal(composer.dataset.collapsed, "false", "点输入区仍然展开");
-  } finally { dom.window.close(); }
-});
-
-test("还在用的状态不折叠：待发图片、补全打开；运行中照常折叠", async () => {
-  const { dom, w, input } = await page();
-  const composer = w.document.getElementById("composer");
-  const wrap = w.document.querySelector(".composer-wrap");
-  const leave = async () => {
-    wrap.dispatchEvent(new w.Event("mouseleave"));
-    input.dispatchEvent(new w.FocusEvent("focusout", { bubbles: true }));
-    await w.__collapseTick();
-  };
-  try {
-    // Stop/Force 在折叠态里是保留项（CSS 只收 selectors 与发送按钮），运行中不必撑开整个输入区。
-    w.expandComposer();
-    w.document.getElementById("stop").hidden = false;
-    await leave();
-    assert.equal(composer.dataset.collapsed, "true", "运行中也折叠，Stop 由折叠态保留");
-    w.document.getElementById("stop").hidden = true;
-    await leave();
-    assert.equal(composer.dataset.collapsed, "true");
-
-    // @ 补全列表是 #composer 的子节点，收起会被裁掉。
-    w.expandComposer();
-    w.document.getElementById("prompt-completion").hidden = false;
-    await leave();
-    assert.equal(composer.dataset.collapsed, "false", "补全打开期间不折叠");
-    w.document.getElementById("prompt-completion").hidden = true;
-    await leave();
-    assert.equal(composer.dataset.collapsed, "true");
-
-    // 待发图片在附件区，折叠不隐附件区，但发送按钮会被收起，所以同样不收。
-    w.expandComposer();
-    w.document.getElementById("image-attachments").hidden = false;
-    await leave();
-    assert.equal(composer.dataset.collapsed, "false", "有待发图片时不折叠");
-    w.document.getElementById("image-attachments").hidden = true;
-    await leave();
-    assert.equal(composer.dataset.collapsed, "true");
-  } finally { dom.window.close(); }
-});
-
-// 折叠态保留什么、收起什么，全靠这段 media query；jsdom 不跑媒体查询，改从 CSS 文本守。
-test("折叠态样式：摘要与停止按钮同一行，任务计时保留，图标组与发送区收起", async () => {
-  const css = await readFile(new URL("../public/style.css", import.meta.url), "utf8");
-  const block = css.match(/@media \(min-width: 701px\) \{\s*#composer\[data-collapsed[\s\S]*?\r?\n\}/)?.[0];
-  assert.ok(block, "桌面折叠态样式块存在");
-  const hidden = block.match(/([^{}]*)\{ display: none; \}/)[1];
-  for (const selector of [".session-detail-rows", ".selectors", "#send", ".icon-group", ".composer-footer"]) {
-    assert.ok(hidden.includes(selector), `${selector} 折叠时收起`);
-  }
-  for (const keep of ["#session-runtime", "#task-timer", "#context-chips", "#image-attachments", "#stop", "#force-stop"]) {
-    assert.ok(!hidden.includes(keep), `${keep} 折叠时保留`);
-  }
-  // 摘要和停止按钮共用第二行：输入框 basis 100% 独占首行，摘要 basis 必须是 0，
-  // 否则 nowrap 文本的内容宽就是初始主尺寸，窄屏时把按钮挤到下一行。
-  assert.match(block, /#composer\[data-collapsed="true"\] \{[^}]*flex-flow: row wrap/, "折叠态改横向换行排列");
-  assert.match(block, /#prompt, #prompt-completion\) \{[^}]*flex: 1 0 100%/, "输入框独占首行");
-  assert.match(block, /> #session-runtime \{[^}]*flex: 1 1 0/, "摘要按剩余宽度收缩，不把按钮顶走");
-  assert.match(block, /> #session-runtime \{[^}]*white-space: nowrap/, "摘要单行不换行");
-  assert.match(block, /> \.actions \{[^}]*justify-content: flex-end/, "停止按钮靠右");
-  assert.match(block, /> \.actions \{[^}]*order: 1/, "动作区排到摘要右侧");
-  assert.match(block, /\.actions:not\(:has\(> #stop:not\(\[hidden\]\), > #force-stop:not\(\[hidden\]\)\)\) \{ display: none/, "两个停止按钮都隐藏时整条动作区收掉");
 });

@@ -10,6 +10,7 @@
          所以用一个阻塞的小脚本文件。 -->
     <script src="/theme.js"></script>
     <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/composer-controls.css" />
     <link rel="stylesheet" href="/file-picker.css" />
     <link rel="stylesheet" href="/tooltip.css" />
     <link rel="stylesheet" href="/model-picker.css" />
@@ -125,7 +126,7 @@
               <label for="prompt" class="sr-only">任务内容</label
               ><textarea
                 id="prompt"
-                rows="3"
+                rows="1"
                 placeholder="描述任务… / 选择 Skill，@ 引用文件或文件夹"
                 aria-controls="prompt-completion"
                 aria-autocomplete="list"
@@ -165,7 +166,7 @@
             </form>
             <div class="composer-footer" id="composer-help">
               <span>/ Skill · @ 文件/文件夹 · Enter 发送 · Shift / Ctrl / ⌘ + Enter 换行 · Ctrl+Z 撤销 · Ctrl+C 清空文字</span
-              ><span>Esc 撤回队列 · 双按 Esc 安全停止</span>
+              ><span id="composer-action-help">Enter 发送 · 运行操作从右侧下拉选择 · 双按 Esc stop</span>
             </div>
           </div>
         </section>
@@ -340,7 +341,7 @@
           <p id="selection-copy-feedback" role="status" aria-live="polite"></p>
         </section>
         <section>
-          <div class="selectors settings-selectors"><label for="queue-type"><span>Running 时 Enter 默认发送类型</span>
+          <div hidden><label for="queue-type"><span>Running 时 Enter 默认发送类型</span>
           <select id="queue-type" aria-describedby="steer-help followup-help"><option value="steer">Steer</option><option value="followUp">Follow-up</option></select></label></div>
           <p id="steer-help"><strong>Steer</strong>：执行中补充指令，AI 在下一个可介入节点收到并调整后续执行；不会立即中断正在运行的工具。</p>
           <p id="followup-help"><strong>Follow-up</strong>：将消息加入队列，等当前这一轮结束后再发送，不影响当前执行；这一轮结束不代表任务一定成功。</p>

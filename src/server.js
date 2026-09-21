@@ -32,6 +32,8 @@ const assets = new Map(
     ["/style.css", "public/style.css", "text/css"],
     ["/theme.js", "public/theme.js"],
     ["/app.js", "public/app.js"],
+    ["/composer-controls.js", "public/composer-controls.js"],
+    ["/composer-controls.css", "public/composer-controls.css", "text/css"],
     ["/icons.js", "public/icons.js"],
     ["/session-cache.js", "public/session-cache.js"],
     ["/session-details.js", "public/session-details.js"],
