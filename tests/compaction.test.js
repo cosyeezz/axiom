@@ -618,6 +618,27 @@ test("固定系统提示与工具超过小窗口时，禁止发出无效请求",
   } finally { compaction?.dispose(); cleanup(); }
 });
 
+for (const resultCount of [1, 3]) test(`最新 ${resultCount} 条工具结果超过保留预算时仍摘要早期历史，完整保留工具配对`, async () => {
+  const { session, cleanup } = await createTestSession();
+  let compaction;
+  try {
+    session.agent.state.model = { ...session.model, contextWindow: 16000 };
+    const call = { ...assistantMsg("read"), content: Array.from({ length: resultCount }, (_, i) => ({ type: "toolCall", id: `large-read-${i}`, name: "read", arguments: { path: "large.txt" } })) };
+    const results = call.content.map(block => ({ role: "toolResult", toolCallId: block.id, toolName: "read", content: [{ type: "text", text: big("r") }], isError: false, timestamp: Date.now() }));
+    seed(session, [userMsg(big("a")), assistantMsg(big("b")), call, ...results]);
+    const calls = [];
+    compaction = createBackgroundCompaction({ session, config: enabledConfig, summarize: fakeSummarize(calls) });
+    compaction.onTurnEnd();
+    await settle();
+    assert.equal(compaction.getStatus().status, "ready");
+    const applied = await compaction.maybeApply();
+    assert.ok(applied);
+    assert.equal(session.messages[0].role, "compactionSummary");
+    assert.deepEqual(session.messages.slice(1), [call, ...results]);
+    assert.equal(applied.compactedMessageIds.length, 2);
+  } finally { compaction?.dispose(); cleanup(); }
+});
+
 test("单 flight：同一段时间多次 turn_end 只发起一次摘要", async () => {
   const { session, cleanup } = await createTestSession();
   let compaction;

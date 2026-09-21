@@ -52,6 +52,21 @@ function prepareBackgroundCompaction(branch, keepRecentTokens) {
     }
   }
   const cut = findCutPoint(branch, boundaryStart, branch.length, keepRecentTokens);
+  // SDK 在最新工具结果自身超过保留预算、且其后没有合法切点时会回退到
+  // 历史开头。改为向前寻找该批结果所属的助手消息：允许保留尾部超预算，
+  // 但仍可摘要更早历史；下方配对检查继续保证不拆散调用与结果。
+  if (cut.firstKeptEntryIndex <= boundaryStart) {
+    let tokens = 0;
+    let crossed = false;
+    for (let i = branch.length - 1; i >= boundaryStart; i--) {
+      tokens += sessionEntryToContextMessages(branch[i]).reduce((sum, message) => sum + estimateTokens(message), 0);
+      crossed ||= tokens >= keepRecentTokens;
+      if (crossed && ["assistant", "user"].includes(branch[i].message?.role)) {
+        cut.firstKeptEntryIndex = i;
+        break;
+      }
+    }
+  }
   const calls = new Map();
   for (let i = boundaryStart; i < branch.length; i++) {
     const message = branch[i].message;
