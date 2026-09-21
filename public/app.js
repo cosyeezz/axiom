@@ -3300,6 +3300,16 @@ $("composer").onsubmit = async (e) => {
   follow = true;
   scrollLatest();
   try {
+    // 提交即腾空编辑器；回执只对账，不再改动下一条草稿。
+    $("prompt").value = "";
+    contextFiles = [];
+    images = [];
+    selectedSkill = "";
+    const saved = views.get(sendingSession);
+    if (saved) Object.assign(saved, { draft: "", contextFiles: [], images: [], selectedSkill: "" });
+    renderImages();
+    resizePrompt();
+    region("输入操作", updateComposer);
     // 乐观上屏：空闲时立即显示「发送中」卡；忙碌排队走队列行反馈。
     const optimistic = !wasBusy;
     if (optimistic) { mountPendingUser(text, sentImages); waiting("main"); }
@@ -3311,30 +3321,27 @@ $("composer").onsubmit = async (e) => {
     if (sessionId !== sendingSession) throw new Error("会话已切换，消息尚未发送");
     const reply = await request("prompt", { sessionId: sendingSession, text, ...(sentImages.length ? { images: sentImages } : {}), ...(wasBusy ? { queueType } : {}) });
     if (sessionId === sendingSession) settlePendingUser(reply?.runId);
-    if (sessionId === sendingSession) {
-      images = images.filter((image) => !sentImages.includes(image));
-      renderImages();
-      region("输入操作", updateComposer);
-    }
-    const imageView = views.get(sendingSession);
-    if (imageView) imageView.images = (imageView.images || []).filter((image) => !sentImages.includes(image));
-    if (sessionId === sendingSession && $("prompt").value === draft) {
-      $("prompt").value = "";
-      contextFiles = contextFiles.filter((file) => !files.includes(file));
-      if (selectedSkill === skill) selectedSkill = "";
-      resizePrompt();
-      region("输入操作", updateComposer);
-    }
-    const saved = views.get(sendingSession);
-    if (saved?.draft === draft) {
-      saved.draft = "";
-      if (saved.selectedSkill === skill) saved.selectedSkill = "";
-      saved.contextFiles = (saved.contextFiles || []).filter((file) => !files.includes(file));
-    }
     void refreshSessions().catch(error);
   } catch (e) {
-    if (sessionId === sendingSession) {
-      // 确定失败（response_error）：撤卡保草稿；结果未知（断线/超时等 unknown）：保留卡并标未确认。
+    // 确定失败只恢复空编辑器；不覆盖新草稿，也不把结果未知的请求自动放回待发送区。
+    const active = sessionId === sendingSession;
+    const untouched = active && !$("prompt").value && !contextFiles.length && !images.length && !selectedSkill;
+    const saved = views.get(sendingSession);
+    if (!e.unknown) {
+      if (untouched) {
+        $("prompt").value = draft;
+        contextFiles = [...files];
+        images = [...sentImages];
+        selectedSkill = skill;
+        renderImages();
+        resizePrompt();
+      }
+      if (saved && (!active || untouched) && !saved.draft && !saved.contextFiles?.length && !saved.images?.length && !saved.selectedSkill) {
+        Object.assign(saved, { draft, contextFiles: [...files], images: [...sentImages], selectedSkill: skill });
+      }
+    }
+    if (active) {
+      // 确定失败撤卡；结果未知（断线/超时等 unknown）保留卡并标未确认。
       failPendingUser(!!e.unknown);
       if (!wasBusy) clearWaiting("main");
       error(e);

@@ -14,6 +14,7 @@ test('配置在飞时发送立即上屏，实际请求等待配置', async t => 
   const before = page.messages();
   page.$('composer').requestSubmit();
   assert.equal(page.messages(), before + 1);
+  assert.equal(page.$('prompt').value, '', '等待配置前同步清空');
   page.paint(); await settle();
   assert.ok(!page.requests.some(req => req.type === 'prompt'));
   page.release();
@@ -40,6 +41,28 @@ test('配置失败不发消息，撤销乐观卡并保留草稿', async t => {
   assert.match(page.$('error').textContent, /保存失败/);
 });
 
+for (const fails of [false, true]) {
+  test(`回执${fails ? '失败' : '成功'}不覆盖后续输入（包括相同文本）`, async t => {
+    const page = bootSessionPage({ hold: req => req.type === 'prompt',
+      respond: (req, base) => {
+        if (fails && req.type === 'prompt') throw new Error('发送失败');
+        return base(req);
+      } });
+    t.after(page.close); page.open();
+    await until(() => page.app.connected(), '连接');
+    page.$('prompt').value = '相同文本';
+    page.$('composer').requestSubmit();
+    assert.equal(page.$('prompt').value, '');
+    page.paint();
+    await until(() => page.held() === 1, '回执扣住');
+    assert.equal(page.$('prompt').value, '');
+    page.$('prompt').value = '相同文本';
+    page.release();
+    await settle();
+    assert.equal(page.$('prompt').value, '相同文本');
+  });
+}
+
 const userEnd = (runId, messageId, content, seq) => ({
   sessionId: 'long', type: 'agent.message.end', agentId: 'main', runId, seq,
   data: { message: { role: 'user', content }, entryId: messageId, messageId },
@@ -55,6 +78,7 @@ test('发送即时上屏「发送中」，确认事件原位升级不另建卡',
   page.$('composer').requestSubmit();
   // 同步渲染乐观卡：未等任何网络往返。
   assert.equal(page.messages(), before + 1, '乐观卡立即上屏');
+  assert.equal(page.$('prompt').value, '', '无需等待绘制或网络回执');
   assert.match(page.$('output').querySelector('.message-status').parentElement.textContent, /马上看到我/);
   const status = page.$('output').querySelector('.message-status');
   assert.ok(status, '有发送中状态行');
@@ -134,6 +158,7 @@ test('发送结果未知（断线/超时）：保留卡并如实标注未确认'
   const status = page.$('output').querySelector('.message-status');
   assert.match(status.textContent, /未确认/);
   assert.equal(page.count('结果未知'), 1, '卡保留可见，不伪装已确认也不静默丢弃');
+  assert.equal(page.$('prompt').value, '', '未知结果不自动恢复，避免误重发');
 });
 
 test('runId 对账：不匹配的事件不认领乐观卡，匹配的原位升级', async t => {
@@ -149,8 +174,8 @@ test('runId 对账：不匹配的事件不认领乐观卡，匹配的原位升�
   page.$('prompt').value = '本轮输入';
   page.$('composer').requestSubmit();
   page.paint();
-  // 回执到达即 runId 已绑定（草稿清空在回执后）；对账正确性由下面的不匹配/匹配断言本身验证。
-  await until(() => page.$('prompt').value === '', '回执到达，runId 已绑定');
+  // 清空不再代表回执到达，等待异步请求完成后验证 runId 对账。
+  await settle();
   page.app.event(userEnd('run-a', 'x1', '别的轮次输入', 501));
   assert.equal(page.count('别的轮次输入'), 1, '不匹配事件另建卡');
   assert.ok(page.$('output').querySelector('.message-status'), '乐观卡仍在等自己的 runId');
