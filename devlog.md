@@ -2752,3 +2752,10 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 改动：新增 public/composer-controls.js/css；调整 public/app.js、index.html；src/server.js 注册静态资源。单行自增高、三级搜索、固定扁平 split button、SVG 图标、分组信息换行、动态快捷提示。隐藏旧默认追加配置，不再由 composer 保存该偏好。
 - 决策：保留 stop/force 既有后端语义；不执行未经确认的历史回滚。焦点管理避开搜索和弹窗。
 - 验证：新增 tests/composer-controls.test.js；更新 tests/prompt-resize.test.js 与 tests/helpers/public-source.js；27 项针对性回归通过。浏览器已检查三级搜索、配置提交、44/64/84px 输入高度增长和信息分组。README 同步。
+
+## 2026-09-21 摘要 JSON 解析兼容与失败诊断
+
+- 原因：历史实报 SUMMARY_INVALID: expected JSON；直接 JSON.parse 会拒绝代码块包装，非法结构还可能在引用处理前产生 TypeError。失败详情仅在内存，无法重启后定位。尚无历史原始输出证明所有失败均源于代码块。
+- 改动：新增严格边界解析器，仅兼容单个完整代码块；预校验结构，保持引用与授权校验；提示词使用合法 JSON 示例；持久化有限且不含正文的终态诊断。未增加自动模型修复请求，避免额外消费和未经验证的内容修补。
+- 涉及文件：src/compaction-output.js、src/compaction.js、src/prompts.js、tests/compaction-output.test.js、tests/compaction.test.js、README.md、devlog.md。
+- 验证：压缩专项 71/71；全量 875 项，873 通过、2 跳过、0 失败；git diff --check 通过。登记 .pi/skills/codebase-map/scripts/reindex.mjs；生成索引不纳入提交，以免覆盖主目录已有未提交索引，读取时可重建。
