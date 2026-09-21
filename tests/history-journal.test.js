@@ -33,6 +33,22 @@ test('first user entry is durable before any assistant and survives reopen', asy
     assert.equal(reopened.getBranch().at(-1).message.content, 'must survive');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+test('durable adapter latches a failed write even when the filesystem becomes writable again', async () => {
+  const { SessionManager } = await import('@earendil-works/pi-coding-agent');
+  const dir = mkdtempSync(join(tmpdir(), 'axiom-journal-fault-'));
+  try {
+    const manager = SessionManager.create(dir, dir);
+    const healthy = installDurableJournal(manager);
+    const file = manager.getSessionFile();
+    // Exclusive creation must fail, simulating an uncertain persistence outcome.
+    writeFileSync(file, 'unexpected existing file');
+    assert.throws(() => manager.appendMessage({ role: 'user', content: 'not confirmed', timestamp: 1 }), { code: 'COMMIT_UNCERTAIN' });
+    rmSync(file);
+    assert.throws(healthy, { code: 'COMMIT_UNCERTAIN' });
+    assert.throws(() => manager.appendMessage({ role: 'user', content: 'must not continue', timestamp: 2 }), { code: 'COMMIT_UNCERTAIN' });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('durable compaction acknowledgement requires the exact complete tail', () => {
   const dir = mkdtempSync(join(tmpdir(), 'axiom-commit-')), file = join(dir, 'session.jsonl');
   try {

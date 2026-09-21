@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/20 21:38:55）
+# Axiom 多级代码索引（生成于 2026/9/20 21:48:24）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -11,13 +11,13 @@
 | public/app.js | 4902 | 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度 | questionUI, filePicker, $, sessionDetail |
 | public/clipboard.js | 27 | 统一剪贴板入口：Clipboard API 优先，非安全上下文回退 execCommand | copyText |
 | public/composer-controls.css | 48 | 输入区扁平按钮、级联菜单、分组信息与窄屏布局 | - |
-| public/composer-controls.js | 131 | 紧凑输入区：三级搜索模型菜单、固定运行操作与焦点管理 | mountComposerControls |
+| public/composer-controls.js | 134 | 紧凑输入区：三级搜索模型菜单、固定运行操作与焦点管理 | mountComposerControls |
 | public/file-picker.css | 276 | 文件选择弹窗主题与响应式布局 | - |
 | public/file-picker.js | 356 | 共享文件/目录选择弹窗、懒加载与分类 SVG 图标 | NS, SEARCH_DEBOUNCE, el, FOLDER_COLORS |
 | public/goal-markers.js | 64 | 前后端共享 goal 完成标记解析与展示层剥离（含流式半截） | ROUND_MARKER, GOAL_MARKER, MARKER_TOKENS, SUFFIXES |
 | public/goal.css | 239 | Goal 目标面板、轮次与控制样式 | - |
 | public/goal.js | 644 | Goal 专属状态、操作与复用消息轮次分组 | createGoalUI |
-| public/icons.js | 93 | 全页面动作 SVG 图标：固定几何路径字典、静态控件与模板水合 | actionIconPaths, initActionIcons, actionIconNode, actionIcon |
+| public/icons.js | 127 | 全页面动作 SVG 图标：固定几何路径字典、静态控件与模板水合 | artwork, tones, composerIcon, composerIconNode |
 | public/index.html | 458 | 页面骨架与元素 id（见 L3） | - |
 | public/markdown-scan.js | 140 | 共享代码区扫描：围栏/缩进/行内代码掩码与区间切割 | FILL, FENCE, INLINE, fill |
 | public/markdown.js | 484 | marked + DOMPurify 渲染（XSS 边界） | cache, PAGE_CACHE_ENTRY_LIMIT, PAGE_CACHE_BYTE_LIMIT, createMarkdownPageCache |
@@ -34,7 +34,7 @@
 | public/session-details.js | 141 | 主代理页签、安全可折叠 JSON 树与会话账单渲染 | detailElement, money, precise, count |
 | public/stream-playback.js | 165 | 有界字素播放游标与真实时间缓冲追赶 | BUFFER_MS, BASE_RATE, CATCHUP_S, MAX_RATE |
 | public/stream-renderer.js | 179 | 共享 rAF 流式绘制、交互让路与挂载生命周期 | createStreamRenderer |
-| public/style.css | 1891 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
+| public/style.css | 1904 | 全局样式（CSP 禁 inline style，样式一律进这里） | - |
 | public/theme.js | 11 | 首帧前阻塞应用明/暗主题（localStorage axiom.theme，默认深色） | - |
 | public/tooltip.css | 50 | 共享悬停说明样式（浅色主题下反色） | - |
 | public/tooltip.js | 225 | 共享悬停说明：动态 title、键盘、定位与无障碍 | SHOW_DELAY, HIDE_DELAY, GAP, EDGE |
@@ -53,13 +53,13 @@
 | src/compaction-budget.js | 21 | 统一完整请求预算、高低水位及压缩错误分级 | requestBudget, compactionError |
 | src/compaction-input.js | 20 | 摘要预算视图，UTF-8首尾范围与省略标记，不用于原文归档 | selectSummaryInput |
 | src/compaction-state.js | 72 | 累计任务状态与来源校验、候选身份 | STATE_FIELDS, STATUSES, inheritTaskState, validateTaskState |
-| src/compaction.js | 858 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
+| src/compaction.js | 863 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
 | src/data-owner.js | 26 | 写库前数据根独占：内核管道或socket持有，禁止同根双写 | claimDataRoot, claimArchiveOwner, claimJournalOwner, claimOwner |
 | src/database.js | 122 | 共享 SQLite 连接、小配置 KV、WAL 与一致性备份 | nodeOk, DATA_VERSION, assertDataVersion, Database |
 | src/gate-ipc.js | 97 | 共享闸门认证IPC与连接租约回收 | MAX_LINE, authenticated, serveGate, connectGate |
 | src/goal.js | 988 | Goal：会话级目标状态、轮次计划、验收门与持久化 | GOAL_PHASES, GOAL_ACTIONS, ROUND_STATUSES, GOAL_MAX_SEGMENTS |
 | src/history-journal.js | 109 | 磁盘 journal 原文投影、持久屏障与提交确认 | readDurableJournal, installDurableJournal, confirmDurableAppend, createJournalArchive |
-| src/history-tools.js | 103 | 鉴权历史检索、原文分页及游标签名 | createHistoryReader |
+| src/history-tools.js | 110 | 鉴权历史检索、原文分页及游标签名 | createHistoryReader |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
 | src/legacy-observation.js | 525 | 旧观察归档只读分页兼容，不折叠或写入 | THRESHOLD_BYTES, FULL_SENDS, PLACEHOLDER_EXCERPT_BYTES, OBSERVATION_ID_PATTERN |
 | src/main.js | 145 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, host, cwd, home |
@@ -107,8 +107,9 @@
 | tests/compaction-state.test.js | 35 | node --test 测试（npm test） | empty |
 | tests/compaction-ui.py | 81 | node --test 测试（npm test） | - |
 | tests/compaction-ui.test.js | 391 | node --test 测试（npm test） | page |
-| tests/compaction.test.js | 1475 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
-| tests/composer-controls.test.js | 50 | node --test 测试（npm test） | source, fixture |
+| tests/compaction.test.js | 1486 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
+| tests/composer-controls.test.js | 57 | node --test 测试（npm test） | iconSource, source, fixture |
+| tests/composer-icons-ui.py | 62 | node --test 测试（npm test） | - |
 | tests/config-scope-ui.py | 59 | node --test 测试（npm test） | - |
 | tests/config.test.js | 309 | node --test 测试（npm test） | - |
 | tests/context-menu-ui.py | 67 | node --test 测试（npm test） | - |
@@ -152,8 +153,8 @@
 | tests/history-page-cache.test.js | 71 | node --test 测试（npm test） | md, records |
 | tests/history-projection.test.js | 137 | node --test 测试（npm test） | fakeSource, mainRecord, subRecord, delegateAnchor |
 | tests/history-reading.test.js | 136 | node --test 测试（npm test） | pageState |
-| tests/history-tools.test.js | 55 | node --test 测试（npm test） | - |
-| tests/icons.test.js | 39 | node --test 测试（npm test） | - |
+| tests/history-tools.test.js | 64 | node --test 测试（npm test） | - |
+| tests/icons.test.js | 59 | node --test 测试（npm test） | - |
 | tests/image-input.test.js | 169 | node --test 测试（npm test） | pngBase64, jpegBase64, image, parsePrompt |
 | tests/inline-images.test.js | 42 | node --test 测试（npm test） | text, a, b, user |
 | tests/install.test.js | 150 | node --test 测试（npm test） | fakeService |
@@ -195,7 +196,7 @@
 | tests/question-preview.mjs | 36 | node --test 测试（npm test） | factory, sessions, app, port |
 | tests/question-ui.test.js | 99 | node --test 测试（npm test） | source |
 | tests/questions.test.js | 110 | node --test 测试（npm test） | params |
-| tests/raw-history.test.js | 79 | node --test 测试（npm test） | - |
+| tests/raw-history.test.js | 92 | node --test 测试（npm test） | - |
 | tests/realtime-transport.test.js | 125 | node --test 测试（npm test） | rig, flush |
 | tests/recall.test.js | 208 | node --test 测试（npm test） | user, assistant, thinking, fixture |
 | tests/remote-ui.py | 51 | node --test 测试（npm test） | - |
@@ -714,12 +715,12 @@
 |---|---|---|
 | copyText | function | 5 |
 
-### public/composer-controls.js（131 行） — 紧凑输入区：三级搜索模型菜单、固定运行操作与焦点管理
+### public/composer-controls.js（134 行） — 紧凑输入区：三级搜索模型菜单、固定运行操作与焦点管理
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| mountComposerControls | function | 2 |
-| refresh | method | 128 |
+| mountComposerControls | function | 4 |
+| refresh | method | 131 |
 
 ### public/file-picker.js（356 行） — 共享文件/目录选择弹窗、懒加载与分类 SVG 图标
 
@@ -762,14 +763,18 @@
 |---|---|---|
 | createGoalUI | function | 10 |
 
-### public/icons.js（93 行） — 全页面动作 SVG 图标：固定几何路径字典、静态控件与模板水合
+### public/icons.js（127 行） — 全页面动作 SVG 图标：固定几何路径字典、静态控件与模板水合
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| actionIconPaths | const | 3 |
-| initActionIcons | function | 50 |
-| actionIconNode | function | 80 |
-| actionIcon | function | 89 |
+| artwork | const | 2 |
+| tones | const | 17 |
+| composerIcon | function | 19 |
+| composerIconNode | function | 25 |
+| actionIconPaths | const | 35 |
+| initActionIcons | function | 82 |
+| actionIconNode | function | 114 |
+| actionIcon | function | 123 |
 
 ### public/markdown-scan.js（140 行） — 共享代码区扫描：围栏/缩进/行内代码掩码与区间切割
 
@@ -1172,7 +1177,7 @@
 | renderTaskState | function | 62 |
 | candidateIdentity | function | 69 |
 
-### src/compaction.js（858 行） — 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交
+### src/compaction.js（863 行） — 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1304,7 +1309,7 @@
 | createJournalArchive | function | 69 |
 | mkdirSync | method | 70 |
 
-### src/history-tools.js（103 行） — 鉴权历史检索、原文分页及游标签名
+### src/history-tools.js（110 行） — 鉴权历史检索、原文分页及游标签名
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1954,7 +1959,7 @@
 | page | function | 11 |
 | restore | method | 41 |
 
-### tests/compaction.test.js（1475 行） — node --test 测试（npm test）
+### tests/compaction.test.js（1486 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1977,20 +1982,21 @@
 | zodError | method | 361 |
 | zodError | method | 362 |
 | zodError | method | 363 |
-| hangingSummarize | function | 801 |
-| createLoopSession | function | 898 |
-| writeFileSync | method | 899 |
-| createPersistentTestSession | function | 1083 |
-| factsTags | const | 1099 |
-| withFacts | const | 1100 |
-| withoutFacts | const | 1102 |
+| hangingSummarize | function | 812 |
+| createLoopSession | function | 909 |
+| writeFileSync | method | 910 |
+| createPersistentTestSession | function | 1094 |
+| factsTags | const | 1110 |
+| withFacts | const | 1111 |
+| withoutFacts | const | 1113 |
 
-### tests/composer-controls.test.js（50 行） — node --test 测试（npm test）
+### tests/composer-controls.test.js（57 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| source | function | 5 |
-| fixture | function | 6 |
+| iconSource | const | 5 |
+| source | function | 6 |
+| fixture | function | 7 |
 
 ### tests/continuous-history.test.js（53 行） — node --test 测试（npm test）
 
@@ -2313,12 +2319,12 @@
 |---|---|---|
 | pageState | const | 23 |
 
-### tests/icons.test.js（39 行） — node --test 测试（npm test）
+### tests/icons.test.js（59 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| initActionIcons | method | 26 |
-| initActionIcons | method | 35 |
+| initActionIcons | method | 43 |
+| initActionIcons | method | 55 |
 
 ### tests/image-input.test.js（169 行） — node --test 测试（npm test）
 

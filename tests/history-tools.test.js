@@ -22,6 +22,15 @@ test('search pages enumerate repeated occurrences, freeze append scope and reaut
   assert.throws(() => reader.search({ query: '中文', limit: 1, cursor: first.cursor }), { code: 'SCOPE_DENIED' });
 });
 
+test('identical entry ids across agents never grant cross-agent read access', () => {
+  const make = agentId => { const sourceEntry = { type: 'message', id: 'same', message: { role: 'user', content: agentId } }; return { archiveId: (agentId === 'main' ? 'a' : 'b').repeat(24), origin: { sourceJournalId: agentId, entryId: 'same', agentId }, sourceEntry, sourceEntryHash: contentHash(sourceEntry) }; };
+  const records = [make('main'), make('child')];
+  const reader = createHistoryReader({ records: () => records, allowed: record => record.origin.agentId === 'main' });
+  assert.throws(() => reader.read({ ref: reader.reference(records[1]) }), { code: 'SCOPE_DENIED' });
+  assert.equal(reader.search({ query: 'child' }).matches.length, 0);
+  assert.match(reader.read({ ref: reader.reference(records[0]) }).text, /main/);
+});
+
 test('summaryEvidence reproduces the source text and hash used by state validation', () => {
   const sourceEntry = { type: 'message', id: 'a', message: { role: 'user', content: '保留约束😀', timestamp: 1 } };
   const record = { archiveId: 'a'.repeat(24), origin: { sourceJournalId: 'j', entryId: 'a' }, sourceEntry, sourceEntryHash: contentHash(sourceEntry) };

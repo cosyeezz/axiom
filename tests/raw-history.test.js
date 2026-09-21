@@ -1,9 +1,22 @@
 import test from 'node:test';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, readFileSync, appendFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRawArchive, contentHash } from '../src/raw-history.js';
+
+test('another process cannot acquire an archive writer held by this process', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'axiom-owner-process-'));
+  const archive = await createRawArchive(dir, { sourceJournalId: 'j', sourceSessionId: 's' });
+  try {
+    const moduleUrl = new URL('../src/raw-history.js', import.meta.url).href;
+    const code = `import {createRawArchive} from ${JSON.stringify(moduleUrl)}; try { const a = await createRawArchive(${JSON.stringify(dir)}, {sourceJournalId:'j',sourceSessionId:'s'}); await a.close(); process.exitCode=1; } catch(e) { if(e.code!=='ARCHIVE_NOT_DURABLE') throw e; console.log('writer-denied'); }`;
+    const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', code], { timeout: 15000 });
+    assert.match(stdout, /writer-denied/);
+  } finally { await archive.close(); rmSync(dir, { recursive: true, force: true }); }
+});
 
 test('full tool artifacts remain readable after temporary output disappears', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'axiom-artifact-'));

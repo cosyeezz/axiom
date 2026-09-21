@@ -374,6 +374,17 @@ test("overCompactionThreshold: 绝对与占比阈值任一命中即触发，全 
 
 // —— 真实 SDK 会话 + 后台压缩主流程 ——
 
+test('取消发生于提交屏障等待期间，候选不能再提交', async () => {
+  const { session, cleanup } = await createTestSession(); let ctrl;
+  try {
+    seed(session, [userMsg(big('a')), assistantMsg(big('b')), userMsg(big('c'))]);
+    ctrl = createBackgroundCompaction({ session, config: enabledConfig, summarize: fakeSummarize([]), beforeCommit: async () => { ctrl.cancel(); } });
+    ctrl.onTurnEnd(); await settle();
+    assert.equal(await ctrl.maybeApply(), null);
+    assert.equal(session.sessionManager.getBranch().filter(entry => entry.type === 'compaction').length, 0);
+  } finally { ctrl?.dispose(); await cleanup(); }
+});
+
 test("原文持久屏障失败时不提交压缩、不替换上下文", async () => {
   const { session, cleanup } = await createTestSession();
   let compaction;

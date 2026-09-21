@@ -433,6 +433,7 @@ export function createBackgroundCompaction({
   let controller = null; // 在途摘要的 AbortController
   let disposed = false;
   let commitUncertain;
+  let generation = 0;
   const assertHealthy = () => { if (commitUncertain) throw commitUncertain; };
   const lockCommit = cause => (commitUncertain = Object.assign(new Error("压缩提交不确定，须重新打开会话恢复"), { code: "COMMIT_UNCERTAIN", cause }));
   let status = null;
@@ -529,6 +530,7 @@ export function createBackgroundCompaction({
   }
 
   function cancel(reason) {
+    generation++;
     if (pending) {
       if (activeRun) note(activeRun, "cancel", reason || "后台摘要已取消");
       report("cancelled", reason || "后台摘要已取消，保留原文");
@@ -559,7 +561,7 @@ export function createBackgroundCompaction({
   }
 
   function isFresh(flight) {
-    if (!flight.leafId) return false;
+    if (!flight.leafId || flight.generation !== generation) return false;
     const branch = session.sessionManager.getBranch();
     const leafIndex = branch.findIndex((entry) => entry.id === flight.leafId);
     if (leafIndex < 0 || contentHash(branch.slice(0, leafIndex + 1)) !== flight.sourceHash) return false; // 分支或快照内容变化
@@ -641,6 +643,7 @@ export function createBackgroundCompaction({
         compactedMessageIds: summarizedEntryIds(branch, preparation.firstKeptEntryId),
         leafId: session.sessionManager.getLeafEntry()?.id ?? null,
         sourceHash: contentHash(branch),
+        generation,
         settled: false,
         run,
       };
@@ -757,6 +760,8 @@ export function createBackgroundCompaction({
       };
       await beforeCommit?.({ firstKeptEntryId: flight.firstKeptEntryId, compactedMessageIds: flight.compactedMessageIds, summary: assembled.summary });
       if (disposed || (!flight.manual && !current.enabled) || !isFresh(flight)) return skip("持久屏障等待期间历史已变化，保留原文");
+      const commitBranch = session.sessionManager.getBranch();
+      if (contentHash(commitBranch) !== contentHash(branch)) return skip("STALE_CANDIDATE: 提交屏障期间尾部改变，重新计划预算");
       const id = appendConfirmed(assembled.summary, flight.firstKeptEntryId, tokensBefore, details, flight.value.usage);
       const data = {
         id,

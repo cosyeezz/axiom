@@ -1,5 +1,11 @@
 # 开发记录
 
+## 2026-09-21 提交竞争与验收证据
+
+- `compaction.js` 补充取消 generation，阻止归档等待期间已取消候选提交；最终屏障后重新核对完整分支，避免预算检查遗漏并发新增尾部。
+- `tests/compaction.test.js` 新增屏障内取消；`raw-history.test.js` 验证跨进程写锁；`history-tools.test.js` 验证不同代理同 entry ID 拒绝串读；`history-journal.test.js` 注入持久化失败并验证故障恢复后仍锁存。
+- `docs/history-compaction-validation.md` 明确列出 T01—T60 已有证据与剩余专项，不把确定性测试等同真实模型质量评测。仍处工作分支验证阶段，未最终合并。
+
 ## 2026-09-21 fork 来源与归档分型校验
 
 - `history-journal.js` 在同目录已授权来源中核对 fork 父日志并保留 copiedFrom；拒绝路径越界和符号链接跳转。`history-tools.js` 允许当前链已证实的复制事件解析旧父 ref，不扩大读取权限。
