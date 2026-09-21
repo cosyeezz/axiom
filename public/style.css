@@ -1180,6 +1180,7 @@ textarea {
 }
 #settings,
 #session-action,
+#manual-compaction,
 #restart-dialog,
 .mm-dialog,
 .task-dialog {
@@ -1222,6 +1223,11 @@ textarea {
 }
 #restart-dialog { width: min(460px, calc(100% - 32px)); }
 #restart-title { margin: 0; font-size: 18px; }
+#manual-compaction-title { margin: 0; font-size: 18px; }
+#manual-compaction-form > label { display: grid; gap: 8px; min-width: 0; font-size: 12px; }
+/* Both modes reserve the same explanation area, including at narrow widths. */
+#manual-compaction-hint { height: 4lh; overflow: auto; }
+#manual-compaction-error:empty { display: none; }
 #settings { width: min(1000px, calc(100% - 32px)); height: 80dvh; overflow: hidden; }
 #settings[open] { display: flex; flex-direction: column; }
 #settings > header { flex-shrink: 0; }
@@ -1261,6 +1267,7 @@ textarea {
 }
 #settings::backdrop,
 #session-action::backdrop,
+#manual-compaction::backdrop,
 #restart-dialog::backdrop,
 .task-dialog::backdrop {
   background: light-dark(#1c1d2199, #0009);
