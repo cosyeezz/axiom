@@ -82,7 +82,9 @@ export async function createRawArchive(directory, { sourceJournalId, sourceSessi
         if (!existsSync(target)) { const artifactFd = openSync(target, 'wx', 0o600); try { writeAll(artifactFd, bytes); } finally { closeSync(artifactFd); } }
         artifacts.push({ part: 'artifact_0', hash: `sha256:${hash}`, bytes: bytes.length });
       }
-      const record = { ...(copiedFrom?.has(sourceEntry.id) ? { copiedFrom: copiedFrom.get(sourceEntry.id) } : {}), artifacts, schemaVersion: 1, canonicalVersion: 1, archiveId, seq: records.size + 1, origin, sourceEntry: JSON.parse(JSON.stringify(sourceEntry)), sourceEntryHash: hash, capturedAt: new Date().toISOString() };
+      const copied = copiedFrom?.get(sourceEntry.id);
+      const aliases = copied ? (Array.isArray(copied) ? copied : [copied]) : [];
+      const record = { ...(aliases.length ? { copiedFrom: aliases.at(-1), copiedFromAll: aliases } : {}), artifacts, schemaVersion: 1, canonicalVersion: 1, archiveId, seq: records.size + 1, origin, sourceEntry: JSON.parse(JSON.stringify(sourceEntry)), sourceEntryHash: hash, capturedAt: new Date().toISOString() };
       try { writeAll(isOriginal(sourceEntry) ? fd : controlFd, `${JSON.stringify(record)}\n`); } catch (error) { failure = historyError('ARCHIVE_NOT_DURABLE', error.message); throw failure; }
       records.set(key, record); return record;
     },

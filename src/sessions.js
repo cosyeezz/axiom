@@ -1,3 +1,4 @@
+import { safePoints as listSafePoints, navigationState } from "./safe-points.js";
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -912,6 +913,73 @@ export class Sessions {
   // 复制会话：主历史 JSONL 与子任务历史都复制成新身份（等价于把会话完整重启成一份副本），
   // 配置沿用源会话，标题原名接序号。只允许空闲会话复制：运行中主历史还在追加，边写边复制
   // 可能截断末行；副本也不会接管未完成的子任务（那会造成同一任务双跑）。
+  async safePoints(id) {
+    const item = this.get(id);
+    const manager = item.loaded ? null : (item.sessionFile ? readSessionManager(item.sessionFile, item.cwd) : null);
+    return item.loaded ? (item.agent.safePoints?.() ?? []) : listSafePoints(manager?.getBranch() ?? []);
+  }
+
+  async navigationItem(id) {
+    const item = await this.ensureLoaded(id);
+    if (pointStatus(item) !== "idle" || item.compacting || item.closing || item.configuring || item.cancelling || item.releasing)
+      throw new Error("请先停止会话及子任务，再操作安全点");
+    if (item.goal?.active) throw new Error("请先退出目标模式，再操作安全点");
+    const queue = item.agent.queue?.();
+    if (queue?.steering?.length || queue?.followUp?.length) throw new Error("请先处理或撤回排队消息");
+    return item;
+  }
+
+  async revert(id, entryId) {
+    const item = await this.navigationItem(id);
+    item.configuring = true;
+    try {
+      const point = await item.agent.revertTo(entryId);
+      const ids = new Set(item.agent.historyEntries().map(entry => entry.id));
+      item.messages = item.messages.filter(record => record.agentId !== "main" || ids.has(record.entryId));
+      const previousCompactions = item.compactions;
+      item.compactions = item.agent.compactions();
+      const previousRetries = item.retries;
+      item.retries = item.retries.filter(record => (record.agentId && record.agentId !== "main") || ids.has(record.anchorEntryId));
+      for (const record of item.retries) delete record.messageCount;
+      delete item.live.main;
+      item.liveIds.delete("main");
+      item.goalExited = true; // Do not let task notifications automatically restart this restored prefix.
+      item.notificationsPaused = true;
+      this.saveChange(item, [
+        { session: this.sessionData(item) },
+        { deletedEvents: { type: "compaction", records: previousCompactions.filter(record => !item.compactions.some(kept => kept.id === record.id)) } },
+        { deletedEvents: { type: "retry", records: previousRetries.filter(record => !item.retries.includes(record)) } },
+      ]);
+      item.emit({ type: "session.history.reset", data: { reason: "revert" } });
+      return point;
+    } finally { item.configuring = false; }
+  }
+
+  async fork(id, entryId) {
+    const item = await this.navigationItem(id);
+    if (!this.storagePath) throw new Error("当前实例未启用会话存储");
+    item.configuring = true;
+    try {
+      await this.persist(item);
+      const point = await item.agent.forkAt(entryId);
+      const saved = this.store.getSession(id);
+      const newId = await this.create(item.cwd, saved.selection, {
+        ...saved, id: randomUUID(), sessionFile: point.sessionFile,
+        title: `${item.title} · 分叉`, titleManual: true, titleRequested: true,
+        createdAt: Date.now(), updatedAt: Date.now(), elapsedMs: 0, runningSince: null,
+        messages: [], tasks: [], retries: [], compactions: [], goalExited: true,
+      });
+      return { sessionId: newId, draft: point.draft };
+    } finally { item.configuring = false; }
+  }
+
+  async continueFromPoint(id) {
+    const item = await this.navigationItem(id);
+    if (!item.agent.navigationState?.()) throw new Error("当前不在恢复后的安全点");
+    item.goalExited = false;
+    return this.startRun(item, () => item.agent.continueFromPoint());
+  }
+
   async duplicate(id) {
     if (!this.items.has(id)) throw new Error("Unknown session");
     if (!this.storagePath) throw new Error("当前实例未启用会话存储，无法复制会话");
@@ -1238,6 +1306,7 @@ export class Sessions {
     // 导入与库恢复的会话都没有完整消息快照（模型消息不再入库）：主代理历史从 Pi JSONL
     // 当前分支重建（撤回/压缩后的分支即真实历史），entryId 保留用于压缩折叠与撤回定位；
     // 子代理使用独立 JSONL，按 task ID 恢复到各自详情，不混入主上下文。
+    if (item.agent.navigationState?.()) { item.goalExited = true; item.notificationsPaused = true; }
     const restoredFromJsonl = importedFile || (saved && !item.messages.length);
     if (restoredFromJsonl)
       item.messages = (item.agent.historyEntries?.() || []).map((entry) => ({ agentId: "main", message: entry.message, entryId: entry.id }));
@@ -1722,6 +1791,7 @@ export class Sessions {
       } catch { /* observation records are optional, never prevent history display */ }
       return structuredClone({ sessionId: id, cwd: item.cwd, title: item.title, seq: item.seq ?? 0,
         instanceId: options.epoch ?? null, liveMessageIds: {},
+        navigation: navigationState(branch), safePoints: listSafePoints(branch),
         status: "idle", safeStop: false, runtime: restoredRuntime, billing: combinedBilling(restoredRuntime.billing, tasks), config: { ...saved.selection, capabilitySelection: selection.capabilities ?? null,
           subagentCapabilities: selection.subagentCapabilities ?? null, queueType: selection.queueType || "steer",
           canReconfigure: !saved.sessionFile && !messages.length && !tasks.length
@@ -1739,6 +1809,8 @@ export class Sessions {
     const state = {
       // 会话身份：前端按 sessionId 路由消息与持久化键，必须带出。
       sessionId: id,
+      navigation: item.agent.navigationState?.() ?? null,
+      safePoints: item.agent.safePoints?.() ?? [],
       cwd: item.cwd,
       title: item.title,
       seq: item.seq,

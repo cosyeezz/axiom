@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, openSync, fsyncSync, closeSync, writeSync, mkdirSync, realpathSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, join } from 'node:path';
 import { claimJournalOwner } from './data-owner.js';
 import { createRawArchive, contentHash, historyError } from './raw-history.js';
 
@@ -77,14 +77,26 @@ export async function createJournalArchive({ file, directory = `${file}.history`
     sessionId = journal.header.id;
     if (!archive) {
       const copiedFrom = new Map();
-      if (journal.header.parentSession) {
-        const parentPath = resolve(dirname(file), journal.header.parentSession);
+      const ancestors = [];
+      const seen = new Set([journal.header.id]);
+      let parentRef = journal.header.parentSession;
+      while (parentRef) {
+        const parentPath = resolve(dirname(file), parentRef);
         // Parent pointers are metadata, not permission to traverse arbitrary files.
         if (dirname(parentPath) !== dirname(resolve(file)) || (existsSync(parentPath) && dirname(realpathSync(parentPath)) !== dirname(realpathSync(file)))) throw historyError('SCOPE_DENIED', 'Fork parent is outside the session directory');
         const parent = readDurableJournal(parentPath);
-        if (!parent) throw historyError('SOURCE_MISSING', 'Fork parent unavailable');
-        const parents = new Map(parent.entries.map(entry => [entry.id, contentHash(entry)]));
-        for (const entry of journal.entries) if (parents.get(entry.id) === contentHash(entry)) copiedFrom.set(entry.id, { sourceJournalId: parent.header.id, entryId: entry.id });
+        if (!parent || seen.has(parent.header.id)) break;
+        seen.add(parent.header.id);
+        ancestors.unshift({ id: parent.header.id, hashes: new Map(parent.entries.map(entry => [entry.id, contentHash(entry)])) });
+        parentRef = parent.header.parentSession;
+      }
+      if (journal.header.parentSession && !ancestors.length && !existsSync(join(directory, 'raw.jsonl')))
+        throw historyError('SOURCE_MISSING', 'Fork parent unavailable');
+      for (const entry of journal.entries) {
+        const hash = contentHash(entry);
+        const aliases = ancestors.filter(parent => parent.hashes.get(entry.id) === hash)
+          .map(parent => ({ sourceJournalId: parent.id, entryId: entry.id }));
+        if (aliases.length) copiedFrom.set(entry.id, aliases);
       }
       archive = await createRawArchive(directory, { sourceJournalId: sessionId, sourceSessionId: sessionId, agentId, authoritativeEntries: journal.entries, copiedFrom });
     }

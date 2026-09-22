@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-22 会话安全点导航
+
+- 用户决策：安全点回退/Fork仅恢复上下文，保留所选压缩点本次压缩；恢复后停下，支持继续与下一用户输入回填。
+- 方案：原生 navigateTree 与独立 SessionManager 分叉；持久标记保存回退位置，现有压缩新鲜度校验丢弃失效候选。
+- 文件：src/safe-points.js、src/pi.js、src/sessions.js、src/compaction.js、src/protocol.js、src/server.js、public/app.js、public/style.css、tests/safe-points.test.js、README.md、代码索引。
+- 验证：新增真实 Pi user-only fork 源隔离/重开测试、完整工具批次边界测试、链式 fork 祖先引用和父文件删除后重开测试通过；goal UI、history、recall、compaction、session persistence、索引定向测试通过。全量验证被 tests/app.test.js:1885 累计摘要展示断言阻塞，在独立未修改 master 基线 ae67c25 已复现；用户明确授权忽略已在未修改 master 复现的非本次失败，同步最新 master 后提交、合并并推送；不修改该既有测试。新增实时请求的测试结束后回调问题已修复并定向验证。
+- 连续性补齐：压缩过程 sidecar 按安全点过滤复制；祖先原文引用增加兼容别名列表，仍执行当前分支/agent/内容哈希校验。涉及 src/history-journal.js、src/history-tools.js、src/raw-history.js 和 tests/history-journal.test.js。
+
 ## 2026-09-22 子代理执行治理
 
 - 原因与依据：先建立 `docs/subagent-execution-governance.md`，统一 UI、主代理取消与预算截止，避免无限等待并保留部分产出；不修改依赖、不逐工具包装 execute。

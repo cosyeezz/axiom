@@ -419,6 +419,18 @@ export function createServerApp(sessions, service = {}) {
               data = await attach(id);
               break;
             }
+            case "session.points":
+              data = await sessions.safePoints(request.sessionId);
+              break;
+            case "session.revert":
+              data = await sessions.revert(request.sessionId, request.entryId);
+              break;
+            case "session.fork":
+              data = await sessions.fork(request.sessionId, request.entryId);
+              break;
+            case "session.continue":
+              data = await sessions.continueFromPoint(request.sessionId);
+              break;
             case "session.duplicate": {
               const id = await sessions.duplicate(request.sessionId);
               if (ws.readyState !== WebSocket.OPEN) {

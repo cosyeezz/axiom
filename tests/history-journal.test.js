@@ -4,6 +4,23 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createJournalArchive, readDurableJournal, confirmDurableAppend, installDurableJournal } from '../src/history-journal.js';
+test('chained fork preserves ancestor aliases after parent deletion', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'axiom-chain-'));
+  try {
+    const entry = { type: 'message', id: 'm', message: { role: 'user', content: 'same event' } };
+    const a = join(dir, 'a.jsonl'), b = join(dir, 'b.jsonl'), c = join(dir, 'c.jsonl');
+    for (const [file, id, parentSession] of [[a, 'A'], [b, 'B', a], [c, 'C', b]])
+      writeFileSync(file, [{ type: 'session', id, parentSession }, entry].map(JSON.stringify).join('\n') + '\n');
+    const archive = await createJournalArchive({ file: c });
+    await archive.barrier();
+    assert.deepEqual(archive.records()[0].copiedFromAll, [{ sourceJournalId: 'A', entryId: 'm' }, { sourceJournalId: 'B', entryId: 'm' }]);
+    await archive.close();
+    rmSync(b);
+    const reopened = await createJournalArchive({ file: c });
+    try { await reopened.barrier(); assert.equal(reopened.records()[0].copiedFromAll.length, 2); }
+    finally { await reopened.close(); }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
 test('journal bridge archives only disk-confirmed entries and rejects changed journal identity', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'axiom-journal-')), file = join(dir, 'session.jsonl');
   const mirror = await createJournalArchive({ file });

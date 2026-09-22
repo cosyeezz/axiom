@@ -2600,6 +2600,12 @@ function applyEvent(message) {
     endedRaw.entryId = data.entryId;
     rawLive.delete(agentId);
   }
+  if (agentId === "main" && (type === "agent.message.end" || type === "agent.compaction")) {
+    const target = sessionId;
+    void request("session.points", { sessionId: target }).then(points => {
+      if (typeof document !== "undefined" && target === sessionId && Array.isArray(points)) renderSafePoints(points);
+    }).catch(cause => { if (typeof document !== "undefined") error(cause); });
+  }
   if (type.startsWith("agent.message.") || type === "agent.delta") rawChanged();
   if (type === "question.asked") region("输入操作", () => questionUI.asked(message.sessionId, data));
   if (type === "question.closed") region("输入操作", () => questionUI.closed(message.sessionId, data.toolCallId));
@@ -3083,6 +3089,54 @@ function markCompacted(item) {
   item.modelInfo.append(note);
   item.modelInfo.hidden = false;
 }
+function safePointControl(point) {
+  const node = document.createElement("div");
+  node.className = "safe-point";
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "safe-point-trigger";
+  trigger.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 12h7m-4-4-4 4 4 4M10 5h7a4 4 0 0 1 4 4v6a4 4 0 0 1-4 4h-7"/></svg><span>从此处重新执行</span>';
+  trigger.setAttribute("aria-expanded", "false");
+  const menu = document.createElement("div");
+  menu.className = "safe-point-actions";
+  menu.hidden = true;
+  trigger.onclick = () => { menu.hidden = !menu.hidden; trigger.setAttribute("aria-expanded", String(!menu.hidden)); };
+  node.onkeydown = event => { if (event.key === "Escape") { menu.hidden = true; trigger.setAttribute("aria-expanded", "false"); trigger.focus(); } };
+  for (const [action, label] of [["revert", "在当前会话回退"], ["fork", "在新页面 Fork"]]) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "secondary";
+    button.textContent = label;
+    button.onclick = async () => {
+      if (busy || changing) return error("请先停止会话再操作安全点");
+      const source = sessionId;
+      const tab = action === "fork" ? window.open("about:blank", "_blank") : null;
+      if (action === "fork" && !tab) return error("请允许弹出新标签页后重试");
+      button.disabled = true;
+      try {
+        const result = await request(`session.${action}`, { sessionId: source, entryId: point.entryId });
+        if (tab) { tab.opener = null; tab.location.replace(`${location.pathname}${location.search}#${new URLSearchParams({ session: result.sessionId })}`); }
+        else if (sessionId === source) await reattach();
+      } catch (cause) { tab?.close(); error(cause); }
+      finally { button.disabled = false; }
+    };
+    menu.append(button);
+  }
+  node.append(trigger, menu);
+  return node;
+}
+function renderSafePoints(points) {
+  for (const node of $("output").querySelectorAll(".safe-point")) node.remove();
+  for (const point of points || []) {
+    let anchor = compactionNodes.get(point.entryId);
+    if (!anchor) {
+      const entry = rawEntries.find(entry => entry.agentId === "main" && entry.entryId === point.entryId);
+      anchor = entry?.item?.node;
+      if (!anchor && entry?.message?.role === "toolResult") anchor = toolItems.get(`main:${entry.message.toolCallId}`)?.container;
+    }
+    if (anchor?.isConnected && !anchor.hidden) anchor.after(safePointControl(point));
+  }
+}
 function finishSnapshot(job, ctx) {
   if (job !== snapshotJob) return;
   const { state, view } = ctx;
@@ -3145,6 +3199,25 @@ function finishSnapshot(job, ctx) {
     if (anchor) transcript.scrollTop += anchor.getBoundingClientRect().top - transcript.getBoundingClientRect().top - (view.anchorOffset || 0);
     lastScrollTops.set(transcript, transcript.scrollTop);
   });
+  renderSafePoints(state.safePoints);
+  if (state.navigation) {
+    const draft = state.navigation.draft;
+    if (draft && !$('prompt').value) {
+      $('prompt').value = typeof draft.content === 'string' ? draft.content : (draft.content || []).filter(block => block.type === 'text').map(block => block.text).join('\n');
+      images = [...images, ...(Array.isArray(draft.content) ? draft.content.filter(block => block.type === 'image') : [])];
+      renderImages(); resizePrompt();
+    }
+    const resume = document.createElement('button');
+    resume.type = 'button';
+    resume.className = 'secondary safe-point-continue';
+    resume.textContent = '继续执行';
+    resume.onclick = async () => {
+      resume.disabled = true;
+      try { await request('session.continue', { sessionId }); resume.remove(); }
+      catch (cause) { resume.disabled = false; error(cause); }
+    };
+    $('output').append(resume);
+  }
   renderQueue(state.queue);
   sessionBill = state.billing;
   runtime = state.runtime;

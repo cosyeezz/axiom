@@ -24,7 +24,7 @@ export function createHistoryReader({ records, allowed, readArtifact, maxBytes =
       try {
         const [, archiveId, encoded] = ref.split(':');
         const origin = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
-        return archiveId === createHash('sha256').update(r.copiedFrom.sourceJournalId).digest('hex').slice(0, 24) && origin.sourceJournalId === r.copiedFrom.sourceJournalId && origin.entryId === r.copiedFrom.entryId && origin.agentId === r.origin.agentId;
+        return (r.copiedFromAll ?? [r.copiedFrom]).some(alias => archiveId === createHash('sha256').update(alias.sourceJournalId).digest('hex').slice(0, 24) && origin.sourceJournalId === alias.sourceJournalId && origin.entryId === alias.entryId && origin.agentId === r.origin.agentId);
       } catch { return false; }
     });
     if (!record) throw historyError('SOURCE_MISSING');

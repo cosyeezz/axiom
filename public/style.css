@@ -1,6 +1,15 @@
 /* 双主题：所有颜色 token 用 light-dark() 一次声明两套值，由 color-scheme 决定取哪一支，
    因此切换主题只需改 :root 的 color-scheme（下方 [data-theme] 规则），不需要重复整份 token 表。
    默认深色（产品基调），浅色仅在用户显式切换后生效，不跟随系统，避免既有用户被动变脸。 */
+.safe-point { position: relative; min-height: 24px; margin: 4px 0; }
+.safe-point-trigger { display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 0; border: 0; background: transparent; color: var(--muted); opacity: 0; cursor: pointer; font-size: 12px; }
+.safe-point-trigger::before { content: ''; flex: 1; height: 1px; background: var(--line-strong); }
+.safe-point:hover .safe-point-trigger, .safe-point:focus-within .safe-point-trigger { opacity: 1; }
+.safe-point-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.safe-point-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 6px; background: var(--surface); }
+.safe-point-actions[hidden] { display: none; }
+.safe-point-continue { margin: 12px 0; }
+@media (hover: none) { .safe-point-trigger { opacity: 1; } }
 #settings.scoped .settings-nav { display: none; }
 #settings.scoped .settings-layout { grid-template-columns: minmax(0, 1fr); }
 #settings.scoped #defaults-title,
