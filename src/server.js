@@ -68,6 +68,7 @@ const assets = new Map(
 // 模型管理器/选择器（前端可选资源）：落地后重启生效，缺失时安全跳过、请求 404。
 for (const [route, file, type = "text/javascript"] of [
   ["/model-manager.js", "public/model-manager.js"],
+  ["/model-limits.js", "public/model-limits.js"],
   ["/model-auth.js", "public/model-auth.js"],
   ["/model-manager.css", "public/model-manager.css", "text/css"],
   ["/model-picker.js", "public/model-picker.js"],

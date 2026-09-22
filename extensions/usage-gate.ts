@@ -19,7 +19,7 @@ export default function usageGate(pi) {
       const service = remoteService(client, initial);
       const models = ctx.modelRegistry.getAll();
       for (const [provider, limits] of Object.entries(initial.limits)) {
-        if (!limits.rpm && !limits.concurrency) continue;
+        if (!limits.rpm && !limits.concurrency && !Object.values(limits.models ?? {}).some(limit => limit.concurrency)) continue;
         if (ctx.modelRegistry.getRegisteredNativeProvider(provider)) {
           ctx.ui.notify(`共享限流：${provider} 已被其他扩展接管，跳过以保留原行为`, "warning");
           continue;

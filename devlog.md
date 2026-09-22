@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-23 模型配置页统一供应商与模型并发
+
+- 决策：保留 SQLite usage/limits 中原供应商限额，增加 models[modelId].concurrency；独立于 SDK 连接字段，避免污染模型定义。
+- 实施：模型页新增数值配置组件，移除用量页 JSON 编辑入口；供应商与模型额度原子准入，排队模型不持有供应商额度；主请求和 IPC 透传模型 ID，外部扩展识别仅模型限额。保留既有超时故障放行策略。
+- 文件：public/model-limits.js、model-manager.js、usage-audit.js；src/request-gate.js、usage-stream.js、gate-ipc.js、shared-gate.js、protocol.js、server.js；extensions/usage-gate.ts；tests/model-concurrency.test.js、model-manager.test.js；README.md。
+- 验证：新增双层并发、跨模型准入、取消、热更新、配置校验及页面保存测试；模型页相关 41 项通过。全量回归 937 项：935 通过、2 跳过、0 失败；补齐新组件 MODULE_INFO 登记与生成索引。
+
 ## 2026-09-23 Todo 改为静态系统规则，撤销读取熔断
 
 - 用户决策：不在每轮／工具调用后注入Todo提醒，仅系统提示词一次性说明；移除刚加入的限制规则。

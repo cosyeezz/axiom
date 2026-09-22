@@ -23,7 +23,7 @@ export function wrapUsageStream(original, { service, identity = {}, createStream
       try {
         requestId = await safe(() => service.store.begin({ ...identity, provider: model.provider, model: model.id, api: model.api }));
         if (service.refresh) await safe(() => service.refresh());
-        try { lease = await service.gate.acquire(model.provider, { signal: options.signal }); }
+        try { lease = await service.gate.acquire(model.provider, { model: model.id, signal: options.signal }); }
         catch (error) { if (options.signal?.aborted) throw error; }
         if (requestId) safe(() => service.store.admit(requestId, { waitMs: lease?.waitMs ?? 0, waitReason: lease?.waitMs ? "concurrency" : null, queueDepth: lease?.queueDepth ?? 0 }));
         const fetchImpl = options.fetch ?? globalThis.fetch;

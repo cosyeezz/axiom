@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/22 09:52:08）
+# Axiom 多级代码索引（生成于 2026/9/22 11:36:17）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -24,8 +24,9 @@
 | public/markdown.js | 484 | marked + DOMPurify 渲染（XSS 边界） | cache, PAGE_CACHE_ENTRY_LIMIT, PAGE_CACHE_BYTE_LIMIT, createMarkdownPageCache |
 | public/memory-tags.js | 107 | 主子代理共享简单标签提取与流式显示过滤 | LIVE, DEAD, TAGS, NAMES |
 | public/model-auth.js | 97 | 网页登录：授权提示、设备码、凭据输入与取消 | createModelAuth |
+| public/model-limits.js | 49 | 模型页供应商总并发、RPM 与模型并发限额配置 | createModelLimits |
 | public/model-manager.css | 551 | 模型配置页：供应商列表、编辑表单与响应式布局 | - |
-| public/model-manager.js | 1521 | 统一模型管理：供应商、字段覆盖与思考等级编辑 | THINKING_LEVELS, API_TYPES, PROVIDER_TEMPLATES, PROVIDER_ID |
+| public/model-manager.js | 1523 | 统一模型管理：供应商、字段覆盖与思考等级编辑 | THINKING_LEVELS, API_TYPES, PROVIDER_TEMPLATES, PROVIDER_ID |
 | public/model-picker.css | 88 | 共享收藏下拉：浮层、星标、触屏与焦点样式 | - |
 | public/model-picker.js | 382 | 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互 | GAP, EDGE, TYPEAHEAD_MS, instanceSeq |
 | public/question.css | 49 | 提问面板样式、焦点与窄屏布局 | - |
@@ -42,7 +43,7 @@
 | public/tooltip.css | 50 | 共享悬停说明样式（浅色主题下反色） | - |
 | public/tooltip.js | 225 | 共享悬停说明：动态 title、键盘、定位与无障碍 | SHOW_DELAY, HIDE_DELAY, GAP, EDGE |
 | public/transport.js | 269 | 业务 WS 唯一所有者：请求回执、逻辑订阅、快照事件闸门与有界恢复 | SERIALIZE_THRESHOLD, WORKER_SOURCE, estimateBytes, createTransport |
-| public/usage-audit.js | 72 | 用量与限流面板：全局汇总、会话分账、请求明细与限额配置 | createUsageAudit |
+| public/usage-audit.js | 61 | 用量与限流面板：全局汇总、会话分账、请求明细与限额配置 | createUsageAudit |
 | scripts/autostart.mjs | 138 | Windows/macOS/Linux 当前用户登录自动启动安装/卸载 | run, projectDir, serviceEntry, label |
 | scripts/dev-vite.mjs | 69 | 独立 Vite 前端：CSS 热替换、同源代理与整页刷新暂停 | startDevWeb |
 | scripts/dev.mjs | 12 | 开发入口：DEV 标识、4320 端口与独立数据目录 | - |
@@ -59,7 +60,7 @@
 | src/compaction.js | 633 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
 | src/data-owner.js | 26 | 写库前数据根独占：内核管道或socket持有，禁止同根双写 | claimDataRoot, claimArchiveOwner, claimJournalOwner, claimOwner |
 | src/database.js | 122 | 共享 SQLite 连接、小配置 KV、WAL 与一致性备份 | nodeOk, DATA_VERSION, assertDataVersion, Database |
-| src/gate-ipc.js | 97 | 共享闸门认证IPC与连接租约回收 | MAX_LINE, authenticated, serveGate, connectGate |
+| src/gate-ipc.js | 98 | 共享闸门认证IPC与连接租约回收 | MAX_LINE, authenticated, serveGate, connectGate |
 | src/goal.js | 988 | Goal：会话级目标状态、轮次计划、验收门与持久化 | GOAL_PHASES, GOAL_ACTIONS, ROUND_STATUSES, GOAL_MAX_SEGMENTS |
 | src/history-journal.js | 121 | 磁盘 journal 原文投影、持久屏障与提交确认 | readDurableJournal, installDurableJournal, confirmDurableAppend, createJournalArchive |
 | src/history-tools.js | 127 | 鉴权历史检索、原文分页及游标签名 | createHistoryReader |
@@ -71,15 +72,15 @@
 | src/native-summary.js | 61 | 原生摘要请求、split-turn附加证据提示与只读流观察 | observeSummaryStream, summarizeNative |
 | src/pi-model-storage.js | 409 | 模型与凭据 SQLite 权威存储、Pi 派生兼容文件 | sdkResolveConfigValue, sdkIsCommandConfigValue, NAMESPACE, AUTH_NAMESPACE |
 | src/pi.js | 714 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | forkSafePoint, agentRuntime, queueStateOf, hasModelOutput |
-| src/prompts.js | 47 | Axiom 自有提示词按 main/subagent/compaction 角色集中维护 | MAIN_AGENT_PROMPT, TITLE_INSTRUCTION, SUBAGENT_PROMPT, WRAP_UP_PROMPT |
+| src/prompts.js | 53 | Axiom 自有提示词按 main/subagent/compaction 角色集中维护 | MAIN_AGENT_PROMPT, TITLE_INSTRUCTION, SUBAGENT_PROMPT, WRAP_UP_PROMPT |
 | src/protocol.js | 384 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/questions.js | 86 | 主代理 question 工具、参数校验与可取消的回答等待 | text, option, input, questionAnswers |
 | src/raw-history.js | 119 | 完整原文耐久归档、身份幂等与恢复校验 | historyError, canonical, contentHash, isOriginal |
 | src/remote.js | 547 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
-| src/request-gate.js | 115 | FIFO并发令牌与RPM滑动窗口 | validateLimits, RequestGate, retryAfterMs |
+| src/request-gate.js | 127 | FIFO并发令牌与RPM滑动窗口 | validateLimits, RequestGate, retryAfterMs |
 | src/retry.js | 196 | 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_DELAY_MS, MAX_RETRIES, RECOVERY_PROMPT |
 | src/safe-points.js | 37 | 完整会话前缀安全点、恢复状态与工具批次边界校验 | safePoints, navigationState, requireSafePoint |
-| src/server.js | 584 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | dev, digest, load, freshen |
+| src/server.js | 585 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | dev, digest, load, freshen |
 | src/session-billing.js | 63 | 全会话 entries 用量与费用统计、当前上下文估算 | keys, zero, number, sessionBilling |
 | src/session-history.js | 37 | 稳定消息身份、线缆记录投影与只读 JSONL 历史读取 | messageIdOf, toWireRecord, readSessionManager, readSessionHistory |
 | src/session-memory.js | 34 | 标题提取登记、轮次预算挂钩与委派背景 | textOf, memoryHooks |
@@ -89,7 +90,7 @@
 | src/task-budget.js | 36 | 主子代理轮次预算规则、收尾提示词与配置页参数校验 | TASK_BUDGET_LIMITS, taskBudgetDefaults, within, taskBudgetPolicy |
 | src/task-execution.js | 23 | 子任务活动阶段、独立时间预算、停止事实与总结提示 | EXECUTION_DEFAULTS, ACTIVE_TASK_STATES, stopReport, stopSummaryPrompt |
 | src/tasks.js | 266 | Tasks：子任务（委托）生命周期 | historyResult, Tasks |
-| src/todo.js | 168 | 主会话 Todo：SQLite 权威存储、版本 CAS、两级工具与暂停状态机 | states, text, operation, updateSchema |
+| src/todo.js | 166 | 主会话 Todo：SQLite 权威存储、版本 CAS、两级工具与暂停状态机 | states, text, operation, updateSchema |
 | src/tool-execution.js | 53 | 命令默认超时策略、角色限制与工具耗时观察 | TOOL_TIMEOUT_PROMPT, createToolExecutionPolicy |
 | src/tools.js | 158 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/transport.js | 37 | 统一有界 WS 发送：回执、广播、删除通知与慢客户端隔离 | createSender |
@@ -105,7 +106,7 @@
 | tests/autoscroll-ui.py | 99 | node --test 测试（npm test） | - |
 | tests/autostart.test.js | 71 | node --test 测试（npm test） | node, cwd, service |
 | tests/benchmark.js | 92 | node --test 测试（npm test） | window |
-| tests/capabilities.test.js | 316 | node --test 测试（npm test） | - |
+| tests/capabilities.test.js | 323 | node --test 测试（npm test） | - |
 | tests/cli-help.test.js | 46 | node --test 测试（npm test） | cli |
 | tests/clipboard.test.js | 85 | node --test 测试（npm test） | loadCopyText, dom |
 | tests/codebase-index.test.js | 20 | node --test 测试（npm test） | ROOT, SKILL |
@@ -181,8 +182,9 @@
 | tests/message-activity.test.js | 523 | node --test 测试（npm test） | page, assistant, thought, call |
 | tests/mobile-reading-ui.py | 130 | node --test 测试（npm test） | - |
 | tests/model-auth.test.js | 133 | node --test 测试（npm test） | SECRET, fakeAuth, waitFor, noLeak |
+| tests/model-concurrency.test.js | 52 | node --test 测试（npm test） | - |
 | tests/model-config.test.js | 1159 | node --test 测试（npm test） | sha, EMPTY, tempDir, openDatabases |
-| tests/model-manager.test.js | 1566 | node --test 测试（npm test） | authSource, source, tick, j |
+| tests/model-manager.test.js | 1567 | node --test 测试（npm test） | authSource, limitsSource, source, tick |
 | tests/model-onboarding-ui.test.js | 185 | node --test 测试（npm test） | stripImports, modelSources, pickerSource, memoryTagsSource |
 | tests/model-onboarding.test.js | 78 | node --test 测试（npm test） | - |
 | tests/model-picker.test.js | 423 | node --test 测试（npm test） | source, tick, nap, OPTS |
@@ -220,7 +222,7 @@
 | tests/retry-settings-ui.py | 30 | node --test 测试（npm test） | - |
 | tests/retry.test.js | 407 | node --test 测试（npm test） | RATE_LIMIT, QUOTA, ABORTED, fakeSession |
 | tests/safe-points.test.js | 47 | node --test 测试（npm test） | - |
-| tests/safe-stop.test.js | 253 | node --test 测试（npm test） | - |
+| tests/safe-stop.test.js | 254 | node --test 测试（npm test） | - |
 | tests/send-optimistic.test.js | 201 | node --test 测试（npm test） | userEnd |
 | tests/serialize-worker.test.js | 129 | node --test 测试（npm test） | rig, BIG |
 | tests/server.test.js | 168 | node --test 测试（npm test） | - |
@@ -268,7 +270,7 @@
 | tests/text-diagram-ui.py | 37 | node --test 测试（npm test） | - |
 | tests/todo-safe-points.test.js | 158 | node --test 测试（npm test） | factoryFixture, tick, until, ordinary |
 | tests/todo-ui.test.js | 51 | node --test 测试（npm test） | source, snapshot |
-| tests/todo.test.js | 89 | node --test 测试（npm test） | setup, update |
+| tests/todo.test.js | 159 | node --test 测试（npm test） | setup, update |
 | tests/tool-detail-reclaim.test.js | 160 | node --test 测试（npm test） | page, toggle, entry |
 | tests/tool-execution.test.js | 53 | node --test 测试（npm test） | fixture |
 | tests/tooltip.test.js | 282 | node --test 测试（npm test） | source, boot, fire, tip |
@@ -890,41 +892,47 @@
 |---|---|---|
 | createModelAuth | function | 2 |
 
-### public/model-manager.js（1521 行） — 统一模型管理：供应商、字段覆盖与思考等级编辑
+### public/model-limits.js（49 行） — 模型页供应商总并发、RPM 与模型并发限额配置
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| THINKING_LEVELS | const | 25 |
-| API_TYPES | const | 26 |
-| PROVIDER_TEMPLATES | const | 34 |
-| PROVIDER_ID | const | 65 |
-| MASK_KINDS | const | 66 |
-| DRAFT | const | 68 |
-| HIDDEN_VIEW | const | 70 |
-| MANAGED_PROVIDER_KEYS | const | 73 |
-| MANAGED_MODEL_KEYS | const | 74 |
-| DERIVED_MODEL_KEYS | const | 77 |
-| MODEL_EXTRA_EXCLUDE | const | 79 |
-| TAB_CONNECTION | const | 81 |
-| TAB_MODELS | const | 82 |
-| isMask | const | 84 |
-| hasOwn | const | 85 |
-| clone | const | 86 |
-| keepMasked | function | 88 |
-| stable | function | 96 |
-| el | function | 104 |
-| fieldSeq | const | 120 |
-| field | function | 122 |
-| badge | function | 131 |
-| parseJsonText | function | 135 |
-| ICONS | const | 148 |
-| icon | function | 155 |
-| openModal | function | 162 |
-| closeModal | function | 166 |
-| openDialog | function | 175 |
-| openModal | method | 193 |
-| initModelManager | function | 198 |
-| renderProviders | method | 1518 |
+| createModelLimits | function | 2 |
+
+### public/model-manager.js（1523 行） — 统一模型管理：供应商、字段覆盖与思考等级编辑
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| THINKING_LEVELS | const | 26 |
+| API_TYPES | const | 27 |
+| PROVIDER_TEMPLATES | const | 35 |
+| PROVIDER_ID | const | 66 |
+| MASK_KINDS | const | 67 |
+| DRAFT | const | 69 |
+| HIDDEN_VIEW | const | 71 |
+| MANAGED_PROVIDER_KEYS | const | 74 |
+| MANAGED_MODEL_KEYS | const | 75 |
+| DERIVED_MODEL_KEYS | const | 78 |
+| MODEL_EXTRA_EXCLUDE | const | 80 |
+| TAB_CONNECTION | const | 82 |
+| TAB_MODELS | const | 83 |
+| isMask | const | 85 |
+| hasOwn | const | 86 |
+| clone | const | 87 |
+| keepMasked | function | 89 |
+| stable | function | 97 |
+| el | function | 105 |
+| fieldSeq | const | 121 |
+| field | function | 123 |
+| badge | function | 132 |
+| parseJsonText | function | 136 |
+| ICONS | const | 149 |
+| icon | function | 156 |
+| openModal | function | 163 |
+| closeModal | function | 167 |
+| openDialog | function | 176 |
+| openModal | method | 194 |
+| initModelManager | function | 199 |
+| renderProviders | method | 1520 |
 
 ### public/model-picker.js（382 行） — 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互
 
@@ -1050,7 +1058,7 @@
 | estimateBytes | function | 9 |
 | createTransport | function | 19 |
 
-### public/usage-audit.js（72 行） — 用量与限流面板：全局汇总、会话分账、请求明细与限额配置
+### public/usage-audit.js（61 行） — 用量与限流面板：全局汇总、会话分账、请求明细与限额配置
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1264,14 +1272,14 @@
 | exec | method | 114 |
 | close | method | 118 |
 
-### src/gate-ipc.js（97 行） — 共享闸门认证IPC与连接租约回收
+### src/gate-ipc.js（98 行） — 共享闸门认证IPC与连接租约回收
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | MAX_LINE | const | 4 |
 | authenticated | const | 5 |
 | serveGate | function | 9 |
-| connectGate | function | 62 |
+| connectGate | function | 63 |
 
 ### src/goal.js（988 行） — Goal：会话级目标状态、轮次计划、验收门与持久化
 
@@ -1503,15 +1511,15 @@
 | memoryExtension | function | 161 |
 | createPiFactory | function | 185 |
 
-### src/prompts.js（47 行） — Axiom 自有提示词按 main/subagent/compaction 角色集中维护
+### src/prompts.js（53 行） — Axiom 自有提示词按 main/subagent/compaction 角色集中维护
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | MAIN_AGENT_PROMPT | const | 4 |
-| TITLE_INSTRUCTION | const | 39 |
-| SUBAGENT_PROMPT | const | 42 |
-| WRAP_UP_PROMPT | const | 43 |
-| budgetSystemPrompt | const | 44 |
+| TITLE_INSTRUCTION | const | 45 |
+| SUBAGENT_PROMPT | const | 48 |
+| WRAP_UP_PROMPT | const | 49 |
+| budgetSystemPrompt | const | 50 |
 
 ### src/protocol.js（384 行） — zod 协议：selection / command 判别联合（消息类型见 L3）
 
@@ -1593,20 +1601,20 @@
 | LOGIN_OUTPUT_CAP | const | 138 |
 | createRemoteAccess | function | 140 |
 
-### src/request-gate.js（115 行） — FIFO并发令牌与RPM滑动窗口
+### src/request-gate.js（127 行） — FIFO并发令牌与RPM滑动窗口
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | validateLimits | function | 3 |
-| RequestGate | class | 19 |
-| constructor | method | 28 |
-| configure | method | 37 |
-| acquire | method | 43 |
-| sweep | method | 61 |
-| cooldown | method | 89 |
-| snapshot | method | 94 |
-| close | method | 105 |
-| retryAfterMs | function | 108 |
+| RequestGate | class | 29 |
+| constructor | method | 38 |
+| configure | method | 47 |
+| acquire | method | 53 |
+| sweep | method | 71 |
+| cooldown | method | 101 |
+| snapshot | method | 106 |
+| close | method | 117 |
+| retryAfterMs | function | 120 |
 
 ### src/retry.js（196 行） — 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续
 
@@ -1633,7 +1641,7 @@
 | navigationState | function | 27 |
 | requireSafePoint | function | 32 |
 
-### src/server.js（584 行） — createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发
+### src/server.js（585 行） — createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1642,7 +1650,7 @@
 | load | const | 14 |
 | freshen | const | 19 |
 | assets | const | 29 |
-| createServerApp | function | 81 |
+| createServerApp | function | 82 |
 
 ### src/session-billing.js（63 行） — 全会话 entries 用量与费用统计、当前上下文估算
 
@@ -1874,7 +1882,7 @@
 | cancel | method | 255 |
 | interrupt | method | 260 |
 
-### src/todo.js（168 行） — 主会话 Todo：SQLite 权威存储、版本 CAS、两级工具与暂停状态机
+### src/todo.js（166 行） — 主会话 Todo：SQLite 权威存储、版本 CAS、两级工具与暂停状态机
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1891,12 +1899,11 @@
 | snapshot | method | 56 |
 | commit | method | 59 |
 | update | method | 65 |
-| pause | method | 116 |
-| resume | method | 120 |
-| nudge | method | 127 |
-| context | method | 139 |
-| readTool | method | 146 |
-| updateTool | method | 157 |
+| pause | method | 121 |
+| resume | method | 125 |
+| nudge | method | 132 |
+| readTool | method | 144 |
+| updateTool | method | 155 |
 
 ### src/tool-execution.js（53 行） — 命令默认超时策略、角色限制与工具耗时观察
 
@@ -2545,65 +2552,66 @@
 | jsonResponse | const | 672 |
 | test | method | 951 |
 
-### tests/model-manager.test.js（1566 行） — node --test 测试（npm test）
+### tests/model-manager.test.js（1567 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | authSource | const | 11 |
-| source | const | 12 |
-| tick | const | 13 |
-| j | const | 15 |
-| masked | const | 17 |
-| harness | function | 19 |
-| apiSelect | method | 88 |
+| limitsSource | const | 12 |
+| source | const | 13 |
+| tick | const | 14 |
+| j | const | 16 |
+| masked | const | 18 |
+| harness | function | 20 |
 | apiSelect | method | 89 |
-| setInput_on | method | 256 |
-| setInput_on | function | 289 |
-| modelDelete | method | 352 |
-| dialogButton | method | 356 |
-| modelDelete | method | 362 |
-| dialogButton | method | 364 |
-| dialogButton | method | 382 |
-| confirm | method | 415 |
-| confirm | method | 422 |
-| row | method | 577 |
-| row | method | 588 |
-| discoverPanelEl | const | 896 |
-| discoverRows | const | 897 |
-| rowBox | const | 898 |
-| addSelectedButton | const | 899 |
-| fetchButton | const | 900 |
-| checkRow | const | 901 |
-| rowBox | method | 902 |
+| apiSelect | method | 90 |
+| setInput_on | method | 257 |
+| setInput_on | function | 290 |
+| modelDelete | method | 353 |
+| dialogButton | method | 357 |
+| modelDelete | method | 363 |
+| dialogButton | method | 365 |
+| dialogButton | method | 383 |
+| confirm | method | 416 |
+| confirm | method | 423 |
+| row | method | 578 |
+| row | method | 589 |
+| discoverPanelEl | const | 897 |
+| discoverRows | const | 898 |
+| rowBox | const | 899 |
+| addSelectedButton | const | 900 |
+| fetchButton | const | 901 |
+| checkRow | const | 902 |
 | rowBox | method | 903 |
-| fetchButton | method | 913 |
-| checkRow | method | 934 |
-| fetchButton | method | 946 |
-| checkRow | method | 958 |
+| rowBox | method | 904 |
+| fetchButton | method | 914 |
+| checkRow | method | 935 |
+| fetchButton | method | 947 |
 | checkRow | method | 959 |
-| addSelectedButton | method | 960 |
-| fetchButton | method | 994 |
-| addSelectedButton | method | 1001 |
-| addSelectedButton | method | 1020 |
-| fetchButton | method | 1042 |
-| fetchButton | method | 1050 |
-| fetchButton | method | 1075 |
-| fetchButton | method | 1094 |
-| fetchButton | method | 1097 |
-| fetchButton | method | 1114 |
-| fetchButton | method | 1120 |
-| sonnetCatalog | const | 1138 |
-| openSonnet | const | 1143 |
-| checkLevel | const | 1151 |
-| checkLevel | method | 1170 |
-| checkLevel | method | 1199 |
-| confirmDialog | method | 1263 |
-| confirmDialog | method | 1295 |
-| toggle | method | 1508 |
-| toggle | method | 1512 |
-| toggle | method | 1516 |
-| toggle | method | 1560 |
-| toggle | method | 1562 |
+| checkRow | method | 960 |
+| addSelectedButton | method | 961 |
+| fetchButton | method | 995 |
+| addSelectedButton | method | 1002 |
+| addSelectedButton | method | 1021 |
+| fetchButton | method | 1043 |
+| fetchButton | method | 1051 |
+| fetchButton | method | 1076 |
+| fetchButton | method | 1095 |
+| fetchButton | method | 1098 |
+| fetchButton | method | 1115 |
+| fetchButton | method | 1121 |
+| sonnetCatalog | const | 1139 |
+| openSonnet | const | 1144 |
+| checkLevel | const | 1152 |
+| checkLevel | method | 1171 |
+| checkLevel | method | 1200 |
+| confirmDialog | method | 1264 |
+| confirmDialog | method | 1296 |
+| toggle | method | 1509 |
+| toggle | method | 1513 |
+| toggle | method | 1517 |
+| toggle | method | 1561 |
+| toggle | method | 1563 |
 
 ### tests/model-onboarding-ui.test.js（185 行） — node --test 测试（npm test）
 
@@ -2865,12 +2873,12 @@
 | recordedSleep | const | 63 |
 | lastAssistant | const | 73 |
 
-### tests/safe-stop.test.js（253 行） — node --test 测试（npm test）
+### tests/safe-stop.test.js（254 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| finish | method | 201 |
-| finish | method | 212 |
+| finish | method | 202 |
+| finish | method | 213 |
 
 ### tests/send-optimistic.test.js（201 行） — node --test 测试（npm test）
 
@@ -3287,7 +3295,7 @@
 | source | const | 6 |
 | snapshot | const | 7 |
 
-### tests/todo.test.js（89 行） — node --test 测试（npm test）
+### tests/todo.test.js（159 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -3307,6 +3315,8 @@
 | update | method | 74 |
 | update | method | 83 |
 | update | method | 84 |
+| update | method | 145 |
+| update | method | 154 |
 
 ### tests/tool-detail-reclaim.test.js（160 行） — node --test 测试（npm test）
 
@@ -3445,7 +3455,7 @@
 
 - 协议 command.type：image、inherit、session.points、session.revert、session.fork、session.continue、goal.action、service.status、service.update.check、service.restart、remote.get、remote.login、remote.configure、session.rename、workspace.reveal、workspace.browse、files.browse、models.list、models.config.get、models.provider.save、models.provider.delete、models.provider.rename、models.model.save、models.model.delete、models.provider.discover、models.favorites.get、models.model.override、models.auth.list、models.auth.start、models.auth.status、models.auth.respond、models.auth.cancel、models.auth.logout、models.hidden.set、models.favorites.set、capabilities.list、session.defaults.get、session.defaults.configure、session.defaults.list、session.defaults.delete、usage.backfill、usage.get、usage.configure、task.budget.get、task.budget.configure、session.configure、inherit、sessions.list、session.create、session.import、session.duplicate、session.attach、session.compaction.messages、session.compaction.cancel、session.compaction.attempt、session.compaction.start、session.skills.refresh、session.close、prompt、cancel、question.reply、session.retry、task.retry、task.cancel、queue.withdraw、tasks.read（src/protocol.js）
 - HTML id：sidebar、new、open-workspace、import-session、search、sessions、open-settings、sidebar-backdrop、toggle-sidebar、session-alert、session-title、workspace-label、copy-workspace、reveal-workspace、workspace-feedback、conversation-font-scale、github-link、status、service-dev、service-version、open-raw-io、toggle-theme、login、maintenance-state、connect、workspace、goal-track、earliest、transcript、output、raw-io、raw-io-title、close-raw-io、raw-io-empty、raw-io-list、goal-dock、question-dock、latest、message-queue、task-runs、compaction-progress、safe-stop-progress、todo-dock、add-context、add-image、compact-session、goal-enter、image-files、context-chips、task-timer、task-timer-value、context-menu、context-picker、context-back、context-title、context-close、context-search、context-results、context-error、image-attachments、composer、prompt、prompt-completion、composer-skill、agent-role、provider、model、thinking、stop、force-stop、send-steer、send-followup、send、session-runtime、session-inspector-trigger、session-billing-trigger、session-bill-total、mobile-runtime、mobile-expand、composer-help、composer-action-help、error、session-action、session-action-form、session-action-title、session-action-description、session-name-label、session-name、session-action-error、session-action-cancel、session-action-submit、image-preview、image-preview-close、image-preview-image、restart-dialog、restart-form、restart-title、restart-description、restart-warning、restart-cancel、restart-submit、force-stop-dialog、force-stop-form、force-stop-title、force-stop-description、force-stop-warning、force-stop-cancel、force-stop-submit、session-detail、session-detail-title、session-detail-close、session-inspector、inspector-prompt-tab、inspector-tools-tab、inspector-prompt-panel、session-system-prompt、inspector-tools-panel、session-active-tools、session-billing、session-bill-body、manual-compaction、manual-compaction-form、manual-compaction-title、manual-compaction-mode、manual-compaction-hint、manual-compaction-error、manual-compaction-cancel、manual-compaction-confirm、task-overlays、compaction-run、compaction-run-title、compaction-run-meta、compaction-run-pick-label、compaction-run-pick、compaction-run-cancel、compaction-run-error、compaction-run-trigger、compaction-run-steps、compaction-run-stream-wrap、compaction-run-stream、task-template、goal-plan、goal-plan-title、goal-plan-meta、goal-plan-constraints-title、goal-plan-constraints、goal-plan-acceptance-title、goal-plan-acceptance、goal-plan-rounds-section、goal-plan-rounds-title、goal-plan-rounds、goal-plan-close、goal-plan-confirm、settings、settings-title、settings-connection-tab、settings-defaults-tab、settings-remote-tab、settings-models-tab、settings-usage-tab、settings-service-tab、usage-panel、connection-panel、connection-current-title、connection-current、connection-form、connection-address、connection-help、connection-feedback、connection-connect、defaults-panel、selection-copy-title、selection-copy、selection-copy-help、selection-copy-feedback、queue-type、steer-help、followup-help、defaults-preview、task-budget-title、task-max-turns、task-wrap-up-window、task-work-seconds、task-wrap-up-seconds、task-summary-seconds、task-budget-help、subagent-title、subagent-help、subagent-provider、subagent-model、settings-feedback、defaults-title、defaults-scope-label、defaults-delete、defaults-workspace-help、defaults-editor、create-form、create-defaults-help、config-hot-title、config-timing-help、create-agents、create-compaction、config-subagent-title、config-subagent-help、create-subagent-settings、config-new-session-title、config-assembly-help、create-capabilities、create-retry、assembly-actions、assembly-feedback、apply-assembly、create-feedback、remote-panel、remote-status-title、remote-status、remote-login、remote-auth、remote-url、remote-form、remote-note、remote-enabled、remote-email、remote-email-help、remote-feedback、remote-refresh、remote-save、models-panel、service-panel、service-state-title、service-feedback、service-restart-title、restart-quick、restart-rebuild、service-recover、service-update-section、service-update-title、update-check、update-result、update-install、service-history-title、service-history（public/index.html）
-- HTTP 静态路由：/、/favicon.svg、/style.css、/theme.js、/app.js、/composer-controls.js、/composer-controls.css、/icons.js、/session-cache.js、/session-details.js、/compaction-view.js、/transport.js、/todo.js、/todo.css、/goal.js、/goal.css、/question.js、/question.css、/service-settings.js、/usage-audit.js、/file-picker.js、/tooltip.js、/tooltip.css、/file-picker.css、/markdown.js、/stream-renderer.js、/stream-playback.js、/markdown-scan.js、/memory-tags.js、/clipboard.js、/answer-tags.js、/goal-markers.js、/vendor/marked.js、/vendor/purify.js、/model-manager.js、/model-auth.js、/model-manager.css、/model-picker.js、/model-picker.css、/health（src/server.js）
+- HTTP 静态路由：/、/favicon.svg、/style.css、/theme.js、/app.js、/composer-controls.js、/composer-controls.css、/icons.js、/session-cache.js、/session-details.js、/compaction-view.js、/transport.js、/todo.js、/todo.css、/goal.js、/goal.css、/question.js、/question.css、/service-settings.js、/usage-audit.js、/file-picker.js、/tooltip.js、/tooltip.css、/file-picker.css、/markdown.js、/stream-renderer.js、/stream-playback.js、/markdown-scan.js、/memory-tags.js、/clipboard.js、/answer-tags.js、/goal-markers.js、/vendor/marked.js、/vendor/purify.js、/model-manager.js、/model-limits.js、/model-auth.js、/model-manager.css、/model-picker.js、/model-picker.css、/health（src/server.js）
 
 ## ⚠ 未登记文件（0）
 

@@ -12,11 +12,8 @@ export function createUsageAudit({ request, panel }) {
   const apply = el("button", "筛选"); filters.append(apply);
   const summary = el("div"); const live = el("div"); const rows = el("div");
   const next = el("button", "下一页"); next.type = "button"; next.className = "secondary"; next.hidden = true;
-  const config = el("details"); config.append(el("summary", "供应商限流配置"));
-  config.append(el("p", "纯 FIFO。RPM 按 HTTP 尝试计数；并发按完整请求计数。0 或未配置表示不限。WebSocket 请求无法统计 HTTP RPM。"));
-  const editor = el("textarea"); editor.rows = 8; editor.setAttribute("aria-label", "供应商限流 JSON"); editor.spellcheck = false;
-  const save = el("button", "保存限额"); save.type = "button";
-  config.append(editor, save);
+  const config = el("details"); config.append(el("summary", "历史用量导入"));
+  config.append(el("p", "供应商和模型并发限额请到「模型与供应商 → 选择供应商 → 模型 → 并发与限流配置」设置。"));
   const importHistory = el("button", "导入现存历史用量"); importHistory.type = "button"; importHistory.className = "secondary";
   config.append(el("p", "历史导入只恢复启用审计前仍存在的 JSONL 用量，自动去除副本重复；无法恢复已删除记录、HTTP 次数或排队耗时。"), importHistory);
   importHistory.onclick = async () => {
@@ -26,8 +23,7 @@ export function createUsageAudit({ request, panel }) {
     finally { importHistory.disabled = false; }
   };
   panel.append(title, note, refresh, status, live, filters, summary, rows, next, config);
-  let cursor = null, generation = 0, dirty = false;
-  editor.oninput = () => { dirty = true; };
+  let cursor = null, generation = 0;
   const money = value => `$${Number(value ?? 0).toFixed(6)}`;
   function table(headers, values) {
     const box = el("div"); box.className = "usage-scroll";
@@ -44,7 +40,6 @@ export function createUsageAudit({ request, panel }) {
       const data = await request("usage.get", { ...(session.value.trim() ? { sessionId: session.value.trim() } : {}), ...(provider.value.trim() ? { provider: provider.value.trim() } : {}), ...(older ? cursor : {}), limit: 50 });
       if (token !== generation) return;
       cursor = data.requests.nextCursor;
-      if (!dirty) editor.value = JSON.stringify(data.limits, null, 2);
       live.replaceChildren(el("h4", "当前限流状态"), table(["供应商", "并发占用", "窗口尝试", "排队", "冷却", "超时放行"], data.gate.map(row => [row.provider, `${row.active} / ${row.concurrency || "不限"}`, `${row.attempts} / ${row.rpm || "不限"}`, row.concurrencyQueue + row.rpmQueue, `${Math.ceil(row.cooldownMs / 1000)}s`, row.bypassed])));
       summary.replaceChildren(el("h4", session.value.trim() ? "会话分账" : "全局每日汇总"), table([session.value.trim() ? "代理" : "日期", "供应商 / 模型", "请求", "输入", "输出", "缓存读", "缓存写", "费用（USD）"], data.billing.map(row => [row.agentId ?? row.day, `${row.provider ?? "未知"} / ${row.model ?? "未知"}`, row.records, row.input, row.output, row.cacheRead, row.cacheWrite, money(row.costTotal)])));
       rows.replaceChildren(el("h4", "请求明细"));
@@ -61,11 +56,5 @@ export function createUsageAudit({ request, panel }) {
   }
   refresh.onclick = () => void load(); next.onclick = () => void load(true);
   filters.onsubmit = event => { event.preventDefault(); void load(); };
-  save.onclick = async () => {
-    save.disabled = true;
-    try { await request("usage.configure", { limits: JSON.parse(editor.value) }); dirty = false; await load(); }
-    catch (error) { status.textContent = error.message; }
-    finally { save.disabled = false; }
-  };
   return { load };
 }

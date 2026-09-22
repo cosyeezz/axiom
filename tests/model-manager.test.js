@@ -9,6 +9,7 @@ import { modelOverrideIn } from "../src/protocol.js";
 // 装载顺序为先剥 export 求值 model-auth.js，再去掉 import 行并剥 export 求值 model-manager.js，
 // 两个模块在同一 eval 作用域内共享符号。
 const authSource = (await readFile(new URL("../public/model-auth.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+const limitsSource = (await readFile(new URL("../public/model-limits.js", import.meta.url), "utf8")).replace(/^export /gm, "");
 const source = await publicSource("model-manager");
 const tick = () => new Promise(setImmediate);
 // 组件在窗口 realm 内构造对象，跨 realm 的 deepStrictEqual 会因原型不同而失败，先转成本 realm。
@@ -28,7 +29,7 @@ function harness() {
       call.reject = reject;
     });
   };
-  window.eval(`${authSource}\n${source}\nwindow.init = initModelManager; window.templates = PROVIDER_TEMPLATES;`);
+  window.eval(`${authSource}\n${limitsSource}\n${source}\nwindow.init = initModelManager; window.templates = PROVIDER_TEMPLATES;`);
   const saved = [];
   const manager = window.init({
     root: window.document.getElementById("root"),

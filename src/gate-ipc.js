@@ -30,7 +30,8 @@ export async function serveGate({ endpoint, token, service }) {
             switch (request.method) {
               case "acquire": {
                 if (typeof request.provider !== "string" || request.provider.length > 200 || !["rpm", "concurrency"].includes(request.kind)) throw new Error("invalid acquire");
-                const lease = await service.gate.acquire(request.provider, { kind: request.kind, signal: controller.signal });
+                if (request.model !== undefined && (typeof request.model !== "string" || request.model.length > 1000)) throw new Error("invalid model");
+                const lease = await service.gate.acquire(request.provider, { kind: request.kind, model: request.model, signal: controller.signal });
                 if (socket.destroyed) { lease.release(); return; }
                 const leaseId = randomUUID();
                 if (request.kind === "concurrency") leases.set(leaseId, lease);

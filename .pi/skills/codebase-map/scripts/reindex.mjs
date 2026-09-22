@@ -141,6 +141,7 @@ const MODULE_INFO = {
   "public/model-picker.js": "共享模型选择器：供应商/模型/思考收藏、排序与键盘交互",
   "public/model-picker.css": "共享收藏下拉：浮层、星标、触屏与焦点样式",
   "public/model-manager.js": "统一模型管理：供应商、字段覆盖与思考等级编辑",
+  "public/model-limits.js": "模型页供应商总并发、RPM 与模型并发限额配置",
   "public/model-auth.js": "网页登录：授权提示、设备码、凭据输入与取消",
   "src/model-auth.js": "SDK 登录桥：连接隔离、超时取消与安全事件投影",
   "public/model-manager.css": "模型配置页：供应商列表、编辑表单与响应式布局",

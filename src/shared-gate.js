@@ -29,13 +29,13 @@ export function remoteService(client, initial) {
     async refresh() { const value = await request("view"); limits = value.limits; },
     gate: {
       get limits() { return limits; },
-      async acquire(provider, { kind = "concurrency", signal } = {}) {
+      async acquire(provider, { kind = "concurrency", model, signal } = {}) {
         if (signal?.aborted) throw signal.reason;
         // 取消关闭专属连接会影响共享客户端，采用取消后归还 + 服务端TTL兜底。
         const result = await new Promise((resolve, reject) => {
           const abort = () => reject(signal.reason ?? new Error("已取消"));
           signal?.addEventListener("abort", abort, { once: true });
-          request("acquire", { provider, kind }).then(value => {
+          request("acquire", { provider, kind, model }).then(value => {
             signal?.removeEventListener("abort", abort);
             if (signal?.aborted) { void request("release", { leaseId: value.leaseId }).catch(() => {}); return; }
             resolve(value);

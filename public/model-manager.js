@@ -1,4 +1,5 @@
 import { actionIconNode } from "./icons.js";
+import { createModelLimits } from "./model-limits.js";
 // 设置页「模型与供应商」面板：编辑 Axiom SQLite 中 的自定义/覆盖供应商与模型。
 // 协议见 docs/model-config-protocol.md v1：
 //   models.config.get → { fingerprint, path, parseError?, providers:[…], catalog:[…] }
@@ -625,6 +626,7 @@ export function initModelManager({ root, request, onSaved }) {
             : null,
           el("button", { type: "button", class: "secondary", onclick: addModel }, "添加模型"))),
       headHint ? el("p", { class: "mm-hint" }, headHint) : null,
+      createModelLimits({ providerId, models: [...savedRows, ...catalogRows], request }),
       provider ? discoverPanel(provider) : null,
       grouped ? el("div", { class: "mm-nav-group" }, "自定义模型") : null,
       customRows.length ? el("div", { class: "mm-models" }, ...customRows) : null,

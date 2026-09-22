@@ -7,6 +7,16 @@ export function validateLimits(value) {
     if (!provider.trim() || provider.length > 200 || !limits || typeof limits !== "object" || Array.isArray(limits)) throw new Error("供应商限流配置无效");
     const clean = {};
     for (const key of Object.keys(limits)) {
+      if (key === "models") {
+        if (!limits.models || typeof limits.models !== "object" || Array.isArray(limits.models)) throw new Error("模型限流配置必须是对象");
+        clean.models = Object.fromEntries(Object.entries(limits.models).map(([model, value]) => {
+          if (!model.trim() || model.length > 1000 || !value || typeof value !== "object" || Array.isArray(value)
+            || Object.keys(value).some(field => field !== "concurrency")
+            || !Number.isSafeInteger(value.concurrency) || value.concurrency < 0 || value.concurrency > 100000) throw new Error("模型并发数必须是 0–100000 的整数");
+          return [model, { concurrency: value.concurrency }];
+        }));
+        continue;
+      }
       if (!["rpm", "concurrency"].includes(key)) throw new Error(`未知限流字段：${key}`);
       if (!Number.isSafeInteger(limits[key]) || limits[key] < 0 || limits[key] > 100000) throw new Error("RPM 与并发数必须是 0–100000 的整数（0 表示不限）");
       clean[key] = limits[key];
@@ -40,13 +50,13 @@ export class RequestGate {
     if (!this.#states.has(provider)) this.#states.set(provider, { leases: new Map(), attempts: [], concurrency: [], rpm: [], cooldownUntil: 0, bypassed: 0 });
     return this.#states.get(provider);
   }
-  acquire(provider, { kind = "concurrency", signal } = {}) {
+  acquire(provider, { kind = "concurrency", model, signal } = {}) {
     if (!["concurrency", "rpm"].includes(kind)) return Promise.reject(new Error("未知闸门类型"));
     if (signal?.aborted) return Promise.reject(signal.reason ?? new Error("请求已取消"));
-    if (this.#closed || !this.#limits[provider]?.[kind]) return Promise.resolve({ release() {}, waitMs: 0, bypassed: this.#closed });
+    if (this.#closed) return Promise.resolve({ release() {}, waitMs: 0, bypassed: this.#closed });
     const state = this.#state(provider);
     return new Promise((resolve, reject) => {
-      const entry = { at: this.#now(), resolve, reject, signal, abort: null };
+      const entry = { at: this.#now(), model, resolve, reject, signal, abort: null };
       entry.abort = () => {
         const index = state[kind].indexOf(entry);
         if (index >= 0) state[kind].splice(index, 1);
@@ -61,22 +71,24 @@ export class RequestGate {
   sweep() {
     const now = this.#now();
     for (const [provider, state] of this.#states) {
-      for (const [key, expires] of state.leases) if (expires <= now) state.leases.delete(key);
+      for (const [key, lease] of state.leases) if (lease.expires <= now) state.leases.delete(key);
       state.attempts = state.attempts.filter(at => at > now - this.#window);
       for (const kind of ["concurrency", "rpm"]) {
         const queue = state[kind];
-        while (queue.length) {
-          const entry = queue[0];
+        for (let index = 0; index < queue.length;) {
+          const entry = queue[index];
           const limit = this.#limits[provider]?.[kind] ?? 0;
           const bypassed = this.#closed || now - entry.at >= this.#maxWait;
           const occupied = kind === "concurrency" ? state.leases.size : state.attempts.length;
-          if (!bypassed && limit && (occupied >= limit || (kind === "rpm" && state.cooldownUntil > now))) break;
-          queue.shift();
+          const modelLimit = kind === "concurrency" ? this.#limits[provider]?.models?.[entry.model]?.concurrency ?? 0 : 0;
+          const modelActive = modelLimit ? [...state.leases.values()].filter(lease => lease.model === entry.model).length : 0;
+          if (!bypassed && ((limit && (occupied >= limit || (kind === "rpm" && state.cooldownUntil > now))) || (modelLimit && modelActive >= modelLimit))) { index++; continue; }
+          queue.splice(index, 1);
           entry.signal?.removeEventListener("abort", entry.abort);
           const token = Symbol();
           if (bypassed) state.bypassed++;
-          else if (limit) {
-            if (kind === "concurrency") state.leases.set(token, now + this.#ttl);
+          else {
+            if (kind === "concurrency") state.leases.set(token, { expires: now + this.#ttl, model: entry.model });
             else state.attempts.push(now);
           }
           let released = false;
