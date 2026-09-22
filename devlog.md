@@ -2850,3 +2850,11 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 改动：新增严格边界解析器，仅兼容单个完整代码块；预校验结构，保持引用与授权校验；提示词使用合法 JSON 示例；持久化有限且不含正文的终态诊断。未增加自动模型修复请求，避免额外消费和未经验证的内容修补。
 - 涉及文件：src/compaction-output.js、src/compaction.js、src/prompts.js、tests/compaction-output.test.js、tests/compaction.test.js、README.md、devlog.md。
 - 验证：压缩专项 71/71；全量 875 项，873 通过、2 跳过、0 失败；git diff --check 通过。登记 .pi/skills/codebase-map/scripts/reindex.mjs；生成索引不纳入提交，以免覆盖主目录已有未提交索引，读取时可重建。
+
+## 2026-09-22 原生摘要与独立任务状态配对提交
+
+- 原因：来源标签协议会使格式错误拖累整次摘要；按确认方案恢复纯SDK原生提示词，仅压缩时维护短Markdown任务状态，移除所有失败回退。
+- 改动：先原生摘要、再从上次已提交摘要/状态和冻结原消息维护状态；两者同一compaction记录持久化。context钩子在摘要后、保留消息前注入状态，主子会话隔离且重开可恢复。失败、取消、超窗不部分应用；保留归档与双提交屏障。SDK usage不可读时使用既有本地窗口估算。展示新增任务状态正文。
+- 涉及文件：src/native-summary.js、src/compaction.js、src/pi.js、src/task-state-doc.js、public/compaction-view.js、tests/compaction*、tests/native-summary.test.js、tests/task-state*、tests/conversation-preview.mjs、tests/accept-native-two-rounds.mjs、README.md、docs/compaction-task-state-execution.md、索引注册及知识记录。
+- 验证：真实供应商历史副本连续两轮成功，共4请求，894条原始记录保留，stateDoc分别6837/2502字符，继承及重开检查通过。真实SDK+本地模拟供应商验证主/子状态隔离、请求顺序及重开注入。浏览器1440/390/320宽度通过任务状态Markdown与原文切换验收；全量测试通过（最终计数见执行文档）。没有重启运行服务。生成索引不纳入提交，保留主目录已有改动。
+- 边界：工具输入仍受SDK序列化截断影响；配对状态维护不保证语义零幻觉。状态失败不得沿用旧文档冒充同版本产物。

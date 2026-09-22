@@ -44,10 +44,12 @@ function prepareBackgroundCompaction(branch, keepRecentTokens, reserveTokens = 1
   let boundaryStart = 0;
   let previousSummary;
   let previousState;
+  let previousStateDoc;
   for (let i = branch.length - 1; i >= 0; i--) {
     if (branch[i].type === "compaction") {
       previousSummary = branch[i].summary;
       previousState = structuredClone(branch[i].details?.taskState);
+      previousStateDoc = branch[i].details?.stateDoc;
       const kept = branch.findIndex((entry) => entry.id === branch[i].firstKeptEntryId);
       if (kept < 0 && branch[i].firstKeptEntryId !== "__axiom_checkpoint__") throw compactionError("SOURCE_CORRUPT", "Unknown compaction boundary");
       boundaryStart = kept >= 0 ? kept : i + 1;
@@ -105,7 +107,7 @@ function prepareBackgroundCompaction(branch, keepRecentTokens, reserveTokens = 1
       if (kind) fileOps[kind].add(block.arguments.path);
     }
   }
-  return { firstKeptEntryId: firstKeptEntry.id, messagesToSummarize, previousSummary, previousState, evidence,
+  return { firstKeptEntryId: firstKeptEntry.id, messagesToSummarize, previousSummary, previousState, previousStateDoc, evidence,
     nativePreparation: { firstKeptEntryId: firstKeptEntry.id, messagesToSummarize: history, turnPrefixMessages, isSplitTurn,
       previousSummary, tokensBefore: contextTokens(branch.flatMap(sessionEntryToContextMessages)), fileOps,
       settings: { enabled: true, reserveTokens, keepRecentTokens } } };
@@ -454,8 +456,6 @@ export function createBackgroundCompaction({
   available = [],
   config,
   summarize = summarizeNative,
-  nativeFallback, // legacy test adapter; production uses generation-only fallback
-  fallbackSummarize = summarize === summarizeNative ? summarizeNative : null,
   beforeCommit,
   confirmCommit = confirmDurableAppend,
   sourceManifest,
@@ -642,20 +642,23 @@ export function createBackgroundCompaction({
     return !branch.slice(leafIndex + 1).some((entry) => entry.type === "compaction" || entry.customType === "axiom-control"); // 期间出现过新压缩 → 作废
   }
 
-  function runFlight(preparation, run, fallback = false) {
+  // Restored/imported assistant messages may lack usage; treat SDK errors as
+  // unavailable usage and retain the conservative local token estimate.
+  function safeContextUsage() {
+    try { return session.getContextUsage?.(); } catch { return undefined; }
+  }
+
+  function runFlight(preparation, run) {
     const model = resolveModel(); // 快照时同步捕获 model/thinking，配置漂移不影响在途 flight
     controller = new AbortController();
     if (run) run.model = model?.name || model?.id || run.model;
-    const originalEvidence = session.sessionManager.getBranch().filter(e => e.type === "message" || e.type === "custom_message")
-      .map(e => ({ entryId: e.id, role: e.message?.role ?? e.type, text: messageText(e) }));
-    const signal = controller.signal;
-    return (fallback ? fallbackSummarize : summarize)({
-      customInstructions: fallback ? null : undefined,
+    return summarize({
       preparation: structuredClone(preparation.nativePreparation),
       messages: structuredClone(preparation.messagesToSummarize), // 冻结快照，防消息对象后续被原地改写
       previousSummary: preparation.previousSummary,
       evidence: preparation.evidence,
       previousState: preparation.previousState,
+      previousStateDoc: preparation.previousStateDoc,
       model,
       thinking: current.thinking,
       modelRuntime,
@@ -666,25 +669,9 @@ export function createBackgroundCompaction({
     }).then(value => {
       if (!value.native) return value;
       if (run) run.rawSummary = value.rawSummary;
-      if (fallback) {
-        if (run) { run.finalSummary = value.summary; run.mode = 'native-fallback'; }
-        return { ...value, nativeFallback: true };
-      }
-      const checked = resolveSummaryExcerpts(value.rawSummary, originalEvidence, preparation.previousSummary, new Set(preparation.evidence.map(e => e.entryId)));
-      if (run) { run.excerpts = checked.items; run.finalSummary = checked.summary; }
-      return { ...value, summary: checked.summary, excerpts: checked.items };
-    }).catch(async error => {
-      if (fallback || !fallbackSummarize || disposed || signal.aborted || error?.name === 'AbortError' ||
-          (error?.action ?? compactionError(error?.code ?? 'SUMMARY_REQUEST_FAILED').action) === 'stop' || commitUncertain) throw error;
-      const flight = pending;
-      if (!flight || flight.run !== run || !isFresh(flight)) throw error;
-      fail('增强摘要失败，准备一次原生回退', error);
-      const next = startRun({ model: run.model, thinking: run.thinking, trigger: { ...run.trigger, fallbackOf: run.id } });
-      next.mode = 'native-fallback';
-      flight.run = next;
-      note(next, 'fallback', '生成一次未增强原生摘要；本次不进行原文摘录核验');
-      emitStatus(true);
-      return runFlight(preparation, next, true);
+      if (!value.stateDoc?.trim()) throw compactionError('SUMMARY_INVALID', '缺少配套任务状态，保留原文');
+      if (run) { run.stateDoc = value.stateDoc; run.finalSummary = value.summary; }
+      return value;
     });
   }
 
@@ -706,7 +693,7 @@ export function createBackgroundCompaction({
     try {
       // 阈值判断优先用 SDK 的 getContextUsage（感知「压缩后 usage 过期」并返回 null）；
       // 拿不到真实 usage 时回退到 chars/4 估算。
-      const usage = session.getContextUsage?.();
+      const usage = safeContextUsage();
       const budget = requestBudget({ model: session.model, messages: session.messages, systemPrompt: session.systemPrompt, tools: session.agent.state.tools, config: current });
       const tokens = Math.max(usage?.tokens ?? 0, budget.tokens);
       const contextWindow = session.model?.contextWindow ?? 0;
@@ -810,7 +797,7 @@ export function createBackgroundCompaction({
       const keptIndex = branch.findIndex((entry) => entry.id === flight.firstKeptEntryId);
       if (keptIndex < 0) return skip("保留边界已变化，保留原文");
       // 提交时重算压缩前占用：usage 可能过期（上次压缩后未回应），不可信时回退估算
-      const freshUsage = session.getContextUsage?.();
+      const freshUsage = safeContextUsage();
       // Compare like with like: provider usage may describe OP's projected view,
       // whereas estimatedAfter describes raw retained history.
       const tokensBefore = contextTokens(session.messages);
@@ -818,7 +805,7 @@ export function createBackgroundCompaction({
       // 引文附录 + 原文快照：先落盘再拼装（快照失败不阻断压缩），附录计入压缩后体积估算。
       // 同一对话内容 → 同一哈希文件，拒绝重试不产生重复快照。
       const snapshotPath = flight.value.native ? null : writeConversationSnapshot(session, flight.corpus);
-      const assembled = flight.value.native ? { summary, extra: { nativeSummary: true, nativeFallback: !!flight.value.nativeFallback, rawSummary: flight.value.rawSummary, excerpts: flight.value.excerpts, ...flight.value.details } } : appendVerifiedFacts(summary, flight.verifiedFacts, snapshotPath);
+      const assembled = flight.value.native ? { summary, extra: { nativeSummary: true, rawSummary: flight.value.rawSummary, ...flight.value.details, stateDoc: flight.value.stateDoc, stateBoundary: flight.firstKeptEntryId } } : appendVerifiedFacts(summary, flight.verifiedFacts, snapshotPath);
       await beforeCommit?.({ firstKeptEntryId: flight.firstKeptEntryId, compactedMessageIds: flight.compactedMessageIds, summary: assembled.summary });
       if (!isFresh(flight)) return skip("STALE_CANDIDATE: 归档等待期间历史已变化");
       const parentCompaction = branch.findLast(entry => entry.type === "compaction");
@@ -841,10 +828,10 @@ export function createBackgroundCompaction({
       // usage 在压缩后必然过期，这里按 estimateTokens 全量求和。
       const keptMessages = branch.slice(keptIndex).filter((entry) => entry.type !== "compaction").flatMap(sessionEntryToContextMessages);
       const estimatedAfter =
-        estimateTokens({ role: "compactionSummary", summary: assembled.summary }) +
+        estimateTokens({ role: "compactionSummary", summary: assembled.summary + (flight.value.stateDoc ?? '') }) +
         keptMessages.reduce((sum, message) => sum + estimateTokens(message), 0);
       if (estimatedAfter >= tokensBefore) return skip("摘要未缩小上下文，保留原文");
-      const budget = requestBudget({ model: session.model, messages: [{ role: "compactionSummary", summary: assembled.summary }, ...keptMessages], systemPrompt: session.systemPrompt, tools: session.agent.state.tools, config: current });
+      const budget = requestBudget({ model: session.model, messages: [{ role: "compactionSummary", summary: assembled.summary + (flight.value.stateDoc ?? '') }, ...keptMessages], systemPrompt: session.systemPrompt, tools: session.agent.state.tools, config: current });
       if (!budget.safe) throw compactionError("WINDOW_UNSAFE", "压缩后仍超过安全窗口");
       note(flight.run, "apply", `安全点应用摘要 · ${tokensBefore.toLocaleString("en-US")} → ${estimatedAfter.toLocaleString("en-US")} tokens（估算）`);
       const details = {
@@ -878,7 +865,7 @@ export function createBackgroundCompaction({
       resetRetry();
       lastAppliedBudgetTokens = budget.tokens > budget.target ? budget.tokens : null;
       if (flight.run) flight.run.result = { compactionId: id, tokensBefore, estimatedTokensAfter: estimatedAfter, summaryChars: assembled.summary.length, facts: flight.value.excerpts?.length ?? flight.verifiedFacts?.length ?? 0 };
-      report("applied", flight.value.nativeFallback ? '已应用原生回退摘要；本次未进行原文摘录核验' : undefined);
+      report("applied", flight.value.stateDoc ? '原生摘要与任务状态已同步应用' : undefined);
       return data;
     } catch (error) {
       fail("后台摘要应用失败", error);
@@ -924,34 +911,9 @@ export function createBackgroundCompaction({
       const flight = pending;
       if (!flight) throw new Error("当前历史不足以压缩，或压缩无法启动；请检查保留 tokens 与压缩模型配置");
       if (mode === "sync") {
-        let generationFailed = false;
-        let generationError;
-        await flight.promise.catch(error => { generationFailed = true; generationError = error; });
+        await flight.promise.catch(() => {}); // failure is recorded by the flight handler
         await maybeApply();
         assertHealthy();
-        // Emergency fallback is only for an idle, manual synchronous request.
-        // Never bypass application/archive errors, cancellation or stale config.
-        if (generationFailed && status?.status === 'failed' && !disposed &&
-            flight.generation === generation && generationError?.name !== 'AbortError' &&
-            (generationError?.action ?? compactionError(generationError?.code ?? 'SUMMARY_REQUEST_FAILED').action) !== 'stop' &&
-            session.isIdle && typeof nativeFallback === 'function') {
-          nativeBusy = true;
-          controller = new AbortController();
-          const fallbackSignal = controller.signal;
-          const fallbackRun = startRun({ model: session.model?.name || session.model?.id, thinking: current.thinking, trigger: { manual: true, mode: 'sync', fallbackOf: flight.run?.id } });
-          report('summarizing', '增强摘要生成失败，正在回退原生压缩（不含 facts 核验）');
-          try {
-            const result = await nativeFallback(event => onFlightProgress(fallbackRun, event), fallbackSignal);
-            if (fallbackSignal.aborted) throw Object.assign(new Error('Compaction cancelled'), { name: 'AbortError' });
-            fallbackRun.rawSummary = result?.summary;
-            fallbackRun.finalSummary = result?.summary;
-            assertHealthy();
-            resetRetry();
-            report('applied', '已回退原生压缩；本次未进行 facts 核验');
-          } catch (error) {
-            if (error.name !== 'AbortError') report('failed', `原生压缩回退失败，未再次重试（${describeCompactionError(error)}）`);
-          } finally { nativeBusy = false; controller = null; }
-        }
       } else {
         // 没有下一轮请求时也在空闲安全点应用；运行中由 prepare hook 接管。
         flight.promise.then(() => {

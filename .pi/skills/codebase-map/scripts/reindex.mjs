@@ -17,6 +17,7 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  * 未登记的文件会在 INDEX.md 里标 ⚠ 提醒补充。
  */
 const MODULE_INFO = {
+  "src/task-state-doc.js": "压缩切点任务状态投影：从同版本日志派生独立上下文，不新增权威记录",
   "src/task-execution.js": "子任务活动阶段、独立时间预算、停止事实与总结提示",
   "src/tool-execution.js": "命令默认超时策略、角色限制与工具耗时观察",
   "tests/task-execution.test.js": "统一停止总结、硬截止、清理隔离与终态续接回归",

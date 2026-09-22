@@ -70,7 +70,8 @@ export function createCompactionView(root, load) {
       if (attempt.rawSummary) section('raw', '模型原始摘要', attempt.rawSummary);
       if (attempt.mode === 'native-fallback') section('verification', '原生回退 · 未进行原文摘录核验', '本次为一次新的原生生成，未复用增强失败候选。');
       if (attempt.excerpts) section('excerpts', `原文核验 · ${attempt.excerpts.length} 项（不是语义核验）`, JSON.stringify(attempt.excerpts, null, 2), true);
-      if (attempt.finalSummary) section('final', '处理后摘要', attempt.finalSummary);
+      if (attempt.finalSummary) section('final', '最终摘要', attempt.finalSummary);
+      if (attempt.stateDoc) section('task-state', '任务状态文档（截至压缩切点）', attempt.stateDoc);
     } catch (e) { if (version === generation) section('error', '过程记录读取失败', e.message, true); }
     finally { if (version === generation) busy = false; }
   };

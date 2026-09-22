@@ -34,7 +34,7 @@ try {
     wrappedRuntime.streamSimple = (...call) => { if (++requests > 8) throw new Error('Request limit exceeded'); return original(...call); };
     return summarizeNative({ ...args, signal, modelRuntime: wrappedRuntime });
   };
-  ctrl = createBackgroundCompaction({ session, modelRuntime: runtime, available, summarize: bounded, fallbackSummarize: bounded,
+  ctrl = createBackgroundCompaction({ session, modelRuntime: runtime, available, summarize: bounded,
     config: { enabled: true, model: COMPACTION_MODEL, thinking: 'off', tokenThreshold: 100000, percentThreshold: null, keepRecentTokens: 5000, syncKeepRecentTokens: 2000 },
     beforeCommit: async ({ compactedMessageIds }) => { await archive.barrier(); const ids = new Set(archive.records().map(r => r.origin.entryId)); assert.ok(compactedMessageIds.every(id => ids.has(id) || manager.getBranch().find(e => e.id === id)?.type !== 'message')); },
   });
@@ -51,17 +51,20 @@ try {
     parent = record.id;
     await archive.barrier();
     const allowed = new Set(manager.getBranch().map(e => e.id));
-    const reader = createHistoryReader({ records: archive.records, allowed: r => allowed.has(r.origin.entryId) });
-    for (const item of record.details.excerpts ?? []) for (const source of item.sources) {
-      const result = reader.readMessage({ messageId: source.messageId, keyword: item.quote.slice(0, 100) }).messages[0];
-      assert.equal(result.error, undefined); assert.equal(result.matched, true);
-    }
+    assert.ok(record.details.stateDoc?.trim());
+    assert.equal(record.details.stateBoundary, record.firstKeptEntryId);
+    assert.equal(record.details.excerpts, undefined);
+    const attempt = ctrl.getAttempt(status.runs.at(-1).id);
+    const stateRequest = attempt.requests.at(-1).context.messages[0].content;
+    if (round === 2) assert.ok(stateRequest.includes(JSON.stringify(rounds[0].stateDoc).slice(1, -1)));
+    assert.ok(attempt.stateDoc);
     for (const id of originals) assert.ok(allowed.has(id));
     const reopened = SessionManager.open(file, dir);
     assert.equal(reopened.getBranch().findLast(e => e.type === 'compaction').id, record.id);
     assert.equal(reopened.buildSessionContext().messages[0].role, 'compactionSummary');
-    rounds.push({ round, applied: true, fallback: !!record.details.nativeFallback, excerpts: record.details.excerpts?.length ?? 0, summaryChars: record.summary.length, requests });
+    assert.equal(reopened.getBranch().findLast(e => e.type === 'compaction').details.stateDoc, record.details.stateDoc);
+    rounds.push({ round, applied: true, stateDoc: record.details.stateDoc, stateChars: record.details.stateDoc.length, summaryChars: record.summary.length, requests });
   }
-  console.log(JSON.stringify({ ok: true, rounds, originalsPreserved: originals.length, requests }));
+  console.log(JSON.stringify({ ok: true, rounds: rounds.map(({ stateDoc, ...info }) => info), originalsPreserved: originals.length, requests }));
 } catch (error) { console.error(JSON.stringify({ ok: false, error: describeCompactionError(error), requests })); process.exitCode = 1; }
 finally { ctrl?.dispose(); session?.dispose(); await archive?.close(); rmSync(dir, { recursive: true, force: true }); }

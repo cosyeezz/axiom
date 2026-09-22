@@ -15,8 +15,10 @@ test('compaction documents preserve source and safely switch markdown/raw', asyn
   w.eval(`${await load('compaction-view')}\nwindow.createCompactionView=createCompactionView;`);
   const root = w.document.getElementById('root');
   const source = '# 标题\n\n系统 <env>环境值</env> 提示\n\n<script>alert(1)</script>\n\n' + '完整正文'.repeat(800);
-  const view = w.createCompactionView(root, async () => ({ requests: [], rawSummary: source, excerpts: [], finalSummary: source }));
+  const view = w.createCompactionView(root, async () => ({ requests: [], rawSummary: source, excerpts: [], finalSummary: source, stateDoc: '# 当前目标\n保留任务约束'  }));
   await view('session', 'run');
+  assert.ok(root.textContent.includes('任务状态文档（截至压缩切点）'));
+  assert.ok(root.textContent.includes('保留任务约束'));
   assert.equal(root.querySelector('script'), null);
   assert.ok(root.textContent.includes('<env>环境值</env>'));
   const toggle = root.querySelector('button'); toggle.click();

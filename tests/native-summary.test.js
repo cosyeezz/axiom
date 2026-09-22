@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { observeSummaryStream, summarizeNative, EXCERPT_INSTRUCTIONS } from "../src/native-summary.js";
+import { observeSummaryStream, summarizeNative, TASK_STATE_SYSTEM } from "../src/native-summary.js";
 
 const model = { id: "mock", provider: "test", api: "openai-completions", maxTokens: 4096, contextWindow: 128000 };
-test('native first/update/split requests retain SDK prompts and get minimal citation instructions', async () => {
+test('native first/update/split prompts stay unchanged; state uses separate frozen input', async () => {
   for (const split of [false, true]) {
     const calls = [];
     const runtime = { getAuth: async () => undefined, streamSimple: async function* (m, context) {
@@ -11,15 +11,21 @@ test('native first/update/split requests retain SDK prompts and get minimal cita
       yield { type: 'done', message: { role: 'assistant', content: [{ type: 'text', text: '## Goal\nkeep task' }], stopReason: 'stop', usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } } };
     } };
     const messages = [{ role: 'user', content: [{ type: 'text', text: 'keep original instruction' }], timestamp: 1 }];
-    const result = await summarizeNative({ model, modelRuntime: runtime, preparation: {
+    const result = await summarizeNative({ model, modelRuntime: runtime, previousSummary: 'last applied summary', previousStateDoc: 'old constraints', messages, preparation: {
       firstKeptEntryId: 'tail', messagesToSummarize: messages, turnPrefixMessages: split ? messages : [], isSplitTurn: split,
       previousSummary: split ? 'previous goal' : undefined, tokensBefore: 10000,
       settings: { reserveTokens: 4096 }, fileOps: { read: new Set(['src/a.js']), written: new Set(), edited: new Set() }
     } });
-    assert.equal(calls.length, split ? 2 : 1);
-    for (const context of calls) {
+    assert.equal(calls.length, split ? 3 : 2);
+    const state = calls.at(-1);
+    assert.equal(state.systemPrompt, TASK_STATE_SYSTEM);
+    assert.match(state.messages[0].content, /last applied summary/);
+    assert.match(state.messages[0].content, /old constraints/);
+    assert.match(state.messages[0].content, /keep original instruction/);
+    assert.equal(result.stateDoc, '## Goal\nkeep task');
+    for (const context of calls.slice(0, -1)) {
       assert.match(context.systemPrompt, /summarization assistant/);
-      assert.ok(context.messages.some(m => m.content.some(b => b.text?.includes(EXCERPT_INSTRUCTIONS))));
+      assert.equal(JSON.stringify(context).includes('Additional focus:'), false);
       assert.equal(context.tools, undefined);
     }
     assert.match(result.summary, /src\/a.js/);
@@ -27,14 +33,15 @@ test('native first/update/split requests retain SDK prompts and get minimal cita
   }
 });
 const final = { role: "assistant", content: [{ type: "text", text: "x".repeat(3000) }], stopReason: "stop" };
-test('pure native fallback adds no excerpt instructions and keeps observer', async () => {
+test('native summary and state have no fallback flag or citation protocol', async () => {
   const contexts = [];
   const runtime = { getAuth: async () => undefined, streamSimple: async function* (m, context) {
     contexts.push(context); yield { type: 'done', message: { ...final, usage: { input: 1, output: 1, totalTokens: 2, cacheRead: 0, cacheWrite: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } } };
   } };
   const result = await summarizeNative({ model, modelRuntime: runtime, customInstructions: null, preparation: { firstKeptEntryId: 'tail', messagesToSummarize: [{ role: 'user', content: 'history' }], turnPrefixMessages: [], isSplitTurn: false, tokensBefore: 10000, settings: { reserveTokens: 4096 }, fileOps: { read: new Set(), written: new Set(), edited: new Set() } } });
-  assert.equal(result.nativeFallback, true);
-  assert.equal(JSON.stringify(contexts).includes(EXCERPT_INSTRUCTIONS), false);
+  assert.equal(result.nativeFallback, undefined);
+  assert.equal(contexts.length, 2);
+  assert.equal(JSON.stringify(contexts).includes('[原文：'), false);
 });
 
 test("native observer preserves request, full text and terminal result", async () => {

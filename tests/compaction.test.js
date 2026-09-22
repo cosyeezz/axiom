@@ -230,19 +230,19 @@ test("manual sync failure preserves messages and permits retry", async () => {
   } finally { ctrl?.dispose(); cleanup(); }
 });
 
-test('manual sync generation failure falls back once without re-entering enhanced compaction', async () => {
+test('manual sync failure makes no fallback request', async () => {
   const { session, cleanup } = await createTestSession();
   let ctrl, calls = 0, summaries = 0;
   try {
     seed(session, [userMsg(big('a')), assistantMsg(big('b')), userMsg(big('c'))]);
     ctrl = createBackgroundCompaction({ session, config: { ...enabledConfig, syncKeepRecentTokens: 200 }, summarize: async () => { summaries++; throw new Error('invalid JSON'); }, nativeFallback: async () => { calls++; ctrl.onTurnEnd({ manual: true }); await assert.rejects(ctrl.runNow('sync'), /已有压缩任务/); } });
     const result = await ctrl.runNow('sync');
-    assert.equal(calls, 1); assert.equal(summaries, 1);
-    assert.equal(result.status, 'applied'); assert.match(result.message, /未进行 facts/);
+    assert.equal(calls, 0); assert.equal(summaries, 1);
+    assert.equal(result.status, 'failed');
   } finally { ctrl?.dispose(); cleanup(); }
 });
 
-for (const mode of ['auto', 'async', 'sync']) test(`generation fallback shares commit barriers: ${mode}`, async () => {
+for (const mode of ['auto', 'async', 'sync']) test(`failed generation preserves history without fallback: ${mode}`, async () => {
   const { session, cleanup } = await createTestSession(); let ctrl, calls = 0, barriers = 0;
   try {
     seed(session, [userMsg(big('a')), assistantMsg(big('b')), userMsg(big('c'))]);
@@ -253,21 +253,21 @@ for (const mode of ['auto', 'async', 'sync']) test(`generation fallback shares c
     });
     if (mode === 'auto') { ctrl.onTurnEnd(); await settle(); await ctrl.maybeApply(); }
     else { await ctrl.runNow(mode); await settle(); await ctrl.maybeApply(); }
-    assert.equal(calls, 1); assert.ok(barriers >= 2);
-    assert.equal(ctrl.getStatus().status, 'applied');
-    assert.equal(ctrl.getStatus().runs.length, 2);
-    assert.equal(session.sessionManager.getBranch().findLast(e => e.type === 'compaction').details.nativeFallback, true);
+    assert.equal(calls, 0); assert.equal(barriers, 0);
+    assert.equal(ctrl.getStatus().status, 'failed');
+    assert.equal(ctrl.getStatus().runs.length, 1);
+    assert.equal(session.sessionManager.getBranch().some(e => e.type === 'compaction'), false);
   } finally { ctrl?.dispose(); cleanup(); }
 });
 
-test('native fallback is independently observable and cancellable', async () => {
+test('state generation is observable and cancellable without partial application', async () => {
   const { session, cleanup } = await createTestSession();
   let ctrl;
   try {
     seed(session, [userMsg(big('a')), assistantMsg(big('b')), userMsg(big('c'))]);
     ctrl = createBackgroundCompaction({ session, config: { ...enabledConfig, syncKeepRecentTokens: 200 },
-      summarize: async () => { throw new Error('enhanced failure'); },
-      nativeFallback: async (progress, signal) => {
+      summarize: async ({ onProgress: progress, signal }) => {
+        await settle();
         progress({ kind: 'request', requestId: 'native-1', context: { systemPrompt: 'native', messages: [] } });
         const result = ctrl.cancelRun(ctrl.getStatus().runId);
         assert.equal(result.cancelled, true);
@@ -277,17 +277,17 @@ test('native fallback is independently observable and cancellable', async () => 
     });
     const result = await ctrl.runNow('sync');
     assert.equal(result.status, 'cancelled');
-    assert.equal(result.runs.length, 2);
-    assert.equal(result.runs[0].status, 'failed');
-    assert.equal(result.runs[1].status, 'cancelled');
+    assert.equal(result.runs.length, 1);
+    assert.equal(result.runs[0].status, 'cancelled');
+    assert.equal(session.sessionManager.getBranch().some(e => e.type === 'compaction'), false);
     assert.equal(JSON.stringify(result).includes('systemPrompt'), false);
-    const attempt = ctrl.getAttempt(result.runs[1].id);
+    const attempt = ctrl.getAttempt(result.runs[0].id);
     assert.equal(attempt.requests[0].context.systemPrompt, 'native');
     assert.equal(ctrl.getAttempt(attempt.id, attempt.revision).unchanged, true);
   } finally { ctrl?.dispose(); cleanup(); }
 });
 
-for (const mode of ['archive', 'cancel', 'native-error', 'async']) test(`native fallback safety: ${mode}`, async () => {
+for (const mode of ['archive', 'cancel', 'native-error', 'async']) test(`generation failure safety without fallback: ${mode}`, async () => {
   const { session, cleanup } = await createTestSession();
   let ctrl, calls = 0, rejectSummary;
   try {
@@ -300,8 +300,63 @@ for (const mode of ['archive', 'cancel', 'native-error', 'async']) test(`native 
     const running = ctrl.runNow(mode === 'async' ? 'async' : 'sync');
     if (mode === 'cancel') { ctrl.cancelRun(); rejectSummary(new Error('cancelled')); }
     await running; await settle();
-    assert.equal(calls, mode === 'native-error' ? 1 : 0);
-    if (mode === 'native-error') assert.match(ctrl.getStatus().message, /未再次重试/);
+    assert.equal(calls, 0);
+    assert.equal(session.sessionManager.getBranch().some(e => e.type === 'compaction'), false);
+  } finally { ctrl?.dispose(); cleanup(); }
+});
+
+test('paired state is frozen, inherited across rounds, and committed with native summary', async () => {
+  const { session, cleanup } = await createTestSession(); let ctrl;
+  const inputs = []; let release;
+  try {
+    session.model.contextWindow = 128000;
+    seed(session, [userMsg(big('first')), assistantMsg(big('response')), userMsg('tail')]);
+    ctrl = createBackgroundCompaction({ session, config: { ...enabledConfig, syncKeepRecentTokens: 200 },
+      summarize: async args => { inputs.push(args); if (inputs.length === 1) await new Promise(r => { release = r; }); return { native: true, summary: `summary ${inputs.length}`, rawSummary: `summary ${inputs.length}`, stateDoc: `state ${inputs.length}` }; }
+    });
+    const running = ctrl.runNow('sync');
+    seed(session, [userMsg('AFTER_FREEZE')]);
+    release(); await running;
+    assert.equal(ctrl.getStatus().status, 'applied', JSON.stringify(ctrl.getStatus()));
+    assert.equal(JSON.stringify(inputs[0].messages).includes('AFTER_FREEZE'), false);
+    const first = session.sessionManager.getBranch().findLast(e => e.type === 'compaction');
+    assert.equal(first.details.stateDoc, 'state 1');
+    assert.equal(first.details.stateBoundary, first.firstKeptEntryId);
+    seed(session, [userMsg(big('second')), assistantMsg(big('reply')), userMsg(big('tail2'))]);
+    await ctrl.runNow('sync');
+    assert.equal(ctrl.getStatus().status, 'applied');
+    assert.equal(inputs[1].previousSummary, 'summary 1');
+    assert.equal(inputs[1].previousStateDoc, 'state 1');
+    assert.equal(session.sessionManager.getBranch().findLast(e => e.type === 'compaction').details.stateDoc, 'state 2');
+  } finally { ctrl?.dispose(); cleanup(); }
+});
+
+for (const mode of ['auto', 'async', 'sync']) test(`paired generation shares durable commit barriers: ${mode}`, async () => {
+  const { session, cleanup } = await createTestSession(); let ctrl, barriers = 0;
+  try {
+    seed(session, [userMsg(big('a')), assistantMsg(big('b')), userMsg(big('c'))]);
+    ctrl = createBackgroundCompaction({ session, config: { ...enabledConfig, syncKeepRecentTokens: 200 },
+      summarize: async () => ({ native: true, summary: 'Native summary', rawSummary: 'Native summary', stateDoc: '# State\nContinue' }),
+      beforeCommit: async () => { barriers++; },
+    });
+    if (mode === 'auto') { ctrl.onTurnEnd(); await settle(); await ctrl.maybeApply(); }
+    else { await ctrl.runNow(mode); await settle(); await ctrl.maybeApply(); }
+    assert.equal(ctrl.getStatus().status, 'applied');
+    assert.equal(barriers, 2);
+    const record = session.sessionManager.getBranch().findLast(e => e.type === 'compaction');
+    assert.equal(record.summary, 'Native summary');
+    assert.equal(record.details.stateDoc, '# State\nContinue');
+  } finally { ctrl?.dispose(); cleanup(); }
+});
+
+test('native result without state never partially commits', async () => {
+  const { session, cleanup } = await createTestSession(); let ctrl;
+  try {
+    seed(session, [userMsg(big('first')), assistantMsg(big('response')), userMsg(big('tail'))]);
+    ctrl = createBackgroundCompaction({ session, config: { ...enabledConfig, syncKeepRecentTokens: 200 }, summarize: async () => ({ native: true, summary: 'good summary', rawSummary: 'good summary' }) });
+    await ctrl.runNow('sync');
+    assert.equal(ctrl.getStatus().status, 'failed');
+    assert.equal(session.sessionManager.getBranch().some(e => e.type === 'compaction'), false);
   } finally { ctrl?.dispose(); cleanup(); }
 });
 
@@ -375,7 +430,7 @@ async function startFakeLlmServer({ hold, reply = () => "ok" } = {}) {
   };
 }
 
-test('manual fallback calls real SDK compact and appends a native compaction record', async () => {
+test('manual generation failure never calls SDK fallback or appends a record', async () => {
   const fake = await startFakeLlmServer({ reply: () => 'Native summary: keep the goal and continue.' });
   const dir = mkdtempSync(join(tmpdir(), 'axiom-native-fallback-'));
   let session, ctrl;
@@ -388,13 +443,12 @@ test('manual fallback calls real SDK compact and appends a native compaction rec
     const events = [];
     session.subscribe(event => events.push(event));
     ctrl = createBackgroundCompaction({ session, config: { ...enabledConfig, syncKeepRecentTokens: 200 }, summarize: async () => { throw new Error('invalid JSON'); }, nativeFallback: () => session.compact() });
-    assert.equal((await ctrl.runNow('sync')).status, 'applied');
-    assert.equal(fake.requests.length, 1);
+    assert.equal((await ctrl.runNow('sync')).status, 'failed');
+    assert.equal(fake.requests.length, 0);
     const branch = session.sessionManager.getBranch();
-    assert.equal(branch.at(-1).type, 'compaction');
-    assert.match(branch.at(-1).summary, /Native summary/);
+    assert.notEqual(branch.at(-1).type, 'compaction');
     assert.ok(ids.every(id => branch.some(entry => entry.id === id)));
-    assert.ok(events.some(event => event.type === 'compaction_end' && event.result));
+    assert.equal(events.some(event => event.type === 'compaction_end' && event.result), false);
   } finally { ctrl?.dispose(); session?.dispose(); await fake.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -1128,7 +1182,7 @@ test("summarizeWithPiSession: signal 取消会真实中断后台 LLM 的 HTTP �
 // —— 真实 SDK loop 端到端：真实 prompt → turn_end 钩子 → 真实摘要会话 → 安全点自动应用 ——
 
 test("真实 SDK loop：prompt 触发 turn_end 后台摘要，下一次 prompt 在安全点自动应用", async () => {
-  const fake = await startFakeLlmServer({ reply: body => JSON.stringify(body).includes("Additional focus:") ? "## Goal\n收到 ok" : "ok" });
+  const fake = await startFakeLlmServer({ reply: body => JSON.stringify(body).includes("summarization assistant") ? "## Goal\n收到 ok" : "ok" });
   const dir = mkdtempSync(join(tmpdir(), "axiom-compaction-loop-"));
   let compaction;
   try {
@@ -1162,18 +1216,18 @@ test("真实 SDK loop：prompt 触发 turn_end 后台摘要，下一次 prompt �
 
     await session.prompt("go"); // 真实 loop：LLM 回复 → turn_end → 后台摘要（真实 HTTP）
     await waitFor(() => fake.requests.length >= 2, 10000); // 第 1 个请求是主 loop，第 2 个是后台摘要
-    await waitFor(() => fake.completed.length >= 2, 10000);
-    // 等待摘要响应在客户端侧完成、flight 落定（本地回环，250ms 足够）
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await waitFor(() => compaction.getStatus().status === 'ready', 10000);
     await settle();
 
     await prompt("more"); // 安全点（pi.js 同款入口）应用压缩，然后再发起下一次 LLM 请求
-    assert.equal(fake.requests.length, 3);
+    assert.equal(fake.requests.length, 4);
     const data = events.find((event) => event.type === "agent.compaction")?.data;
     assert.ok(data, "应发出 agent.compaction 事件");
     assert.match(data.summary, /## Goal/);
     const attempt = compaction.getAttempt(compaction.getStatus().runs.at(-1).id);
-    assert.ok(JSON.stringify(attempt.requests).includes('原文'));
+    assert.equal(attempt.requests.length, 2);
+    assert.ok(attempt.stateDoc);
+    assert.equal(JSON.stringify(attempt.requests[0]).includes('Additional focus:'), false);
     assert.ok(!JSON.stringify(attempt.requests).includes('Return ONLY a JSON object'));
     assert.match(data.summary, /收到 ok/);
     assert.ok(data.estimatedTokensAfter < data.tokensBefore);
@@ -1194,6 +1248,7 @@ test("真实 SDK loop：prompt 触发 turn_end 后台摘要，下一次 prompt �
     assert.equal(branch.filter((entry) => entry.type === "compaction").length, 1);
     assert.equal(branch.find(entry => entry.type === "compaction").details.nativeSummary, true);
     assert.equal(branch.find(entry => entry.type === "compaction").details.taskState, undefined);
+    assert.equal(branch.find(entry => entry.type === "compaction").details.stateDoc, attempt.stateDoc);
     assert.equal(branch.at(-1).type, "message");
     // 过程可视：run 的步骤流接的是真 SDK 事件（不只是测试桩调 onProgress）
     const run = compaction.getStatus().runs.at(-1);

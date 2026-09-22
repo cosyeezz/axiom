@@ -198,6 +198,7 @@ const sessions = {
     rawSummary: '## 决策\n禁止分页。[原文：“不要分页。”]',
     excerpts: [{ status: 'verified', quote: '不要分页。', sources: [{ messageId: 'abc12345', role: 'user' }] }],
     finalSummary: '## 决策\n禁止分页。[消息:abc12345]',
+    stateDoc: '# 任务状态\n\n## 目标\n验证压缩过程。\n\n## 约束\n- 不要分页。\n\n## 未完成\n验证连续压缩的第二轮。',
   }),
   snapshot: (id) => sessions.get(id),
   configure: async (id, selection) => {
