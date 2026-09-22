@@ -95,7 +95,7 @@ test("端到端：停止自动折叠，旧归档只读取回且无 ledger", asyn
       await agent.prompt('读大文件');
       for (let i = 0; i < 3; i++) { script = [{ text: '继续' }]; await agent.prompt('继续'); }
       assert.ok(flat(requests.at(-1)).includes('MIDDLE-MARKER-XYZ'));
-      assert.ok(schemas[0].includes('history_search'));
+      assert.ok(!schemas[0].includes('history_search'), 'only exact history reads are exposed');
       assert.ok(schemas[0].includes('history_read'));
       script = [{ tool: 'obs_recall', args: { id } }, { text: '完成' }];
       await agent.prompt('取回旧归档');

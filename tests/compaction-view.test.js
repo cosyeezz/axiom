@@ -1,0 +1,26 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { JSDOM } from 'jsdom';
+import { marked } from 'marked';
+import createPurify from 'dompurify';
+
+test('compaction documents preserve source and safely switch markdown/raw', async () => {
+  const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost', runScripts: 'outside-only' });
+  const w = dom.window;
+  const load = async name => (await readFile(new URL(`../public/${name}.js`, import.meta.url), 'utf8')).replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
+  const markdown = await load('markdown');
+  w.renderMarkdown = new Function('marked', 'DOMPurify', `${markdown}; return renderMarkdown;`)(marked, createPurify(w));
+  w.copyText = async () => {};
+  w.eval(`${await load('compaction-view')}\nwindow.createCompactionView=createCompactionView;`);
+  const root = w.document.getElementById('root');
+  const source = '# 标题\n\n系统 <env>环境值</env> 提示\n\n<script>alert(1)</script>\n\n' + '完整正文'.repeat(800);
+  const view = w.createCompactionView(root, async () => ({ requests: [], rawSummary: source, excerpts: [], finalSummary: source }));
+  await view('session', 'run');
+  assert.equal(root.querySelector('script'), null);
+  assert.ok(root.textContent.includes('<env>环境值</env>'));
+  const toggle = root.querySelector('button'); toggle.click();
+  assert.equal(root.querySelector('pre').textContent, source);
+  toggle.click(); assert.equal(root.querySelector('script'), null);
+  dom.window.close();
+});

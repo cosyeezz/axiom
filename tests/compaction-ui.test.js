@@ -25,6 +25,8 @@ async function page() {
     .replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "");
   const markdownApi = new Function("marked", "DOMPurify", `${markdown}; return { renderMarkdown, createMarkdownPageCache };`)(marked, createPurify(w));
   w.renderMarkdown = markdownApi.renderMarkdown;
+  const compactionView = (await readFile(new URL('../public/compaction-view.js', import.meta.url), 'utf8')).replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
+  w.eval(`${compactionView}\nwindow.createCompactionView = createCompactionView;`);
   w.createMarkdownPageCache = markdownApi.createMarkdownPageCache;
   w.createStreamRenderer = (render, after) => createStreamRenderer(render, after, w.requestAnimationFrame, w.cancelAnimationFrame);
   w.WebSocket = class { static OPEN = 1; readyState = 1; send() {} };

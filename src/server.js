@@ -432,6 +432,9 @@ export function createServerApp(sessions, service = {}) {
             case "session.compaction.messages":
               data = await sessions.compactionMessages(request.sessionId, request.compactionId);
               break;
+            case "session.compaction.attempt":
+              data = await sessions.compactionAttempt(request.sessionId, request.runId, request.knownRequests, request.revision);
+              break;
             case "session.compaction.start":
               data = await sessions.startCompaction(request.sessionId, request.mode);
               break;

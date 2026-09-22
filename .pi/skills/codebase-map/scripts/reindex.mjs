@@ -17,6 +17,9 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  * 未登记的文件会在 INDEX.md 里标 ⚠ 提醒补充。
  */
 const MODULE_INFO = {
+  "src/native-summary.js": "原生摘要请求、split-turn附加证据提示与只读流观察",
+  "src/compaction-excerpt.js": "内联原文逐字匹配、消息ID替换与Unicode关键词窗口",
+  "public/compaction-view.js": "压缩尝试详情、完整输出及安全Markdown与原文切换",
   "src/compaction-input.js": "摘要预算视图，UTF-8首尾范围与省略标记，不用于原文归档",
   "src/compaction-output.js": "摘要 JSON 边界解析与引用处理前的结构预校验",
   "src/compaction-budget.js": "统一完整请求预算、高低水位及压缩错误分级",

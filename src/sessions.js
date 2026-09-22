@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { realpath, stat, readFile, mkdir, writeFile, copyFile, rm, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { Database } from "./database.js";
@@ -1695,6 +1695,14 @@ export class Sessions {
       const goal = new Goal({ sessionId: id, store: {
         load: () => structuredClone(this.goalStore.load(id)), save: () => {},
       } });
+      let restoredCompactionStatus = null;
+      try {
+        if (saved.sessionFile) {
+          const runs = JSON.parse(readFileSync(`${saved.sessionFile}.compaction-attempts.json`, 'utf8')).slice(-5)
+            .map(({ requests, rawSummary, finalSummary, excerpts, ...run }) => run);
+          if (runs.length) restoredCompactionStatus = { status: runs.at(-1).status, startedAt: runs.at(-1).startedAt, runId: null, runs };
+        }
+      } catch { /* observation records are optional, never prevent history display */ }
       return structuredClone({ sessionId: id, cwd: item.cwd, title: item.title, seq: item.seq ?? 0,
         instanceId: options.epoch ?? null, liveMessageIds: {},
         status: "idle", safeStop: false, runtime: restoredRuntime, billing: combinedBilling(restoredRuntime.billing, tasks), config: { ...saved.selection, capabilitySelection: selection.capabilities ?? null,
@@ -1705,7 +1713,7 @@ export class Sessions {
         messageIndexes: fold.indexes, messageCount: messages.length,
         compactions, retries: historyRetries(saved.retries ?? [], visibleIds, fold.keptBefore, messages.length),
         live: {}, tools: {},
-        questions: [], tasks, goal: goal.snapshot(), canReask: false, compactionStatus: null });
+        questions: [], tasks, goal: goal.snapshot(), canReask: false, compactionStatus: restoredCompactionStatus });
     }
     // 读时投影：live 数组保持到达序（撤回/重试/压缩等内部逻辑依赖它），下发按锚点顺序。
     const projected = projectTimeline(item.messages);
@@ -1748,6 +1756,18 @@ export class Sessions {
 
   // 压缩卡按需展开：取某条摘要折叠掉的原始消息（含挂在其后的子代理记录）与这些消息引用的工具记录。
   // 未加载会话走 JSONL 只读投影，不创建 SDK 实例。
+  async compactionAttempt(id, runId, knownRequests = 0, revision) {
+    const item = this.get(id);
+    let result = item.loaded ? item.agent.compactionAttempt?.(runId, revision) : null;
+    if (!result && item.sessionFile) {
+      try { result = JSON.parse(await readFile(`${item.sessionFile}.compaction-attempts.json`, 'utf8')).find(run => run.id === runId); } catch { /* missing or corrupt observation record */ }
+    }
+    if (!result) throw new Error("找不到该压缩过程记录");
+    if (result.unchanged || (revision !== undefined && result.revision === revision)) return { unchanged: true, revision };
+    result.requests = result.requests?.map((request, index) => index < knownRequests ? { ...request, context: undefined } : request);
+    return result;
+  }
+
   async compactionMessages(id, compactionId) {
     const item = this.get(id);
     let records;
@@ -2145,7 +2165,10 @@ export class Sessions {
         this.deleteRecords(id);
         const storageDir = this.storagePath && join(this.storagePath, createHash("sha256").update(process.platform === "win32" ? item.cwd.toLowerCase() : item.cwd).digest("hex"));
         if (storageDir) {
-          if (item.sessionFile) await rm(item.sessionFile, { force: true });
+          if (item.sessionFile) {
+        await rm(item.sessionFile, { force: true });
+        for (const suffix of ['.compaction-attempts.json', '.compaction-attempts.json.tmp', '.compaction-diagnostics.json']) await rm(`${item.sessionFile}${suffix}`, { force: true });
+      }
           await rm(join(storageDir, `${id}-tasks`), { recursive: true, force: true });
           await rm(join(storageDir, `${id}-observations`), { recursive: true, force: true });
           await rm(join(storageDir, `${id}.json`), { force: true });
@@ -2171,7 +2194,11 @@ export class Sessions {
       // 删除顺序：先删库记录再清理文件；若中途崩溃，标记过的旧 JSON 不会复活会话。
       this.deleteRecords(id);
       if (item.storageDir) {
-        if (item.agent.sessionFile?.()) await rm(item.agent.sessionFile(), { force: true });
+        if (item.agent.sessionFile?.()) {
+        const file = item.agent.sessionFile();
+        await rm(file, { force: true });
+        for (const suffix of ['.compaction-attempts.json', '.compaction-attempts.json.tmp', '.compaction-diagnostics.json']) await rm(`${file}${suffix}`, { force: true });
+      }
         await rm(join(item.storageDir, `${id}-tasks`), { recursive: true, force: true });
         await rm(join(item.storageDir, `${id}-observations`), { recursive: true, force: true });
         // 旧版磁盘快照兜底清理（已迁移标记的目录不会再被扫描）。

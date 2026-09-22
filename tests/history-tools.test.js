@@ -3,6 +3,20 @@ import assert from 'node:assert/strict';
 import { createHistoryReader } from '../src/history-tools.js';
 import { canonical, contentHash } from '../src/raw-history.js';
 
+test('exact message reads are scoped, bounded, and independent in a batch', () => {
+  const sourceEntry = { id: 'one', message: { role: 'user', content: '😀'.repeat(3000) + 'needle' + '尾'.repeat(3000) } };
+  const record = { archiveId: 'a'.repeat(24), origin: { sourceJournalId: 'j', entryId: 'one' }, sourceEntry, sourceEntryHash: contentHash(sourceEntry) };
+  let allowed = true;
+  const reader = createHistoryReader({ records: () => [record], allowed: () => allowed });
+  const result = reader.readMessage({ sources: [{ messageId: 'one', keyword: 'needle' }, { messageId: 'absent', keyword: 'x' }] });
+  assert.equal(result.messages[0].matched, true);
+  assert.equal(Array.from(result.messages[0].text).length, 2000);
+  assert.equal(result.messages[1].error, 'SOURCE_MISSING');
+  allowed = false;
+  assert.equal(reader.readMessage({ messageId: 'one', keyword: 'needle' }).messages[0].error, 'SOURCE_MISSING');
+  assert.throws(() => reader.readMessage({ sources: Array(4).fill({}) }));
+});
+
 test('search pages enumerate repeated occurrences, freeze append scope and reauthorize', () => {
   const make = id => { const sourceEntry = { id, message: { role: 'toolResult', toolName: 'read', content: '中文😀 中文😀 中文😀' } }; return { archiveId: 'b'.repeat(24), origin: { sourceJournalId: 'j', entryId: id }, sourceEntry, sourceEntryHash: contentHash(sourceEntry) }; };
   const records = [make('a')]; let permitted = true;

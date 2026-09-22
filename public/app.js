@@ -1,3 +1,4 @@
+import { createCompactionView } from "./compaction-view.js";
 import { mountComposerControls } from "./composer-controls.js";
 import { actionIcon, composerIcon, initActionIcons } from "./icons.js";
 initActionIcons(document);
@@ -1917,6 +1918,7 @@ function openCompactionRun() {
   const dialog = $("compaction-run");
   if (!dialog.open) dialog.showModal();
 }
+let updateCompactionView;
 function renderCompactionRun() {
   const dialog = $("compaction-run");
   const run = compactionRun();
@@ -1925,6 +1927,13 @@ function renderCompactionRun() {
     dialog.close();
     return;
   }
+  if (!updateCompactionView) {
+    const root = document.createElement('div'); root.id = 'compaction-documents';
+    $('compaction-run-stream-wrap').after(root);
+    updateCompactionView = createCompactionView(root, (sessionId, runId, knownRequests, revision) => request('session.compaction.attempt', { sessionId, runId, knownRequests, revision }));
+    setInterval(() => { if (dialog.open && compactionRun()) void updateCompactionView(sessionId, compactionRun().id); }, 1000);
+  }
+  void updateCompactionView(sessionId, run.id);
   const phase = compactionRunPhases[run.status] || run.status;
   dialog.dataset.status = run.status;
   $("compaction-run-title").textContent = `后台压缩 · ${phase}`;

@@ -339,6 +339,7 @@ export const command = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("session.compaction.messages"), sessionId: id, compactionId: z.string().min(1).max(256) }).strict(),
   // 取消当前在途的后台摘要（压缩进程面板的取消按钮）；runId 用于对得上哪一次，防陈旧 id 误杀新任务。
   z.object({ id, type: z.literal("session.compaction.cancel"), sessionId: id, runId: z.string().min(1).max(256).optional() }).strict(),
+  z.object({ id, type: z.literal("session.compaction.attempt"), sessionId: id, runId: z.string().min(1).max(256), knownRequests: z.number().int().min(0).optional(), revision: z.number().int().min(0).optional() }).strict(),
   z.object({ id, type: z.literal("session.compaction.start"), sessionId: id, mode: z.enum(["sync", "async"]) }).strict(),
   // 运行中重新发现项目技能（composer 打开技能列表时调用）；返回 { skills: [{name, description}] }。
   z.object({ id, type: z.literal("session.skills.refresh"), sessionId: id }).strict(),

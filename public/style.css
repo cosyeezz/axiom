@@ -1919,3 +1919,11 @@ summary:hover > .disclosure-action { color: var(--ink); }
   .activity-icon, .activity-icon svg, .activity-icon::after, .tool-status::before,
   .task-status::before, .task-top h2::before, .task-run-spin, .thinking-dots, .task-timer-dot { animation: none !important; }
 }
+
+/* Compaction documents reuse the existing Linear surfaces and focus tokens. */
+.compaction-document { border: 1px solid var(--line); border-radius: 8px; margin-block: 12px; padding: 12px; }
+.compaction-document summary { cursor: pointer; font-weight: 500; }
+.compaction-document-actions { display:flex; gap:8px; margin-block:12px; }
+.compaction-document-actions button { min-height:40px; }
+.compaction-document-body { max-height:55vh; overflow:auto; scrollbar-gutter:stable; overscroll-behavior:contain; overflow-wrap:anywhere; }
+.compaction-document-body pre { white-space:pre-wrap; font-family:var(--mono); font-size:13px; }

@@ -242,6 +242,33 @@ test('manual sync generation failure falls back once without re-entering enhance
   } finally { ctrl?.dispose(); cleanup(); }
 });
 
+test('native fallback is independently observable and cancellable', async () => {
+  const { session, cleanup } = await createTestSession();
+  let ctrl;
+  try {
+    seed(session, [userMsg(big('a')), assistantMsg(big('b')), userMsg(big('c'))]);
+    ctrl = createBackgroundCompaction({ session, config: { ...enabledConfig, syncKeepRecentTokens: 200 },
+      summarize: async () => { throw new Error('enhanced failure'); },
+      nativeFallback: async (progress, signal) => {
+        progress({ kind: 'request', requestId: 'native-1', context: { systemPrompt: 'native', messages: [] } });
+        const result = ctrl.cancelRun(ctrl.getStatus().runId);
+        assert.equal(result.cancelled, true);
+        assert.equal(signal.aborted, true);
+        throw Object.assign(new Error('cancelled'), { name: 'AbortError' });
+      }
+    });
+    const result = await ctrl.runNow('sync');
+    assert.equal(result.status, 'cancelled');
+    assert.equal(result.runs.length, 2);
+    assert.equal(result.runs[0].status, 'failed');
+    assert.equal(result.runs[1].status, 'cancelled');
+    assert.equal(JSON.stringify(result).includes('systemPrompt'), false);
+    const attempt = ctrl.getAttempt(result.runs[1].id);
+    assert.equal(attempt.requests[0].context.systemPrompt, 'native');
+    assert.equal(ctrl.getAttempt(attempt.id, attempt.revision).unchanged, true);
+  } finally { ctrl?.dispose(); cleanup(); }
+});
+
 for (const mode of ['archive', 'cancel', 'native-error', 'async']) test(`native fallback safety: ${mode}`, async () => {
   const { session, cleanup } = await createTestSession();
   let ctrl, calls = 0, rejectSummary;
@@ -1083,8 +1110,7 @@ test("summarizeWithPiSession: signal 取消会真实中断后台 LLM 的 HTTP �
 // —— 真实 SDK loop 端到端：真实 prompt → turn_end 钩子 → 真实摘要会话 → 安全点自动应用 ——
 
 test("真实 SDK loop：prompt 触发 turn_end 后台摘要，下一次 prompt 在安全点自动应用", async () => {
-  const taskState = { schemaVersion: 1, goals: [], constraints: [], decisions: [], progress: [{ id: "p1", status: "completed", text: "收到 ok", sources: [] }], evidence: [], uncertainties: [], nextActions: [], sourceDirectory: [] };
-  const fake = await startFakeLlmServer({ reply: body => JSON.stringify(body).includes("sourceDirectory") && JSON.stringify(body).includes("Return ONLY a JSON object") ? JSON.stringify(taskState) : "ok" });
+  const fake = await startFakeLlmServer({ reply: body => JSON.stringify(body).includes("Additional focus:") ? "## Goal\n收到 ok" : "ok" });
   const dir = mkdtempSync(join(tmpdir(), "axiom-compaction-loop-"));
   let compaction;
   try {
@@ -1127,7 +1153,10 @@ test("真实 SDK loop：prompt 触发 turn_end 后台摘要，下一次 prompt �
     assert.equal(fake.requests.length, 3);
     const data = events.find((event) => event.type === "agent.compaction")?.data;
     assert.ok(data, "应发出 agent.compaction 事件");
-    assert.match(data.summary, /## goals/);
+    assert.match(data.summary, /## Goal/);
+    const attempt = compaction.getAttempt(compaction.getStatus().runs.at(-1).id);
+    assert.ok(JSON.stringify(attempt.requests).includes('原文'));
+    assert.ok(!JSON.stringify(attempt.requests).includes('Return ONLY a JSON object'));
     assert.match(data.summary, /收到 ok/);
     assert.ok(data.estimatedTokensAfter < data.tokensBefore);
 
@@ -1145,12 +1174,13 @@ test("真实 SDK loop：prompt 触发 turn_end 后台摘要，下一次 prompt �
     );
     const branch = session.sessionManager.getBranch();
     assert.equal(branch.filter((entry) => entry.type === "compaction").length, 1);
-    assert.deepEqual(branch.find(entry => entry.type === "compaction").details.taskState, taskState);
+    assert.equal(branch.find(entry => entry.type === "compaction").details.nativeSummary, true);
+    assert.equal(branch.find(entry => entry.type === "compaction").details.taskState, undefined);
     assert.equal(branch.at(-1).type, "message");
     // 过程可视：run 的步骤流接的是真 SDK 事件（不只是测试桩调 onProgress）
     const run = compaction.getStatus().runs.at(-1);
     assert.equal(run.status, "applied");
-    for (const step of ["trigger", "plan", "session", "request", "stream_start", "stream_end", "parsed", "ready", "apply", "applied"])
+    for (const step of ["trigger", "plan", "request", "stream_end", "ready", "apply", "applied"])
       assert.ok(run.steps.some((item) => item.step === step), `缺步骤 ${step}`);
     assert.ok(run.stream.chars > 0, "流式文本有计数");
     assert.match(run.stream.preview, /ok/);

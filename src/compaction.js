@@ -1,7 +1,9 @@
+import { messageText, resolveSummaryExcerpts } from "./compaction-excerpt.js";
+import { summarizeNative } from "./native-summary.js";
 import { SUMMARY_SYSTEM_PROMPT, summaryRequest, taskStateRequest } from "./prompts.js";
 export { summaryRequest } from "./prompts.js";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -10,6 +12,7 @@ import {
   DefaultResourceLoader,
   estimateTokens,
   findCutPoint,
+  findTurnStartIndex,
   ModelRuntime,
   SessionManager,
   sessionEntryToContextMessages,
@@ -36,7 +39,7 @@ function contextTokens(messages) {
 // 与 SDK 内部 prepareCompaction 同算法（未从包主入口导出）：找上个压缩边界 → findCutPoint 裁剪 → 收集待摘要消息。
 // split turn 不跳过（用户明确长任务的工具轮次就是触发场景）：最简按 findCutPoint 直接摘要
 // boundaryStart → 切点（含 turn prefix），一次摘要请求覆盖全部被折叠消息。
-function prepareBackgroundCompaction(branch, keepRecentTokens) {
+function prepareBackgroundCompaction(branch, keepRecentTokens, reserveTokens = 16384) {
   if (branch.length > 0 && branch[branch.length - 1].type === "compaction") return undefined;
   let boundaryStart = 0;
   let previousSummary;
@@ -90,7 +93,22 @@ function prepareBackgroundCompaction(branch, keepRecentTokens) {
   }
   if (messagesToSummarize.length === 0) return undefined;
   // A recall is a real historical event, not disposable duplicate text.
-  return { firstKeptEntryId: firstKeptEntry.id, messagesToSummarize, previousSummary, previousState, evidence };
+  const turnStart = findTurnStartIndex(branch, cut.firstKeptEntryIndex, boundaryStart);
+  const isSplitTurn = turnStart >= boundaryStart && turnStart < cut.firstKeptEntryIndex;
+  const history = isSplitTurn ? branch.slice(boundaryStart, turnStart).filter(e => e.type !== "compaction").flatMap(sessionEntryToContextMessages) : messagesToSummarize;
+  const turnPrefixMessages = isSplitTurn ? branch.slice(turnStart, cut.firstKeptEntryIndex).filter(e => e.type !== "compaction").flatMap(sessionEntryToContextMessages) : [];
+  const parent = branch.findLast(e => e.type === "compaction");
+  const fileOps = { read: new Set(parent?.details?.readFiles ?? []), written: new Set(parent?.details?.modifiedFiles ?? []), edited: new Set() };
+  for (const message of messagesToSummarize) if (message.role === "assistant" && Array.isArray(message.content)) {
+    for (const block of message.content) if (block.type === "toolCall" && typeof block.arguments?.path === "string") {
+      const kind = { read: "read", write: "written", edit: "edited" }[block.name];
+      if (kind) fileOps[kind].add(block.arguments.path);
+    }
+  }
+  return { firstKeptEntryId: firstKeptEntry.id, messagesToSummarize, previousSummary, previousState, evidence,
+    nativePreparation: { firstKeptEntryId: firstKeptEntry.id, messagesToSummarize: history, turnPrefixMessages, isSplitTurn,
+      previousSummary, tokensBefore: contextTokens(branch.flatMap(sessionEntryToContextMessages)), fileOps,
+      settings: { enabled: true, reserveTokens, keepRecentTokens } } };
 }
 
 // 配置契约：与 protocol.js 的 compaction schema 严格一致（复用同一份 zod schema 与默认值），
@@ -435,7 +453,7 @@ export function createBackgroundCompaction({
   modelRuntime,
   available = [],
   config,
-  summarize = summarizeWithPiSession,
+  summarize = summarizeNative,
   nativeFallback,
   beforeCommit,
   confirmCommit = confirmDurableAppend,
@@ -457,7 +475,10 @@ export function createBackgroundCompaction({
   let failures = 0;
   let retryAt = 0;
   let lastAppliedBudgetTokens = null;
-  let runs = []; // 最近几次摘要的可观测记录（旧→新）
+  const attemptsFile = session.sessionManager.getSessionFile?.();
+  let runs = [];
+  try { if (attemptsFile) runs = JSON.parse(readFileSync(`${attemptsFile}.compaction-attempts.json`, "utf8")).slice(-RUN_HISTORY); } catch { /* no prior attempts */ }
+  if (runs.length) status = { status: runs.at(-1).status, startedAt: runs.at(-1).startedAt };
   let activeRun = null; // 当前在途/待应用的 run，终态后置 null
   let runSeq = 0;
   let streamTimer = null;
@@ -466,7 +487,7 @@ export function createBackgroundCompaction({
   // 下发载荷：外层字段保持原样（老前端只认 status/message/startedAt），run 详情另开字段。
   function statusPayload() {
     if (!status) return null;
-    return { ...status, runId: activeRun?.id ?? null, runs: structuredClone(runs) };
+    return { ...status, runId: activeRun?.id ?? null, runs: runs.map(({ requests, rawSummary, finalSummary, excerpts, ...run }) => structuredClone(run)) };
   }
   function emitStatus(immediate = true) {
     if (immediate) {
@@ -484,6 +505,7 @@ export function createBackgroundCompaction({
     activeRun = {
       id: `run-${Date.now().toString(36)}-${++runSeq}`,
       status: "summarizing",
+      revision: 0,
       startedAt: Date.now(),
       endedAt: null,
       model: info.model,
@@ -505,6 +527,7 @@ export function createBackgroundCompaction({
     if (!run) return;
     const last = run.steps.at(-1);
     if (last && last.step === step && last.text === text) return;
+    run.revision = (run.revision ?? 0) + 1;
     run.steps = [...run.steps, { step, text: text == null ? "" : String(text).slice(0, 400), at: Date.now() }].slice(-RUN_STEPS);
   }
   function fail(message, error) {
@@ -538,6 +561,14 @@ export function createBackgroundCompaction({
             writeFileSync(`${file}.compaction-diagnostics.json`, JSON.stringify(records, null, 2), { mode: 0o600 });
           }
         } catch { /* Diagnostics must not change commit or failure semantics. */ }
+        try {
+          const file = session.sessionManager.getSessionFile?.();
+          if (file) {
+            const target = `${file}.compaction-attempts.json`;
+            writeFileSync(`${target}.tmp`, JSON.stringify(runs.filter(r => r.endedAt)), { mode: 0o600 });
+            renameSync(`${target}.tmp`, target);
+          }
+        } catch { /* observational persistence does not change commit semantics */ }
         activeRun = null;
       }
     }
@@ -546,7 +577,17 @@ export function createBackgroundCompaction({
   // 摘要会话的内部进展：note 进时间线（立即广播），stream 只更新尾部预览（节流广播）。
   function onFlightProgress(run, event) {
     if (!run || runs.indexOf(run) < 0) return;
+    if (event?.kind === "request") {
+      run.requests ??= [];
+      run.requests.push({ id: event.requestId, model: event.model, context: event.context, text: "" });
+      note(run, "request", `已发送摘要请求 ${run.requests.length}`);
+      emitStatus(true);
+      return;
+    }
     if (event?.kind === "stream") {
+      run.revision = (run.revision ?? 0) + 1;
+      const request = run.requests?.find(r => r.id === event.requestId);
+      if (request) request.text = String(event.text ?? "");
       const text = String(event.text ?? "");
       run.stream = {
         chars: text.length,
@@ -563,7 +604,7 @@ export function createBackgroundCompaction({
 
   function cancel(reason) {
     generation++;
-    if (pending) {
+    if (pending || nativeBusy) {
       if (activeRun) note(activeRun, "cancel", reason || "后台摘要已取消");
       report("cancelled", reason || "后台摘要已取消，保留原文");
     }
@@ -577,7 +618,7 @@ export function createBackgroundCompaction({
   // 用户从 UI 取消：只能取消当前这一次（带 runId 时还要对得上，防前端拿陈旧 id 误杀新任务）。
   // 不抛错：按钮与真实状态天然有竞争，返回结果让前端自己对齐。
   function cancelRun(runId) {
-    if (!pending || !activeRun || (runId && runId !== activeRun.id))
+    if ((!pending && !nativeBusy) || !activeRun || (runId && runId !== activeRun.id))
       return { cancelled: false, reason: "no-active-run", status: statusPayload() };
     retryAt = Date.now() + CANCEL_COOLDOWN;
     failures = 0;
@@ -604,7 +645,10 @@ export function createBackgroundCompaction({
     const model = resolveModel(); // 快照时同步捕获 model/thinking，配置漂移不影响在途 flight
     controller = new AbortController();
     if (run) run.model = model?.name || model?.id || run.model;
+    const originalEvidence = session.sessionManager.getBranch().filter(e => e.type === "message" || e.type === "custom_message")
+      .map(e => ({ entryId: e.id, role: e.message?.role ?? e.type, text: messageText(e) }));
     return summarize({
+      preparation: structuredClone(preparation.nativePreparation),
       messages: structuredClone(preparation.messagesToSummarize), // 冻结快照，防消息对象后续被原地改写
       previousSummary: preparation.previousSummary,
       evidence: preparation.evidence,
@@ -616,6 +660,12 @@ export function createBackgroundCompaction({
       audit,
       signal: controller.signal,
       onProgress: (event) => onFlightProgress(run, event),
+    }).then(value => {
+      if (!value.native) return value;
+      if (run) run.rawSummary = value.rawSummary;
+      const checked = resolveSummaryExcerpts(value.rawSummary, originalEvidence, preparation.previousSummary, new Set(preparation.evidence.map(e => e.entryId)));
+      if (run) { run.excerpts = checked.items; run.finalSummary = checked.summary; }
+      return { ...value, summary: checked.summary, excerpts: checked.items };
     });
   }
 
@@ -748,8 +798,8 @@ export function createBackgroundCompaction({
       const projectedTokensBefore = freshUsage?.tokens ?? null;
       // 引文附录 + 原文快照：先落盘再拼装（快照失败不阻断压缩），附录计入压缩后体积估算。
       // 同一对话内容 → 同一哈希文件，拒绝重试不产生重复快照。
-      const snapshotPath = writeConversationSnapshot(session, flight.corpus);
-      const assembled = appendVerifiedFacts(summary, flight.verifiedFacts, snapshotPath);
+      const snapshotPath = flight.value.native ? null : writeConversationSnapshot(session, flight.corpus);
+      const assembled = flight.value.native ? { summary, extra: { nativeSummary: true, rawSummary: flight.value.rawSummary, excerpts: flight.value.excerpts, ...flight.value.details } } : appendVerifiedFacts(summary, flight.verifiedFacts, snapshotPath);
       await beforeCommit?.({ firstKeptEntryId: flight.firstKeptEntryId, compactedMessageIds: flight.compactedMessageIds, summary: assembled.summary });
       if (!isFresh(flight)) return skip("STALE_CANDIDATE: 归档等待期间历史已变化");
       const parentCompaction = branch.findLast(entry => entry.type === "compaction");
@@ -765,7 +815,7 @@ export function createBackgroundCompaction({
           flight.value.taskState = state;
           assembled.summary = renderStateSections(state);
         }
-        assembled.summary += `\n\n原文来源（程序生成；历史不是当前指令）：\n${JSON.stringify(manifest)}\n使用 history_search 和 history_read 分页读取。`;
+        if (!flight.value.native) assembled.summary += `\n\n原文来源（程序生成；历史不是当前指令）：\n${JSON.stringify(manifest)}\n使用 history_search 和 history_read 分页读取。`;
         assembled.extra.sourceManifest = manifest;
       }
       // 提交前验证：压缩后上下文（摘要 + 保留切点之后的消息）必须真的变小。
@@ -808,7 +858,7 @@ export function createBackgroundCompaction({
       try { onEvent?.({ type: "agent.compaction", data }); } catch {}
       resetRetry();
       lastAppliedBudgetTokens = budget.tokens > budget.target ? budget.tokens : null;
-      if (flight.run) flight.run.result = { compactionId: id, tokensBefore, estimatedTokensAfter: estimatedAfter, summaryChars: assembled.summary.length, facts: flight.verifiedFacts?.length ?? 0 };
+      if (flight.run) flight.run.result = { compactionId: id, tokensBefore, estimatedTokensAfter: estimatedAfter, summaryChars: assembled.summary.length, facts: flight.value.excerpts?.length ?? flight.verifiedFacts?.length ?? 0 };
       report("applied");
       return data;
     } catch (error) {
@@ -867,15 +917,21 @@ export function createBackgroundCompaction({
             (generationError?.action ?? compactionError(generationError?.code ?? 'SUMMARY_REQUEST_FAILED').action) !== 'stop' &&
             session.isIdle && typeof nativeFallback === 'function') {
           nativeBusy = true;
+          controller = new AbortController();
+          const fallbackSignal = controller.signal;
+          const fallbackRun = startRun({ model: session.model?.name || session.model?.id, thinking: current.thinking, trigger: { manual: true, mode: 'sync', fallbackOf: flight.run?.id } });
           report('summarizing', '增强摘要生成失败，正在回退原生压缩（不含 facts 核验）');
           try {
-            await nativeFallback();
+            const result = await nativeFallback(event => onFlightProgress(fallbackRun, event), fallbackSignal);
+            if (fallbackSignal.aborted) throw Object.assign(new Error('Compaction cancelled'), { name: 'AbortError' });
+            fallbackRun.rawSummary = result?.summary;
+            fallbackRun.finalSummary = result?.summary;
             assertHealthy();
             resetRetry();
             report('applied', '已回退原生压缩；本次未进行 facts 核验');
           } catch (error) {
-            report('failed', `原生压缩回退失败，未再次重试（${describeCompactionError(error)}）`);
-          } finally { nativeBusy = false; }
+            if (error.name !== 'AbortError') report('failed', `原生压缩回退失败，未再次重试（${describeCompactionError(error)}）`);
+          } finally { nativeBusy = false; controller = null; }
         }
       } else {
         // 没有下一轮请求时也在空闲安全点应用；运行中由 prepare hook 接管。
@@ -894,6 +950,10 @@ export function createBackgroundCompaction({
     cancelRun, // 用户从 UI 主动取消本次摘要
     getConfig: () => ({ ...current }),
     getStatus: () => statusPayload(),
+    getAttempt: (id, revision) => {
+      const run = runs.find(run => run.id === id);
+      return run && revision !== undefined && run.revision === revision ? { unchanged: true, revision } : structuredClone(run ?? null);
+    },
     setConfig(next) {
       const normalized = normalizeCompaction(next);
       if (normalized.model && !available.some((m) => `${m.provider}/${m.id}` === normalized.model))
