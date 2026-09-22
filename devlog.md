@@ -1,5 +1,14 @@
 # 开发记录
 
+## 2026-09-22 压缩定稿完整接线与真实／浏览器验收
+
+- 原因：用户要求不遗留第一阶段缺口。自动、手动异步、手动同步现统一生成层最多一次原生回退，保留冻结切点、预算、取消、归档及持久提交屏障，不调用会 abort 主代理的 session.compact。新增入口回归与纯原生无附加指令测试；独立安全审查通过。
+- 展示：实际输入增加可读消息块并保留完整请求原文；原生回退显式未核验、复制反馈复位。浏览器发现并修复 `src/server.js` 缺少 compaction-view 静态路由、原文切换破坏 Markdown 缓存、手机旧折叠规则隐藏所有状态且无展开入口。
+- 真实验收：`tests/accept-native-two-rounds.mjs` 对完整历史临时副本调用 abc/glm-5.3 共2次；两轮均应用成功未回退，摘要10632／16070字符，原始869条消息ID保留；第二轮5处摘录通过归档精确读取，重开上下文成功。原文件／运行服务未改，临时副本清理，不打印配置密钥。
+- 浏览器：Python Playwright / Chromium，1440、390、320px，明暗主题、完整正文、多请求、原文／Markdown切换、历史、减少动效、无横向溢出通过。`tests/compaction-ui.py` 支持 PREVIEW_PORT，`tests/conversation-preview.mjs` 提供过程详情桩。
+- 最终回归：903 项，901 通过、2 跳过、0 失败；git diff --check 通过。修复 tests/app.test.js 的 setTimeout(0) 与 jsdom details toggle 的事件循环竞态，改为等待既有 settle；不修改产品懒渲染。
+- 文件：src/compaction.js、native-summary.js、pi.js、server.js；public/compaction-view.js、style.css；对应单元与浏览器测试、手动真实验收脚本；README与定稿文档同步。生成索引不提交，保留主工作区已有修改。
+
 ## 2026-09-22 原生摘要与来源回读第一阶段实施
 
 - 原因：按定稿移除默认八类 JSON 状态生成路径，恢复原生提示与摘要质量基线，同时让过程可查。

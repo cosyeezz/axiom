@@ -338,22 +338,6 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       modelRuntime,
       available,
       config: initialCompaction,
-      nativeFallback: async (onProgress, signal) => {
-        assertJournalHealthy();
-        compactionCtrl.assertHealthy();
-        await history?.barrier();
-        if (!session.isIdle) throw new Error('会话正在运行，请空闲后使用同步压缩');
-        assertJournalHealthy();
-        // Direct SDK call: no enhanced schema, facts or custom budget pipeline.
-        const { observeSummaryStream } = await import('./native-summary.js');
-        const original = session.agent.streamFunction;
-        session.agent.streamFunction = observeSummaryStream(original, onProgress);
-        const abort = () => { void session.abort(); };
-        if (signal?.aborted) { session.agent.streamFunction = original; throw Object.assign(new Error('Compaction cancelled'), { name: 'AbortError' }); }
-        signal?.addEventListener('abort', abort, { once: true });
-        try { return await session.compact(); }
-        finally { signal?.removeEventListener('abort', abort); session.agent.streamFunction = original; }
-      },
       beforeCommit: async ({ compactedMessageIds }) => {
         const tools = new Set(session.agent.state.tools.map(tool => tool.name));
         if (!tools.has("history_read")) throw new Error("SOURCE_MISSING: 历史读取工具未激活");

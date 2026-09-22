@@ -27,6 +27,16 @@ test('native first/update/split requests retain SDK prompts and get minimal cita
   }
 });
 const final = { role: "assistant", content: [{ type: "text", text: "x".repeat(3000) }], stopReason: "stop" };
+test('pure native fallback adds no excerpt instructions and keeps observer', async () => {
+  const contexts = [];
+  const runtime = { getAuth: async () => undefined, streamSimple: async function* (m, context) {
+    contexts.push(context); yield { type: 'done', message: { ...final, usage: { input: 1, output: 1, totalTokens: 2, cacheRead: 0, cacheWrite: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } } };
+  } };
+  const result = await summarizeNative({ model, modelRuntime: runtime, customInstructions: null, preparation: { firstKeptEntryId: 'tail', messagesToSummarize: [{ role: 'user', content: 'history' }], turnPrefixMessages: [], isSplitTurn: false, tokensBefore: 10000, settings: { reserveTokens: 4096 }, fileOps: { read: new Set(), written: new Set(), edited: new Set() } } });
+  assert.equal(result.nativeFallback, true);
+  assert.equal(JSON.stringify(contexts).includes(EXCERPT_INSTRUCTIONS), false);
+});
+
 test("native observer preserves request, full text and terminal result", async () => {
   const seen = [];
   const context = { systemPrompt: "native", messages: [{ role: "user", content: "history" }] };

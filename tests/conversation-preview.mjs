@@ -192,6 +192,13 @@ const sessions = {
     }
     return structuredClone({ sessionId: id, compactionId, messages: picked, tools: {}, retries: [] });
   },
+  compactionAttempt: async (id, runId) => ({
+    id: runId, revision: 1, status: 'applied', endedAt: Date.now(),
+    requests: [1, 2].map(n => ({ id: `request-${n}`, context: { systemPrompt: '# 原生摘要\n\n保留任务状态。', messages: [{ role: 'user', content: [{ type: 'text', text: '<conversation>\n用户：不要分页。\n</conversation>\n\n# 摘要指令\n保留重要内容。' }] }] }, text: `## 摘要 ${n}\n\n` + '完整正文。'.repeat(400) })),
+    rawSummary: '## 决策\n禁止分页。[原文：“不要分页。”]',
+    excerpts: [{ status: 'verified', quote: '不要分页。', sources: [{ messageId: 'abc12345', role: 'user' }] }],
+    finalSummary: '## 决策\n禁止分页。[消息:abc12345]',
+  }),
   snapshot: (id) => sessions.get(id),
   configure: async (id, selection) => {
     const s = sessions.get(id);

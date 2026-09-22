@@ -41,7 +41,7 @@ export function observeSummaryStream(original, progress = () => {}) {
   };
 }
 
-export async function summarizeNative({ preparation, model, thinking, modelRuntime, signal, onProgress, usage, audit }) {
+export async function summarizeNative({ preparation, model, thinking, modelRuntime, signal, onProgress, usage, audit, customInstructions = EXCERPT_INSTRUCTIONS }) {
   const runtime = modelRuntime ?? await ModelRuntime.create();
   const auth = await runtime.getAuth(model);
   const requestModel = auth?.auth?.baseUrl ? { ...model, baseUrl: auth.auth.baseUrl } : model;
@@ -51,10 +51,10 @@ export async function summarizeNative({ preparation, model, thinking, modelRunti
   // stream boundary append only our source requirement; preserve the native prompt.
   const observed = observeSummaryStream(stream, onProgress);
   const enhancedStream = (m, context, options) => {
-    if (!context.messages.some(message => JSON.stringify(message.content).includes(EXCERPT_INSTRUCTIONS))) {
+    if (customInstructions && !context.messages.some(message => JSON.stringify(message.content).includes(customInstructions))) {
       context = structuredClone(context);
       const last = context.messages.at(-1);
-      const suffix = `\n\nAdditional focus: ${EXCERPT_INSTRUCTIONS}`;
+      const suffix = `\n\nAdditional focus: ${customInstructions}`;
       if (typeof last.content === "string") last.content += suffix;
       else last.content.push({ type: "text", text: suffix });
     }
@@ -63,7 +63,7 @@ export async function summarizeNative({ preparation, model, thinking, modelRunti
     return observed(m, context, options);
   };
   const result = await compact(preparation, requestModel, auth?.auth?.apiKey, auth?.auth?.headers,
-    EXCERPT_INSTRUCTIONS, signal, thinking ?? "off", enhancedStream, auth?.env, undefined, undefined, audit?.sessionId);
+    customInstructions ?? undefined, signal, thinking ?? "off", enhancedStream, auth?.env, undefined, undefined, audit?.sessionId);
   if (signal?.aborted) throw Object.assign(new Error("Compaction cancelled"), { name: "AbortError" });
-  return { ...result, native: true, rawSummary: result.summary };
+  return { ...result, native: true, nativeFallback: !customInstructions, rawSummary: result.summary };
 }

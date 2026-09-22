@@ -22,5 +22,7 @@ test('compaction documents preserve source and safely switch markdown/raw', asyn
   const toggle = root.querySelector('button'); toggle.click();
   assert.equal(root.querySelector('pre').textContent, source);
   toggle.click(); assert.equal(root.querySelector('script'), null);
+  assert.equal(root.querySelector('h1').textContent, '标题');
+  assert.equal(root.querySelector('pre').hidden, true);
   dom.window.close();
 });

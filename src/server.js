@@ -37,6 +37,7 @@ const assets = new Map(
     ["/icons.js", "public/icons.js"],
     ["/session-cache.js", "public/session-cache.js"],
     ["/session-details.js", "public/session-details.js"],
+    ["/compaction-view.js", "public/compaction-view.js"],
     ["/transport.js", "public/transport.js"],
     ["/goal.js", "public/goal.js"],
     ["/goal.css", "public/goal.css", "text/css"],

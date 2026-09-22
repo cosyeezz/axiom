@@ -1881,7 +1881,7 @@ test("compaction settings edit per scope and fold transcripts in place", async (
       tokensBefore: 1200,
     });
     for (const card of cards()) card.open = true;
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await settle(); // Wait for jsdom's queued details toggle, not a racing timer.
     assert.match(cards()[0].querySelector(".compaction-summary").textContent, /早前/); assert.match(cards()[1].querySelector(".compaction-summary").textContent, /累计摘要/);
     for (const card of cards()) card.open = false;
     assert.match($("output").lastElementChild.textContent, /回答二/, "each cumulative summary keeps its own card");

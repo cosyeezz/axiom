@@ -242,6 +242,24 @@ test('manual sync generation failure falls back once without re-entering enhance
   } finally { ctrl?.dispose(); cleanup(); }
 });
 
+for (const mode of ['auto', 'async', 'sync']) test(`generation fallback shares commit barriers: ${mode}`, async () => {
+  const { session, cleanup } = await createTestSession(); let ctrl, calls = 0, barriers = 0;
+  try {
+    seed(session, [userMsg(big('a')), assistantMsg(big('b')), userMsg(big('c'))]);
+    ctrl = createBackgroundCompaction({ session, config: { ...enabledConfig, syncKeepRecentTokens: 200 },
+      summarize: async () => { throw new Error('enhanced offline'); },
+      fallbackSummarize: async args => { calls++; assert.equal(args.customInstructions, null); return { native: true, nativeFallback: true, summary: 'Native summary', rawSummary: 'Native summary' }; },
+      beforeCommit: async () => { barriers++; },
+    });
+    if (mode === 'auto') { ctrl.onTurnEnd(); await settle(); await ctrl.maybeApply(); }
+    else { await ctrl.runNow(mode); await settle(); await ctrl.maybeApply(); }
+    assert.equal(calls, 1); assert.ok(barriers >= 2);
+    assert.equal(ctrl.getStatus().status, 'applied');
+    assert.equal(ctrl.getStatus().runs.length, 2);
+    assert.equal(session.sessionManager.getBranch().findLast(e => e.type === 'compaction').details.nativeFallback, true);
+  } finally { ctrl?.dispose(); cleanup(); }
+});
+
 test('native fallback is independently observable and cancellable', async () => {
   const { session, cleanup } = await createTestSession();
   let ctrl;

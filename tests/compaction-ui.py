@@ -3,6 +3,7 @@ Uses installed Playwright/Chromium; no model calls or user history.
 """
 from pathlib import Path
 import sys
+import os
 from playwright.sync_api import sync_playwright, expect
 
 out = Path(sys.argv[1]) if len(sys.argv) > 1 else None
@@ -16,12 +17,10 @@ with sync_playwright() as p:
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     for width in [1440, 390, 320]:
         page.set_viewport_size({"width": width, "height": 1000 if width == 1440 else 844})
-        page.goto("http://127.0.0.1:4321/#session=ui-compaction")
+        page.goto(f"http://127.0.0.1:{os.environ.get('PREVIEW_PORT', '4321')}/#session=ui-compaction")
         page.wait_for_selector("#workspace:not([hidden])")
         page.wait_for_timeout(150)
         expect(page.locator("#session-title")).to_have_text("压缩验收 · 摘要分层与后台进度")
-        if width < 768 and page.locator("#mobile-expand").get_attribute("aria-expanded") != "true":
-            page.locator("#mobile-expand").click()
         progress = page.locator("#compaction-progress")
         expect(progress).to_be_visible()
         assert progress.get_attribute("role") == "status"
@@ -67,6 +66,24 @@ with sync_playwright() as p:
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         if out:
             page.screenshot(path=str(out / f"compaction-run-{width}.png"))
+        documents = page.locator('#compaction-documents')
+        expect(documents.locator('summary').filter(has_text='模型原始摘要')).to_be_visible()
+        raw = documents.locator('details').filter(has=page.locator('summary', has_text='模型原始摘要'))
+        raw.locator('summary').click()
+        raw.get_by_role('button', name='查看原文', exact=True).click()
+        expect(raw.locator('pre')).to_contain_text('[原文：“不要分页。”]')
+        raw.get_by_role('button', name='查看 Markdown', exact=True).click()
+        expect(raw.locator('h2')).to_have_text('决策')
+        stream_doc = documents.locator('details').filter(has=page.locator('summary', has_text='请求 1 · 完整生成正文'))
+        stream_doc.locator('summary').click()
+        assert len(stream_doc.locator('.compaction-document-body').inner_text()) > 1500
+        expect(documents.locator('summary').filter(has_text='请求 2 · 完整生成正文')).to_be_visible()
+        assert documents.locator('script,img').count() == 0
+        for scheme in ['light', 'dark']:
+            page.emulate_media(color_scheme=scheme)
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+            if out:
+                page.screenshot(path=str(out / f'compaction-documents-{width}-{scheme}.png'))
         # 历史记录：只换展示、露出失败原因，并且不能再取消
         page.locator("#compaction-run-pick").select_option("run-preview-1")
         expect(page.locator("#compaction-run-error")).to_have_text("429 Too Many Requests")
