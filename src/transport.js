@@ -16,9 +16,9 @@ export function createSender({ maxBytes = 32 * 1024 * 1024,
       else ws.terminate();
     } catch { reportSafe("close_failed", ws, bytes); }
   };
-  const sendRaw = (ws, raw) => {
+  const sendRaw = (ws, raw, bytes) => {
     if (ws.readyState !== 1 || stopped.has(ws)) return false;
-    const bytes = Buffer.byteLength(raw);
+    bytes ??= Buffer.byteLength(raw);
     if (bytes > maxBytes) { stop(ws, "message_limit", bytes); return false; }
     if ((ws.bufferedAmount || 0) + bytes > maxBytes) { stop(ws, "buffer_limit", bytes); return false; }
     try {
@@ -29,8 +29,8 @@ export function createSender({ maxBytes = 32 * 1024 * 1024,
   return {
     send: (ws, message) => sendRaw(ws, JSON.stringify(message)),
     broadcast(clients, message, except) {
-      const raw = JSON.stringify(message);
-      for (const client of clients) if (client !== except) sendRaw(client, raw);
+      const raw = JSON.stringify(message), bytes = Buffer.byteLength(raw);
+      for (const client of clients) if (client !== except) sendRaw(client, raw, bytes);
     },
   };
 }

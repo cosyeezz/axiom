@@ -87,13 +87,14 @@ export function createPlayback() {
       snap(all);
       return null;
     }
-    const from = Math.min(shown, all.length, cap(all));
+    const capped = cap(all);
+    const from = Math.min(shown, all.length, capped);
     if (all.length - from > MAX_TAIL_G) {
       snap(all);
       return null;
     }
     starts = all;
-    safe = cap(all);
+    safe = capped;
     shown = from;
     return all.length - prevTotal;
   }

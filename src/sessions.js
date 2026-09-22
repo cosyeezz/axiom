@@ -188,9 +188,11 @@ function historyRetries(records, visibleIds, keptBefore, total) {
 }
 
 // live 数组按到达序累积，重试卡的 messageCount 是记录时的数组下标；下发投影时
-// 换算成投影下标（主记录恒保序，双指针 O(n)；全主记录数组上恒等）。
+// 换算成投影下标（主记录恒保序；前缀计数与双指针使总成本随历史、投影和重试数线性增长）。
 function translateRetries(retries, raw, projected) {
   if (!retries.some((record) => Number.isInteger(record.messageCount))) return retries;
+  const mainsBefore = [0];
+  for (const record of raw) mainsBefore.push(mainsBefore.at(-1) + ((record.agentId ?? "main") === "main" ? 1 : 0));
   const slots = []; // 第 k 条主记录的投影下标 + 1，即「其后」的槽位。
   let p = 0;
   for (const record of raw) {
@@ -201,9 +203,7 @@ function translateRetries(retries, raw, projected) {
   }
   return retries.map((record) => {
     if (!Number.isInteger(record.messageCount)) return record;
-    let mains = 0;
-    for (let index = 0; index < Math.min(record.messageCount, raw.length); index++)
-      if ((raw[index].agentId ?? "main") === "main") mains++;
+    const mains = mainsBefore[Math.max(0, Math.min(record.messageCount, raw.length))];
     const slot = mains > 0 && mains <= slots.length ? slots[mains - 1] : 0;
     return slot === record.messageCount ? record : { ...record, messageCount: slot };
   });
@@ -1288,7 +1288,8 @@ export class Sessions {
         await writeFile(importedFile, lines.join("\n"), { mode: 0o600 });
       }
       item.agent = await this.createAgent([...delegationTools(item.tasks), item.questions.tool, item.todo.readTool(), item.todo.updateTool(), item.goal.planTool(), item.goal.blockTool(), item.goal.progressTool(), item.goal.verificationTool({ evidence: () => {
-        const start = item.goal.snapshot()?.rounds[item.goal.snapshot()?.currentRound]?.startMessage ?? item.messages.length;
+        const goal = item.goal.snapshot();
+        const start = goal?.rounds[goal.currentRound]?.startMessage ?? item.messages.length;
         return item.messages.slice(start).filter((entry) => entry.agentId === "main" && entry.message?.role === "toolResult")
           .map((entry) => entry.message);
       } })], {
@@ -1306,7 +1307,10 @@ export class Sessions {
         sessionFile: saved?.sessionFile ?? importedFile,
         memory: memoryHooks(item, saveMemory),
         executionContext: () => item.goal.context(),
-        shouldPause: () => !!item.goal.snapshot()?.pendingAction || item.goal.snapshot()?.phase === "paused",
+        shouldPause: () => {
+          const goal = item.goal.snapshot();
+          return !!goal?.pendingAction || goal?.phase === "paused";
+        },
         inactiveTools: item.goal.active ? [] : GOAL_TOOL_NAMES,
       });
     // 导入与库恢复的会话都没有完整消息快照（模型消息不再入库）：主代理历史从 Pi JSONL
@@ -1771,9 +1775,6 @@ export class Sessions {
     return item.agent.refreshSkills();
   }
 
-  // 一次全量下发历史（不分页）：被压缩摘要折叠掉的消息除外，那段由前端点开摘要卡时按需取。
-  // 未加载时按数据库元数据 + JSONL 构建只读投影：浏览历史不得持久化恢复状态或启动任务
-  //（Goal 恢复仅在内存投影）。
   configData(item) {
     return {
       canReconfigure: this.canReconfigure(item), queueType: item.queueType,
@@ -1785,6 +1786,9 @@ export class Sessions {
     };
   }
 
+  // 一次全量下发历史（不分页）：被压缩摘要折叠掉的消息除外，那段由前端点开摘要卡时按需取。
+  // 未加载时按数据库元数据 + JSONL 构建只读投影：浏览历史不得持久化恢复状态或启动任务
+  //（Goal 恢复仅在内存投影）。
   snapshot(id, options = {}) {
     const item = this.get(id);
     if (!item.loaded) {
@@ -1843,6 +1847,7 @@ export class Sessions {
     const projected = projectTimeline(item.messages);
     const fold = foldCompacted(projected, item.compactions);
     const visibleIds = fold.visibleIds;
+    const runtime = item.agent.runtime?.();
     const state = {
       // 会话身份：前端按 sessionId 路由消息与持久化键，必须带出。
       sessionId: id,
@@ -1855,8 +1860,8 @@ export class Sessions {
       status: item.status,
       // 刷新/重连后也要能看到「等待安全点」提示，所以跟快照一起下发。
       safeStop: item.status !== "idle" && !!item.safeStopping,
-      runtime: item.agent.runtime?.(),
-      billing: combinedBilling(item.agent.runtime?.()?.billing, [...item.tasks.jobs.values()]),
+      runtime,
+      billing: combinedBilling(runtime?.billing, [...item.tasks.jobs.values()]),
       queue: item.agent.queue?.(),
       config: this.configData(item),
       runId: item.runId,
@@ -1881,8 +1886,7 @@ export class Sessions {
     return structuredClone(state);
   }
 
-  // 压缩卡按需展开：取某条摘要折叠掉的原始消息（含挂在其后的子代理记录）与这些消息引用的工具记录。
-  // 未加载会话走 JSONL 只读投影，不创建 SDK 实例。
+  // 按需取单次压缩过程记录；已知 revision 不重复下发请求链。
   async compactionAttempt(id, runId, knownRequests = 0, revision) {
     const item = this.get(id);
     let result = item.loaded ? item.agent.compactionAttempt?.(runId, revision) : null;
@@ -1895,6 +1899,8 @@ export class Sessions {
     return result;
   }
 
+  // 压缩卡按需展开：取某条摘要折叠掉的原始消息（含挂在其后的子代理记录）与这些消息引用的工具记录。
+  // 未加载会话走 JSONL 只读投影，不创建 SDK 实例。
   async compactionMessages(id, compactionId) {
     const item = this.get(id);
     let records;

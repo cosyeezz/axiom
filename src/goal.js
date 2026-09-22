@@ -205,7 +205,7 @@ export class Goal {
     return this.#state !== null;
   }
 
-  // 契约 goal 对象（只含约定字段；evidence/claimed/failure 等内部字段不进 snapshot）。
+  // 契约 goal 对象（只含约定字段；evidence/claimed 等内部字段不进 snapshot）。
   snapshot() {
     const s = this.#state;
     if (!s) return null;

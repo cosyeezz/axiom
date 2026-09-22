@@ -72,7 +72,7 @@ export async function createJournalArchive({ file, directory = `${file}.history`
   let archive, sessionId;
   const sync = async () => {
     const journal = readDurableJournal(file);
-    if (!journal) return false; // A new SDK session has not committed its first assistant yet.
+    if (!journal) return false; // 尚无 journal 路径或文件；读取与完整性错误仍向外抛出。
     if (sessionId && sessionId !== journal.header.id) throw historyError('ARCHIVE_IDENTITY_CONFLICT');
     sessionId = journal.header.id;
     if (!archive) {
