@@ -62,15 +62,13 @@ export async function createRawArchive(directory, { sourceJournalId, sourceSessi
     controlFd = openSync(controlPath, 'a', 0o600);
   } catch (error) { if (fd !== undefined) closeSync(fd); await release(); throw error; }
   const assertOpen = () => { if (failure || closed) throw failure ?? historyError('ARCHIVE_NOT_DURABLE', 'Archive closed'); };
-  return {
-    archiveId,
-    record(sourceEntry) {
+  function record(sourceEntry, verifiedHash) {
       assertOpen();
       const disk = statfsSync(directory);
       if (disk.bavail * disk.bsize < 16 * 1024 * 1024) throw historyError('ARCHIVE_NOT_DURABLE', 'Archive disk reserve below 16 MiB; no history deleted');
       if (!sourceEntry?.id) throw historyError('SOURCE_MISSING');
       const origin = { sourceJournalId, sourceSessionId, entryId: sourceEntry.id, agentId };
-      const key = keyOf(origin), hash = contentHash(sourceEntry), prior = records.get(key);
+      const key = keyOf(origin), hash = verifiedHash ?? contentHash(sourceEntry), prior = records.get(key);
       if (prior) { if (prior.sourceEntryHash !== hash) throw historyError('ARCHIVE_IDENTITY_CONFLICT'); return prior; }
       const artifacts = [];
       const output = sourceEntry.message?.details?.fullOutputPath;
@@ -87,16 +85,20 @@ export async function createRawArchive(directory, { sourceJournalId, sourceSessi
       const record = { ...(aliases.length ? { copiedFrom: aliases.at(-1), copiedFromAll: aliases } : {}), artifacts, schemaVersion: 1, canonicalVersion: 1, archiveId, seq: records.size + 1, origin, sourceEntry: JSON.parse(JSON.stringify(sourceEntry)), sourceEntryHash: hash, capturedAt: new Date().toISOString() };
       try { writeAll(isOriginal(sourceEntry) ? fd : controlFd, `${JSON.stringify(record)}\n`); } catch (error) { failure = historyError('ARCHIVE_NOT_DURABLE', error.message); throw failure; }
       records.set(key, record); return record;
-    },
+  }
+  return {
+    archiveId,
+    record: sourceEntry => record(sourceEntry),
     reconcile(entries) {
       assertOpen();
-      const current = new Map(entries.map(entry => [entry.id, contentHash(entry)]));
+      const verified = entries.map(entry => [entry, contentHash(entry)]);
+      const current = new Map(verified.map(([entry, hash]) => [entry.id, hash]));
       for (const record of records.values()) {
         const hash = current.get(record.origin.entryId);
         if (hash === undefined) throw historyError('SOURCE_CORRUPT', 'Authoritative journal removed an archived identity');
         if (hash !== record.sourceEntryHash) throw historyError('ARCHIVE_IDENTITY_CONFLICT');
       }
-      for (const entry of entries) this.record(entry);
+      for (const [entry, hash] of verified) record(entry, hash);
       for (const record of records.values()) for (const artifact of record.artifacts ?? []) this.readArtifact(record, artifact.part);
       this.barrier();
     },

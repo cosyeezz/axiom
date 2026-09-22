@@ -511,12 +511,14 @@ export function createBackgroundCompaction({
       const budget = requestBudget({ model: session.model, messages: [{ role: "compactionSummary", summary: assembled.summary }, ...keptMessages], systemPrompt: session.systemPrompt, tools: session.agent.state.tools, config: current });
       if (!budget.safe) throw compactionError("WINDOW_UNSAFE", "压缩后仍超过安全窗口");
       note(flight.run, "apply", `安全点应用摘要 · ${tokensBefore.toLocaleString("en-US")} → ${estimatedAfter.toLocaleString("en-US")} tokens（估算）`);
+      const branchById = new Map();
+      for (const entry of branch) if (!branchById.has(entry.id)) branchById.set(entry.id, entry);
       const details = {
-        parentCompactionId: branch.findLast(entry => entry.type === "compaction")?.id ?? null,
+        parentCompactionId: parentCompaction?.id ?? null,
         branchAnchor: flight.leafId,
         inputHash: flight.sourceHash,
         compactedMessageIds: flight.compactedMessageIds,
-        coverageHash: contentHash(flight.compactedMessageIds.map(id => branch.find(entry => entry.id === id))),
+        coverageHash: contentHash(flight.compactedMessageIds.map(id => branchById.get(id))),
         rawEstimatedTokensBefore: tokensBefore,
         projectedTokensBefore,
         ...(flight.value.progress ? { progress: flight.value.progress } : {}),

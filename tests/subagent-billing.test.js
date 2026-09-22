@@ -89,6 +89,17 @@ test("实时总账包含子任务；冷快照与恢复不漏账；缺失文件�
     assert.equal(last.incomplete, false);
     assert.deepEqual(last.groups.map(g => g.model).sort(), ["test/main", "test/one"]);
     assert.deepEqual(combinedBilling(item.agent.runtime().billing, [...item.tasks.jobs.values()]), last);
+    const originalRuntime = item.agent.runtime;
+    let runtimeCalls = 0;
+    item.agent.runtime = () => { runtimeCalls++; return originalRuntime(); };
+    const live = sessions.snapshot(id);
+    assert.equal(runtimeCalls, 2, "快照账单复用 runtime；配置保留独立的动态 runtime");
+    assert.deepEqual(live.billing, last);
+    assert.notEqual(live.runtime, live.config.runtime);
+    live.runtime.billing.cost.total = -1;
+    assert.notEqual(live.config.runtime.billing.cost.total, -1);
+    assert.deepEqual(sessions.snapshot(id).billing, last);
+    item.agent.runtime = originalRuntime;
     const taskFile = item.tasks.jobs.get(taskId).sessionFile;
     await sessions.close();
     const next = factory();

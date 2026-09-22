@@ -1,5 +1,15 @@
 # 开发记录
 
+## 2026-09-23 行为保持型计算精简与逐项审查
+
+- 分支：`feat/behavior-preserving-simplification`；工作树：`F:/worktrees/Axiom-behavior-preserving-simplification`；基线：`947ce52`。
+- 内容：快照账单复用 runtime；重试前缀计数；压缩来源清单局部 Set 与首匹配 Map；归档对账私有逐条哈希复用；广播 UTF-8 字节复用；Goal 与字素计算局部去重。修正文档与错位注释。
+- 原因与决策：消除重复扫描和计算，不扩大公开接口，不改持久化格式、取消/提交状态机、fsync/artifact 校验和 UI 生命周期。11项逐项结论见 `docs/behavior-preserving-review.md`。不机械拆模块，不新增 output 增量失效及活动计时第二份状态。
+- 验证：基线934项（932通过、2平台跳过）；最终937项（935通过、0失败、2既有平台跳过）；500组固定随机重试差分，专项压缩/投影63项与归档20项通过。独立差异复核通过，`git diff --check`通过。不将重复执行的测试计数相加宣传覆盖数。
+- 文件：`src/{sessions,pi,compaction,raw-history,transport,goal,history-journal}.js`、`public/stream-playback.js`、4个回归测试文件、README、历史性能报告及答卷。
+- 规模说明：生产文件净增16行（含说明注释），降低的是重复计算/扫描而非物理行数；没有宣称代码总行数下降或端到端等比例提速。测试与决策记录另计。
+- 保留主目录原有未提交文件；本轮子代理生成的工作树索引及临时产物不纳入提交。不重启运行服务。
+
 ## 2026-09-23 Todo 改为静态系统规则，撤销读取熔断
 
 - 用户决策：不在每轮／工具调用后注入Todo提醒，仅系统提示词一次性说明；移除刚加入的限制规则。

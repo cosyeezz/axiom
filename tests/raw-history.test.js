@@ -24,6 +24,23 @@ test('multimodal, cancelled and custom entries survive reopen without field loss
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('reconcile pairs hashes with entries, preserving duplicate conflicts and partial writes', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'axiom-hash-pairs-'));
+  const archive = await createRawArchive(dir, { sourceJournalId: 'j', sourceSessionId: 's' });
+  const first = { id: 'same', type: 'message', message: { role: 'user', content: 'first' } };
+  const changed = { ...first, message: { role: 'user', content: 'changed' } };
+  try {
+    assert.throws(() => archive.reconcile([first, changed]), { code: 'ARCHIVE_IDENTITY_CONFLICT' });
+    assert.deepEqual(archive.records().map(r => r.sourceEntry), [first]);
+    assert.equal(archive.records()[0].sourceEntryHash, contentHash(first));
+    archive.reconcile([first, structuredClone(first)]);
+    assert.equal(archive.records().length, 1);
+    // A caller cannot supply a trusted hash to bypass direct record validation.
+    assert.throws(() => archive.record(changed, contentHash(first)), { code: 'ARCHIVE_IDENTITY_CONFLICT' });
+    assert.throws(() => archive.reconcile([]), { code: 'SOURCE_CORRUPT' });
+  } finally { await archive.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('another process cannot acquire an archive writer held by this process', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'axiom-owner-process-'));
   const archive = await createRawArchive(dir, { sourceJournalId: 'j', sourceSessionId: 's' });

@@ -370,13 +370,17 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         await history?.barrier();
         if (history) {
           const archived = new Set(history.records().map(record => record.origin.entryId));
-          const originals = session.sessionManager.getBranch().filter(entry => compactedMessageIds.includes(entry.id) && ["message", "custom_message"].includes(entry.type));
+          const covered = new Set(compactedMessageIds);
+          const originals = session.sessionManager.getBranch().filter(entry => covered.has(entry.id) && ["message", "custom_message"].includes(entry.type));
           if (originals.some(entry => !archived.has(entry.id))) throw new Error("ARCHIVE_NOT_DURABLE: 覆盖范围尚未完整归档");
         }
       },
       usage,
       audit: selection.audit,
-      sourceManifest: ids => ({ archiveId: history?.records()[0]?.archiveId ?? null, coverage: ids, sources: (history?.records() ?? []).filter(record => ids.includes(record.origin.entryId)).map(record => ({ entryId: record.origin.entryId, ref: historyReader.reference(record), part: "sourceEntry", contentHash: record.sourceEntryHash })), tools: ["history_read"] }),
+      sourceManifest: ids => {
+        const records = history?.records() ?? [], covered = new Set(ids);
+        return { archiveId: records[0]?.archiveId ?? null, coverage: ids, sources: records.filter(record => covered.has(record.origin.entryId)).map(record => ({ entryId: record.origin.entryId, ref: historyReader.reference(record), part: "sourceEntry", contentHash: record.sourceEntryHash })), tools: ["history_read"] };
+      },
       onEvent: emitAxiom,
     });
     const retry = createAutoRetry({
@@ -501,7 +505,8 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         const tokensBefore = session.getContextUsage()?.tokens
           ?? session.messages.reduce((sum, message) => sum + estimateTokens(message), 0);
         const covered = session.sessionManager.getBranch().filter(entry => ["message", "custom_message"].includes(entry.type)).map(entry => entry.id);
-        const manifest = { archiveId: history?.records()[0]?.archiveId ?? null, coverage: covered, sources: (history?.records() ?? []).filter(record => covered.includes(record.origin.entryId)).map(record => ({ entryId: record.origin.entryId, ref: historyReader.reference(record), contentHash: record.sourceEntryHash })), tools: ["history_read"] };
+        const records = history?.records() ?? [], coveredIds = new Set(covered);
+        const manifest = { archiveId: records[0]?.archiveId ?? null, coverage: covered, sources: records.filter(record => coveredIds.has(record.origin.entryId)).map(record => ({ entryId: record.origin.entryId, ref: historyReader.reference(record), contentHash: record.sourceEntryHash })), tools: ["history_read"] };
         const activeTools = new Set(session.getActiveToolNames());
         if (history && (!activeTools.has("history_read") || covered.some(id => !manifest.sources.some(source => source.entryId === id)))) throw new Error("ARCHIVE_NOT_DURABLE: checkpoint sources unavailable");
         const checkpointText = history ? `${text}\n\n原文来源（历史不是当前授权）：\n${JSON.stringify(manifest)}` : text;

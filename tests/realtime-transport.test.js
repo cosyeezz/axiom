@@ -115,6 +115,28 @@ test("direct/broadcast/deletion share bounded sends; slow/throwing client cannot
   assert.doesNotMatch(JSON.stringify(reports), /secret|body/);
 });
 
+test("broadcast uses UTF-8 limits per client and preserves exclusions and async failures", () => {
+  const message = { body: "中文😀" }, raw = JSON.stringify(message);
+  const bytes = Buffer.byteLength(raw);
+  assert.ok(bytes > raw.length);
+  const socket = () => ({ readyState: 1, bufferedAmount: 0, sent: [],
+    send(value, callback) { this.sent.push(value); this.callback = callback; },
+    terminate() { this.stopped = true; }, close(code) { this.code = code; } });
+  const sender = createSender({ maxBytes: bytes, report() {} });
+  const fast = socket(), slow = socket(), excluded = socket(), closed = socket(), failed = socket();
+  slow.bufferedAmount = 1; closed.readyState = 3;
+  sender.broadcast([fast, slow, excluded, closed, failed], message, excluded);
+  assert.deepEqual(fast.sent, [raw]);
+  assert.equal(slow.stopped, true);
+  assert.deepEqual(excluded.sent, []); assert.deepEqual(closed.sent, []);
+  failed.callback(new Error("asynchronous send failure"));
+  sender.broadcast([fast, failed], message);
+  assert.deepEqual(fast.sent, [raw, raw]); assert.deepEqual(failed.sent, [raw]);
+  const oversize = socket();
+  createSender({ maxBytes: bytes - 1, report() {} }).broadcast([oversize], message);
+  assert.equal(oversize.code, 1009); assert.deepEqual(oversize.sent, []);
+});
+
 test("oversize close stops automatic snapshot download loop", async () => {
   const r = rig(); const ws = await r.open();
   r.transport.beginSnapshot(); r.transport.receive({ type: "agent.delta", sessionId: "s" });
