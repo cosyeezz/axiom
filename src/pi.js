@@ -1,3 +1,5 @@
+import { readFile, writeFile } from "node:fs/promises";
+import { safePoints, requireSafePoint, navigationState } from "./safe-points.js";
 import { wrapUsageStream } from "./usage-stream.js";
 import { createToolExecutionPolicy } from "./tool-execution.js";
 import { sessionBilling, usageRuntime } from "./session-billing.js";
@@ -21,6 +23,26 @@ const { AssistantMessageEventStream } = await createJiti(import.meta.resolve("@e
 const { getSupportedThinkingLevels } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai/compat");
 
 if (Object.hasOwn(process.env, "AXIOM_OBSERVATION_PACK")) process.emitWarning("AXIOM_OBSERVATION_PACK 已弃用并被忽略，旧归档仅只读取回", { code: "AXIOM_OP_DEPRECATED" });
+
+export async function forkSafePoint(manager, entryId) {
+  const point = requireSafePoint(manager.getBranch(), entryId);
+  // Native branching mutates its manager; restore an independent copy first.
+  const copy = SessionManager.open(manager.getSessionFile());
+  copy.createBranchedSession(entryId);
+  copy.appendCustomEntry("axiom_revert", { entryId, draft: point.draft });
+  // SDK defers persistence for a user-only prefix.
+  await writeFile(copy.getSessionFile(), [copy.getHeader(), ...copy.getEntries()].map(entry => JSON.stringify(entry)).join("\n") + "\n", { mode: 0o600 });
+  const prefix = manager.getBranch(entryId);
+  const cutoff = Date.parse(prefix.at(-1).timestamp);
+  const compactionIds = new Set(prefix.filter(entry => entry.type === "compaction").map(entry => entry.id));
+  for (const suffix of [".compaction-attempts.json", ".compaction-diagnostics.json"]) {
+    try {
+      const records = JSON.parse(await readFile(`${manager.getSessionFile()}${suffix}`, "utf8"));
+      await writeFile(`${copy.getSessionFile()}${suffix}`, JSON.stringify(records.filter(run => compactionIds.has(run.result?.compactionId) || run.endedAt <= cutoff)), { mode: 0o600 });
+    } catch (error) { if (error.code !== "ENOENT") throw error; }
+  }
+  return { ...point, sessionFile: copy.getSessionFile() };
+}
 
 export function agentRuntime(session, observations = null) {
   return {
@@ -325,7 +347,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         : entry);
     const compactionRecords = () => session.sessionManager.getBranch().filter((entry) => entry.type === "compaction").map((entry) => {
       const branch = session.sessionManager.getBranch(entry.id);
-      return { id: entry.id, summary: entry.summary, ...(entry.details?.progress ? { progress: entry.details.progress } : {}), firstKeptEntryId: entry.firstKeptEntryId,
+      return { id: entry.id, summary: entry.summary, ...(entry.details?.checkpoint ? { checkpoint: true } : {}), ...(entry.details?.progress ? { progress: entry.details.progress } : {}), firstKeptEntryId: entry.firstKeptEntryId,
         compactedMessageIds: summarizedEntryIds(branch.filter((item) => item.id !== entry.id), entry.firstKeptEntryId),
         tokensBefore: entry.tokensBefore };
     });
@@ -423,6 +445,35 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       },
       sessionFile: () => session.sessionFile,
       historyEntries: messageEntries,
+      safePoints: () => safePoints(session.sessionManager.getBranch()),
+      navigationState: () => navigationState(session.sessionManager.getBranch()),
+      async revertTo(entryId) {
+        if (!session.isIdle || session.isRetrying || reaskController) throw new Error("请先停止会话再回退");
+        const queue = queueState();
+        if (queue.steering.length || queue.followUp.length) throw new Error("请先处理或撤回排队消息");
+        const point = requireSafePoint(session.sessionManager.getBranch(), entryId);
+        // navigateTree(user) means BEFORE user; a custom child pins the AFTER-user boundary.
+        let target = entryId;
+        if (point.kind === "user") {
+          const previous = session.sessionManager.getLeafId();
+          session.sessionManager.branch(entryId);
+          target = session.sessionManager.appendCustomEntry("axiom_safe_point", { entryId });
+          session.sessionManager.branch(previous);
+        }
+        const result = await session.navigateTree(target);
+        if (result.cancelled) throw new Error("回退已被扩展取消");
+        session.sessionManager.appendCustomEntry("axiom_revert", { entryId, draft: point.draft });
+        compactionCtrl.discardStale();
+        return point;
+      },
+      async forkAt(entryId) {
+        await history?.barrier();
+        return forkSafePoint(session.sessionManager, entryId);
+      },
+      continueFromPoint: async () => {
+        beginRun();
+        await retry.run(() => session.agent.continue());
+      },
       compactions: compactionRecords,
       compactionStatus: () => compactionCtrl.getStatus(),
       compactionAttempt: (id, revision) => compactionCtrl.getAttempt(id, revision),

@@ -605,6 +605,7 @@ export function createBackgroundCompaction({
     appendConfirmed,
     cancel, // pi wrapper 在会话 abort / dispose 时调用，中断后台真实 LLM
     cancelRun, // 用户从 UI 主动取消本次摘要
+    discardStale: () => { if (pending && !isFresh(pending)) cancel("会话已回退，丢弃不属于当前分支的摘要"); },
     getConfig: () => ({ ...current }),
     getStatus: () => statusPayload(),
     getAttempt: (id, revision) => {

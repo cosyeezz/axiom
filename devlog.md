@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-23 Todo 与最新安全点功能合并
+
+- 合并 origin/master 206ac8d，保留双方协议、模块登记与文档；不恢复已删除的 task-state-doc。
+- 回退保留 SQLite 清单但显式暂停，继续安全点不自动解冻；Fork 新会话不继承 Todo，避免历史前缀与当前任务真相混用。
+- 验证：合并后全量 929 项，927 通过、2 跳过、0 失败；新增回退暂停、继续不解冻、显式恢复和分叉清单隔离测试。
+- 涉及：src/protocol.js、sessions.js、模块登记、README、devlog 与 tests/todo-safe-points.test.js；不重启服务。
+
 ## 2026-09-23 Todo 长会话控制与纯原生压缩
 
 - 决策：任务控制与有损摘要分离。主代理维护 SQLite 两级 Todo，版本 CAS 批量原子更新；子代理不注册工具、不接收 Todo 上下文。Goal 与 Todo 互斥驱动。
@@ -8,6 +15,13 @@
 - 压缩：直接 SDK compact() + customInstructions，仅可选标题／简述；删除 stateDoc 生成／注入、旧摘要提示词、结构化 patch 及 facts 校验路径。保留冻结快照、预算、取消、归档与持久提交屏障；展示字段异常不重试摘要。
 - 验证：全量 924 项，922 通过、2 跳过、0 失败（约 63 秒）。修复 jsdom 展开测试竞态，改为等待实际 toggle 事件；补齐 Todo 生命周期、暂停跨重启、通知冻结、UI、安全渲染和容错展示解析测试；本地 HTTP 覆盖 401 不重试及客户端密钥不泄漏、取消真实关闭响应连接。会话列表测试使用固定快照时间，消除逐行时钟导致的偶发排序失败。本轮未调用真实供应商或执行真实浏览器验收，不重启运行服务。
 - 文件：src/todo.js、sessions.js、protocol.js、server.js、compaction.js、native-summary.js、compaction-display.js、pi.js、prompts.js；public/todo.js、todo.css、app.js、index.html；对应 tests、README、docs/todo-control-execution.md、模块登记。生成 INDEX.md 不交付，保留主工作区用户改动。
+## 2026-09-22 会话安全点导航
+
+- 用户决策：安全点回退/Fork仅恢复上下文，保留所选压缩点本次压缩；恢复后停下，支持继续与下一用户输入回填。
+- 方案：原生 navigateTree 与独立 SessionManager 分叉；持久标记保存回退位置，现有压缩新鲜度校验丢弃失效候选。
+- 文件：src/safe-points.js、src/pi.js、src/sessions.js、src/compaction.js、src/protocol.js、src/server.js、public/app.js、public/style.css、tests/safe-points.test.js、README.md、代码索引。
+- 验证：新增真实 Pi user-only fork 源隔离/重开测试、完整工具批次边界测试、链式 fork 祖先引用和父文件删除后重开测试通过；goal UI、history、recall、compaction、session persistence、索引定向测试通过。全量验证被 tests/app.test.js:1885 累计摘要展示断言阻塞，在独立未修改 master 基线 ae67c25 已复现；用户明确授权忽略已在未修改 master 复现的非本次失败，同步最新 master 后提交、合并并推送；不修改该既有测试。新增实时请求的测试结束后回调问题已修复并定向验证。
+- 连续性补齐：压缩过程 sidecar 按安全点过滤复制；祖先原文引用增加兼容别名列表，仍执行当前分支/agent/内容哈希校验。涉及 src/history-journal.js、src/history-tools.js、src/raw-history.js 和 tests/history-journal.test.js。
 
 ## 2026-09-22 子代理执行治理
 
