@@ -1,4 +1,5 @@
 import { wrapUsageStream } from "./usage-stream.js";
+import { createToolExecutionPolicy } from "./tool-execution.js";
 import { sessionBilling, usageRuntime } from "./session-billing.js";
 import { TITLE_INSTRUCTION } from "./prompts.js";
 import { legacyObservationExtension, createObservationStats, observationRuntime } from "./legacy-observation.js";
@@ -168,11 +169,13 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
   const defaultKey = requested || `${startup.settingsManager.getDefaultProvider()}/${startup.settingsManager.getDefaultModel()}`;
   const factory = async (customTools = [], selection = {}) => {
     const workspace = selection.cwd || cwd;
+    let summaryMode = false;
+    const toolExecution = createToolExecutionPolicy({ subagent: selection.audit?.source === "task" || selection.memory?.role === "subagent", summarizing: () => summaryMode, emit: event => emitAxiom(event) });
     const memory = selection.memory || null;
     // 预算策略建会话时随记忆装配捕获一次（memoryHooks 计算，含配置校验），逐请求不重读，避免中途漂移。
     // 主代理没有预算（policy 为 null）：人在盯，且它是会话本体，不该被截断。
     const policy = memory?.policy ?? null;
-    // 轮次只在本次子代理进程内计数：子代理不跨重启续命，重启即取消，无需持久化。
+    // 轮次提示仅在本执行器进程内计数；Tasks 独立持久化时间截止，重启不延长工作预算。
     const memoryState = memory ? { turn: 0 } : null;
     // 启动不依赖模型；每次建会话从最新目录选择，网页首次配置后无需重启。
     const key = selection.model || defaultKey;
@@ -213,6 +216,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         async execute(_id, args) { await history?.reconcile(); activeHistoryIds = new Set(session.sessionManager.getBranch().map(entry => entry.id)); const result = args.messageId || args.sources ? historyReader.readMessage(args) : historyReader.read(args); return { content: [{ type: "text", text: JSON.stringify(result) }], details: result }; },
       });
     } }];
+    extraFactories.push({ name: "axiom-tool-execution", factory: toolExecution.extension });
     if (memoryState || typeof executionContext === "function")
       extraFactories.push(memoryExtension(memoryState, memory, policy, executionContext));
     if (selection.observationsDir)
@@ -396,14 +400,27 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       }
       if (event.type.startsWith("tool_execution_")) {
         const { type, ...data } = event;
-        emitAxiom({ type: "tool.state", data: { phase: type.slice("tool_execution_".length), ...data } });
+        const phase = type.slice("tool_execution_".length);
+        emitAxiom({ type: "tool.state", data: { phase, ...data, ...toolExecution.observe(phase, data) } });
       }
       // Lifecycle boundaries only: never resend the prompt or scan history per token.
       if (["message_start", "message_end", "turn_end", "agent_end", "compaction_end"].includes(event.type))
         emitAxiom({ type: "agent.runtime", data: agentRuntime(session, observations) });
     });
     return {
-      runtime: () => agentRuntime(session, observations),
+      runtime: () => ({ ...agentRuntime(session, observations), activeTools: toolExecution.active() }),
+      async summarize(instruction) {
+        summaryMode = true;
+        const tools = session.getActiveToolNames();
+        session.clearQueue();
+        session.setActiveToolsByName([]);
+        try {
+          beginRun();
+          await session.prompt(instruction); // 独立总结不走自动重试，外层统一限定时间。
+          if (!lastResult || ["error", "aborted", "length"].includes(lastResult.stopReason)) throw new Error(lastResult?.errorMessage || "总结未正常结束");
+          return lastResult.content.filter(block => block.type === "text").map(block => block.text).join("\n");
+        } finally { summaryMode = false; session.setActiveToolsByName(tools); }
+      },
       sessionFile: () => session.sessionFile,
       historyEntries: messageEntries,
       compactions: compactionRecords,

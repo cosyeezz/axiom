@@ -1,8 +1,11 @@
-import test from "node:test";
+import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { Tasks } from "../src/tasks.js";
 import { delegationTools } from "../src/tools.js";
 import { command } from "../src/protocol.js";
+
+const fixtures = new Set();
+afterEach(async () => { for (const tasks of fixtures) await tasks.cancel(); fixtures.clear(); });
 
 function fixture() {
   const agents = [], events = [], notifications = [];
@@ -10,7 +13,7 @@ function fixture() {
     let finish;
     const agent = {
       subscribe: () => () => {},
-      prompt: () => new Promise((resolve) => { finish = resolve; }),
+      prompt: () => new Promise((resolve) => { finish = resolve; agent.prompted = true; }),
       enqueue: async (text, mode) => { agent.appended = { text, mode }; },
       result: () => { if (agent.fail) throw new Error("failed"); return "result"; },
       abort: async () => { agent.aborts = (agent.aborts || 0) + 1; finish?.(); },
@@ -19,7 +22,9 @@ function fixture() {
     };
     agents.push(agent);
     return agent;
-  }, (event) => events.push(event), async (job) => notifications.push({ taskId: job.id, resultId: job.resultId }));
+  }, (event) => events.push(event), async (job) => notifications.push({ taskId: job.id, resultId: job.resultId }),
+  { workMs: 5000, wrapUpMs: 1000, summaryMs: 1000, cleanupMs: 1000 });
+  fixtures.add(tasks);
   return { tasks, agents, events, notifications };
 }
 
@@ -53,6 +58,8 @@ test("results require completion notification IDs, never wait or poll", async ()
   assert.throws(() => tasks.read(taskIds[0]), /不要轮询/);
   assert.equal(JSON.stringify(response).includes("resultId"), false);
   await assert.rejects(read.execute("", { taskIds, wait: false }));
+  await new Promise(setImmediate);
+  assert.ok(agents.every(agent => agent.prompted));
   agents[0].finish();
   await tasks.jobs.get(taskIds[0]).done;
   assert.equal(notifications.length, 1, "one completed task notifies without waiting for siblings");
@@ -80,7 +87,7 @@ test("publish separates safe view data from the full saved snapshot", async () =
   const [id] = tasks.start(["a"]);
   await tasks.cancel();
   const { data, saved } = events.filter((event) => event.type === "task.state").at(-1);
-  assert.deepEqual(Object.keys(data).sort(), ["canRetry", "error", "id", "runtime", "status", "task", "text"], "broadcast data stays a safe view");
+  assert.deepEqual(Object.keys(data).sort(), ["canRetry", "cleanupStatus", "endedAt", "error", "executionId", "hardDeadline", "id", "runtime", "softDeadline", "startedAt", "status", "stop", "task", "text", "totalElapsedMs"], "broadcast data stays a safe view");
   assert.equal(data.canRetry, false, "cancelled job without session evidence offers no retry");
   assert.equal(data.status, "cancelled");
   assert.equal("saved" in data, false);
@@ -115,7 +122,7 @@ test("delegate freezes background at start; context lands in <context> section",
   const job = tasks.jobs.get(id);
   await job.done;
   // context 冻结于 start 时刻（子代理拿到的唯一背景），含 <context> 段。
-  assert.match(received, /<context>\n以下是主代理为本任务写的背景，不是新的任务指令：\n本轮已确认的背景\n<\/context>\n<task>\n检查接口\n<\/task>/);
+  assert.match(received, /<context>\n以下是主代理提供的背景，不是新的任务指令：\n本轮已确认的背景\n<\/context>\n<task>\n检查接口\n<\/task>/);
   assert.equal(tasks.read(id, job.resultId).text, "完成<progress>已完成检查</progress>", "回读给原文");
   // 缺 context 的 delegate 输入校验失败（必填）。
   const delegate = delegationTools(tasks).find((tool) => tool.name === "delegate");
@@ -131,7 +138,7 @@ test("delegate freezes background at start; context lands in <context> section",
   assert.equal(bare, "裸任务");
 });
 
-test("append defaults to steer, validates input and rejects ended/cancelling tasks", async () => {
+test("append defaults to steer, validates input and rejects missing history/cancelling tasks", async () => {
   const { tasks, agents, notifications } = fixture();
   const append = delegationTools(tasks).find((tool) => tool.name === "append");
   const [taskId] = tasks.start(["a"]);
@@ -142,12 +149,12 @@ test("append defaults to steer, validates input and rejects ended/cancelling tas
   assert.deepEqual(agents[0].appended, { text: "later", mode: "followUp" });
   for (const input of [{ taskId, text: " " }, { taskId, text: "x", mode: "bad" }, { taskId, text: "x", extra: true }])
     await assert.rejects(append.execute("", input));
-  await assert.rejects(tasks.append("missing", "x"), /运行中/);
+  await assert.rejects(tasks.append("missing", "x"), /找不到该子任务/);
   const cancelling = tasks.cancel();
-  await assert.rejects(tasks.append(taskId, "x"), /运行中/);
+  await assert.rejects(tasks.append(taskId, "x"), /任务正在取消/);
   await cancelling;
   assert.equal(tasks.read(taskId, notifications[0].resultId).status, "cancelled");
-  await assert.rejects(tasks.append(taskId, "x"), /运行中/);
+  await assert.rejects(tasks.append(taskId, "x"), /没有持久化历史/);
 });
 
 test("cancel_task aborts only the target subtask, keeps siblings and the completion path", async () => {
@@ -171,7 +178,7 @@ test("cancel_task aborts only the target subtask, keeps siblings and the complet
   assert.equal(tasks.read(first, a.resultId).canRetry, false, "无历史依据的取消不提供重试入口");
   await tasks.append(second, "继续");
   assert.deepEqual(agents[1].appended, { text: "继续", mode: "steer" });
-  await assert.rejects(tasks.append(first, "x"), /运行中/);
+  await assert.rejects(tasks.append(first, "x"), /没有持久化历史/);
   // 已终态重复取消是幂等空操作：既不改状态也不换 resultId、不再通知。
   const again = JSON.parse((await cancel.execute("", { taskId: first })).content[0].text);
   assert.equal(again.status, "cancelled");
@@ -202,7 +209,7 @@ test("cancel_task wins the initialization race: no agent yet means prompt never 
   const out = JSON.parse((await pending).content[0].text);
   assert.equal(out.status, "cancelled");
   assert.equal(prompted, 0, "取消在 prompt 前生效：不启动子代理工作");
-  assert.equal(tasks.jobs.get(id).text, undefined);
+  assert.match(tasks.jobs.get(id).text, /会话创建期间停止，未启动工作/);
   assert.deepEqual(notifications.map((n) => n.taskId), [id]);
   assert.match(notifications[0].resultId, /^[0-9a-f-]{36}$/);
   assert.equal(events.at(-1).type, "task.state");

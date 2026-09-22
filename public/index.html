@@ -364,12 +364,17 @@
           <p id="defaults-preview"></p>
         </section>
         <section aria-labelledby="task-budget-title">
-          <h3 id="task-budget-title">需要启动新会话区 · 子代理轮次预算（全局）</h3>
+          <h3 id="task-budget-title">需要启动新会话区 · 子代理执行预算（全局）</h3>
           <div class="selectors settings-selectors">
             <label class="budget-field" for="task-max-turns"><span class="budget-field-label">轮次上限</span><input type="number" id="task-max-turns" min="3" max="200" step="1" aria-describedby="task-budget-help"><span class="budget-field-unit">轮</span></label>
             <label class="budget-field" for="task-wrap-up-window"><span class="budget-field-label">收尾窗口</span><input type="number" id="task-wrap-up-window" min="1" max="10" step="1" aria-describedby="task-budget-help"><span class="budget-field-unit">轮</span></label>
           </div>
-          <p id="task-budget-help">上限是软的：子代理跑到「轮次上限 − 收尾窗口」时，每轮注入一条收尾指令让子代理自己交付（不强行中断，不丢已有产出）。保存后，新建会话中的子任务使用新预算；已有会话保持创建时的预算。</p>
+          <div class="selectors settings-selectors">
+            <label class="budget-field" for="task-work-seconds"><span class="budget-field-label">工作时间</span><input type="number" id="task-work-seconds" min="60" max="7200" step="1" aria-describedby="task-budget-help"><span class="budget-field-unit">秒</span></label>
+            <label class="budget-field" for="task-wrap-up-seconds"><span class="budget-field-label">收尾时间</span><input type="number" id="task-wrap-up-seconds" min="30" max="3600" step="1" aria-describedby="task-budget-help"><span class="budget-field-unit">秒</span></label>
+            <label class="budget-field" for="task-summary-seconds"><span class="budget-field-label">停止后总结</span><input type="number" id="task-summary-seconds" min="10" max="600" step="1" aria-describedby="task-budget-help"><span class="budget-field-unit">秒</span></label>
+          </div>
+          <p id="task-budget-help">轮次仅提示收尾；工作时间耗尽后进入收尾阶段，收尾截止会停止工作并在独立时限内禁工具总结。默认 600 秒工作 + 180 秒收尾 + 60 秒总结；输出和运行中追加不延长截止。保存后，新建会话中的子任务使用新预算；已有会话保持创建时的预算。</p>
         </section>
         <section aria-labelledby="subagent-title" hidden>
           <h3 id="subagent-title">子代理</h3>

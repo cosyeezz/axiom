@@ -69,6 +69,22 @@ test("session list stays running until parent and all children finish", async ()
   } finally { await sessions.close(); }
 });
 
+test("wrapping/stopping/summarizing remain active in session list and block duplication", async () => {
+  const { factory } = factoryFixture();
+  const root = await mkdtemp(join(tmpdir(), "axiom-active-phase-"));
+  const sessions = new Sessions(factory, undefined, join(root, "storage"));
+  try {
+    const id = await sessions.create();
+    const item = sessions.get(id);
+    for (const status of ["wrapping", "stopping", "summarizing"]) {
+      item.tasks.jobs.set("phase-test", { id: "phase-test", status, done: Promise.resolve(), notified: true });
+      assert.equal(sessions.list().find(session => session.id === id).status, "running", status);
+      await assert.rejects(sessions.duplicate(id), /运行|空闲|停止/);
+      item.tasks.jobs.delete("phase-test");
+    }
+  } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test("completion is persisted, batched after parent settles, and credentials survive reload", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-notify-"));
   const { factory, mains, children } = factoryFixture();

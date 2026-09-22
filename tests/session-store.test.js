@@ -177,6 +177,29 @@ test("listPendingSessionIds 查 notified 列，含 notified 缺失的旧任务",
     assert.deepEqual(store.listPendingSessionIds(), []);
   }));
 
+test("notified 聚合保留历史待通知，纯 patch 不重写正文，确认后跨重开保持", () => withStore((store, db) => {
+  store.insertSession({ id: "s1", cwd: "F:/x" });
+  store.saveTask("s1", { id: "t1", status: "completed", resultId: "r2", notified: true,
+    previousResults: { r1: { id: "t1", resultId: "r1", text: "第一次", notified: false } } });
+  assert.deepEqual(store.listPendingSessionIds(), ["s1"]);
+  const before = db.prepare("SELECT record FROM tasks WHERE session_id = 's1' AND id = 't1'").get().record;
+  store.saveTask("s1", { id: "t1", notified: true });
+  assert.deepEqual(store.listPendingSessionIds(), ["s1"]);
+  assert.equal(db.prepare("SELECT record FROM tasks WHERE session_id = 's1' AND id = 't1'").get().record, before);
+  let reopened = new Database(db.path);
+  try { assert.deepEqual(new SessionStore(reopened).listPendingSessionIds(), ["s1"]); }
+  finally { reopened.close(); }
+  store.saveTask("s1", { id: "t1", notified: true,
+    previousResults: { r1: { id: "t1", resultId: "r1", text: "第一次", notified: true } } });
+  assert.deepEqual(store.listPendingSessionIds(), []);
+  reopened = new Database(db.path);
+  try {
+    const store2 = new SessionStore(reopened);
+    assert.deepEqual(store2.listPendingSessionIds(), []);
+    assert.equal(store2.listTasks("s1")[0].previousResults.r1.notified, true);
+  } finally { reopened.close(); }
+}));
+
 test("change 包多实体全有或全无；嵌套内层回滚不影响外层", () =>
   withStore((store) => {
     store.insertSession({ id: "s1", cwd: "F:/x" });

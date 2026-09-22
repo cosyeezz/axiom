@@ -54,7 +54,7 @@ export const GOAL_MAX_SEGMENTS = 64;
 const SUMMARY_MAX = 500;
 // 目标工具/提问工具的结果不能作为验收证据（否则模型用自报工具自证）。
 const NON_EVIDENCE_TOOLS = new Set(["goal_plan", "goal_evidence", "goal_block", "goal_progress", "question", "delegate", "append", "cancel_task"]);
-const ACTIVE_TASKS = new Set(["starting", "running"]);
+const ACTIVE_TASKS = new Set(["starting", "running", "wrapping", "stopping", "summarizing"]);
 
 const messageText = (message) =>
   (message?.content ?? []).filter((block) => block.type === "text").map((block) => block.text).join("\n");

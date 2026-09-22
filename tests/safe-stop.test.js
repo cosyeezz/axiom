@@ -23,7 +23,7 @@ test("safe stop ends the run at a turn boundary: tools finish, output is kept, r
       import { join } from 'node:path';
       import { createPiFactory } from './src/pi.js';
 
-      const requests = [];
+      const requests = [], requestTools = [];
       let n = 0;
       const script = [];
       const usage = { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 };
@@ -32,6 +32,7 @@ test("safe stop ends the run at a turn boundary: tools finish, output is kept, r
         req.on('data', (chunk) => { body += chunk; });
         req.on('end', () => {
           requests.push(JSON.parse(body).messages);
+          requestTools.push(JSON.parse(body).tools || []);
           const step = script[n]; n += 1;
           res.writeHead(200, { 'content-type': 'text/event-stream' });
           const chunks = [];
@@ -116,6 +117,30 @@ test("safe stop ends the run at a turn boundary: tools finish, output is kept, r
             resumableAfterResume: agent.resumable(),
             pendingAfterResume: agent.safeStopPending(),
           }));
+          // 停止后总结只看历史，不向模型暴露任何工具；结束后恢复工具集。
+          script.push({ text: '已停止，现有成果仅供核实。' });
+          const summary = await agent.summarize('仅总结已有历史，不调用工具。');
+          assert.match(summary, /已停止/);
+          assert.equal(requestTools.at(-1).length, 0);
+          script.push({ text: '新问题已回答' });
+          await agent.prompt('新的独立问题');
+          assert.ok(requestTools.at(-1).some(tool => tool.function.name === 'mark'));
+          // 真实命令经过 start → policy → tool_result → end；不是只测手工调用 hook。
+          const toolEvents = [];
+          const unsubscribe = agent.subscribe(event => { if (event.type === 'tool.state') toolEvents.push(event.data); });
+          script.push({ tool: 'bash', args: { command: 'echo policy-default' } }, { text: 'default complete' });
+          await agent.prompt('运行短命令');
+          const defaultPolicy = toolEvents.find(event => event.phase === 'policy' && event.timeoutSource === 'default');
+          assert.equal(defaultPolicy.timeoutSeconds, 180);
+          assert.ok(toolEvents.some(event => event.phase === 'end' && event.toolCallId === defaultPolicy.toolCallId && event.elapsedMs >= 0));
+          script.push({ tool: 'bash', args: { command: 'node -e "setTimeout(()=>{},5000)"', timeout: 0.1 } }, { text: 'timeout handled' });
+          await agent.prompt('验证命令时限');
+          const timeoutResult = agent.historyEntries().map(entry => entry.message).findLast(message => message.role === 'toolResult');
+          assert.equal(timeoutResult.isError, true);
+          assert.equal(timeoutResult.details.execution.timedOut, true);
+          assert.match(JSON.stringify(timeoutResult.content), /Axiom 工具超时/);
+          assert.equal(agent.runtime().activeTools.length, 0);
+          unsubscribe();
         } finally {
           await agent.dispose();
         }

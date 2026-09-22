@@ -17,6 +17,11 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  * 未登记的文件会在 INDEX.md 里标 ⚠ 提醒补充。
  */
 const MODULE_INFO = {
+  "src/task-execution.js": "子任务活动阶段、独立时间预算、停止事实与总结提示",
+  "src/tool-execution.js": "命令默认超时策略、角色限制与工具耗时观察",
+  "tests/task-execution.test.js": "统一停止总结、硬截止、清理隔离与终态续接回归",
+  "tests/task-execution-ui.test.js": "任务停止模式与理由、重连耗时和执行预算表单回归",
+  "tests/tool-execution.test.js": "命令时限默认/显式/无限策略与超时反馈回归",
   "src/native-summary.js": "原生摘要请求、split-turn附加证据提示与只读流观察",
   "src/compaction-excerpt.js": "内联原文逐字匹配、消息ID替换与Unicode关键词窗口",
   "public/compaction-view.js": "压缩尝试详情、完整输出及安全Markdown与原文切换",

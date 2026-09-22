@@ -409,10 +409,10 @@ test("child task cancellation also survives a pending thinking-only frame", asyn
     w.event({ sessionId: "activity", type: "task.state", taskId: task.id, data: { ...task, status: "cancelled" } });
     const line = w.document.querySelector("#task-child .thinking-record .activity-line");
     assert.equal(line.dataset.state, "stopped");
-    assert.equal(line.querySelector(".activity-label").textContent, "thinking · 已取消");
+    assert.equal(line.querySelector(".activity-label").textContent, "thinking · 已停止并交付");
     paint();
     assert.equal(line.dataset.state, "stopped", "子任务挂起帧不得把已取消摘要改回 done");
-    assert.equal(line.querySelector(".activity-label").textContent, "thinking · 已取消");
+    assert.equal(line.querySelector(".activity-label").textContent, "thinking · 已停止并交付");
   } finally { dom.window.close(); }
 });
 
@@ -483,7 +483,7 @@ test("live activity tracks thinking, tool completion, errors, cancellation and s
     assert.equal(record.querySelector(".activity-label").textContent, "edit");
     assert.equal(record.querySelector(".tool-target").textContent, "app.js");
     assert.equal(record.querySelector(".tool-activity").dataset.state, "done", "completed tools settle into the done state");
-    assert.equal(record.querySelector(".tool-status").textContent, "", "completed tools show no status text");
+    assert.match(record.querySelector(".tool-status").textContent, /\d+s/, "completed tools retain execution time");
     const selector = record.querySelector('select[aria-label="代码对比展示方式"]');
     selector.value = "split";
     selector.dispatchEvent(new w.Event("change"));

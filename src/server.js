@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { createSender } from "./transport.js";
 import { WebSocketServer, WebSocket } from "ws";
 import { command } from "./protocol.js";
+import { ACTIVE_TASK_STATES } from "./task-execution.js";
 import { createModelAuthService } from "./model-auth.js";
 
 // 开发模式下前端资源按 mtime 惰性重读（改完刷新页面即可，不必重启服务）；
@@ -89,7 +90,7 @@ export function createServerApp(sessions, service = {}) {
   const hasActiveWork = () => sessions.list().some((item) => item.status !== "idle") ||
     [...(sessions.items?.values() || [])].some((item) => item.configuring || item.loading ||
       item.notifying || item.goalScheduled || item.notificationScheduled ||
-      [...(item.tasks?.jobs.values() || [])].some((task) => ["starting", "running"].includes(task.status)));
+      [...(item.tasks?.jobs.values() || [])].some((task) => ACTIVE_TASK_STATES.includes(task.status)));
   const handleRequest = (req, res, isLocal) => {
     if (req.url === "/service/stop") {
       if (!isLocal) {
@@ -469,6 +470,9 @@ export function createServerApp(sessions, service = {}) {
               break;
             case "session.retry":
               data = { runId: await sessions.retry(request.sessionId) };
+              break;
+            case "task.cancel":
+              data = await sessions.cancelTask(request.sessionId, request.taskId, { mode: request.mode, reason: request.reason });
               break;
             case "task.retry":
               data = await sessions.retryTask(request.sessionId, request.taskId);

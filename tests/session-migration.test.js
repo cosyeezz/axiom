@@ -242,20 +242,20 @@ test("全局轮次预算：默认 20/2，configure 校验后持久化，重启�
   let sessions;
   try {
     sessions = new Sessions(factory, join(dir, "defaults.json"));
-    assert.deepEqual(sessions.getTaskBudget(), { maxTurns: 20, wrapUpWindow: 2 });
+    assert.deepEqual(sessions.getTaskBudget(), { maxTurns: 20, wrapUpWindow: 2, workSeconds: 600, wrapUpSeconds: 180, summarySeconds: 60 });
     const saved = sessions.configureTaskBudget({ maxTurns: 50, wrapUpWindow: 5 });
-    assert.deepEqual(saved, { maxTurns: 50, wrapUpWindow: 5 });
+    assert.deepEqual(saved, { maxTurns: 50, wrapUpWindow: 5, workSeconds: 600, wrapUpSeconds: 180, summarySeconds: 60 });
     // 越界值抛给调用方，内存与库都不更新
     assert.throws(() => sessions.configureTaskBudget({ maxTurns: 2, wrapUpWindow: 5 }));
     assert.throws(() => sessions.configureTaskBudget({ maxTurns: 201, wrapUpWindow: 5 }));
     assert.throws(() => sessions.configureTaskBudget({ maxTurns: 50, wrapUpWindow: 0 }));
     assert.throws(() => sessions.configureTaskBudget({ maxTurns: 50, wrapUpWindow: 11 }));
-    assert.deepEqual(sessions.getTaskBudget(), { maxTurns: 50, wrapUpWindow: 5 });
+    assert.deepEqual(sessions.getTaskBudget(), { maxTurns: 50, wrapUpWindow: 5, workSeconds: 600, wrapUpSeconds: 180, summarySeconds: 60 });
     await sessions.close();
 
     // 重启后恢复最新全局设置
     sessions = new Sessions(factory, join(dir, "defaults.json"));
-    assert.deepEqual(sessions.getTaskBudget(), { maxTurns: 50, wrapUpWindow: 5 });
+    assert.deepEqual(sessions.getTaskBudget(), { maxTurns: 50, wrapUpWindow: 5, workSeconds: 600, wrapUpSeconds: 180, summarySeconds: 60 });
     await sessions.close();
 
     // 库记录损坏：警告并回退默认，不阻断启动
@@ -272,7 +272,7 @@ test("全局轮次预算：默认 20/2，configure 校验后持久化，重启�
       console.warn = original;
     }
     assert.ok(warnings.some((message) => message.includes("轮次预算读取失败")));
-    assert.deepEqual(sessions.getTaskBudget(), { maxTurns: 20, wrapUpWindow: 2 });
+    assert.deepEqual(sessions.getTaskBudget(), { maxTurns: 20, wrapUpWindow: 2, workSeconds: 600, wrapUpSeconds: 180, summarySeconds: 60 });
     await sessions.close();
   } finally {
     await sessions?.close();

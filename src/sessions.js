@@ -13,6 +13,7 @@ import { basename, dirname, join, relative, isAbsolute, resolve, sep, parse } fr
 import { selection as selectionSchema, taskBudget as taskBudgetSchema, compaction as compactionSchema, compactionDefaults, resolveCompaction, assertPromptImages } from "./protocol.js";
 import { taskBudgetDefaults } from "./task-budget.js";
 import { Tasks } from "./tasks.js";
+import { ACTIVE_TASK_STATES } from "./task-execution.js";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { delegationTools } from "./tools.js";
 import { createQuestions } from "./questions.js";
@@ -25,7 +26,7 @@ import { stripGoalMarkers } from "../public/goal-markers.js";
 // Goal 模式挂载的四个工具：普通会话初始即停用，退出 Goal 时统一停用。
 const GOAL_TOOL_NAMES = ["goal_plan", "goal_evidence", "goal_block", "goal_progress"];
 // 在飞子任务：状态在跑且真有运行 promise（恢复时被暂停的 starting 没有 done，不算在飞）。
-const hasRunningTasks = (item) => [...item.tasks.jobs.values()].some((job) => ["starting", "running"].includes(job.status) && job.done);
+const hasRunningTasks = (item) => [...item.tasks.jobs.values()].some((job) => ACTIVE_TASK_STATES.includes(job.status) && job.done);
 
 // 消息引用到的工具调用身份（toolCall 块与 toolResult 的 toolCallId）。
 const referencedToolKeys = (records) => {
@@ -265,7 +266,7 @@ async function searchEntries(root, base, { needle, directoriesOnly, limit }) {
 // 侧栏绿点口径：主运行中，或主代理空闲但仍有子任务在跑。
 function pointStatus(item) {
   if (item.status !== "idle") return item.status;
-  return [...item.tasks.jobs.values()].some((job) => ["starting", "running"].includes(job.status)) ? "running" : "idle";
+  return [...item.tasks.jobs.values()].some((job) => ACTIVE_TASK_STATES.includes(job.status)) ? "running" : "idle";
 }
 
 // 任务用时即会话执行中的累计时长：进入 running 开始计，离开 running 结算，再次 running 继续累加。
@@ -549,7 +550,7 @@ export class Sessions {
   // 无库实例时明确报错：读侧有空库判断，写侧也必须有，不能靠 TypeError 暴露。
   configureTaskBudget(value) {
     if (!this.database) throw new Error("未启用轮次预算持久化");
-    const next = taskBudgetSchema.parse(value);
+    const next = taskBudgetSchema.parse({ ...taskBudgetDefaults, ...this.taskBudget, ...value });
     this.database.set("settings", "taskBudget", next);
     this.taskBudget = next;
     return structuredClone(next);
@@ -917,9 +918,9 @@ export class Sessions {
     if (this.get(id).loading) await this.get(id).loading;
     const item = this.get(id);
     if (item.closing) throw new Error("Session is closing");
+    if (pointStatus(item) !== "idle") throw new Error("会话正在运行，请等任务结束或停止后再复制");
     const file = landedSessionFile(item);
     if (!file) throw new Error("会话还没有历史文件，发送首条消息后再复制");
-    if (pointStatus(item) !== "idle") throw new Error("会话正在运行，请等任务结束或停止后再复制");
     // 先冲刷内存里的最新状态到库（标题/时间/累计用时等，失败按原语义上抛，不做降级复制）。
     await this.persist(item);
     const saved = this.store.getSession(id);
@@ -948,9 +949,11 @@ export class Sessions {
       } else delete record.sessionFile;
       // 副本不接管未完成的子任务；通知也一律视为已消费：用户在源会话已看过结果，
       // 副本重启后不该再自动唤醒一轮通知（与 goal 退出的 notified 归一口径一致）。
-      if (["starting", "running"].includes(record.status))
+      if (ACTIVE_TASK_STATES.includes(record.status))
         Object.assign(record, { status: "cancelled", error: "副本不接管未完成的子任务" });
       record.notified = true;
+      if (record.previousResults) record.previousResults = Object.fromEntries(
+        Object.entries(record.previousResults).map(([key, result]) => [key, { ...result, notified: true }]));
       tasks.push(record);
     }
     return this.create(cwd, saved?.selection ?? {}, {
@@ -1007,7 +1010,7 @@ export class Sessions {
       titlePending: false,
       // 轮次预算随会话创建定死：新会话取当前全局值（保存后新建即生效），运行中不热更；
       // 恢复的会话从 selection 读回创建时的预算，全局值后来改了也不追认。
-      taskBudget: structuredClone(selection.taskBudget ?? this.taskBudget),
+      taskBudget: taskBudgetSchema.parse({ ...taskBudgetDefaults, ...(selection.taskBudget ?? this.taskBudget) }),
       // 老记录无 createdAt，回退 updatedAt 兜底（历史文件未存创建时间，无法还原真实值）。
       createdAt: saved?.createdAt || saved?.updatedAt || Date.now(),
       updatedAt: saved?.updatedAt || Date.now(),
@@ -1192,10 +1195,12 @@ export class Sessions {
         this.scheduleTaskNotifications(item);
         this.scheduleGoal(item);
       },
+      { workMs: item.taskBudget.workSeconds * 1000, wrapUpMs: item.taskBudget.wrapUpSeconds * 1000,
+        summaryMs: item.taskBudget.summarySeconds * 1000 },
     );
     for (const task of saved?.tasks || []) {
-      const interrupted = ["starting", "running"].includes(task.status);
-      const resumable = interrupted && (!!task.sessionFile || task.persistenceVersion === 1);
+      const interrupted = ACTIVE_TASK_STATES.includes(task.status);
+      const resumable = interrupted && (!!task.sessionFile || task.persistenceVersion >= 1);
       item.tasks.jobs.set(task.id, { ...task,
         status: resumable ? "starting" : interrupted ? "cancelled" : task.status,
         error: interrupted && !resumable ? "旧子任务没有持久化历史，无法恢复" : task.error,
@@ -1368,7 +1373,7 @@ export class Sessions {
     }
     this.items.set(id, item);
     for (const job of item.tasks.jobs.values())
-      if (job.status === "starting" && !this.goalNotificationsBlocked(item) && (job.sessionFile || job.persistenceVersion === 1)) job.done = item.tasks.run(job, true);
+      if (job.status === "starting" && !this.goalNotificationsBlocked(item) && (job.sessionFile || job.persistenceVersion >= 1)) job.done = item.tasks.run(job, true);
     this.scheduleTaskNotifications(item);
     return id;
   }
@@ -1385,6 +1390,11 @@ export class Sessions {
       // 只消费通知不删结果：任务记录、resultId 与正文照旧保留，用户仍可查看或 read_result。
       // 顺序先于删目标：中途崩溃时目标还在（暂停态），不会出现无目标 + 未通知的自动唤醒窗口。
       for (const job of item.tasks.jobs.values()) {
+        if (Object.values(job.previousResults || {}).some(result => result.resultId && !result.notified)) {
+          const previousResults = Object.fromEntries(Object.entries(job.previousResults).map(([key, result]) => [key, { ...result, notified: true }]));
+          await this.persist(item, { task: { id: job.id, previousResults, notified: job.notified } });
+          job.previousResults = previousResults;
+        }
         if (!job.resultId || job.notified) continue;
         // 先落库再改内存：反了的话落库失败会留下「内存已通知、库里还是 0」，
         // 本进程不再补发而重启又通知一遍。
@@ -1491,8 +1501,7 @@ export class Sessions {
 
   async deliverTaskNotifications(item) {
     if (item.compacting || item.notifying || item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item) || item.configuring) return;
-    const jobs = [...item.tasks.jobs.values()].filter((job) => job.resultId && !job.notified)
-      .map(({ id, resultId, status }) => ({ id, resultId, status }));
+    const jobs = item.tasks.pendingNotifications().map(({ id, resultId, status }) => ({ id, resultId, status }));
     if (!jobs.length) return;
     const text = "[Axiom 子任务完成通知] 以下任务已结束。使用各自的 taskId 和 resultId 调用 read_result 获取结果；不要轮询。\n" +
       JSON.stringify(jobs.map((job) => ({ taskId: job.id, resultId: job.resultId, status: job.status })));
@@ -1519,10 +1528,7 @@ export class Sessions {
       await item.work;
       if (item.notificationsPaused || item.closing) return;
       for (const job of jobs) {
-        const current = item.tasks.jobs.get(job.id);
-        if (current?.resultId !== job.resultId) continue;
-        await this.persist(item, { task: { id: job.id, notified: true } });
-        if (current.resultId === job.resultId) current.notified = true;
+        await this.confirmTaskNotification(item, job);
       }
     } finally {
       item.notifying = false;
@@ -1534,9 +1540,22 @@ export class Sessions {
   // running 通道注入的通知送达确认：消息已进历史（被模型消费、已落盘）才置 notified。不在历史
   // （被 clear_queue 误清或尚滞留队列）一律保持未通知，交 scheduleTaskNotifications 补投：通知文本
   // 幂等，read_result 靠 resultId 校验，重复投递无害。只在 run 收尾（status 回到 idle 后）调用。
+  async confirmTaskNotification(item, notice) {
+    const current = item.tasks.jobs.get(notice.id);
+    if (!current) return;
+    if (current.resultId === notice.resultId) {
+      await this.persist(item, { task: { id: notice.id, notified: true } });
+      if (current.resultId === notice.resultId) { current.notified = true; item.tasks.resumeQueued(current); }
+    } else if (current.previousResults?.[notice.resultId]) {
+      const previousResults = { ...current.previousResults,
+        [notice.resultId]: { ...current.previousResults[notice.resultId], notified: true } };
+      await this.persist(item, { task: { id: notice.id, previousResults, notified: current.notified } });
+      current.previousResults[notice.resultId].notified = true;
+    }
+  }
   async settleTaskNotifications(item) {
     if (item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item)) return;
-    const jobs = [...item.tasks.jobs.values()].filter((job) => job.resultId && !job.notified);
+    const jobs = item.tasks.pendingNotifications();
     if (!jobs.length) return;
     for (const job of jobs) {
       const delivered = item.messages.some((record) => {
@@ -1545,13 +1564,11 @@ export class Sessions {
         const content = record.message?.content;
         const text = typeof content === "string" ? content
           : Array.isArray(content) ? content.filter((b) => b?.type === "text").map((b) => b.text).join("\n") : "";
-        return text.includes(`"${job.id}"`);
+        return text.includes(`"${job.id}"`) && text.includes(`"${job.resultId}"`);
       });
       if (!delivered) continue;
-      await this.persist(item, { task: { id: job.id, notified: true } }).catch((error) =>
+      await this.confirmTaskNotification(item, job).catch((error) =>
         item.emit({ type: "error", data: { message: `通知确认落盘失败：${error.message}` } }));
-      const current = item.tasks.jobs.get(job.id);
-      if (current?.resultId === job.resultId) current.notified = true;
     }
   }
 
@@ -2104,6 +2121,15 @@ export class Sessions {
       }
     })();
     return item.cancelling;
+  }
+  async cancelTask(id, taskId, options = {}) {
+    const item = await this.ensureLoaded(id);
+    if (item.closing) throw new Error("会话正在关闭");
+    item.notificationsPaused = false;
+    item.goalExited = false;
+    const result = await item.tasks.cancelTask(taskId, { ...options, source: "user" });
+    this.scheduleTaskNotifications(item);
+    return result;
   }
   async retryTask(id, taskId) {
     const item = await this.ensureLoaded(id);

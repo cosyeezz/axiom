@@ -77,7 +77,7 @@ const goalUI = typeof createGoalUI === "function"
   : { show() {}, setConnected() {}, anchors() {} };
 const compactionDefaults = { enabled: true, tokenThreshold: 100000, percentThreshold: 50, model: null, thinking: "off", keepRecentTokens: 5000, syncKeepRecentTokens: 20000, asyncKeepRecentTokens: 5000 };
 // 子代理轮次预算默认值，与 src/task-budget.js 的 taskBudgetDefaults 保持一致。
-const taskBudgetDefaults = { maxTurns: 20, wrapUpWindow: 2 };
+const taskBudgetDefaults = { maxTurns: 20, wrapUpWindow: 2, workSeconds: 600, wrapUpSeconds: 180, summarySeconds: 60 };
 // 有效思考等级：只展示目标模型真正支持的等级（目录条目的 levels 由 SDK 的
 // getSupportedThinkingLevels 派生）。找不到模型时退回当前会话主模型的等级，
 // 再退到 ["off"]——绝不展示一份写死的「全部等级」，否则界面会给出模型根本不支持的选项。
@@ -910,7 +910,8 @@ async function configure(thinking, source = "composer") {
   }
 }
 // 摘要记忆参数：设置页「默认新会话设置」独立小节，get 填充、change 即存（服务端持久化并校验边界）。
-const taskBudgetInputs = ["task-max-turns", "task-wrap-up-window"];
+const taskBudgetFields = [["task-max-turns", "maxTurns"], ["task-wrap-up-window", "wrapUpWindow"], ["task-work-seconds", "workSeconds"], ["task-wrap-up-seconds", "wrapUpSeconds"], ["task-summary-seconds", "summarySeconds"]];
+const taskBudgetInputs = taskBudgetFields.map(([id]) => id);
 let settingsGeneration = 0;
 let budgetRequest = 0, remoteRequest = 0;
 const settingsTicket = () => {
@@ -928,8 +929,7 @@ async function loadTaskBudget() {
   try {
     const budget = await request("task.budget.get");
     if (!current() || ticket !== budgetRequest) return;
-    $("task-max-turns").value = budget.maxTurns ?? taskBudgetDefaults.maxTurns;
-    $("task-wrap-up-window").value = budget.wrapUpWindow ?? taskBudgetDefaults.wrapUpWindow;
+    for (const [id, key] of taskBudgetFields) $(id).value = budget[key] ?? taskBudgetDefaults[key];
   } catch (e) {
     if (current() && ticket === budgetRequest) $("settings-feedback").textContent = `轮次预算加载失败：${e.message}`;
   }
@@ -938,13 +938,11 @@ async function saveTaskBudget() {
   const current = settingsTicket(), ticket = ++budgetRequest;
   try {
     const budget = await request("task.budget.configure", { budget: Object.fromEntries(
-      [["task-max-turns", "maxTurns"], ["task-wrap-up-window", "wrapUpWindow"]]
-        .map(([id, key]) => [key, Number($(id).value)]),
+      taskBudgetFields.map(([id, key]) => [key, Number($(id).value)]),
     ) });
     if (!current() || ticket !== budgetRequest) return;
-    $("task-max-turns").value = budget.maxTurns;
-    $("task-wrap-up-window").value = budget.wrapUpWindow;
-    $("settings-feedback").textContent = "轮次预算已保存 · 新建任务生效";
+    for (const [id, key] of taskBudgetFields) $(id).value = budget[key] ?? taskBudgetDefaults[key];
+    $("settings-feedback").textContent = "子代理预算已保存 · 新建会话生效";
   } catch (e) {
     if (current() && ticket === budgetRequest) $("settings-feedback").textContent = `轮次预算保存失败：${e.message}`;
   }
@@ -1634,6 +1632,9 @@ function toolState(agentId, data) {
     toolItems.set(key, tool);
     if (item) updateActivity(item);
   }
+  for (const field of ["startedAt", "endedAt", "elapsedMs", "timeoutSeconds", "timeoutSource"]) if (Object.hasOwn(data, field)) tool[field] = data[field];
+  if (!tool.startedAt && data.phase === "start") tool.startedAt = Date.now();
+  if (!tool.endedAt && data.phase === "end" && tool.startedAt) tool.endedAt = Date.now();
   if (data.args) tool.args = data.args;
   if (data.result || data.partialResult) tool.result = data.result || data.partialResult;
   else if (data.content) tool.result = data;
@@ -1653,8 +1654,23 @@ function toolState(agentId, data) {
   target.title = fullDetail;
   const state = data.phase === "end" ? (data.isError ? "failed" : "done") : data.phase === "history" ? "stopped" : "running";
   setActivity(tool.node, { running: "", done: "", failed: "FAILED", stopped: "" }[state], state);
+  renderToolTiming(tool);
   renderToolDetail(tool);
   scrollLatest();
+}
+function renderToolTiming(tool) {
+  const status = tool.node.querySelector(".tool-status");
+  if (!status || !tool.startedAt) return;
+  const elapsed = tool.endedAt ? tool.elapsedMs ?? tool.endedAt - tool.startedAt : Date.now() - tool.startedAt;
+  const limit = tool.timeoutSource === "unlimited" ? " · 不限时" : tool.timeoutSeconds != null ? ` · 时限 ${timerText(tool.timeoutSeconds * 1000)}（${tool.timeoutSource === "default" ? "默认" : "显式"}）` : "";
+  status.textContent = `${tool.node.dataset.state === "failed" ? "FAILED · " : ""}${timerText(elapsed)}${limit}`;
+  status.title = status.textContent;
+}
+function renderSubtaskTiming(task) {
+  const data = task.execution;
+  if (!data?.startedAt || !task.timing) return;
+  const remaining = data.hardDeadline && !data.endedAt ? ` · 距工作硬截止 ${timerText(Math.max(0, data.hardDeadline - Date.now()))}` : "";
+  task.timing.textContent = `本次 ${timerText((data.endedAt || Date.now()) - data.startedAt)}${remaining} · 累计 ${timerText((data.totalElapsedMs || 0) + (data.endedAt ? 0 : Date.now() - data.startedAt))}`;
 }
 function card(title, task) {
   clearEmptyState();
@@ -2387,9 +2403,10 @@ function retryEditor(initial) {
     error: () => "",
   };
 }
+const ACTIVE_TASK_STATUSES = ["starting", "running", "wrapping", "stopping", "summarizing"];
 // 运行摘要复用 tasks map，点击定位原卡片，不复制详情渲染。
 function renderTaskRuns() {
-  const active = [...tasks.values()].filter((task) => ["starting", "running"].includes(task.trigger.dataset.status));
+  const active = [...tasks.values()].filter((task) => ACTIVE_TASK_STATUSES.includes(task.trigger.dataset.status));
   $("task-runs").replaceChildren(...active.map((task) => {
     const row = document.createElement("button");
     row.type = "button";
@@ -2608,7 +2625,7 @@ function applyEvent(message) {
   }
   if (type === "tool.state") {
     toolState(agentId, data);
-    if (data.phase === "end" && (agentId === "main" ? busy : tasks.get(agentId)?.node.dataset.status === "running")) waiting(agentId);
+    if (data.phase === "end" && (agentId === "main" ? busy : ACTIVE_TASK_STATUSES.includes(tasks.get(agentId)?.node.dataset.status))) waiting(agentId);
   }
   if (type === "agent.message.end" && data.message.role === "toolResult") {
     toolState(agentId, { ...data.message, phase: "end" });
@@ -2772,6 +2789,29 @@ function applyEvent(message) {
         }
       };
       task.failure.after(retryButton);
+      const controls = document.createElement("div");
+      controls.className = "task-stop-controls";
+      const reason = document.createElement("input");
+      reason.placeholder = "停止理由（可选）";
+      reason.setAttribute("aria-label", "子任务停止理由");
+      reason.maxLength = 4000;
+      controls.append(reason);
+      for (const [mode, label] of [["summary", "停止并总结"], ["immediate", "立即结束"]]) {
+        const button = document.createElement("button");
+        button.type = "button"; button.className = "secondary"; button.textContent = label;
+        button.onclick = async () => {
+          if (!connected || changing || sessionMissing || task.stopping) return;
+          task.stopping = true;
+          for (const control of controls.querySelectorAll("button")) control.disabled = true;
+          try { await request("task.cancel", { sessionId: taskSessionId, taskId: message.taskId, mode, reason: reason.value }); }
+          catch (e) { if (sessionId === taskSessionId) error(e); }
+          finally { task.stopping = false; for (const control of controls.querySelectorAll("button")) control.disabled = false; }
+        };
+        controls.append(button);
+      }
+      task.stopControls = controls;
+      task.timing = document.createElement("small"); task.timing.className = "task-execution-timing";
+      retryButton.after(task.timing, controls);
       trigger.onclick = () => {
         activeTask = task;
         node.showModal();
@@ -2801,7 +2841,10 @@ function applyEvent(message) {
     }
     const item = tasks.get(message.taskId);
     item.trigger.dataset.status = item.node.dataset.status = data.status;
-    const status = { starting: "启动中", running: "运行中", completed: "已完成", failed: "失败", cancelled: "已取消" }[data.status] || data.status;
+    const status = { starting: "启动中", running: "运行中", wrapping: "收尾中", stopping: "正在停止", summarizing: "停止后总结", completed: "已完成", failed: "失败", cancelled: "已停止并交付" }[data.status] || data.status;
+    item.execution = data;
+    item.stopControls.hidden = !["starting", "running", "wrapping"].includes(data.status);
+    renderSubtaskTiming(item);
     item.status.textContent = status;
     item.heading.textContent = `子代理 · ${status}`;
     item.title.textContent = item.trigger.title = data.task;
@@ -2813,7 +2856,7 @@ function applyEvent(message) {
     updateTaskRuntime(item, data.runtime);
     placeCompactedTasks();
     renderTaskRuns();
-    if (["starting", "running"].includes(data.status)) waiting(message.taskId);
+    if (ACTIVE_TASK_STATUSES.includes(data.status)) waiting(message.taskId);
     else stopActivity(message.taskId, status);
     scrollLatest();
   }
@@ -3070,7 +3113,7 @@ function finishSnapshot(job, ctx) {
   mergeThoughts($("output"));
   for (const [id, task] of tasks) {
     mergeThoughts(task.output);
-    if (!["starting", "running"].includes(task.node.dataset.status)) stopActivity(id, "已结束");
+    if (!ACTIVE_TASK_STATUSES.includes(task.node.dataset.status)) stopActivity(id, "已结束");
     else waiting(id);
   }
   if (state.status === "running") waiting("main");
@@ -3767,6 +3810,8 @@ setInterval(() => {
 // 运行中每秒重算显示；停止后不再重绘。减少动态效果只停动画，不停计时。
 setInterval(() => {
   if (allSessions.find((s) => s.id === sessionId)?.runningSince) renderTaskTimer();
+  for (const tool of toolItems.values()) if (tool.node.dataset.state === "running") renderToolTiming(tool);
+  for (const task of tasks.values()) if (!task.execution?.endedAt) renderSubtaskTiming(task);
 }, 1000);
 // 任务计时：绿点（会话执行中）累计时长，运行中每秒增长，停止后定格为累计值。
 function timerText(ms) {

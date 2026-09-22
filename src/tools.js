@@ -22,7 +22,7 @@ const result = (value) => ({
   content: [{ type: "text", text: JSON.stringify(value) }],
 });
 const cancelInput = z
-  .object({ taskId: z.string().trim().min(1) })
+  .object({ taskId: z.string().trim().min(1), mode: z.enum(["summary", "immediate"]).default("summary"), reason: z.string().max(4000).default("") })
   .strict();
 
 export function delegationTools(tasks) {
@@ -68,6 +68,7 @@ export function delegationTools(tasks) {
         const { context, tasks: requested } = delegateInput.parse(input);
         return result({
           taskIds: tasks.start(requested.map(({ task }) => task), context),
+          budget: tasks.options,
           note: "Subtasks are running in the background. Continue with work that does not depend on their results; when nothing remains, close the turn with a brief status — completion notifications arrive automatically.",
         });
       },
@@ -103,7 +104,7 @@ export function delegationTools(tasks) {
       name: "append",
       label: "Append",
       description:
-        "Send additional instructions to a running subtask started by delegate. Use steer to adjust the direction or requirements of its current work. Use followUp to queue instructions for execution after its current work finishes. Defaults to steer.",
+        "Send instructions to a subtask. Running tasks accept steer/followUp. Completed, failed or cancelled sessions can start a new execution from saved history. During stopping/summarizing instructions queue until the current execution ends. Do not use repeated continue requests to evade budgets; use prior results and narrow remaining scope.",
       parameters: {
         type: "object",
         properties: {
@@ -138,16 +139,16 @@ export function delegationTools(tasks) {
       name: "cancel_task",
       label: "Cancel task",
       description:
-        "Cancel one subtask by taskId. Only that subtask stops; sibling tasks keep running. Side effects it already produced are not rolled back. Its usual completion notification still arrives and its result stays readable with read_result then; if cleanup fails the final status is failed, so report the status you get back. Cancelling an already ended task is a no-op that returns its final state.",
+        "Stop one subtask through the same mechanism as user cancellation and budget expiry. Default summary stops work then asks the same session for a bounded tool-free summary; immediate skips model summary but still delivers a system report. Reason is passed to the summary and parent. Wait for the usual completion notification and read_result; no intermediate result is delivered. Siblings keep running; side effects are not rolled back. Already ended tasks are unchanged.",
       parameters: {
         type: "object",
-        properties: { taskId: { type: "string", minLength: 1 } },
+        properties: { taskId: { type: "string", minLength: 1 }, mode: { type: "string", enum: ["summary", "immediate"], default: "summary" }, reason: { type: "string", maxLength: 4000 } },
         required: ["taskId"],
         additionalProperties: false,
       },
       async execute(_id, input) {
-        const { taskId } = cancelInput.parse(input);
-        const { id, status } = await tasks.cancelTask(taskId);
+        const { taskId, mode, reason } = cancelInput.parse(input);
+        const { id, status } = await tasks.cancelTask(taskId, { source: "agent", mode, reason });
         // 只回执状态：完整结果与 text 必须经完成通知的 resultId 走 read_result。
         return result({ taskId: id, status });
       },

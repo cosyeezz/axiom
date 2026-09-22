@@ -15,10 +15,10 @@ test("policy：主代理 null，子代理按 item.taskBudget 定死（缺省回�
   const item = { taskBudget: { maxTurns: 50, wrapUpWindow: 5 }, emit: () => {} };
   const child = memoryHooks(item, () => {}, { id: "child", status: "running" });
   assert.equal(child.role, "subagent");
-  assert.deepEqual(child.policy, { maxTurns: 50, wrapUpWindow: 5, wrapUpAt: 45 });
+  assert.deepEqual(child.policy, { maxTurns: 50, wrapUpWindow: 5, wrapUpAt: 45, workSeconds: 600, wrapUpSeconds: 180, summarySeconds: 60 });
   // 无配置回默认：20 轮、窗口 2
   const fresh = memoryHooks({ emit: () => {} }, () => {}, { id: "child", status: "running" });
-  assert.deepEqual(fresh.policy, { maxTurns: 20, wrapUpWindow: 2, wrapUpAt: 18 });
+  assert.deepEqual(fresh.policy, { maxTurns: 20, wrapUpWindow: 2, wrapUpAt: 18, workSeconds: 600, wrapUpSeconds: 180, summarySeconds: 60 });
   // 非法配置直接报错（早于任何模型请求）
   assert.throws(() => memoryHooks({ taskBudget: { maxTurns: 1 }, emit: () => {} }, () => {}, { id: "c", status: "running" }), /须为 3-200 的整数/);
   assert.throws(() => memoryHooks({ taskBudget: { maxTurns: 20, wrapUpWindow: 99 }, emit: () => {} }, () => {}, { id: "c", status: "running" }), /须为 1-10 的整数/);

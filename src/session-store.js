@@ -270,6 +270,12 @@ export class SessionStore {
     );
   }
 
+  // 列保存全部执行的聚合通知状态，保留原部分索引；恢复时允许保守重复投递，不能漏结果。
+  #allNotified(notified, previousResults) {
+    if (Object.values(previousResults || {}).some(result => result?.resultId && !result.notified)) return 0;
+    return notified == null ? null : notified ? 1 : 0;
+  }
+
   #insertTaskRow(sessionId, task) {
     // memoryTurn/progress/progressDelivered 是旧 JSON 里的死字段（机制已删），在此丢掉，不随导入进新 record。
     const { id, notified, memoryTurn, progress, progressDelivered, ...record } = task;
@@ -277,7 +283,7 @@ export class SessionStore {
     this.#sql("INSERT INTO tasks (session_id, id, notified, record) VALUES (?, ?, ?, ?)").run(
       sessionId,
       id,
-      notified == null ? null : notified ? 1 : 0,
+      this.#allNotified(notified, record.previousResults),
       JSON.stringify(record),
     );
   }
@@ -451,8 +457,12 @@ export class SessionStore {
     if (typeof task?.id !== "string" || !task.id) throw new Error("saveTask：任务缺少 id");
     const { id, notified, ...content } = task;
     if (Object.keys(content).length === 0) {
+      if (notified === undefined) return;
+      const row = this.#sql("SELECT record FROM tasks WHERE session_id = ? AND id = ?").get(sessionId, id);
+      if (!row) return;
+      const record = this.#parse("tasks", sessionId, id, row.record);
       this.#sql("UPDATE tasks SET notified = COALESCE(?, notified) WHERE session_id = ? AND id = ?").run(
-        notified === undefined ? null : notified ? 1 : 0,
+        this.#allNotified(notified, record.previousResults),
         sessionId,
         id,
       );
@@ -465,7 +475,7 @@ export class SessionStore {
     ).run(
       sessionId,
       id,
-      notified !== undefined ? (notified ? 1 : 0) : row?.notified ?? null,
+      this.#allNotified(notified !== undefined ? notified : row?.notified, merged.previousResults),
       JSON.stringify(merged),
     );
   }

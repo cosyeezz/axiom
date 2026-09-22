@@ -69,7 +69,9 @@ scripts/autostart.mjs  Windows/macOS/Linux 用户登录自动启动注册
   │    ├─ goal.js       会话级目标状态/轮次/验收门（Sessions 外层调度，共用 Pi 执行）
   │    ├─ questions.js 主代理提问等待、答案校验、快照与取消
   │    └─ Tasks ── delegationTools（tools.js，注册给 pi 的委托工具）
+  │         └─ task-execution.js  执行预算、统一停止阶段与事实交付
   └─ pi.js createPiFactory → pi-coding-agent SDK（原生队列 + SessionManager JSONL）
+       ├─ tool-execution.js 命令默认时限、角色约束与耗时事件（不包装execute）
        ├─ capabilities.js  模型/子代理/技能发现与解析
        │    └─ inline-images.js  模型请求副本按正文占位交错排列图片
        └─ compaction.js    后台摘要 + 原生 turn 安全提交，保留检查点后的消息

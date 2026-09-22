@@ -422,7 +422,7 @@ test("跨重启读回：会话元数据、任务、事件三类原样恢复，�
     const saved = sessions.store.getSession(id);
     // 库里保留崩溃瞬间的起点：它是「上次异常退出时正在运行」的唯一证据，读回内存反而会重复累加。
     assert.equal(saved.runningSince, 999);
-    assert.deepEqual(saved.selection.taskBudget, { maxTurns: 30, wrapUpWindow: 3 });
+    assert.deepEqual(saved.selection.taskBudget, { maxTurns: 30, wrapUpWindow: 3, workSeconds: 600, wrapUpSeconds: 180, summarySeconds: 60 });
     assert.deepEqual(sessions.store.listTasks(id), [child], "任务大字段（runtime/parentContext）跨重启原样读回");
     assert.deepEqual(saved.retries, [
       { id: "r1", agentId: "main", status: "failed", attempt: 2, error: "boom" },
@@ -431,7 +431,7 @@ test("跨重启读回：会话元数据、任务、事件三类原样恢复，�
     assert.deepEqual(saved.compactions, [{ id: "c1", summary: "摘要", title: "压缩标题" }]);
 
     const opened = await sessions.ensureLoaded(id);
-    assert.deepEqual(opened.taskBudget, { maxTurns: 30, wrapUpWindow: 3 }, "全局预算已改成 5 轮，旧会话仍用创建时的预算");
+    assert.deepEqual(opened.taskBudget, { maxTurns: 30, wrapUpWindow: 3, workSeconds: 600, wrapUpSeconds: 180, summarySeconds: 60 }, "全局预算已改成 5 轮，旧会话仍用创建时的预算");
     assert.equal(opened.elapsedMs, 4200);
     assert.deepEqual(opened.retries, saved.retries);
     assert.deepEqual(opened.compactions, saved.compactions);
@@ -439,7 +439,7 @@ test("跨重启读回：会话元数据、任务、事件三类原样恢复，�
       records: 0, unpriced: 0, groups: [],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     } } };
-    assert.deepEqual(opened.tasks.snapshot(), [{ ...restoredChild, error: undefined }], "恢复字段并从任务历史重建账单");
+    assert.deepEqual(JSON.parse(JSON.stringify(opened.tasks.snapshot())), [restoredChild], "恢复字段并从任务历史重建账单，旧记录不虚构执行时间");
     assert.deepEqual(sessions.store.listTasks(id), [restoredChild], "恢复对账重写任务不得丢字段");
     await sessions.close();
 

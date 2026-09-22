@@ -123,7 +123,7 @@ test("轮次预算设置：task.budget.get 填充面板，change 即存并回显
     w.document.getElementById("task-max-turns").dispatchEvent(new w.Event("change"));
     await new Promise((resolve) => setTimeout(resolve, 0));
     const configure = w.__rpc.find(([type]) => type === "task.budget.configure");
-    assert.deepEqual(JSON.parse(JSON.stringify(configure[1])), { budget: { maxTurns: 50, wrapUpWindow: 3 } });
+    assert.deepEqual(JSON.parse(JSON.stringify(configure[1])), { budget: { maxTurns: 50, wrapUpWindow: 3, workSeconds: 600, wrapUpSeconds: 180, summarySeconds: 60 } });
     assert.equal(value("task-max-turns"), "50");
     assert.match(w.document.getElementById("settings-feedback").textContent, /已保存/);
     assert.ok(w.__rpc.some(([type]) => type === "task.budget.get"));

@@ -1727,8 +1727,12 @@ textarea {
 .call-list { padding-left: 20px; }
 .call-list .message.activity-only { margin: 0; }
 .call-list .tool-record[open] > summary, .call-list .thinking-record[open] > summary { top: var(--call-row-height); }
-.call-list .tool-status:not(:empty) { display: none; }
-.tool-activity:not([data-state="failed"]) .tool-status { display: none; }
+.tool-status:not(:empty) { display: flex; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.task-execution-timing { display: block; color: var(--muted); font-variant-numeric: tabular-nums; margin-block: 8px; }
+.task-stop-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-block: 8px; }
+.task-stop-controls[hidden] { display: none; }
+.task-stop-controls input { flex: 1 1 200px; min-width: 0; }
+.task-stop-controls button { color: var(--danger); }
 .tool-activity[data-state="failed"] :is(.activity-icon, .activity-label, .tool-target, .tool-status) { color: var(--danger); }
 .call-list .tool-activity[data-state="failed"] .tool-status { display: flex; }
 @keyframes call-roll { from { transform: translateY(100%); } to { transform: translateY(0); } }

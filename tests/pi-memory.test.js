@@ -142,7 +142,7 @@ test("memory hooks order, per-request context, run-long title and wrap-up budget
         // —— 子代理（wrapUpAt 2）：前两次请求不注入，第 3 次起每轮注入（无去重、无硬停） ——
         // policy 建会话捕获一次，逐请求不重读；系统提示词含轮次预算原文（按该 policy 定死）。
         const policy = taskBudgetPolicy('subagent', { maxTurns: 5, wrapUpWindow: 3 });
-        assert.deepEqual(policy, { maxTurns: 5, wrapUpWindow: 3, wrapUpAt: 2 });
+        assert.deepEqual(policy, { maxTurns: 5, wrapUpWindow: 3, wrapUpAt: 2, workSeconds: 600, wrapUpSeconds: 180, summarySeconds: 60 });
         const subMemory = {
           role: 'subagent',
           policy,

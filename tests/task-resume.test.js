@@ -60,7 +60,7 @@ test("snapshotJob persists sessionFile/historySaved/persistenceVersion before pr
     const first = events.find((event) => event.type === "task.state" && event.data.status === "running");
     assert.equal(first.saved.sessionFile, file);
     const saved = tasks.snapshotJob(tasks.jobs.get(id));
-    assert.equal(saved.persistenceVersion, 1);
+    assert.equal(saved.persistenceVersion, 2);
     assert.equal(saved.sessionFile, file);
     assert.equal(saved.historySaved, true, "agent.message.end 落盘后 historySaved 置真");
     assert.equal(saved.canRetry, false, "completed 任务不提供重试");
@@ -79,7 +79,7 @@ test("run(job,true) resumes via agent.resume when history exists and resumable",
   assert.equal(tasks.jobs.get("t1").status, "completed");
   assert.equal(agents[0].resumed, 1);
   assert.equal(tasks.jobs.get("t1").text, "续跑完成", "resume 后经 result() 取结果");
-  assert.throws(() => tasks.read("t1", "old-result"), /不要轮询/, "旧 resultId 已作废");
+  assert.equal(tasks.read("t1", "old-result").id, "t1", "旧执行凭证仍可读，不与本次执行混淆");
 });
 
 test("history already finished: reuse last assistant text, no resume/prompt/result", async () => {

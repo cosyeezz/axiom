@@ -92,6 +92,9 @@ export const selection = z.object({
 export const taskBudget = z.object({
   maxTurns: z.number().int().min(TASK_BUDGET_LIMITS.turns[0]).max(TASK_BUDGET_LIMITS.turns[1]),
   wrapUpWindow: z.number().int().min(TASK_BUDGET_LIMITS.window[0]).max(TASK_BUDGET_LIMITS.window[1]),
+  workSeconds: z.number().int().min(TASK_BUDGET_LIMITS.workSeconds[0]).max(TASK_BUDGET_LIMITS.workSeconds[1]).optional(),
+  wrapUpSeconds: z.number().int().min(TASK_BUDGET_LIMITS.wrapUpSeconds[0]).max(TASK_BUDGET_LIMITS.wrapUpSeconds[1]).optional(),
+  summarySeconds: z.number().int().min(TASK_BUDGET_LIMITS.summarySeconds[0]).max(TASK_BUDGET_LIMITS.summarySeconds[1]).optional(),
 }).strict();
 // —— 模型配置（models.json）与收藏，协议：docs/model-config-protocol.md ——
 export const providerKey = z
@@ -361,6 +364,7 @@ export const command = z.discriminatedUnion("type", [
   // 手动重试：不带新输入，续跑上一次异常停止（Esc 停止/终态错误/重试用尽）的请求。
   z.object({ id, type: z.literal("session.retry"), sessionId: id }).strict(),
   z.object({ id, type: z.literal("task.retry"), sessionId: id, taskId: id }).strict(),
+  z.object({ id, type: z.literal("task.cancel"), sessionId: id, taskId: id, mode: z.enum(["summary", "immediate"]).default("summary"), reason: z.string().max(4000).default("") }).strict(),
   z.object({ id, type: z.literal("queue.withdraw"), sessionId: id, recall: z.boolean().optional() }).strict(),
   z
     .object({

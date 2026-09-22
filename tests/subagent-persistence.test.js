@@ -91,7 +91,7 @@ test("真实子 JSONL：停机恢复过程且仅续跑未完成任务，缺失�
   } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
 });
 
-test("用户取消不自动恢复；手动重试同 ID、作废旧凭证", async () => {
+test("用户取消不自动恢复；手动重试同 ID、保留旧执行凭证", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-child-retry-"));
   const first = factory();
   let sessions = new Sessions(first.create, undefined, join(root, "storage"));
@@ -116,7 +116,7 @@ test("用户取消不自动恢复；手动重试同 ID、作废旧凭证", async
     assert.equal(next.calls.resumes, 1);
     assert.deepEqual(next.calls.prompts, []);
     assert.notEqual(restored.tasks.jobs.get(taskId).resultId, oldToken);
-    assert.throws(() => restored.tasks.read(taskId, oldToken));
+    assert.equal(restored.tasks.read(taskId, oldToken).status, "cancelled");
     assert.equal(restored.tasks.jobs.get(taskId).status, "completed");
   } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
 });

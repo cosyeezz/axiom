@@ -1,163 +1,216 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
+import { ACTIVE_TASK_STATES as ACTIVE, EXECUTION_DEFAULTS, bounded, stopReport, stopSummaryPrompt } from "./task-execution.js";
 
-const ACTIVE = ["starting", "running"];
-
-// 历史已正常收尾（末条 assistant 正常结束）时直接取已有结果，不重发 prompt。
-const historyResult = (history) => {
+const historyResult = history => {
   const message = history.at(-1)?.message;
-  const text = message?.role === "assistant"
-    ? (message.content ?? []).filter((block) => block.type === "text")
-      .map((block) => block.text).join("\n").trim()
-    : "";
-  return text || "指令已处理，未产生模型回答。";
+  return message?.role === "assistant" ? (message.content ?? []).filter(b => b.type === "text").map(b => b.text).join("\n").trim() : "";
 };
 
 export class Tasks {
-  constructor(createAgent, emit, onComplete = async () => {}) {
+  constructor(createAgent, emit, onComplete = async () => {}, options = {}) {
     this.createAgent = createAgent;
     this.emit = emit;
     this.onComplete = onComplete;
+    this.options = { ...EXECUTION_DEFAULTS, ...options };
     this.jobs = new Map();
   }
-
-  // context 由主代理在 delegate 时现写（子代理零父级上下文，这是它拿到的唯一背景）。
   start(tasks, context = "") {
     if (this.cancelling) throw new Error("Tasks are cancelling");
-    return tasks.map((task) => {
-      const job = { id: randomUUID(), task, status: "starting", parentContext: context,
-        // persistenceVersion 区分新版 starting（崩溃窗口可恢复）与旧版无历史任务。
-        persistenceVersion: 1, createdAt: Date.now(), updatedAt: Date.now() };
+    return tasks.map(task => {
+      const job = { id: randomUUID(), task, status: "starting", parentContext: context, persistenceVersion: 2,
+        createdAt: Date.now(), updatedAt: Date.now(), totalElapsedMs: 0 };
       this.jobs.set(job.id, job);
-      this.publish(job);
-      job.done = this.run(job);
+      this.launch(job);
       return job.id;
     });
   }
-
-  // 完整单条状态（超集于 view）：持久化与主审落盘用，不直接广播。
-  // sessionFile/historySaved/persistenceVersion 支撑重启恢复：sessions 按 sessionFile 重建
-  // 子代理，historySaved 表示历史确已落盘（文件存在），persistenceVersion 区分新旧恢复路径。
-  snapshotJob(job) {
-    return { ...this.view(job), runtime: job.runtime,
-      resultId: job.resultId, notified: job.notified, parentContext: job.parentContext,
-      persistenceVersion: job.persistenceVersion, sessionFile: job.sessionFile ?? null,
-      historySaved: job.historySaved ?? false,
-      createdAt: job.createdAt, updatedAt: job.updatedAt };
+  launch(job, resume = false, continuation = null) {
+    if (job.cleanupStatus === "unconfirmed") throw new Error("旧执行停止未确认，不能并发续接该会话");
+    if (job.resultId) {
+      job.previousResults ||= {};
+      job.previousResults[job.resultId] = { ...this.view(job), resultId: job.resultId, notified: job.notified };
+    }
+    delete job.error; delete job.text; delete job.resultId; delete job.stop; delete job.partialText;
+    job.cancelled = false; job.interrupted = false; job.notified = false;
+    job.executionId = randomUUID(); job.status = "starting"; job.cleanupStatus = "none";
+    job.startedAt = Date.now(); job.endedAt = null;
+    job.budget = { ...this.options, ...job.budget };
+    job.softDeadline = job.startedAt + job.budget.workMs;
+    job.hardDeadline = job.softDeadline + job.budget.wrapUpMs;
+    job.stopSignal = new Promise(resolve => { job.signalStop = resolve; });
+    this.publish(job);
+    job.done = this.run(job, resume, continuation);
+    return job.id;
   }
-  // data 是安全 view（前端可收）；saved 是完整快照（含 parentContext/resultId/notified/
-  // runtime），供主审按 taskId 单条落盘——广播前由主审删除 saved，只留 data。
-  publish(job) {
-    job.updatedAt = Date.now();
-    this.emit({ type: "task.state", taskId: job.id,
-      data: { ...this.view(job), runtime: job.runtime }, saved: this.snapshotJob(job) });
-  }
-  // 子代理输出保持模型原文：<title> 自报只是主代理协议（session-memory.js 的 onReply 对子任务
-  // 直接返回），剥离只会让原文永久不可回读；展示由前端流式消息通道负责（public/app.js 已剥）。
   view(job) {
-    const { id, task, status, text, error } = job;
-    return { id, task, status, text, error,
+    const { id, task, status, text, error, executionId, startedAt, endedAt, softDeadline, hardDeadline, totalElapsedMs, stop, cleanupStatus } = job;
+    return { id, task, status, text, error, executionId, startedAt, endedAt, softDeadline, hardDeadline, totalElapsedMs, stop, cleanupStatus,
       canRetry: this.retryable(job) };
   }
-  // 可重试 = 终态（运行中/已完成不可）且有可恢复依据：历史已落盘、已知 sessionFile，
-  // 或仍持有已确认可续跑的 agent。旧版恢复任务三者皆无 → 不可重试，不给假入口。
+  snapshotJob(job) {
+    return { ...this.view(job), runtime: job.runtime, budget: job.budget, pendingAppends: job.pendingAppends,
+      resultId: job.resultId, notified: job.notified, previousResults: job.previousResults, parentContext: job.parentContext,
+      persistenceVersion: job.persistenceVersion, sessionFile: job.sessionFile ?? null, historySaved: job.historySaved ?? false,
+      createdAt: job.createdAt, updatedAt: job.updatedAt };
+  }
+  publish(job) {
+    job.updatedAt = Date.now();
+    this.emit({ type: "task.state", taskId: job.id, data: { ...this.view(job), runtime: job.runtime }, saved: this.snapshotJob(job) });
+  }
   retryable(job) {
-    if (this.cancelling) return false;
-    if (job.status === "completed" || (ACTIVE.includes(job.status) && !job.interrupted)) return false;
-    return !!job.historySaved || !!job.sessionFile || job.agent?.resumable?.() === true;
+    return !this.cancelling && job.cleanupStatus !== "unconfirmed" && job.status !== "completed" &&
+      (!ACTIVE.includes(job.status) || job.interrupted) && (!!job.historySaved || !!job.sessionFile || job.agent?.resumable?.() === true);
   }
-  snapshot() {
-    return [...this.jobs.values()].map((job) => this.snapshotJob(job));
-  }
+  snapshot() { return [...this.jobs.values()].map(job => this.snapshotJob(job)); }
 
-  async run(job, resume = false) {
-    let unsubscribe;
+  async run(job, resume = false, continuation = null) {
+    // 恢复旧任务也必须建立本轮外部预算；保留已持久化的截止时间，不因重启续期。
+    job.executionId ||= randomUUID(); job.startedAt ||= Date.now(); job.budget = { ...this.options, ...job.budget };
+    if (!job.softDeadline) job.startedAt = Date.now();
+    job.softDeadline ||= job.startedAt + job.budget.workMs;
+    job.hardDeadline ||= job.softDeadline + job.budget.wrapUpMs;
+    if (!job.stopSignal) job.stopSignal = new Promise(resolve => { job.signalStop = resolve; });
+    const executionId = job.executionId;
+    let unsubscribe, agent, work, orphan = false;
+    const soft = setTimeout(() => {
+      if (job.executionId !== executionId || job.stop || job.interrupted) return;
+      job.status = "wrapping"; this.publish(job);
+      void agent?.enqueue?.("[时间预算] 正常工作预算已耗尽。停止扩展任务，不再启动长操作，仅整理已有成果、未完成项与耗时原因；硬截止将取消执行并要求总结。", "steer").catch(() => {});
+    }, Math.max(0, job.softDeadline - Date.now()));
+    const hard = setTimeout(() => { void this.cancelTask(job.id, { source: "budget", reason: "子任务时间预算耗尽", mode: "summary" }); }, Math.max(0, job.hardDeadline - Date.now()));
     try {
-      job.agent = await this.createAgent(job);
-      job.runtime = job.agent.runtime?.();
-      if (job.cancelled || job.interrupted) throw new Error("Cancelled");
-      job.status = "running";
-      // prompt 前先发布 sessionFile（可能尚是"意图路径"，首条消息后才真正落盘）。
-      job.sessionFile = job.agent.sessionFile?.() ?? job.sessionFile ?? null;
-      this.publish(job);
-      unsubscribe = job.agent.subscribe((event) => {
-        if (event.type === "agent.runtime") job.runtime = event.data;
-        // 首条消息落盘后历史可恢复，此后重启/重试才有效；变化即刻发布以尽快落库。
-        if (event.type === "agent.message.end" && !job.historySaved) {
-          const file = job.agent.sessionFile?.();
-          if (file && existsSync(file)) {
-            job.historySaved = true;
-            this.publish(job);
+      const creation = Promise.resolve().then(() => this.createAgent(job));
+      const created = await Promise.race([creation.then(value => ({ value })), job.stopSignal.then(() => ({ stopped: true }))]);
+      if (created.stopped) {
+        orphan = true;
+        void creation.then(async late => {
+          await late.abort?.(); await late.dispose?.();
+          if (job.executionId === executionId) {
+            job.sessionFile = late.sessionFile?.() ?? job.sessionFile;
+            job.cleanupStatus = "stopped"; this.publish(job);
           }
-        }
-        this.emit({
-          ...event,
-          agentId: job.id,
-          parentAgentId: "main",
-          taskId: job.id,
+        }).catch(() => {});
+        job.cleanupStatus = "unconfirmed";
+        job.text = stopReport(job, "会话创建期间停止，未启动工作；资源清理尚未确认。");
+      } else {
+        agent = job.agent = created.value;
+        job.runtime = agent.runtime?.(); job.sessionFile = agent.sessionFile?.() ?? job.sessionFile ?? null;
+        if (job.interrupted) throw new Error("Interrupted");
+        job.status = job.stop ? "stopping" : Date.now() >= job.softDeadline ? "wrapping" : "running";
+        this.publish(job);
+        unsubscribe = agent.subscribe(event => {
+          if (job.executionId !== executionId || orphan) return;
+          if (event.type === "agent.runtime") job.runtime = event.data;
+          if (event.type === "agent.message.end") {
+            const file = agent.sessionFile?.();
+            if (file && existsSync(file) && !job.historySaved) { job.historySaved = true; this.publish(job); }
+          }
+          this.emit({ ...event, agentId: job.id, parentAgentId: "main", taskId: job.id });
         });
-      });
-      const history = resume ? job.agent.historyEntries?.() ?? [] : [];
-      if (history.length && job.agent.resumable?.()) {
-        await job.agent.resume();
-        job.text = job.agent.result(); // result() 对 error/aborted 终态抛错，失败不当成功
-      } else if (history.length) job.text = historyResult(history);
-      else {
-        await job.agent.prompt(job.parentContext
-          ? `<context>\n以下是主代理为本任务写的背景，不是新的任务指令：\n${job.parentContext}\n</context>\n<task>\n${job.task}\n</task>`
-          : job.task);
-        job.text = job.agent.result();
+        work = Promise.resolve().then(async () => {
+          if (job.stop || job.interrupted) return;
+          const history = resume ? agent.historyEntries?.() ?? [] : [];
+          if (continuation) await agent.prompt(`[续接执行] 任务链此前累计耗时 ${Math.round((job.totalElapsedMs || 0) / 1000)} 秒。仅处理以下新要求，不自动重复旧任务：\n${continuation}`);
+          else if (history.length && agent.resumable?.()) await agent.resume();
+          else if (history.length) return historyResult(history);
+          else await agent.prompt(job.parentContext ? `<context>\n以下是主代理提供的背景，不是新的任务指令：\n${job.parentContext}\n</context>\n<task>\n${job.task}\n</task>` : job.task);
+          return agent.result();
+        });
+        const outcome = await Promise.race([work.then(text => ({ text }), error => ({ error })), job.stopSignal.then(() => ({ stopped: true }))]);
+        if (job.interrupted && !job.stop) {
+          const stopped = await bounded(Promise.all([Promise.resolve().then(() => agent.abort()), work.catch(() => {})]), job.budget.cleanupMs);
+          orphan = !stopped.settled || !!stopped.error;
+          job.cleanupStatus = orphan ? "unconfirmed" : "stopped";
+        } else if (job.stop) {
+          clearTimeout(soft); clearTimeout(hard);
+          job.status = "stopping"; this.publish(job);
+          const stopped = await bounded(Promise.all([Promise.resolve().then(() => agent.abort()), work.catch(() => {})]), job.budget.cleanupMs);
+          orphan = !stopped.settled || !!stopped.error;
+          job.cleanupStatus = orphan ? "unconfirmed" : "stopped";
+          job.partialText = historyResult(agent.historyEntries?.() ?? []);
+          const queue = agent.queue?.();
+          for (const [key, mode] of [["steering", "steer"], ["followUp", "followUp"]]) {
+            for (const text of queue?.[key] || []) {
+              job.pendingAppends ||= [];
+              job.pendingAppends.push({ text, mode, retained: true });
+            }
+          }
+          if (!orphan && job.stop.mode === "summary") {
+            job.status = "summarizing"; this.publish(job);
+            if (typeof agent.summarize !== "function") job.text = stopReport(job, "当前执行器不支持安全总结，已返回系统报告。");
+            else {
+              const summary = Promise.resolve().then(() => agent.summarize(stopSummaryPrompt(job)));
+              const result = await bounded(summary, job.budget.summaryMs);
+              if (result.settled && !result.error) job.text = `${stopReport({ ...job, partialText: "" }, "以下为停止后的总结：")}\n\n${result.value || agent.result()}`;
+              else {
+                const aborted = await bounded(Promise.resolve().then(() => agent.abort()), job.budget.cleanupMs);
+                orphan = !aborted.settled || !!aborted.error;
+                job.cleanupStatus = orphan ? "unconfirmed" : "stopped";
+                job.text = stopReport(job, result.error ? `总结失败：${result.error.message || result.error}` : "总结超过时限，返回已有事实。");
+              }
+            }
+          } else job.text = stopReport(job, orphan ? "停止尚未确认，未启动模型总结。" : "已立即结束，未启动模型总结。");
+        } else if (outcome.error) throw outcome.error;
+        else job.text = outcome.text || "指令已处理，未产生模型回答。";
       }
-      // abort 可能只让 prompt/resume 正常 resolve，各分支后统一复核取消/中断。
-      if (job.cancelled || job.interrupted) throw new Error("Cancelled");
-      job.status = "completed";
+      job.status = job.interrupted ? "starting" : job.stop ? "cancelled" : "completed";
     } catch (error) {
-      if (job.interrupted) job.status = "starting";
-      else {
-        job.status = job.cancelled ? "cancelled" : "failed";
-        job.error = String(error.message ?? error);
-      }
+      job.status = job.interrupted ? "starting" : job.stop ? "cancelled" : "failed";
+      job.error = String(error.message ?? error);
+      if (job.stop) job.text ||= stopReport(job, job.error);
     } finally {
-      unsubscribe?.();
-      try {
-        job.runtime = job.agent?.runtime?.() ?? job.runtime;
-        job.sessionFile = job.agent?.sessionFile?.() ?? job.sessionFile ?? null;
-        if (!job.historySaved && job.sessionFile && existsSync(job.sessionFile)) job.historySaved = true;
-        await job.agent?.dispose();
-      } catch (error) {
-        if (!job.interrupted) {
-          job.status = "failed";
-          job.error = `子代理清理失败：${error.message || error}`;
+      clearTimeout(soft); clearTimeout(hard); unsubscribe?.();
+      job.runtime = agent?.runtime?.() ?? job.runtime;
+      job.sessionFile = agent?.sessionFile?.() ?? job.sessionFile ?? null;
+      if (job.sessionFile && existsSync(job.sessionFile)) job.historySaved = true;
+      if (agent) {
+        if (orphan) {
+          // 不关闭仍被工具使用的会话资源；隔离迟到事件，确认空闲后清理。
+          void Promise.resolve().then(() => agent.abort()).then(() => agent.dispose()).then(() => {
+            if (job.executionId === executionId) { job.cleanupStatus = "stopped"; this.publish(job); }
+          }).catch(() => {});
+        } else {
+          const disposed = await bounded(Promise.resolve().then(() => agent.dispose()), job.budget.cleanupMs);
+          if (!disposed.settled || disposed.error) { job.cleanupStatus = "unconfirmed"; job.error = "子代理资源清理未确认"; }
         }
-      } finally {
-        delete job.agent;
-        if (job.interrupted) {
-          // 中断（重启前停机）：保持可重启状态，不发完成通知、不产生 resultId。
-          job.notified = false;
-          this.publish(job);
-        } else await this.finalize(job);
+      }
+      delete job.agent; delete job.signalStop; delete job.stopSignal;
+      if (job.interrupted) { job.notified = false; this.publish(job); }
+      else {
+        job.endedAt = Date.now();
+        job.totalElapsedMs = (job.totalElapsedMs || 0) + job.endedAt - job.startedAt;
+        await this.finalize(job);
+        this.resumeQueued(job);
       }
     }
   }
-
-  // 终态收尾：作废旧读取（换新 resultId）、落盘并触发完成通知。run 收尾与单任务取消共用，
-  // 保证取消与自然结束的终态、通知路径完全一致（resultId 只经通知下发，工具结果不带）。
+  pendingNotifications() {
+    return [...this.jobs.values()].flatMap(job => [
+      ...Object.values(job.previousResults || {}).filter(result => result.resultId && !result.notified),
+      ...(job.resultId && !job.notified ? [{ id: job.id, resultId: job.resultId, status: job.status }] : []),
+    ]);
+  }
+  resumeQueued(job) {
+    if (!job.notified || !job.pendingAppends?.some(entry => !entry.retained) || this.cancelling || job.cleanupStatus === "unconfirmed") return;
+    const executionId = job.executionId;
+    setImmediate(() => {
+      if (job.executionId !== executionId || ACTIVE.includes(job.status) || this.cancelling || !job.notified) return;
+      const messages = job.pendingAppends.splice(0).map(entry => entry.text);
+      this.launch(job, true, messages.join("\n\n"));
+    });
+  }
   async finalize(job) {
-    job.resultId = randomUUID();
-    job.notified = false;
-    this.publish(job);
+    job.resultId = randomUUID(); job.notified = false; this.publish(job);
     try { await this.onComplete(job); }
     catch (error) { this.emit({ type: "error", data: { message: `子任务通知失败：${error.message}` } }); }
   }
-
   read(id, resultId) {
     const job = this.jobs.get(id);
-    if (!job || !resultId || job.resultId !== resultId || ["starting", "running"].includes(job.status))
-      throw new Error("请等待任务完成通知，并使用通知中的 taskId 和 resultId 读取；不要轮询。");
+    if (job?.previousResults?.[resultId]) return job.previousResults[resultId];
+    if (!job || !resultId || job.resultId !== resultId || ACTIVE.includes(job.status)) throw new Error("请等待任务完成通知，并使用通知中的 taskId 和 resultId 读取；不要轮询。");
     return this.view(job);
   }
-
-  // 手动重试：同一 taskId 原地重跑；resume 语义交给 run(job, true)（有历史续跑，无历史重发原始任务）。
   retry(id) {
     if (this.cancelling) throw new Error("任务正在取消，无法重试");
     const job = this.jobs.get(id);
@@ -165,69 +218,48 @@ export class Tasks {
     if (ACTIVE.includes(job.status) && !job.interrupted) throw new Error("子任务仍在运行，不能重试");
     if (job.status === "completed") throw new Error("子任务已成功完成，无需重试");
     if (!this.retryable(job)) throw new Error("该子任务没有可恢复的会话历史，无法重试");
-    delete job.error;
-    delete job.text;
-    delete job.resultId; // 旧结果作废：旧 resultId 读取即失败
-    job.cancelled = false;
-    job.interrupted = false;
-    job.notified = false;
-    job.status = "starting";
-    this.publish(job);
-    job.done = this.run(job, true);
-    return job.id;
+    return this.launch(job, true);
   }
-
   async append(id, text, mode = "steer") {
-    if (typeof text !== "string" || !text.trim() || !["steer", "followUp"].includes(mode))
-      throw new Error("追加内容不能为空，mode 必须是 steer 或 followUp");
-    const job = this.jobs.get(id);
-    if (this.cancelling || job?.cancelled || job?.status !== "running")
-      throw new Error("只能向运行中的子任务追加内容");
-    await job.agent.enqueue(text.trim(), mode);
-    return { taskId: id, accepted: true, mode };
-  }
-
-  // 单任务取消：只作用于指定 job，不置 cancelling（不阻塞新委派，也不改变整会话 cancel 语义）。
-  // 已结束（含已取消）时幂等返回当前终态与原结果，重复取消不换 resultId。
-  async cancelTask(id) {
+    if (typeof text !== "string" || !text.trim() || !["steer", "followUp"].includes(mode)) throw new Error("追加内容不能为空，mode 必须是 steer 或 followUp");
     const job = this.jobs.get(id);
     if (!job) throw new Error("找不到该子任务");
-    // interrupted 是停机在飞的中间态，此时置取消无效（run 收尾只会退回 starting），幂等返回现状。
-    if (!ACTIVE.includes(job.status) || job.interrupted) return this.view(job);
-    const first = !job.cancelled; // 已有取消在飞（整会话 cancel 或并发单任务取消）时不重复 abort
-    job.cancelled = true; // 同步置位：run 的取消检查与并发的后续取消都据此收敛
-    // 重启恢复出来的 starting 没有在飞 run，没人替它收尾，这里自己走同一终态路径。
-    if (!job.done) {
-      job.status = "cancelled";
-      await this.finalize(job);
-      return this.view(job);
+    if (this.cancelling) throw new Error("任务正在取消，稍后可继续追问");
+    if (["stopping", "summarizing", "starting"].includes(job.status)) {
+      job.pendingAppends ||= []; job.pendingAppends.push({ text: text.trim(), mode }); this.publish(job);
+      return { taskId: id, accepted: true, queued: true, mode, note: "已排队，将在当前执行通知送达并确认停止后启动新执行；会话级停止期间不会自动续接。" };
     }
-    // 在飞（starting/running）：abort 只打这一个 agent，run 收尾后完成通知照常发出。
-    if (first) await job.agent?.abort();
-    await job.done;
+    if (["running", "wrapping"].includes(job.status)) await job.agent.enqueue(text.trim(), mode);
+    else {
+      if (!job.sessionFile && !job.historySaved) throw new Error("该子任务没有持久化历史，无法续接");
+      const pending = (job.pendingAppends || []).map(p => p.text); job.pendingAppends = [];
+      this.launch(job, true, [...pending, text.trim()].join("\n\n"));
+    }
+    return { taskId: id, accepted: true, mode };
+  }
+  async cancelTask(id, { source = "agent", reason = "", mode = "summary" } = {}) {
+    if (!["summary", "immediate"].includes(mode)) throw new Error("无效停止模式");
+    const job = this.jobs.get(id);
+    if (!job) throw new Error("找不到该子任务");
+    if (!ACTIVE.includes(job.status) || job.interrupted) return this.view(job);
+    if (!job.stop) {
+      job.stop = { source, reason: String(reason).slice(0, 4000), mode, requestedAt: Date.now() };
+      job.cancelled = true; job.status = "stopping"; this.publish(job); job.signalStop?.();
+    }
+    if (!job.done) {
+      job.cleanupStatus = "none"; job.text = stopReport(job, "没有在飞执行，返回保留的任务记录。"); job.status = "cancelled";
+      await this.finalize(job);
+    } else await job.done;
     return this.view(job);
   }
-
   async cancel() {
     this.cancelling = true;
-    const active = [...this.jobs.values()].filter((job) =>
-      ACTIVE.includes(job.status) && !job.interrupted,
-    );
-    for (const job of active) job.cancelled = true;
-    try {
-      await Promise.all(active.map((job) => job.agent?.abort()));
-      await Promise.all(active.map((job) => job.done));
-    } finally {
-      this.cancelling = false;
-    }
+    try { await Promise.all([...this.jobs.values()].filter(j => ACTIVE.includes(j.status) && !j.interrupted).map(j => this.cancelTask(j.id, { source: "user", reason: "用户停止主会话及其子任务" }))); }
+    finally { this.cancelling = false; }
   }
-
-  // 停机中断：与 cancel 不同，不打终态、不发完成通知，保留 sessionFile/historySaved
-  // 供重启后 run(job, true) 续跑。
   async interrupt() {
-    const active = [...this.jobs.values()].filter((job) => ACTIVE.includes(job.status));
-    for (const job of active) job.interrupted = true;
-    await Promise.all(active.map((job) => job.agent?.abort()));
-    await Promise.all(active.map((job) => job.done));
+    const active = [...this.jobs.values()].filter(job => ACTIVE.includes(job.status));
+    for (const job of active) { job.interrupted = true; job.signalStop?.(); }
+    await Promise.all(active.map(job => job.done));
   }
 }
