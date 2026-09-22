@@ -86,3 +86,68 @@ test('Todo tools read bounded slices and main context names the read entry', asy
   assert.equal(data.total, 2); assert.equal(data.items[0].id, 'b');
   assert.match(todo.context(), /todo_read/);
 });
+
+
+test('add preserves initial leaf states and aggregates parents', () => {
+  for (const status of ['pending', 'running', 'done', 'blocked']) {
+    const { todo } = setup();
+    const state = update(todo, [{ op: 'add', id: 'leaf', title: 'leaf', status, note: 'reason' }]);
+    assert.equal(state.items[0].status, status);
+    assert.equal(state.mode, status === 'done' ? 'completed' : 'enabled');
+  }
+  for (const status of ['running', 'done', 'blocked']) {
+    const { todo } = setup();
+    const state = update(todo, [
+      { op: 'add', id: 'p', title: 'parent', status: 'running' },
+      { op: 'add', id: 'c', title: 'child', parentId: 'p', status, note: 'reason' },
+    ]);
+    assert.ok(state.items.every(item => item.status === status));
+  }
+});
+
+test('batch errors identify operation and ID without persisting partial changes', () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    const store = createTodoStore(db);
+    const todo = new Todo({ sessionId: 'atomic', store });
+    update(todo, [{ op: 'add', id: 'p', title: 'parent' }, { op: 'add', id: 'c', title: 'child', parentId: 'p' }]);
+    const before = store.load('atomic');
+    for (const invalid of [
+      { op: 'status', id: 'p', status: 'running' },
+      { op: 'status', id: 'missing', status: 'done' },
+      { op: 'add', id: 'blocked', title: 'blocked', status: 'blocked', note: '   ' },
+    ]) {
+      assert.throws(() => update(todo, [{ op: 'edit', id: 'c', title: 'changed' }, invalid]), error => {
+        assert.match(error.message, /第2个操作/);
+        assert.ok(error.message.includes(`id="${invalid.id}"`));
+        return true;
+      });
+      assert.deepEqual(store.load('atomic'), before);
+      assert.equal(db.prepare('SELECT version FROM todos').get().version, before.version);
+    }
+    assert.throws(() => todo.update({ baseVersion: 0, ops: [{ op: 'delete', id: 'p' }] }), error => {
+      assert.equal(error.message, 'Todo版本冲突，请重新todo_read'); return true;
+    });
+  } finally { db.close(); }
+});
+
+test('tool return is reusable authority without intervening reads', async () => {
+  const { todo } = setup();
+  const tool = todo.updateTool();
+  const created = JSON.parse((await tool.execute('create', { baseVersion: 0, ops: [
+    { op: 'add', id: 'p', title: 'demo' },
+    { op: 'add', id: 'c', parentId: 'p', title: 'check', status: 'running' },
+  ] })).content[0].text);
+  assert.ok(created.items.every(item => item.status === 'running'));
+  const done = JSON.parse((await tool.execute('finish', { baseVersion: created.version, ops: [
+    { op: 'status', id: 'c', status: 'done' },
+  ] })).content[0].text);
+  assert.equal(done.mode, 'completed');
+  assert.match(todo.context(), /直接复用，不要重复读取/);
+  assert.match(todo.context(), /先新增对应事项再执行/);
+  assert.match(todo.context(), /复用快照只减少读取，不免除更新/);
+  assert.doesNotMatch(todo.context(), /执行前读取/);
+  assert.match(todo.context(), /版本不一致、更新冲突/);
+  assert.match(tool.description, /禁止对其使用status/);
+  assert.match(todo.readTool().description, /直接复用/);
+});

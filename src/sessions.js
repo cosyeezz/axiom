@@ -1539,7 +1539,7 @@ export class Sessions {
     const queue = item.agent.queue?.();
     if (queue?.steering?.length || queue?.followUp?.length) return;
     if (!item.todo.nudge()) return;
-    this.startRun(item, () => item.agent.prompt('[Axiom Todo 继续执行] 当前仍有可执行的未完成事项。请用todo_read读取最新清单，继续下一项并更新进度。确需用户输入则标记阻塞并提问，不要重复空转。'));
+    this.startRun(item, () => item.agent.prompt('[Axiom Todo 继续执行] 当前仍有可执行的未完成事项。请核对当前Todo版本；已有同版本权威返回且包含相关事项时直接复用，否则用todo_read读取最新清单，继续下一项并更新进度。确需用户输入则标记阻塞并提问，不要重复空转。'));
   }
 
   async advanceGoal(item) {

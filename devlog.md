@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-23 Todo 工具契约与重复读取修复
+
+- 原因：测试会话重复读取权威快照、误改汇总父项；代码还接受却忽略 add.status。
+- 修改：明确新多步骤工作先新增事项、复用快照不免除维护，避免排查完成后修复阶段无清单；context/read/update/自动督促统一允许复用同版本权威返回；新增叶项尊重初始状态，父项仍自动汇总；blocked 拒绝空白原因；批量错误标明操作序号及 ID，保留 CAS 与整批回滚。
+- 验证：全量932项，930通过、2跳过、0失败；新增叶项/子项初始状态、父汇总、SQLite 原子失败及更新返回直接复用测试；不改变最终回复展示协议，不声称提示词能强制模型遵守。
+- 文件：src/todo.js、src/sessions.js、tests/todo.test.js、README.md、docs/todo-control-execution.md、devlog.md。不重启服务。
+
 ## 2026-09-23 Todo 与最新安全点功能合并
 
 - 合并 origin/master 206ac8d，保留双方协议、模块登记与文档；不恢复已删除的 task-state-doc。

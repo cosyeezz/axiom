@@ -67,44 +67,49 @@ export class Todo {
     // Keep load, validation and CAS synchronous: no await or partial persistence.
     const next = this.store.load(this.id) ?? empty();
     if (baseVersion !== next.version) throw new Error('Todo版本冲突，请重新todo_read');
-    for (const op of ops) {
-      let item = next.items.find(i => i.id === op.id);
-      if (op.op === 'add') {
-        if (!op.title) throw new Error('新增事项需要title');
-        const id = op.id ?? randomUUID();
-        if (next.items.some(i => i.id === id)) throw new Error('Todo ID重复');
-        const parent = op.parentId ? next.items.find(i => i.id === op.parentId) : null;
-        if (op.parentId && (!parent || parent.parentId || parent.status === 'done')) throw new Error('只能向未完成的一级事项添加子项');
-        item = { id, title: op.title, note: op.note ?? '', status: 'pending', parentId: op.parentId ?? null };
-        next.items.push(item);
-      } else {
-        if (!item) throw new Error('Todo事项不存在');
-        if (op.op === 'delete') {
-          next.items = next.items.filter(i => i.id !== item.id && i.parentId !== item.id);
-          const parent = next.items.find(i => i.id === item.parentId);
-          if (parent && !next.items.some(i => i.parentId === parent.id)) parent.status = 'pending';
-          continue;
-        }
-        if (op.op === 'reopen') {
-          if (next.items.some(i => i.parentId === item.id)) throw new Error('请重新打开具体子事项');
-          item.status = 'pending';
+    for (const [index, op] of ops.entries()) {
+      try {
+        let item = next.items.find(i => i.id === op.id);
+        if (op.op === 'add') {
+          if (!op.title) throw new Error('新增事项需要title');
+          const id = op.id ?? randomUUID();
+          if (next.items.some(i => i.id === id)) throw new Error('Todo ID重复');
+          const parent = op.parentId ? next.items.find(i => i.id === op.parentId) : null;
+          if (op.parentId && (!parent || parent.parentId || parent.status === 'done')) throw new Error('只能向未完成的一级事项添加子项');
+          if (op.status === 'blocked' && !op.note?.trim()) throw new Error('受阻事项需要说明原因');
+          item = { id, title: op.title, note: op.note ?? '', status: op.status ?? 'pending', parentId: op.parentId ?? null };
+          next.items.push(item);
         } else {
-          if (item.status === 'done') throw new Error('已完成事项请先reopen');
-          if (op.op === 'edit') { if (op.title) item.title = op.title; if (op.note !== undefined) item.note = op.note; }
-          if (op.op === 'status') {
-            if (!op.status) throw new Error('缺少status');
-            if (next.items.some(i => i.parentId === item.id)) throw new Error('父项状态由子项汇总');
-            if (op.status === 'blocked' && !(op.note ?? item.note)) throw new Error('受阻事项需要说明原因');
-            item.status = op.status; if (op.note !== undefined) item.note = op.note;
+          if (!item) throw new Error('Todo事项不存在');
+          if (op.op === 'delete') {
+            next.items = next.items.filter(i => i.id !== item.id && i.parentId !== item.id);
+            const parent = next.items.find(i => i.id === item.parentId);
+            if (parent && !next.items.some(i => i.parentId === parent.id)) parent.status = 'pending';
+            continue;
           }
-          if (op.op === 'move') {
-            const before = next.items.find(i => i.id === op.beforeId);
-            if (op.beforeId && (!before || before.parentId !== item.parentId || before.id === item.id)) throw new Error('只能在同级事项间重排');
-            next.items = next.items.filter(i => i !== item);
-            const index = before ? next.items.indexOf(before) : next.items.length;
-            next.items.splice(index, 0, item);
+          if (op.op === 'reopen') {
+            if (next.items.some(i => i.parentId === item.id)) throw new Error('请重新打开具体子事项');
+            item.status = 'pending';
+          } else {
+            if (item.status === 'done') throw new Error('已完成事项请先reopen');
+            if (op.op === 'edit') { if (op.title) item.title = op.title; if (op.note !== undefined) item.note = op.note; }
+            if (op.op === 'status') {
+              if (!op.status) throw new Error('缺少status');
+              if (next.items.some(i => i.parentId === item.id)) throw new Error('父项状态由子项汇总，请修改具体子项，不要直接设置父项状态');
+              if (op.status === 'blocked' && !(op.note ?? item.note)?.trim()) throw new Error('受阻事项需要说明原因');
+              item.status = op.status; if (op.note !== undefined) item.note = op.note;
+            }
+            if (op.op === 'move') {
+              const before = next.items.find(i => i.id === op.beforeId);
+              if (op.beforeId && (!before || before.parentId !== item.parentId || before.id === item.id)) throw new Error('只能在同级事项间重排');
+              next.items = next.items.filter(i => i !== item);
+              const index = before ? next.items.indexOf(before) : next.items.length;
+              next.items.splice(index, 0, item);
+            }
           }
         }
+      } catch (error) {
+        throw new Error(`第${index + 1}个操作(${op.op}${op.id ? ` id=${JSON.stringify(op.id)}` : ''})失败：${error.message}`, { cause: error });
       }
     }
     if (next.items.length > 5000) throw new Error('Todo最多5000项');
@@ -139,12 +144,12 @@ export class Todo {
   context() {
     const s = this.snapshot();
     const counts = Object.fromEntries(states.map(state => [state, s.items.filter(i => i.status === state).length]));
-    return '多步骤任务使用todo_read/todo_update维护两级清单；执行前读取，开始/完成/阻塞/计划变化时更新。子代理不维护清单，由你读取其结果并验收。Todo不是额外操作授权，新用户指令优先。' +
+    return '多步骤任务使用todo_read/todo_update维护两级清单；用户提出新的多步骤工作（如从排查转为修复）时，先新增对应事项再执行，不要沿用已完成清单冒充当前计划。开始/完成/阻塞/计划变化时更新；复用快照只减少读取，不免除更新。子代理不维护清单，由你读取其结果并验收。Todo不是额外操作授权，新用户指令优先。' +
       `\n当前Todo版本${s.version}，自动推进${s.mode}，总计${s.items.length}项：${JSON.stringify(counts)}。` +
-      (s.reason ? ` ${s.reason}` : '') + '\n使用todo_read读取最新事项，勿依赖压缩摘要中的旧清单。';
+      (s.reason ? ` ${s.reason}` : '') + '\ntodo_read/todo_update返回均为权威状态；已有返回的版本与当前版本一致且包含相关事项时直接复用，不要重复读取。仅缺少相关事项、版本不一致、更新冲突，或压缩/恢复后只剩旧清单时，才用todo_read读取。';
   }
   readTool() {
-    return { name: 'todo_read', label: '读取任务清单', description: '读取当前主会话SQLite任务清单。大清单可按ID或未完成过滤；修改前取得最新version。',
+    return { name: 'todo_read', label: '读取任务清单', description: '读取当前主会话SQLite任务清单。大清单可按ID或未完成过滤；已有同版本权威返回且包含相关事项时直接复用；仅缺少事项、版本变化或冲突时读取。',
       parameters: { type: 'object', properties: { id: { type: 'string' }, unfinished: { type: 'boolean' }, offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 1000 } }, additionalProperties: false },
       execute: async (_id, input) => {
         const q = z.object({ id: z.string().optional(), unfinished: z.boolean().optional(), offset: z.number().int().nonnegative().optional(), limit: z.number().int().min(1).max(1000).optional() }).strict().parse(input ?? {});
@@ -155,7 +160,7 @@ export class Todo {
       } };
   }
   updateTool() {
-    return { name: 'todo_update', label: '更新任务清单', description: '主代理维护Todo：按baseVersion原子批量add/edit/status/move/delete/reopen。最多两级；add可指定稳定id供同批子项引用。父状态自动汇总，删除父项含子项。用户暂停不能通过修改清单恢复。',
+    return { name: 'todo_update', label: '更新任务清单', description: '主代理维护Todo：按baseVersion原子批量add/edit/status/move/delete/reopen。最多两级；add可指定稳定id供同批子项引用。add默认pending，可用status指定叶项初始状态（含一级叶项），blocked需note说明原因。有子项的父项状态自动汇总，禁止对其使用status，请改具体子项。删除父项含子项。更新返回可直接作为下一次修改的权威版本，无需重复读取。用户暂停不能通过修改清单恢复。',
       parameters: { type: 'object', required: ['baseVersion', 'ops'], additionalProperties: false, properties: {
         baseVersion: { type: 'integer', minimum: 0 }, ops: { type: 'array', minItems: 1, maxItems: 1000, items: {
           type: 'object', required: ['op'], additionalProperties: false, properties: {
