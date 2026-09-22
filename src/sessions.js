@@ -1212,8 +1212,6 @@ export class Sessions {
         }
         this.saveChange(item, { event: { type: "retry", record } });
       }
-      if (event.type === "tool.state" && agentId === "main" && event.data.phase === "end" &&
-          !['todo_read', 'todo_update'].includes(event.data.toolName)) item.todo?.resetReads();
       if (event.type === "tool.state")
         Object.assign(item.tools[`${agentId}:${event.data.toolCallId}`] ??= { agentId }, event.data);
       if (event.type === "task.state") this.saveChange(item, { task: event.saved ?? event.data });
@@ -1235,11 +1233,7 @@ export class Sessions {
     };
     item.goal = new Goal({ sessionId: id, store: this.goalStore, emit: item.emit,
       messageCount: () => item.messages.length });
-    item.todo = new Todo({ sessionId: id, store: this.todoStore, emit: item.emit, onLoop: () => {
-      item.notificationsPaused = true;
-      item.goalExited = true;
-      item.agent.requestSafeStop?.();
-    } });
+    item.todo = new Todo({ sessionId: id, store: this.todoStore, emit: item.emit });
     item.questions = createQuestions(item.emit);
     const saveMemory = (change) => this.saveChange(item, change);
     item.tasks = new Tasks(
@@ -1311,7 +1305,7 @@ export class Sessions {
         observationsDir: storageDir ? join(storageDir, `${id}-observations`) : undefined,
         sessionFile: saved?.sessionFile ?? importedFile,
         memory: memoryHooks(item, saveMemory),
-        executionContext: () => [item.goal.context(), item.todo.context()].filter(Boolean).join('\n\n'),
+        executionContext: () => item.goal.context(),
         shouldPause: () => !!item.goal.snapshot()?.pendingAction || item.goal.snapshot()?.phase === "paused",
         inactiveTools: item.goal.active ? [] : GOAL_TOOL_NAMES,
       });
@@ -1545,7 +1539,7 @@ export class Sessions {
     const queue = item.agent.queue?.();
     if (queue?.steering?.length || queue?.followUp?.length) return;
     if (!item.todo.nudge()) return;
-    this.startRun(item, () => item.agent.prompt('[Axiom Todo 继续执行] 当前仍有可执行的未完成事项。请核对当前Todo版本；已有同版本权威返回且包含相关事项时直接复用，否则用todo_read读取最新清单，继续下一项并更新进度。确需用户输入则标记阻塞并提问，不要重复空转。'));
+    this.startRun(item, () => item.agent.prompt('[Axiom Todo 继续执行] 当前仍有可执行的未完成事项，请继续实际工作；确需用户输入则说明阻塞。'));
   }
 
   async advanceGoal(item) {
@@ -2016,7 +2010,6 @@ export class Sessions {
 
   // 运行骨架（prompt 与手动重试共用）：runId/status 广播 → result() 取错 → 收尾持久化与 idle 复位。
   startRun(item, run) {
-    item.todo?.resetReads();
     item.executionStarted = true;
     // 通知在下一次运行开始时恢复：goal 被暂停/退出时仍要冻结，安全停止期间也暂停，防止通知把刚停下的会话又拉起来。
     item.notificationsPaused = this.goalNotificationsBlocked(item) || false;

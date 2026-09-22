@@ -84,7 +84,6 @@ test('Todo tools read bounded slices and main context names the read entry', asy
   update(todo, [{ op: 'move', id: 'b', beforeId: 'a' }]);
   const data = JSON.parse((await todo.readTool().execute('call', { limit: 1 })).content[0].text);
   assert.equal(data.total, 2); assert.equal(data.items[0].id, 'b');
-  assert.match(todo.context(), /todo_read/);
 });
 
 
@@ -143,39 +142,17 @@ test('tool return is reusable authority without intervening reads', async () => 
     { op: 'status', id: 'c', status: 'done' },
   ] })).content[0].text);
   assert.equal(done.mode, 'completed');
-  assert.match(todo.context(), /不要读取或轮询已完成清单/);
   update(todo, [{ op: 'add', id: 'new', title: 'new work' }]);
-  assert.match(todo.context(), /直接复用，不要重复读取/);
-  assert.match(todo.context(), /先新增对应事项再执行/);
-  assert.match(todo.context(), /复用快照只减少读取，不免除更新/);
-  assert.doesNotMatch(todo.context(), /执行前读取/);
-  assert.match(todo.context(), /版本不一致、更新冲突/);
   assert.match(tool.description, /禁止对其使用status/);
   assert.match(todo.readTool().description, /直接复用/);
 });
 
 
-test('third identical read stops even an empty list; pauses persist', async () => {
-  const store = createTodoStore(); let stops = 0;
-  const todo = new Todo({ sessionId: 'loop', store, onLoop: () => stops++ });
-  const read = todo.readTool();
-  await read.execute('1', {});
-  await read.execute('2', { offset: 0, limit: 100, unfinished: false });
-  await assert.rejects(read.execute('3', {}), /TODO_READ_LOOP/);
-  assert.equal(stops, 1);
-  assert.equal(new Todo({ sessionId: 'loop', store }).snapshot().mode, 'paused');
-  assert.doesNotMatch(todo.context(), /todo_read|执行前读取/);
-});
 
-test('read guard distinguishes pages and resets on real version changes or work', async () => {
+test('repeated reads do not pause or stop a task', async () => {
   const { todo } = setup();
-  const read = todo.readTool();
-  await read.execute('1', {}); await read.execute('2', {});
-  await read.execute('page', { offset: 100 });
-  update(todo, [{ op: 'add', id: 'a', title: 'a' }]);
-  await read.execute('new-version', {});
-  await read.execute('new-version-2', {});
-  todo.resetReads();
-  await read.execute('after-work', {});
-  assert.equal(todo.snapshot().mode, 'enabled');
+  update(todo, [{ op: 'add', id: 'a', title: 'work' }]);
+  const before = todo.snapshot();
+  for (let i = 0; i < 10; i++) await todo.readTool().execute(String(i), {});
+  assert.deepEqual(todo.snapshot(), before);
 });

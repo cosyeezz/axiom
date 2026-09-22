@@ -22,7 +22,6 @@ test("safe stop ends the run at a turn boundary: tools finish, output is kept, r
       import { createServer } from 'node:http';
       import { join } from 'node:path';
       import { createPiFactory } from './src/pi.js';
-      import { Todo, createTodoStore } from './src/todo.js';
 
       const requests = [], requestTools = [];
       let n = 0;
@@ -142,22 +141,7 @@ test("safe stop ends the run at a turn boundary: tools finish, output is kept, r
           assert.match(JSON.stringify(timeoutResult.content), /Axiom 工具超时/);
           assert.equal(agent.runtime().activeTools.length, 0);
           unsubscribe();
-          // A model that ignores all reminders must still stop before a fourth paid request.
-          let looping;
-          const todo = new Todo({ sessionId: 'loop', store: createTodoStore(), onLoop: () => looping.requestSafeStop() });
-          looping = await factory([todo.readTool()]);
-          try {
-            const beforeLoop = requests.length;
-            script.push(...Array.from({ length: 3 }, () => ({ tool: 'todo_read', args: {} })));
-            script.push({ text: 'must not be requested' });
-            await looping.prompt('test polling');
-            assert.equal(requests.length - beforeLoop, 3);
-            assert.equal(todo.snapshot().mode, 'paused');
-            assert.equal(looping.safeStopPending(), true);
-            const last = looping.historyEntries().at(-1).message;
-            assert.equal(last.role, 'toolResult');
-            assert.match(JSON.stringify(last.content), /TODO_READ_LOOP/);
-          } finally { await looping.dispose(); }
+
         } finally {
           await agent.dispose();
         }

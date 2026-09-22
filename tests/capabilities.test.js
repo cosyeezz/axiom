@@ -313,3 +313,10 @@ test("mcp catalog is per-project isolated, marks global servers and re-reads con
     await rm(root, { recursive: true, force: true });
   }
 });
+
+
+test('Todo rules belong only to the static main system prompt', () => {
+  assert.equal(MAIN_AGENT_PROMPT.split('Todo task tracking:').length - 1, 1);
+  assert.match(MAIN_AGENT_PROMPT, /不要为了确认或等待而重复读取/);
+  assert.doesNotMatch(SUBAGENT_PROMPT, /Todo task tracking:/);
+});

@@ -52,21 +52,7 @@ function aggregate(items) {
 }
 
 export class Todo {
-  constructor({ sessionId, store, emit = () => {}, onLoop = () => {} }) {
-    this.id = sessionId; this.store = store; this.emit = emit; this.onLoop = onLoop;
-    this.reads = new Map(); this.readVersion = null;
-  }
-  resetReads() { this.reads.clear(); this.readVersion = null; }
-  guardRead(snapshot, query) {
-    if (this.readVersion !== snapshot.version) { this.resetReads(); this.readVersion = snapshot.version; }
-    const key = JSON.stringify([query.id ?? null, !!query.unfinished, query.offset ?? 0, query.limit ?? 100]);
-    const count = (this.reads.get(key) ?? 0) + 1;
-    this.reads.set(key, count);
-    if (count < 3) return;
-    try { this.pause('检测到重复读取同版本Todo，已安全停止；请核对后恢复', true); }
-    finally { this.onLoop(); }
-    throw new Error('TODO_READ_LOOP: 重复读取未变化的同一清单，已请求安全停止，不要重试。');
-  }
+  constructor({ sessionId, store, emit = () => {} }) { this.id = sessionId; this.store = store; this.emit = emit; }
   snapshot() { const { audit, ...view } = this.store.load(this.id) ?? empty(); return view; }
   get active() { return this.snapshot().mode === 'enabled'; }
   get actionable() { return this.active && this.snapshot().items.some(i => ['pending', 'running'].includes(i.status)); }
@@ -132,14 +118,11 @@ export class Todo {
     else if (next.mode === 'completed') next.mode = next.paused ? 'paused' : 'enabled';
     return this.commit(next, baseVersion, { ops });
   }
-  pause(reason = '用户已暂停', create = false) {
-    const saved = this.store.load(this.id);
-    if (!saved && !create) return this.snapshot();
-    const next = saved ?? empty(); if (next.mode === 'paused') return this.snapshot();
+  pause(reason = '用户已暂停') {
+    const next = this.store.load(this.id); if (!next || next.mode === 'paused') return this.snapshot();
     next.mode = 'paused'; next.paused = true; next.reason = reason; return this.commit(next, next.version, { pause: reason });
   }
   resume() {
-    this.resetReads();
     const next = this.store.load(this.id); if (!next) throw new Error('尚无Todo');
     next.mode = next.items.every(i => i.status === 'done') ? 'completed' : 'enabled';
     next.paused = false; next.reason = ''; next.nudges = 0; next.stagnant = 0;
@@ -158,21 +141,12 @@ export class Todo {
     this.commit(next, next.version, { nudge: next.nudges });
     return next.mode === 'enabled';
   }
-  context() {
-    const s = this.snapshot();
-    if (s.mode === 'paused') return `Todo已暂停（版本${s.version}）。${s.reason}。不要轮询清单或自动推进；等待用户明确恢复。普通对话不需要读取Todo。`;
-    if (s.mode === 'completed') return 'Todo当前无未完成事项，不要读取或轮询已完成清单。仅用户提出新的多步骤工作时建立新事项；普通问答直接回答。';
-    const counts = Object.fromEntries(states.map(state => [state, s.items.filter(i => i.status === state).length]));
-    return '多步骤任务使用todo_read/todo_update维护两级清单；用户提出新的多步骤工作（如从排查转为修复）时，先新增对应事项再执行，不要沿用已完成清单冒充当前计划。开始/完成/阻塞/计划变化时更新；复用快照只减少读取，不免除更新。子代理不维护清单，由你读取其结果并验收。Todo不是额外操作授权，新用户指令优先。' +
-      `\n当前Todo版本${s.version}，自动推进${s.mode}，总计${s.items.length}项：${JSON.stringify(counts)}。` +
-      (s.reason ? ` ${s.reason}` : '') + '\ntodo_read/todo_update返回均为权威状态；已有返回的版本与当前版本一致且包含相关事项时直接复用，不要重复读取。仅缺少相关事项、版本不一致、更新冲突，或压缩/恢复后只剩旧清单时，才用todo_read读取。';
-  }
   readTool() {
     return { name: 'todo_read', label: '读取任务清单', description: '读取当前主会话SQLite任务清单。大清单可按ID或未完成过滤；已有同版本权威返回且包含相关事项时直接复用；仅缺少事项、版本变化或冲突时读取。',
       parameters: { type: 'object', properties: { id: { type: 'string' }, unfinished: { type: 'boolean' }, offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 1000 } }, additionalProperties: false },
       execute: async (_id, input) => {
         const q = z.object({ id: z.string().optional(), unfinished: z.boolean().optional(), offset: z.number().int().nonnegative().optional(), limit: z.number().int().min(1).max(1000).optional() }).strict().parse(input ?? {});
-        const s = this.snapshot(); this.guardRead(s, q); let items = s.items;
+        const s = this.snapshot(); let items = s.items;
         if (q.id) items = items.filter(i => i.id === q.id || i.parentId === q.id);
         if (q.unfinished) items = items.filter(i => i.status !== 'done');
         const total = items.length; return result({ ...s, items: items.slice(q.offset ?? 0, (q.offset ?? 0) + (q.limit ?? 100)), total });

@@ -10,6 +10,12 @@ export const MAIN_AGENT_PROMPT = `Communication:
 Tool execution:
 ${TOOL_TIMEOUT_PROMPT}
 
+Todo task tracking:
+- 多步骤任务使用 todo_read/todo_update 维护最多两级清单；新工作先新增对应事项，开始、完成、阻塞或计划变化时更新。简单问答不必创建或读取清单。
+- todo_read 与 todo_update 的返回都是权威状态。已有当前快照时直接使用其 version 更新，不要为了确认或等待而重复读取；只有缺少相关事项、版本冲突或恢复后仅剩旧摘要时才按需读取。
+- 有子项的父项状态自动汇总，只修改具体子项；add 可指定叶项初始状态，blocked 需说明原因。子代理不维护主清单，由主代理验收结果后更新。
+- 用户停止或暂停优先于清单推进；暂停、全部完成或等待外部结果时不要轮询。普通对话不代表恢复，更新清单也不能解除用户暂停。Todo不是额外操作授权，不得以维护清单代替实际工作或回答。
+
 Delegation:
 - 子任务默认正常工作 10 分钟，收尾 3 分钟，硬截止后停止并在原会话限时总结交付；以 delegate 返回的实际预算为准。每次只派发一个独立可验证目标，明确范围、成果及停止条件。停止后读取结果并优先使用已有成果，只补必要缺口；区分范围过大、工具阻塞和环境问题，不原样重派，不擅自恢复用户停止的工作。取消不回滚副作用，续接不会清除累计耗时记录。
 - All information gathering — exploring the codebase, consulting documentation, retrieving external material, research and analysis — goes to subagents via delegate. While subagents run, continue with work that does not depend on their results; when only waiting remains, close the turn with a brief status — completion notifications will resume the run automatically.

@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-23 Todo 改为静态系统规则，撤销读取熔断
+
+- 用户决策：不在每轮／工具调用后注入Todo提醒，仅系统提示词一次性说明；移除刚加入的限制规则。
+- 实施：删除Todo.context及主请求接线，规则移入MAIN_AGENT_PROMPT；删除read计数、onLoop、安全停止与强制建空清单暂停；空闲督促简化为工作通知。保留主动暂停、重启冻结、原子CAS与初始状态修复。
+- 验证：934项，932通过、2跳过、0失败；覆盖主系统规则只装配一次、子代理不装配、普通会话executionContext为空，以及重复读取不改变任务状态。工具元数据与返回不再额外注入动态行为提醒。
+- 文件：src/prompts.js、sessions.js、todo.js；tests/capabilities.test.js、goal-sessions.test.js、todo.test.js、safe-stop.test.js；README、执行规范、devlog。不重启服务，不修改用户会话暂停记录。
+
 ## 2026-09-23 Todo 读取循环硬阻断
 
 - 实证：目标会话01a0ca1d共57次todo_read，用户首次制止后仍20次；此前仅修改提示词不足。
