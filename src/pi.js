@@ -338,6 +338,15 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       modelRuntime,
       available,
       config: initialCompaction,
+      nativeFallback: async () => {
+        assertJournalHealthy();
+        compactionCtrl.assertHealthy();
+        await history?.barrier();
+        if (!session.isIdle) throw new Error('会话正在运行，请空闲后使用同步压缩');
+        assertJournalHealthy();
+        // Direct SDK call: no enhanced schema, facts or custom budget pipeline.
+        return session.compact();
+      },
       beforeCommit: async ({ compactedMessageIds }) => {
         const tools = new Set(session.agent.state.tools.map(tool => tool.name));
         if (!tools.has("history_search") || !tools.has("history_read")) throw new Error("SOURCE_MISSING: 历史读取工具未激活");

@@ -230,6 +230,36 @@ test("manual sync failure preserves messages and permits retry", async () => {
   } finally { ctrl?.dispose(); cleanup(); }
 });
 
+test('manual sync generation failure falls back once without re-entering enhanced compaction', async () => {
+  const { session, cleanup } = await createTestSession();
+  let ctrl, calls = 0, summaries = 0;
+  try {
+    seed(session, [userMsg(big('a')), assistantMsg(big('b')), userMsg(big('c'))]);
+    ctrl = createBackgroundCompaction({ session, config: { ...enabledConfig, syncKeepRecentTokens: 200 }, summarize: async () => { summaries++; throw new Error('invalid JSON'); }, nativeFallback: async () => { calls++; ctrl.onTurnEnd({ manual: true }); await assert.rejects(ctrl.runNow('sync'), /已有压缩任务/); } });
+    const result = await ctrl.runNow('sync');
+    assert.equal(calls, 1); assert.equal(summaries, 1);
+    assert.equal(result.status, 'applied'); assert.match(result.message, /未进行 facts/);
+  } finally { ctrl?.dispose(); cleanup(); }
+});
+
+for (const mode of ['archive', 'cancel', 'native-error', 'async']) test(`native fallback safety: ${mode}`, async () => {
+  const { session, cleanup } = await createTestSession();
+  let ctrl, calls = 0, rejectSummary;
+  try {
+    seed(session, [userMsg(big('a')), assistantMsg(big('b')), userMsg(big('c'))]);
+    ctrl = createBackgroundCompaction({ session, config: { ...enabledConfig, syncKeepRecentTokens: 200 },
+      summarize: mode === 'archive' ? fakeSummarize() : mode === 'cancel' ? () => new Promise((_, reject) => { rejectSummary = reject; }) : async () => { throw new Error('offline'); },
+      beforeCommit: async () => { throw new Error('ARCHIVE_NOT_DURABLE'); },
+      nativeFallback: async () => { calls++; throw new Error('native offline'); },
+    });
+    const running = ctrl.runNow(mode === 'async' ? 'async' : 'sync');
+    if (mode === 'cancel') { ctrl.cancelRun(); rejectSummary(new Error('cancelled')); }
+    await running; await settle();
+    assert.equal(calls, mode === 'native-error' ? 1 : 0);
+    if (mode === 'native-error') assert.match(ctrl.getStatus().message, /未再次重试/);
+  } finally { ctrl?.dispose(); cleanup(); }
+});
+
 function fakeSummarize(log) {
   return async ({ messages, previousSummary }) => {
     log?.push({ count: messages.length, previousSummary });
@@ -299,6 +329,29 @@ async function startFakeLlmServer({ hold, reply = () => "ok" } = {}) {
     close: () => new Promise((resolve) => server.close(resolve)),
   };
 }
+
+test('manual fallback calls real SDK compact and appends a native compaction record', async () => {
+  const fake = await startFakeLlmServer({ reply: () => 'Native summary: keep the goal and continue.' });
+  const dir = mkdtempSync(join(tmpdir(), 'axiom-native-fallback-'));
+  let session, ctrl;
+  try {
+    const runtime = await createLoopSession(dir, fake.port);
+    session = runtime.session;
+    session.settingsManager.applyOverrides({ compaction: { enabled: false, keepRecentTokens: 200 } });
+    seed(session, [userMsg(big('a')), assistantMsg(big('b')), userMsg(big('c'))]);
+    const ids = session.sessionManager.getBranch().map(entry => entry.id);
+    const events = [];
+    session.subscribe(event => events.push(event));
+    ctrl = createBackgroundCompaction({ session, config: { ...enabledConfig, syncKeepRecentTokens: 200 }, summarize: async () => { throw new Error('invalid JSON'); }, nativeFallback: () => session.compact() });
+    assert.equal((await ctrl.runNow('sync')).status, 'applied');
+    assert.equal(fake.requests.length, 1);
+    const branch = session.sessionManager.getBranch();
+    assert.equal(branch.at(-1).type, 'compaction');
+    assert.match(branch.at(-1).summary, /Native summary/);
+    assert.ok(ids.every(id => branch.some(entry => entry.id === id)));
+    assert.ok(events.some(event => event.type === 'compaction_end' && event.result));
+  } finally { ctrl?.dispose(); session?.dispose(); await fake.close(); rmSync(dir, { recursive: true, force: true }); }
+});
 
 test("真实摘要 JSON：原文引用核验，伪造引文与非 JSON 整份拒绝", async () => {
   const state = { schemaVersion: 1, goals: [], constraints: [], decisions: [], progress: [], evidence: [{ id: "e1", status: "completed", text: "已验证输出", sources: [{ ref: "m1", quote: "真实输出" }] }], uncertainties: [], nextActions: [], sourceDirectory: [] };

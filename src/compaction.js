@@ -436,6 +436,7 @@ export function createBackgroundCompaction({
   available = [],
   config,
   summarize = summarizeWithPiSession,
+  nativeFallback,
   beforeCommit,
   confirmCommit = confirmDurableAppend,
   sourceManifest,
@@ -448,6 +449,7 @@ export function createBackgroundCompaction({
   let controller = null; // 在途摘要的 AbortController
   let disposed = false;
   let commitUncertain;
+  let nativeBusy = false;
   let generation = 0;
   const assertHealthy = () => { if (commitUncertain) throw commitUncertain; };
   const lockCommit = cause => (commitUncertain = Object.assign(new Error("压缩提交不确定，须重新打开会话恢复"), { code: "COMMIT_UNCERTAIN", cause }));
@@ -630,7 +632,7 @@ export function createBackgroundCompaction({
 
   function onTurnEnd({ manual = false, mode = "async" } = {}) {
     if (commitUncertain) return;
-    if (disposed || pending || (!manual && (!current.enabled || Date.now() < retryAt))) return;
+    if (disposed || nativeBusy || pending || (!manual && (!current.enabled || Date.now() < retryAt))) return;
     const keepRecentTokens = mode === "sync" ? (current.syncKeepRecentTokens ?? compactionDefaults.syncKeepRecentTokens) : (current.asyncKeepRecentTokens ?? current.keepRecentTokens);
     try {
       // 阈值判断优先用 SDK 的 getContextUsage（感知「压缩后 usage 过期」并返回 null）；
@@ -848,13 +850,33 @@ export function createBackgroundCompaction({
       assertHealthy();
       if (disposed) throw new Error("会话已关闭");
       if (!["sync", "async"].includes(mode)) throw new Error("未知压缩模式");
-      if (pending) throw new Error("已有压缩任务，请等待完成或先取消");
+      if (pending || nativeBusy) throw new Error("已有压缩任务，请等待完成或先取消");
       onTurnEnd({ manual: true, mode });
       const flight = pending;
       if (!flight) throw new Error("当前历史不足以压缩，或压缩无法启动；请检查保留 tokens 与压缩模型配置");
       if (mode === "sync") {
-        await flight.promise.catch(() => {});
+        let generationFailed = false;
+        let generationError;
+        await flight.promise.catch(error => { generationFailed = true; generationError = error; });
         await maybeApply();
+        assertHealthy();
+        // Emergency fallback is only for an idle, manual synchronous request.
+        // Never bypass application/archive errors, cancellation or stale config.
+        if (generationFailed && status?.status === 'failed' && !disposed &&
+            flight.generation === generation && generationError?.name !== 'AbortError' &&
+            (generationError?.action ?? compactionError(generationError?.code ?? 'SUMMARY_REQUEST_FAILED').action) !== 'stop' &&
+            session.isIdle && typeof nativeFallback === 'function') {
+          nativeBusy = true;
+          report('summarizing', '增强摘要生成失败，正在回退原生压缩（不含 facts 核验）');
+          try {
+            await nativeFallback();
+            assertHealthy();
+            resetRetry();
+            report('applied', '已回退原生压缩；本次未进行 facts 核验');
+          } catch (error) {
+            report('failed', `原生压缩回退失败，未再次重试（${describeCompactionError(error)}）`);
+          } finally { nativeBusy = false; }
+        }
       } else {
         // 没有下一轮请求时也在空闲安全点应用；运行中由 prepare hook 接管。
         flight.promise.then(() => {
