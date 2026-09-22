@@ -82,6 +82,74 @@ async function enterGoal(sessions, id, agent, text = "把构建时间降到 10s 
   return agent;
 }
 
+test('Todo restart pause blocks notifications on attach and ordinary input until resume', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'axiom-todo-pause-'));
+  const storage = join(root, 'storage');
+  const first = factoryFixture();
+  const sessions = new Sessions(first.factory, undefined, storage);
+  let restored;
+  try {
+    const id = await sessions.create(root);
+    const item = sessions.get(id);
+    await ordinary(sessions, id);
+    item.todo.update({ baseVersion: 0, ops: [{ op: 'add', id: 'a', title: '事项' }] });
+    const [taskId] = item.tasks.start(['child']); await tick();
+    await sessions.todoAction(id, 'pause');
+    first.children[0].finish();
+    await item.tasks.jobs.get(taskId).done; await tick();
+    assert.ok(item.tasks.jobs.get(taskId).resultId);
+    assert.ok(!item.tasks.jobs.get(taskId).notified);
+    await sessions.close();
+    const second = factoryFixture();
+    restored = new Sessions(second.factory, undefined, storage);
+    await restored.load();
+    assert.equal(second.mains.length, 0);
+    await restored.ensureLoaded(id);
+    await new Promise(r => setTimeout(r, 30));
+    const agent = second.mains[0];
+    const wake = () => agent.calls.some(c => c.includes('[Axiom 子任务完成通知]'));
+    assert.equal(wake(), false, 'attach must not wake paused Todo');
+    await ordinary(restored, id, '补充说明');
+    await new Promise(r => setTimeout(r, 30));
+    assert.equal(wake(), false, 'normal input must not thaw notification delivery');
+    assert.equal(restored.get(id).todo.snapshot().mode, 'paused');
+    await restored.todoAction(id, 'resume');
+    await until(wake, 'resume notification');
+    await restored.todoAction(id, 'pause');
+    agent.finish(); await restored.get(id).work;
+  } finally {
+    await restored?.close(); await sessions.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Todo explicit pause survives normal input and resumes after Goal exit', async () => {
+  const { factory, mains } = factoryFixture();
+  const sessions = new Sessions(factory);
+  try {
+    const id = await sessions.create();
+    const item = sessions.get(id), agent = mains[0];
+    await ordinary(sessions, id);
+    const update = agent.tools.find(t => t.name === 'todo_update');
+    assert.ok(agent.tools.some(t => t.name === 'todo_read'));
+    await update.execute('add', { baseVersion: 0, ops: [{ op: 'add', id: 'a', title: '核对产物' }] });
+    await sessions.todoAction(id, 'pause');
+    await ordinary(sessions, id, '补充说明，不恢复自动推进');
+    assert.equal(item.todo.snapshot().mode, 'paused');
+    const count = agent.calls.length;
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(agent.calls.length, count);
+    await enterGoal(sessions, id, agent);
+    await assert.rejects(sessions.todoAction(id, 'resume'), /Goal/);
+    await sessions.goalAction(id, 'exit');
+    await sessions.todoAction(id, 'resume');
+    assert.equal(item.goalExited, false);
+    await until(() => agent.calls.some(c => c.includes('[Axiom Todo 继续执行]')), 'Todo wake');
+    await sessions.todoAction(id, 'pause');
+    agent.finish(); await item.work;
+  } finally { await sessions.close(); }
+});
+
 test("普通会话不自动续跑、不注入目标上下文", async () => {
   const { factory, mains } = factoryFixture();
   const sessions = new Sessions(factory);
@@ -92,7 +160,8 @@ test("普通会话不自动续跑、不注入目标上下文", async () => {
     await tick();
     assert.equal(mains.length, 1);
     assert.equal(typeof mains[0].options.executionContext, "function");
-    assert.equal(mains[0].options.executionContext(), null, "普通会话上下文为 null");
+    assert.match(mains[0].options.executionContext(), /todo_read/);
+    assert.doesNotMatch(mains[0].options.executionContext(), /目标模式/);
     assert.equal(mains[0].options.shouldPause(), false, "普通会话永不在安全点暂停");
     assert.equal(item.goal.active, false);
     assert.equal(item.goal.context(), null);
@@ -286,7 +355,8 @@ test("跨会话互不影响：只有进入 /goal 的会话受目标模式约束"
 
     assert.equal(sessions.snapshot(a).goal.phase, "paused");
     assert.equal(sessions.snapshot(b).goal, null, "B 会话无目标");
-    assert.equal(mains[1].options.executionContext(), null, "普通会话不得注入目标上下文");
+    assert.match(mains[1].options.executionContext(), /todo_read/);
+    assert.doesNotMatch(mains[1].options.executionContext(), /目标模式/);
     assert.notEqual(sessions.goalStore.load(a), null);
     assert.equal(sessions.goalStore.load(b), null);
 
@@ -495,7 +565,8 @@ test("exit：空闲时退出目标模式，停用 goal_* 工具、清记录且�
     // 用户显式输入恢复普通会话：无目标上下文、不自动循环
     await ordinary(sessions, id, "退出后的普通输入");
     assert.equal(item.goalExited, false);
-    assert.equal(agent.options.executionContext(), null, "退出后不得注入目标上下文");
+    assert.match(agent.options.executionContext(), /todo_read/);
+    assert.doesNotMatch(agent.options.executionContext(), /目标模式/);
     assert.equal(agent.calls.at(-1), "退出后的普通输入");
   } finally { await sessions.close(); }
 });
@@ -615,7 +686,8 @@ test("新会话默认普通模式：A 处于 running/paused Goal 时新建的会
       assert.ok(item.agent.options.inactiveTools.includes(name), `新会话应默认停用 ${name}`);
       assert.ok(!item.agent.activeTools.has(name), `新会话不得激活 ${name}`);
     }
-    assert.equal(item.agent.options.executionContext(), null, "新会话不注入任何目标上下文");
+    assert.match(item.agent.options.executionContext(), /todo_read/);
+    assert.doesNotMatch(item.agent.options.executionContext(), /目标模式/);
     // 普通会话只跑一轮：不自动续跑
     await plainTurn(id, text);
     assert.deepEqual(item.agent.calls, [text], "普通会话一条输入只跑一轮");

@@ -26,6 +26,7 @@ test('重启后大量子代理历史不挤走最新主会话正文，子历史�
   const item = { loaded: false, cwd: root, title: '历史', seq: 7 };
   sessions.get = () => item;
   sessions.goalStore = { load: () => null };
+  sessions.todoStore = { load: () => null };
   sessions.store = { getSession: () => ({ sessionFile: file, cwd: root, selection: { model: 'test/model', levels: ['off'] }, tasks: [{ id: 'child', task: '子任务', status: 'completed', sessionFile: childFile }] }) };
   const state = sessions.snapshot('s', { epoch: 'instance', includeSeq: true });
   // 主轴末条仍是主会话最终回答：130 条子历史插在委派锚点后，不追加到末尾。

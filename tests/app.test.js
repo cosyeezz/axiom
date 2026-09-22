@@ -283,7 +283,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
               id: s.sessionId,
               ...s,
               sessionFile: `C:\\axiom\\${s.sessionId}.jsonl`,
-              updatedAt: Date.now(),
+              updatedAt: 1700000000000, // One deterministic list snapshot; no per-row clock race.
             }));
             break;
           case "session.attach":
@@ -1880,8 +1880,9 @@ test("compaction settings edit per scope and fold transcripts in place", async (
       compactedMessageIds: ["m1", "m2", "m3"],
       tokensBefore: 1200,
     });
+    const expandedAll = Promise.all([...cards()].map(card => new Promise(resolve => card.addEventListener('toggle', resolve, { once: true }))));
     for (const card of cards()) card.open = true;
-    await settle(); // Wait for jsdom's queued details toggle, not a racing timer.
+    await expandedAll; // Await the actual lazy-render event, not setImmediate racing its timer.
     assert.match(cards()[0].querySelector(".compaction-summary").textContent, /早前/); assert.match(cards()[1].querySelector(".compaction-summary").textContent, /累计摘要/);
     for (const card of cards()) card.open = false;
     assert.match($("output").lastElementChild.textContent, /回答二/, "each cumulative summary keeps its own card");

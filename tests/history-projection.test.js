@@ -98,6 +98,7 @@ test("live 到达序与 JSONL 恢复投影等价：整段历史逐条一致", as
   const item = { loaded: false, cwd: root, title: "历史", seq: 7 };
   restored.get = () => item;
   restored.goalStore = { load: () => null };
+  restored.todoStore = { load: () => null };
   restored.store = { getSession: () => ({ sessionFile: file, cwd: root, selection: { model: "test/model", levels: ["off"] }, tasks: [{ id: "child", task: "子任务", status: "completed", sessionFile: childFile }] }) };
   const readonly = restored.snapshot("s", { epoch: "instance" });
   const normalize = (list) => list.map((m) => m.messageId.replace(/^main-/, "m").replace(/^child-/, "s-child-"));

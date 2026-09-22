@@ -450,6 +450,9 @@ export function createServerApp(sessions, service = {}) {
               await sessions.remove(request.sessionId);
               sender.broadcast(wss.clients, { type: "session.deleted", sessionId: request.sessionId }, ws);
               break;
+            case 'todo.action':
+              data = await sessions.todoAction(request.sessionId, request.action);
+              break;
             case "goal.action":
               data = await sessions.goalAction(request.sessionId, request.action, request.text);
               break;

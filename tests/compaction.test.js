@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -18,11 +18,7 @@ import {
   entryIdFor,
   normalizeCompaction,
   overCompactionThreshold,
-  summarizeWithPiSession,
   summarizedEntryIds,
-  summaryRequest,
-  parseSummaryOutput,
-  validateFacts,
   DEFAULT_COMPACTION_CONFIG,
 } from "../src/compaction.js";
 
@@ -40,54 +36,6 @@ test("压缩错误摘要单行限长，隐藏常见凭据，不传递堆栈", ()
   const error = new Error("safe reason");
   error.stack = "private stack";
   assert.equal(describeCompactionError(error), "safe reason");
-});
-
-test("增量展示与完整交接分离，格式异常只丢元数据不污染正文", () => {
-  const progress = { title: "确认通知缺口", description: "发现已通知不等于已读，尚未修复。" };
-  const tags = `<axiom_compact_title>\n${progress.title}\n</axiom_compact_title>\n<axiom_compact_desc>${progress.description}</axiom_compact_desc>`;
-  const body = "Goal: 保留之前的约束\nProgress: 新发现";
-  const text = `${body}\n${tags}`;
-  assert.deepEqual(parseSummaryOutput(text), { progress, summary: body });
-  assert.deepEqual(parseSummaryOutput(text.replaceAll("\n", "\r\n") + "\n"), { progress, summary: body.replace("\n", "\r\n") });
-  // C-T1：标签不在结尾、顺序颠倒都照样拆元数据；正文里绝不留标签原文（否则会随 previousSummary 回注自我强化）
-  assert.deepEqual(parseSummaryOutput(`${text}\n后续正文`), { progress, summary: `${body}\n后续正文` });
-  assert.deepEqual(
-    parseSummaryOutput(`${body}\n<axiom_compact_desc>${progress.description}</axiom_compact_desc>\n<axiom_compact_title>${progress.title}</axiom_compact_title>`),
-    { progress, summary: body },
-  );
-  // 元数据不合格（空、超长、含嵌套标签）→ 只丢 progress，正文照旧干净
-  for (const value of [text.replace(progress.title, ""), text.replace(progress.title, "长".repeat(31)), text.replace(progress.description, "长".repeat(201)), text.replace(progress.title, "<nested>标题</nested>"), text.replace(progress.title, "🙂".repeat(31))])
-    assert.deepEqual(parseSummaryOutput(value), { summary: body });
-  // C-T2：长度按码点算，16 个 emoji 的标题不算超长；标题里的 > 是正常文字，不是嵌套标签
-  for (const title of ["🙂".repeat(16), "A > B 的差异"])
-    assert.deepEqual(parseSummaryOutput(text.replace(progress.title, title)), { progress: { ...progress, title }, summary: body });
-  // 落单标签只删标记本身：闭合边界未知，标记后的内容当正文留下，不误吞
-  assert.deepEqual(parseSummaryOutput(text.replace("</axiom_compact_desc>", "")), { summary: `${body}\n${progress.description}` });
-  // 只有标签没有正文 → 摘要为空，由调用方跳过压缩保留原文；不把标签原文当摘要
-  assert.deepEqual(parseSummaryOutput(tags), { progress, summary: "" });
-  // 代码围栏里的标签是讨论内容不是协议；整份输出被围栏包住时退回原文扫描，元数据照样拆出
-  const fenced = "```\n<axiom_compact_title>示例</axiom_compact_title>\n```";
-  assert.deepEqual(parseSummaryOutput(`${fenced}\n${tags}`), { progress, summary: fenced });
-  assert.deepEqual(parseSummaryOutput(`\`\`\`markdown\n${text}\n\`\`\``), { progress, summary: `\`\`\`markdown\n${body}\n\`\`\`` });
-  for (const value of ["旧摘要", `AXIOM_PROGRESS ${JSON.stringify(progress)}\n旧格式摘要`])
-    assert.deepEqual(parseSummaryOutput(value), { summary: value });
-  const request = summaryRequest("本次新增发现", "历史约束");
-  assert.match(request, /ONLY progress/);
-  assert.match(request, /NOT incremental/);
-  assert.match(request, /Do not include numbering/);
-  assert.match(request, /<axiom_compact_title>/);
-  assert.match(request, /<axiom_compact_desc>/);
-  assert.ok(!request.includes("AXIOM_PROGRESS"));
-});
-
-test("连续摘要请求完整传入旧约束并要求保留，而非仅输出增量", () => {
-  for (const previous of ["约束A：禁止新增依赖", "约束A：禁止新增依赖；已完成B"]) {
-    const request = summaryRequest("只讨论新方案C", previous);
-    assert(request.includes(`<previous-summary>\n${previous}\n</previous-summary>`));
-    assert.match(request, /Silence does not mean a requirement has expired/);
-    assert.match(request, /complete handoff, not just an incremental update/);
-    assert.match(request, /only when the conversation explicitly changes/);
-  }
 });
 
 test("恢复摘要区间不累计之前已折叠的消息", () => {
@@ -305,14 +253,14 @@ for (const mode of ['archive', 'cancel', 'native-error', 'async']) test(`generat
   } finally { ctrl?.dispose(); cleanup(); }
 });
 
-test('paired state is frozen, inherited across rounds, and committed with native summary', async () => {
+test('native summary inputs are frozen and previousSummary inherits across rounds', async () => {
   const { session, cleanup } = await createTestSession(); let ctrl;
   const inputs = []; let release;
   try {
     session.model.contextWindow = 128000;
     seed(session, [userMsg(big('first')), assistantMsg(big('response')), userMsg('tail')]);
     ctrl = createBackgroundCompaction({ session, config: { ...enabledConfig, syncKeepRecentTokens: 200 },
-      summarize: async args => { inputs.push(args); if (inputs.length === 1) await new Promise(r => { release = r; }); return { native: true, summary: `summary ${inputs.length}`, rawSummary: `summary ${inputs.length}`, stateDoc: `state ${inputs.length}` }; }
+      summarize: async args => { inputs.push(args); if (inputs.length === 1) await new Promise(r => { release = r; }); return { native: true, summary: `summary ${inputs.length}`, rawSummary: `summary ${inputs.length}` }; }
     });
     const running = ctrl.runNow('sync');
     seed(session, [userMsg('AFTER_FREEZE')]);
@@ -320,23 +268,22 @@ test('paired state is frozen, inherited across rounds, and committed with native
     assert.equal(ctrl.getStatus().status, 'applied', JSON.stringify(ctrl.getStatus()));
     assert.equal(JSON.stringify(inputs[0].messages).includes('AFTER_FREEZE'), false);
     const first = session.sessionManager.getBranch().findLast(e => e.type === 'compaction');
-    assert.equal(first.details.stateDoc, 'state 1');
-    assert.equal(first.details.stateBoundary, first.firstKeptEntryId);
+    assert.equal(first.details.stateDoc, undefined);
     seed(session, [userMsg(big('second')), assistantMsg(big('reply')), userMsg(big('tail2'))]);
     await ctrl.runNow('sync');
     assert.equal(ctrl.getStatus().status, 'applied');
     assert.equal(inputs[1].previousSummary, 'summary 1');
-    assert.equal(inputs[1].previousStateDoc, 'state 1');
-    assert.equal(session.sessionManager.getBranch().findLast(e => e.type === 'compaction').details.stateDoc, 'state 2');
+    assert.equal(inputs[1].previousStateDoc, undefined);
+    assert.equal(session.sessionManager.getBranch().findLast(e => e.type === 'compaction').details.stateDoc, undefined);
   } finally { ctrl?.dispose(); cleanup(); }
 });
 
-for (const mode of ['auto', 'async', 'sync']) test(`paired generation shares durable commit barriers: ${mode}`, async () => {
+for (const mode of ['auto', 'async', 'sync']) test(`native generation shares durable commit barriers: ${mode}`, async () => {
   const { session, cleanup } = await createTestSession(); let ctrl, barriers = 0;
   try {
     seed(session, [userMsg(big('a')), assistantMsg(big('b')), userMsg(big('c'))]);
     ctrl = createBackgroundCompaction({ session, config: { ...enabledConfig, syncKeepRecentTokens: 200 },
-      summarize: async () => ({ native: true, summary: 'Native summary', rawSummary: 'Native summary', stateDoc: '# State\nContinue' }),
+      summarize: async () => ({ native: true, summary: 'Native summary', rawSummary: 'Native summary' }),
       beforeCommit: async () => { barriers++; },
     });
     if (mode === 'auto') { ctrl.onTurnEnd(); await settle(); await ctrl.maybeApply(); }
@@ -345,18 +292,19 @@ for (const mode of ['auto', 'async', 'sync']) test(`paired generation shares dur
     assert.equal(barriers, 2);
     const record = session.sessionManager.getBranch().findLast(e => e.type === 'compaction');
     assert.equal(record.summary, 'Native summary');
-    assert.equal(record.details.stateDoc, '# State\nContinue');
+    assert.equal(record.details.stateDoc, undefined);
   } finally { ctrl?.dispose(); cleanup(); }
 });
 
-test('native result without state never partially commits', async () => {
+test('native result needs no additional state to commit', async () => {
   const { session, cleanup } = await createTestSession(); let ctrl;
   try {
+    session.model.contextWindow = 128000;
     seed(session, [userMsg(big('first')), assistantMsg(big('response')), userMsg(big('tail'))]);
     ctrl = createBackgroundCompaction({ session, config: { ...enabledConfig, syncKeepRecentTokens: 200 }, summarize: async () => ({ native: true, summary: 'good summary', rawSummary: 'good summary' }) });
     await ctrl.runNow('sync');
-    assert.equal(ctrl.getStatus().status, 'failed');
-    assert.equal(session.sessionManager.getBranch().some(e => e.type === 'compaction'), false);
+    assert.equal(ctrl.getStatus().status, 'applied');
+    assert.equal(session.sessionManager.getBranch().findLast(e => e.type === 'compaction').details.stateDoc, undefined);
   } finally { ctrl?.dispose(); cleanup(); }
 });
 
@@ -368,26 +316,7 @@ function fakeSummarize(log) {
 }
 
 // 挂起不响应的伪 LLM 服务（用于验证取消真的中断 HTTP 请求）
-async function startHangingLlmServer() {
-  let sawRequest = false;
-  let closed = false;
-  const server = createServer((req, res) => {
-    sawRequest = true;
-    req.on("close", () => {
-      closed = true;
-    });
-    req.resume();
-    // 故意不响应：模拟慢 LLM
-  });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  return {
-    server,
-    port: server.address().port,
-    sawRequest: () => sawRequest,
-    closed: () => closed,
-    close: () => new Promise((resolve) => server.close(resolve)),
-  };
-}
+
 
 // OpenAI completions 兼容的流式伪服务：每个请求返回一条 "ok" 助手回复（SSE）。
 // hold(index) 可对第 index 个请求返回一个 promise，测试手动放行以控制时序。
@@ -451,56 +380,6 @@ test('manual generation failure never calls SDK fallback or appends a record', a
     assert.equal(events.some(event => event.type === 'compaction_end' && event.result), false);
   } finally { ctrl?.dispose(); session?.dispose(); await fake.close(); rmSync(dir, { recursive: true, force: true }); }
 });
-
-test("真实摘要 JSON：原文引用核验，伪造引文与非 JSON 整份拒绝", async () => {
-  const state = { schemaVersion: 1, goals: [], constraints: [], decisions: [], progress: [], evidence: [{ id: "e1", status: "completed", text: "已验证输出", sources: [{ ref: "m1", quote: "真实输出" }] }], uncertainties: [], nextActions: [], sourceDirectory: [] };
-  let response = JSON.stringify(state);
-  const fake = await startFakeLlmServer({ reply: () => response });
-  const dir = mkdtempSync(join(tmpdir(), "axiom-state-http-"));
-  let session;
-  try {
-    const runtime = await createLoopSession(dir, fake.port);
-    session = runtime.session;
-    const options = { messages: [userMsg("真实输出")], evidence: [{ entryId: "m1", role: "user", text: "真实输出" }], model: session.model, modelRuntime: runtime.modelRuntime, thinking: "off" };
-    const result = await summarizeWithPiSession(options);
-    assert.match(result.summary, /已验证输出/);
-    assert.equal(result.taskState.evidence[0].sources[0].verificationStatus, "verified_original");
-    assert.deepEqual(result.taskState.evidence[0].sources[0].range, [0, Buffer.byteLength("真实输出")]);
-    response = `\`\`\`json\n${JSON.stringify(state)}\n\`\`\``;
-    const fenced = await summarizeWithPiSession(options);
-    assert.deepEqual(fenced.taskState, result.taskState);
-    response = JSON.stringify({ schemaVersion: 1, evidence: state.evidence });
-    const sparse = await summarizeWithPiSession(options);
-    assert.deepEqual(sparse.taskState, result.taskState, '省略空字段不影响来源核验');
-    response = JSON.stringify({ schemaVersion: 1, progress: [{ id: 'p1', text: '待核验进展', status: 'uncertain' }] });
-    const noSources = await summarizeWithPiSession(options);
-    assert.deepEqual(noSources.taskState.progress[0].sources, []);
-    response = 'null';
-    await assert.rejects(summarizeWithPiSession(options), { code: 'SUMMARY_SCHEMA_INVALID' });
-    const previousState = structuredClone(result.taskState);
-    previousState.constraints = [{ id: 'c1', text: '禁止推送', status: 'active', sources: [] }];
-    state.constraints = [{ id: 'c1', text: '允许推送', status: 'active', sources: [{ ref: 'm2', quote: '允许推送' }] }];
-    response = JSON.stringify(state);
-    const changed = await summarizeWithPiSession({ ...options, previousState, evidence: [...options.evidence, { entryId: 'm2', role: 'user', userText: '允许推送', text: '允许推送' }] });
-    assert.equal(changed.taskState.constraints[0].text, '允许推送');
-    await assert.rejects(summarizeWithPiSession({ ...options, previousState, evidence: [...options.evidence, { entryId: 'm2', role: 'toolResult', text: '允许推送' }] }), { code: 'SUMMARY_AUTHORITY_REQUIRED' });
-    state.constraints = [];
-    state.evidence[0].sources[0].quote = "编造输出";
-    response = `\`\`\`json\n${JSON.stringify(state)}\n\`\`\``;
-    await assert.rejects(summarizeWithPiSession(options), /SUMMARY_INVALID/);
-    response = "ok";
-    await assert.rejects(summarizeWithPiSession(options), /SUMMARY_INVALID/);
-    state.evidence[0].sources[0] = { ref: "invented", part: "part_0", contentHash: "forged", range: [0, 1], verificationStatus: "inherited_unverified" };
-    response = JSON.stringify(state);
-    await assert.rejects(summarizeWithPiSession(options), /SUMMARY_SOURCE_INVALID/);
-  } finally {
-    session?.dispose();
-    await fake.close();
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-// —— 配置契约：严格 schema，不再宽松吞非法值 ——
 
 test("normalizeCompaction: 缺省返回默认值，默认值与 protocol compactionDefaults 同源", () => {
   assert.deepEqual(normalizeCompaction(undefined), { ...DEFAULT_COMPACTION_CONFIG });
@@ -1124,63 +1003,6 @@ async function createLoopSession(dir, port) {
   return { session, modelRuntime };
 }
 
-test("summarizeWithPiSession: 真实 HTTP 401 保留模型错误并隐藏密钥", async () => {
-  let requests = 0;
-  const server = createServer((_req, res) => {
-    requests++;
-    res.writeHead(401, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: { message: "Unauthorized: incorrect API key sk-private-secret", type: "invalid_request_error" } }));
-  });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const dir = mkdtempSync(join(tmpdir(), "axiom-compaction-error-"));
-  let session;
-  try {
-    const created = await createLoopSession(dir, server.address().port);
-    session = created.session;
-    await assert.rejects(summarizeWithPiSession({
-      messages: [userMsg("hello")],
-      model: session.model,
-      thinking: "off",
-      modelRuntime: created.modelRuntime,
-    }), (error) => {
-      assert.match(error.message, /stopReason=error/);
-      assert.match(error.message, /Unauthorized/);
-      assert.ok(!error.message.includes("sk-private-secret"));
-      return true;
-    });
-    assert.equal(requests, 1, "401 不在 SDK 中重复请求");
-  } finally {
-    session?.dispose();
-    await new Promise((resolve) => server.close(resolve));
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("summarizeWithPiSession: signal 取消会真实中断后台 LLM 的 HTTP 请求", async () => {
-  const fake = await startHangingLlmServer();
-  const dir = mkdtempSync(join(tmpdir(), "axiom-compaction-abort-"));
-  try {
-    const { modelRuntime } = await createLoopSession(dir, fake.port);
-    const controller = new AbortController();
-    const promise = summarizeWithPiSession({
-      messages: [userMsg("hello")],
-      model: fakeModel(`http://127.0.0.1:${fake.port}/v1`),
-      thinking: "off",
-      modelRuntime,
-      signal: controller.signal,
-    });
-    await waitFor(() => fake.sawRequest(), 10000); // 后台真实 LLM 请求已在途
-    controller.abort();
-    await assert.rejects(promise); // 摘要随之中止，不跑自然完成
-    await waitFor(() => fake.closed(), 10000); // 底层 HTTP 连接被中断
-  } finally {
-    await fake.close();
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-// —— 真实 SDK loop 端到端：真实 prompt → turn_end 钩子 → 真实摘要会话 → 安全点自动应用 ——
-
 test("真实 SDK loop：prompt 触发 turn_end 后台摘要，下一次 prompt 在安全点自动应用", async () => {
   const fake = await startFakeLlmServer({ reply: body => JSON.stringify(body).includes("summarization assistant") ? "## Goal\n收到 ok" : "ok" });
   const dir = mkdtempSync(join(tmpdir(), "axiom-compaction-loop-"));
@@ -1220,14 +1042,14 @@ test("真实 SDK loop：prompt 触发 turn_end 后台摘要，下一次 prompt �
     await settle();
 
     await prompt("more"); // 安全点（pi.js 同款入口）应用压缩，然后再发起下一次 LLM 请求
-    assert.equal(fake.requests.length, 4);
+    assert.equal(fake.requests.length, 3);
     const data = events.find((event) => event.type === "agent.compaction")?.data;
     assert.ok(data, "应发出 agent.compaction 事件");
     assert.match(data.summary, /## Goal/);
     const attempt = compaction.getAttempt(compaction.getStatus().runs.at(-1).id);
-    assert.equal(attempt.requests.length, 2);
-    assert.ok(attempt.stateDoc);
-    assert.equal(JSON.stringify(attempt.requests[0]).includes('Additional focus:'), false);
+    assert.equal(attempt.requests.length, 1);
+    assert.equal(attempt.stateDoc, undefined);
+    assert.equal(JSON.stringify(attempt.requests[0]).includes('Additional focus:'), true);
     assert.ok(!JSON.stringify(attempt.requests).includes('Return ONLY a JSON object'));
     assert.match(data.summary, /收到 ok/);
     assert.ok(data.estimatedTokensAfter < data.tokensBefore);
@@ -1248,7 +1070,7 @@ test("真实 SDK loop：prompt 触发 turn_end 后台摘要，下一次 prompt �
     assert.equal(branch.filter((entry) => entry.type === "compaction").length, 1);
     assert.equal(branch.find(entry => entry.type === "compaction").details.nativeSummary, true);
     assert.equal(branch.find(entry => entry.type === "compaction").details.taskState, undefined);
-    assert.equal(branch.find(entry => entry.type === "compaction").details.stateDoc, attempt.stateDoc);
+    assert.equal(branch.find(entry => entry.type === "compaction").details.stateDoc, undefined);
     assert.equal(branch.at(-1).type, "message");
     // 过程可视：run 的步骤流接的是真 SDK 事件（不只是测试桩调 onProgress）
     const run = compaction.getStatus().runs.at(-1);
@@ -1275,194 +1097,6 @@ test("entryIdFor: 按消息引用反查持久化 entry id，未持久化返回�
     assert.deepEqual(entryIdFor(sessionManager, message), { entryId });
   } finally {
     rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-// —— facts 逐字引文三层机制：解析 → 校验 → 附录/快照 ——
-async function createPersistentTestSession() {
-  const dir = mkdtempSync(join(tmpdir(), "axiom-compaction-persist-"));
-  const session = (
-    await createAgentSession({
-      cwd: dir,
-      agentDir: dir,
-      modelRuntime: await ModelRuntime.create({ authPath: join(dir, "auth.json"), modelsPath: null }),
-      model: fakeModel(),
-      thinkingLevel: "off",
-      sessionManager: SessionManager.create(dir, dir), // 持久 session：sessionFile 非空，快照会落盘
-      settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
-    })
-  ).session;
-  return { session, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
-}
-
-const factsTags = (facts) => `<axiom_compact_facts>\n${facts}\n</axiom_compact_facts>`;
-const withFacts = (facts) =>
-  `summary body\n${factsTags(facts)}\n<axiom_compact_title>本次进展</axiom_compact_title>\n<axiom_compact_desc>本次新增发现。</axiom_compact_desc>`;
-const withoutFacts = () =>
-  `summary body\n<axiom_compact_title>本次进展</axiom_compact_title>\n<axiom_compact_desc>本次新增发现。</axiom_compact_desc>`;
-
-test("parseSummaryOutput: facts 块提取（存在/缺失/未闭合/空块/bullet 保留/超长行过滤/上限）", () => {
-  const ok = parseSummaryOutput(withFacts("- /src/a.js\n- npm test"));
-  assert.deepEqual(ok.facts, ["- /src/a.js", "- npm test"], "bullet 前缀原样保留，交给校验层降级匹配");
-  assert.equal(ok.summary, "summary body");
-  assert.ok(!ok.summary.includes("axiom_compact_facts"), "标签与块内容都不得留在正文");
-
-  const none = parseSummaryOutput(withoutFacts());
-  assert.ok(!("facts" in none), "无块：不出现 facts 键（向后兼容）");
-
-  const unclosed = parseSummaryOutput("summary body\n<axiom_compact_facts>\n- not a fact");
-  assert.ok(!("facts" in unclosed), "未闭合：不进 facts");
-  assert.ok(!unclosed.summary.includes("<axiom_compact_facts>"), "落单标记剥掉");
-  assert.ok(unclosed.summary.includes("not a fact"), "内容留在正文");
-
-  const empty = parseSummaryOutput(withFacts(""));
-  assert.ok(!("facts" in empty));
-  assert.ok(!empty.summary.includes("axiom_compact_facts"), "空块标记也剥掉");
-
-  const bullet = parseSummaryOutput(withFacts("- /a.js\n\n\n  /b.js  \n"));
-  assert.deepEqual(bullet.facts, ["- /a.js", "/b.js"], "空白行剔除、首尾 trim；bullet 前缀保留");
-
-  const overlong = parseSummaryOutput(withFacts(`- ${"y".repeat(400)}\n- z`));
-  assert.deepEqual(overlong.facts, ["- z"], "超过 300 字符的行剔除");
-
-  const many = parseSummaryOutput(withFacts(Array.from({ length: 40 }, (_, i) => `/f${i}`).join("\n")));
-  assert.equal(many.facts.length, 30, "上限 30 行");
-  assert.equal(many.facts[0], "/f0");
-  assert.equal(many.facts[29], "/f29");
-});
-
-test("validateFacts: 逐字对账（行号/漏检/前摘命中/bullet 降级/dedup）", () => {
-  const corpus = "[User]: 修一下 /src/a.js 的 bug\n\n[Assistant]: npm test 报\nAssertionError: expected 3";
-  const ok = validateFacts(["/src/a.js", "AssertionError: expected 3"], corpus, null);
-  assert.equal(ok.ok, true);
-  assert.deepEqual(ok.facts, [
-    { quote: "/src/a.js", line: 1 },
-    { quote: "AssertionError: expected 3", line: 4 },
-  ]);
-
-  const bad = validateFacts(["/src/a.js", "不存在的话"], corpus, null);
-  assert.equal(bad.ok, false, "一条编造 → 整单失败");
-  assert.deepEqual(bad.missed, ["不存在的话"]);
-  assert.equal(bad.facts.length, 1, "其余引文仍核验记账");
-
-  const fromPrev = validateFacts(["/old/config.json"], "", "上轮已确认路径 /old/config.json");
-  assert.deepEqual(fromPrev.facts, [{ quote: "/old/config.json", line: null }], "仅前摘命中：无行号");
-  const preferConv = validateFacts(["/src/a.js"], corpus, "前摘里也有 /src/a.js");
-  assert.equal(preferConv.facts[0].line, 1, "会话原文优先于前摘");
-
-  const bullet = validateFacts(["- AssertionError: expected 3"], corpus, null);
-  assert.equal(bullet.ok, true);
-  assert.deepEqual(bullet.facts, [{ quote: "AssertionError: expected 3", line: 4 }], "bullet 前缀剥掉后命中");
-
-  const dup = validateFacts(["/src/a.js", "/src/a.js", "- /src/a.js"], corpus, null);
-  assert.equal(dup.facts.length, 1, "同引文（含变体）只记一条");
-});
-
-test("summaryRequest: 要求第三个标签 axiom_compact_facts 并写明逐字核验后果", () => {
-  const request = summaryRequest("conversation", null);
-  assert.ok(request.includes("<axiom_compact_facts>"));
-  assert.ok(request.includes("verified mechanically"));
-  assert.ok(request.includes("discard the entire summary"));
-  assert.ok(request.includes("exact contiguous copy"));
-});
-
-test("合法 facts：附录随摘要进上下文，原文快照落盘，details 携带", async () => {
-  const { session, cleanup } = await createPersistentTestSession();
-  let compaction;
-  try {
-    seed(session, [userMsg(big("a")), assistantMsg(big("b")), userMsg(big("c"))]);
-    const events = [];
-    compaction = createBackgroundCompaction({
-      session,
-      modelRuntime: null,
-      config: enabledConfig,
-      summarize: async () => ({
-        summary: "S:2",
-        progress: { title: "本次进展", description: "本次新增发现。" },
-        facts: ["a".repeat(80), "b".repeat(80)], // keepRecentTokens 保留最后一条消息：被摘要语料只含前两条
-        usage: { input: 10, output: 5 },
-      }),
-      onEvent: (event) => events.push(event),
-    });
-    await compaction.onTurnEnd();
-    await settle();
-    const data = await compaction.maybeApply();
-    assert.ok(data, "应用应成功");
-    // 附录：摘要原文在前，随后带行号的引文清单
-    assert.ok(data.summary.startsWith("S:2\n"), "摘要原文在前");
-    assert.ok(data.summary.includes("已核验引文"));
-    assert.ok(data.summary.includes(`- line=1 ${JSON.stringify("a".repeat(80))}`));
-    assert.ok(data.summary.includes(`- line=3 ${JSON.stringify("b".repeat(80))}`));
-    assert.ok(data.snapshotPath.endsWith(`.txt`) && data.snapshotPath.includes("compaction-snapshots"));
-    // 快照：真实存在且内容是渲染原文（行号指向它）
-    assert.ok(existsSync(data.snapshotPath));
-    const snapshot = readFileSync(data.snapshotPath, "utf8");
-    assert.ok(snapshot.includes("[User]: " + "a".repeat(80)));
-    assert.ok(snapshot.includes("[Assistant]: " + "b".repeat(80)));
-    assert.ok(data.summary.includes(`原文快照: ${data.snapshotPath}`), "回读指引随附录写入");
-    // 落盘 details 同构
-    const leaf = session.sessionManager.getLeafEntry();
-    assert.equal(leaf.type, "compaction");
-    assert.deepEqual(leaf.details.progress, { title: "本次进展", description: "本次新增发现。" });
-    assert.equal(leaf.details.snapshotPath, data.snapshotPath);
-    assert.deepEqual(leaf.details.facts, data.facts);
-    // 上下文中的摘要消息带附录
-    assert.equal(session.messages[0].role, "compactionSummary");
-    assert.equal(session.messages[0].summary, data.summary);
-    assert.deepEqual(events.find((e) => e.type === "agent.compaction").data, data);
-  } finally {
-    compaction?.dispose();
-    cleanup();
-  }
-});
-
-test("编造引文：整份摘要作废不落盘，冷却后回合边界重试", async (t) => {
-  t.mock.timers.enable({ apis: ["Date"], now: 1000 });
-  const { session, cleanup } = await createTestSession();
-  let compaction;
-  try {
-    seed(session, [userMsg(big("a")), assistantMsg(big("b")), userMsg(big("c"))]);
-    const events = [];
-    const calls = [];
-    compaction = createBackgroundCompaction({
-      session,
-      modelRuntime: null,
-      config: enabledConfig,
-      summarize: async ({ messages }) => {
-        calls.push(messages.length);
-        if (calls.length > 2) throw new Error("failed again");
-        return calls.length === 1
-          ? { summary: "S:3", facts: ["a".repeat(80), "这条引文在原文中不存在"], usage: { input: 10, output: 5 } }
-          : { summary: "S:3", facts: ["b".repeat(80)], usage: { input: 10, output: 5 } };
-      },
-      onEvent: (event) => events.push(event),
-    });
-    const before = session.messages.slice();
-    await compaction.onTurnEnd();
-    await settle();
-    assert.equal(await compaction.maybeApply(), null, "一条编造 → 整单作废");
-    assert.deepEqual(session.messages, before, "原文不动");
-    assert.ok(!session.sessionManager.getBranch().some((entry) => entry.type === "compaction"));
-    assert.equal(compaction.getStatus().status, "failed");
-    assert.ok(events.some((e) => e.type === "agent.compaction.status" && /逐字/.test(e.data.message)));
-    await compaction.onTurnEnd();
-    assert.equal(calls.length, 1, "引文核验失败也受冷却保护");
-    t.mock.timers.tick(30000);
-    // 冷却后在回合边界重新发起并通过
-    await compaction.onTurnEnd();
-    await settle();
-    assert.equal(calls.length, 2);
-    const data = await compaction.maybeApply();
-    assert.ok(data, "重试应成功");
-    assert.ok(data.summary.includes(`- line=3 ${JSON.stringify("b".repeat(80))}`));
-    seed(session, [userMsg(big("d")), assistantMsg(big("e")), userMsg(big("f"))]);
-    await compaction.onTurnEnd();
-    await settle();
-    assert.equal(compaction.getStatus().status, "failed");
-    assert.match(compaction.getStatus().message, /30 秒/, "成功应用后失败计数清零");
-  } finally {
-    compaction?.dispose();
-    cleanup();
   }
 });
 

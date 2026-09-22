@@ -20,6 +20,8 @@ import { initServiceSettings } from "./service-settings.js";
 import { createUsageAudit } from "./usage-audit.js";
 import { createQuestionUI } from "./question.js";
 import { createGoalUI } from "./goal.js";
+import { createTodoUI } from "./todo.js";
+const todoUI = createTodoUI({ root: document.getElementById("todo-dock"), request });
 const questionUI = createQuestionUI({ root: document.getElementById("question-dock"), reply: (data) => request("question.reply", data), focusPrompt: () => document.getElementById("prompt").focus() });
 
 const filePicker = createFilePicker(request);
@@ -435,7 +437,7 @@ composerWrap.addEventListener("mouseleave", () => { composerHovered = false; sch
 // “回到最新”钉在输入区上沿（bottom: 100% + 8px），mousedown 就展开会把按钮向上推
 // 两百多像素，mouseup 落不回原元素，click 根本不触发——滚动按钮不算写入意图。
 // 压缩进度条幅同理：它排在输入区上方，展开会把它顶走，点开摘要详情也不是写入意图。
-const composerIntent = (event) => !event.target?.closest?.("#latest, #compaction-progress");
+const composerIntent = (event) => !event.target?.closest?.("#latest, #compaction-progress, #todo-dock");
 composerWrap.addEventListener("mousedown", (event) => { if (composerIntent(event)) expandComposer(); });
 composerWrap.addEventListener("focusin", (event) => { if (composerIntent(event)) expandComposer(); });
 composerWrap.addEventListener("focusout", scheduleComposerCollapse);
@@ -708,6 +710,7 @@ function updateComposer() {
   const unavailable = !connected || (changing && !configuringSessions.has(sessionId));
   questionUI.setConnected(!unavailable && !sessionMissing);
   goalUI.setConnected(!unavailable && !sessionMissing);
+  todoUI.setConnected(!unavailable && !sessionMissing);
   $("queue-type").disabled = unavailable;
   $("composer-skill").disabled = unavailable || !config?.skills?.length;
   $("composer-skill").value = selectedSkill;
@@ -2602,6 +2605,7 @@ function applyEvent(message) {
   }
   if (type.startsWith("agent.message.") || type === "agent.delta") rawChanged();
   if (type === "question.asked") region("输入操作", () => questionUI.asked(message.sessionId, data));
+  if (type === "todo") region("输入操作", () => todoUI.show(sessionId, message.todo));
   if (type === "question.closed") region("输入操作", () => questionUI.closed(message.sessionId, data.toolCallId));
   if (type === "goal") {
     region("对话展示", () => goalUI.show(sessionId, data?.goal ?? message.goal, goalAnchors));
@@ -3152,6 +3156,7 @@ function finishSnapshot(job, ctx) {
   config.compaction = state.config.compaction || compactionDefaults;
   updateAvailability();
   region("对话展示", () => goalUI.show(sessionId, state.goal, goalAnchors));
+  region("输入操作", () => todoUI.show(sessionId, state.todo));
 }
 const transport = createTransport({
   url: () => `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`,

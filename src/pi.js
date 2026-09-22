@@ -216,12 +216,6 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         async execute(_id, args) { await history?.reconcile(); activeHistoryIds = new Set(session.sessionManager.getBranch().map(entry => entry.id)); const result = args.messageId || args.sources ? historyReader.readMessage(args) : historyReader.read(args); return { content: [{ type: "text", text: JSON.stringify(result) }], details: result }; },
       });
     } }];
-    extraFactories.push({ name: "axiom-task-state", factory: pi => {
-      pi.on('context', async ({ messages }) => {
-        const { withTaskState } = await import('./task-state-doc.js');
-        return { messages: withTaskState(messages, session.sessionManager.getBranch()) };
-      });
-    } });
     extraFactories.push({ name: "axiom-tool-execution", factory: toolExecution.extension });
     if (memoryState || typeof executionContext === "function")
       extraFactories.push(memoryExtension(memoryState, memory, policy, executionContext));

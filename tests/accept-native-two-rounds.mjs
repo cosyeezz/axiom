@@ -51,20 +51,19 @@ try {
     parent = record.id;
     await archive.barrier();
     const allowed = new Set(manager.getBranch().map(e => e.id));
-    assert.ok(record.details.stateDoc?.trim());
-    assert.equal(record.details.stateBoundary, record.firstKeptEntryId);
+    assert.equal(record.details.stateDoc, undefined);
+    assert.equal(record.details.stateBoundary, undefined);
     assert.equal(record.details.excerpts, undefined);
     const attempt = ctrl.getAttempt(status.runs.at(-1).id);
-    const stateRequest = attempt.requests.at(-1).context.messages[0].content;
-    if (round === 2) assert.ok(stateRequest.includes(JSON.stringify(rounds[0].stateDoc).slice(1, -1)));
-    assert.ok(attempt.stateDoc);
+    assert.equal(attempt.stateDoc, undefined);
+    assert.ok(attempt.requests.length >= 1);
     for (const id of originals) assert.ok(allowed.has(id));
     const reopened = SessionManager.open(file, dir);
     assert.equal(reopened.getBranch().findLast(e => e.type === 'compaction').id, record.id);
     assert.equal(reopened.buildSessionContext().messages[0].role, 'compactionSummary');
-    assert.equal(reopened.getBranch().findLast(e => e.type === 'compaction').details.stateDoc, record.details.stateDoc);
-    rounds.push({ round, applied: true, stateDoc: record.details.stateDoc, stateChars: record.details.stateDoc.length, summaryChars: record.summary.length, requests });
+    assert.equal(reopened.getBranch().findLast(e => e.type === 'compaction').summary, record.summary);
+    rounds.push({ round, applied: true, summaryChars: record.summary.length, requests });
   }
-  console.log(JSON.stringify({ ok: true, rounds: rounds.map(({ stateDoc, ...info }) => info), originalsPreserved: originals.length, requests }));
+  console.log(JSON.stringify({ ok: true, rounds, originalsPreserved: originals.length, requests }));
 } catch (error) { console.error(JSON.stringify({ ok: false, error: describeCompactionError(error), requests })); process.exitCode = 1; }
 finally { ctrl?.dispose(); session?.dispose(); await archive?.close(); rmSync(dir, { recursive: true, force: true }); }

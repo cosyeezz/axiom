@@ -17,7 +17,10 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  * 未登记的文件会在 INDEX.md 里标 ⚠ 提醒补充。
  */
 const MODULE_INFO = {
-  "src/task-state-doc.js": "压缩切点任务状态投影：从同版本日志派生独立上下文，不新增权威记录",
+  "src/todo.js": "主会话 Todo：SQLite 权威存储、版本 CAS、两级工具与暂停状态机",
+  "public/todo.js": "输入区任务清单：SVG 计数、全局折叠偏好与暂停恢复",
+  "public/todo.css": "任务清单面板样式",
+  "src/compaction-display.js": "原生压缩可选展示指令与标题概述容错解析",
   "src/task-execution.js": "子任务活动阶段、独立时间预算、停止事实与总结提示",
   "src/tool-execution.js": "命令默认超时策略、角色限制与工具耗时观察",
   "tests/task-execution.test.js": "统一停止总结、硬截止、清理隔离与终态续接回归",

@@ -18,6 +18,7 @@
     <script type="module" src="/app.js"></script>
     <link rel="stylesheet" href="/question.css" />
     <link rel="stylesheet" href="/goal.css" />
+    <link rel="stylesheet" href="/todo.css" />
 </head>
   <body>
     <div class="shell">
@@ -100,6 +101,7 @@
             <div id="task-runs" role="status" aria-label="运行中的子代理任务" hidden></div>
             <div id="compaction-progress" role="status" aria-live="polite" aria-atomic="true" aria-label="后台上下文压缩进度" hidden></div>
             <div id="safe-stop-progress" role="status" aria-live="polite" aria-atomic="true" aria-label="安全停止进度" hidden><svg class="safe-stop-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5h5v5h-5z"/></svg><span class="safe-stop-text">安全停止中，等待安全点<span class="safe-stop-dots" aria-hidden="true"><i></i><i></i><i></i></span></span></div>
+            <div id="todo-dock" aria-label="任务清单" hidden></div>
             <div class="context-bar">
               <div class="icon-group" role="group" aria-label="输入区图标">
                 <button type="button" id="add-context" class="icon-button" popovertarget="context-menu" title="添加上下文" aria-label="添加 Skill、文件或文件夹"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>

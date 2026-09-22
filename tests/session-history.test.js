@@ -196,6 +196,7 @@ test("未加载会话取快照不创建 SDK，身份/水位/元数据遵守同�
     sessions.get = () => item;
     sessions.ensureLoaded = () => { throw new Error("不得初始化 SDK"); };
     sessions.goalStore = { load: () => null };
+    sessions.todoStore = { load: () => null };
     sessions.store = { getSession: () => ({ sessionFile: file, cwd: root, tasks: [{ id: "outside", status: "completed" }],
       compactions: [], retries: [{ messageCount: 1 }] }) };
     const state = sessions.snapshot("s", { epoch: "inst", includeSeq: true });

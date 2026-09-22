@@ -1,5 +1,14 @@
 # 开发记录
 
+## 2026-09-23 Todo 长会话控制与纯原生压缩
+
+- 决策：任务控制与有损摘要分离。主代理维护 SQLite 两级 Todo，版本 CAS 批量原子更新；子代理不注册工具、不接收 Todo 上下文。Goal 与 Todo 互斥驱动。
+- 行为：空闲且无子任务、问题、待通知或排队消息时有界督促；停止及重启持久暂停，普通输入不解冻，显式恢复才继续。补齐 attach、通知补投和中断子任务续跑的暂停守卫；完成列表保留暂停，删除最后子项重置父项。
+- UI：输入框上方两级列表、SVG 数字折叠、全局 localStorage 偏好、暂停／恢复与断连禁用，沿用 Linear token。
+- 压缩：直接 SDK compact() + customInstructions，仅可选标题／简述；删除 stateDoc 生成／注入、旧摘要提示词、结构化 patch 及 facts 校验路径。保留冻结快照、预算、取消、归档与持久提交屏障；展示字段异常不重试摘要。
+- 验证：全量 924 项，922 通过、2 跳过、0 失败（约 63 秒）。修复 jsdom 展开测试竞态，改为等待实际 toggle 事件；补齐 Todo 生命周期、暂停跨重启、通知冻结、UI、安全渲染和容错展示解析测试；本地 HTTP 覆盖 401 不重试及客户端密钥不泄漏、取消真实关闭响应连接。会话列表测试使用固定快照时间，消除逐行时钟导致的偶发排序失败。本轮未调用真实供应商或执行真实浏览器验收，不重启运行服务。
+- 文件：src/todo.js、sessions.js、protocol.js、server.js、compaction.js、native-summary.js、compaction-display.js、pi.js、prompts.js；public/todo.js、todo.css、app.js、index.html；对应 tests、README、docs/todo-control-execution.md、模块登记。生成 INDEX.md 不交付，保留主工作区用户改动。
+
 ## 2026-09-22 子代理执行治理
 
 - 原因与依据：先建立 `docs/subagent-execution-governance.md`，统一 UI、主代理取消与预算截止，避免无限等待并保留部分产出；不修改依赖、不逐工具包装 execute。
