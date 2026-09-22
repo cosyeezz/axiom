@@ -160,7 +160,7 @@ test("普通会话不自动续跑、不注入目标上下文", async () => {
     await tick();
     assert.equal(mains.length, 1);
     assert.equal(typeof mains[0].options.executionContext, "function");
-    assert.match(mains[0].options.executionContext(), /todo_read/);
+    assert.match(mains[0].options.executionContext(), /Todo当前无未完成事项/);
     assert.doesNotMatch(mains[0].options.executionContext(), /目标模式/);
     assert.equal(mains[0].options.shouldPause(), false, "普通会话永不在安全点暂停");
     assert.equal(item.goal.active, false);
@@ -355,7 +355,7 @@ test("跨会话互不影响：只有进入 /goal 的会话受目标模式约束"
 
     assert.equal(sessions.snapshot(a).goal.phase, "paused");
     assert.equal(sessions.snapshot(b).goal, null, "B 会话无目标");
-    assert.match(mains[1].options.executionContext(), /todo_read/);
+    assert.match(mains[1].options.executionContext(), /Todo当前无未完成事项/);
     assert.doesNotMatch(mains[1].options.executionContext(), /目标模式/);
     assert.notEqual(sessions.goalStore.load(a), null);
     assert.equal(sessions.goalStore.load(b), null);
@@ -565,7 +565,7 @@ test("exit：空闲时退出目标模式，停用 goal_* 工具、清记录且�
     // 用户显式输入恢复普通会话：无目标上下文、不自动循环
     await ordinary(sessions, id, "退出后的普通输入");
     assert.equal(item.goalExited, false);
-    assert.match(agent.options.executionContext(), /todo_read/);
+    assert.match(agent.options.executionContext(), /Todo当前无未完成事项/);
     assert.doesNotMatch(agent.options.executionContext(), /目标模式/);
     assert.equal(agent.calls.at(-1), "退出后的普通输入");
   } finally { await sessions.close(); }
@@ -686,7 +686,7 @@ test("新会话默认普通模式：A 处于 running/paused Goal 时新建的会
       assert.ok(item.agent.options.inactiveTools.includes(name), `新会话应默认停用 ${name}`);
       assert.ok(!item.agent.activeTools.has(name), `新会话不得激活 ${name}`);
     }
-    assert.match(item.agent.options.executionContext(), /todo_read/);
+    assert.match(item.agent.options.executionContext(), /Todo当前无未完成事项/);
     assert.doesNotMatch(item.agent.options.executionContext(), /目标模式/);
     // 普通会话只跑一轮：不自动续跑
     await plainTurn(id, text);
@@ -812,4 +812,27 @@ test("启动恢复跳过 Goal 阻塞态会话：不白拉 SDK，通知仍留到�
     assert.equal(restored.get(id).loaded, false);
     assert.equal(restored.goalStore.load(id).phase, "paused", "目标记录原样保留，恢复后仍可投递");
   } finally { await restored?.close(); await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+
+test('Todo read loop requests safe stop and freezes notification wakeups', async () => {
+  const { factory, mains } = factoryFixture();
+  const sessions = new Sessions(factory);
+  try {
+    const id = await sessions.create();
+    await sessions.prompt(id, 'test');
+    const item = sessions.get(id);
+    const read = item.todo.readTool();
+    await read.execute('1', {});
+    await read.execute('2', {});
+    await assert.rejects(read.execute('3', {}), /TODO_READ_LOOP/);
+    assert.equal(mains[0].safeStopRequested, true);
+    assert.equal(item.todo.snapshot().mode, 'paused');
+    assert.equal(item.goalExited, true);
+    assert.equal(item.notificationsPaused, true);
+    mains[0].finish();
+    await item.work;
+    await tick();
+    assert.equal(mains[0].calls.length, 1);
+  } finally { await sessions.close(); }
 });

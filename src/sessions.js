@@ -1212,6 +1212,8 @@ export class Sessions {
         }
         this.saveChange(item, { event: { type: "retry", record } });
       }
+      if (event.type === "tool.state" && agentId === "main" && event.data.phase === "end" &&
+          !['todo_read', 'todo_update'].includes(event.data.toolName)) item.todo?.resetReads();
       if (event.type === "tool.state")
         Object.assign(item.tools[`${agentId}:${event.data.toolCallId}`] ??= { agentId }, event.data);
       if (event.type === "task.state") this.saveChange(item, { task: event.saved ?? event.data });
@@ -1233,7 +1235,11 @@ export class Sessions {
     };
     item.goal = new Goal({ sessionId: id, store: this.goalStore, emit: item.emit,
       messageCount: () => item.messages.length });
-    item.todo = new Todo({ sessionId: id, store: this.todoStore, emit: item.emit });
+    item.todo = new Todo({ sessionId: id, store: this.todoStore, emit: item.emit, onLoop: () => {
+      item.notificationsPaused = true;
+      item.goalExited = true;
+      item.agent.requestSafeStop?.();
+    } });
     item.questions = createQuestions(item.emit);
     const saveMemory = (change) => this.saveChange(item, change);
     item.tasks = new Tasks(
@@ -2010,6 +2016,7 @@ export class Sessions {
 
   // 运行骨架（prompt 与手动重试共用）：runId/status 广播 → result() 取错 → 收尾持久化与 idle 复位。
   startRun(item, run) {
+    item.todo?.resetReads();
     item.executionStarted = true;
     // 通知在下一次运行开始时恢复：goal 被暂停/退出时仍要冻结，安全停止期间也暂停，防止通知把刚停下的会话又拉起来。
     item.notificationsPaused = this.goalNotificationsBlocked(item) || false;
