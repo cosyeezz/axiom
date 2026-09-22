@@ -40,6 +40,8 @@ const assets = new Map(
     ["/session-details.js", "public/session-details.js"],
     ["/compaction-view.js", "public/compaction-view.js"],
     ["/transport.js", "public/transport.js"],
+    ["/todo.js", "public/todo.js"],
+    ["/todo.css", "public/todo.css", "text/css"],
     ["/goal.js", "public/goal.js"],
     ["/goal.css", "public/goal.css", "text/css"],
     ["/question.js", "public/question.js"],

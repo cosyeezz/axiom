@@ -856,3 +856,5 @@ sessions.js 事件 -> server.js -> src/transport.js（统一发送保护）
 任务状态摘要接受裸 JSON，或唯一完整的 JSON/无语言 Markdown 代码块；不从解释文本抽取 JSON，不补全截断内容。结构、逐字引用与约束授权校验仍严格执行。格式错误提供格式分类与字符数，非法结构归类为 SUMMARY_SCHEMA_INVALID。
 
 有持久会话文件时，压缩终态旁写 `<session.jsonl>.compaction-diagnostics.json`，保存本进程最近至多 5 次终态的阶段、时间、错误代码和输出长度，不保存提示词、摘要正文、引文或供应商错误原文；重启后可直接读取文件排查，但 UI 不自动恢复它，后续终态会用当前进程记录覆盖。诊断写入失败不影响压缩。
+
+开发排障：页面一直显示「连接中」时，检查浏览器静态模块请求是否 404；新增 public JS/CSS 必须登记 src/server.js 路由并重启服务。任务清单资源为 /todo.js 与 /todo.css。

@@ -2881,3 +2881,7 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 涉及文件：src/native-summary.js、src/compaction.js、src/pi.js、src/task-state-doc.js、public/compaction-view.js、tests/compaction*、tests/native-summary.test.js、tests/task-state*、tests/conversation-preview.mjs、tests/accept-native-two-rounds.mjs、README.md、docs/compaction-task-state-execution.md、索引注册及知识记录。
 - 验证：真实供应商历史副本连续两轮成功，共4请求，894条原始记录保留，stateDoc分别6837/2502字符，继承及重开检查通过。真实SDK+本地模拟供应商验证主/子状态隔离、请求顺序及重开注入。浏览器1440/390/320宽度通过任务状态Markdown与原文切换验收；全量测试通过（最终计数见执行文档）。没有重启运行服务。生成索引不纳入提交，保留主目录已有改动。
 - 边界：工具输入仍受SDK序列化截断影响；配对状态维护不保证语义零幻觉。状态失败不得沿用旧文档冒充同版本产物。
+
+### 2026-09-22 修复页面持续连接中
+- 原因：todo.js 静态导入及 todo.css 未登记 HTTP 路由，应用模块无法执行。
+- 修改：src/server.js 补齐两个资源；tests/server.test.js 验证 HTTP 200、JS 类型与缓存；README.md、knowledge.md 记录排障，重建 INDEX.md。

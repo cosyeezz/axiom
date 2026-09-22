@@ -704,3 +704,8 @@
 - 根因：runtime.billing 只代表单代理，当前页任务不覆盖全会话；两个详情各自设置 vh 上限仍会叠加高度。
 - 修复：src/session-billing.js combinedBilling 纯函数合并主代理及全部任务；src/sessions.js 快照和 session.billing 事件同口径，恢复从各自 JSONL getEntries 重算，缺文件回退持久化的最后已知账；public/index.html/app.js/style.css 将详情移入独立原生 dialog，内容只由弹窗主体滚动。
 - 防再犯：不在前端按消息/任务页累计费用，不改变 runtime.billing 的单代理语义；测试同时覆盖实时、冷快照、分页、恢复和缺文件。新增前端辅助函数避免与 eval 测试拼接模块的顶层名称冲突；浏览器需验证真实 ESM 加载、移动端展开态、焦点和关闭返回。
+
+### 2026-09-22 Todo 资源漏注册阻断应用启动
+- 症状：health 正常，页面一直连接中。根因：todo.js 静态导入 404 阻止 app.js 执行，文字只是 HTML 初始状态。
+- 修复：src/server.js 注册 todo.js/todo.css；tests/server.test.js 覆盖真实 HTTP 资源。
+- 防再犯：验收必须检查浏览器已连接，不能以 health 200 或 HTML 可见代替应用启动。
