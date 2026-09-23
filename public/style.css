@@ -2,7 +2,7 @@
    因此切换主题只需改 :root 的 color-scheme（下方 [data-theme] 规则），不需要重复整份 token 表。
    默认深色（产品基调），浅色仅在用户显式切换后生效，不跟随系统，避免既有用户被动变脸。 */
 /* Keep the timeline gap near the original 24px; the hit target floats in that gap. */
-.safe-point { position: relative; height: 4px; margin: 0 0 4px; z-index: 1; }
+.safe-point { position: relative; height: 2px; margin: 0 0 2px; z-index: 1; }
 .safe-point-trigger { position: absolute; top: -8px; left: 0; display: flex; align-items: center; gap: 6px; width: 100%; height: 16px; min-height: 0; padding: 0; border: 0; background: transparent; color: var(--muted); opacity: 0; cursor: pointer; font-size: 12px; }
 .safe-point-trigger::before { content: ''; flex: 1; height: 1px; background: var(--line-strong); }
 .safe-point:hover .safe-point-trigger, .safe-point:focus-within .safe-point-trigger { opacity: 1; }
@@ -833,8 +833,8 @@ h1 {
 #session-runtime { padding: 0 12px 8px; }
 #composer { display: flex; flex-direction: column; }
 .message-model { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin-top: 8px; color: var(--muted); overflow-wrap: anywhere; font-size: 12px; font-variant-numeric: tabular-nums; }
-.safe-point-boundary > .message-model { margin-top: 0; padding-bottom: 12px; }
-@media (hover: none) { .safe-point-boundary > .message-model { padding-bottom: 24px; } }
+.message > .safe-point { margin-top: 8px; }
+@media (hover: none) { .message > .safe-point { margin-top: 24px; } }
 .message-model-name { color: var(--body-ink); }
 .message-tokens { display: inline-flex; gap: 12px; white-space: nowrap; }
 .call-list .message.activity-only > .message-model:not([hidden]) { display: flex; padding-bottom: 8px; }

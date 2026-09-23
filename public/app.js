@@ -3132,11 +3132,6 @@ function safePointControl(point) {
   return node;
 }
 function renderSafePoints(points) {
-  for (const boundary of $("output").querySelectorAll(".safe-point-boundary")) {
-    const item = boundary.safePointItem;
-    if (item) item.node.append(item.modelInfo);
-    boundary.remove();
-  }
   for (const node of $("output").querySelectorAll(".safe-point")) node.remove();
   for (const point of points || []) {
     let item;
@@ -3152,31 +3147,12 @@ function renderSafePoints(points) {
       }
     }
     if (!anchor?.isConnected || anchor.hidden) continue;
-    // Preserve the exact history boundary, including intermediate folded calls.
-    // A non-call boundary also prevents refreshCallGroups from merging the halves.
-    while (anchor.parentElement !== $("output") && anchor.parentElement) {
-      if (anchor.parentElement.classList.contains("call-list") && anchor.nextElementSibling) {
-        const group = anchor.parentElement.parentElement;
-        const tail = createCallGroup();
-        tail.open = group.open;
-        while (anchor.nextElementSibling) tail.lastElementChild.append(anchor.nextElementSibling);
-        group.after(tail);
-        paintCallGroup(group);
-        paintCallGroup(tail);
-      }
-      anchor = anchor.parentElement;
-    }
-    if (anchor.parentElement !== $("output")) continue;
-    const boundary = document.createElement("div");
-    boundary.className = "safe-point-boundary";
-    // Move, don't clone: renderMessage continues updating the same modelInfo node.
-    // Restore before rebuilding markers so removal never discards the footer.
-    if (item?.modelInfo && !item.node.hidden && item.modelInfo.textContent) {
-      boundary.safePointItem = item;
-      boundary.append(item.modelInfo);
-    }
-    boundary.append(safePointControl(point));
-    anchor.after(boundary);
+    // Keep markers inside records: refreshCallGroups moves whole records, so
+    // internal history boundaries never split consecutive calls into new groups.
+    // A card-owned marker follows its original model/usage footer.
+    const marker = safePointControl(point);
+    if (anchor.parentElement?.classList.contains("message-tools")) anchor.after(marker);
+    else anchor.append(marker);
   }
 }
 function finishSnapshot(job, ctx) {

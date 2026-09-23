@@ -75,9 +75,9 @@ test("safe-point control floats over a compact timeline gap", async () => {
     assert.equal(trigger.height, "16px");
     assert.equal(trigger.minHeight, "0px");
     assert.equal(trigger.padding, "0px");
-    assert.equal(row.height, "4px");
+    assert.equal(row.height, "2px");
     assert.equal(row.marginTop, "0px");
-    assert.equal(row.marginBottom, "4px");
+    assert.equal(row.marginBottom, "2px");
     assert.match(css, /@media \(hover: none\)\s*\{\s*\.safe-point\s*\{\s*height:\s*12px;\s*\}\s*\.safe-point-trigger\s*\{\s*top:\s*-24px;\s*height:\s*40px;/);
   } finally { dom.window.close(); }
 });
@@ -88,6 +88,8 @@ test("tool-result safe point follows the issuing assistant's model usage", async
   const end = source.indexOf("function finishSnapshot(", start);
   const renderSource = start >= 0 && end > start ? source.slice(start, end) : null;
   assert.ok(renderSource, "exercise the production safe-point placement logic");
+  assert.ok(!renderSource.includes('createCallGroup'));
+  assert.ok(!renderSource.includes('safe-point-boundary'));
   const dom = new JSDOM('<div id="output"></div>');
   try {
     const { document } = dom.window;
@@ -114,8 +116,8 @@ test("tool-result safe point follows the issuing assistant's model usage", async
     output.append(assistant, next);
     render([{ entryId: "result-1" }]);
     let marker = output.querySelector(".safe-point");
-    assert.equal(marker.parentElement.previousElementSibling, assistant);
-    assert.equal(marker.parentElement.nextElementSibling, next);
+    assert.equal(marker.parentElement, assistant);
+    assert.equal(assistant.nextElementSibling, next);
     afterUsage(marker);
     // Prose + calls: the tool container is moved into a separate group after the card.
     const group = document.createElement("details");
@@ -128,26 +130,44 @@ test("tool-result safe point follows the issuing assistant's model usage", async
     item.callGroup = group;
     render([{ entryId: "result-1" }]);
     marker = output.querySelector(".safe-point");
-    assert.equal(marker.parentElement.previousElementSibling, group);
-    assert.equal(marker.parentElement.nextElementSibling, next);
+    assert.equal(marker.parentElement, tool);
+    assert.equal(group.nextElementSibling, next);
     afterUsage(marker);
     assert.equal(output.querySelectorAll(".safe-point").length, 1);
-    // A folded group can contain multiple assistant cards. Split at the boundary.
+    // A folded group keeps all its cards and internal markers together.
     item.callGroup = undefined;
     item.tools.append(tool);
     list.append(assistant, next);
     group.open = false;
     render([{ entryId: "result-1" }]);
     marker = output.querySelector(".safe-point");
-    assert.equal(marker.parentElement.previousElementSibling, group);
-    const tail = marker.parentElement.nextElementSibling;
-    assert.equal(tail.lastElementChild.firstElementChild, next);
-    assert.equal(tail.open, false);
-    assert.equal(item.modelInfo.parentElement, marker.parentElement);
+    assert.equal(marker.parentElement, assistant);
+    assert.equal(next.parentElement, list);
+    assert.equal(group.open, false);
+    assert.equal(output.querySelectorAll('.call-group').length, 1);
+    assert.equal(item.modelInfo.parentElement, assistant);
     afterUsage(marker);
     render([{ entryId: "result-1" }]);
     assert.equal(output.querySelectorAll(".message-model").length, 1);
     assert.equal(output.querySelectorAll(".safe-point").length, 1);
+    // Execute the real grouping pass twice: an internal marker must not split
+    // consecutive tool-only assistant cards, including after a later refresh.
+    const groupSource = source.slice(source.indexOf('function refreshCallGroups(output) {'), source.indexOf('function foldCallsBeforeMessage('));
+    const items = new Map();
+    for (const node of [assistant, next]) {
+      const heading = document.createElement('h3'); heading.textContent = 'AXIOM';
+      items.set(node, { node, heading, buffer: '', tools: item.tools });
+    }
+    const refresh = new Function('messageItems', 'createCallGroup', 'paintCallGroup', 'foldCallsBeforeMessage',
+      `${groupSource}; return refreshCallGroups;`)(items,
+      () => { throw new Error('must reuse the existing group'); }, () => {}, () => {});
+    marker = output.querySelector('.safe-point');
+    refresh(output);
+    refresh(output);
+    assert.equal(output.querySelectorAll('.call-group').length, 1);
+    assert.equal(assistant.parentElement, next.parentElement);
+    assert.equal(marker.parentElement, assistant);
+    assert.equal(item.modelInfo.parentElement, assistant);
     render([]);
     assert.equal(item.modelInfo.parentElement, assistant);
     assert.equal(output.querySelectorAll(".safe-point-boundary").length, 0);
