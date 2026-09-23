@@ -5056,6 +5056,11 @@ async function saveCreation(e) {
 
 compactComposer = mountComposerControls({
   state: () => ({ busy, safeStopping, sessionId, model: config?.model, thinking: config?.thinking, available: connected && !changing && !!config }),
+  getFavorites: () => modelFavorites,
+  toggleFavorite: async (kind, key, favorite) => {
+    modelFavorites = await request("models.favorites.set", { kind, key, favorite });
+    modelPicker.syncAll();
+  },
   providers: providerEntries,
   models: modelEntries,
   levels: effectiveLevels,

@@ -2,7 +2,7 @@
 #composer #prompt { min-height:44px; padding:12px 16px; line-height:20px; white-space:pre-wrap; overflow-wrap:anywhere; max-height:240px; }
 #composer .actions { display:flex; flex-wrap:nowrap; align-items:center; gap:12px; padding:8px 12px; min-width:0; }
 #composer .actions > .selectors, #composer .actions > #stop, #composer .actions > #force-stop, #composer .actions > #send, #composer .actions > #send-steer, #composer .actions > #send-followup { display:none !important; }
-#composer .composer-model-trigger { height:30px; min-height:30px; min-width:0; max-width:280px; padding:4px 8px; flex:0 1 auto; display:flex; align-items:center; gap:8px; border:1px solid transparent; border-radius:6px; background:transparent; color:var(--muted); font:inherit; font-size:12px; }
+#composer .composer-model-trigger { height:30px; min-height:30px; min-width:0; max-width:420px; padding:4px 8px; flex:0 1 auto; display:flex; align-items:center; gap:8px; border:1px solid transparent; border-radius:6px; background:transparent; color:var(--muted); font:inherit; font-size:12px; }
 .composer-model-trigger span { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 #composer .composer-model-trigger:hover { background:var(--raised); color:var(--text); border-color:var(--line); }
 #composer .composer-split { display:flex; flex:0 0 140px; width:140px; margin-left:auto; border:1px solid var(--line); border-radius:6px; overflow:hidden; height:30px; background:var(--raised); }
@@ -11,9 +11,15 @@
 #composer .composer-split button:last-child { flex:0 0 30px; width:30px; border-left:1px solid var(--line); }
 #composer .composer-split button:hover:not(:disabled) { background:var(--surface); }
 .composer-model-panel, .composer-operation-menu { position:fixed; margin:0; padding:6px; border:1px solid var(--line); border-radius:8px; background:var(--raised); color:var(--text); box-shadow:none; max-width:calc(100vw - 16px); max-height: min(440px, 70vh); overflow:auto; }
+.composer-model-panel { box-sizing:border-box; height:min(360px, 70vh); width:234px; }
 .composer-model-panel:popover-open { display:flex; gap:6px; }
+.composer-model-panel > .composer-choice-column { box-sizing:border-box; width:220px; }
+.composer-model-panel .composer-choice-list { max-height:230px; }
 .composer-choice-column { flex:0 0 220px; width:220px; min-width:0; padding:6px; }
-.composer-choice-column + .composer-choice-column { border-left:1px solid var(--line); }
+.composer-choice-row { display:flex; align-items:center; }
+.composer-choice-row > button:first-child { flex:1; min-width:0; }
+.composer-choice-row > .composer-favorite { flex:0 0 28px; width:28px; padding:4px; justify-content:center; color:var(--muted); }
+.composer-choice-row > .composer-favorite[aria-pressed="true"] { color:var(--accent); }
 .composer-choice-column h3 { margin:0 0 8px; padding:0 4px; font-size:11px; font-weight:500; color:var(--muted); }
 .composer-choice-column input { box-sizing:border-box; width:100%; height:32px; min-height:32px; padding:6px 10px; border:1px solid var(--line); border-radius:6px; background:var(--surface); color:var(--text); font-size:12px; }
 .composer-choice-list { max-height:290px; overflow-y:auto; padding-top:6px; }
@@ -25,17 +31,21 @@
 .composer-choice-list p { color:var(--muted); font-size:12px; padding:8px; }
 .composer-model-panel :focus-visible, .composer-operation-menu :focus-visible, #composer .actions button:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
 .composer-control-icon { width:14px; height:14px; flex:0 0 14px; fill:none; stroke:currentColor; stroke-width:1.65; stroke-linecap:round; stroke-linejoin:round; }
-#composer #session-runtime { display:flex; flex-wrap:wrap; gap:4px 16px; padding:6px 16px 10px; font-size:11px; line-height:18px; }
-#composer #session-runtime > span { white-space:nowrap; min-width:0; }
+#composer #session-runtime { display:flex; flex-wrap:nowrap; flex:0 1 auto; gap:12px; padding:0; min-width:0; font-size:11px; line-height:18px; }
+#composer #session-runtime > span:last-child { display:none; }
+#composer #session-runtime > span { white-space:nowrap; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+#composer[data-collapsed="true"] > .actions { display:flex; flex:1; }
+#composer[data-collapsed="true"] .actions #session-runtime { overflow:hidden; }
 #composer .session-detail-rows { display:none; }
 .composer-session-info { margin-left:auto; }
 @media (max-width:720px) {
   .composer-model-panel:popover-open { display:block; width:min(300px, calc(100vw - 16px)); }
   .composer-choice-column { width:auto; }
-  .composer-choice-column:not(:last-child) { display:none; }
+  .composer-model-panel:has(> .composer-model-child:popover-open) > .composer-choice-column { visibility:hidden; }
+  #composer .actions { flex-wrap:wrap; }
+  #composer #session-runtime { font-size:10px; gap:8px; }
   .composer-choice-column + .composer-choice-column { border-left:0; }
   #composer .actions { gap:8px; }
-  #composer #session-runtime > span:last-child { white-space:normal; overflow-wrap:anywhere; }
 }
 
 /* Keep the same usable composer on phones; no legacy collapsed toolbar. */

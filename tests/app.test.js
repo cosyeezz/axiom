@@ -941,7 +941,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.match(window.runtimeSummary({ usage: { input: 0, cacheRead: 0 } })[0], /cache —/);
     assert.match(window.runtimeSummary({ context: { tokens: null, contextWindow: 10000, percent: null } })[1], /—\/10,000 · —/);
     assert.equal(window.runtimeSummary({ observationPack: { folded: 3 } }).length, 3, 'OP 不再占用信息栏');
-    assert.equal($("session-runtime").previousElementSibling.className, "actions");
+    assert.equal($("session-runtime").parentElement.className, "actions");
+    assert.equal($("session-runtime").nextElementSibling.className, "composer-model-trigger");
     assert.equal($("subagent-model").value, "");
     assert.equal($("subagent-model").disabled, true);
     assert.equal($("composer").contains($("subagent-model")), false);

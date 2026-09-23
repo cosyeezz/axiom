@@ -449,8 +449,10 @@ export class Sessions {
     this.workspaceSelections = new Map();
     this.createAgent = createAgent;
     this.items = new Map();
-    // 每个工作目录记住自己最近用过的模型/思考等级（内存级），不跨目录污染。
-    this.recentConfig = new Map();
+    // 用户最后一次主动选择跨目录、跨重启沿用；不改写显式默认配置。
+    const recent = this.database?.get(DEFAULTS_NS, "recent");
+    this.recentConfig = typeof recent?.model === "string" && typeof recent?.thinking === "string"
+      ? { model: recent.model, thinking: recent.thinking } : null;
     this.defaultSelection = { compaction: { ...compactionDefaults }, retry: null, queueType: "steer", model: null, subagentModel: null, thinking: null, subagentThinking: null, capabilities: { skills: [], mcp: [], plugins: [] }, subagentCapabilities: { skills: [], mcp: [], plugins: [] } };
   }
 
@@ -1051,7 +1053,11 @@ export class Sessions {
     const resolvedWorkspace = await realpath(workspace || this.createAgent.cwd || process.cwd());
     const capabilityCatalog = this.createAgent.capabilities && selection.trustProject !== true
       ? await this.createAgent.capabilities(resolvedWorkspace, false) : undefined;
-    selection = structuredClone({ ...(selection.useDefaults === false ? {} : await this.workspaceDefaults(resolvedWorkspace, capabilityCatalog)), ...selection });
+    const recentModel = !saved && selection.useDefaults !== false && this.recentConfig?.model
+      ? (this.createAgent.catalog?.() || []).find((entry) => entry.key === this.recentConfig.model) : null;
+    const recent = recentModel && (!recentModel.levels || recentModel.levels.includes(this.recentConfig.thinking))
+      ? this.recentConfig : {};
+    selection = structuredClone({ ...(selection.useDefaults === false ? {} : await this.workspaceDefaults(resolvedWorkspace, capabilityCatalog)), ...recent, ...selection });
     // 恢复已有会话时告知 validateSelection 放行历史模型（后续建 agent 本就传 sessionFile）。
     if (saved?.sessionFile) selection.sessionFile = saved.sessionFile;
     const { cwd, catalog, warnings } = await this.validateSelection(resolvedWorkspace, selection, inherited, selection.trustProject === true ? undefined : capabilityCatalog);
@@ -1293,7 +1299,6 @@ export class Sessions {
         return item.messages.slice(start).filter((entry) => entry.agentId === "main" && entry.message?.role === "toolResult")
           .map((entry) => entry.message);
       } })], {
-        ...(this.recentConfig.get(workspaceKeyOf(cwd)) ?? {}),
         audit: { sessionId: id, agentId: "main", source: "main" },
         ...(selection.model ? { model: selection.model } : {}),
         ...(selection.thinking ? { thinking: selection.thinking } : {}),
@@ -1992,8 +1997,12 @@ export class Sessions {
       const previous = item.agent.config?.();
       if (selection.compaction) this.validateCompaction(selection.compaction, model || previous?.model);
       const config = await item.agent.configure({ model, thinking, compaction: selection.compaction });
-      if (config.model !== previous?.model || config.thinking !== previous?.thinking)
-        this.recentConfig.set(workspaceKeyOf(item.cwd), { model: config.model, thinking: config.thinking });
+      if ((model !== undefined || thinking !== undefined) &&
+        (config.model !== previous?.model || config.thinking !== previous?.thinking || (!Object.hasOwn(selection, "subagentModel") && !Object.hasOwn(selection, "subagentThinking")))) {
+        const recent = { model: config.model, thinking: config.thinking };
+        this.database?.set(DEFAULTS_NS, "recent", recent);
+        this.recentConfig = recent;
+      }
       item.subagentModel = subagentModel;
       item.subagentThinking = subagentThinking;
       item.queueType = selection.queueType || item.queueType;

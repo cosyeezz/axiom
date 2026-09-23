@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-23 输入区紧凑布局与模型选择恢复
+
+- 原因：输入区统计和模型重复分行，三级菜单展开重建父级并移动位置；ca573b5 改版隐藏原收藏选择器；最近模型仅按目录存在内存且被默认配置覆盖。
+- 修改：统计、模型下拉、发送合为一行；独立固定尺寸级联面板保留父级搜索和位置，末级无展开箭头；恢复原 SQLite 共享收藏和收藏置顶，保留星标焦点，修正子菜单键盘导航。
+- 决策：主模型与思考等级写入 defaults/recent，跨工作目录、跨重启沿用，优先于默认配置但不改写默认配置；显式创建参数仍优先，已有会话与恢复/导入不受影响。失效模型/等级与异常存储值回退；子代理专属配置不覆盖最近主模型。
+- 验证：全量 963 项（961 通过、2 跳过、0 失败）；真实 Chromium 验证父级坐标稳定、收藏不选模、子面板键盘焦点、末级无箭头及 390/320px 无页面横向溢出。远端 master 同步后无新变化，diff 检查通过。自动生成索引留本地重建，不纳入本次提交。
+- 文件：public/composer-controls.js、public/composer-controls.css、public/app.js、src/sessions.js、tests/composer-controls.test.js、tests/recent-model.test.js、tests/config.test.js、tests/app.test.js、tests/composer-cascade-ui.py、README.md、devlog.md。
+
 ## 2026-09-23 修复安全点拆散连续调用组
 
 - 原因：上一版将安全点作为顶层边界并主动拆组，阻止连续调用重新合并，产生多条 Completed。

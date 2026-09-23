@@ -12,9 +12,10 @@ function fixture() {
   w.HTMLElement.prototype.showPopover = function () { this.open = true; };
   w.HTMLElement.prototype.hidePopover = function () { this.open = false; };
   let state = { busy: false, available: true, sessionId: 'a', model: 'claude/opus', thinking: 'high' }, selected;
+  const favorites = { provider: [], model: [], thinking: [] }, favoriteCalls = [];
   w.eval(`${iconSource}\n${source}`);
-  const api = w.mountComposerControls({ state: () => state, providers: () => [['claude', 'claude'], ['openai', 'openai']], models: () => [['claude/opus', 'opus']], levels: () => ['low', 'high'], selectModel: async (...args) => { selected = args; } });
-  return { dom, w, api, state, selected: () => selected };
+  const api = w.mountComposerControls({ getFavorites: () => favorites, toggleFavorite: async (kind, key, favorite) => { favoriteCalls.push([kind, key, favorite]); favorites[kind] = favorite ? [...favorites[kind], key] : favorites[kind].filter((entry) => entry !== key); }, state: () => state, providers: () => [['claude', 'claude'], ['openai', 'openai']], models: () => [['claude/opus', 'opus']], levels: () => ['low', 'high'], selectModel: async (...args) => { selected = args; } });
+  return { dom, w, api, state, favoriteCalls, selected: () => selected };
 }
 test('one stable split button defaults to stop; menu clicks execute immediately', () => {
   const { dom, w, api, state } = fixture();
@@ -48,7 +49,7 @@ test('one stable split button defaults to stop; menu clicks execute immediately'
     assert.deepEqual(submissions, ['send-steer', 'send-followup']);
     assert.equal(api.queue(), 'followUp');
     state.busy = false; api.refresh(); state.busy = true; api.refresh(); assert.equal(primary.textContent, 'stop');
-    assert.ok(primary.querySelector('svg')); assert.equal(w.document.querySelector('.composer-model-trigger span').textContent, 'opus');
+    assert.ok(primary.querySelector('svg')); assert.equal(w.document.querySelector('.composer-model-trigger span').textContent, 'claude · opus · high');
   } finally { dom.window.close(); }
 });
 test('unavailable menu actions cannot execute or submit an idle message', () => {
@@ -67,18 +68,36 @@ test('unavailable menu actions cannot execute or submit an idle message', () => 
     assert.equal(executions, 0);
   } finally { dom.window.close(); }
 });
+test('favorites persist through the shared callback without choosing a model', async () => {
+  const { dom, w, favoriteCalls, selected } = fixture();
+  try {
+    w.document.querySelector('.composer-model-trigger').click();
+    w.document.querySelector('.composer-favorite').click(); await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual(favoriteCalls, [['provider', 'claude', true]]);
+    assert.equal(selected(), undefined);
+    assert.equal(w.document.querySelector('.composer-favorite').textContent, '★');
+    w.document.querySelector('.composer-choice-row > button').click();
+    w.document.querySelectorAll('.composer-choice-column')[1].querySelector('.composer-choice-row > button').click();
+    const level = w.document.querySelectorAll('.composer-choice-column')[2];
+    level.querySelector('.composer-favorite').click(); await Promise.resolve();
+    assert.deepEqual(favoriteCalls[1], ['thinking', 'claude/opus:low', true]);
+  } finally { dom.window.close(); }
+});
 test('all three model levels have independent searches and commit only at final selection', async () => {
   const { dom, w, selected } = fixture();
   try {
     w.document.querySelector('.composer-model-trigger').click();
     const search = w.document.querySelector('.composer-choice-column input'); search.value = 'claude'; search.dispatchEvent(new w.Event('input'));
-    assert.equal(w.document.querySelectorAll('.composer-choice-list button').length, 1);
+    assert.equal(w.document.querySelectorAll('.composer-choice-row').length, 1);
     w.document.querySelector('.composer-choice-list button').click();
     assert.equal(w.document.querySelectorAll('.composer-choice-column input').length, 2);
+    assert.equal(w.document.querySelector('.composer-choice-column input'), search, 'parent search DOM stays fixed');
+    assert.equal(search.value, 'claude');
     assert.equal(selected(), undefined);
     w.document.querySelectorAll('.composer-choice-column')[1].querySelector('.composer-choice-list button').click();
     assert.equal(w.document.querySelectorAll('.composer-choice-column input').length, 3);
     const level = w.document.querySelectorAll('.composer-choice-column')[2];
+    assert.equal(level.querySelectorAll('.composer-choice-row > button:first-child svg').length, 1, 'only selected check, no terminal arrows');
     const filter = level.querySelector('input'); filter.value = 'high'; filter.dispatchEvent(new w.Event('input'));
     level.querySelector('.composer-choice-list button').click(); await Promise.resolve();
     assert.deepEqual(selected(), ['claude/opus', 'high']);

@@ -141,7 +141,7 @@ test("configuration applies to the main agent and is inherited by delegated chil
     assert.deepEqual(await sessions.workspaceDefaults(process.cwd()), defaults, "returned defaults are isolated");
     const normal = await sessions.create();
     const normalConfig = sessions.snapshot(normal).config;
-    assert.equal(normalConfig.model, "c/d");
+    assert.equal(normalConfig.model, "a/b", "last main-model choice takes precedence over configured defaults");
     assert.equal(normalConfig.subagentModel, "a/b");
     assert.deepEqual(normalConfig.capabilitySelection, defaults.capabilities);
     assert.deepEqual(normalConfig.subagentCapabilities, defaults.subagentCapabilities);
@@ -192,7 +192,7 @@ test("configuration applies to the main agent and is inherited by delegated chil
     assert.equal(sessions.snapshot(following).config.subagentCapabilities, "inherit");
     await Promise.all(sessions.get(following).tasks.start(["follow main"])
       .map((taskId) => sessions.get(following).tasks.jobs.get(taskId).done));
-    assert.equal(selections.at(-1).model, "c/d");
+    assert.equal(selections.at(-1).model, "a/b", "delegated children inherit the remembered main model");
     assert.equal(selections.at(-1).thinking, "off");
     assert.deepEqual(selections.at(-1).capabilities, defaults.capabilities);
     assert.equal(command.safeParse({ id: "follow", type: "session.defaults.configure", subagentCapabilities: "inherit", thinking: "high", subagentThinking: "off" }).success, true);
