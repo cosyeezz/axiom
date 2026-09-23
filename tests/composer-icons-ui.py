@@ -57,8 +57,23 @@ try:
             # that lives outside .icon-group, and none bleeds past the button edge.
             assert all(m['offsetY'] == 0 for m in metrics), metrics
             assert all(m['overflow'] == 0 for m in metrics), metrics
-            # Toolbar hue stays single: colour is not what tells these tools apart.
+            # Neutral tools retain one colour; target paths supply the coloured artwork.
             assert len(set(m['color'] for m in metrics)) == 1, metrics
+            target = page.locator('#goal-enter .composer-icon path')
+            strokes = target.evaluate_all('nodes => nodes.map(el => getComputedStyle(el).stroke)')
+            assert len(strokes) == 4 and len(set(strokes)) == 3, strokes
+            assert strokes[0] == strokes[2] and strokes[1] == 'rgb(255, 255, 255)', strokes
+            send = page.locator('.composer-split [data-icon="send"]')
+            assert send.count() == 1
+            assert send.evaluate('el => getComputedStyle(el).color') == 'rgb(94, 106, 210)'
+            # Hidden legacy controls use the same artwork/styles as runtime split controls.
+            for selector in ['#stop', '#force-stop']:
+                svg = page.locator(f'{selector} .composer-icon')
+                expected = 'rgb(165, 53, 67)' if theme == 'dark' else 'rgb(192, 55, 74)'
+                assert svg.evaluate('el => getComputedStyle(el).color') == expected
+            page.locator('#goal-enter').hover()
+            assert target.evaluate_all('nodes => nodes.map(el => getComputedStyle(el).stroke)') == strokes
+            page.mouse.move(0, 0)
             # Hover must be actually perceptible against the composer surface. --raised was
             # only 1.33:1 in dark and 1.06:1 in light, i.e. invisible.
             button = page.locator('#compact-session')

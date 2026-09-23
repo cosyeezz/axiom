@@ -1021,8 +1021,7 @@ body:has(#context-menu:popover-open) #add-context { background: var(--raised); }
 .context-chip span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .context-chip span:last-child { color: var(--muted); }
 .context-bar svg:not(.composer-icon), #context-menu svg:not(.composer-icon), #context-picker svg:not(.composer-icon) { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; flex-shrink: 0; color: var(--body-ink); }
-/* One glyph size and one stroke weight for the whole composer row, and one colour:
-   these icons are all neutral. Hue is not what tells them apart. */
+/* Shared grid and stroke weight; supplied action silhouettes use semantic colours. */
 .context-bar .icon-group { border-color: transparent; background: transparent; box-shadow: none; }
 svg.composer-icon { width: 20px; height: 20px; flex-shrink: 0; vertical-align: middle; color: var(--body-ink); }
 /* Menu rows and the split button pair 12px text, so their glyphs step down to 16px. */
@@ -1042,7 +1041,16 @@ svg.composer-icon { width: 20px; height: 20px; flex-shrink: 0; vertical-align: m
 .context-bar .composer-session-info:active:not(:disabled) { background: color-mix(in srgb, var(--accent) 20%, transparent); }
 .context-bar .icon-group > *:hover:not(:disabled) .composer-icon,
 .context-bar .composer-session-info:hover:not(:disabled) .composer-icon { color: var(--ink); }
-/* Icons are neutral, so the destructive run action keeps its warning in the text colour. */
+/* User-requested colour accents, scoped to composer artwork (not shared action icons).
+   Keep deep red in both themes rather than the pale dark-theme --danger text colour. */
+svg.composer-icon[data-icon="send"] { color: var(--accent); }
+svg.composer-icon[data-icon="stop"], svg.composer-icon[data-icon="force"] { color: light-dark(#c0374a, #a53543); }
+svg.composer-icon[data-icon="target"] { --target-red: light-dark(#c0374a, #c95160); --target-white: #fff; }
+svg.composer-icon[data-icon="target"] path:nth-child(1),
+svg.composer-icon[data-icon="target"] path:nth-child(3) { stroke: var(--target-red); fill: var(--target-red); }
+svg.composer-icon[data-icon="target"] path:nth-child(2) { stroke: var(--target-white); fill: var(--target-white); }
+svg.composer-icon[data-icon="target"] path:nth-child(4) { stroke: var(--accent); }
+/* Warning wording remains visible independently of icon colour. */
 .composer-operation-menu button[data-operation="force"] { color: var(--danger); }
 #context-menu { position: fixed; inset: auto; left: max(8px, 5vw); bottom: 260px; margin: 0; width: 176px; padding: 4px; border: 1px solid var(--line); border-radius: 9px; background: var(--raised); color: var(--ink); box-shadow: 0 8px 24px var(--shadow-mid); }
 #context-menu { overflow: visible; }

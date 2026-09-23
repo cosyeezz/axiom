@@ -1,29 +1,27 @@
 // Composer artwork: 24px grid, 1.75px round strokes, >=1px safe area, r=2 corners.
-// Monochrome throughout — hue never distinguishes one tool from another, because a
-// multi-hue row reads as false hierarchy and carries no meaning for colour-blind users.
-// Destructive intent is carried by button styling and wording, not by icon colour.
+// Composer controls redraw the supplied 素材 SVG silhouettes on this shared grid.
+// Semantic colours are applied in CSS; distinct shapes and labels remain usable without colour.
 const artwork = Object.freeze({
-  // 回形针：比裸 + 号更明确「附加上下文」，且与相邻矩形类图形区分。
-  context: ['m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48'],
+  // 素材/add.svg：列表 + 添加。
+  context: ['M6 3v8M2 7h8', 'M14 7h8M3 14h19M3 21h13'],
   // 图片：沿用原有「边框 + 山景 + 太阳」语汇，按 24 网格重排。
   image: ['M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z', 'M9 11a2 2 0 1 0 0-4 2 2 0 0 0 0 4', 'm21 15-4-4a2 2 0 0 0-3 0L4 21'],
   // 压缩：四角向中心收拢（lucide shrink / ISC）。Continue.dev 的「Compact conversation」
   // 与 Zed 的 `/compact` 用的就是这个语汇；它的笔画间隙足够宽，16px 下不会糊成一团。
   compact: ['m15 15 6 6m-6-6v4.8m0-4.8h4.8', 'M9 19.8V15m0 0H4.2M9 15l-6 6', 'M15 4.2V9m0 0h4.8M15 9l6-6', 'M9 4.2V9m0 0H4.2M9 9 3 3'],
-  // 目标：同心靶心，圆形按光学规则取 d20 / d12 / d4。
-  target: ['M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20', 'M12 6a6 6 0 1 0 0 12 6 6 0 0 0 0-12', 'M12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4'],
+  // 素材/goal.svg：同心靶环 + 命中箭头，CSS 提供红白靶面。
+  target: ['M11 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18', 'M11 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10', 'M11 11a1 1 0 1 0 0 2 1 1 0 0 0 0-2', 'm11 12 10-10M17 2h4v4'],
   info: ['M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20', 'M12 16v-5', 'M12 8h.01'],
-  send: ['M22 2 11 13', 'M22 2l-7 20-4-9-9-4z'],
-  // 安全停止沿用改动前的方块语汇（不再是绿色盾牌），强停沿用叉，两者对齐到同一光学尺寸。
-  stop: ['M7.5 6h9a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 16.5v-9A1.5 1.5 0 0 1 7.5 6z'],
-  force: ['m6 6 12 12M18 6 6 18'],
+  send: ['m21 3-7 18-4-7-7-4L21 3Z', 'm10 14 11-11'],
+  // 素材/stop.svg 与 force stop.svg：圆角方块 / 警告三角，形状不依赖颜色区分。
+  stop: ['M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z'],
+  force: ['M10.3 4a2 2 0 0 1 3.4 0l7 13a2 2 0 0 1-1.7 3H5a2 2 0 0 1-1.7-3l7-13Z', 'M12 9v4M12 16h.01'],
   steer: ['M5 19v-8a4 4 0 0 1 4-4h10', 'm15 3 4 4-4 4'],
   followUp: ['M4 7h16M4 12h9M4 17h6', 'M17 14v6m-3-3 3 3 3-3'],
   skill: ['M11.52 2.37a.5.5 0 0 1 .96 0L14.06 8.5A2 2 0 0 0 15.5 9.94l6.13 1.58a.5.5 0 0 1 0 .96L15.5 14.06a2 2 0 0 0-1.44 1.44l-1.58 6.13a.5.5 0 0 1-.96 0L9.94 15.5A2 2 0 0 0 8.5 14.06l-6.13-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5z'],
   file: ['M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z', 'M14 2v4a2 2 0 0 0 2 2h4', 'M8 13h8M8 17h5'],
   folder: ['M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z'],
 });
-const tones = Object.freeze({});
 
 export function composerIcon(name) {
   if (!Object.hasOwn(artwork, name)) throw new Error(`Unknown composer icon: ${name}`);
