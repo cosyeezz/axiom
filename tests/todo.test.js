@@ -1,158 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Todo, createTodoStore } from '../src/todo.js';
-import { DatabaseSync } from 'node:sqlite';
-
-test('SQLite is authoritative and rejects stale writers without partial updates', () => {
-  const db = new DatabaseSync(':memory:');
-  try {
-    const store = createTodoStore(db);
-    const t = new Todo({ sessionId: 'sqlite', store });
-    t.update({ baseVersion: 0, ops: [{ op: 'add', id: 's', title: 'persistent' }] });
-    const reopened = new Todo({ sessionId: 'sqlite', store: createTodoStore(db) });
-    assert.equal(reopened.snapshot().items[0].title, 'persistent');
-    assert.throws(() => reopened.update({ baseVersion: 0, ops: [{ op: 'delete', id: 's' }] }), /版本冲突/);
-    assert.equal(db.prepare('SELECT version FROM todos').get().version, 1);
-    store.remove('sqlite'); assert.equal(store.load('sqlite'), null);
-  } finally { db.close(); }
+import {Todo,createTodoStore} from '../src/todo.js';
+const goal={op:'add',id:'a',level:1,title:'交付',description:'范围',acceptance:[{criterionId:'c',text:'核对',check:'review'}]};
+const fixture=()=>new Todo({sessionId:'s',store:createTodoStore(),questions:{confirmTodo:async()=>({approved:true})}});
+const update=(t,ops)=>t.update({listId:t.snapshot().listId,baseVersion:t.snapshot().version,ops});
+test('pause survives edits and reads; only resume clears it',async()=>{
+ const t=fixture();await t.update({baseVersion:0,ops:[goal]});t.pause();
+ await update(t,[{op:'edit',id:'a',summary:'进度'}]);const version=t.snapshot().version;
+ for(let i=0;i<10;i++)assert.equal(t.read().paused,true);
+ assert.equal(t.snapshot().version,version);assert.equal(t.resume().paused,false);
 });
-
-function setup() { const store = createTodoStore(); const todo = new Todo({ sessionId: 'a', store }); return { store, todo }; }
-const update = (t, ops) => t.update({ baseVersion: t.snapshot().version, ops });
-test('completed and emptied lists retain explicit pause when work is added', () => {
-  for (const finish of [{ op: 'status', id: 'a', status: 'done' }, { op: 'delete', id: 'a' }]) {
-    const { todo } = setup();
-    update(todo, [{ op: 'add', id: 'a', title: 'a' }]);
-    update(todo, [finish]);
-    todo.pause();
-    update(todo, [{ op: 'add', id: 'b', title: 'b' }]);
-    assert.equal(todo.snapshot().mode, 'paused');
-    assert.equal(todo.actionable, false);
-  }
+test('running child advances parent but completing child never completes parent',async()=>{
+ const t=fixture();await t.update({baseVersion:0,ops:[goal]});
+ const output=await update(t,[{op:'add',id:'s',parentId:'a',level:2,title:'步骤',status:'running'}]);
+ assert.ok(output.affectedTargetIds.includes('a'));assert.equal(t.read({id:'a'}).item.status,'running');
+ await update(t,[{op:'status',id:'s',status:'done',summary:'已完成'}]);assert.equal(t.snapshot().completed,false);
 });
-
-test('deleting the last child resets derived parent completion', () => {
-  const { todo } = setup();
-  update(todo, [{ op: 'add', id: 'p', title: 'p' }, { op: 'add', id: 'c', parentId: 'p', title: 'c' }]);
-  update(todo, [{ op: 'status', id: 'c', status: 'done' }]);
-  update(todo, [{ op: 'delete', id: 'c' }]);
-  assert.equal(todo.snapshot().items[0].status, 'pending');
+test('atomic batch reports failing operation and returns latest version',async()=>{
+ const t=fixture();await t.update({baseVersion:0,ops:[goal]});const before=t.snapshot();
+ const r=await t.updateTool().execute('call',{listId:before.listId,baseVersion:before.version,ops:[{op:'edit',id:'a',summary:'不可提交'},{op:'status',id:'missing',status:'running'}]});
+ assert.equal(r.isError,true);const value=JSON.parse(r.content[0].text);assert.equal(value.operationIndex,1);assert.equal(value.version,before.version);assert.deepEqual(t.snapshot(),before);
 });
-
-test('Todo atomic edits, stable IDs, two levels and completion aggregation', () => {
-  const { todo } = setup();
-  update(todo, [{ op: 'add', id: 'p', title: 'parent' }, { op: 'add', id: 'c', title: 'child', parentId: 'p' }]);
-  assert.equal(todo.snapshot().mode, 'enabled');
-  const before = todo.snapshot();
-  assert.throws(() => update(todo, [{ op: 'edit', id: 'c', title: 'changed' }, { op: 'add', title: 'third', parentId: 'c' }]));
-  assert.deepEqual(todo.snapshot(), before);
-  update(todo, [{ op: 'status', id: 'c', status: 'done' }]);
-  assert.equal(todo.snapshot().mode, 'completed');
-  assert.ok(todo.snapshot().items.every(i => i.status === 'done'));
-  assert.throws(() => update(todo, [{ op: 'edit', id: 'c', title: 'different task' }]));
-  update(todo, [{ op: 'reopen', id: 'c' }]);
-  assert.equal(todo.snapshot().items[0].status, 'pending');
-  update(todo, [{ op: 'delete', id: 'p' }]);
-  assert.equal(todo.snapshot().items.length, 0);
-});
-test('Todo version conflict and per-session isolation', () => {
-  const { todo, store } = setup();
-  update(todo, [{ op: 'add', id: 'x', title: 'x' }]);
-  assert.throws(() => todo.update({ baseVersion: 0, ops: [{ op: 'delete', id: 'x' }] }), /版本冲突/);
-  assert.equal(new Todo({ sessionId: 'b', store }).snapshot().items.length, 0);
-  assert.equal(new Todo({ sessionId: 'a', store }).snapshot().items.length, 1);
-});
-test('Todo pause survives edits; blocked work never nudges; no-progress is bounded', () => {
-  const { todo } = setup();
-  update(todo, [{ op: 'add', id: 'a', title: 'a' }]);
-  todo.pause();
-  update(todo, [{ op: 'edit', id: 'a', note: 'some note' }]);
-  assert.equal(todo.active, false);
-  todo.resume();
-  update(todo, [{ op: 'status', id: 'a', status: 'blocked', note: 'need user' }]);
-  assert.equal(todo.nudge(), false);
-  update(todo, [{ op: 'status', id: 'a', status: 'pending' }]);
-  assert.equal(todo.nudge(), true);
-  assert.equal(todo.nudge(), true);
-  assert.equal(todo.nudge(), true);
-  assert.equal(todo.nudge(), false);
-  assert.equal(todo.snapshot().mode, 'paused');
-});
-test('Todo tools read bounded slices and main context names the read entry', async () => {
-  const { todo } = setup();
-  update(todo, [{ op: 'add', id: 'a', title: 'a' }, { op: 'add', id: 'b', title: 'b' }]);
-  update(todo, [{ op: 'move', id: 'b', beforeId: 'a' }]);
-  const data = JSON.parse((await todo.readTool().execute('call', { limit: 1 })).content[0].text);
-  assert.equal(data.total, 2); assert.equal(data.items[0].id, 'b');
-});
-
-
-test('add preserves initial leaf states and aggregates parents', () => {
-  for (const status of ['pending', 'running', 'done', 'blocked']) {
-    const { todo } = setup();
-    const state = update(todo, [{ op: 'add', id: 'leaf', title: 'leaf', status, note: 'reason' }]);
-    assert.equal(state.items[0].status, status);
-    assert.equal(state.mode, status === 'done' ? 'completed' : 'enabled');
-  }
-  for (const status of ['running', 'done', 'blocked']) {
-    const { todo } = setup();
-    const state = update(todo, [
-      { op: 'add', id: 'p', title: 'parent', status: 'running' },
-      { op: 'add', id: 'c', title: 'child', parentId: 'p', status, note: 'reason' },
-    ]);
-    assert.ok(state.items.every(item => item.status === status));
-  }
-});
-
-test('batch errors identify operation and ID without persisting partial changes', () => {
-  const db = new DatabaseSync(':memory:');
-  try {
-    const store = createTodoStore(db);
-    const todo = new Todo({ sessionId: 'atomic', store });
-    update(todo, [{ op: 'add', id: 'p', title: 'parent' }, { op: 'add', id: 'c', title: 'child', parentId: 'p' }]);
-    const before = store.load('atomic');
-    for (const invalid of [
-      { op: 'status', id: 'p', status: 'running' },
-      { op: 'status', id: 'missing', status: 'done' },
-      { op: 'add', id: 'blocked', title: 'blocked', status: 'blocked', note: '   ' },
-    ]) {
-      assert.throws(() => update(todo, [{ op: 'edit', id: 'c', title: 'changed' }, invalid]), error => {
-        assert.match(error.message, /第2个操作/);
-        assert.ok(error.message.includes(`id="${invalid.id}"`));
-        return true;
-      });
-      assert.deepEqual(store.load('atomic'), before);
-      assert.equal(db.prepare('SELECT version FROM todos').get().version, before.version);
-    }
-    assert.throws(() => todo.update({ baseVersion: 0, ops: [{ op: 'delete', id: 'p' }] }), error => {
-      assert.equal(error.message, 'Todo版本冲突，请重新todo_read'); return true;
-    });
-  } finally { db.close(); }
-});
-
-test('tool return is reusable authority without intervening reads', async () => {
-  const { todo } = setup();
-  const tool = todo.updateTool();
-  const created = JSON.parse((await tool.execute('create', { baseVersion: 0, ops: [
-    { op: 'add', id: 'p', title: 'demo' },
-    { op: 'add', id: 'c', parentId: 'p', title: 'check', status: 'running' },
-  ] })).content[0].text);
-  assert.ok(created.items.every(item => item.status === 'running'));
-  const done = JSON.parse((await tool.execute('finish', { baseVersion: created.version, ops: [
-    { op: 'status', id: 'c', status: 'done' },
-  ] })).content[0].text);
-  assert.equal(done.mode, 'completed');
-  update(todo, [{ op: 'add', id: 'new', title: 'new work' }]);
-  assert.match(tool.description, /禁止对其使用status/);
-  assert.match(todo.readTool().description, /直接复用/);
-});
-
-
-
-test('repeated reads do not pause or stop a task', async () => {
-  const { todo } = setup();
-  update(todo, [{ op: 'add', id: 'a', title: 'work' }]);
-  const before = todo.snapshot();
-  for (let i = 0; i < 10; i++) await todo.readTool().execute(String(i), {});
-  assert.deepEqual(todo.snapshot(), before);
+test('tool update response is the next CAS baseline',async()=>{
+ const t=fixture();const first=JSON.parse((await t.updateTool().execute('one',{baseVersion:0,ops:[goal]})).content[0].text);
+ const next=await t.updateTool().execute('two',{listId:first.listId,baseVersion:first.version,ops:[{op:'edit',id:'a',summary:'核对中'}]});assert.ok(!next.isError);assert.equal(JSON.parse(next.content[0].text).version,first.version+1);
 });

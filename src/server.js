@@ -42,8 +42,6 @@ const assets = new Map(
     ["/transport.js", "public/transport.js"],
     ["/todo.js", "public/todo.js"],
     ["/todo.css", "public/todo.css", "text/css"],
-    ["/goal.js", "public/goal.js"],
-    ["/goal.css", "public/goal.css", "text/css"],
     ["/question.js", "public/question.js"],
     ["/question.css", "public/question.css", "text/css"],
     ["/service-settings.js", "public/service-settings.js"],
@@ -59,7 +57,6 @@ const assets = new Map(
     ["/memory-tags.js", "public/memory-tags.js"],
     ["/clipboard.js", "public/clipboard.js"],
     ["/answer-tags.js", "public/answer-tags.js"],
-    ["/goal-markers.js", "public/goal-markers.js"],
     ["/vendor/marked.js", "node_modules/marked/lib/marked.esm.js"],
     ["/vendor/purify.js", "node_modules/dompurify/dist/purify.es.mjs"],
   ].map(([route, file, type = "text/javascript"]) => [route, { type, ...load(file) }]),
@@ -92,7 +89,7 @@ export function createServerApp(sessions, service = {}) {
   const remoteClients = new Set();
   const hasActiveWork = () => sessions.list().some((item) => item.status !== "idle") ||
     [...(sessions.items?.values() || [])].some((item) => item.configuring || item.loading ||
-      item.notifying || item.goalScheduled || item.notificationScheduled ||
+      item.notifying || item.todoScheduled || item.notificationScheduled ||
       [...(item.tasks?.jobs.values() || [])].some((task) => ACTIVE_TASK_STATES.includes(task.status)));
   const handleRequest = (req, res, isLocal) => {
     if (req.url === "/service/stop") {
@@ -466,11 +463,13 @@ export function createServerApp(sessions, service = {}) {
               sender.broadcast(wss.clients, { type: "session.deleted", sessionId: request.sessionId }, ws);
               break;
             case 'todo.action':
-              data = await sessions.todoAction(request.sessionId, request.action);
+              data = await sessions.todoAction(request.sessionId, request.action, request.text);
               break;
-            case "goal.action":
-              data = await sessions.goalAction(request.sessionId, request.action, request.text);
+            case 'todo.get': {
+              const { id, type, sessionId, itemId, ...query } = request;
+              data = (await sessions.ensureLoaded(sessionId)).todo.read({ ...query, ...(itemId ? { id: itemId } : {}) });
               break;
+            }
             case "prompt":
               data = {
                 runId: await sessions.prompt(request.sessionId, request.text, request.queueType, request.images),

@@ -1,57 +1,32 @@
-const KEY = 'axiom.todoExpanded';
-const paths = {
-  pending: '<rect x="3" y="3" width="14" height="14" rx="3"/>',
-  running: '<circle cx="10" cy="10" r="7"/><path d="M10 6v4l3 2"/>',
-  done: '<path d="m4 10 4 4 8-9"/>',
-  blocked: '<circle cx="10" cy="10" r="7"/><path d="M10 6v5m0 3h.01"/>',
-};
-const names = { pending: '待处理', running: '进行中', done: '已完成', blocked: '受阻' };
-function icon(state) { return `<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">${paths[state]}</svg>`; }
-export function createTodoUI({ root, request }) {
-  let todo = null, sessionId = null, connected = true, expanded = false;
-  try { expanded = localStorage.getItem(KEY) === '1'; } catch {}
-  function render() {
-    root.replaceChildren(); root.hidden = !todo?.items?.length;
-    if (root.hidden) return;
-    const head = document.createElement('div'); head.className = 'todo-header';
-    const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'todo-toggle';
-    toggle.setAttribute('aria-expanded', String(expanded)); toggle.setAttribute('aria-controls', 'todo-list');
-    toggle.setAttribute('aria-label', expanded ? '收起任务清单' : '展开任务清单');
-    const title = document.createElement('span'); title.textContent = 'Todo'; toggle.append(title);
-    const leaves = todo.items.filter(i => !todo.items.some(c => c.parentId === i.id));
-    for (const state of Object.keys(paths)) {
-      const count = leaves.filter(i => i.status === state).length;
-      const badge = document.createElement('span'); badge.className = 'todo-count'; badge.dataset.status = state;
-      badge.title = names[state]; badge.setAttribute('aria-label', `${names[state]} ${count}`);
-      badge.innerHTML = icon(state); badge.append(document.createTextNode(String(count))); toggle.append(badge);
-    }
-    toggle.onclick = () => { expanded = !expanded; try { localStorage.setItem(KEY, expanded ? '1' : '0'); } catch {} render(); };
-    head.append(toggle);
-    const action = document.createElement('button'); action.type = 'button'; action.className = 'todo-action';
-    action.textContent = todo.mode === 'paused' ? '恢复' : todo.mode === 'completed' ? '已完成' : '暂停';
-    action.disabled = !connected || todo.mode === 'completed';
-    action.onclick = async () => {
-      action.disabled = true;
-      try { await request('todo.action', { sessionId, action: todo.mode === 'paused' ? 'resume' : 'pause' }); }
-      catch (error) { const alert = document.createElement('div'); alert.setAttribute('role', 'alert'); alert.textContent = error.message; root.append(alert); }
-      finally { action.disabled = !connected || todo.mode === 'completed'; }
-    };
-    head.append(action); root.append(head);
-    const list = document.createElement('div'); list.id = 'todo-list'; list.hidden = !expanded; list.className = 'todo-list';
-    if (todo.reason) { const reason = document.createElement('p'); reason.className = 'todo-reason'; reason.textContent = todo.reason; list.append(reason); }
-    function row(item, child = false) {
-      const el = document.createElement('div'); el.className = 'todo-row'; el.dataset.status = item.status; if (child) el.classList.add('todo-child');
-      const status = document.createElement('span'); status.innerHTML = icon(item.status); status.title = names[item.status];
-      const text = document.createElement('span'); text.textContent = item.title;
-      el.append(status, text); if (item.note) { const note = document.createElement('small'); note.textContent = item.note; el.append(note); }
-      list.append(el);
-    }
-    for (const item of todo.items.filter(i => !i.parentId)) { row(item); for (const child of todo.items.filter(i => i.parentId === item.id)) row(child, true); }
-    root.append(list);
-  }
-  window.addEventListener('storage', event => { if (event.key === KEY) { expanded = event.newValue === '1'; render(); } });
-  return {
-    show(id, value) { sessionId = id; todo = value; render(); },
-    setConnected(value) { if (connected !== value) { connected = value; render(); } },
-  };
+export function createTodoUI({root,request}) {
+const KEY='axiom.todoExpanded';
+const paths={pending:'<rect x="3" y="3" width="14" height="14" rx="3"/>',running:'<circle cx="10" cy="10" r="7"/><path d="M10 6v4l3 2"/>',done:'<path d="m4 10 4 4 8-9"/>',blocked:'<circle cx="10" cy="10" r="7"/><path d="M10 6v5m0 3h.01"/>'};
+const names={pending:'待处理',running:'进行中',done:'已完成',blocked:'受阻'};
+const el=(tag,cls,text)=>{const n=document.createElement(tag);n.className=cls;if(text!=null)n.textContent=text;return n;};
+const icon=state=>{const n=el('span','');n.innerHTML=`<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">${paths[state]??paths.pending}</svg>`;return n;};
+ let todo=null,sessionId=null,connected=true,expanded=false,generation=0,nextOffset=null,loading=false;
+ const rows=new Map();
+ try{expanded=localStorage.getItem(KEY)==='1';}catch{}
+ const head=el('div','todo-header'),toggle=el('button','todo-toggle'),action=el('button','todo-action'),list=el('div','todo-list'),notice=el('p','todo-reason'),more=el('button','todo-action','显示更多');
+ toggle.type=action.type=more.type='button';list.id='todo-list';toggle.setAttribute('aria-controls',list.id);head.append(toggle,action);root.replaceChildren(head,notice,list,more);
+ const error=e=>{notice.textContent=e.message;notice.setAttribute('role','alert');};
+ async function query(params={}){const id=sessionId,token=generation;const {id:itemId,...rest}=params;const value=await request('todo.get',{sessionId:id,listId:todo?.listId,...rest,...(itemId?{itemId}:{})});if(id!==sessionId||token!==generation)return null;return value;}
+ async function details(item,node){try{const view=await query({id:item.id,detail:true,limit:20});if(!view||!node.isConnected)return;let detail=node.querySelector('.todo-detail');if(detail){detail.remove();return;}detail=el('div','todo-detail');detail.append(el('p','',view.item.description));const criteria=el('ul','');for(const c of view.item.acceptance??[])criteria.append(el('li','',`${c.text}（${c.check}）`));detail.append(criteria,el('p','',view.item.summary));
+ const verification=await query({id:item.id,section:'verification',limit:10});if(!verification||!node.isConnected)return;for(const v of verification.verification??[])detail.append(el('p','',`${v.criterionId}：${v.result}\n${JSON.stringify(v.refs)}`));
+ for(const child of view.items??[])detail.append(makeRow(child));
+ if(view.hasMore){const button=el('button','todo-action','显示更多步骤');button.type='button';let offset=view.nextOffset;button.onclick=async()=>{button.disabled=true;try{const page=await query({id:item.id,offset,limit:20});if(!page||!node.isConnected)return;for(const child of page.items)detail.insertBefore(makeRow(child),button);offset=page.nextOffset;button.hidden=!page.hasMore;}catch(e){error(e);}finally{button.disabled=false;}};detail.append(button);}
+ if((view.items??[]).length&&!view.hasMore&&view.items.every(c=>c.status==='done')&&view.item.status!=='done')detail.append(el('p','todo-reason','步骤已完成，待目标验收'));node.append(detail);
+ }catch(e){error(e);}}
+ function makeRow(item){const node=el('div',`todo-row${item.level===2?' todo-child':''}`);node.dataset.id=item.id;const state=icon(item.status),button=el('button','todo-item-title',item.title),summary=el('small','',item.summary||item.blocker);button.type='button';button.title=item.level===1?'目标要求已确认；修改需再次确认。':names[item.status];button.onclick=()=>details(item,node);node.append(state,button,summary);node.dataset.status=item.status;return node;}
+ function put(item){let row=rows.get(item.id);if(!row){row=makeRow(item);rows.set(item.id,row);list.append(row);}else{row.dataset.status=item.status;row.firstChild.replaceWith(icon(item.status));const button=row.querySelector('.todo-item-title');button.textContent=item.title;button.onclick=()=>details(item,row);row.querySelector('small').textContent=item.summary||item.blocker||'';row.querySelector('.todo-detail')?.remove();}}
+ async function load(offset=0){if(loading||!expanded||!todo?.listId)return;loading=true;const token=generation;try{const view=await query({offset,limit:20});if(!view||!expanded)return;if(view.version<todo.version)return;todo={...todo,...view};for(const i of view.items)put(i);nextOffset=view.nextOffset;renderHeader();}catch(e){error(e);}finally{if(token===generation)loading=false;}}
+ function renderHeader(){root.hidden=!todo?.listId;if(root.hidden)return;toggle.replaceChildren(el('span','','Todo'));const counts=todo.counts?.targets??{};toggle.append(el('span','todo-count',`目标 ${counts.done??0}/${counts.total??0}`));for(const state of Object.keys(paths)){const badge=el('span','todo-count');badge.dataset.status=state;badge.title=names[state];badge.append(icon(state),document.createTextNode(String(counts[state]??0)));toggle.append(badge);}toggle.setAttribute('aria-expanded',String(expanded));toggle.setAttribute('aria-label',expanded?'收起任务清单':'展开任务清单');
+ const h=todo.header??{};action.textContent=todo.completed?'已完成':todo.cancelled?'已取消':h.requirePlan?'取消创建':h.paused?'恢复':'暂停';action.disabled=!connected||todo.completed||todo.cancelled;
+ notice.textContent=h.runtimeBlock?.reason||h.pauseReason||(h.requirePlan?'等待填写目标或确认目标':todo.cancelled?'已取消，未完成':'');notice.hidden=!notice.textContent;list.hidden=!expanded;more.hidden=!expanded||nextOffset==null;more.disabled=!connected||loading;}
+ function collapse(){rows.clear();list.replaceChildren();nextOffset=null;}
+ toggle.onclick=()=>{expanded=!expanded;try{localStorage.setItem(KEY,expanded?'1':'0');}catch{}if(!expanded)collapse();renderHeader();if(expanded)void load();};more.onclick=()=>load(nextOffset);
+ action.onclick=async()=>{const token=generation;action.disabled=true;try{const value=await request('todo.action',{sessionId,action:todo.header?.requirePlan?'cancel_prepare':todo.header?.paused?'resume':'pause'});if(token===generation&&value?.listId)show(sessionId,value);}catch(e){if(token===generation)error(e);}finally{if(token===generation)renderHeader();}};
+ function show(id,value){if(id!==sessionId||value?.listId!==todo?.listId){generation++;loading=false;collapse();sessionId=id;todo=null;}if(todo&&value&&value.version<todo.version)return;todo=value;renderHeader();if(!expanded){collapse();return;}for(const item of value?.changed??value?.items??[])if(item.level===1)put(item);for(const removed of value?.removedIds??[]){rows.get(removed)?.remove();rows.delete(removed);}if(value?.items){const ids=new Set(value.items.map(i=>i.id));if(value.coverage?.complete)for(const [id,row]of rows)if(!ids.has(id)){row.remove();rows.delete(id);}}if(!rows.size)void load();}
+ window.addEventListener('storage',event=>{if(event.key!==KEY)return;expanded=event.newValue==='1';if(!expanded)collapse();renderHeader();if(expanded)void load();});
+ return {show,setConnected(value){connected=value;renderHeader();},expand(){expanded=true;renderHeader();void load();}};
 }

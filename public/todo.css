@@ -14,5 +14,11 @@
 .todo-child { margin-left: 20px; }
 .todo-row[data-status="done"] { opacity: .6; }
 .todo-row[data-status="running"] > span:first-child { color: var(--accent); }
-.todo-reason { margin: 4px 0; overflow-wrap: anywhere; }
+.todo-reason { margin: 4px 8px; overflow-wrap: anywhere; }
+.todo-item-title { border: 0; background: transparent; color: var(--ink); font: inherit; text-align: left; padding: 0; cursor: pointer; overflow-wrap: anywhere; }
+.todo-item-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.todo-detail { grid-column: 2; border-top: 1px solid var(--line); white-space: pre-wrap; }
+.todo-detail ul { padding-left: 16px; }
+.todo-toggle { flex-wrap: wrap; }
+.todo-count { white-space: nowrap; }
 @media (max-width: 480px) { .todo-toggle { gap: 8px; } .todo-list { max-height: 180px; } }

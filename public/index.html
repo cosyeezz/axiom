@@ -17,7 +17,6 @@
     <link rel="stylesheet" href="/model-manager.css" />
     <script type="module" src="/app.js"></script>
     <link rel="stylesheet" href="/question.css" />
-    <link rel="stylesheet" href="/goal.css" />
     <link rel="stylesheet" href="/todo.css" />
 </head>
   <body>
@@ -80,7 +79,6 @@
           <button id="connect" class="secondary">重新连接</button>
         </form>
         <section id="workspace" hidden>
-          <div id="goal-track" class="goal-track" aria-label="目标进度" hidden></div>
           <button id="earliest" class="secondary" type="button" aria-controls="transcript" hidden>回到最早消息 ↑</button>
           <div class="conversation-reading">
             <div id="transcript" role="region" aria-label="对话记录" tabindex="0">
@@ -94,7 +92,6 @@
             </section>
           </div>
           <div class="composer-wrap">
-            <div id="goal-dock" class="goal-dock" aria-label="目标模式控制" hidden></div>
             <section id="question-dock" class="question-dock" aria-label="待回答的问题" hidden></section>
             <button id="latest" class="secondary" type="button" aria-controls="transcript" hidden>回到最新消息 ↓</button>
             <div id="message-queue" aria-label="待发送队列" aria-live="polite" hidden></div>
@@ -290,32 +287,6 @@
         </div>
       </dialog>
     </template>
-    <dialog id="goal-plan" aria-labelledby="goal-plan-title">
-      <div class="goal-plan-head">
-        <div>
-          <p class="goal-plan-eyebrow">目标计划 · 待确认</p>
-          <h2 id="goal-plan-title"></h2>
-        </div>
-        <form method="dialog"><button class="secondary" aria-label="关闭目标计划">✕</button></form>
-      </div>
-      <p id="goal-plan-meta" class="goal-plan-meta"></p>
-      <div class="goal-plan-body">
-        <section class="goal-plan-section" aria-labelledby="goal-plan-constraints-title">
-          <h3 id="goal-plan-constraints-title">约束</h3>
-          <ul id="goal-plan-constraints"></ul>
-        </section>
-        <section class="goal-plan-section" aria-labelledby="goal-plan-acceptance-title">
-          <h3 id="goal-plan-acceptance-title">验收标准</h3>
-          <ul id="goal-plan-acceptance"></ul>
-        </section>
-        <section class="goal-plan-section" id="goal-plan-rounds-section" aria-labelledby="goal-plan-rounds-title">
-          <h3 id="goal-plan-rounds-title">执行计划</h3>
-          <ul id="goal-plan-rounds"></ul>
-        </section>
-      </div>
-      <p class="goal-plan-note">有修改意见？直接在下方输入框描述并发送，模型会重新规划后再请你确认。</p>
-      <div class="dialog-actions"><button type="button" class="secondary" id="goal-plan-close">先不确认</button><button type="button" id="goal-plan-confirm">确认并开始执行</button></div>
-    </dialog>
     <dialog id="settings" aria-labelledby="settings-title">
       <header>
         <h2 id="settings-title">设置</h2>

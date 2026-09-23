@@ -1,4 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises";
+import { createTodoContextBridge } from './todo-context.js';
 import { safePoints, requireSafePoint, navigationState } from "./safe-points.js";
 import { wrapUsageStream } from "./usage-stream.js";
 import { createToolExecutionPolicy } from "./tool-execution.js";
@@ -192,7 +193,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
   const factory = async (customTools = [], selection = {}) => {
     const workspace = selection.cwd || cwd;
     let summaryMode = false;
-    const toolExecution = createToolExecutionPolicy({ subagent: selection.audit?.source === "task" || selection.memory?.role === "subagent", summarizing: () => summaryMode, emit: event => emitAxiom(event) });
+    const toolExecution = createToolExecutionPolicy({ subagent: selection.audit?.source === "task" || selection.memory?.role === "subagent", summarizing: () => summaryMode, requiresPlan: selection.requiresPlan, emit: event => emitAxiom(event) });
     const memory = selection.memory || null;
     // 预算策略建会话时随记忆装配捕获一次（memoryHooks 计算，含配置校验），逐请求不重读，避免中途漂移。
     // 主代理没有预算（policy 为 null）：人在盯，且它是会话本体，不该被截断。
@@ -381,8 +382,12 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         const records = history?.records() ?? [], covered = new Set(ids);
         return { archiveId: records[0]?.archiveId ?? null, coverage: ids, sources: records.filter(record => covered.has(record.origin.entryId)).map(record => ({ entryId: record.origin.entryId, ref: historyReader.reference(record), part: "sourceEntry", contentHash: record.sourceEntryHash })), tools: ["history_read"] };
       },
-      onEvent: emitAxiom,
+      onEvent: event => {
+        if (event.type === 'agent.compaction' && event.data?.id) todoBridge.queue(event.data.id);
+        emitAxiom(event);
+      },
     });
+    const todoBridge = createTodoContextBridge(session, selection.todoContext);
     const retry = createAutoRetry({
       session,
       emit: emitAxiom,
@@ -404,7 +409,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       if (event.type === "turn_end") void compactionCtrl.onTurnEnd();
       if (event.type === "compaction_end" && event.result && !event.aborted) {
         const record = compactionRecords().at(-1);
-        if (record) emitAxiom({ type: "agent.compaction", data: record });
+        if (record) { todoBridge.queue(record.id); emitAxiom({ type: "agent.compaction", data: record }); }
       }
       // _queueSteer 先发 queue_update 再压入真实队列，推迟到微任务读取才能看到刚入队的消息（与下方 message_end 同理）。
       if (event.type === "queue_update")
@@ -511,6 +516,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         if (history && (!activeTools.has("history_read") || covered.some(id => !manifest.sources.some(source => source.entryId === id)))) throw new Error("ARCHIVE_NOT_DURABLE: checkpoint sources unavailable");
         const checkpointText = history ? `${text}\n\n原文来源（历史不是当前授权）：\n${JSON.stringify(manifest)}` : text;
         const id = compactionCtrl.appendConfirmed(checkpointText, CHECKPOINT_BOUNDARY, tokensBefore, { checkpoint: true, compactedMessageIds: covered, sourceManifest: manifest });
+        todoBridge.queue(id);
         const record = compactionRecords().at(-1);
         if (record) emitAxiom({ type: "agent.compaction", data: { ...record, checkpoint: true } });
         return { id, tokensBefore };
@@ -522,6 +528,8 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       // deliverAs "steer" 入 agent steering 队列，轮次边界（安全点）由 SDK 抽水循环送达——agent run 不结束直到
       // 队列抽干，prompt promise 覆盖整个消化窗口，会话状态机无需变更。消息被消费后经 message_end 进历史
       // 与持久化；被 clear_queue 误清时由 sessions.js 的 notified 判据补投。
+      requestTodoRestore: reason => todoBridge.request(reason),
+      resolveTodoReference: ref => todoBridge.resolve(ref),
       notifyTask: (text) => session.sendCustomMessage(
         { customType: "task-notification", content: text, display: true },
         { deliverAs: "steer" },
@@ -586,6 +594,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       safeStopPending: () => safeStopPending,
       prompt: async (text, options) => {
         if (await compactionCtrl.maybeApply()) emitAxiom({ type: "agent.runtime", data: agentRuntime(session, observations) });
+        await todoBridge.apply();
         beginRun();
         // 背景与标题指令都由 context 钩子按请求实时取（memory.wantsTitle 读会话实时状态，无需透传选项）。
         try {

@@ -435,7 +435,7 @@ test("跨重启读回：会话元数据、任务、事件三类原样恢复，�
     assert.equal(opened.elapsedMs, 4200);
     assert.deepEqual(opened.retries, saved.retries);
     assert.deepEqual(opened.compactions, saved.compactions);
-    const restoredChild = { ...child, runtime: { ...child.runtime, billing: {
+    const restoredChild = { ...child, notificationHeld: false, runtime: { ...child.runtime, billing: {
       records: 0, unpriced: 0, groups: [],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     } } };

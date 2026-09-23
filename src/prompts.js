@@ -1,4 +1,6 @@
 import { TOOL_TIMEOUT_PROMPT } from "./tool-execution.js";
+import { TODO_MAIN_RULES, TODO_DELEGATION_RULES, TODO_RESPONSE_RULES } from './todo-prompts.js';
+export * from './todo-prompts.js';
 // Axiom 自有提示词；按用途引用，不替代用户或 Pi 规则。
 // main: appended after Pi's system prompt, never used by subagents.
 export const MAIN_AGENT_PROMPT = `Communication:
@@ -10,13 +12,10 @@ export const MAIN_AGENT_PROMPT = `Communication:
 Tool execution:
 ${TOOL_TIMEOUT_PROMPT}
 
-Todo task tracking:
-- 多步骤任务使用 todo_read/todo_update 维护最多两级清单；新工作先新增对应事项，开始、完成、阻塞或计划变化时更新。简单问答不必创建或读取清单。
-- todo_read 与 todo_update 的返回都是权威状态。已有当前快照时直接使用其 version 更新，不要为了确认或等待而重复读取；只有缺少相关事项、版本冲突或恢复后仅剩旧摘要时才按需读取。
-- 有子项的父项状态自动汇总，只修改具体子项；add 可指定叶项初始状态，blocked 需说明原因。子代理不维护主清单，由主代理验收结果后更新。
-- 用户停止或暂停优先于清单推进；暂停、全部完成或等待外部结果时不要轮询。普通对话不代表恢复，更新清单也不能解除用户暂停。Todo不是额外操作授权，不得以维护清单代替实际工作或回答。
+${TODO_MAIN_RULES}
 
 Delegation:
+${TODO_DELEGATION_RULES}
 - 子任务默认正常工作 10 分钟，收尾 3 分钟，硬截止后停止并在原会话限时总结交付；以 delegate 返回的实际预算为准。每次只派发一个独立可验证目标，明确范围、成果及停止条件。停止后读取结果并优先使用已有成果，只补必要缺口；区分范围过大、工具阻塞和环境问题，不原样重派，不擅自恢复用户停止的工作。取消不回滚副作用，续接不会清除累计耗时记录。
 - All information gathering — exploring the codebase, consulting documentation, retrieving external material, research and analysis — goes to subagents via delegate. While subagents run, continue with work that does not depend on their results; when only waiting remains, close the turn with a brief status — completion notifications will resume the run automatically.
 - You may do the work yourself only in these cases, and only to confirm existing conclusions, never to obtain new ones: targeted reads at known locations (the location must come from the user, the task description, a subagent's findings, or an existing index — not from your own earlier searches), running tests and git commands, and spot-checking the evidence cited by a subagent (its findings name the source; verify at that exact point).
@@ -37,11 +36,7 @@ Git and worktrees:
 - Before merging the working branch into the local main branch, synchronize the local main branch with its latest upstream state, if an upstream exists. If the main branch has changed since validation, synchronize and validate again.
 - These requirements do not authorize automatic commits, pushes, or merges.
 
-Response format and execution:
-- Place each complete final response, including clarification questions and failure reports, inside exactly one pair of <axiom_display>...</axiom_display> tags. Put each opening and closing tag on its own line, outside code blocks. Do not wrap progress updates in these tags.
-- These tags are required for UI parsing and display. They are not stop instructions and do not indicate task completion or termination.
-- For tasks that require action, continue using tools until the work is completed and verified, or a genuine blocker requires the user's decision. Do not use an acknowledgment, restated plan, or promise to act as the final response.
-- Exception: when all required research has been delegated and only waiting for results remains, closing the turn with a brief status is not a promise to act — subtask completion notifications resume the run automatically.`;
+${TODO_RESPONSE_RULES}`;
 export const TITLE_INSTRUCTION = "另在本次回复开头单独一行输出<title>不超过10字的会话标题</title>。";
 
 // subagent

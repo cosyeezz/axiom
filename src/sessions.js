@@ -8,7 +8,7 @@ import { Database } from "./database.js";
 import { SessionStore } from "./session-store.js";
 import { readSessionManager, toWireRecord } from "./session-history.js";
 import { sessionBilling, combinedBilling, usageRuntime } from "./session-billing.js";
-import { Goal, createGoalStore } from "./goal.js";
+import { GOAL_PREPARE_PROMPT, TODO_CONTINUE_PROMPT, TODO_RESUME_PROMPT, TODO_DELIVERY_RETRY_PROMPT } from './todo-prompts.js';
 import { Todo, createTodoStore } from "./todo.js";
 import { basename, dirname, join, relative, isAbsolute, resolve, sep, parse } from "node:path";
 
@@ -23,10 +23,7 @@ import { resolveCapabilities } from "./capabilities.js";
 import { memoryHooks } from "./session-memory.js";
 import { TITLE_MAX, stripMemoryTags } from "../public/memory-tags.js";
 import { splitAnswer } from "../public/answer-tags.js";
-import { stripGoalMarkers } from "../public/goal-markers.js";
 
-// Goal 模式挂载的四个工具：普通会话初始即停用，退出 Goal 时统一停用。
-const GOAL_TOOL_NAMES = ["goal_plan", "goal_evidence", "goal_block", "goal_progress"];
 // 在飞子任务：状态在跑且真有运行 promise（恢复时被暂停的 starting 没有 done，不算在飞）。
 const hasRunningTasks = (item) => [...item.tasks.jobs.values()].some((job) => ACTIVE_TASK_STATES.includes(job.status) && job.done);
 
@@ -105,7 +102,7 @@ const entryIdSet = (records) => new Set(records.map((record) => record.entryId).
 // 压缩段的展示口径正文：与前端 renderMessage、src/goal.js 的 bodyText 同一套实现
 // （先去 goal 完成标记，再剥记忆标签，最后取 <axiom_display> 内的正式答复），避免正则漂移。
 const compactedAnswer = (text) => {
-  const cleaned = stripMemoryTags(stripGoalMarkers(String(text ?? "")));
+  const cleaned = stripMemoryTags(String(text ?? ""));
   try { return splitAnswer(cleaned, { streaming: false }).answer.trim(); }
   catch { return cleaned.trim(); }
 };
@@ -439,7 +436,6 @@ export class Sessions {
     this.ownsDatabase = !database && !!sidecar;
     this.database = database || (sidecar ? new Database(sidecar) : null);
     this.store = this.database ? new SessionStore(this.database) : null;
-    this.goalStore = createGoalStore(this.database);
     this.todoStore = createTodoStore(this.database);
     for (const { sessionId } of this.todoStore.list()) new Todo({ sessionId, store: this.todoStore }).pause('服务已重启，请核对实际产物后恢复');
     this.taskBudget = structuredClone(taskBudgetDefaults);
@@ -723,11 +719,8 @@ export class Sessions {
     // 只有待通知会话需要主动恢复，串行启动避免历史任务同时唤醒大量 SDK。
     for (const id of this.store?.listPendingSessionIds() ?? []) {
       try {
-        // 暂停/等待确认的 Goal 会话投递必被拒（见 goalNotificationsBlocked），拉起 SDK 纯属白费；
-        // notified 仍留 0，等用户恢复 Goal 再投，不改「待通知」口径。
-        const phase = this.goalStore.load(id)?.phase;
-        if (phase && !["running", "verifying"].includes(phase)) continue;
-        if (this.todoStore.load(id)?.mode === 'paused') continue;
+        const header = this.todoStore.load(id);
+        if (header?.paused || header?.runtimeBlock) continue;
         await this.ensureLoaded(id);
       }
       catch (error) { console.warn(`会话恢复失败 ${id}：${error.message}`); }
@@ -929,7 +922,6 @@ export class Sessions {
     const item = await this.ensureLoaded(id);
     if (pointStatus(item) !== "idle" || item.compacting || item.closing || item.configuring || item.cancelling || item.releasing)
       throw new Error("请先停止会话及子任务，再操作安全点");
-    if (item.goal?.active) throw new Error("请先退出目标模式，再操作安全点");
     const queue = item.agent.queue?.();
     if (queue?.steering?.length || queue?.followUp?.length) throw new Error("请先处理或撤回排队消息");
     return item;
@@ -949,7 +941,6 @@ export class Sessions {
       for (const record of item.retries) delete record.messageCount;
       delete item.live.main;
       item.liveIds.delete("main");
-      item.goalExited = true; // Do not let task notifications automatically restart this restored prefix.
       item.notificationsPaused = true;
       item.todo?.pause('会话已回退，请核对后恢复');
       this.saveChange(item, [
@@ -974,7 +965,7 @@ export class Sessions {
         ...saved, id: randomUUID(), sessionFile: point.sessionFile,
         title: `${item.title} · 分叉`, titleManual: true, titleRequested: true,
         createdAt: Date.now(), updatedAt: Date.now(), elapsedMs: 0, runningSince: null,
-        messages: [], tasks: [], retries: [], compactions: [], goalExited: true,
+        messages: [], tasks: [], retries: [], compactions: [],
       });
       return { sessionId: newId, draft: point.draft };
     } finally { item.configuring = false; }
@@ -1237,10 +1228,9 @@ export class Sessions {
           } catch { console.warn("[sessions] listener_failed"); }
         }
     };
-    item.goal = new Goal({ sessionId: id, store: this.goalStore, emit: item.emit,
-      messageCount: () => item.messages.length });
-    item.todo = new Todo({ sessionId: id, store: this.todoStore, emit: item.emit });
     item.questions = createQuestions(item.emit);
+    item.todo = new Todo({ sessionId: id, store: this.todoStore, emit: item.emit, questions: item.questions,
+      resolveRef: ref => item.agent?.resolveTodoReference?.(ref) });
     const saveMemory = (change) => this.saveChange(item, change);
     item.tasks = new Tasks(
       (job) => {
@@ -1256,12 +1246,7 @@ export class Sessions {
           capabilities: item.subagentCapabilities === "inherit" ? item.agent.config?.().capabilities ?? item.capabilities : item.subagentCapabilities,
           trustProject: item.trustProject,
           memory: memoryHooks(item, saveMemory, job),
-          executionContext: () => {
-            const goal = item.goal.snapshot();
-            if (!goal) return null;
-            return `[Goal 所属子任务] 总体目标：${goal.objective}\n约束：${goal.constraints.join("；")}\n所属轮次：${goal.currentRound + 1}。只完成委派给你的具体任务，不负责推进总体目标。` +
-              (this.goalNotificationsBlocked(item) ? "\n用户已要求暂停：在当前工具完成后保存实际进度、未完成事项和产物位置，安全收尾，不启动新的工作。" : "");
-          },
+
           sessionDir: storageDir ? join(storageDir, `${id}-tasks`) : undefined,
           // 子代理与主会话共享同一归档目录：与 `${id}-tasks` 同批清理。
           observationsDir: storageDir ? join(storageDir, `${id}-observations`) : undefined,
@@ -1273,7 +1258,7 @@ export class Sessions {
         // task.state 已同步提交终态；只重试失败队列，不再重写同一大结果。
         await this.persist(item, {});
         this.scheduleTaskNotifications(item);
-        this.scheduleGoal(item);
+        this.scheduleTodo(item);
       },
       { workMs: item.taskBudget.workSeconds * 1000, wrapUpMs: item.taskBudget.wrapUpSeconds * 1000,
         summaryMs: item.taskBudget.summarySeconds * 1000 },
@@ -1293,12 +1278,7 @@ export class Sessions {
         lines[0] = JSON.stringify({ ...JSON.parse(lines[0]), id, cwd });
         await writeFile(importedFile, lines.join("\n"), { mode: 0o600 });
       }
-      item.agent = await this.createAgent([...delegationTools(item.tasks), item.questions.tool, item.todo.readTool(), item.todo.updateTool(), item.goal.planTool(), item.goal.blockTool(), item.goal.progressTool(), item.goal.verificationTool({ evidence: () => {
-        const goal = item.goal.snapshot();
-        const start = goal?.rounds[goal.currentRound]?.startMessage ?? item.messages.length;
-        return item.messages.slice(start).filter((entry) => entry.agentId === "main" && entry.message?.role === "toolResult")
-          .map((entry) => entry.message);
-      } })], {
+      item.agent = await this.createAgent([...delegationTools(item.tasks), item.questions.tool, item.todo.readTool(), item.todo.updateTool()], {
         audit: { sessionId: id, agentId: "main", source: "main" },
         ...(selection.model ? { model: selection.model } : {}),
         ...(selection.thinking ? { thinking: selection.thinking } : {}),
@@ -1311,17 +1291,13 @@ export class Sessions {
         observationsDir: storageDir ? join(storageDir, `${id}-observations`) : undefined,
         sessionFile: saved?.sessionFile ?? importedFile,
         memory: memoryHooks(item, saveMemory),
-        executionContext: () => item.goal.context(),
-        shouldPause: () => {
-          const goal = item.goal.snapshot();
-          return !!goal?.pendingAction || goal?.phase === "paused";
-        },
-        inactiveTools: item.goal.active ? [] : GOAL_TOOL_NAMES,
+        requiresPlan: () => item.todo.requiresPlan,
+        todoContext: reason => item.todo.header ? item.todo.contextPacket(reason) : null,
       });
     // 导入与库恢复的会话都没有完整消息快照（模型消息不再入库）：主代理历史从 Pi JSONL
     // 当前分支重建（撤回/压缩后的分支即真实历史），entryId 保留用于压缩折叠与撤回定位；
     // 子代理使用独立 JSONL，按 task ID 恢复到各自详情，不混入主上下文。
-    if (item.agent.navigationState?.()) { item.goalExited = true; item.notificationsPaused = true; }
+    if (item.agent.navigationState?.()) { item.notificationsPaused = true; }
     const restoredFromJsonl = importedFile || (saved && !item.messages.length);
     if (restoredFromJsonl)
       item.messages = (item.agent.historyEntries?.() || []).map((entry) => ({ agentId: "main", message: entry.message, entryId: entry.id }));
@@ -1457,154 +1433,77 @@ export class Sessions {
     }
     this.items.set(id, item);
     for (const job of item.tasks.jobs.values())
-      if (job.status === "starting" && !this.goalNotificationsBlocked(item) && !this.todoNotificationsBlocked(item) && (job.sessionFile || job.persistenceVersion >= 1)) job.done = item.tasks.run(job, true);
+      if (job.status === "starting" && !job.notificationHeld && !item.todo.header?.paused && (job.sessionFile || job.persistenceVersion >= 1)) job.done = item.tasks.run(job, true);
     this.scheduleTaskNotifications(item);
     return id;
   }
 
-  async goalAction(id, action, text) {
-    const item = await this.ensureLoaded(id);
-    if (item.compacting || item.closing || item.configuring || item.cancelling) throw new Error("会话正在切换状态");
-    // 退出目标模式：只允许在没有在飞工作时发生（UI 需先暂停并等安全点落定）。
-    // 清掉目标记录回到普通会话，历史与产物原样保留；goal_* 工具停用，通知冻结到用户下次显式输入。
-    if (action === "exit") {
-      if (item.status !== "idle" || hasRunningTasks(item)) throw new Error("Goal 仍在执行：请先暂停并在安全点落定后再退出");
-      // 先按「已通知」落盘未投递的结果（notified 是唯一持久化的待通知信号）：
-      // 否则重启时 listPendingSessionIds 会把已退出的会话重新拉起并自动唤醒。
-      // 只消费通知不删结果：任务记录、resultId 与正文照旧保留，用户仍可查看或 read_result。
-      // 顺序先于删目标：中途崩溃时目标还在（暂停态），不会出现无目标 + 未通知的自动唤醒窗口。
-      for (const job of item.tasks.jobs.values()) {
-        if (Object.values(job.previousResults || {}).some(result => result.resultId && !result.notified)) {
-          const previousResults = Object.fromEntries(Object.entries(job.previousResults).map(([key, result]) => [key, { ...result, notified: true }]));
-          await this.persist(item, { task: { id: job.id, previousResults, notified: job.notified } });
-          job.previousResults = previousResults;
-        }
-        if (!job.resultId || job.notified) continue;
-        // 先落库再改内存：反了的话落库失败会留下「内存已通知、库里还是 0」，
-        // 本进程不再补发而重启又通知一遍。
-        await this.persist(item, { task: { id: job.id, notified: true } });
-        job.notified = true;
-      }
-      item.goal.exit();
-      item.agent.disableTools?.(GOAL_TOOL_NAMES);
-      item.goalExited = true;
-      item.notificationsPaused = true;
-      return { goal: null, runId: item.runId };
-    }
-    if (["enter", "confirm", "resume"].includes(action) && (item.status !== "idle" || hasRunningTasks(item))) throw new Error("请等待当前执行与子任务安全收尾");
-    item.goalExited = false;
-    item.goal.action(action, text);
-    item.agent.enableTools?.(GOAL_TOOL_NAMES);
-    item.notificationsPaused = this.goalNotificationsBlocked(item) || false;
-    if (action === "enter" && !item.goal.snapshot().objective) return { goal: item.goal.snapshot(), runId: item.runId };
-    if (["enter", "confirm", "resume"].includes(action)) {
-      item.goalSegments = 0;
-      for (const job of item.tasks.jobs.values())
-        if (job.status === "starting" && !job.done) job.done = item.tasks.run(job, true);
-      this.startRun(item, () => item.agent.prompt(action === "enter"
-        ? "[Axiom Goal] 根据现有对话澄清目标并提交分轮计划，等待用户确认。"
-        : "[Axiom Goal] 按已确认目标继续。先核对实际产物和已保存进度，不盲目重放操作。"));
-    } else if (item.goal.snapshot()?.phase === "clarifying" && item.status === "idle") {
-      this.startRun(item, () => item.agent.prompt("[Axiom Goal 调整] 根据用户调整重新规划。先核对已保存产物，保留历史，提交计划等待确认。"));
-    } else {
-      item.agent.requestPause?.();
-      this.scheduleGoal(item);
-    }
-    return { goal: item.goal.snapshot(), runId: item.runId };
-  }
-
-  scheduleGoal(item) {
-    if ((!item.goal?.active && !item.todo?.active) || item.goalScheduled || item.closing) return;
-    item.goalScheduled = true;
+  scheduleTodo(item) {
+    if (!item.todo?.header || item.todoScheduled || item.closing) return;
+    item.todoScheduled = true;
     setImmediate(() => {
-      item.goalScheduled = false;
-      void (item.goal?.active ? this.advanceGoal(item) : this.advanceTodo(item)).catch((error) => {
-        item.todo?.pause(`自动推进失败：${error.message}`);
-        item.goal.fail(`Goal 调度失败：${error.message}`);
-        item.emit({ type: "error", data: { message: error.message } });
+      item.todoScheduled = false;
+      void this.advanceTodo(item).catch(error => {
+        item.todo.block('TODO_SCHEDULER_FAILED', error.message);
+        item.emit({ type: 'error', data: { message: error.message } });
       });
     });
   }
 
-  async todoAction(id, action) {
+  async holdTodoNotifications(item, held) {
+    for (const job of item.tasks.jobs.values()) {
+      job.notificationHeld = held;
+      for (const previous of Object.values(job.previousResults || {})) if (!previous.notified) previous.notificationHeld = held;
+      await this.persist(item, { task: item.tasks.snapshotJob(job) });
+    }
+  }
+
+  async todoAction(id, action, text = '') {
     const item = await this.ensureLoaded(id);
+    if (action === 'pause') { await this.safeStop(id); return item.todo.snapshot(); }
     if (item.compacting || item.closing || item.configuring || item.cancelling) throw new Error('会话忙，请稍后重试');
-    if (item.goal?.active) throw new Error('请先退出Goal模式再操作Todo');
-    if (action === 'pause') { item.notificationsPaused = true; item.todo.pause(); item.agent.requestSafeStop?.(); }
-    else if (action === 'resume') {
-      item.goalExited = false;
-      item.todo.resume(); item.notificationsPaused = false;
-      this.scheduleTaskNotifications(item); this.scheduleGoal(item);
+    if (action === 'prepare') {
+      if (item.status !== 'idle') throw new Error('请等待当前执行结束');
+      const before = item.todo.snapshot();
+      if (before.counts.targets.total && !before.completed) return before;
+      item.todo.prepare(text);
+      if (text) this.startRun(item, () => item.agent.prompt(`${GOAL_PREPARE_PROMPT}\n\n${text}`));
+    } else if (action === 'cancel_prepare') {
+      item.questions.cancel(); item.todo.cancelPrepare();
+      item.agent.requestSafeStop?.();
+    } else if (action === 'resume') {
+      if (item.status !== 'idle') throw new Error('请等待停止完成');
+      item.todo.resume(); item.notificationsPaused = false; item.todoResumeRequested = true;
+      item.agent.requestTodoRestore?.('resume');
+      await this.holdTodoNotifications(item, false);
+      for (const job of item.tasks.jobs.values()) if (job.status === 'starting' && !job.done && job.cleanupStatus !== 'unconfirmed') job.done = item.tasks.run(job, true);
+      this.scheduleTaskNotifications(item); this.scheduleTodo(item);
     } else throw new Error('未知Todo操作');
     return item.todo.snapshot();
   }
 
   async advanceTodo(item) {
-    if (!item.todo?.actionable || item.goal?.active || this.goalNotificationsBlocked(item)) return;
+    if (!item.todo?.header) return;
     if (item.compacting || item.closing || item.cancelling || item.configuring || item.releasing || item.status !== 'idle' || item.notifying || item.notificationsPaused) return;
+    const state = item.todo.snapshot();
+    if (state.paused || state.header.runtimeBlock || item.todo.memoryBlock) return;
     if ([...item.tasks.jobs.values()].some(job => ACTIVE_TASK_STATES.includes(job.status) || job.cleanupStatus === 'unconfirmed')) return;
     if (item.questions.snapshot().length) return;
-    if ([...item.tasks.jobs.values()].some(job => job.resultId && !job.notified)) { this.scheduleTaskNotifications(item); return; }
+    if (item.tasks.pendingNotifications().length) { this.scheduleTaskNotifications(item); return; }
     const queue = item.agent.queue?.();
     if (queue?.steering?.length || queue?.followUp?.length) return;
-    if (!item.todo.nudge()) return;
-    this.startRun(item, () => item.agent.prompt('[Axiom Todo 继续执行] 当前仍有可执行的未完成事项，请继续实际工作；确需用户输入则说明阻塞。'));
-  }
-
-  async advanceGoal(item) {
-    if (item.compacting || item.closing || item.cancelling || item.configuring || item.status !== "idle" || item.notifying) return;
-    if (hasRunningTasks(item)) return;
-    let goal = item.goal.snapshot();
-    if (!goal) return;
-    if (goal.pendingAction || goal.phase === "paused") {
-      item.goal.pauseAtSafePoint({ tasks: item.tasks.snapshot(), summary: item.goalResult?.text || "执行已到安全点；工具结果与子任务进度保留在会话历史。" });
-      item.goalResult = null;
-      item.notificationsPaused = true;
-      if (item.goal.snapshot()?.phase === "clarifying")
-        this.startRun(item, () => item.agent.prompt("[Axiom Goal 调整] 现有工作已安全保存。按用户调整重新规划，核对产物，保留历史，提交计划等待确认。"));
-      return;
-    }
-    if (!["running", "verifying"].includes(goal.phase)) return;
-    if ([...item.tasks.jobs.values()].some((job) => job.resultId && !job.notified)) {
-      this.scheduleTaskNotifications(item);
-      return;
-    }
-    const previousRound = goal.currentRound;
-    if (item.goalResult) {
-      const reply = item.goalResult;
-      item.goalResult = null;
-      const last = item.messages.findLastIndex((entry) => entry.agentId === "main" && entry.message?.role === "assistant");
-      item.goal.onReply({ message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: reply.text }] }, index: last >= 0 ? last : item.messages.length });
-    }
-    goal = item.goal.snapshot();
-    if (!["running", "verifying"].includes(goal.phase)) return;
-    if ((item.goalSegments = (item.goalSegments || 0) + 1) > 64) {
-      item.goal.fail("已达到本次自动执行的 64 段预算，进度已保存；请检查结果后手动恢复。");
-      return;
-    }
-    const queue = item.agent.queue?.();
-    if (goal.currentRound !== previousRound && item.agent.checkpoint && !queue?.steering?.length && !queue?.followUp?.length)
-      await item.agent.checkpoint(item.goal.context());
-    if (item.closing || item.status !== "idle" || this.goalNotificationsBlocked(item)) return;
-    this.startRun(item, () => item.agent.prompt("[Axiom Goal 自动续跑] 核对最新目标与本轮进度。未完成请继续修正；已完成请提交验收依据并在最终回复独立一行给出完成标记。"));
-  }
-
-  goalNotificationsBlocked(item) {
-    // 退出目标模式后冻结自动唤醒：排队中的子任务通知与续跑不得自行重启，直到用户显式输入。
-    if (item.goalExited) return true;
-    const phase = item.goal?.snapshot()?.phase;
-    return phase && !["running", "verifying"].includes(phase);
-  }
-
-  todoNotificationsBlocked(item) {
-    // Persistent pause also guards reopen and ordinary-input notification paths.
-    return !item.goal?.active && item.todo?.snapshot()?.mode === 'paused';
+    const prepare = state.header.requirePlan && state.header.hasPrepareText;
+    const actionable = state.counts.targets.pending + state.counts.targets.running > 0;
+    if (!prepare && !actionable && !item.todoResumeRequested) return;
+    const prompt = item.todoResumeRequested ? (state.completed ? TODO_DELIVERY_RETRY_PROMPT : TODO_RESUME_PROMPT) : prepare ? GOAL_PREPARE_PROMPT : TODO_CONTINUE_PROMPT;
+    item.todoResumeRequested = false;
+    this.startRun(item, () => item.agent.prompt(prompt));
   }
 
   scheduleTaskNotifications(item) {
     // 通知双通道：running 时经 SDK custom message（task-notification）在轮次边界注入，不打断工具、
     // 不等待运行结束；idle 时经 prompt 直接唤醒，走完整 startRun 状态机。见 deliverTaskNotifications。
-    if (item.notificationScheduled || item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item) || this.todoNotificationsBlocked(item)) return;
+    if (item.notificationScheduled || item.closing || item.notificationsPaused) return;
     item.notificationScheduled = true;
     setImmediate(() => {
       item.notificationScheduled = false;
@@ -1615,7 +1514,7 @@ export class Sessions {
   }
 
   async deliverTaskNotifications(item) {
-    if (item.compacting || item.notifying || item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item) || this.todoNotificationsBlocked(item) || item.configuring) return;
+    if (item.compacting || item.notifying || item.closing || item.notificationsPaused || item.configuring) return;
     const jobs = item.tasks.pendingNotifications().map(({ id, resultId, status }) => ({ id, resultId, status }));
     if (!jobs.length) return;
     const text = "[Axiom 子任务完成通知] 以下任务已结束。使用各自的 taskId 和 resultId 调用 read_result 获取结果；不要轮询。\n" +
@@ -1627,7 +1526,7 @@ export class Sessions {
       item.notifying = true;
       try {
         await this.persist(item, {});
-        if (item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item) || this.todoNotificationsBlocked(item) || item.configuring) return;
+        if (item.closing || item.notificationsPaused || item.configuring) return;
         await item.agent.notifyTask(text);
       } finally {
         item.notifying = false;
@@ -1638,7 +1537,7 @@ export class Sessions {
     try {
       // 结果先落盘再触达；idle 通道直接唤醒，走完整 startRun 状态机。
       await this.persist(item, {});
-      if (item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item) || this.todoNotificationsBlocked(item) || item.configuring || item.status !== "idle") return;
+      if (item.closing || item.notificationsPaused || item.configuring || item.status !== "idle") return;
       await this.prompt(item.id, text);
       await item.work;
       if (item.notificationsPaused || item.closing) return;
@@ -1649,7 +1548,7 @@ export class Sessions {
       item.notifying = false;
     }
     this.scheduleTaskNotifications(item);
-    this.scheduleGoal(item);
+    this.scheduleTodo(item);
   }
 
   // running 通道注入的通知送达确认：消息已进历史（被模型消费、已落盘）才置 notified。不在历史
@@ -1669,7 +1568,7 @@ export class Sessions {
     }
   }
   async settleTaskNotifications(item) {
-    if (item.closing || item.notificationsPaused || this.goalNotificationsBlocked(item)) return;
+    if (item.closing || item.notificationsPaused) return;
     const jobs = item.tasks.pendingNotifications();
     if (!jobs.length) return;
     for (const job of jobs) {
@@ -1824,9 +1723,7 @@ export class Sessions {
       const compactions = saved.compactions ?? [];
       const fold = foldCompacted(messages, compactions);
       const visibleIds = fold.visibleIds;
-      const goal = new Goal({ sessionId: id, store: {
-        load: () => structuredClone(this.goalStore.load(id)), save: () => {},
-      } });
+      const todo = new Todo({ sessionId: id, store: this.todoStore });
       let restoredCompactionStatus = null;
       try {
         if (saved.sessionFile) {
@@ -1841,12 +1738,12 @@ export class Sessions {
         status: "idle", safeStop: false, runtime: restoredRuntime, billing: combinedBilling(restoredRuntime.billing, tasks), config: { ...saved.selection, capabilitySelection: selection.capabilities ?? null,
           subagentCapabilities: selection.subagentCapabilities ?? null, queueType: selection.queueType || "steer",
           canReconfigure: !saved.sessionFile && !messages.length && !tasks.length
-          && !compactions.length && !saved.retries?.length && saved.selection?.executionStarted !== true && !goal.active },
+          && !compactions.length && !saved.retries?.length && saved.selection?.executionStarted !== true && !todo.active },
         messages: fold.records.map(toWireRecord),
         messageIndexes: fold.indexes, messageCount: messages.length,
         compactions, retries: historyRetries(saved.retries ?? [], visibleIds, fold.keptBefore, messages.length),
         live: {}, tools: {},
-        questions: [], tasks, goal: goal.snapshot(), todo: new Todo({ sessionId: id, store: this.todoStore }).snapshot(), canReask: false, compactionStatus: restoredCompactionStatus });
+        questions: [], tasks, todo: todo.snapshot(), canReask: false, compactionStatus: restoredCompactionStatus });
     }
     // 读时投影：live 数组保持到达序（撤回/重试/压缩等内部逻辑依赖它），下发按锚点顺序。
     const projected = projectTimeline(item.messages);
@@ -1883,7 +1780,6 @@ export class Sessions {
       canReask: item.status === 'idle' && !!item.agent.canReask?.(),
       // 任务卡按 delegate 锚点渲染，折叠段里的委派入口也要能落到摘要卡内，所以任务不做裁剪。
       tasks: item.tasks.snapshot(),
-      goal: item.goal?.snapshot() ?? null,
       todo: item.todo?.snapshot() ?? null,
       // 活动流的身份：前端要按 agent.message.end 带的 messageId 把半成品原文接到正确槽位。
       liveMessageIds: Object.fromEntries(item.liveIds),
@@ -1966,7 +1862,7 @@ export class Sessions {
   canReconfigure(item, afterConfigure = false) {
     return item.loaded && item.status === "idle" && !item.executionStarted && (afterConfigure || !item.configuring) && !item.closing
       && !item.messages.length && !item.compactions.length && !item.retries.length
-      && !item.tasks.jobs.size && !item.goal.active && !landedSessionFile(item);
+      && !item.tasks.jobs.size && !item.todo?.active && !landedSessionFile(item);
   }
 
   async configure(id, selection) {
@@ -2027,7 +1923,7 @@ export class Sessions {
   startRun(item, run) {
     item.executionStarted = true;
     // 通知在下一次运行开始时恢复：goal 被暂停/退出时仍要冻结，安全停止期间也暂停，防止通知把刚停下的会话又拉起来。
-    item.notificationsPaused = this.goalNotificationsBlocked(item) || false;
+    item.notificationsPaused = false;
     item.safeStopping = false;
     item.updatedAt = Date.now();
     item.runId = randomUUID();
@@ -2040,10 +1936,9 @@ export class Sessions {
       try {
         await this.persist(item);
         await run();
-        const text = item.agent.result();
-        if (item.goal.active) item.goalResult = { text, runId: item.runId };
+        item.agent.result();
       } catch (error) {
-        if (item.goal.active) item.goal.fail(String(error.message ?? error));
+        if (item.todo.header && !item.safeStopping) item.todo.block('TODO_RUN_FAILED', String(error.message ?? error));
         item.emit({
           type: "error",
           data: { message: String(error.message ?? error) },
@@ -2063,7 +1958,7 @@ export class Sessions {
           // running 通道注入的通知在此判据确认（消息进历史才置 notified），未确认的交给下面的调度补投。
           await this.settleTaskNotifications(item);
           this.scheduleTaskNotifications(item);
-          this.scheduleGoal(item);
+          this.scheduleTodo(item);
         }
       }
     })();
@@ -2075,7 +1970,12 @@ export class Sessions {
   async retry(id) {
     const item = this.get(id).loaded ? this.get(id) : await this.ensureLoaded(id);
     if (item.status !== "idle" || item.configuring || item.closing || item.compacting) throw new Error("Session is busy");
-    if (item.goal.active && this.goalNotificationsBlocked(item)) throw new Error("Goal 已暂停或等待确认，请使用 Goal 恢复按钮");
+    if (item.todo.header?.paused) throw new Error('Todo 已暂停，请使用恢复按钮');
+    if (item.todo.header?.runtimeBlock) {
+      const completed = item.todo.snapshot().completed;
+      item.todo.resume();
+      if (completed) return this.startRun(item, () => item.agent.prompt(TODO_DELIVERY_RETRY_PROMPT));
+    }
     if (item.agent.canReask?.()) return this.startRun(item, () => item.agent.reask());
     if (!item.agent.resumable()) throw new Error("没有可重试的请求：上一次运行已正常结束");
     return this.startRun(item, () => item.agent.resume());
@@ -2086,11 +1986,9 @@ export class Sessions {
     const item = this.get(id).loaded ? this.get(id) : await this.ensureLoaded(id);
     if (item.compacting || item.configuring || item.closing || item.releasing) throw new Error("Session is busy");
     if (/^\/goal(?:\s|$)/.test(text.trim())) {
-      const result = await this.goalAction(id, "enter", text.trim().replace(/^\/goal\s*/, ""));
-      return result.runId;
+      await this.todoAction(id, 'prepare', text.trim().replace(/^\/goal\s*/, ''));
+      return item.runId;
     }
-    if (item.goal.active && ["paused", "pausing", "adjusting", "completed"].includes(item.goal.snapshot().phase))
-      throw new Error("Goal 已停止或正在安全收尾，请使用专用恢复、调整或重启按钮");
     if (images?.length) {
       // 必须在回执前拒绝：一旦入队或启动，SDK 会静默丢弃不支持模型的图片。
       assertPromptImages(images);
@@ -2104,9 +2002,10 @@ export class Sessions {
     }
     if (item.status !== "idle" || item.configuring || item.closing || item.releasing) throw new Error("Session is busy");
     // 用户显式输入：退出目标模式后的通知/续跑冻结到此为止，恢复正常会话行为。
-    item.goalExited = false;
-    const goal = item.goal.snapshot();
-    if (goal?.phase === "clarifying" && !goal.objective && !goal.rounds.length) item.goal.supplyObjective(text);
+    if (item.todo.requiresPlan && !item.todo.header.prepareText) {
+      item.todo.prepare(text);
+      return this.startRun(item, () => item.agent.prompt(`${GOAL_PREPARE_PROMPT}\n\n${text}`));
+    }
     if (item.title === "新会话" && !item.titleManual) item.title = fallbackTitle(text);
     // 标题未定案（模型没自报过、也没手动命名）就持续索要：本轮靠 item.titlePending（context 钩子
     // 逐请求读 memory.wantsTitle），run 结束清零；titleRequested 只在自报成功后才固化为真。
@@ -2178,16 +2077,19 @@ export class Sessions {
 
   // 安全停止：不 abort、不杀工具，只请求 SDK 在下一个轮次边界收工，已完成的产出全部保留。
   // 子任务不受影响（继续跑到自己结束）；期间暂停子任务完成通知，否则通知会立刻 prompt 把会话重新拉起来。
-  // goal 会话的“停”在 master 里已有专用路径（暂停并落定目标进度），复用同一入口，避免同一颗按钮两套语义。
+  // Todo 暂停与主停止共用持久化暂停和通知冻结入口。
   async safeStop(id) {
     const item = this.get(id);
     if (item.loading) {
       await item.loading.catch(() => {});
       return this.safeStop(id);
     }
-    if (item.goal?.active && !item.closing) return this.goalAction(id, "pause");
     item.todo?.pause();
     item.notificationsPaused = true;
+    if (item.loaded) {
+      if (item.todo?.header) await this.holdTodoNotifications(item, true);
+      item.questions.cancel();
+    }
     if (!item.loaded || item.cancelling || item.status === "idle") return;
     item.safeStopping = true;
     item.agent.requestSafeStop?.();
@@ -2208,7 +2110,7 @@ export class Sessions {
     finally {
       if (mode === "sync") {
         item.compacting = false;
-        this.scheduleGoal(item);
+        this.scheduleTodo(item);
         void this.deliverTaskNotifications(item);
       }
     }
@@ -2229,8 +2131,8 @@ export class Sessions {
       return this.cancel(id);
     }
     if (!item.loaded) return;
-    if (item.goal?.active && !item.closing) return this.goalAction(id, "pause");
     item.todo?.pause();
+    if (item.todo?.header) await this.holdTodoNotifications(item, true);
     if (item.cancelling) return item.cancelling;
     item.notificationsPaused = true;
     item.status = "cancelling";
@@ -2261,8 +2163,7 @@ export class Sessions {
   async retryTask(id, taskId) {
     const item = await this.ensureLoaded(id);
     if (item.closing || item.cancelling) throw new Error("会话正在停止，暂时无法重试子任务");
-    if (item.goal.active && this.goalNotificationsBlocked(item)) throw new Error("请先恢复 Goal，再重试子任务");
-    item.goalExited = false; // 显式重试子任务：退出 Goal 后的通知冻结到此解除
+    // Explicit retry starts a new execution; Tasks.launch clears only its held flag.
     item.notificationsPaused = false;
     return item.tasks.retry(taskId);
   }
@@ -2272,13 +2173,11 @@ export class Sessions {
   deleteRecords(id) {
     if (!this.store) {
       this.todoStore.remove(id);
-      this.goalStore.remove(id);
       return;
     }
     this.store.change(() => {
       this.store.deleteSession(id); // 子表外键级联
       this.todoStore.remove(id);
-      this.goalStore.remove(id);
     });
   }
 
@@ -2287,11 +2186,11 @@ export class Sessions {
     for (const item of this.items.values()) {
       const queue = item.agent?.queue?.();
       if (!item.loaded || item.loading || item.releasing || item.closing || item.cancelling || item.configuring || item.compacting ||
-          item.status !== "idle" || item.notifying || item.goalScheduled || item.notificationScheduled ||
+          item.status !== "idle" || item.notifying || item.todoScheduled || item.notificationScheduled ||
           hasRunningTasks(item) || item.questions.snapshot().length || item.pendingWrites?.length ||
           queue?.steering?.length || queue?.followUp?.length ||
           [...item.tasks.jobs.values()].some(task => !task.notified) ||
-          item.goal?.active || item.todo?.active || now - Math.max(item.lastUsedAt ?? 0, item.updatedAt ?? 0) < idleMs) continue;
+          item.todo?.active || now - Math.max(item.lastUsedAt ?? 0, item.updatedAt ?? 0) < idleMs) continue;
       item.releasing = (async () => {
         await this.persist(item);
         await item.agent.dispose();
@@ -2313,7 +2212,7 @@ export class Sessions {
       item = this.get(id);
     }
     item.closing = true;
-    if (!deleting) { item.goal?.freeze(); item.todo?.pause('服务已停止，请核对后恢复'); }
+    if (!deleting) { item.todo?.pause('服务已停止，请核对后恢复'); }
     if (!item.loaded) {
       if (!deleting && item.pendingWrites?.length) await this.persist(item, {});
       if (deleting) {

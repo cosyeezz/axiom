@@ -11,7 +11,6 @@ import { stripMemoryTags } from "./memory-tags.js";
 import { createMaskCache } from "./markdown-scan.js";
 import { createStreamRenderer } from "./stream-renderer.js";
 import { splitAnswer } from "./answer-tags.js";
-import { stripGoalMarkers } from "./goal-markers.js";
 import { createFilePicker, fileIcon } from "./file-picker.js";
 import "./tooltip.js";
 import { createModelPicker } from "./model-picker.js";
@@ -19,7 +18,6 @@ import { initModelManager } from "./model-manager.js";
 import { initServiceSettings } from "./service-settings.js";
 import { createUsageAudit } from "./usage-audit.js";
 import { createQuestionUI } from "./question.js";
-import { createGoalUI } from "./goal.js";
 import { createTodoUI } from "./todo.js";
 const todoUI = createTodoUI({ root: document.getElementById("todo-dock"), request });
 const questionUI = createQuestionUI({ root: document.getElementById("question-dock"), reply: (data) => request("question.reply", data), focusPrompt: () => document.getElementById("prompt").focus() });
@@ -58,25 +56,18 @@ const views = createSessionCache();
 // 会话历史一次全量挂载：attach 即完整历史（被压缩折叠的那段由摘要卡按需取）。
 // attachToken 让在飞的 attach 回包失效（切会话/重复请求），hiddenDirty 记「后台期间有新消息」。
 let attachToken = 0, attaching = false, hiddenDirty = false;
-// 目标模式：只消费 snapshot.goal 与 goal 事件，消息仍由本文件渲染；
-// 回执/事件里的 goal 由后端给出，前端对字段缺失完整容错。
-// （去掉 import 行单独跑 app.js 的测试环境里没有该模块，降级为空实现。）
-const goalUI = typeof createGoalUI === "function"
-  ? createGoalUI({
-      root: {
-        track: $("goal-track"),
-        dock: $("goal-dock"),
-        enter: $("goal-enter"),
-        plan: $("goal-plan"),
-        output: $("output"),
-      },
-      request,
-      onError: error,
-      readPrompt: () => $("prompt").value,
-      clearPrompt: (text) => clearGoalPrompt(text),
-      focusPrompt: () => $("prompt").focus(),
-    })
-  : { show() {}, setConnected() {}, anchors() {} };
+$('goal-enter').onclick = async () => {
+  if (!connected || !sessionId) return;
+  const targetSession = sessionId;
+  const text = $('prompt').value.trim();
+  try {
+    const view = await request('todo.action', { sessionId: targetSession, action: 'prepare', text });
+    if (sessionId !== targetSession) return;
+    todoUI.show(targetSession, view);
+    todoUI.expand();
+    if (text && $('prompt').value.trim() === text) clearGoalPrompt(text);
+  } catch (e) { error(e); }
+};
 const compactionDefaults = { enabled: true, tokenThreshold: 100000, percentThreshold: 50, model: null, thinking: "off", keepRecentTokens: 5000, syncKeepRecentTokens: 20000, asyncKeepRecentTokens: 5000 };
 // 子代理轮次预算默认值，与 src/task-budget.js 的 taskBudgetDefaults 保持一致。
 const taskBudgetDefaults = { maxTurns: 20, wrapUpWindow: 2, workSeconds: 600, wrapUpSeconds: 180, summarySeconds: 60 };
@@ -115,13 +106,6 @@ modelPicker.enhance($("manual-compaction-mode"), "mode");
 const modelManager = initModelManager({ root: $("models-panel"), request, onSaved: refreshModelCatalog });
 const serviceUi = initServiceSettings({ request, isReady: () => connected });
 let compactions = [], mainItems = [];
-// 消息锚点：键既可以是 state.messages 的下标，也可以是 entryId（startMessage/endMessage 两种语义都可用）。
-let goalAnchors = new Map(), goalAnchorCount = 0;
-function anchorGoal(key, item, entryId) {
-  if (!item?.node) return;
-  goalAnchors.set(key, item.node);
-  if (entryId) goalAnchors.set(entryId, item.node);
-}
 // 「调整本轮」用输入框内容当纠正说明；只有内容未被改动时才清空，避免吃掉用户新输入。
 function clearGoalPrompt(text) {
   if ($("prompt").value !== text) return;
@@ -709,7 +693,7 @@ function duplicateBlocked(session) {
 function updateComposer() {
   const unavailable = !connected || (changing && !configuringSessions.has(sessionId));
   questionUI.setConnected(!unavailable && !sessionMissing);
-  goalUI.setConnected(!unavailable && !sessionMissing);
+  todoUI.setConnected(!unavailable && !sessionMissing);
   todoUI.setConnected(!unavailable && !sessionMissing);
   $("queue-type").disabled = unavailable;
   $("composer-skill").disabled = unavailable || !config?.skills?.length;
@@ -1746,9 +1730,8 @@ function prepareStream(item) {
     // 剧本增量缓存：maskCode 是这条链上量级最大的全文扫描（T1 实测剥离管线占流式 CPU 的
     // 大头），三个模块各持一份掩码缓存，append 帧只重扫末行+末段，非 append 帧（残片翻转/
     // 整行删除）自动退化全量。缓存随 item 存活，dispose 即回收。
-    item.scanCache ||= { goal: createMaskCache(), memory: createMaskCache(), answer: createMaskCache() };
-    // 与最终渲染同序：先剥 goal 完成标记、再拆答复，最后过滤记忆标签；流式残片暂存。
-    item.buffer = stripGoalMarkers(item.raw || "", { streaming: true, maskCache: item.scanCache.goal });
+    item.scanCache ||= { memory: createMaskCache(), answer: createMaskCache() };
+    item.buffer = item.raw || '';
     // 先拆回答，再分别剥标签：展示块内首行的 <title> 才是回答首行，不能按整条消息的首行判断。
     item.processBuffer = "";
     if (!item.task) {
@@ -1810,7 +1793,7 @@ function renderMessage(item, message) {
     .join("\n");
   // 记忆标签与 goal 完成标记只属于助手自报内容；用户手写同名标签原样保留。
   // 先去完成标记、再拆正式答复，展示块内首行的标题在拆分后才能正确过滤。
-  item.buffer = message.role === "assistant" ? stripGoalMarkers(raw) : raw;
+  item.buffer = raw;
   // 主会话解析 axiom_display；未闭合回答仍展示，子任务透传。
   // 异常走原文回退，保证错误/中断始终可见。
   item.processBuffer = "";
@@ -2613,19 +2596,13 @@ function applyEvent(message) {
   }
   if (type.startsWith("agent.message.") || type === "agent.delta") rawChanged();
   if (type === "question.asked") region("输入操作", () => questionUI.asked(message.sessionId, data));
-  if (type === "todo") region("输入操作", () => todoUI.show(sessionId, message.todo));
+  if (type === "todo" && message.sessionId === sessionId) region("输入操作", () => todoUI.show(sessionId, message.todo));
   if (type === "question.closed") region("输入操作", () => questionUI.closed(message.sessionId, data.toolCallId));
-  if (type === "goal") {
-    region("对话展示", () => goalUI.show(sessionId, data?.goal ?? message.goal, goalAnchors));
-    return;
-  }
   if (type === "agent.compaction.status" && agentId === "main") renderCompactionStatus(data);
   if (type === "agent.message.end" && agentId === "main") {
     lastMainMessage = data.message;
     trackTaskEntries(data.message, data.entryId);
     placeCompactedTasks();
-    // 每条主代理消息（含工具结果）占一个 state.messages 槽位，计数与下标保持同构。
-    goalAnchorCount++;
   }
   if (type === "agent.message.end" && agentId !== "main" && ["assistant", "user"].includes(data.message?.role) && tasks.has(agentId))
     // 实时到达的子代理消息渲染后把任务入口归位到主轴锚点：否则 pill 会留在追加时的时间线末尾。
@@ -2670,8 +2647,6 @@ function applyEvent(message) {
     renderMessage(item, data.message);
     if (agentId === "main") {
       mainItems.push({ item, entryId: data.entryId });
-      anchorGoal(goalAnchorCount - 1, item, data.entryId);
-      goalUI.anchors(goalAnchors);
     }
     if (busy) waiting(agentId);
   }
@@ -2750,11 +2725,7 @@ function applyEvent(message) {
     renderMessage(item, data.message);
     mergeThoughts(item.node.parentElement);
     live.delete(agentId);
-    if (agentId === "main") {
-      mainItems.push({ item, entryId: data.entryId });
-      anchorGoal(goalAnchorCount - 1, item, data.entryId);
-      goalUI.anchors(goalAnchors);
-    }
+    if (agentId === "main") mainItems.push({ item, entryId: data.entryId });
   }
   if (type === "agent.compaction" && agentId === "main" && !compactions.some((c) => c.id === data.id)) {
     compactions.push(data);
@@ -2995,8 +2966,6 @@ function beginSnapshot(state, target) {
   for (const { agentId, message, entryId } of state.messages)
     if (agentId === "main") trackTaskEntries(message, entryId);
   mainItems = [];
-  goalAnchors = new Map();
-  goalAnchorCount = 0;
   for (const task of state.tasks) {
     // 页内 task 恢复不进入实时事件归并。
     applyEvent({ type: "task.state", sessionId, taskId: task.id, data: task });
@@ -3077,8 +3046,6 @@ function placeSnapshotMessage(ctx, index, { agentId, message, entryId, compacted
     if (compacted) markCompacted(item);
     if (agentId === "main") {
       mainItems.push({ item, entryId });
-      // 目标轮次锚点键是折叠前的历史下标：压缩折叠会让下发数组下标偏移，按服务端映射还原。
-      anchorGoal(ctx.state.messageIndexes?.[index] ?? index, item, entryId);
     }
   }
 }
@@ -3158,8 +3125,6 @@ function renderSafePoints(points) {
 function finishSnapshot(job, ctx) {
   if (job !== snapshotJob) return;
   const { state, view } = ctx;
-  // 目标轮次锚点按折叠前的历史下标计数：被压缩折叠的消息不下发，但计数必须连续。
-  goalAnchorCount = state.messageCount ?? state.messages.length;
   ctx.restoreRetries(state.messages.length);
   for (const [agentId, message] of Object.entries(state.live))
     if (message.role === "assistant") {
@@ -3242,7 +3207,7 @@ function finishSnapshot(job, ctx) {
   applyConfig(state.config);
   config.compaction = state.config.compaction || compactionDefaults;
   updateAvailability();
-  region("对话展示", () => goalUI.show(sessionId, state.goal, goalAnchors));
+  // Unified task state is rendered by todoUI below.
   region("输入操作", () => todoUI.show(sessionId, state.todo));
 }
 const transport = createTransport({

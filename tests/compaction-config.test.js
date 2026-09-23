@@ -38,6 +38,7 @@ test("compaction settings, message IDs and successful records survive restart; f
     delete config.memory;
     delete config.executionContext;
     delete config.shouldPause;
+    delete config.requiresPlan; delete config.todoContext;
     return {
       config: () => config, configure: async (value) => (config = { ...config, ...value }),
       historyEntries: () => [{ id: "m1", type: "message", message: { role: "user", content: "old" } }],
@@ -93,6 +94,7 @@ test("session compaction remains independent of later default changes and surviv
     delete config.memory;
     delete config.executionContext;
     delete config.shouldPause;
+    delete config.requiresPlan; delete config.todoContext;
     return {
       config: () => config, configure: async (value) => (config = { ...config, ...value }),
       historyEntries: () => [], compactions: () => [],
@@ -136,6 +138,7 @@ test("删除目录默认配置只影响新会话，不覆盖已有会话", async
   await mkdir(b);
   const factory = async (_tools, selection) => {
     let config = { thinking: "off", compaction: { ...compactionDefaults }, ...selection };
+    delete config.requiresPlan; delete config.todoContext;
     delete config.memory;
     delete config.executionContext;
     delete config.shouldPause;
@@ -181,7 +184,7 @@ test("session.compaction.cancel：协议校验 + 未加载会话安全返回 + �
   const calls = [];
   const factory = async (_tools, selection) => {
     let config = { model: "p/main", thinking: "off", compaction: { ...compactionDefaults }, ...selection };
-    for (const key of ["memory", "executionContext", "shouldPause"]) delete config[key];
+    for (const key of ["memory", "executionContext", "shouldPause", "requiresPlan", "todoContext"]) delete config[key];
     return {
       config: () => config, configure: async (value) => (config = { ...config, ...value }),
       historyEntries: () => [], compactions: () => [],

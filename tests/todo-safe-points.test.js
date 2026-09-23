@@ -80,7 +80,8 @@ test("revert 显式暂停 Todo：清单保留，continueFromPoint 不解冻，�
     const item = sessions.get(id);
     await ordinary(sessions, id);
     const agent = mains[0];
-    item.todo.update({ baseVersion: 0, ops: [{ op: "add", id: "a", title: "事项" }] });
+    item.todo.questions = { confirmTodo: async () => ({ approved: true }) };
+    await item.todo.update({ baseVersion: 0, ops: [{ op: 'add', id: 'a', level: 1, title: '事项', description: '范围', acceptance: [{criterionId:'c',text:'核对',check:'review'}] }] });
     agent.entries = [
       { id: "u1", type: "message", message: { role: "user", content: "普通输入" } },
       { id: "a1", type: "message", message: { role: "assistant", content: "回复" } },
@@ -93,11 +94,10 @@ test("revert 显式暂停 Todo：清单保留，continueFromPoint 不解冻，�
     const point = await sessions.revert(id, "u1");
     assert.equal(point.entryId, "u1");
     const snapshot = item.todo.snapshot();
-    assert.equal(snapshot.mode, "paused", "回退后必须显式暂停 Todo");
-    assert.equal(snapshot.reason, "会话已回退，请核对后恢复");
+    assert.equal(snapshot.paused, true, "回退后必须显式暂停 Todo");
+    assert.equal(snapshot.header.pauseReason, "会话已回退，请核对后恢复");
     assert.deepEqual(snapshot.items.map((entry) => entry.id), ["a"], "回退保留 SQLite 清单内容");
     assert.equal(item.notificationsPaused, true, "回退冻结通知投递");
-    assert.equal(item.goalExited, true, "回退不得让任务通知自动拉起会话");
 
     // continueFromPoint 只恢复对话续跑，不是 Todo 的恢复入口。
     await sessions.continueFromPoint(id);
@@ -106,16 +106,17 @@ test("revert 显式暂停 Todo：清单保留，continueFromPoint 不解冻，�
     await item.work;
     await until(() => item.status === "idle", "continue idle");
     const after = item.todo.snapshot();
-    assert.equal(after.mode, "paused", "continueFromPoint 不得解冻 Todo");
-    assert.equal(after.reason, "会话已回退，请核对后恢复");
+    assert.equal(after.paused, true, "continueFromPoint 不得解冻 Todo");
+    assert.equal(after.header.pauseReason, "会话已回退，请核对后恢复");
     await new Promise((resolve) => setTimeout(resolve, 30));
-    assert.equal(item.todo.snapshot().mode, "paused", "续跑结束后也不得自动推进");
+    assert.equal(item.todo.snapshot().paused, true, "续跑结束后也不得自动推进");
     assert.ok(!agent.calls.some((call) => call.includes("[Axiom Todo 继续执行]")), "continue 不得唤醒 Todo");
 
     // 对照：显式 resume 才是唯一解冻入口。
     await sessions.todoAction(id, "resume");
-    assert.equal(item.todo.snapshot().mode, "enabled");
-    await until(() => agent.calls.some((call) => call.includes("[Axiom Todo 继续执行]")), "resume wake");
+    assert.equal(item.todo.snapshot().paused, false);
+    await until(() => agent.calls.length === 3, 'resume wake');
+    await sessions.todoAction(id, 'pause');
     agent.finish();
     await item.work;
     await until(() => item.status === "idle", "wake idle");
@@ -131,7 +132,8 @@ test("fork 新会话不继承 Todo：SQLite 无行、快照为空，源会话清
     const id = await sessions.create(root);
     const item = sessions.get(id);
     await ordinary(sessions, id);
-    item.todo.update({ baseVersion: 0, ops: [{ op: "add", id: "a", title: "源会话事项" }] });
+    item.todo.questions = { confirmTodo: async () => ({ approved: true }) };
+    await item.todo.update({ baseVersion: 0, ops: [{ op: 'add', id: 'a', level: 1, title: '源会话事项', description: '范围', acceptance: [{criterionId:'c',text:'核对',check:'review'}] }] });
     const agent = mains[0];
     agent.entries = [
       { id: "u1", type: "message", message: { role: "user", content: "普通输入" } },
@@ -147,11 +149,11 @@ test("fork 新会话不继承 Todo：SQLite 无行、快照为空，源会话清
 
     const fresh = sessions.get(forked.sessionId).todo.snapshot();
     assert.deepEqual(fresh.items, [], "分叉会话清单必须为空");
-    assert.equal(fresh.mode, "completed");
-    assert.equal(sessions.todoStore.load(forked.sessionId), null, "分叉会话在 SQLite 不得有 Todo 行");
+    assert.equal(fresh.listId, null);
+    assert.equal(sessions.todoStore.load(forked.sessionId), undefined, "分叉会话在 SQLite 不得有 Todo 行");
 
     const source = item.todo.snapshot();
     assert.deepEqual(source.items.map((entry) => entry.id), ["a"], "分叉不得改动源会话清单");
-    assert.equal(source.mode, "enabled");
+    assert.equal(source.paused, false);
   } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
 });

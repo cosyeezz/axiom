@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { randomUUID } from 'node:crypto';
+import { makeTodoApprovalQuestion, todoApprovalAcceptLabel } from './todo-prompts.js';
 
 const text = (max) => z.string().trim().min(1).max(max);
 const option = z.object({ label: text(120), description: text(1000).optional() }).strict();
@@ -67,6 +69,26 @@ export function createQuestions(emit) {
   };
   return {
     tool,
+    async confirmTodo({ kind, reason, proposal }, signal) {
+      const toolCallId = `todo-approval-${randomUUID()}`;
+      const questions = [makeTodoApprovalQuestion(kind, reason)];
+      const frozen = structuredClone(proposal);
+      if (signal?.aborted) return { approved: false, decision: 'cancelled' };
+      return new Promise(resolve => {
+        const finish = answers => {
+          if (!pending.delete(toolCallId)) return;
+          signal?.removeEventListener('abort', abort);
+          const value = answers?.[0]?.[0];
+          resolve({ approved: value === todoApprovalAcceptLabel(kind), decision: !answers ? 'cancelled' : value === todoApprovalAcceptLabel(kind) ? 'approved' : value === questions[0].options[1].label ? 'rejected' : 'feedback', feedback: value ?? '' });
+          emit({ type: 'question.closed', agentId: 'main', data: { toolCallId } });
+        };
+        const abort = () => finish(null);
+        const info = { toolCallId, questions, proposal: frozen };
+        pending.set(toolCallId, { info, finish, abort });
+        signal?.addEventListener('abort', abort, { once: true });
+        emit({ type: 'question.asked', agentId: 'main', data: info });
+      });
+    },
     snapshot: () => [...pending.values()].map(({ info }) => info),
     reply(toolCallId, value) {
       const entry = pending.get(toolCallId);

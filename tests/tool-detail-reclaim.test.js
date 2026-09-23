@@ -8,13 +8,14 @@ import { createStreamRenderer } from "../public/stream-renderer.js";
 import { publicSource } from "./helpers/public-source.js";
 
 // 复用 message-activity 的页面 harness（真实 app.js，无模型无服务器）；
-// 额外暴露 toolItems/goalAnchors/mainItems 用于断言关闭详情不会删记录或锚点。
+// 额外暴露 toolItems/mainItems 用于断言关闭详情不会删记录或锚点。
 async function page() {
   const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
-  // 与 tests/app.test.js、compaction-ui 同一套加载顺序：markdown-scan 是 memory-tags/goal-markers 的依赖。
-  const source = await publicSource("markdown-scan", "memory-tags", "goal-markers", "question", "service-settings", "app");
+  // 与 tests/app.test.js、compaction-ui 同一套加载顺序：markdown-scan 是 memory-tags 的依赖。
+  const source = await publicSource("markdown-scan", "memory-tags", "question", "service-settings", "app");
   const picker = (await readFile(new URL("../public/file-picker.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "");
   const dom = new JSDOM(html, { url: "http://localhost", runScripts: "outside-only", pretendToBeVisual: true });
+  try {
   const w = dom.window;
   w.matchMedia = () => ({ matches: false });
   w.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
@@ -37,7 +38,6 @@ async function page() {
   }
   w.eval(`${picker}\n${source}\nconnected = true;
     window.__toolItems = toolItems;
-    window.__goalAnchors = goalAnchors;
     window.__mainItems = mainItems;`);
   const state = { sessionId: "activity", title: "Activity", cwd: "C:/work", status: "idle", config: { model: "test/model", thinking: "off", levels: ["off"], skills: [] }, messages: [], tasks: [], live: {}, tools: {} };
   const restore = (changes = {}) => w.snapshot({ ...state, ...changes });
@@ -45,6 +45,10 @@ async function page() {
   const paint = () => { const batch = [...frames.values()]; frames.clear(); batch.forEach((fn) => fn()); };
   restore();
   return { dom, w, emit, restore, paint, output: w.document.getElementById("output") };
+  } catch (error) {
+    dom.window.close();
+    throw error;
+  }
 }
 
 const toggle = (w, record, open) => { record.open = open; record.dispatchEvent(new w.Event("toggle")); };
@@ -62,7 +66,6 @@ test("折叠普通工具释放 body，重开按现有 args/result 原样恢复",
     const record = output.querySelector(".tool-record");
     const body = record.querySelector(".tool-detail");
     const item = w.__toolItems.get("main:t1");
-    const anchors = new Map(w.__goalAnchors);
     const mainItems = [...w.__mainItems];
     assert.equal(record.open, false, "恢复后的记录默认折叠");
     assert.equal(body.childElementCount, 0, "折叠时不构建详情 DOM");
@@ -87,7 +90,6 @@ test("折叠普通工具释放 body，重开按现有 args/result 原样恢复",
     assert.equal(w.__toolItems.get("main:t1"), item, "关闭不删除 toolItems 记录");
     assert.equal(item.args, args);
     assert.equal(item.result, result);
-    assert.equal(w.__goalAnchors.size, anchors.size, "关闭不删除锚点");
     assert.deepEqual([...w.__mainItems], mainItems);
 
     toggle(w, record, true);

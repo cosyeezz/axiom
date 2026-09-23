@@ -29,10 +29,10 @@ export class Tasks {
     if (job.cleanupStatus === "unconfirmed") throw new Error("旧执行停止未确认，不能并发续接该会话");
     if (job.resultId) {
       job.previousResults ||= {};
-      job.previousResults[job.resultId] = { ...this.view(job), resultId: job.resultId, notified: job.notified };
+      job.previousResults[job.resultId] = { ...this.view(job), resultId: job.resultId, notified: job.notified, notificationHeld: !!job.notificationHeld };
     }
     delete job.error; delete job.text; delete job.resultId; delete job.stop; delete job.partialText;
-    job.cancelled = false; job.interrupted = false; job.notified = false;
+    job.cancelled = false; job.interrupted = false; job.notified = false; job.notificationHeld = false;
     job.executionId = randomUUID(); job.status = "starting"; job.cleanupStatus = "none";
     job.startedAt = Date.now(); job.endedAt = null;
     job.budget = { ...this.options, ...job.budget };
@@ -50,7 +50,7 @@ export class Tasks {
   }
   snapshotJob(job) {
     return { ...this.view(job), runtime: job.runtime, budget: job.budget, pendingAppends: job.pendingAppends,
-      resultId: job.resultId, notified: job.notified, previousResults: job.previousResults, parentContext: job.parentContext,
+      resultId: job.resultId, notified: job.notified, notificationHeld: !!job.notificationHeld, previousResults: job.previousResults, parentContext: job.parentContext,
       persistenceVersion: job.persistenceVersion, sessionFile: job.sessionFile ?? null, historySaved: job.historySaved ?? false,
       createdAt: job.createdAt, updatedAt: job.updatedAt };
   }
@@ -187,15 +187,15 @@ export class Tasks {
   }
   pendingNotifications() {
     return [...this.jobs.values()].flatMap(job => [
-      ...Object.values(job.previousResults || {}).filter(result => result.resultId && !result.notified),
-      ...(job.resultId && !job.notified ? [{ id: job.id, resultId: job.resultId, status: job.status }] : []),
+      ...Object.values(job.previousResults || {}).filter(result => result.resultId && !result.notified && !result.notificationHeld),
+      ...(job.resultId && !job.notified && !job.notificationHeld ? [{ id: job.id, resultId: job.resultId, status: job.status }] : []),
     ]);
   }
   resumeQueued(job) {
-    if (!job.notified || !job.pendingAppends?.some(entry => !entry.retained) || this.cancelling || job.cleanupStatus === "unconfirmed") return;
+    if (job.notificationHeld || !job.notified || !job.pendingAppends?.some(entry => !entry.retained) || this.cancelling || job.cleanupStatus === "unconfirmed") return;
     const executionId = job.executionId;
     setImmediate(() => {
-      if (job.executionId !== executionId || ACTIVE.includes(job.status) || this.cancelling || !job.notified) return;
+      if (job.executionId !== executionId || ACTIVE.includes(job.status) || this.cancelling || job.notificationHeld || !job.notified) return;
       const messages = job.pendingAppends.splice(0).map(entry => entry.text);
       this.launch(job, true, messages.join("\n\n"));
     });

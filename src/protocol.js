@@ -178,15 +178,13 @@ export const modelConfigIn = z
 export const modelOverrideIn = modelConfigIn.omit({ id: true, api: true, baseUrl: true }).strict();
 const fingerprintIn = z.string().min(1).max(128);
 export const command = z.discriminatedUnion("type", [
-  z.object({ id, type: z.literal('todo.action'), sessionId: id, action: z.enum(['pause', 'resume']) }).strict(),
+  z.object({ id, type: z.literal('todo.action'), sessionId: id, action: z.enum(['prepare', 'cancel_prepare', 'pause', 'resume']), text: z.string().max(30000).optional() }).strict(),
+  z.object({ id, type: z.literal('todo.get'), sessionId: id, listId: id.optional(), itemId: id.optional(), detail: z.boolean().optional(), section: z.enum(['item', 'verification']).optional(), unfinished: z.boolean().optional(), includeDeleted: z.boolean().optional(), offset: z.number().int().nonnegative().optional(), limit: z.number().int().min(1).max(100).optional() }).strict(),
   z.object({ id, type: z.literal("session.points"), sessionId: id }).strict(),
   z.object({ id, type: z.literal("session.revert"), sessionId: id, entryId: z.string().min(1).max(128) }).strict(),
   z.object({ id, type: z.literal("session.fork"), sessionId: id, entryId: z.string().min(1).max(128) }).strict(),
   z.object({ id, type: z.literal("session.continue"), sessionId: id }).strict(),
-  z.object({ id, type: z.literal("goal.action"), sessionId: id,
-    action: z.enum(["enter", "confirm", "adjust", "pause", "resume", "restart", "exit"]),
-    text: z.string().max(30000).optional(),
-  }).strict(),
+
   z.object({ id, type: z.literal("service.status") }).strict(),
   z.object({ id, type: z.literal("service.update.check") }).strict(),
   z.object({ id, type: z.literal("service.restart"), mode: z.enum(["quick", "rebuild", "update"]), sha: z.string().regex(/^[0-9a-f]{40}$/i).optional() }).strict(),

@@ -17,6 +17,11 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  * 未登记的文件会在 INDEX.md 里标 ⚠ 提醒补充。
  */
 const MODULE_INFO = {
+  "src/todo-store.js": "统一任务三表、事务 CAS、有界查询与审计事件",
+  "src/todo-context.js": "压缩边界任务恢复包、持久消息与引用解析",
+  "src/todo-prompts.js": "统一任务准备、执行、恢复与验收提示",
+  "scripts/reset-todo.mjs": "发布时定向清理旧任务表",
+  "scripts/benchmark-todo.mjs": "大规模任务清单性能基准",
   "src/todo.js": "主会话 Todo：SQLite 权威存储、版本 CAS、两级工具与暂停状态机",
   "public/todo.js": "输入区任务清单：SVG 计数、全局折叠偏好与暂停恢复",
   "public/todo.css": "任务清单面板样式",

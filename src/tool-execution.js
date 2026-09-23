@@ -1,7 +1,7 @@
 import { performance } from "node:perf_hooks";
 export const TOOL_TIMEOUT_PROMPT = "命令工具 bash/powershell 未填写 timeout 时系统使用 180 秒。长测试/构建请提前显式设置合理秒数，通常建议不超过 600 秒，确需更长可明确设置。主代理可显式 -1 不设工具超时；子代理禁止不限时及脱离管理的常驻进程。超时不是回滚，重试前核实部分产出与副作用，不要原样反复重试。";
 
-export function createToolExecutionPolicy({ subagent = false, summarizing = () => false, emit = () => {} } = {}) {
+export function createToolExecutionPolicy({ subagent = false, summarizing = () => false, requiresPlan = () => false, emit = () => {} } = {}) {
   const calls = new Map();
   const snapshot = record => ({ startedAt: record.startedAt, ...(record.endedAt ? { endedAt: record.endedAt } : {}),
     elapsedMs: record.elapsedMs ?? Math.max(0, performance.now() - record.tick),
@@ -21,6 +21,8 @@ export function createToolExecutionPolicy({ subagent = false, summarizing = () =
   const extension = pi => {
     pi.on("tool_call", event => {
       if (summarizing()) return { block: true, reason: "停止后总结禁止工具调用；只基于已有历史输出总结。" };
+      if (!subagent && requiresPlan() && !['question', 'todo_read', 'todo_update'].includes(event.toolName))
+        return { block: true, reason: 'TODO_GOAL_NOT_CONFIRMED：先创建并确认一级目标，再开始实施。' };
       if (!["bash", "powershell"].includes(event.toolName)) return;
       const value = event.input.timeout;
       let source = "explicit", effective = value;

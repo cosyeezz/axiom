@@ -68,6 +68,18 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
     const title = el('h3', '', question.question); title.id = 'question-title';
     const description = el('p', 'question-description', question.description); description.id = 'question-description';
     panel.append(title, description);
+    if (request.proposal) {
+      const details = el('details', 'question-proposal');
+      details.open = true;
+      details.append(el('summary', '', '完整目标与变更内容'));
+      const content = el('pre', '', JSON.stringify(request.proposal, null, 2));
+      content.style.whiteSpace = 'pre-wrap';
+      content.style.overflowWrap = 'anywhere';
+      content.style.maxHeight = '240px';
+      content.style.overflow = 'auto';
+      details.append(content);
+      panel.append(details);
+    }
     const options = el('div', 'question-options');
     options.setAttribute('role', question.multiple ? 'group' : 'radiogroup');
     options.setAttribute('aria-labelledby', 'question-title'); options.setAttribute('aria-describedby', 'question-description');

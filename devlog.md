@@ -2982,3 +2982,12 @@ expected: '完成<progress>已完成检查</progress>'                          
 - 指标：`src/usage-store.js` 新增可幂等迁移的 `rpm_wait_ms`，`src/usage-stream.js` 按可拦截的 RPM fetch 尝试累计 RPM 等待，与并发 `waitMs` 分开；`README.md` 说明覆盖边界、旧端点升级、外部 pi 的显式数据根及断线语义。测试涉及 `tests/gate-ipc.test.js`、`tests/shared-gate.test.js`、`tests/usage-store.test.js`、`tests/usage-stream.test.js`。
 - 决策与边界：不根据成功终态缺失 usage 推断 SDK 行为；未配置 RPM 与 Google 等不可拦截路径的 `httpAttempts=0` 不代表无物理请求；`Retry-After` 不等于实际退避。当前列表已用复合游标，缺少实际筛选组合的查询计划与负载基准，暂不调整深页 SQL。旧固定端点和新端点跨版本互斥、生产负载收益尚未验证，升级先退出旧版实例。
 - 验证：初次定向 36 项通过；安装独立工作树依赖后执行 `node --test --test-timeout=120000 tests/*.test.js`，950 项中 948 通过、2 既有跳过、0 失败；新增重连原连接归属两项定向测试通过。首次全量 CSS DOM 断言偶发失败，单测与第二次全量复跑通过；仅隔离测试，不宣称已验证生产负载。全量测试重建的 `.pi/skills/codebase-map/INDEX.md` 是本地索引，不纳入 usage 提交。
+
+## 2026-09-23 — Todo 统一任务生命周期
+
+- 原因：按统一任务生命周期执行方案，将旧 Goal 与 Todo 合并为单一任务权威，避免双状态机、正文标记结算与清单状态不一致。
+- 修改：新增 SQLite 三表与有界 CAS、一级目标确认及验收记录、二级步骤维护、准备/取消准备/暂停/恢复；接入会话调度、通知冻结、原生压缩边界恢复包与引用解析；移除旧 Goal 工具、标记解析及独立 UI，任务面板折叠释放行、展开分页并隔离迟到响应。
+- 决策：首次建单批准前只保留内存准备状态，拒绝不写任务表；SDK custom message 用于持久化恢复上下文，不额外启动模型轮次。发布不迁移旧任务数据，以显式指定数据库及确认参数的维护脚本清空任务相关表，不在开发过程中清理用户库。保留共享 SDK/通知不变量测试，迁移旧 Goal 专属接口测试。
+- 涉及文件：`src/todo*.js`、`src/sessions.js`、`src/tasks.js`、`src/pi.js`、`src/questions.js`、`src/protocol.js`、`src/prompts.js`、`src/tool-execution.js`、`src/server.js`；`public/app.js`、`public/index.html`、`public/question.js`、`public/todo.js/css`；`scripts/reset-todo.mjs`、`scripts/benchmark-todo.mjs`、Todo/会话/UI/配置相关测试、代码索引登记及 `README.md`；删除旧 Goal 实现及专属测试。
+- 验证：修复工具详情测试夹具残留 Goal 引用及初始化失败时的 jsdom 定时器泄漏；同步最新主分支 `3aab7e1` 后完整运行 `node --test --test-concurrency=4 --test-timeout=30000 tests/*.test.js`，881 项中 879 通过、2 跳过、0 失败，耗时 83.55 秒，无排除文件；`git diff --check` 通过。生成的 INDEX.md 不入提交，保留主工作区已有索引修改。
+- 性能：Node v24.19.0 / Windows / Ryzen 7 5800X / 临时 SQLite WAL；100／1000／5000 项读 p95 分别为 0.1071／0.1681／0.4758 ms，写 p95 为 0.4938／0.8698／2.4649 ms；读写返回约 666–738 字符。仅隔离基准，不代表生产负载结果；未执行生产数据复位。
