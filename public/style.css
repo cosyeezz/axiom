@@ -1045,11 +1045,9 @@ svg.composer-icon { width: 20px; height: 20px; flex-shrink: 0; vertical-align: m
    Keep deep red in both themes rather than the pale dark-theme --danger text colour. */
 svg.composer-icon[data-icon="send"] { color: var(--accent); }
 svg.composer-icon[data-icon="stop"], svg.composer-icon[data-icon="force"] { color: light-dark(#c0374a, #a53543); }
-svg.composer-icon[data-icon="target"] { --target-red: light-dark(#c0374a, #c95160); --target-white: #fff; }
-svg.composer-icon[data-icon="target"] path:nth-child(1),
-svg.composer-icon[data-icon="target"] path:nth-child(3) { stroke: var(--target-red); fill: var(--target-red); }
-svg.composer-icon[data-icon="target"] path:nth-child(2) { stroke: var(--target-white); fill: var(--target-white); }
-svg.composer-icon[data-icon="target"] path:nth-child(4) { stroke: var(--accent); }
+svg.composer-icon[data-icon="target"] { --target-red: light-dark(#c0374a, #c95160); }
+svg.composer-icon[data-icon="target"] path { fill: none; stroke: var(--target-red); }
+svg.composer-icon[data-icon="target"] path:last-child { stroke: var(--accent); }
 /* Warning wording remains visible independently of icon colour. */
 .composer-operation-menu button[data-operation="force"] { color: var(--danger); }
 #context-menu { position: fixed; inset: auto; left: max(8px, 5vw); bottom: 260px; margin: 0; width: 176px; padding: 4px; border: 1px solid var(--line); border-radius: 9px; background: var(--raised); color: var(--ink); box-shadow: 0 8px 24px var(--shadow-mid); }

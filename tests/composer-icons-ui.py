@@ -41,6 +41,10 @@ try:
                 const box = svg.getBoundingClientRect();
                 const button = svg.closest('button').getBoundingClientRect();
                 return {
+                    name: svg.dataset.icon,
+                    glyph: (() => { const b = svg.getBBox(); return { width: b.width, height: b.height, x: b.x + b.width / 2, y: b.y + b.height / 2 }; })(),
+                    centerY: (box.top + box.bottom) / 2,
+                    fills: [...svg.querySelectorAll('path')].map(p => getComputedStyle(p).fill),
                     width: box.width,
                     height: box.height,
                     stroke: getComputedStyle(svg).strokeWidth,
@@ -57,12 +61,19 @@ try:
             # that lives outside .icon-group, and none bleeds past the button edge.
             assert all(m['offsetY'] == 0 for m in metrics), metrics
             assert all(m['overflow'] == 0 for m in metrics), metrics
+            # Compare actual artwork bounds and row centres, not merely each SVG box.
+            assert max(m['centerY'] for m in metrics) - min(m['centerY'] for m in metrics) < .5, metrics
+            for m in metrics:
+                assert abs(m['glyph']['width'] - 18) < .1 and abs(m['glyph']['height'] - 18) < .1, m
+                assert abs(m['glyph']['x'] - 12) < .1 and abs(m['glyph']['y'] - 12) < .1, m
+                assert all(fill == 'none' for fill in m['fills']), m
             # Neutral tools retain one colour; target paths supply the coloured artwork.
             assert len(set(m['color'] for m in metrics)) == 1, metrics
             target = page.locator('#goal-enter .composer-icon path')
             strokes = target.evaluate_all('nodes => nodes.map(el => getComputedStyle(el).stroke)')
-            assert len(strokes) == 4 and len(set(strokes)) == 3, strokes
-            assert strokes[0] == strokes[2] and strokes[1] == 'rgb(255, 255, 255)', strokes
+            assert len(strokes) == 3 and len(set(strokes)) == 2, strokes
+            assert strokes[0] == strokes[1] and strokes[2] == 'rgb(94, 106, 210)', strokes
+            assert target.last.get_attribute('d') == 'M21 3 12 12M12 8v4h4'
             send = page.locator('.composer-split [data-icon="send"]')
             assert send.count() == 1
             assert send.evaluate('el => getComputedStyle(el).color') == 'rgb(94, 106, 210)'
@@ -89,6 +100,14 @@ try:
         page.set_viewport_size({'width': 390, 'height': 844})
         page.wait_for_timeout(250)
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+        mobile = page.locator('.context-bar .composer-icon').evaluate_all('''nodes => nodes.map(svg => {
+            const r = svg.getBoundingClientRect(), b = svg.getBBox();
+            return { width: r.width, height: r.height, y: r.y + r.height / 2,
+                     glyphWidth: b.width, glyphHeight: b.height };
+        })''')
+        assert all(m['width'] == 20 and m['height'] == 20 for m in mobile), mobile
+        assert max(m['y'] for m in mobile) - min(m['y'] for m in mobile) < .5, mobile
+        assert all(abs(m['glyphWidth'] - 18) < .1 and abs(m['glyphHeight'] - 18) < .1 for m in mobile), mobile
         page.locator('.composer-wrap').screenshot(path=str(artifacts / 'mobile.png'))
         assert not errors, errors
         browser.close()
