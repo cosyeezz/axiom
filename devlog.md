@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-22 修复正式答复标题与完成卡展示
+
+- 症状与原因：过程说明与 `<axiom_display>` 开标签同行时，旧解析器未识别正式答复；而先过滤记忆标签再拆答复，会使答复首行的 `<title>` 漏进正文/目标小结，标题定案还可能误取过程说明。
+- 修复：识别过程说明行尾的开标签及流式残片，先划定正式答复再分别清理记忆标签；标题从正式答复提取，目标轮次与暂停小结也取清理后的答复。不改变原始消息保存与代码示例保护规则。
+- 涉及文件：public/answer-tags.js、app.js；src/session-memory.js、goal.js；tests/answer-tags.test.js、memory-ui.test.js、session-memory.test.js、goal.test.js；README.md、devlog.md、.pi/skills/codebase-map/knowledge.md。
+- 验证：定向 66 项通过；全量 944 项（942 通过、2 跳过、0 失败），`git diff --check` 通过。按技能规则本地重建代码索引；由于基线已有大量过期索引项、重建引入数百行无关变动，遵循主线现行“索引留本地重建”做法，不把生成物纳入本次提交。
+
 ## 2026-09-23 模型配置页统一供应商与模型并发
 
 - 决策：保留 SQLite usage/limits 中原供应商限额，增加 models[modelId].concurrency；独立于 SDK 连接字段，避免污染模型定义。

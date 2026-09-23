@@ -98,6 +98,31 @@ test("正式回答与过程分离，流式和历史均可独立阅读", async ()
   } finally { dom.window.close(); }
 });
 
+test("行尾展示标签与块内标题：流式和历史正文不漏协议，说明折入过程", async () => {
+  const { dom, emit, restore, paint, output } = await page();
+  const intro = "收到，稍后给结论。";
+  const raw = `${intro}<axiom_display>\n<title>优化项评估</title>\n结论与原因。\n</axiom_display>`;
+  try {
+    emit("agent.message.start", { message: { role: "assistant" } });
+    emit("agent.delta", { type: "text_delta", delta: intro + "<axiom_dis" }); paint();
+    assert.ok(!output.textContent.includes("<axiom_dis"));
+    emit("agent.delta", { type: "text_delta", delta: "play>\n<title>优化项评估</title>\n结论与原因。" }); paint(); paint();
+    assert.match(output.textContent, /结论与原因/);
+    assert.ok(!output.textContent.includes("<title>"));
+    emit("agent.message.end", { message: { role: "assistant", content: raw } }); paint(); paint();
+    assert.ok(!output.textContent.includes("axiom_display") && !output.textContent.includes("<title>"));
+    assert.match(output.querySelector(".message:not(.user) .markdown:not(.thinking-content)").textContent, /结论与原因/);
+    restore({ messages: [{ agentId: "main", message: { role: "assistant", content: raw } }] }); paint(); paint();
+    const process = output.querySelector("[data-process-marker]");
+    assert.ok(process && !process.open);
+    assert.match(output.querySelector(".message:not(.user) .markdown:not(.thinking-content)").textContent, /结论与原因/);
+    assert.ok(!output.textContent.includes("<title>") && !output.textContent.includes("axiom_display"));
+    process.open = true;
+    process.dispatchEvent(new dom.window.Event("toggle")); paint(); paint();
+    assert.match(process.textContent, /收到，稍后给结论/);
+  } finally { dom.window.close(); }
+});
+
 test("session.title 更新标题与页面标题", async () => {
   const { dom, w, emit } = await page();
   try {

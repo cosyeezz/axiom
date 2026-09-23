@@ -1,4 +1,5 @@
 import { extractMemoryTags, TITLE_MAX } from "../public/memory-tags.js";
+import { splitAnswer } from "../public/answer-tags.js";
 import { taskBudgetPolicy } from "./task-budget.js";
 
 const textOf = (message) => (message.content || []).filter((block) => block.type === "text").map((block) => block.text).join("\n");
@@ -20,7 +21,10 @@ export function memoryHooks(item, save, job) {
       if (job || message.role !== "assistant") return;
       if (["error", "aborted", "length"].includes(message.stopReason)) return;
       if (!item.titlePending || item.titleManual) return;
-      const { title } = extractMemoryTags(textOf(message));
+      const raw = textOf(message);
+      const split = splitAnswer(raw);
+      // 过程说明可能在 <axiom_display> 前；标题应按正式回答的首行提取。
+      const { title } = extractMemoryTags(split.found ? split.answer : raw);
       if (!title || [...title].length > TITLE_MAX) return;
       item.title = title;
       // 只有真正拿到自报标题才固化「已定案」；没拿到就让 titleRequested 保持 false，下一条消息接着索要。

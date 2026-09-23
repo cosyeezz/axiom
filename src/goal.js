@@ -61,9 +61,9 @@ const messageText = (message) =>
 
 // 验收标准按「折叠空白 + trim」比对，避免模型抄写时空格差异。
 const normCriterion = (text) => String(text ?? "").replace(/\s+/g, " ").trim();
-// 展示口径的正文：先去完成标记与记忆标签，再取 <axiom_display>里的正式答复（模型把答复写在标签里时，
-// 小结要取答复本身而不是过程说明或标签原文）。落库始终存模型原文，这里只用于生成轮次小结。
-const bodyText = (text) => splitAnswer(stripMemoryTags(stripGoalMarkers(String(text ?? "")))).answer;
+// 展示口径的正文：先去完成标记、取 <axiom_display> 里的正式答复，再去记忆标签，
+// 避免块前的过程说明挡住答复首行的 <title>。落库始终存模型原文，这里只用于生成轮次小结。
+const bodyText = (text) => stripMemoryTags(splitAnswer(stripGoalMarkers(String(text ?? ""))).answer);
 const firstLine = (text) => bodyText(text).split("\n").map((line) => line.trim()).find(Boolean) ?? "";
 
 const normalizeToolResult = (record) => {
