@@ -4,8 +4,14 @@
 
 - 原因：独立 pi 的 `AXIOM_HOME` 与 Axiom worker 不一致时可能连接错误数据根；共享端点初始化失败时原实现清空限额并继续启动，不能提供声称的共享限制。
 - 修改与决策：`extensions/usage-gate.ts` 从独立进程环境中解析显式数据根，缺省仍使用 `~/.axiom`，首次只取限额；`src/shared-gate.js` 在端点初始化失败时拒绝启动而非退化为无共享限流。密钥先完整写入同目录临时文件，再用不覆盖目标的 hard link 原子发布，并清理临时文件；发布不可用则拒绝启动。Unix 遗留 socket 上的 `ECONNREFUSED` 不足以授权并发安全地 unlink，不自动清理以免误删活端点；外部 pi 的连接失败提示行为不变。
-- 验证：`tests/usage-extension.test.js` 在隔离子进程与真实 IPC 下验证相对 `AXIOM_HOME` 与默认根；`tests/shared-gate.test.js` 验证启动失败不清空限额、并发首次创建只获取完整且一致的密钥，专项 13 项通过。原子发布后全量 955 项（953 通过、2 跳过、0 失败）；合并最新主分支后仍需复测。没有在生产负载或双实例升级现场验证。
+- 验证：`tests/usage-extension.test.js` 在隔离子进程与真实 IPC 下验证相对 `AXIOM_HOME` 与默认根；`tests/shared-gate.test.js` 验证启动失败不清空限额、并发首次创建只获取完整且一致的密钥，专项 13 项通过。原子发布后全量 955 项（953 通过、2 跳过、0 失败）；合并最新远端主分支 `e8b59a7` 后全量 959 项（957 通过、2 跳过、0 失败），`git diff --check` 通过。没有在生产负载或双实例升级现场验证。
 - 文件：`extensions/usage-gate.ts`、`src/shared-gate.js`、`tests/usage-extension.test.js`、`tests/shared-gate.test.js`、`README.md`、`devlog.md`。
+## 2026-09-22 修复正式答复标题与完成卡展示
+
+- 症状与原因：过程说明与 `<axiom_display>` 开标签同行时，旧解析器未识别正式答复；而先过滤记忆标签再拆答复，会使答复首行的 `<title>` 漏进正文/目标小结，标题定案还可能误取过程说明。
+- 修复：识别过程说明行尾的开标签及流式残片，先划定正式答复再分别清理记忆标签；标题从正式答复提取，目标轮次与暂停小结也取清理后的答复。不改变原始消息保存与代码示例保护规则。
+- 涉及文件：public/answer-tags.js、app.js；src/session-memory.js、goal.js；tests/answer-tags.test.js、memory-ui.test.js、session-memory.test.js、goal.test.js；README.md、devlog.md、.pi/skills/codebase-map/knowledge.md。
+- 验证：定向 66 项通过；全量 944 项（942 通过、2 跳过、0 失败），`git diff --check` 通过。按技能规则本地重建代码索引；由于基线已有大量过期索引项、重建引入数百行无关变动，遵循主线现行“索引留本地重建”做法，不把生成物纳入本次提交。
 
 ## 2026-09-23 模型配置页统一供应商与模型并发
 

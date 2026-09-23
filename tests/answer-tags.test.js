@@ -7,6 +7,18 @@ test("answer separates progress without mutating source", () => {
   const source = `检查中\n${open}\n**完成**\n${close}\n补充`;
   assert.deepEqual(splitAnswer(source), { found: true, answer: "**完成**", process: "检查中\n\n补充", incomplete: false, malformed: false });
 });
+test("行尾紧接说明的展示标签拆出过程，不把示例或代码当协议", () => {
+  const source = `说明${open}\n<title>优化项评估</title>\n正式答复\n${close}`;
+  assert.deepEqual(splitAnswer(source), { found: true, answer: "<title>优化项评估</title>\n正式答复", process: "说明", incomplete: false, malformed: false });
+  assert.equal(splitAnswer(`说明${open}\n正式答复`, { streaming: true }).answer, "正式答复");
+  for (const example of [`用法：${open}正文${close}`, `\`例子${open}\`\n正文\n${close}`, `    说明${open}\n正文\n${close}`]) {
+    assert.equal(splitAnswer(example).found, false);
+  }
+  for (let i = 1; i < open.length; i++) {
+    assert.equal(splitAnswer(`说明${open.slice(0, i)}`, { streaming: true }).answer, "说明");
+  }
+});
+
 test("streaming tag prefixes never flash; interrupted answer survives", () => {
   for (let i = 1; i < open.length; i++) assert.equal(splitAnswer(open.slice(0, i), { streaming: true }).answer, "");
   for (let i = 1; i < close.length; i++) assert.equal(splitAnswer(`${open}\n答复\n${close.slice(0, i)}`, { streaming: true }).answer, "答复");

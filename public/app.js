@@ -1747,9 +1747,9 @@ function prepareStream(item) {
     // 大头），三个模块各持一份掩码缓存，append 帧只重扫末行+末段，非 append 帧（残片翻转/
     // 整行删除）自动退化全量。缓存随 item 存活，dispose 即回收。
     item.scanCache ||= { goal: createMaskCache(), memory: createMaskCache(), answer: createMaskCache() };
-    // 与最终渲染同序：先剥 goal 完成标记，再剥记忆标签；半截标记由 streaming 模式暂存。
-    item.buffer = stripMemoryTags(stripGoalMarkers(item.raw || "", { streaming: true, maskCache: item.scanCache.goal }), { streaming: true, maskCache: item.scanCache.memory });
-    // 累计解析：开标签到达即展示回答，半截标签暂存。
+    // 与最终渲染同序：先剥 goal 完成标记、再拆答复，最后过滤记忆标签；流式残片暂存。
+    item.buffer = stripGoalMarkers(item.raw || "", { streaming: true, maskCache: item.scanCache.goal });
+    // 先拆回答，再分别剥标签：展示块内首行的 <title> 才是回答首行，不能按整条消息的首行判断。
     item.processBuffer = "";
     if (!item.task) {
       let split;
@@ -1758,9 +1758,10 @@ function prepareStream(item) {
       if (split) {
         item.buffer = split.answer;
         item.hasAnswer = split.found;
-        item.processBuffer = split.process || "";
+        item.processBuffer = stripMemoryTags(split.process || "", { streaming: true });
       }
     }
+    item.buffer = stripMemoryTags(item.buffer, { streaming: true, maskCache: item.scanCache.memory });
   }
   updateActivity(item);
 }
@@ -1807,9 +1808,9 @@ function renderMessage(item, message) {
     .filter((c) => c?.type === "text")
     .map((c) => c.text)
     .join("\n");
-  // 记忆标签与 goal 完成标记只属于助手自报内容；用户手写同名标签原样保留。顺序与后端展示口径
-  // （src/goal.js 的 bodyText）一致：先去完成标记，再剥记忆标签，最后拆正式答复。
-  item.buffer = message.role === "assistant" ? stripMemoryTags(stripGoalMarkers(raw)) : raw;
+  // 记忆标签与 goal 完成标记只属于助手自报内容；用户手写同名标签原样保留。
+  // 先去完成标记、再拆正式答复，展示块内首行的标题在拆分后才能正确过滤。
+  item.buffer = message.role === "assistant" ? stripGoalMarkers(raw) : raw;
   // 主会话解析 axiom_display；未闭合回答仍展示，子任务透传。
   // 异常走原文回退，保证错误/中断始终可见。
   item.processBuffer = "";
@@ -1820,9 +1821,10 @@ function renderMessage(item, message) {
     if (split) {
       item.buffer = split.answer;
       item.hasAnswer = split.found;
-      item.processBuffer = split.process || "";
+      item.processBuffer = stripMemoryTags(split.process || "");
     }
   }
+  if (message.role === "assistant") item.buffer = stripMemoryTags(item.buffer);
   item.reasoning = content
     .filter((c) => c?.type === "thinking")
     .map((c) => c.thinking)

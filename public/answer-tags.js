@@ -1,4 +1,4 @@
-// 展示协议只识别独占行的标签；原始消息始终由调用方保存。
+// 展示协议识别独占行标签及紧接过程说明行尾的开启标签；原始消息始终由调用方保存。
 // 代码区判定与 memory-tags、goal 共用 public/markdown-scan.js：写在围栏、缩进代码块或行内代码
 // 里的标记是在举例，不是协议（原先自带的行内反引号计数器跨行不重置，一个落单反引号就让整条消息失效）。
 import { maskCode, maskCodeCached, cutSpans } from "./markdown-scan.js";
@@ -6,8 +6,13 @@ import { maskCode, maskCodeCached, cutSpans } from "./markdown-scan.js";
 const OPEN = "<axiom_display>";
 const CLOSE = "</axiom_display>";
 const MARKS = [OPEN, CLOSE];
-// 标记必须独占一行、缩进不超过 3 空格：4 空格起是缩进代码块，属于举例。
+// 独占行标记缩进不超过 3 空格：4 空格起是缩进代码块，属于举例。
 const isMark = (line) => /^ {0,3}\S/.test(line) && MARKS.includes(line.trim());
+// 模型偶尔把开启标记接在过程说明的行尾；只认行尾原样标记，避免吞正文中的举例。
+const inlineOpen = (line) => {
+  const at = line.lastIndexOf(OPEN);
+  return at > 0 && line.slice(0, at).trim() && !line.slice(at + OPEN.length).trim() ? at : -1;
+};
 
 export function splitAnswer(text, { streaming = false, maskCache } = {}) {
   text = String(text ?? "");
@@ -17,9 +22,19 @@ export function splitAnswer(text, { streaming = false, maskCache } = {}) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i], trimmed = line.trim();
     if (isMark(line)) marks.push({ kind: trimmed, start: offset, end: offset + line.length });
-    // 流式：末行正在输入的标记前缀先藏起来，避免半截标签闪现。
-    else if (streaming && i === lines.length - 1 && trimmed && /^ {0,3}\S/.test(line)
-      && MARKS.some((mark) => mark.startsWith(trimmed))) pending = offset;
+    else {
+      const at = inlineOpen(line);
+      if (at >= 0) marks.push({ kind: OPEN, start: offset + at, end: offset + at + OPEN.length });
+      // 流式：末行正在输入的标记前缀先藏起来，避免半截标签闪现。
+      else if (streaming && i === lines.length - 1) {
+        if (trimmed && /^ {0,3}\S/.test(line) && MARKS.some((mark) => mark.startsWith(trimmed))) pending = offset;
+        else {
+          const at = line.lastIndexOf("<");
+          const suffix = at >= 0 ? line.slice(at).trimEnd() : "";
+          if (at > 0 && line.slice(0, at).trim() && suffix && OPEN.startsWith(suffix)) pending = offset + at;
+        }
+      }
+    }
     offset += line.length + 1;
   }
   const visible = pending < 0 ? text : text.slice(0, pending);

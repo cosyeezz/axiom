@@ -120,9 +120,8 @@ test("轮次小结取正文首行：记忆标签、答复标签与完成标记�
   const { goal } = runningGoal();
   const text = [
     "<title>接口修复</title>",
-    "过程说明：先看日志，再改超时。",
-    "",
-    "<axiom_display>",
+    "过程说明：先看日志，再改超时。<axiom_display>",
+    "<title>接口恢复</title>",
     "修好了，接口恢复 200",
     "细节写进 devlog。",
     "</axiom_display>",
@@ -427,6 +426,12 @@ test("pauseAtSafePoint：没有完成标记也能暂停并记录小结", async (
   assert.equal(snapshot.resumePhase, undefined);
   goal.action("resume");
   assert.equal(goal.snapshot().phase, "running");
+});
+
+test("pauseAtSafePoint：小结从展示块正文取首行且隐藏标题", () => {
+  const { goal } = runningGoal();
+  const snapshot = goal.pauseAtSafePoint({ summary: "继续前先检查。<axiom_display>\n<title>中途暂停</title>\n暂停前进展\n</axiom_display>" });
+  assert.equal(snapshot.rounds[0].summary, "暂停前进展");
 });
 
 test("pauseAtSafePoint：子任务未收尾时暂停不落定", () => {

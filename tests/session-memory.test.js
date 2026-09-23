@@ -45,6 +45,16 @@ test("onReply 只提取主代理标题，save 只落 {title:true}；子代理、
   assert.equal(saves.length, 1);
 });
 
+test("展示块内首行标题由后端提取，过程前缀不能妨碍定案", () => {
+  const events = [], saves = [];
+  const item = { title: "暂定", titlePending: true, emit: (event) => events.push(event) };
+  memoryHooks(item, (change) => saves.push(change)).onReply({ message: reply("收到，稍后给结论。<axiom_display>\n<title>优化项评估</title>\n结论与原因。\n</axiom_display>") });
+  assert.equal(item.title, "优化项评估");
+  assert.equal(item.titlePending, false);
+  assert.deepEqual(events, [{ type: "session.title", data: { title: "优化项评估" } }]);
+  assert.deepEqual(saves, [{ title: true }]);
+});
+
 test("invalid, missing and failed model reports do not change the title", () => {
   const item = { title: "临时标题", titlePending: true, emit: () => {} };
   const hooks = memoryHooks(item, () => {});
