@@ -39,7 +39,7 @@ try {
 // 共享 SQLite 单例：会话/预设/默认配置、模型配置与凭据、远程访问配置共用一个库；
 // 关闭时机在 app.close 完全之后（stop 内），保证退出前的最后一次保存不会撞上已关闭的库。
 const database = new Database(join(home, "axiom.db"));
-const usage = await shareGate(new UsageService(database));
+const usage = await shareGate(new UsageService(database), home);
 const modelStorage = createPiModelStorage({ database, home });
 await modelStorage.init();
 const factory = await createPiFactory({

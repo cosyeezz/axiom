@@ -32,7 +32,8 @@ export function wrapUsageStream(original, { service, identity = {}, createStream
         const gatedOptions = service.gate.limits[model.provider]?.rpm && !String(model.api).startsWith("google-")
           ? { ...options, fetch: async (input, init) => {
             const signal = init?.signal ?? options.signal;
-            try { await service.gate.acquire(model.provider, { kind: "rpm", signal }); }
+            let rpmWaitMs = 0;
+            try { rpmWaitMs = (await service.gate.acquire(model.provider, { kind: "rpm", signal })).waitMs ?? 0; }
             catch (error) { if (signal?.aborted) throw error; }
             let response;
             try { response = await fetchImpl(input, init); return response; }
@@ -40,7 +41,7 @@ export function wrapUsageStream(original, { service, identity = {}, createStream
               const is429 = response?.status === 429;
               const cooldown = is429 ? retryAfterMs(response.headers.get("retry-after")) || 1000 : 0;
               // 冷却建议不是实际退避耗时，不能写成 backoff_ms。
-              if (requestId) safe(() => service.store.attempt(requestId, { is429 }));
+              if (requestId) safe(() => service.store.attempt(requestId, { is429, rpmWaitMs }));
               if (is429) safe(async () => {
                 await service.gate.cooldown(model.provider, cooldown);
                 await service.store.recordGateEvent({ provider: model.provider, type: "rate_limited", detail: { requestId, cooldownMs: cooldown } });

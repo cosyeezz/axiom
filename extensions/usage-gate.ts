@@ -2,6 +2,7 @@ import { createJiti } from "jiti";
 const sdk = createJiti(import.meta.resolve("@earendil-works/pi-coding-agent"));
 const { AssistantMessageEventStream } = await sdk.import("@earendil-works/pi-ai");
 const { streamSimple } = await sdk.import("@earendil-works/pi-ai/compat");
+import { resolve } from "node:path";
 import { gateLayout, remoteService } from "../src/shared-gate.js";
 import { connectGate } from "../src/gate-ipc.js";
 import { wrapUsageStream } from "../src/usage-stream.js";
@@ -14,8 +15,9 @@ export default function usageGate(pi) {
   pi.on("session_start", async (_event, ctx) => {
     try {
       client?.close();
-      client = await connectGate(await gateLayout());
-      const initial = await client.request("view", {}, 1000);
+      // 外部 pi 是独立进程：显式 AXIOM_HOME 应与目标 Axiom 实例相同。
+      client = await connectGate(await gateLayout(process.env.AXIOM_HOME ? resolve(process.env.AXIOM_HOME) : undefined));
+      const initial = await client.request("limits", {}, 1000);
       const service = remoteService(client, initial);
       const models = ctx.modelRegistry.getAll();
       for (const [provider, limits] of Object.entries(initial.limits)) {

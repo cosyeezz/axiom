@@ -36,6 +36,7 @@ const TABLES = {
     http_attempts INTEGER NOT NULL DEFAULT 0,
     http_429 INTEGER NOT NULL DEFAULT 0,
     backoff_ms INTEGER NOT NULL DEFAULT 0,
+    rpm_wait_ms INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL,
     error TEXT,
     input INTEGER NOT NULL DEFAULT 0,
@@ -109,7 +110,9 @@ export class UsageStore {
     this.#database = database;
     database.exec(Object.values(TABLES).join(";\n"));
     database.exec(INDEXES);
-    if (!database.prepare('PRAGMA table_info(llm_requests)').all().some(column => column.name === 'usage_known')) database.exec('ALTER TABLE llm_requests ADD COLUMN usage_known INTEGER NOT NULL DEFAULT 0');
+    const columns = new Set(database.prepare('PRAGMA table_info(llm_requests)').all().map(column => column.name));
+    if (!columns.has('usage_known')) database.exec('ALTER TABLE llm_requests ADD COLUMN usage_known INTEGER NOT NULL DEFAULT 0');
+    if (!columns.has('rpm_wait_ms')) database.exec('ALTER TABLE llm_requests ADD COLUMN rpm_wait_ms INTEGER NOT NULL DEFAULT 0');
   }
 
   #sql(text) {
@@ -139,14 +142,15 @@ export class UsageStore {
 
   // 物理尝试累计：pi 内层 retryProviderRequest 的每次 fetch 都记一笔。
   // 一次逻辑请求可能对应多次物理请求，RPM 是按物理次数算的，这里也必须按物理次数累加。
-  attempt(requestId, { is429 = false, backoffMs = 0 } = {}) {
+  attempt(requestId, { is429 = false, backoffMs = 0, rpmWaitMs = 0 } = {}) {
     this.#sql(
       `UPDATE llm_requests
          SET http_attempts = http_attempts + 1,
              http_429 = http_429 + ?,
-             backoff_ms = backoff_ms + ?
+             backoff_ms = backoff_ms + ?,
+             rpm_wait_ms = rpm_wait_ms + ?
        WHERE request_id = ? AND status = 'running'`,
-    ).run(is429 ? 1 : 0, Math.max(0, Math.round(backoffMs)), requestId);
+    ).run(is429 ? 1 : 0, Math.max(0, Math.round(backoffMs)), Math.max(0, Math.round(rpmWaitMs)), requestId);
   }
 
   // 请求终结：写入结果与用量。usage 形状同 pi-ai 的 Usage（可缺字段）。
@@ -243,7 +247,7 @@ export class UsageStore {
               provider, model, api, pid,
               queued_at AS queuedAt, started_at AS startedAt, ended_at AS endedAt,
               wait_ms AS waitMs, wait_reason AS waitReason, queue_depth AS queueDepth,
-              http_attempts AS httpAttempts, http_429 AS http429, backoff_ms AS backoffMs,
+              http_attempts AS httpAttempts, http_429 AS http429, backoff_ms AS backoffMs, rpm_wait_ms AS rpmWaitMs,
               status, error,
               input, output, cache_read AS cacheRead, cache_write AS cacheWrite,
               cache_write_1h AS cacheWrite1h, reasoning, total_tokens AS totalTokens,

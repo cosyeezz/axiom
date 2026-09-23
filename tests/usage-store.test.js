@@ -63,9 +63,25 @@ test("请求全生命周期落库，用量与成本逐列保留", async () => {
     assert.equal(row.waitReason, "rpm");
     assert.equal(row.queueDepth, 2);
     assert.equal(row.httpAttempts, 1);
+    assert.equal(row.rpmWaitMs, 0);
   });
 });
 
+test("已有审计表补充 RPM 等待列且保留原记录", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "axiom-usage-legacy-"));
+  const path = join(dir, "axiom.db");
+  try {
+    const db = new Database(path);
+    const original = new UsageStore(db);
+    const id = original.begin({ sessionId: "old" });
+    db.exec("ALTER TABLE llm_requests DROP COLUMN rpm_wait_ms");
+    new UsageStore(db);
+    assert.equal(db.prepare("SELECT rpm_wait_ms FROM llm_requests WHERE request_id = ?").get(id).rpm_wait_ms, 0);
+    new UsageStore(db);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM llm_requests").get().count, 1);
+    db.close();
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
 test("迟到的终态和尝试不能覆盖已记账请求", async () => {
   await withStore(store => {
     const id = complete(store);
@@ -154,14 +170,15 @@ test("物理尝试与 429 累加，反映 pi 内层重试", async () => {
   await withStore((store) => {
     const id = store.begin({ sessionId: "s1", source: "main" });
     store.admit(id, {});
-    store.attempt(id, { is429: true, backoffMs: 2000 });
-    store.attempt(id, { is429: true, backoffMs: 4000 });
+    store.attempt(id, { is429: true, backoffMs: 2000, rpmWaitMs: 12 });
+    store.attempt(id, { is429: true, backoffMs: 4000, rpmWaitMs: 34 });
     store.attempt(id, {});
     store.finish(id, { status: "ok", usage: usage() });
     const [row] = store.listRequests({}).items;
     assert.equal(row.httpAttempts, 3);
     assert.equal(row.http429, 2);
     assert.equal(row.backoffMs, 6000);
+    assert.equal(row.rpmWaitMs, 46);
   });
 });
 

@@ -17,12 +17,12 @@ function createStream() {
 const model = { provider: "p", id: "m", api: "openai-completions" };
 const message = { role: "assistant", stopReason: "stop", usage: { input: 3, cost: { total: 1 } } };
 function fixture(original, { brokenAudit = false, rpm = 0 } = {}) {
-  const records = []; let released = 0, attempts = 0;
+  const records = [], attemptData = []; let released = 0, attempts = 0;
   const service = { store: {
     begin() { if (brokenAudit) throw new Error("db unavailable"); return "r"; }, admit() {},
-    finish(id, data) { records.push(data); }, attempt() { attempts++; }, recordGateEvent() {},
+    finish(id, data) { records.push(data); }, attempt(id, data) { attempts++; attemptData.push(data); }, recordGateEvent() {},
   }, gate: { limits: { p: { rpm } }, acquire: async () => ({ release() { released++; } }), cooldown() {} } };
-  return { run: wrapUsageStream(original, { service, createStream }), records, released: () => released, attempts: () => attempts };
+  return { run: wrapUsageStream(original, { service, createStream }), records, released: () => released, attempts: () => attempts, attemptData, service };
 }
 test("完整转发终态、result和usage，归还令牌", async () => {
   const f = fixture(() => { const stream = createStream(); stream.push({ type: "done", message }); return stream; });
@@ -52,6 +52,17 @@ test("fetch保留原始参数，每次物理尝试记一次", async () => {
   }, { rpm: 1 });
   await f.run(model, {}, { fetch: async (url, init) => { calls++; assert.equal(init.method, "POST"); return response; } }).result();
   assert.equal(calls, 1); assert.equal(f.attempts(), 1);
+  assert.equal(f.attemptData[0].rpmWaitMs, 0);
+});
+test("RPM等待时长按实际闸门返回记录，不将Retry-After算成退避", async () => {
+  const f = fixture(async (m, c, options) => {
+    await options.fetch("https://example.invalid");
+    const stream = createStream(); stream.push({ type: "done", message }); return stream;
+  }, { rpm: 1 });
+  f.service.gate.acquire = async (provider, options) => options.kind === "rpm" ? { waitMs: 73 } : { release() {} };
+  await f.run(model, {}, { fetch: async () => new Response("ok") }).result();
+  assert.equal(f.attemptData[0].rpmWaitMs, 73);
+  assert.equal(f.attemptData[0].backoffMs, undefined);
 });
 test("未限RPM与Google保留原options对象", async () => {
   for (const api of ["openai-completions", "google-generative-ai"]) {

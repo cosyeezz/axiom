@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-23 外部闸门数据根与启动失败边界
+
+- 原因：独立 pi 的 `AXIOM_HOME` 与 Axiom worker 不一致时可能连接错误数据根；共享端点初始化失败时原实现清空限额并继续启动，不能提供声称的共享限制。
+- 修改与决策：`extensions/usage-gate.ts` 从独立进程环境中解析显式数据根，缺省仍使用 `~/.axiom`，首次只取限额；`src/shared-gate.js` 在端点初始化失败时拒绝启动而非退化为无共享限流。密钥先完整写入同目录临时文件，再用不覆盖目标的 hard link 原子发布，并清理临时文件；发布不可用则拒绝启动。Unix 遗留 socket 上的 `ECONNREFUSED` 不足以授权并发安全地 unlink，不自动清理以免误删活端点；外部 pi 的连接失败提示行为不变。
+- 验证：`tests/usage-extension.test.js` 在隔离子进程与真实 IPC 下验证相对 `AXIOM_HOME` 与默认根；`tests/shared-gate.test.js` 验证启动失败不清空限额、并发首次创建只获取完整且一致的密钥，专项 13 项通过。原子发布后全量 955 项（953 通过、2 跳过、0 失败）；合并最新主分支后仍需复测。没有在生产负载或双实例升级现场验证。
+- 文件：`extensions/usage-gate.ts`、`src/shared-gate.js`、`tests/usage-extension.test.js`、`tests/shared-gate.test.js`、`README.md`、`devlog.md`。
+
 ## 2026-09-23 模型配置页统一供应商与模型并发
 
 - 决策：保留 SQLite usage/limits 中原供应商限额，增加 models[modelId].concurrency；独立于 SDK 连接字段，避免污染模型定义。
@@ -2923,3 +2930,11 @@ expected: '完成<progress>已完成检查</progress>'                          
 ### 2026-09-22 修复页面持续连接中
 - 原因：todo.js 静态导入及 todo.css 未登记 HTTP 路由，应用模块无法执行。
 - 修改：src/server.js 补齐两个资源；tests/server.test.js 验证 HTTP 200、JS 类型与缓存；README.md、knowledge.md 记录排障，重建 INDEX.md。
+
+## 2026-09-22T21:11-07:00 usage 审计与共享闸门加固
+
+- 原因：审计证据提示跨数据根共用闸门、断线后旧客户端不可恢复、服务端排队无法定向取消、IPC 分帧误拒绝及远程归属/指标不准；经源码与隔离测试确认后处理，不把隔离结果当生产收益。
+- 修改：`src/main.js` 传入数据根，`src/shared-gate.js` 按规范路径隔离端点/密钥、断线后只重试只读请求、刷新只取限额、远程审计传调用方 PID 并合并本地失败数；`src/gate-ipc.js` 按帧限长和请求 ID 定向取消；`extensions/usage-gate.ts` 从外部进程的 `AXIOM_HOME` 选择正确数据根，仅用轻量限额 RPC 初始化。获取租约超时后只取消该笔，迟到租约归还，不断开可能承载其他租约的共享连接；重连期间的取消、补偿归还和已发租约归还均定向原 acquire 连接，不转发给新 owner。
+- 指标：`src/usage-store.js` 新增可幂等迁移的 `rpm_wait_ms`，`src/usage-stream.js` 按可拦截的 RPM fetch 尝试累计 RPM 等待，与并发 `waitMs` 分开；`README.md` 说明覆盖边界、旧端点升级、外部 pi 的显式数据根及断线语义。测试涉及 `tests/gate-ipc.test.js`、`tests/shared-gate.test.js`、`tests/usage-store.test.js`、`tests/usage-stream.test.js`。
+- 决策与边界：不根据成功终态缺失 usage 推断 SDK 行为；未配置 RPM 与 Google 等不可拦截路径的 `httpAttempts=0` 不代表无物理请求；`Retry-After` 不等于实际退避。当前列表已用复合游标，缺少实际筛选组合的查询计划与负载基准，暂不调整深页 SQL。旧固定端点和新端点跨版本互斥、生产负载收益尚未验证，升级先退出旧版实例。
+- 验证：初次定向 36 项通过；安装独立工作树依赖后执行 `node --test --test-timeout=120000 tests/*.test.js`，950 项中 948 通过、2 既有跳过、0 失败；新增重连原连接归属两项定向测试通过。首次全量 CSS DOM 断言偶发失败，单测与第二次全量复跑通过；仅隔离测试，不宣称已验证生产负载。全量测试重建的 `.pi/skills/codebase-map/INDEX.md` 是本地索引，不纳入 usage 提交。
