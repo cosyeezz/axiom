@@ -1630,7 +1630,7 @@ function toolState(agentId, data) {
     body.className = "tool-detail";
     container.append(summary, body);
     (item?.tools || tasks.get(agentId)?.output || $("output")).append(container);
-    tool = { node, agentId, container, body };
+    tool = { node, agentId, container, body, item };
     container.ontoggle = () => { renderToolDetail(tool); scrollLatest(); };
     toolItems.set(key, tool);
     if (item) updateActivity(item);
@@ -3061,7 +3061,7 @@ function placeSnapshotMessage(ctx, index, { agentId, message, entryId, compacted
         const existing = toolItems.get(`${agentId}:${call.id}`);
         // The result may have been loaded first at the window boundary. Rehome its
         // existing detail node rather than leaving the delegate anchor at the tail.
-        if (existing) { existing.args ||= call.arguments; item.tools.append(existing.container); }
+        if (existing) { existing.args ||= call.arguments; existing.item = item; item.tools.append(existing.container); }
         else toolState(agentId, { phase: "history", toolCallId: call.id, toolName: call.name, args: call.arguments });
       }
     live.delete(agentId);
@@ -3132,15 +3132,51 @@ function safePointControl(point) {
   return node;
 }
 function renderSafePoints(points) {
+  for (const boundary of $("output").querySelectorAll(".safe-point-boundary")) {
+    const item = boundary.safePointItem;
+    if (item) item.node.append(item.modelInfo);
+    boundary.remove();
+  }
   for (const node of $("output").querySelectorAll(".safe-point")) node.remove();
   for (const point of points || []) {
+    let item;
     let anchor = compactionNodes.get(point.entryId);
     if (!anchor) {
       const entry = rawEntries.find(entry => entry.agentId === "main" && entry.entryId === point.entryId);
-      anchor = entry?.item?.node;
-      if (!anchor && entry?.message?.role === "toolResult") anchor = toolItems.get(`main:${entry.message.toolCallId}`)?.container;
+      item = entry?.item;
+      anchor = item?.node;
+      if (entry?.message?.role === "toolResult") {
+        const tool = toolItems.get(`main:${entry.message.toolCallId}`);
+        item = tool?.item;
+        anchor = item?.node.contains(tool.container) ? item.node : tool?.container || anchor;
+      }
     }
-    if (anchor?.isConnected && !anchor.hidden) anchor.after(safePointControl(point));
+    if (!anchor?.isConnected || anchor.hidden) continue;
+    // Preserve the exact history boundary, including intermediate folded calls.
+    // A non-call boundary also prevents refreshCallGroups from merging the halves.
+    while (anchor.parentElement !== $("output") && anchor.parentElement) {
+      if (anchor.parentElement.classList.contains("call-list") && anchor.nextElementSibling) {
+        const group = anchor.parentElement.parentElement;
+        const tail = createCallGroup();
+        tail.open = group.open;
+        while (anchor.nextElementSibling) tail.lastElementChild.append(anchor.nextElementSibling);
+        group.after(tail);
+        paintCallGroup(group);
+        paintCallGroup(tail);
+      }
+      anchor = anchor.parentElement;
+    }
+    if (anchor.parentElement !== $("output")) continue;
+    const boundary = document.createElement("div");
+    boundary.className = "safe-point-boundary";
+    // Move, don't clone: renderMessage continues updating the same modelInfo node.
+    // Restore before rebuilding markers so removal never discards the footer.
+    if (item?.modelInfo && !item.node.hidden && item.modelInfo.textContent) {
+      boundary.safePointItem = item;
+      boundary.append(item.modelInfo);
+    }
+    boundary.append(safePointControl(point));
+    anchor.after(boundary);
   }
 }
 function finishSnapshot(job, ctx) {

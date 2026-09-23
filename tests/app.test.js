@@ -62,6 +62,98 @@ test("header path icons do not inherit the global button minimum height", async 
   } finally { dom.window.close(); }
 });
 
+test("safe-point control floats over a compact timeline gap", async () => {
+  const css = await readFile(new URL("../public/style.css", import.meta.url), "utf8");
+  const dom = new JSDOM('<div class="safe-point"><button class="safe-point-trigger">从此处重新执行</button></div>');
+  try {
+    const style = dom.window.document.createElement("style");
+    style.textContent = css;
+    dom.window.document.head.append(style);
+    const trigger = dom.window.getComputedStyle(dom.window.document.querySelector(".safe-point-trigger"));
+    const row = dom.window.getComputedStyle(dom.window.document.querySelector(".safe-point"));
+    assert.equal(trigger.position, "absolute");
+    assert.equal(trigger.height, "16px");
+    assert.equal(trigger.minHeight, "0px");
+    assert.equal(trigger.padding, "0px");
+    assert.equal(row.height, "4px");
+    assert.equal(row.marginTop, "0px");
+    assert.equal(row.marginBottom, "4px");
+    assert.match(css, /@media \(hover: none\)\s*\{\s*\.safe-point\s*\{\s*height:\s*12px;\s*\}\s*\.safe-point-trigger\s*\{\s*top:\s*-24px;\s*height:\s*40px;/);
+  } finally { dom.window.close(); }
+});
+
+test("tool-result safe point follows the issuing assistant's model usage", async () => {
+  const source = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
+  const start = source.indexOf("function renderSafePoints(points) {");
+  const end = source.indexOf("function finishSnapshot(", start);
+  const renderSource = start >= 0 && end > start ? source.slice(start, end) : null;
+  assert.ok(renderSource, "exercise the production safe-point placement logic");
+  const dom = new JSDOM('<div id="output"></div>');
+  try {
+    const { document } = dom.window;
+    const output = document.getElementById("output");
+    const assistant = document.createElement("article");
+    assistant.className = "message";
+    assistant.innerHTML = '<div class="message-tools"></div><small class="message-model">local-model ↑100 ↓20</small>';
+    const tool = document.createElement("details");
+    tool.className = "tool-record";
+    const item = { node: assistant, tools: assistant.firstElementChild, modelInfo: assistant.lastElementChild };
+    const tools = new Map([["main:read-1", { container: tool, item }]]);
+    const rawEntries = [{ agentId: "main", entryId: "result-1", message: { role: "toolResult", toolCallId: "read-1" } }];
+    const render = new Function("compactionNodes", "rawEntries", "toolItems", "safePointControl", "$", "document", "createCallGroup", "paintCallGroup",
+      `${renderSource}; return renderSafePoints;`)(new Map(), rawEntries, tools,
+      () => { const marker = document.createElement("div"); marker.className = "safe-point"; return marker; },
+      (id) => document.getElementById(id), document,
+      () => { const group = document.createElement("details"); group.className = "call-group"; group.append(document.createElement("summary"), document.createElement("div")); group.lastElementChild.className = "call-list"; return group; }, () => {});
+    const afterUsage = (marker) => assert.ok(
+      item.modelInfo.compareDocumentPosition(marker) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING,
+      "the model and token usage must precede the marker");
+    const next = document.createElement("article");
+    next.textContent = "下一条消息";
+    item.tools.append(tool);
+    output.append(assistant, next);
+    render([{ entryId: "result-1" }]);
+    let marker = output.querySelector(".safe-point");
+    assert.equal(marker.parentElement.previousElementSibling, assistant);
+    assert.equal(marker.parentElement.nextElementSibling, next);
+    afterUsage(marker);
+    // Prose + calls: the tool container is moved into a separate group after the card.
+    const group = document.createElement("details");
+    group.className = "call-group";
+    const list = document.createElement("div");
+    list.className = "call-list";
+    group.append(document.createElement("summary"), list);
+    list.append(tool);
+    assistant.after(group);
+    item.callGroup = group;
+    render([{ entryId: "result-1" }]);
+    marker = output.querySelector(".safe-point");
+    assert.equal(marker.parentElement.previousElementSibling, group);
+    assert.equal(marker.parentElement.nextElementSibling, next);
+    afterUsage(marker);
+    assert.equal(output.querySelectorAll(".safe-point").length, 1);
+    // A folded group can contain multiple assistant cards. Split at the boundary.
+    item.callGroup = undefined;
+    item.tools.append(tool);
+    list.append(assistant, next);
+    group.open = false;
+    render([{ entryId: "result-1" }]);
+    marker = output.querySelector(".safe-point");
+    assert.equal(marker.parentElement.previousElementSibling, group);
+    const tail = marker.parentElement.nextElementSibling;
+    assert.equal(tail.lastElementChild.firstElementChild, next);
+    assert.equal(tail.open, false);
+    assert.equal(item.modelInfo.parentElement, marker.parentElement);
+    afterUsage(marker);
+    render([{ entryId: "result-1" }]);
+    assert.equal(output.querySelectorAll(".message-model").length, 1);
+    assert.equal(output.querySelectorAll(".safe-point").length, 1);
+    render([]);
+    assert.equal(item.modelInfo.parentElement, assistant);
+    assert.equal(output.querySelectorAll(".safe-point-boundary").length, 0);
+  } finally { dom.window.close(); }
+});
+
 // Exercise the real page handlers without a live model or an extra test framework.
 test("page preserves drafts, recovers failed connections and paints tasks on demand", async () => {
   const html = await readFile(
