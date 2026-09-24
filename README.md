@@ -1,5 +1,13 @@
 # Axiom
 
+## 通用指令组件
+
+`src/instructions.js` 提供 `createInstructions()`，实例只暴露 `register({ name, description, parameters, handler })` 和 `execute(name, arguments)`。注册名称唯一、精确匹配；`parameters` 为可信程序提供的对象 JSON Schema，注册时保存快照，执行前使用 TypeBox 校验参数，不自动转换类型。`handler(arguments)` 返回结果或抛错，不接收执行上下文。
+
+会话新增两个英文 schema 工具：`ask_axiom({ name })` 获取已知指令的调用说明；`let_axiom({ name, arguments })` 执行已知指令，无参数传 `{}`，名称不得猜测。`ask_axiom` 只是 `execute("axiom.describe", { name })` 的封装；内置说明指令同样通过注册接入，返回 `name`、`description`、`parameters`。`instructionTools(registry)` 可将注册实例封装为两个 Pi 工具；默认每个会话创建独立实例，目前只注册说明指令，现有业务工具不迁移。
+
+组件不提供搜索、列表、模型推理、任务状态、取消、超时、重试或其他生命周期管理。宿主原有准备/总结阶段工具限制保持不变；两个新入口暂不作为 Todo 的执行验收证据。新增指令无需改变工具 schema。验证：`node --test tests/instructions.test.js tests/goal-pi.test.js`（后者使用本地假供应商，不产生模型费用）。
+
 ### 供应商与模型并发配置
 
 在 **设置 → 模型与供应商 → 选择供应商 → 模型 → 并发与限流配置** 中点击「读取限额」，设置供应商总并发、供应商 RPM 和各模型并发后保存。自定义和内置供应商均支持；原用量页保留审计展示与历史导入，不再编辑限额。

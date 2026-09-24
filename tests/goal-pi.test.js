@@ -41,7 +41,7 @@ const PREAMBLE = `
             chunks.push({ choices: [{ delta: { tool_calls: [
               { index: 0, id: step.id ?? 'call_1', type: 'function', function: { name: step.tool, arguments: '' } },
             ] } }] });
-            chunks.push({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{}' } }] } }] });
+            chunks.push({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify(step.args ?? {}) } }] } }] });
             chunks.push({ choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage });
           } else {
             chunks.push({ choices: [{ delta: { content: step.text ?? '' } }] });
@@ -88,6 +88,26 @@ const run = async (body) => {
     await rm(dir, { recursive: true, force: true });
   }
 };
+
+test("universal tools are registered and ask/let execute the same description through the SDK", async () => {
+  await run(`
+        const agent = await factory([], { memory: memory('subagent') });
+        try {
+          script = [
+            { tool: 'ask_axiom', id: 'ask_1', args: { name: 'axiom.describe' } },
+            { tool: 'let_axiom', id: 'let_1', args: { name: 'axiom.describe', arguments: { name: 'axiom.describe' } } },
+            { text: 'done' },
+          ];
+          await agent.prompt('Describe the known axiom.describe instruction using both tools.');
+          assert.ok(schemas[0].includes('ask_axiom'));
+          assert.ok(schemas[0].includes('let_axiom'));
+          const results = requests[2].filter(m => m.role === 'tool');
+          assert.equal(results.length, 2);
+          assert.deepEqual(results[0].content, results[1].content);
+          assert.match(JSON.stringify(results[0].content), /parameters/);
+        } finally { await agent.dispose(); }
+  `);
+});
 
 test("executionContext 每请求注入（工具后续轮+子代理），空串不注入，不改用户原文", async () => {
   await run(`

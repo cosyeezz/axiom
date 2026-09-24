@@ -17,6 +17,9 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  * 未登记的文件会在 INDEX.md 里标 ⚠ 提醒补充。
  */
 const MODULE_INFO = {
+  "src/instructions.js": "通用指令注册、精确查找、参数校验与执行，无生命周期管理",
+  "src/instruction-tools.js": "ask_axiom / let_axiom 工具薄封装，共用指令执行器",
+  "tests/instructions.test.js": "指令注册、严格参数校验、说明快照及工具封装回归",
   "src/todo-store.js": "统一任务三表、事务 CAS、有界查询与审计事件",
   "src/todo-context.js": "压缩边界任务恢复包、持久消息与引用解析",
   "src/todo-prompts.js": "统一任务准备、执行、恢复与验收提示",

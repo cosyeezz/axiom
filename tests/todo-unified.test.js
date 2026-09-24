@@ -14,6 +14,14 @@ test('confirmed targets survive initialization; reads are read only; steps never
  await update(todo,[{op:'status',id:'target',status:'done',summary:'报告已交付',verification:[{criterionId:'check',result:'已核对',refs:[{messageId:'report'}]}]}]);assert.equal(todo.snapshot().completed,true);
  const again=new Todo({sessionId:'s',store:createTodoStore(todo.store.database)});assert.equal(again.snapshot().listId,listId);assert.equal(again.pause().paused,false);
 });
+test('universal tools cannot serve as Todo execution evidence',async()=>{
+ for(const toolName of ['ask_axiom','let_axiom']){
+  const todo=new Todo({sessionId:'s',store:createTodoStore(),questions:{confirmTodo:async()=>({approved:true})},resolveRef:()=>({toolName})});
+  await todo.update({baseVersion:0,ops:[{...target,acceptance:[{criterionId:'check',text:'实际执行',check:'tool'}]}]});
+  await assert.rejects(update(todo,[{op:'status',id:'target',status:'done',summary:'完成',verification:[{criterionId:'check',result:'说明不是证据',refs:[{toolCallId:'call'}]}]}]),/TODO_INVALID_REFERENCE/);
+  assert.equal(todo.read({id:'target'}).item.status,'pending');
+ }
+});
 test('approval is bound and stale approval cannot write',async()=>{
  const events=[];const questions=createQuestions(e=>events.push(e));const todo=new Todo({sessionId:'s',store:createTodoStore(),questions});
  const promise=todo.update({baseVersion:0,ops:[target]});const asked=events.find(e=>e.type==='question.asked');assert.ok(asked.data.proposal);assert.equal(todo.snapshot().counts.targets.total,0);

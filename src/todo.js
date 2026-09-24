@@ -114,7 +114,7 @@ export class Todo {
       if(!i.summary.trim())fail('TODO_SUMMARY_REQUIRED');
       if(new Set(i.verification.map(v=>v.criterionId)).size!==i.verification.length||i.verification.length!==i.acceptance.length)fail('TODO_ACCEPTANCE_INCOMPLETE');
       for(const c of i.acceptance){const v=i.verification.find(v=>v.criterionId===c.criterionId);if(!v)fail('TODO_ACCEPTANCE_INCOMPLETE');let validTool=false;
-       for(const reference of v.refs){const found=this.resolveRef(reference);if(!found)fail('TODO_INVALID_REFERENCE');if(reference.toolCallId&&!['todo_read','todo_update','question','delegate','read_result','append','cancel_task'].includes(found.toolName))validTool=true;}
+       for(const reference of v.refs){const found=this.resolveRef(reference);if(!found)fail('TODO_INVALID_REFERENCE');if(reference.toolCallId&&!['todo_read','todo_update','question','delegate','read_result','append','cancel_task','ask_axiom','let_axiom'].includes(found.toolName))validTool=true;}
        if(c.check==='tool'&&!validTool)fail('TODO_INVALID_REFERENCE');if(c.check==='review'&&!v.refs.length)fail('TODO_INVALID_REFERENCE');if(c.check==='user')userCheck=true;
       }
       if(i.acceptance.some(c=>c.check==='user'))proposal.push({before,after:structuredClone(i)});events.push({id:i.id,kind:'completed',record:{definitionVersion:i.definitionVersion,verification:i.verification}});

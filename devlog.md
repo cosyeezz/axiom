@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-24 最小通用指令组件
+
+- 原因：按最新讨论先建立可注册、可执行的通用基础，不迁移现有工具；取代讨论稿中的发现/搜索设想。
+- 修改：新增 instructions 注册执行组件、instruction-tools 薄封装与 Pi 内联扩展接线，ask_axiom 通过同一执行器调用注册的 axiom.describe。工具描述及 schema 使用英文，名称要求已知且准确。
+- 决策：定义仅含 name/description/parameters/handler；不提供列表搜索、context、取消或生命周期管理。直接依赖 TypeBox 进行不强制转换的参数校验，schema 来自可信注册代码并保存私有快照。维持宿主执行限制，将新工具排除出 Todo 自证验收来源。
+- 验证：全量 npm test 共 892 项，890 通过、2 跳过、0 失败；包含组件/封装、真实 SDK 本地假供应商接线、准备阶段拦截及 Todo 验收来源回归；未调用付费模型。同步 origin/master 后基线未变化。重建代码索引确认 0 未登记；生成索引存在大量无关历史漂移，因此仅提交职责表登记，不提交全量重排。
+- 文件：src/instructions.js、src/instruction-tools.js、src/pi.js、src/todo.js、tests/instructions.test.js、tests/goal-pi.test.js、tests/todo-preparation.test.js、tests/todo-unified.test.js、package.json、package-lock.json、.pi/skills/codebase-map/scripts/reindex.mjs、README.md、devlog.md。
+
 ## 2026-09-24 通用工具构造方案讨论稿
 
 - 原因：用户要求单独生成通用工具构造文档，以便继续审阅和调整，不开始实现。
