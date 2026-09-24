@@ -285,6 +285,15 @@
           <details class="task-billing"><summary>任务账单</summary><div class="task-bill-body"></div></details>
           <p class="task-error" role="alert" hidden></p>
         </div>
+        <form class="task-composer">
+          <label>发给子代理<textarea class="task-input" rows="2" maxlength="100000" placeholder="补充要求或继续追问" required></textarea></label>
+          <div class="task-composer-controls">
+            <label>子代理模型<select class="task-model" aria-label="当前会话子代理模型"></select></label>
+            <select class="task-message-mode" aria-label="子代理消息发送方式"><option value="steer">立即插入</option><option value="followUp">本轮结束后</option></select>
+            <button type="submit">发送</button>
+          </div>
+          <small class="task-composer-feedback" role="status">模型选择保存在当前会话，从下一次模型请求生效，新开的子代理也使用此模型。</small>
+        </form>
       </dialog>
     </template>
     <dialog id="settings" aria-labelledby="settings-title">

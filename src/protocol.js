@@ -367,6 +367,7 @@ export const command = z.discriminatedUnion("type", [
   // 手动重试：不带新输入，续跑上一次异常停止（Esc 停止/终态错误/重试用尽）的请求。
   z.object({ id, type: z.literal("session.retry"), sessionId: id }).strict(),
   z.object({ id, type: z.literal("task.retry"), sessionId: id, taskId: id }).strict(),
+  z.object({ id, type: z.literal("task.append"), sessionId: id, taskId: id, text: z.string().trim().min(1).max(100000), mode: z.enum(["steer", "followUp"]).default("steer") }).strict(),
   z.object({ id, type: z.literal("task.cancel"), sessionId: id, taskId: id, mode: z.enum(["summary", "immediate"]).default("summary"), reason: z.string().max(4000).default("") }).strict(),
   z.object({ id, type: z.literal("queue.withdraw"), sessionId: id, recall: z.boolean().optional() }).strict(),
   z

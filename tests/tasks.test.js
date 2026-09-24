@@ -157,6 +157,75 @@ test("append defaults to steer, validates input and rejects missing history/canc
   await assert.rejects(tasks.append(taskId, "x"), /没有持久化历史/);
 });
 
+test("task.append protocol validates messages and modes", () => {
+  const input = { id: "r", type: "task.append", sessionId: "s", taskId: "t", text: " hello " };
+  assert.equal(command.parse(input).mode, "steer");
+  assert.equal(command.parse(input).text, "hello");
+  for (const change of [{ text: " " }, { mode: "invalid" }, { extra: true }])
+    assert.equal(command.safeParse({ ...input, ...change }).success, false);
+});
+
+test("model changes update active agents without aborting or sending another prompt", async () => {
+  const { tasks, agents } = fixture();
+  tasks.start(["a", "b"]);
+  await new Promise(setImmediate);
+  for (const agent of agents) agent.configure = async ({ model }) => { agent.model = model; };
+  await tasks.configureModel("provider/new");
+  assert.ok(agents.every(agent => agent.model === "provider/new" && !agent.aborts));
+  await tasks.configureModel("provider/next");
+  assert.ok(agents.every(agent => agent.model === "provider/next" && !agent.aborts));
+});
+
+test("model changes during creation and asynchronous configuration reach the first request", async () => {
+  let releaseCreation, releaseConfig, configStarted;
+  const created = new Promise(resolve => { releaseCreation = resolve; });
+  const configuring = new Promise(resolve => { configStarted = resolve; });
+  const configured = new Promise(resolve => { releaseConfig = resolve; });
+  let model = "old", requestModel;
+  const tasks = new Tasks(() => created, () => {});
+  fixtures.add(tasks);
+  const [id] = tasks.start(["a"]);
+  await tasks.configureModel("first");
+  releaseCreation({
+    subscribe: () => () => {},
+    configure: async ({ model: selected }) => {
+      if (selected === "first") { configStarted(); await configured; }
+      model = selected;
+    },
+    prompt: async () => { requestModel = model; }, result: () => "done", dispose: async () => {},
+  });
+  await configuring;
+  const update = tasks.configureModel("latest");
+  releaseConfig();
+  await update;
+  await tasks.jobs.get(id).done;
+  assert.equal(requestModel, "latest");
+});
+
+test("stopping does not wait indefinitely for model authentication", async () => {
+  let started, release;
+  const configuring = new Promise(resolve => { started = resolve; });
+  const pending = new Promise(resolve => { release = resolve; });
+  let prompted = false, disposed = false;
+  const tasks = new Tasks(async () => ({
+    configure: async () => { started(); await pending; },
+    subscribe: () => () => {}, prompt: async () => { prompted = true; },
+    abort: async () => {}, dispose: async () => { disposed = true; }, result: () => "ok",
+  }), () => {}, async () => {}, { workMs: 5000, cleanupMs: 10 });
+  fixtures.add(tasks);
+  await tasks.configureModel("new");
+  const [id] = tasks.start(["a"]);
+  await configuring;
+  await tasks.cancelTask(id, { mode: "immediate" });
+  assert.equal(prompted, false);
+  assert.equal(disposed, false, "pending configuration must not touch disposed resources");
+  assert.equal(tasks.jobs.get(id).cleanupStatus, "unconfirmed");
+  release();
+  await new Promise(setImmediate);
+  assert.equal(disposed, true);
+  assert.equal(tasks.jobs.get(id).cleanupStatus, "stopped");
+});
+
 test("cancel_task aborts only the target subtask, keeps siblings and the completion path", async () => {
   const { tasks, agents, notifications } = fixture();
   const cancel = delegationTools(tasks).find((tool) => tool.name === "cancel_task");

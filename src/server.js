@@ -491,6 +491,9 @@ export function createServerApp(sessions, service = {}) {
             case "task.cancel":
               data = await sessions.cancelTask(request.sessionId, request.taskId, { mode: request.mode, reason: request.reason });
               break;
+            case "task.append":
+              data = await sessions.appendTask(request.sessionId, request.taskId, request.text, request.mode);
+              break;
             case "task.retry":
               data = await sessions.retryTask(request.sessionId, request.taskId);
               break;

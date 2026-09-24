@@ -230,6 +230,44 @@ test("会话重试词表保存并在重启后传给主代理和子代理", async
   } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+test("子代理模型选择保存在当前会话并用于重载后的新任务", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-child-model-"));
+  const seen = [];
+  const selected = Object.assign(async (_, selection) => {
+    seen.push(selection);
+    let model = selection.model || "test/one";
+    return { ...await factory(), config: () => ({ model, thinking: "off" }),
+      configure: async change => { model = change.model || model; return { model, thinking: "off" }; } };
+  }, { catalog: () => [{ key: "test/one" }, { key: "test/two" }] });
+  let sessions = new Sessions(selected, undefined, join(root, "storage"));
+  try {
+    const id = await sessions.create(root);
+    await sessions.configure(id, { model: "test/one", subagentModel: "test/two" });
+    assert.equal(sessions.store.getSession(id).selection.subagentModel, "test/two");
+    assert.equal(sessions.get(id).agent.config().model, "test/one");
+    await sessions.close();
+    sessions = new Sessions(selected, undefined, join(root, "storage"));
+    await sessions.load();
+    const item = await sessions.ensureLoaded(id);
+    assert.equal(item.subagentModel, "test/two");
+    item.notificationsPaused = true;
+    const [taskId] = item.tasks.start(["child"]);
+    await item.tasks.jobs.get(taskId).done;
+    assert.equal(seen.at(-1).model, "test/two");
+    let forwarded;
+    item.tasks.append = async (...args) => { forwarded = args; return { accepted: true }; };
+    for (const guard of ["closing", "cancelling", "safeStopping"]) {
+      item[guard] = true;
+      await assert.rejects(sessions.appendTask(id, taskId, "hello"), /会话正在停止|Session is closing/);
+      assert.equal(forwarded, undefined);
+      item[guard] = false;
+    }
+    await sessions.appendTask(id, taskId, "hello", "followUp");
+    assert.deepEqual(forwarded, [taskId, "hello", "followUp"]);
+    assert.equal(item.notificationsPaused, true, "子代理消息不能解除主会话通知冻结");
+  } finally { await sessions.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test("取消正在恢复但最终失败的会话仍成功，不重建SDK或丢记录", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-cancel-load-"));
   let begin, fail;

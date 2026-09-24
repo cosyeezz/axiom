@@ -638,6 +638,13 @@ function updateAvailability() {
   region("输入操作", updateComposer);
   region("模型配置", updateModelAvailability);
   region("设置与详情", updateSettingsAvailability);
+  for (const task of tasks.values()) {
+    const unavailable = !connected || changing || sessionMissing;
+    task.node.querySelector('.task-composer button[type="submit"]').disabled = unavailable || !!task.sending || safeStopping;
+    const select = task.node.querySelector(".task-model");
+    select.disabled = unavailable;
+    modelPicker.sync(select);
+  }
 }
 function updateConnection() {
   $("status").dataset.connected = String(connected);
@@ -860,6 +867,7 @@ function renderModelConfig(value) {
   );
   fillSubagentModels();
   renderAgentConfig();
+  for (const task of tasks.values()) task.syncModel?.();
 }
 // 配置请求携带发起时的会话身份与序号；切换会话或重连后，迟到的回执（成功或失败）一律丢弃，不污染当前会话。
 let configureSeq = 0;
@@ -2761,6 +2769,56 @@ function applyEvent(message) {
       retryButton.hidden = true;
       task.retryButton = retryButton;
       const taskSessionId = sessionId;
+      const composer = node.querySelector(".task-composer");
+      const input = node.querySelector(".task-input");
+      const taskModel = node.querySelector(".task-model");
+      const feedback = node.querySelector(".task-composer-feedback");
+      task.syncModel = () => {
+        options(taskModel, [["", "跟随主代理模型"], ...modelEntries()], config?.subagentModel || "");
+        modelPicker.sync(taskModel);
+      };
+      task.syncModel();
+      modelPicker.enhance(taskModel, "model");
+      taskModel.onchange = async () => {
+        if (!connected || changing || sessionMissing || sessionId !== taskSessionId) { task.syncModel(); return; }
+        const seq = ++configureSeq;
+        changing = true;
+        taskModel.disabled = true;
+        modelPicker.sync(taskModel);
+        updateAvailability();
+        try {
+          const value = await request("session.configure", { sessionId: taskSessionId, model: config.model, subagentModel: taskModel.value || null });
+          if (sessionId !== taskSessionId || seq !== configureSeq) return;
+          applyConfig(value);
+          feedback.textContent = "已保存到当前会话；已有子代理从下一次模型请求生效，新开的子代理也使用此模型。";
+        } catch (e) {
+          if (sessionId === taskSessionId && seq === configureSeq) { feedback.textContent = `模型保存失败：${e.message || e}`; task.syncModel(); }
+        } finally {
+          if (seq === configureSeq) { changing = false; updateAvailability(); }
+          taskModel.disabled = false;
+          modelPicker.sync(taskModel);
+        }
+      };
+      composer.onsubmit = async (event) => {
+        event.preventDefault();
+        if (!connected || changing || sessionMissing || safeStopping || task.sending || sessionId !== taskSessionId) return;
+        const text = input.value.trim();
+        if (!text) return;
+        const draft = input.value;
+        const send = composer.querySelector('button[type="submit"]');
+        task.sending = send.disabled = true;
+        try {
+          const result = await request("task.append", { sessionId: taskSessionId, taskId: message.taskId, text, mode: node.querySelector(".task-message-mode").value });
+          if (sessionId !== taskSessionId) return;
+          if (input.value === draft) input.value = "";
+          feedback.textContent = result?.queued ? "消息已排队，当前执行结束并确认停止后续接。" : "消息已发送给子代理。";
+        } catch (e) {
+          if (sessionId === taskSessionId) feedback.textContent = `发送失败：${e.message || e}`;
+        } finally { task.sending = send.disabled = false; }
+      };
+      input.onkeydown = (event) => {
+        if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); composer.requestSubmit(); }
+      };
       retryButton.onclick = async () => {
         if (task.retrying || !connected || changing || sessionMissing) return;
         task.retrying = retryButton.disabled = true;
@@ -2927,6 +2985,7 @@ function beginSnapshot(state, target) {
   recallArmedUntil = 0;
   activeTask?.node.close();
   activeTask = undefined;
+  for (const task of tasks.values()) modelPicker.dispose(task.node.querySelector(".task-model"));
   $("task-overlays").replaceChildren();
   renderer.clear();
   if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame);

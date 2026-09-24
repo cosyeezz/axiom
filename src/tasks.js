@@ -95,6 +95,7 @@ export class Tasks {
         job.text = stopReport(job, "会话创建期间停止，未启动工作；资源清理尚未确认。");
       } else {
         agent = job.agent = created.value;
+        if (this.model) await Promise.race([this.applyModel(job), job.stopSignal]);
         job.runtime = agent.runtime?.(); job.sessionFile = agent.sessionFile?.() ?? job.sessionFile ?? null;
         if (job.interrupted) throw new Error("Interrupted");
         job.status = job.stop ? "stopping" : Date.now() >= job.softDeadline ? "wrapping" : "running";
@@ -165,9 +166,16 @@ export class Tasks {
       job.sessionFile = agent?.sessionFile?.() ?? job.sessionFile ?? null;
       if (job.sessionFile && existsSync(job.sessionFile)) job.historySaved = true;
       if (agent) {
+        // 配置可能在请求结束时仍等待鉴权；先停止接受更新，再等待已排队的更新退出。
+        job.modelClosing = true;
+        const pendingModel = job.modelUpdate;
+        if (pendingModel) {
+          const settled = await bounded(pendingModel.catch(() => {}), job.budget.cleanupMs);
+          if (!settled.settled) { orphan = true; job.cleanupStatus = "unconfirmed"; }
+        }
         if (orphan) {
           // 不关闭仍被工具使用的会话资源；隔离迟到事件，确认空闲后清理。
-          void Promise.resolve().then(() => agent.abort()).then(() => agent.dispose()).then(() => {
+          void Promise.resolve(pendingModel).catch(() => {}).then(() => agent.abort()).then(() => agent.dispose()).then(() => {
             if (job.executionId === executionId) { job.cleanupStatus = "stopped"; this.publish(job); }
           }).catch(() => {});
         } else {
@@ -175,7 +183,7 @@ export class Tasks {
           if (!disposed.settled || disposed.error) { job.cleanupStatus = "unconfirmed"; job.error = "子代理资源清理未确认"; }
         }
       }
-      delete job.agent; delete job.signalStop; delete job.stopSignal;
+      delete job.agent; delete job.modelClosing; delete job.signalStop; delete job.stopSignal;
       if (job.interrupted) { job.notified = false; this.publish(job); }
       else {
         job.endedAt = Date.now();
@@ -219,6 +227,27 @@ export class Tasks {
     if (job.status === "completed") throw new Error("子任务已成功完成，无需重试");
     if (!this.retryable(job)) throw new Error("该子任务没有可恢复的会话历史，无法重试");
     return this.launch(job, true);
+  }
+  async applyModel(job) {
+    const agent = job.agent;
+    const update = (job.modelUpdate || Promise.resolve()).catch(() => {}).then(async () => {
+      let selected;
+      do {
+        selected = this.model;
+        if (!selected || job.agent !== agent || job.modelClosing) return;
+        await agent.configure({ model: selected });
+      } while (selected !== this.model);
+      if (job.agent === agent) { job.runtime = agent.runtime?.() ?? job.runtime; this.publish(job); }
+    });
+    job.modelUpdate = update;
+    try { await update; }
+    finally { if (job.modelUpdate === update) delete job.modelUpdate; }
+  }
+  async configureModel(model) {
+    this.model = model;
+    await Promise.all([...this.jobs.values()]
+      .filter(job => job.agent && !job.modelClosing && ACTIVE.includes(job.status) && job.cleanupStatus !== "unconfirmed")
+      .map(job => this.applyModel(job)));
   }
   async append(id, text, mode = "steer") {
     if (typeof text !== "string" || !text.trim() || !["steer", "followUp"].includes(mode)) throw new Error("追加内容不能为空，mode 必须是 steer 或 followUp");

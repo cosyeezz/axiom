@@ -1899,6 +1899,13 @@ export class Sessions {
         this.database?.set(DEFAULTS_NS, "recent", recent);
         this.recentConfig = recent;
       }
+      if (subagentModel !== item.subagentModel || (!subagentModel && config.model !== previous?.model)) {
+        try { await item.tasks.configureModel(subagentModel || config.model); }
+        catch (error) {
+          await item.tasks.configureModel(item.subagentModel || previous?.model).catch(() => {});
+          throw error;
+        }
+      }
       item.subagentModel = subagentModel;
       item.subagentThinking = subagentThinking;
       item.queueType = selection.queueType || item.queueType;
@@ -2159,6 +2166,12 @@ export class Sessions {
     const result = await item.tasks.cancelTask(taskId, { ...options, source: "user" });
     this.scheduleTaskNotifications(item);
     return result;
+  }
+  async appendTask(id, taskId, text, mode = "steer") {
+    const item = await this.ensureLoaded(id);
+    if (item.closing || item.cancelling || item.safeStopping) throw new Error("会话正在停止，暂时无法发送子代理消息");
+    // 子代理对话不等于恢复主会话；保留用户停止后的通知冻结。
+    return item.tasks.append(taskId, text, mode);
   }
   async retryTask(id, taskId) {
     const item = await this.ensureLoaded(id);
