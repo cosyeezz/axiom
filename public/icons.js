@@ -9,9 +9,11 @@ const artwork = Object.freeze({
   // 压缩：四角向中心收拢（lucide shrink / ISC）。Continue.dev 的「Compact conversation」
   // 与 Zed 的 `/compact` 用的就是这个语汇；它的笔画间隙足够宽，16px 下不会糊成一团。
   compact: ['m15 15 6 6m-6-6v4.8m0-4.8h4.8', 'M9 19.8V15m0 0H4.2M9 15l-6 6', 'M15 4.2V9m0 0h4.8M15 9l6-6', 'M9 4.2V9m0 0H4.2M9 9 3 3'],
-  // 空心靶环在右上留出箭道；箭头从 (21,3) 指向靶心 (12,12)。
-  // 工具栏图形统一落在 [3,21]，中心为 (12,12)，不以填色增加视觉重量。
-  target: ['M12 3a9 9 0 1 0 9 9', 'M12 7a5 5 0 1 0 5 5', 'M21 3 12 12M12 8v4h4'],
+  // 素材/goal.svg：保留原始填充轮廓，外环与中心/箭头拆分以便主题配色。
+  target: [
+    'M4.358.877a8 8 0 0 1 4.47-.834a.75.75 0 0 1-.155 1.492a6.5 6.5 0 0 0-3.632.678l-.222.118A6.5 6.5 0 0 0 2.244 4.98l-.112.225a6.5 6.5 0 0 0 1.272 7.392l.18.174a6.5 6.5 0 0 0 3.314 1.636l.248.037a6.5 6.5 0 0 0 3.65-.576l.224-.112a6.5 6.5 0 0 0 3.445-6.43l.746-.077l.746-.078a8 8 0 0 1-4.24 7.913l-.276.138a8 8 0 0 1-4.492.709l-.306-.047a8 8 0 0 1-4.077-2.012l-.222-.214A8 8 0 0 1 .777 4.56l.139-.276a8 8 0 0 1 3.17-3.26zM15.133 6.503a.75.75 0 0 1 .824.668l-1.492.155a.75.75 0 0 1 .668-.823',
+    'M12.22.22a.75.75 0 0 1 1.28.53V2.5h1.75l.112.01a.75.75 0 0 1 .491 1.186l-.073.085l-3 3a.75.75 0 0 1-.53.22h-.38a4 4 0 0 1 .11 1.404l-.044.305a4 4 0 0 1-2.982 3.175l-.303.062a4 4 0 0 1-2.111-.223l-.283-.123a4 4 0 0 1-1.597-1.4l-.16-.264a4 4 0 0 1-.477-2.371l.046-.306a4 4 0 0 1 .933-1.907l.213-.224a4 4 0 0 1 1.861-1.02l.076-.015a.75.75 0 0 1 .27 1.474l-.185.051a2.5 2.5 0 0 0-.978.587l-.133.139c-.3.338-.5.751-.583 1.192l-.029.192a2.5 2.5 0 0 0 .298 1.482l.1.165a2.5 2.5 0 0 0 .998.874l.177.078a2.5 2.5 0 0 0 1.32.14l.189-.04a2.5 2.5 0 0 0 1.864-1.984l.027-.19A2.5 2.5 0 0 0 10.29 7h-.23L8.53 8.53a.75.75 0 1 1-1.06-1.06L9 5.94V3.75c0-.199.079-.39.22-.53zM10.5 4.061V5.5h1.44l1.5-1.5H12V2.56z',
+  ],
   info: ['M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18', 'M12 16v-5', 'M12 8h.01'],
   send: ['m21 3-7 18-4-7-7-4L21 3Z', 'm10 14 11-11'],
   // 素材/stop.svg 与 force stop.svg：圆角方块 / 警告三角，形状不依赖颜色区分。
@@ -26,7 +28,9 @@ const artwork = Object.freeze({
 
 export function composerIcon(name) {
   if (!Object.hasOwn(artwork, name)) throw new Error(`Unknown composer icon: ${name}`);
-  const body = artwork[name].map((d) => `<path d="${d}"/>`).join('');
+  const paths = artwork[name].map((d) => `<path d="${d}"/>`).join('');
+  // Fit the supplied 16px silhouette to the same centred 18px artwork bounds.
+  const body = name === 'target' ? `<g transform="translate(3 3) scale(1.125)">${paths}</g>` : paths;
   return `<svg class="action-icon composer-icon" data-icon="${name}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${body}</svg>`;
 }
 

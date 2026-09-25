@@ -66,14 +66,16 @@ try:
             for m in metrics:
                 assert abs(m['glyph']['width'] - 18) < .1 and abs(m['glyph']['height'] - 18) < .1, m
                 assert abs(m['glyph']['x'] - 12) < .1 and abs(m['glyph']['y'] - 12) < .1, m
-                assert all(fill == 'none' for fill in m['fills']), m
+                if m['name'] != 'target':
+                    assert all(fill == 'none' for fill in m['fills']), m
             # Neutral tools retain one colour; target paths supply the coloured artwork.
             assert len(set(m['color'] for m in metrics)) == 1, metrics
             target = page.locator('#goal-enter .composer-icon path')
             strokes = target.evaluate_all('nodes => nodes.map(el => getComputedStyle(el).stroke)')
-            assert len(strokes) == 3 and len(set(strokes)) == 2, strokes
-            assert strokes[0] == strokes[1] and strokes[2] == 'rgb(94, 106, 210)', strokes
-            assert target.last.get_attribute('d') == 'M21 3 12 12M12 8v4h4'
+            assert strokes == ['none', 'none'], strokes
+            fills = target.evaluate_all('nodes => nodes.map(el => getComputedStyle(el).fill)')
+            red = 'rgb(201, 81, 96)' if theme == 'dark' else 'rgb(192, 55, 74)'
+            assert fills == [metrics[0]['color'], red], fills
             send = page.locator('.composer-split [data-icon="send"]')
             assert send.count() == 1
             assert send.evaluate('el => getComputedStyle(el).color') == 'rgb(94, 106, 210)'
@@ -83,7 +85,8 @@ try:
                 expected = 'rgb(165, 53, 67)' if theme == 'dark' else 'rgb(192, 55, 74)'
                 assert svg.evaluate('el => getComputedStyle(el).color') == expected
             page.locator('#goal-enter').hover()
-            assert target.evaluate_all('nodes => nodes.map(el => getComputedStyle(el).stroke)') == strokes
+            assert target.last.evaluate('el => getComputedStyle(el).fill') == red
+            assert target.first.evaluate('el => getComputedStyle(el).fill') == page.locator('#goal-enter svg').evaluate('el => getComputedStyle(el).color')
             page.mouse.move(0, 0)
             # Hover must be actually perceptible against the composer surface. --raised was
             # only 1.33:1 in dark and 1.06:1 in light, i.e. invisible.
@@ -97,6 +100,13 @@ try:
             page.mouse.move(0, 0)
             page.wait_for_timeout(120)
             page.locator('.composer-wrap').screenshot(path=str(artifacts / f'{theme}.png'))
+        # Stress the same row with long context chips and the running timer.
+        page.evaluate('''() => {
+            document.querySelector('#context-chips').innerHTML =
+                '<button class="context-chip"><span>' + 'very-long-context-file-name/'.repeat(12) + '</span><span>×</span></button>';
+            document.querySelector('#task-timer').hidden = false;
+            document.querySelector('#task-timer-value').textContent = '12h 59m';
+        }''')
         page.set_viewport_size({'width': 390, 'height': 844})
         page.wait_for_timeout(250)
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
@@ -106,6 +116,13 @@ try:
                      glyphWidth: b.width, glyphHeight: b.height };
         })''')
         assert all(m['width'] == 20 and m['height'] == 20 for m in mobile), mobile
+        row = page.locator('.context-bar').evaluate('''el => {
+            const selectors = ['#goal-enter', '.composer-session-info', '#context-chips', '#task-timer'];
+            return selectors.map(s => el.querySelector(s).getBoundingClientRect()).map(r => ({left:r.left, right:r.right, y:r.y+r.height/2}));
+        }''')
+        assert max(r['y'] for r in row) - min(r['y'] for r in row) < .5, row
+        ordered = sorted(row, key=lambda r: r['left'])
+        assert all(a['right'] <= b['left'] for a, b in zip(ordered, ordered[1:])), row
         assert max(m['y'] for m in mobile) - min(m['y'] for m in mobile) < .5, mobile
         assert all(abs(m['glyphWidth'] - 18) < .1 and abs(m['glyphHeight'] - 18) < .1 for m in mobile), mobile
         page.locator('.composer-wrap').screenshot(path=str(artifacts / 'mobile.png'))
