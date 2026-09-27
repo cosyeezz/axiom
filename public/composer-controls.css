@@ -4,13 +4,13 @@
 #composer .actions > .selectors, #composer .actions > #stop, #composer .actions > #force-stop, #composer .actions > #send, #composer .actions > #send-steer, #composer .actions > #send-followup { display:none !important; }
 #composer .composer-model-trigger { height:30px; min-height:30px; min-width:0; max-width:420px; padding:4px 8px; flex:0 1 auto; display:flex; align-items:center; gap:8px; border:1px solid transparent; border-radius:6px; background:transparent; color:var(--muted); font:inherit; font-size:12px; }
 .composer-model-trigger span { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-#composer .composer-model-trigger:hover { background:var(--raised); color:var(--text); border-color:var(--line); }
+#composer .composer-model-trigger:hover { background:var(--raised); color:var(--ink); border-color:var(--line); }
 #composer .composer-split { display:flex; flex:0 0 140px; width:140px; margin-left:auto; border:1px solid var(--line); border-radius:6px; overflow:hidden; height:30px; background:var(--raised); }
-#composer .composer-split button { border:0; border-radius:0; height:28px; min-height:28px; padding:0 8px; background:transparent; color:var(--text); font-size:12px; display:flex; align-items:center; justify-content:center; gap:7px; }
+#composer .composer-split button { border:0; border-radius:0; height:28px; min-height:28px; padding:0 8px; background:transparent; color:var(--ink); font-size:12px; display:flex; align-items:center; justify-content:center; gap:7px; }
 #composer .composer-split button:first-child { flex:1; min-width:0; }
 #composer .composer-split button:last-child { flex:0 0 30px; width:30px; border-left:1px solid var(--line); }
 #composer .composer-split button:hover:not(:disabled) { background:var(--surface); }
-.composer-model-panel, .composer-operation-menu { position:fixed; margin:0; padding:6px; border:1px solid var(--line); border-radius:8px; background:var(--raised); color:var(--text); box-shadow:none; max-width:calc(100vw - 16px); max-height: min(440px, 70vh); overflow:auto; }
+.composer-model-panel, .composer-operation-menu { position:fixed; margin:0; padding:6px; border:1px solid var(--line); border-radius:8px; background:var(--raised); color:var(--ink); box-shadow:none; max-width:calc(100vw - 16px); max-height: min(440px, 70vh); overflow:auto; }
 .composer-model-panel { box-sizing:border-box; height:min(360px, 70vh); width:234px; }
 .composer-model-panel:popover-open { display:flex; gap:6px; }
 .composer-model-panel > .composer-choice-column { box-sizing:border-box; width:220px; }
@@ -21,9 +21,9 @@
 .composer-choice-row > .composer-favorite { flex:0 0 28px; width:28px; padding:4px; justify-content:center; color:var(--muted); }
 .composer-choice-row > .composer-favorite[aria-pressed="true"] { color:var(--accent); }
 .composer-choice-column h3 { margin:0 0 8px; padding:0 4px; font-size:11px; font-weight:500; color:var(--muted); }
-.composer-choice-column input { box-sizing:border-box; width:100%; height:32px; min-height:32px; padding:6px 10px; border:1px solid var(--line); border-radius:6px; background:var(--surface); color:var(--text); font-size:12px; }
+.composer-choice-column input { box-sizing:border-box; width:100%; height:32px; min-height:32px; padding:6px 10px; border:1px solid var(--line); border-radius:6px; background:var(--surface); color:var(--ink); font-size:12px; }
 .composer-choice-list { max-height:290px; overflow-y:auto; padding-top:6px; }
-.composer-choice-list button, .composer-operation-menu button { display:flex; align-items:center; gap:8px; width:100%; min-height:32px; padding:7px 8px; background:transparent; border:0; border-radius:5px; color:var(--text); text-align:left; font-size:12px; }
+.composer-choice-list button, .composer-operation-menu button { display:flex; align-items:center; gap:8px; width:100%; min-height:32px; padding:7px 8px; background:transparent; border:0; border-radius:5px; color:var(--ink); text-align:left; font-size:12px; }
 .composer-choice-list button span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
 .composer-choice-list button:hover, .composer-operation-menu button:hover, .composer-choice-list button[aria-pressed="true"], .composer-operation-menu button[aria-checked="true"] { background:var(--surface); }
 .composer-operation-menu { width:160px; }

@@ -1941,7 +1941,7 @@ function renderCompactionRun() {
   }
   if (!updateCompactionView) {
     const root = document.createElement('div'); root.id = 'compaction-documents';
-    $('compaction-run-stream-wrap').after(root);
+    $('compaction-run-trigger').after(root);
     updateCompactionView = createCompactionView(root, (sessionId, runId, knownRequests, revision) => request('session.compaction.attempt', { sessionId, runId, knownRequests, revision }));
     setInterval(() => { if (dialog.open && compactionRun()) void updateCompactionView(sessionId, compactionRun().id); }, 1000);
   }
@@ -1963,10 +1963,10 @@ function renderCompactionRun() {
     return span;
   }));
   $("compaction-run-trigger").replaceChildren(...[
+    run.result ? `结果：${compactionCount(run.result.tokensBefore)} → ${compactionCount(run.result.estimatedTokensAfter)} tokens（估算）· 引文 ${compactionCount(run.result.facts)} 条` : null,
     `触发时上下文 ${compactionCount(trigger.tokens)}${trigger.contextWindow ? ` / ${compactionCount(trigger.contextWindow)}` : ""} tokens${trigger.estimated ? "（估算）" : ""}`,
     `阈值 ${[trigger.tokenThreshold ? `${compactionCount(trigger.tokenThreshold)} tokens` : null, trigger.percentThreshold ? `${trigger.percentThreshold}%` : null].filter(Boolean).join(" 或 ") || "未设"}`,
     `保留最近 ${compactionCount(trigger.keepRecentTokens)} tokens`,
-    run.result ? `结果：${compactionCount(run.result.tokensBefore)} → ${compactionCount(run.result.estimatedTokensAfter)} tokens（估算）· 引文 ${compactionCount(run.result.facts)} 条` : null,
   ].filter(Boolean).map((text) => {
     const line = document.createElement("p");
     line.textContent = text;

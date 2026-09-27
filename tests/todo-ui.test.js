@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { publicSource } from './helpers/public-source.js';
 import { JSDOM } from 'jsdom';
 
-const source = (await readFile(new URL('../public/todo.js', import.meta.url), 'utf8')).replace(/^export /gm, '');
+const source = await publicSource('todo');
 const child = { id: 'c', level: 2, parentId: 'p', title: '<script>danger</script>', status: 'running', summary: '核对产物' };
 const snapshot = (mode = 'enabled') => ({ listId: 'list', version: 1, header: { paused: mode === 'paused' },
   counts: { targets: { total: 1, running: 1 } }, coverage: { complete: true },
@@ -20,13 +20,17 @@ test('Todo panel renders safe two-level text, target counts and global collapse 
     ui.show('a', snapshot());
     assert.equal(root.hidden, false);
     assert.equal(root.querySelector('#todo-list').hidden, true);
-    assert.equal(root.querySelector('[data-status="running"].todo-count').textContent, '1');
+    assert.equal(root.querySelector('[data-status="running"].todo-count').textContent, '1 进行中');
+    assert.equal(root.querySelector('.todo-heading').textContent, '任务清单');
+    assert.equal(root.querySelectorAll('.todo-count[data-status]').length, 1);
     root.querySelector('.todo-toggle').click();
     assert.equal(root.querySelector('#todo-list').hidden, false);
     assert.equal(dom.window.localStorage.getItem('axiom.todoExpanded'), '1');
     await new Promise(setImmediate);
+    assert.equal(root.querySelector('.todo-row > small').hidden, true);
     root.querySelector('.todo-item-title').click();
     await new Promise(setImmediate);
+    assert.equal(root.querySelector('.todo-item-title').getAttribute('aria-expanded'), 'true');
     assert.equal(root.querySelector('.todo-child').textContent, '<script>danger</script>核对产物');
     assert.equal(root.querySelector('script'), null);
     ui.show('b', snapshot('paused'));

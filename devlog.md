@@ -1,5 +1,14 @@
 # 开发记录
 
+## 2026-09-27 十二轮 UI 阅读与布局优化
+
+- 原因：用户要求至少10轮优化，重点指出任务确认显示原始JSON、内容难读且滚动过多；同时覆盖弹窗、Subagent、压缩会话、对齐、密度与图标。
+- 修改：完成12轮实质改动，逐轮记录见 `docs/ui-polish-rounds.md`。目标确认改为可读要求与验收清单，保留变更对照/技术原文；清单减少重复计数并对齐行首；输入控件修复未定义颜色；Subagent标题优先、说明按需展开；压缩结果前置、文档工具栏适配窄屏。
+- 决策：不改变授权、拒绝/反馈、暂停恢复、子代理发送/停止及压缩原文获取语义；沿用Linear主题token与共享SVG图标，无新依赖。浏览器预览只使用静态fixture，不读取用户会话或调用模型。
+- 文件：public/question.js、question.css、todo.js、todo.css、composer-controls.css、index.html、style.css、app.js、compaction-view.js；tests/question-ui.test.js、todo-ui.test.js、helpers/public-source.js、compaction-ui.py、compaction-document-ui.test.js、ui-polish-browser.py；README.md、docs/ui-polish-rounds.md、devlog.md。
+- 最终修正：为目标确认缓存实际宽度，避免 ResizeObserver 把展开造成的高度变化误判并重建内容；修正未选项 hover 被全局紫底覆盖；压缩结果顺序不变时不搬动节点；子代理输入框显式小内边距。修复浏览器 fixture 固定定位宽度冲突，并增加实际元素边界、hover 颜色及 Enter/空格/鼠标展开与焦点检查。
+- 验证：全量899项（897通过、2跳过、0失败）；Chromium专项检查通过（双主题、5种视口，确认卡/长内容/键盘、Subagent、压缩详情），已有问答布局及压缩浏览器回归通过；截图复核确认窄屏卡片不越界。合并前同步 origin/master 基线无变化。未调用付费模型、未测试真实移动设备软键盘；静态fixture验证布局和交互，不替代模型端到端验证。自动生成的无关代码索引漂移不纳入提交。
+
 ## 2026-09-27 Pi 服务启动修复
 
 - 原因：用可配置 Pi 代理取代固定重装依赖，并积累启动故障经验。

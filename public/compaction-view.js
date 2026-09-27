@@ -16,6 +16,8 @@ export function createCompactionView(root, load) {
       const body = document.createElement('div'); body.className = 'compaction-document-body markdown';
       item = { wrap, body, source: '', raw: code, positions: [0, 0] };
       toggle.textContent = code ? '查看 Markdown' : '查看原文';
+      toggle.setAttribute('aria-pressed', String(code));
+      body.tabIndex = 0; body.setAttribute('role', 'region'); body.setAttribute('aria-label', title);
       const draw = () => {
         item.pre ??= document.createElement('pre');
         item.md ??= document.createElement('div');
@@ -72,6 +74,13 @@ export function createCompactionView(root, load) {
       if (attempt.excerpts) section('excerpts', `原文核验 · ${attempt.excerpts.length} 项（不是语义核验）`, JSON.stringify(attempt.excerpts, null, 2), true);
       if (attempt.finalSummary) section('final', '最终摘要', attempt.finalSummary);
       if (attempt.stateDoc) section('task-state', '任务状态文档（截至压缩切点）', attempt.stateDoc);
+      // 结果优先；按需展开的请求诊断保留在后面，不随轮询重建节点。
+      const results = ['final', 'task-state'].map(id => sections.get(id)).filter(Boolean);
+      for (const [index, item] of results.entries()) {
+        if (!item.presented) { item.wrap.open = true; item.presented = true; }
+        const position = root.children[index];
+        if (position !== item.wrap) root.insertBefore(item.wrap, position || null);
+      }
     } catch (e) { if (version === generation) section('error', '过程记录读取失败', e.message, true); }
     finally { if (version === generation) busy = false; }
   };

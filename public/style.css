@@ -759,17 +759,19 @@ h1 {
   display: block;
   width: 100%;
   text-align: left;
-  background: color-mix(in srgb, var(--thought) 10%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--subagent) 45%, var(--line));
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-left: 3px solid var(--subagent);
   padding: 12px 16px;
   border-radius: 8px;
   margin: 12px 0;
 }
-.task-card:hover:not(:disabled) { background: color-mix(in srgb, var(--thought) 15%, var(--surface)); border-color: var(--subagent); }
+.task-card:hover:not(:disabled) { background: var(--raised); border-color: var(--subagent); }
 .task-card:focus-visible,
 .task-dialog :focus-visible { outline-color: var(--subagent); }
-.task-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 11px; }
+.task-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 8px; font-size: 12px; line-height: 1.5; }
+.task-cost { color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.task-meta .task-badge { border: 0; padding: 0; font-family: inherit; font-size: 12px; letter-spacing: 0; }
 .task-badge, .skill-badge { flex-shrink: 0; padding: 2px 6px; border: 1px solid currentColor; border-radius: 4px; color: var(--subagent); font: 500 11px/1.5 var(--mono); letter-spacing: 0.04em; }
 .skill-badge { color: var(--info); }
 .task-status { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
@@ -785,13 +787,14 @@ h1 {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
-  margin-top: 6px;
+  margin-top: 0;
   overflow: hidden;
   overflow-wrap: anywhere;
   white-space: normal;
-  font-size: 13px;
-  line-height: 1.6;
-  font-weight: 400;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.5;
+  font-weight: 500;
 }
 .task-dialog[open] { display: flex; flex-direction: column; }
 .task-dialog {
@@ -802,28 +805,42 @@ h1 {
   overflow: hidden;
 }
 .task-top { flex-shrink: 0; border-bottom: 1px solid var(--line); }
-.task-top header { border-bottom: 0; }
+.task-top header { border-bottom: 0; padding: 16px 24px 8px; gap: 12px; }
+.task-top header h2 { min-width: 0; overflow-wrap: anywhere; font-size: 16px; line-height: 1.5; }
+.task-top header form { flex-shrink: 0; }
 .task-top header form { margin-left: auto; }
-.task-navigation { display: flex; gap: 8px; padding: 0 24px 12px; }
+.task-navigation { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 24px 8px; }
 .task-navigation button { min-height: 36px; padding: 4px 12px; color: var(--muted); font-size: 12px; }
 .task-top h2 { color: var(--subagent); }
-.task-top .runtime-summary { padding: 0 24px 16px; }
+.task-top .runtime-summary { padding: 0 24px 8px; gap: 4px 12px; line-height: 1.5; }
 .task-body {
   min-height: 0;
   flex: 1;
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-  padding: 24px;
+  padding: 16px 24px;
 }
 .task-composer { flex-shrink: 0; padding: 12px 24px; border-top: 1px solid var(--line); display: grid; gap: 8px; }
 .task-composer label { display: grid; gap: 4px; min-width: 0; font-size: 12px; color: var(--muted); }
-.task-input { width: 100%; min-height: 64px; max-height: 160px; resize: vertical; }
+.task-input { width: 100%; min-height: 44px; max-height: 120px; padding: 8px 12px; resize: vertical; font-size: 14px; line-height: 1.5; }
 .task-composer-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
 .task-composer-controls > label { flex: 1; min-width: 160px; }
 .task-composer-controls select { max-width: 100%; }
-.task-composer-feedback { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-@media (max-width: 480px) { .task-composer { padding: 8px 12px; } }
+.task-composer-feedback { color: var(--muted); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.task-composer-feedback:empty { display: none; }
+.task-model-note { margin: 0; font-size: 12px; line-height: 1.5; color: var(--muted); }
+.task-context { margin-bottom: 12px; }
+.task-context > summary { cursor: pointer; color: var(--body-ink); font-size: 12px; padding: 8px 0; }
+@media (max-width: 480px) {
+  .task-composer { padding: 8px 12px; gap: 4px; }
+  .task-top header { padding: 12px 12px 8px; }
+  .task-top .runtime-summary, .task-navigation { padding-left: 12px; padding-right: 12px; }
+  .task-body { padding: 12px; }
+  .task-composer-controls { align-items: center; }
+  .task-composer-controls > label { min-width: 0; flex-basis: 100%; }
+  .task-composer-controls button, .task-composer-controls select { min-height: 44px; }
+}
 .task-body > h3 { margin: 0; font-size: 12px; color: var(--muted); }
 .task-body > .message { margin: 16px 0; }
 .task-body > .message:not(.user) > h3 { color: var(--subagent); }
@@ -1110,7 +1127,7 @@ svg.composer-icon[data-icon="target"] path:last-child { fill: var(--target-red);
 .message-compacted { font: 500 11px/1.5 var(--mono); letter-spacing: 0.04em; color: var(--subagent); }
 .compaction-card {
   border: 1px solid var(--line);
-  border-left: 3px solid var(--subagent);
+  border-left: 3px solid var(--accent);
   background: var(--surface);
   border-radius: 8px;
   padding: 8px 16px;
@@ -1121,11 +1138,13 @@ svg.composer-icon[data-icon="target"] path:last-child { fill: var(--target-red);
   flex-wrap: wrap;
   align-items: baseline;
   gap: 4px 12px;
-  font-size: 12px;
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--body-ink);
 }
-.compaction-card > summary small { color: var(--muted); font-variant-numeric: tabular-nums; }
-.compaction-summary { margin-top: 10px; font-size: 13px; overflow-wrap: anywhere; }
+.compaction-card > summary > span:first-child { font-weight: 500; overflow-wrap: anywhere; }
+.compaction-card > summary small { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.compaction-summary { margin-top: 12px; font-size: 14px; overflow-wrap: anywhere; }
 .compaction-tasks { display: grid; gap: 8px; margin-top: 12px; }
 .compaction-tasks:empty { display: none; }
 .compaction-tasks .task-card { margin: 0; }
@@ -1949,8 +1968,10 @@ summary:hover > .disclosure-action { color: var(--ink); }
 
 /* Compaction documents reuse the existing Linear surfaces and focus tokens. */
 .compaction-document { border: 1px solid var(--line); border-radius: 8px; margin-block: 12px; padding: 12px; }
-.compaction-document summary { cursor: pointer; font-weight: 500; }
-.compaction-document-actions { display:flex; gap:8px; margin-block:12px; }
-.compaction-document-actions button { min-height:40px; }
-.compaction-document-body { max-height:55vh; overflow:auto; scrollbar-gutter:stable; overscroll-behavior:contain; overflow-wrap:anywhere; }
+.compaction-document summary { cursor: pointer; font-weight: 500; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.compaction-document-actions { display:flex; flex-wrap:wrap; gap:8px; margin-block:12px; }
+.compaction-document-actions button { min-height:40px; padding:8px 12px; font-size:12px; background:var(--raised); color:var(--body-ink); border:1px solid var(--line); border-radius:8px; }
+.compaction-document-actions button:hover { background:var(--surface); color:var(--ink); }
+.compaction-document-body { max-height:55vh; overflow:auto; scrollbar-gutter:stable; overscroll-behavior:contain; overflow-wrap:anywhere; border-top:1px solid var(--line); padding-top:12px; }
+@media (max-width:480px) { .compaction-document { padding:8px; } .compaction-document-actions button { min-height:44px; } .compaction-document summary { min-height:44px; align-content:center; } }
 .compaction-document-body pre { white-space:pre-wrap; font-family:var(--mono); font-size:13px; }

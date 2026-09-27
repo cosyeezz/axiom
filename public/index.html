@@ -263,8 +263,8 @@
     </dialog>
     <template id="task-template">
       <button type="button" class="task-card" aria-haspopup="dialog">
-        <span class="task-meta"><span class="task-badge">子代理</span><span class="task-status"></span><span class="task-cost"></span><span class="task-open" aria-hidden="true">查看详情 ↗</span></span>
         <span class="task-title"></span>
+        <span class="task-meta"><span class="task-badge">子代理</span><span class="task-status"></span><span class="task-cost"></span><span class="task-open" aria-hidden="true">查看详情 ↗</span></span>
       </button>
       <dialog class="task-dialog">
         <div class="task-top">
@@ -279,20 +279,20 @@
           </nav>
         </div>
         <div class="task-body" role="region" aria-label="子代理执行记录" tabindex="0">
-          <h3>任务</h3>
-          <pre class="task-description"></pre>
+          <details class="task-context"><summary>查看完整任务要求</summary><pre class="task-description"></pre></details>
           <details class="task-system-prompt"><summary>系统提示词（运行时）</summary><pre></pre></details>
           <details class="task-billing"><summary>任务账单</summary><div class="task-bill-body"></div></details>
+          <details class="task-model-note"><summary>模型设置说明</summary><p>模型选择保存在当前会话，从下一次模型请求生效，新开的子代理也使用此模型。</p></details>
           <p class="task-error" role="alert" hidden></p>
         </div>
         <form class="task-composer">
-          <label>发给子代理<textarea class="task-input" rows="2" maxlength="100000" placeholder="补充要求或继续追问" required></textarea></label>
+          <label>发给子代理<textarea class="task-input" rows="1" maxlength="100000" placeholder="补充要求或继续追问" required></textarea></label>
           <div class="task-composer-controls">
             <label>子代理模型<select class="task-model" aria-label="当前会话子代理模型"></select></label>
             <select class="task-message-mode" aria-label="子代理消息发送方式"><option value="steer">立即插入</option><option value="followUp">本轮结束后</option></select>
             <button type="submit">发送</button>
           </div>
-          <small class="task-composer-feedback" role="status">模型选择保存在当前会话，从下一次模型请求生效，新开的子代理也使用此模型。</small>
+          <small class="task-composer-feedback" role="status"></small>
         </form>
       </dialog>
     </template>

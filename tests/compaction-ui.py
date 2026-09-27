@@ -80,7 +80,7 @@ with sync_playwright() as p:
         expect(documents.locator('summary').filter(has_text='请求 2 · 完整生成正文')).to_be_visible()
         state_doc = documents.locator('details').filter(has=page.locator('summary', has_text='任务状态文档'))
         expect(state_doc.locator('summary')).to_have_text('任务状态文档（截至压缩切点）')
-        state_doc.locator('summary').click()
+        assert state_doc.evaluate('(el) => el.open'), '任务状态首次展示应展开'
         state_body = state_doc.locator('.compaction-document-body')
         expect(state_body).to_be_visible()
         expect(state_body.locator('h1')).to_have_text('任务状态')
@@ -90,6 +90,7 @@ with sync_playwright() as p:
         expect(state_doc.locator('pre')).to_contain_text('# 任务状态')
         assert documents.locator('script,img').count() == 0
         for scheme in ['light', 'dark']:
+            page.evaluate('(theme) => document.documentElement.dataset.theme = theme', scheme)
             page.emulate_media(color_scheme=scheme)
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
             if out:

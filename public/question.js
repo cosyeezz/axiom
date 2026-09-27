@@ -24,6 +24,7 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
     const request = current();
     root.hidden = !request;
     if (!request) { activeKey = undefined; return; }
+    root.classList.toggle('question-todo', !!request.proposal);
     const key = keyOf(request.toolCallId);
     if (!drafts.has(key)) drafts.set(key, {
       tab: 0, answers: request.questions.map(() => []), custom: request.questions.map(() => ""),
@@ -32,7 +33,7 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
     const state = draft(), question = request.questions[state.tab];
     // 同组题按当前宽度一次测量最高内容，切题时不改变输入区高度。
     const width = root.clientWidth;
-    if (!measuring && state.width !== width) {
+    if (!request.proposal && !measuring && state.width !== width) {
       state.width = width;
       const selected = state.tab;
       state.panelHeight = 0;
@@ -42,12 +43,14 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
       });
       state.tab = selected;
     }
+    if (request.proposal) state.width = width;
     const disabled = !connected || state.sending;
     root.replaceChildren();
     const heading = el('div', 'question-heading');
     const emblem = el('span', 'question-emblem');
     emblem.append(actionIconNode('chat'));
-    heading.append(emblem, el('span', '', '需要你确认'), el('span', 'question-mode', question.multiple ? '可多选' : '单选'));
+    heading.append(emblem, el('span', '', request.proposal ? '确认任务目标' : '需要你确认'));
+    if (!request.proposal) heading.append(el('span', 'question-mode', question.multiple ? '可多选' : '单选'));
     root.append(heading);
     const tabs = el('div', 'question-tabs');
     tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', '待确认问题');
@@ -63,22 +66,65 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
     });
     root.append(tabs);
     const panel = el('div', 'question-panel'); panel.id = 'question-panel';
-    if (!measuring) panel.style.minHeight = `${state.panelHeight || 0}px`;
-    panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', `question-tab-${state.tab}`);
+    if (!request.proposal && !measuring) panel.style.minHeight = `${state.panelHeight || 0}px`;
+    panel.setAttribute('role', request.questions.length === 1 ? 'group' : 'tabpanel');
+    panel.setAttribute('aria-labelledby', request.questions.length === 1 ? 'question-title' : `question-tab-${state.tab}`);
     const title = el('h3', '', question.question); title.id = 'question-title';
     const description = el('p', 'question-description', question.description); description.id = 'question-description';
     panel.append(title, description);
     if (request.proposal) {
-      const details = el('details', 'question-proposal');
-      details.open = true;
-      details.append(el('summary', '', '完整目标与变更内容'));
-      const content = el('pre', '', JSON.stringify(request.proposal, null, 2));
-      content.style.whiteSpace = 'pre-wrap';
-      content.style.overflowWrap = 'anywhere';
-      content.style.maxHeight = '240px';
-      content.style.overflow = 'auto';
-      details.append(content);
-      panel.append(details);
+      const proposal = el('section', 'question-proposal');
+      proposal.setAttribute('aria-label', '目标与验收标准');
+      const checkNames = { tool: '工具验证', review: '检查确认', user: '由你验收' };
+      for (const change of request.proposal.changes || []) {
+        const removed = !!change.after?.deletedAt || !change.after;
+        const item = removed ? change.before || change.after : change.after;
+        if (!item) continue;
+        const kind = removed ? '删除目标' : !change.before ? '新增目标' : change.after.status === 'done' && change.before.status !== 'done' ? '验收目标' : '修改目标';
+        const card = el('article', 'question-goal');
+        const header = el('div', 'question-goal-header');
+        header.append(el('span', 'question-change-kind', kind), el('h4', 'question-goal-title', item.title));
+        card.append(header);
+        if (kind === '修改目标') {
+          const fields = [['title', '标题'], ['description', '范围与要求'], ['acceptance', '完成标准']];
+          const changed = fields.filter(([key]) => JSON.stringify(change.before[key]) !== JSON.stringify(item[key]));
+          card.append(el('p', 'question-change-note', `本次调整：${changed.map(([, label]) => label).join('、') || '目标信息'}`));
+          const previous = el('details', 'question-previous');
+          previous.append(el('summary', '', '对照原要求'), el('p', '', change.before.title), el('p', '', change.before.description));
+          const criteria = el('ul');
+          for (const criterion of change.before.acceptance || []) criteria.append(el('li', '', criterion.text));
+          previous.append(criteria); card.append(previous);
+        }
+        if (removed) card.append(el('p', 'question-change-note', '确认后移除此目标及其步骤；原要求如下。'));
+        if (item.description) {
+          card.append(el('div', 'question-section-label', '范围与要求'), el('p', 'question-goal-description', item.description));
+        }
+        if (item.acceptance?.length) {
+          card.append(el('div', 'question-section-label', '完成标准'));
+          const criteria = el('ul', 'question-criteria');
+          for (const criterion of item.acceptance) {
+            const row = el('li');
+            row.append(el('span', '', criterion.text), el('span', 'question-check-method', checkNames[criterion.check] || '检查确认'));
+            criteria.append(row);
+          }
+          card.append(criteria);
+        }
+        if (kind === '验收目标') {
+          if (item.summary) card.append(el('div', 'question-section-label', '实施结果'), el('p', 'question-goal-description', item.summary));
+          for (const verification of item.verification || []) {
+            const criterion = item.acceptance?.find((c) => c.criterionId === verification.criterionId);
+            const evidence = el('div', 'question-evidence');
+            evidence.append(el('strong', '', criterion?.text || verification.criterionId), el('p', '', verification.result));
+            for (const ref of verification.refs || []) evidence.append(el('small', '', ref.messageId ? `消息依据：${ref.messageId}` : `工具依据：${ref.toolCallId}`));
+            card.append(evidence);
+          }
+        }
+        proposal.append(card);
+      }
+      const technical = el('details', 'question-technical');
+      technical.append(el('summary', '', '查看技术原文'), el('pre', '', JSON.stringify(request.proposal, null, 2)));
+      proposal.append(technical);
+      panel.append(proposal);
     }
     const options = el('div', 'question-options');
     options.setAttribute('role', question.multiple ? 'group' : 'radiogroup');
@@ -125,7 +171,7 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
       input.style.height = 'auto';
       input.style.height = `${input.scrollHeight + input.offsetHeight - input.clientHeight}px`;
       input.scrollTop = 0;
-      if (!measuring) {
+      if (!request.proposal && !measuring) {
         state.panelHeight = Math.max(state.panelHeight || 0, panel.getBoundingClientRect().height);
         panel.style.minHeight = `${state.panelHeight}px`;
       }
@@ -133,10 +179,10 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
     panel.append(input); root.append(panel);
     resizeInput();
     const footer = el('div', 'question-footer'), progress = el('span', 'question-progress');
-    const submit = el('button', 'question-submit', state.sending ? '提交中…' : '提交全部答案'); submit.type = 'button'; submit.onclick = send;
+    const submit = el('button', 'question-submit', state.sending ? '提交中…' : request.proposal ? '提交选择' : '提交全部答案'); submit.type = 'button'; submit.onclick = send;
     function updateFooter() {
       const count = answersOf(state).filter((answer) => answer.length).length;
-      progress.textContent = connected ? `已回答 ${count} / ${request.questions.length}` : '连接已断开，重连后可提交';
+      progress.textContent = !connected ? '连接已断开，重连后可提交' : request.proposal ? (count ? '选择后提交才会生效' : '请确认目标，或填写修改意见') : `已回答 ${count} / ${request.questions.length}`;
       submit.disabled = disabled || count !== request.questions.length;
       tabs.querySelectorAll('button').forEach((button, i) => {
         const done = answersOf(state)[i].length > 0;
@@ -160,7 +206,7 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
       hint.append(document.createTextNode(label)); help.append(hint);
     }
     help.setAttribute('aria-label', '左右方向键切题，上下方向键移动，空格选择，Enter 下一题或提交');
-    root.append(help);
+    if (!request.proposal) root.append(help);
     if (state.error) { const error = el('p', 'question-error', state.error); error.setAttribute('role', 'alert'); root.append(error); }
     if (measuring) return;
     activeKey = key;
@@ -211,7 +257,7 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
       event.preventDefault(); switchTab(state.tab + (event.key === 'ArrowRight' ? 1 : -1));
     } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
       event.preventDefault(); state.focus[state.tab] = Math.max(0, Math.min(current().questions[state.tab].options.length, state.focus[state.tab] + (event.key === 'ArrowDown' ? 1 : -1))); focusOption();
-    } else if (event.key === 'Enter' && !event.target.matches('.question-submit')) {
+    } else if (event.key === 'Enter' && !event.target.matches('.question-submit, summary')) {
       event.preventDefault();
       if (!answersOf(state)[state.tab].length) return;
       if (state.tab === current().questions.length - 1) void send(); else switchTab(state.tab + 1);

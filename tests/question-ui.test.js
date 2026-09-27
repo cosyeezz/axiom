@@ -4,6 +4,39 @@ import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { publicSource } from './helpers/public-source.js';
 const source = await publicSource('question');
+const goal = { title: '优化确认界面', description: '保留完整要求 <img src=x onerror=alert(1)>', acceptance: [{ criterionId: 'readable', text: '清晰展示目标', check: 'tool' }] };
+function proposalFixture(changes) {
+  const dom = new JSDOM('<section id="dock"></section>', { runScripts: 'outside-only' });
+  dom.window.eval(source + '\nwindow.makeQuestion = createQuestionUI;');
+  const root = dom.window.document.querySelector('#dock');
+  dom.window.makeQuestion({ root, reply: async () => {} }).show('s', [{ toolCallId: 'proposal', proposal: { changes }, questions: [{ header: '确认', question: '确认这些目标？', options: [{ label: '同意' }, { label: '拒绝' }] }] }]);
+  return { dom, root };
+}
+test('todo proposal presents complete readable requirements, with safe optional technical source', () => {
+  const { dom, root } = proposalFixture([{ before: null, after: goal }]);
+  try {
+    assert.equal(root.querySelector('.question-goal-title').textContent, goal.title);
+    assert.equal(root.querySelector('.question-goal-description').textContent, goal.description);
+    assert.match(root.querySelector('.question-criteria').textContent, /清晰展示目标工具验证/);
+    assert.equal(root.querySelector('img'), null);
+    assert.equal(root.querySelector('.question-technical').open, false);
+    assert.equal(root.querySelector('[aria-checked="true"]'), null);
+  } finally { dom.window.close(); }
+});
+test('todo proposal distinguishes changes, deletion and acceptance without losing evidence', () => {
+  const { dom, root } = proposalFixture([
+    { before: goal, after: { ...goal, title: '新版目标' } },
+    { before: goal, after: { ...goal, deletedAt: 123 } },
+    { before: { ...goal, status: 'running' }, after: { ...goal, status: 'done', summary: '优化已完成', verification: [{ criterionId: 'readable', result: '截图检查通过', refs: [{ toolCallId: 'evidence-1' }] }] } },
+  ]);
+  try {
+    assert.deepEqual([...root.querySelectorAll('.question-change-kind')].map(n => n.textContent), ['修改目标', '删除目标', '验收目标']);
+    assert.match(root.querySelector('.question-change-note').textContent, /本次调整：标题/);
+    assert.match(root.querySelector('.question-previous').textContent, /优化确认界面/);
+    assert.match(root.querySelector('.question-evidence').textContent, /清晰展示目标截图检查通过工具依据：evidence-1/);
+    assert.equal(root.querySelectorAll('.question-goal-description').length, 4);
+  } finally { dom.window.close(); }
+});
 test('question UI keyboard, custom answers, reconnect, session isolation and submission', async () => {
   const dom = new JSDOM('<button id="prompt">输入</button><section id="dock"></section>', { runScripts: 'outside-only' });
   const w = dom.window, d = w.document, calls = [];
