@@ -187,7 +187,7 @@ export const command = z.discriminatedUnion("type", [
 
   z.object({ id, type: z.literal("service.status") }).strict(),
   z.object({ id, type: z.literal("service.update.check") }).strict(),
-  z.object({ id, type: z.literal("service.restart"), mode: z.enum(["quick", "rebuild", "update"]), sha: z.string().regex(/^[0-9a-f]{40}$/i).optional() }).strict(),
+  z.object({ id, type: z.literal("service.restart"), mode: z.enum(["quick", "rebuild", "update"]), sha: z.string().regex(/^[0-9a-f]{40}$/i).optional(), repair: z.object({ provider: z.string().regex(/^[\w.-]{1,100}$/), model: z.string().regex(/^[\w./:@+-]{1,200}$/), thinking: z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]) }).strict().optional() }).strict(),
   // 远程访问（Tailscale）：get 本地/远程均可读；configure/login 仅限本地连接（server.js 内拦截远程）。
   z.object({ id, type: z.literal("remote.get") }).strict(),
   z.object({ id, type: z.literal("remote.login") }).strict(),

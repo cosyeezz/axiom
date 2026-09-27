@@ -100,6 +100,28 @@ test("重启对话框：quick/rebuild 不带 sha，拒绝时反馈且解锁，�
   } finally { dom.window.close(); }
 });
 
+test("Pi 修复发送供应商模型思考配置，离线走维护入口", async () => {
+  for (const ready of [true, false]) {
+    const { dom, ui, $, calls, fetches, tick, settle } = await setup({ ready, respond: async (url) => ({ ok: true, json: async () => url.endsWith("/status") ? { ready: false, status: "failed" } : { accepted: true } }) });
+    try {
+      ui.apply({ managed: true, maintenance: { url: "http://127.0.0.1:12345", token: "test" } });
+      await settle();
+      $("repair-provider").value = "openai";
+      $("repair-model").value = "custom/model";
+      $("repair-thinking").value = "high";
+      $("restart-rebuild").click();
+      assert.equal($("restart-dialog").open, true);
+      $("restart-form").dispatchEvent(new dom.window.Event("submit", { cancelable: true }));
+      await tick();
+      const body = ready ? calls[0].args : JSON.parse(fetches.find((f) => f.url.endsWith("/recover")).opts.body);
+      assert.equal(body.mode, "rebuild");
+      assert.equal(body.repair.provider, "openai");
+      assert.equal(body.repair.model, "custom/model");
+      assert.equal(body.repair.thinking, "high");
+    } finally { ui.stop(); dom.window.close(); }
+  }
+});
+
 test("持久化操作记录：扁平契约渲染，status 不带 operation 时保留历史", async () => {
   const { dom, ui, $ } = await setup();
   try {
@@ -118,7 +140,7 @@ test("持久化操作记录：扁平契约渲染，status 不带 operation 时�
     ui.apply({ managed: true }); // service.status 不带 operation：保留上次记录
     assert.match($("service-history").textContent, /重启服务：成功/);
     ui.apply({ managed: true, operation: { operation: "rebuild", status: "running", phase: "weird", startedAt: t } });
-    assert.match($("service-history").textContent, /修复依赖并重启：进行中（weird）/);
+    assert.match($("service-history").textContent, /Pi 修复并重启：进行中（weird）/);
     ui.apply({ managed: true, operation: { operation: null, status: "idle" } });
     assert.match($("service-history").textContent, /尚未执行任何操作/);
   } finally { dom.window.close(); }

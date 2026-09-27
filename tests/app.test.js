@@ -1239,13 +1239,15 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("service-update-section").hidden, true, "dev hides the update group");
     const restartRequests = () => requests.filter((r) => r.type === "service.restart");
     window.confirm = () => { throw new Error("must use styled dialog"); };
+    $("repair-provider").value = "openai";
+    $("repair-model").value = "test-model";
     for (const mode of ["quick", "rebuild"]) {
       const before = restartRequests().length;
       $(`restart-${mode}`).click();
       assert.equal($("restart-dialog").open, true);
       assert.equal(window.document.activeElement, $("restart-cancel"));
       assert.match($("restart-description").textContent,
-        mode === "quick" ? /不修复依赖/ : /数分钟/);
+        mode === "quick" ? /不修复依赖/ : /独立 Pi/);
       assert.equal(restartRequests().length, before);
       $("restart-cancel").click();
       assert.equal($("restart-dialog").open, false);

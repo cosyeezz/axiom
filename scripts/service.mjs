@@ -13,6 +13,7 @@ import { Database } from "../src/database.js";
 import { npmSpec, commitFile, validateCommit } from "../src/update.js";
 import { createMaintState, redact, sanitize } from "./maint-state.mjs";
 import { startMaintServer } from "./maint-server.mjs";
+import { validateRepairConfig, readRepairConfig, saveRepairConfig, preparePiRepair, runPiRepair, recordPiRepair } from "./pi-repair.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 let output = "inherit";
@@ -297,13 +298,16 @@ export async function supervise() {
   // 准备阶段失败且 worker 仍存活：通知其解锁 stopping 继续服务（worker 侧 app.resume）。
   const resume = () => { if (workerAlive()) child.send({ type: "service.resume" }, () => {}); };
   // worker 已退出时的恢复写操作：仅允许在无存活 worker 时执行，串行由 restarting 保证。
-  function recover(mode) {
+  function recover(mode, repair) {
+    if (repair !== undefined) { try { validateRepairConfig(repair); } catch (error) { return { code: 400, error: error.message }; } }
     if (workerAlive()) return { code: 409, error: "worker 仍在运行；请通过页面重启，活动任务需先在页面停止" };
     if (restarting || stopping) return { code: 409, error: "维护操作已在进行或守护进程正在停止" };
     restarting = true;
     const operationId = newOperationId();
+    const diagnostic = `${state.data.error || ""}\n${state.data.log || ""}`;
     void state.begin(operationId, mode);
-    setTimeout(() => { void runOp(mode, undefined, operationId).catch((error) => { console.error(error); process.exitCode = 1; }); }, 0);
+    if (mode === "rebuild") state.appendLog(diagnostic);
+    setTimeout(() => { void runOp(mode, undefined, operationId, repair).catch((error) => { console.error(error); process.exitCode = 1; }); }, 0);
     return { operationId };
   }
   const maintenance = await startMaintServer({
@@ -434,6 +438,9 @@ export async function supervise() {
     const reject = (error) => child.send({ type: "service.rejected", requestId, error }, () => {});
     if (restarting || stopping) { reject(restarting ? "维护操作已在进行，请等待完成" : "服务正在停止"); return; }
     const mode = message.mode;
+    if (message.repair !== undefined) {
+      try { validateRepairConfig(message.repair); } catch (error) { reject(error.message); resume(); return; }
+    }
     const invalid = !["quick", "rebuild", "update"].includes(mode) ||
       (mode === "update" && !/^[0-9a-f]{40}$/i.test(message.sha ?? ""));
     if (invalid) {
@@ -443,10 +450,12 @@ export async function supervise() {
     }
     restarting = true;
     const operationId = newOperationId();
+    const diagnostic = `${state.data.error || ""}\n${state.data.log || ""}`;
     void state.begin(operationId, mode);
+    if (mode === "rebuild") state.appendLog(diagnostic);
     // Allow the WebSocket acknowledgment to flush before closing the worker.
     child.send({ type: "service.accepted", requestId, operationId }, () => {});
-    setTimeout(() => { void runOp(mode, message.sha, operationId).catch((error) => { console.error(error); process.exitCode = 1; }); }, 150);
+    setTimeout(() => { void runOp(mode, message.sha, operationId, message.repair).catch((error) => { console.error(error); process.exitCode = 1; }); }, 150);
   }
   async function restoreWorker(error) {
     if (!await spawnWorker(sanitize(error, redactions))) {
@@ -455,8 +464,39 @@ export async function supervise() {
     }
     return false;
   }
-  async function runOp(mode, sha, operationId) {
+  async function runOp(mode, sha, operationId, repairConfig) {
     let retryRecovery = false;
+    if (mode === "rebuild") {
+      let prepared, report = "", ready = false, error = "";
+      const diagnostic = `${state.data.error || ""}\n${state.data.log || ""}`;
+      try {
+        clearTimeout(restartTimer);
+        restartTimer = null;
+        failures = 0;
+        await state.phase("preparing");
+        const config = repairConfig ? await saveRepairConfig(logDir, repairConfig) : await readRepairConfig(logDir);
+        prepared = await preparePiRepair({ root, home: logDir, config, npmRoot: await npmRun(run, ["root", "-g"], root, true) });
+        await state.phase("stopping");
+        const code = await stopChild();
+        if (code !== 0) throw new Error(`worker 停止退出码 ${code}，已取消 Pi 修复`);
+        await state.phase("repairing");
+        report = await runPiRepair(prepared, { root, log: diagnostic, onLog: (text) => { logLine(text); state.appendLog(text); } });
+        ready = await spawnWorker("");
+        if (!ready) throw new Error("Pi 已结束，但修复后实例未就绪，请检查日志");
+        await state.succeed();
+      } catch (cause) {
+        error = cause.message;
+        await state.fail(cause);
+        if (workerAlive()) resume();
+      } finally {
+        if (prepared) {
+          try { await recordPiRepair(prepared.memory, { operationId, ready, report, error, redactions }); }
+          catch (cause) { await state.fail(`修复记录写入失败：${cause.message}；服务就绪：${ready}`); }
+        }
+        restarting = false;
+      }
+      return;
+    }
     try {
       clearTimeout(restartTimer);
       restartTimer = null;

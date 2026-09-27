@@ -423,7 +423,12 @@
           <h3 id="service-restart-title">重启</h3>
           <div class="service-actions">
             <div class="service-action"><button type="button" id="restart-quick" class="secondary" aria-haspopup="dialog" aria-controls="restart-dialog" disabled>重启服务</button><p>仅重启服务，不修复依赖。</p></div>
-            <div class="service-action"><button type="button" id="restart-rebuild" class="secondary" aria-haspopup="dialog" aria-controls="restart-dialog" disabled>修复依赖并重启</button><p>重新安装依赖、执行构建后启动，可能需要数分钟。</p></div>
+            <div class="service-action"><button type="button" id="restart-rebuild" class="secondary" aria-haspopup="dialog" aria-controls="restart-dialog" disabled>Pi 修复并重启</button><p>启动独立 Pi 诊断启动故障并修复，使用本机 Pi 的供应商凭证，可能产生模型费用。</p>
+              <label>供应商 <input id="repair-provider" type="text" maxlength="100" placeholder="例如 openai" autocomplete="off"></label>
+              <label>模型 ID <input id="repair-model" type="text" maxlength="200" placeholder="使用 Pi 已配置的模型 ID" autocomplete="off"></label>
+              <label>思考程度 <select id="repair-thinking"><option value="off">关闭</option><option value="minimal">最低</option><option value="low">低</option><option value="medium" selected>中</option><option value="high">高</option><option value="xhigh">极高</option><option value="max">最高</option></select></label>
+              <p>配置在本浏览器自动保留，执行时保存到本机。修复经验存入 AXIOM_HOME/service-repair-prompt.md。</p>
+            </div>
             <div class="service-action"><button type="button" id="service-recover" class="secondary" hidden>尝试恢复服务</button><p>页面与服务断开且业务进程未运行时，请求守护进程重新拉起。</p></div>
           </div>
         </section>

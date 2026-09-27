@@ -71,7 +71,7 @@ const service = {
   importDir: join(getAgentDir(), "sessions"),
   models,
   version: JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8")).version,
-  restart: process.send ? (mode, sha) => new Promise((resolve, reject) => {
+  restart: process.send ? (mode, sha, repair) => new Promise((resolve, reject) => {
     if (mode === "update") {
       if (process.env.AXIOM_DEV === "1") return reject(new Error("开发环境不执行安装版更新"));
       try { sha = validateCommit(sha); } catch (error) { reject(error); return; }
@@ -86,7 +86,7 @@ const service = {
     // 回执超时不等于拒绝：保留维护锁，由守护进程状态给出最终结论。
     const timer = setTimeout(() => { finish(); resolve({ unconfirmed: true }); }, 5000);
     process.on("message", onMessage);
-    process.send({ type: "service.restart", mode, sha, requestId }, (error) => {
+    process.send({ type: "service.restart", mode, sha, repair, requestId }, (error) => {
       if (error) { finish(); reject(error); }
     });
   }) : undefined,

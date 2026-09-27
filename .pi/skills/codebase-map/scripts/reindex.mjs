@@ -98,6 +98,7 @@ const MODULE_INFO = {
   "tests/memory-tags.test.js": "标签边界、代码块、流式前缀与合法性回归",
   "tests/pi-memory.test.js": "Pi事件接入、turn计数与请求前提示注入回归",
   "tests/memory-ui.test.js": "摘要记录入口与助手标签隐藏回归",
+  "scripts/pi-repair.mjs": "独立全局 Pi 启动修复、配置校验与修复经验沉淀",
   "scripts/maint-server.mjs": "loopback维护HTTP：来源校验、随机凭证、状态与离线恢复",
   "scripts/maint-state.mjs": "守护维护状态：持久化阶段、最近结果与有界脱敏证据",
   "tests/service-settings.test.js": "服务设置操作、确认更新、进度与离线恢复回归",

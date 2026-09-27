@@ -311,7 +311,7 @@ export function createServerApp(sessions, service = {}) {
               if (hasActiveWork())
                 throw new Error("还有会话正在运行，请先停止所有任务再重启");
               stopping = true;
-              try { data = { restarting: true, ...await service.restart(request.mode, request.sha) }; }
+              try { data = { restarting: true, ...await service.restart(request.mode, request.sha, request.repair) }; }
               catch (error) { stopping = false; throw error; }
               break;
             case "capabilities.list":

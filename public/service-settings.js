@@ -20,17 +20,27 @@ export function initServiceSettings({ request, isReady }) {
   const $ = (id) => document.getElementById(id);
   let managed = false, restarting = false, checking = false, update = null;
   let pollTimer, polling = false, lastState = null, recovering = false, submittedAt = 0;
-  const names = { quick: "重启服务", rebuild: "修复依赖并重启", update: "安装更新", install: "安装更新" };
+  const names = { quick: "重启服务", rebuild: "Pi 修复并重启", update: "安装更新", install: "安装更新" };
   const statusNames = { running: "进行中", succeeded: "成功", failed: "失败", interrupted: "已中断" };
   // 阶段名本地化，未知阶段原样展示。
-  const phaseNames = { preparing: "准备安装", stopping: "保存并停止", swapping: "切换安装", building: "构建", starting: "启动服务", boot: "启动", ready: "就绪", stop: "停止服务", build: "构建", download: "下载更新", install: "安装更新", start: "启动服务", recover: "恢复服务" };
+  const phaseNames = { repairing: "Pi 诊断修复", preparing: "准备安装", stopping: "保存并停止", swapping: "切换安装", building: "构建", starting: "启动服务", boot: "启动", ready: "就绪", stop: "停止服务", build: "构建", download: "下载更新", install: "安装更新", start: "启动服务", recover: "恢复服务" };
   const phaseText = (phase) => (phase ? (phaseNames[phase] ?? phase) : "…");
+
+  const repairConfig = () => ({ provider: $("repair-provider")?.value.trim() || "", model: $("repair-model")?.value.trim() || "", thinking: $("repair-thinking")?.value || "medium" });
+  for (const key of ["provider", "model", "thinking"]) {
+    const field = $(`repair-${key}`);
+    if (!field) continue;
+    try { const saved = JSON.parse(localStorage.getItem("axiom.service-repair") || "null"); if (saved?.[key]) field.value = saved[key]; } catch {}
+    field.onchange = () => { try { localStorage.setItem("axiom.service-repair", JSON.stringify(repairConfig())); } catch {} };
+  }
 
   function sync() {
     const ready = isReady() && managed && !restarting && !checking;
     for (const id of ["restart-quick", "restart-rebuild"]) {
       $(id).disabled = !ready;
     }
+    if (!isReady()) $("restart-rebuild").disabled = !readMaintenance() || recovering || !lastState || lastState.unreachable || lastState.ready || lastState.status === "running";
+    for (const key of ["provider", "model", "thinking"]) if ($(`repair-${key}`)) $(`repair-${key}`).disabled = restarting || recovering;
     $("update-check").disabled = !ready;
     $("update-install").disabled = !ready;
     const recover = $("service-recover");
@@ -99,7 +109,11 @@ export function initServiceSettings({ request, isReady }) {
   }
 
   function openDialog(mode) {
-    if (!isReady() || !managed || restarting) return;
+    if (restarting || (mode !== "rebuild" && (!isReady() || !managed))) return;
+    if (mode === "rebuild" && (!repairConfig().provider || !repairConfig().model)) {
+      $("service-feedback").textContent = "请先填写修复代理的供应商和模型 ID。";
+      return;
+    }
     const dialog = $("restart-dialog");
     dialog.dataset.mode = mode;
     $("restart-title").textContent = names[mode];
@@ -107,7 +121,7 @@ export function initServiceSettings({ request, isReady }) {
       ? `下载并安装新版本 ${update.remote}（当前 ${update.local}），随后自动重启；所有页面会暂时断开连接。`
       : mode === "quick"
         ? "仅重启服务，不修复依赖。所有页面会暂时断开连接，随后自动重连。"
-        : "重新安装依赖、执行构建后启动，可能需要数分钟。所有页面会暂时断开连接，随后自动重连。";
+        : "授权独立 Pi 代理检查并修改当前安装的依赖、构建及启动配置。业务服务会停止，修复报告会沉淀到本机提示词文档；可能产生模型费用，最终以新实例就绪核验为准。";
     $("restart-submit").textContent = `确认${names[mode]}`;
     dialog.showModal();
     $("restart-cancel").focus();
@@ -138,6 +152,15 @@ export function initServiceSettings({ request, isReady }) {
     if (!dialog.open) return;
     const mode = dialog.dataset.mode;
     dialog.close();
+    if (mode === "rebuild" && !isReady()) {
+      recovering = true;
+      sync();
+      const result = await maintenanceRequest("/recover", { method: "POST", body: { mode: "rebuild", repair: repairConfig() } });
+      recovering = false;
+      $("service-feedback").textContent = result?.accepted ? "Pi 修复请求已接受，请等待维护记录更新。" : `修复请求失败：${result?.error || "维护端点不可达"}`;
+      sync();
+      return;
+    }
     if (!isReady() || !managed || restarting) return;
     restarting = true;
     submittedAt = Date.now(); // 守护记账前的短暂窗口内，轮询不因 idle 提前解锁
@@ -145,7 +168,7 @@ export function initServiceSettings({ request, isReady }) {
     // 不提示成功：接受请求只代表开始执行，真实结果按持久化操作记录展示（轮询或重连后覆盖）。
     $("service-feedback").textContent = `${names[mode]}请求已提交，服务将重启并断开页面连接；请勿重复操作，结果以最近操作为准。`;
     try {
-      await request("service.restart", mode === "install" ? { mode: "update", sha: update.sha } : { mode });
+      await request("service.restart", mode === "install" ? { mode: "update", sha: update.sha } : { mode, ...(mode === "rebuild" ? { repair: repairConfig() } : {}) });
     } catch (e) {
       restarting = false;
       submittedAt = 0;

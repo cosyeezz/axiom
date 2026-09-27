@@ -3,6 +3,7 @@
 import { createServer } from "node:http";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { sanitize } from "./maint-state.mjs";
+import { validateRepairConfig } from "./pi-repair.mjs";
 
 const MAX_BODY = 1024;
 const hash = (value) => createHash("sha256").update(value).digest();
@@ -61,10 +62,13 @@ export async function startMaintServer({ state, token, origins = [], recover, re
         // 严格对象：拒绝数组/原始值/多余键。
         const mode = parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed.mode : undefined;
         if (typeof mode !== "string" || !["quick", "rebuild"].includes(mode) ||
-            Object.keys(parsed).some((key) => key !== "mode"))
+            Object.keys(parsed).some((key) => key !== "mode" && key !== "repair"))
           return json(res, 400, { error: 'body 必须是 {"mode":"quick"} 或 {"mode":"rebuild"}' }, allow);
         let result;
-        try { result = recover(mode); }
+        try {
+          if (parsed.repair !== undefined) validateRepairConfig(parsed.repair);
+        } catch (error) { return json(res, 400, { error: error.message }, allow); }
+        try { result = recover(mode, parsed.repair); }
         // 500 报文也脱敏：错误信息可能含安装/用户路径，页面不可见源码位置。
         catch (error) { return json(res, 500, { error: `恢复请求处理失败：${sanitize(error.message, redactions)}` }, allow); }
         if (result.error) return json(res, result.code ?? 409, { error: result.error }, allow);

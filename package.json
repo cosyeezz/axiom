@@ -23,6 +23,7 @@
   "tests",
   "package-lock.json",
   "README.md",
+  "docs/service-repair-prompt.md",
   "LICENSE",
   "install.sh",
   "install.ps1",

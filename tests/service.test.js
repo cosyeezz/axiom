@@ -38,7 +38,7 @@ const buildWorkspace = async (npm = false) => {
   await mkdir(join(root, "src"), { recursive: true });
   await writeFile(join(root, "package.json"), JSON.stringify({ name: "axiom", version: "0.0.0", private: true }));
   await writeFile(join(root, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: {} }));
-  for (const name of ["service.mjs", "maint-state.mjs", "maint-server.mjs"])
+  for (const name of ["service.mjs", "maint-state.mjs", "maint-server.mjs", "pi-repair.mjs"])
     await writeFile(join(root, "scripts", name), await readFile(new URL(`../scripts/${name}`, import.meta.url)));
   for (const name of ["update.js", "database.js"])
     await writeFile(join(root, "src", name), await readFile(new URL(`../src/${name}`, import.meta.url)));
@@ -313,7 +313,7 @@ test("update install failure leaves running install untouched and resumes worker
   } finally { await teardown(base, child); }
 });
 
-test("rebuild cancels swap when worker stop exits non-zero", async () => {
+test("Pi repair preparation failure preserves worker and dependencies", async () => {
   const { base, root, home } = await buildWorkspace();
   const npm = await installNpmShim(base);
   const child = await startTest(root, {
@@ -325,17 +325,15 @@ test("rebuild cancels swap when worker stop exits non-zero", async () => {
     await mkdir(join(root, "node_modules"), { recursive: true });
     await writeFile(join(root, "node_modules", "old-marker"), "1");
     await until(async () => (await getStatus(root)).status === "failed");
-    assert.ok(/退出码/.test((await stateOf(root, join(base, "home"))).error));
+    assert.ok(/修复配置/.test((await stateOf(root, join(base, "home"))).error));
     assert.equal(existsSync(join(root, ".node_modules-backup")), false);
     assert.equal(existsSync(join(root, "build-called")), false);
     assert.equal(await readMaybe(join(root, "node_modules", "old-marker")), "1", "依赖原样保留");
-    // failed 先落盘，之后才 fork 恢复 worker；等待真实 ready，不能把维护失败当恢复已完成。
-    await until(async () => (await getStatus(root)).ready && await readMaybe(join(root, "workers")) === "2");
-    assert.equal(parseInt(await readFile(join(root, "workers"), "utf8"), 10), 2, "旧代码拉起恢复服务");
+    assert.equal(await readMaybe(join(root, "workers")), "1", "准备失败不停止健康实例");
   } finally { await teardown(base, child); }
 });
 
-test("rebuild with leftover backup refuses before stopping the healthy worker", async () => {
+test("Pi repair missing configuration preserves pre-existing backup", async () => {
   const { base, root } = await buildWorkspace();
   await mkdir(join(root, '.node_modules-backup'));
   await writeFile(join(root, '.node_modules-backup', 'keep'), 'preserved');
@@ -348,7 +346,7 @@ test("rebuild with leftover backup refuses before stopping the healthy worker", 
     assert.equal(state.status, 'failed');
     assert.equal(state.ready, true);
     assert.equal(state.phase, 'preparing');
-    assert.match(state.error, /备份目录已存在/);
+    assert.match(state.error, /修复配置/);
     assert.equal(await readMaybe(join(root, 'stopped')), null);
     assert.equal(await readMaybe(join(root, 'workers')), '1');
     assert.equal(await readMaybe(join(root, '.node_modules-backup', 'keep')), 'preserved');
@@ -356,11 +354,11 @@ test("rebuild with leftover backup refuses before stopping the healthy worker", 
   } finally { await teardown(base, child); }
 });
 
-test("failed maintenance replacement resumes bounded crash retries instead of staying silently offline", async () => {
+test("quick maintenance replacement resumes bounded crash retries instead of staying silently offline", async () => {
   const { base, root } = await buildWorkspace();
   const npm = await installNpmShim(base);
   const child = await startTest(root, {
-    requests: [{ type: 'service.restart', mode: 'rebuild', requestId: 'failed-recovery' }],
+    requests: [{ type: 'service.restart', mode: 'quick', requestId: 'failed-recovery' }],
     touch: [['stop-exit', '3'], ['crash-replacement', '1']],
     env: { AXIOM_NPM: npm, AXIOM_CRASH_BACKOFF_MS: '30', AXIOM_MAX_CRASH_RETRIES: '2' },
   });
@@ -374,26 +372,32 @@ test("failed maintenance replacement resumes bounded crash retries instead of st
   } finally { await teardown(base, child); }
 });
 
-test("rebuild happy path: stage, swap after stop, build once, commit after ready", async () => {
+test("Pi repair happy path uses independent CLI and records ready result", async () => {
   const { base, root, home } = await buildWorkspace();
   const npm = await installNpmShim(base);
+  const global = join(base, "global");
+  await mkdir(join(global, "@earendil-works/pi-coding-agent/dist"), { recursive: true });
+  await writeFile(join(global, "@earendil-works/pi-coding-agent/dist/cli.js"), "process.stdin.resume(); process.stdin.on('end', () => console.log('diagnosis verified'));\n");
+  await mkdir(join(root, "docs"));
+  await writeFile(join(root, "docs/service-repair-prompt.md"), "Repair instructions");
   const child = await startTest(root, {
-    requests: [{ type: "service.restart", mode: "rebuild", requestId: "rb2" }],
-    env: { AXIOM_NPM: npm, AXIOM_HOME: join(base, "home") },
+    requests: [{ type: "service.restart", mode: "rebuild", requestId: "rb2", repair: { provider: "test", model: "test", thinking: "off" } }],
+    env: { AXIOM_NPM: npm, FAKE_GLOBAL_ROOT: global, AXIOM_HOME: join(base, "home") },
   });
   try {
     await until(async () => (await readMaybe(join(root, "accepted-rb2"))) !== null);
     await until(async () => (await getStatus(root)).status === "succeeded");
-    assert.equal(await readMaybe(join(root, "node_modules", "staged")), "yes\n");
-    assert.equal(existsSync(join(root, "build-called")), true);
-    assert.equal(existsSync(join(root, ".node_modules-backup")), false, "ready 后备份清理");
+    await until(async () => /新实例已就绪/.test(await readMaybe(join(home, "service-repair-prompt.md")) || ""));
+    assert.match(await readFile(join(home, "service-repair-prompt.md"), "utf8"), /diagnosis verified/);
+    assert.equal(existsSync(join(root, "build-called")), false);
+    assert.equal(existsSync(join(root, ".node_modules-backup")), false);
     assert.equal((await readdir(root)).some((f) => f.startsWith(".axiom-stage-")), false);
     assert.deepEqual((await stateOf(root, join(base, "home"))).phases.map((p) => p.phase),
-      ["preparing", "stopping", "swapping", "building", "starting", "ready"]);
+      ["preparing", "stopping", "repairing", "starting", "ready"]);
   } finally { await teardown(base, child); }
 });
 
-for (const failure of ['build', 'timeout']) test(`rebuild ${failure} failure restores old dependencies before recovery`, async () => {
+for (const failure of ['build', 'timeout']) test(`Pi missing config does not mutate dependencies (${failure})`, async () => {
   const { base, root } = await buildWorkspace();
   const npm = await installNpmShim(base);
   await mkdir(join(root, 'node_modules'));
@@ -410,7 +414,7 @@ for (const failure of ['build', 'timeout']) test(`rebuild ${failure} failure res
     assert.equal(await readMaybe(join(root, 'node_modules', 'old-marker')), 'preserved');
     assert.equal(existsSync(join(root, 'node_modules', 'staged')), false);
     assert.equal(existsSync(join(root, '.node_modules-backup')), false);
-    assert.equal(Number(await readMaybe(join(root, 'workers'))), failure === 'build' ? 2 : 3);
+    assert.equal(Number(await readMaybe(join(root, 'workers'))), 1);
   } finally { await teardown(base, child); }
 });
 
