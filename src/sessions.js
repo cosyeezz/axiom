@@ -17,7 +17,10 @@ import { taskBudgetDefaults } from "./task-budget.js";
 import { Tasks } from "./tasks.js";
 import { ACTIVE_TASK_STATES } from "./task-execution.js";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { delegationTools } from "./tools.js";
+import { createInstructions } from './instructions.js';
+import { createBusinessInstructions } from './business-instructions.js';
+import { taskProfile, isMemoryProfile } from './agent-profile.js';
+import { createMemoryStore, registerMemoryAccess } from './long-term-memory.js';
 import { createQuestions } from "./questions.js";
 import { resolveCapabilities } from "./capabilities.js";
 import { memoryHooks } from "./session-memory.js";
@@ -63,7 +66,7 @@ function ownedTools(allTools, records) {
 // 投影时用来把子代理历史挂回它自己的委派锚点之后。
 const delegateTaskIds = (message, into) => {
   if (message?.isError || message?.role !== "toolResult" ||
-      message.toolName?.replace(/^functions\./, "") !== "delegate") return;
+      !(message.toolName?.replace(/^functions\./, "") === "delegate" || message.toolName === 'let_axiom' && ['task.start', 'memory.query'].includes(message.details?.axiomInstruction))) return;
   for (const block of Array.isArray(message.content) ? message.content : []) {
     if (block?.type !== "text") continue;
     try {
@@ -791,6 +794,7 @@ export class Sessions {
         // 轮次预算随会话创建定死（create 从 selection.taskBudget 读回）：不落进 selection
         // 就无从区分「创建时的预算」与「当前全局值」，重开会话即被热更成新全局值。
         taskBudget: item.taskBudget, executionStarted: item.executionStarted,
+        ...(item.memoryPaused ? { memoryPaused: true } : {}),
         trustProject: item.trustProject, useDefaults: false } : item.selection };
   }
 
@@ -1092,6 +1096,7 @@ export class Sessions {
       status: "idle",
       listeners: this.items.get(id)?.listeners ?? new Set(),
       executionStarted: selection.executionStarted ?? !!(saved?.sessionFile || saved?.messages?.length || saved?.retries?.length || saved?.tasks?.length),
+      memoryPaused: selection.memoryPaused === true,
       messages: saved?.messages || [],
       compactions: saved?.compactions || [],
       retries: (saved?.retries || []).map((savedRecord) => {
@@ -1172,8 +1177,11 @@ export class Sessions {
         if (event.data.message?.role === "user") this.saveChange(item, { session: this.sessionData(item) });
       }
       if (event.type === "agent.compaction" && agentId === "main") {
+        // Persist eligibility with the compaction; legacy compactions are not backfilled.
+        if (!event.data.checkpoint) event = { ...event, data: { ...event.data, memoryEligible: true } };
         if (!item.compactions.some((entry) => entry.id === event.data.id)) item.compactions.push(event.data);
         this.saveChange(item, { event: { type: "compaction", record: event.data } });
+        if (!event.data.checkpoint) { item.memoryPending ??= new Map(); item.memoryPending.set(event.data.id, event.data); this.scheduleMemory(item); }
       }
       const envelope = { ...event, sessionId: id, seq: ++item.seq };
       if (endIdentity) envelope.data = { ...envelope.data, ...endIdentity };
@@ -1232,18 +1240,27 @@ export class Sessions {
     item.todo = new Todo({ sessionId: id, store: this.todoStore, emit: item.emit, questions: item.questions,
       resolveRef: ref => item.agent?.resolveTodoReference?.(ref) });
     const saveMemory = (change) => this.saveChange(item, change);
+    item.memoryStore = createMemoryStore({ cwd });
     item.tasks = new Tasks(
       (job) => {
         if (job.historySaved && (!job.sessionFile || !existsSync(job.sessionFile)))
           throw new Error("子任务历史文件缺失，已保留记录，拒绝重新执行原任务");
+        const isolated = isMemoryProfile(job.profile);
+        // Cover raw Tasks continuations too (including ask/let), not only the UI append/retry routes.
+        if (job.profile?.purpose === 'memory-maintain' && (item.memoryPaused || item.todo.header?.paused)) throw new Error('记忆整理已暂停，请先恢复主会话');
+        job.profile = taskProfile({ ...job.profile, capabilities: job.profile?.capabilities ?? (isolated ? { skills: [], plugins: [], mcp: [] } : item.subagentResolvedCapabilities ?? item.agent.config?.().capabilities ?? { skills: [], plugins: [], mcp: [] }) });
+        const instructions = createInstructions();
+        if (isolated) registerMemoryAccess(instructions, item.memoryStore, job);
+        item.tasks.publish(job);
         return this.createAgent([], {
           ...item.agent.config?.(),
+          profile: job.profile, instructions,
           audit: { sessionId: id, agentId: job.id, source: "task" },
           ...(item.retry ? { retry: item.retry } : {}),
           ...(item.subagentModel ? { model: item.subagentModel } : {}),
           cwd,
           ...(item.subagentThinking ? { thinking: item.subagentThinking } : {}),
-          capabilities: item.subagentCapabilities === "inherit" ? item.agent.config?.().capabilities ?? item.capabilities : item.subagentCapabilities,
+          capabilities: job.profile.capabilities,
           trustProject: item.trustProject,
           memory: memoryHooks(item, saveMemory, job),
 
@@ -1257,6 +1274,7 @@ export class Sessions {
       async () => {
         // task.state 已同步提交终态；只重试失败队列，不再重写同一大结果。
         await this.persist(item, {});
+        this.scheduleMemory(item);
         this.scheduleTaskNotifications(item);
         this.scheduleTodo(item);
       },
@@ -1266,7 +1284,7 @@ export class Sessions {
     for (const task of saved?.tasks || []) {
       const interrupted = ACTIVE_TASK_STATES.includes(task.status);
       const resumable = interrupted && (!!task.sessionFile || task.persistenceVersion >= 1);
-      item.tasks.jobs.set(task.id, { ...task,
+      item.tasks.jobs.set(task.id, { ...task, profile: taskProfile(task.profile),
         status: resumable ? "starting" : interrupted ? "cancelled" : task.status,
         error: interrupted && !resumable ? "旧子任务没有持久化历史，无法恢复" : task.error,
         resultId: resumable ? undefined : task.resultId || randomUUID(), notified: resumable ? false : task.notified ?? false });
@@ -1278,7 +1296,9 @@ export class Sessions {
         lines[0] = JSON.stringify({ ...JSON.parse(lines[0]), id, cwd });
         await writeFile(importedFile, lines.join("\n"), { mode: 0o600 });
       }
-      item.agent = await this.createAgent([...delegationTools(item.tasks), item.questions.tool, item.todo.readTool(), item.todo.updateTool()], {
+      item.agent = await this.createAgent([item.questions.tool], {
+        profile: { role: 'main', purpose: 'general' },
+        instructions: createBusinessInstructions(item.tasks, item.todo),
         audit: { sessionId: id, agentId: "main", source: "main" },
         ...(selection.model ? { model: selection.model } : {}),
         ...(selection.thinking ? { thinking: selection.thinking } : {}),
@@ -1433,7 +1453,9 @@ export class Sessions {
     }
     this.items.set(id, item);
     for (const job of item.tasks.jobs.values())
-      if (job.status === "starting" && !job.notificationHeld && !item.todo.header?.paused && (job.sessionFile || job.persistenceVersion >= 1)) job.done = item.tasks.run(job, true);
+      if (job.status === "starting" && !job.notificationHeld && !item.todo.header?.paused && !(item.memoryPaused && job.profile?.purpose === 'memory-maintain') && (job.sessionFile || job.persistenceVersion >= 1)) job.done = item.tasks.run(job, true);
+    item.memoryPending = new Map(item.compactions.filter(record => record.memoryEligible && !record.checkpoint && ![...item.tasks.jobs.values()].some(job => job.sourceKey === record.id)).map(record => [record.id, record]));
+    this.scheduleMemory(item);
     this.scheduleTaskNotifications(item);
     return id;
   }
@@ -1473,11 +1495,12 @@ export class Sessions {
       item.agent.requestSafeStop?.();
     } else if (action === 'resume') {
       if (item.status !== 'idle') throw new Error('请等待停止完成');
-      item.todo.resume(); item.notificationsPaused = false; item.todoResumeRequested = true;
+      item.todo.resume(); item.notificationsPaused = false; item.memoryPaused = false; item.todoResumeRequested = true;
       item.agent.requestTodoRestore?.('resume');
       await this.holdTodoNotifications(item, false);
       for (const job of item.tasks.jobs.values()) if (job.status === 'starting' && !job.done && job.cleanupStatus !== 'unconfirmed') job.done = item.tasks.run(job, true);
-      this.scheduleTaskNotifications(item); this.scheduleTodo(item);
+      await this.persist(item);
+      this.scheduleMemory(item); this.scheduleTaskNotifications(item); this.scheduleTodo(item);
     } else throw new Error('未知Todo操作');
     return item.todo.snapshot();
   }
@@ -1500,6 +1523,27 @@ export class Sessions {
     this.startRun(item, () => item.agent.prompt(prompt));
   }
 
+  scheduleMemory(item) {
+    if (item.memoryScheduled || !item.memoryPending?.size) return;
+    item.memoryScheduled = true;
+    setImmediate(() => {
+      item.memoryScheduled = false;
+      if (item.status !== 'idle' || item.closing || item.releasing || item.compacting || item.notifying || item.notificationsPaused || item.memoryPaused || item.todo?.header?.paused || item.cancelling || item.configuring || item.questions.snapshot().length) return;
+      if ([...item.tasks.jobs.values()].some(job => job.profile?.purpose === 'memory-maintain' && (ACTIVE_TASK_STATES.includes(job.status) || job.cleanupStatus === 'unconfirmed'))) return;
+      for (const [sourceKey, event] of item.memoryPending) {
+        if (![...item.tasks.jobs.values()].some(job => job.sourceKey === sourceKey)) {
+          const ids = new Set(event.compactedMessageIds ?? []);
+          const records = item.messages.filter(record => record.agentId === 'main' && ids.has(record.entryId) && ['user', 'assistant', 'toolResult'].includes(record.message?.role));
+          const materials = records.map(record => JSON.stringify({ source: { sessionId: item.id, entryId: record.entryId }, role: record.message.role, timestamp: record.message.timestamp, toolName: record.message.toolName, toolCallId: record.message.toolCallId, isError: record.message.isError, stopReason: record.message.stopReason, content: typeof record.message.content === 'string' ? record.message.content : (record.message.content ?? []).filter(block => block.type !== 'thinking' && block.type !== 'image') })).join('\n');
+          if (materials) item.tasks.start([{ task: '读取本任务原始材料，按整理职责维护全局和当前项目记忆；没有值得保留的新信息就不写。', profile: { purpose: 'memory-maintain' }, materials, sourceKey }]);
+        }
+        item.memoryPending.delete(sourceKey);
+        this.scheduleMemory(item); // Also drain duplicate/empty events without waiting for a completion.
+        break; // Serialize maintenance within a session; index CAS protects other sessions.
+      }
+    });
+  }
+
   scheduleTaskNotifications(item) {
     // 通知双通道：running 时经 SDK custom message（task-notification）在轮次边界注入，不打断工具、
     // 不等待运行结束；idle 时经 prompt 直接唤醒，走完整 startRun 状态机。见 deliverTaskNotifications。
@@ -1517,7 +1561,7 @@ export class Sessions {
     if (item.compacting || item.notifying || item.closing || item.notificationsPaused || item.configuring) return;
     const jobs = item.tasks.pendingNotifications().map(({ id, resultId, status }) => ({ id, resultId, status }));
     if (!jobs.length) return;
-    const text = "[Axiom 子任务完成通知] 以下任务已结束。使用各自的 taskId 和 resultId 调用 read_result 获取结果；不要轮询。\n" +
+    const text = "[Axiom 子任务完成通知] 以下任务已结束。使用各自的 taskId 和 resultId 调用 let_axiom 的 task.read 指令获取结果；不要轮询。\n" +
       JSON.stringify(jobs.map((job) => ({ taskId: job.id, resultId: job.resultId, status: job.status })));
     if (item.status !== "idle") {
       // running：结果先落盘，再以 custom message 注入 steering 队列——SDK 在轮次边界（安全点）送达，
@@ -1964,6 +2008,7 @@ export class Sessions {
           });
           // running 通道注入的通知在此判据确认（消息进历史才置 notified），未确认的交给下面的调度补投。
           await this.settleTaskNotifications(item);
+          this.scheduleMemory(item);
           this.scheduleTaskNotifications(item);
           this.scheduleTodo(item);
         }
@@ -1978,6 +2023,7 @@ export class Sessions {
     const item = this.get(id).loaded ? this.get(id) : await this.ensureLoaded(id);
     if (item.status !== "idle" || item.configuring || item.closing || item.compacting) throw new Error("Session is busy");
     if (item.todo.header?.paused) throw new Error('Todo 已暂停，请使用恢复按钮');
+    item.memoryPaused = false; // Explicit retry, not an automatic notification wakeup.
     if (item.todo.header?.runtimeBlock) {
       const completed = item.todo.snapshot().completed;
       item.todo.resume();
@@ -2008,6 +2054,8 @@ export class Sessions {
       return item.runId;
     }
     if (item.status !== "idle" || item.configuring || item.closing || item.releasing) throw new Error("Session is busy");
+    // Non-Todo user execution can release its stop; ordinary input never releases a paused Todo.
+    if (!item.todo.header?.paused) item.memoryPaused = false;
     // 用户显式输入：退出目标模式后的通知/续跑冻结到此为止，恢复正常会话行为。
     if (item.todo.requiresPlan && !item.todo.header.prepareText) {
       item.todo.prepare(text);
@@ -2083,7 +2131,7 @@ export class Sessions {
   }
 
   // 安全停止：不 abort、不杀工具，只请求 SDK 在下一个轮次边界收工，已完成的产出全部保留。
-  // 子任务不受影响（继续跑到自己结束）；期间暂停子任务完成通知，否则通知会立刻 prompt 把会话重新拉起来。
+  // 普通子任务继续到自身结束，记忆写任务立即停止；通知冻结，避免刚停下的会话又被拉起。
   // Todo 暂停与主停止共用持久化暂停和通知冻结入口。
   async safeStop(id) {
     const item = this.get(id);
@@ -2093,10 +2141,14 @@ export class Sessions {
     }
     item.todo?.pause();
     item.notificationsPaused = true;
+    item.memoryPaused = true;
     if (item.loaded) {
       if (item.todo?.header) await this.holdTodoNotifications(item, true);
       item.questions.cancel();
+      // Stop background writers even when the parent is already idle; stopping must not write more memory.
+      await Promise.all([...item.tasks.jobs.values()].filter(job => job.profile?.purpose === 'memory-maintain' && ACTIVE_TASK_STATES.includes(job.status)).map(job => item.tasks.cancelTask(job.id, { mode: 'immediate', source: 'user', reason: '主会话已暂停' })));
     }
+    if (item.loaded) await this.persist(item);
     if (!item.loaded || item.cancelling || item.status === "idle") return;
     item.safeStopping = true;
     item.agent.requestSafeStop?.();
@@ -2117,6 +2169,7 @@ export class Sessions {
     finally {
       if (mode === "sync") {
         item.compacting = false;
+        this.scheduleMemory(item);
         this.scheduleTodo(item);
         void this.deliverTaskNotifications(item);
       }
@@ -2142,6 +2195,8 @@ export class Sessions {
     if (item.todo?.header) await this.holdTodoNotifications(item, true);
     if (item.cancelling) return item.cancelling;
     item.notificationsPaused = true;
+    item.memoryPaused = true;
+    await this.persist(item);
     item.status = "cancelling";
     item.emit({ type: "session.state", data: { status: "cancelling" } });
     item.cancelling = (async () => {
@@ -2171,11 +2226,13 @@ export class Sessions {
     const item = await this.ensureLoaded(id);
     if (item.closing || item.cancelling || item.safeStopping) throw new Error("会话正在停止，暂时无法发送子代理消息");
     // 子代理对话不等于恢复主会话；保留用户停止后的通知冻结。
+    if (item.tasks.jobs.get(taskId)?.profile?.purpose === 'memory-maintain' && (item.memoryPaused || item.todo.header?.paused)) throw new Error('记忆整理已暂停，请先恢复主会话');
     return item.tasks.append(taskId, text, mode);
   }
   async retryTask(id, taskId) {
     const item = await this.ensureLoaded(id);
     if (item.closing || item.cancelling) throw new Error("会话正在停止，暂时无法重试子任务");
+    if (item.tasks.jobs.get(taskId)?.profile?.purpose === 'memory-maintain' && (item.memoryPaused || item.todo.header?.paused)) throw new Error('记忆整理已暂停，请先恢复主会话');
     // Explicit retry starts a new execution; Tasks.launch clears only its held flag.
     item.notificationsPaused = false;
     return item.tasks.retry(taskId);

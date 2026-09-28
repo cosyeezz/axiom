@@ -60,7 +60,8 @@ test("snapshotJob persists sessionFile/historySaved/persistenceVersion before pr
     const first = events.find((event) => event.type === "task.state" && event.data.status === "running");
     assert.equal(first.saved.sessionFile, file);
     const saved = tasks.snapshotJob(tasks.jobs.get(id));
-    assert.equal(saved.persistenceVersion, 2);
+    assert.equal(saved.persistenceVersion, 3);
+    assert.deepEqual(saved.profile, { role: 'subagent', purpose: 'general' });
     assert.equal(saved.sessionFile, file);
     assert.equal(saved.historySaved, true, "agent.message.end 落盘后 historySaved 置真");
     assert.equal(saved.canRetry, false, "completed 任务不提供重试");

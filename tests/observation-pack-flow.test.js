@@ -83,7 +83,7 @@ const run = async (body) => {
   }
 };
 
-test("端到端：停止自动折叠，旧归档只读取回且无 ledger", async () => {
+test("端到端：停止自动折叠，旧归档保留但不暴露历史工具", async () => {
   await run(`
     const { mkdir, readFile, access } = await import('node:fs/promises');
     const id = 'obs_' + 'a'.repeat(24);
@@ -96,17 +96,16 @@ test("端到端：停止自动折叠，旧归档只读取回且无 ledger", asyn
       for (let i = 0; i < 3; i++) { script = [{ text: '继续' }]; await agent.prompt('继续'); }
       assert.ok(flat(requests.at(-1)).includes('MIDDLE-MARKER-XYZ'));
       assert.ok(!schemas[0].includes('history_search'), 'only exact history reads are exposed');
-      assert.ok(schemas[0].includes('history_read'));
-      script = [{ tool: 'obs_recall', args: { id } }, { text: '完成' }];
-      await agent.prompt('取回旧归档');
-      assert.ok(flat(requests.at(-1)).includes('[obs_recall id=' + id));
+      for (const name of ['history_read', 'history.read', 'obs_recall']) assert.ok(!schemas[0].includes(name));
+      agent.enableTools(['history_read', 'obs_recall']);
+      assert.ok(!agent.config().activeTools.includes('history_read'));
       assert.equal(await readFile(join(obsDir, 'objects', id + '.txt'), 'utf8'), bigText);
       await assert.rejects(access(join(obsDir, 'ledger.jsonl')));
     } finally { await agent.dispose(); }
   `);
 });
 
-test('持久会话 checkpoint 来源可取回，恢复后尾部完整且控制记录不混入 raw', async () => {
+test('持久会话 checkpoint 原文落盘，恢复后尾部完整且模型无回读入口', async () => {
   await run(`
     const { readFile, mkdir } = await import('node:fs/promises');
     const sessionDir = join(cwd, 'journals');
@@ -127,9 +126,13 @@ test('持久会话 checkpoint 来源可取回，恢复后尾部完整且控制�
     const ref = checkpoint.sourceEntry.details.sourceManifest.sources[0].ref;
     agent = await factory([], { sessionFile: file, sessionDir });
     try {
-      script = [{ tool: 'history_read', args: { ref } }, { text: '原文已核验' }];
-      await agent.prompt('核验原文');
-      assert.ok(flat(requests.at(-1)).includes('ALPHA'));
+      assert.ok(ref);
+      assert.deepEqual(checkpoint.sourceEntry.details.sourceManifest.tools, []);
+      script = [{ text: '继续' }];
+      await agent.prompt('继续工作');
+      assert.ok(!schemas.at(-1).includes('history_read'));
+      assert.ok(!flat(requests.at(-1)).includes('ALPHA'));
+      assert.ok(JSON.stringify(agent.historyEntries()).includes('ALPHA'));
       assert.ok(flat(requests.at(-1)).includes('BETA'));
     } finally { await agent.dispose(); }
   `);

@@ -4,7 +4,7 @@ const delegateInput = z
   .object({
     context: z.string().trim().min(1),
     tasks: z
-      .array(z.object({ task: z.string().trim().min(1) }).strict())
+      .array(z.object({ task: z.string().trim().min(1), systemPrompt: z.string().trim().min(1).max(16000).optional() }).strict())
       .min(1),
   })
   .strict();
@@ -49,6 +49,7 @@ export function delegationTools(tasks) {
             items: {
               type: "object",
               properties: {
+                systemPrompt: { type: 'string', minLength: 1, maxLength: 16000, description: 'Optional custom role instructions. Does not change permissions or budget.' },
                 task: {
                   type: "string",
                   minLength: 1,
@@ -67,7 +68,7 @@ export function delegationTools(tasks) {
       async execute(_id, input) {
         const { context, tasks: requested } = delegateInput.parse(input);
         return result({
-          taskIds: tasks.start(requested.map(({ task }) => task), context),
+          taskIds: tasks.start(requested.map(({ task, systemPrompt }) => ({ task, profile: { purpose: 'general', ...(systemPrompt ? { systemPrompt } : {}) } })), context),
           budget: tasks.options,
           note: "Subtasks are running in the background. Continue with work that does not depend on their results; when nothing remains, close the turn with a brief status — completion notifications arrive automatically.",
         });

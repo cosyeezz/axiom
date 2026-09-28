@@ -17,6 +17,13 @@ const OUT = join(SKILL_DIR, "INDEX.md");
  * 未登记的文件会在 INDEX.md 里标 ⚠ 提醒补充。
  */
 const MODULE_INFO = {
+  "src/agent-profile.js": "显式子代理职责与能力配置、记忆查询/整理提示词",
+  "src/business-instructions.js": "task/Todo/记忆查询业务指令注册与旧工具契约适配",
+  "src/operating-guides.js": "按需加载的任务、Todo、Git 正式操作规程",
+  "src/long-term-memory.js": "全局/项目 Markdown 记忆、受限指令与原子版本化索引",
+  "tests/business-instructions.test.js": "业务指令生命周期、取消、Todo 确认与证据回归",
+  "tests/long-term-memory.test.js": "记忆存储、链接防护、冲突合并与只读权限回归",
+  "tests/memory-lifecycle.test.js": "后台整理原文材料、去重恢复与持久暂停回归",
   "src/instructions.js": "通用指令注册、精确查找、参数校验与执行，无生命周期管理",
   "src/instruction-tools.js": "ask_axiom / let_axiom 工具薄封装，共用指令执行器",
   "tests/instructions.test.js": "指令注册、严格参数校验、说明快照及工具封装回归",

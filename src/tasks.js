@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
+import { taskProfile } from './agent-profile.js';
 import { ACTIVE_TASK_STATES as ACTIVE, EXECUTION_DEFAULTS, bounded, stopReport, stopSummaryPrompt } from "./task-execution.js";
 
 const historyResult = history => {
@@ -17,8 +18,9 @@ export class Tasks {
   }
   start(tasks, context = "") {
     if (this.cancelling) throw new Error("Tasks are cancelling");
-    return tasks.map(task => {
-      const job = { id: randomUUID(), task, status: "starting", parentContext: context, persistenceVersion: 2,
+    const requests = tasks.map(value => typeof value === 'string' ? { task: value, profile: taskProfile() } : { ...value, profile: taskProfile(value.profile) });
+    return requests.map(({ task, profile, materials, sourceKey }) => {
+      const job = { id: randomUUID(), task, profile, materials, sourceKey, status: "starting", parentContext: context, persistenceVersion: 3,
         createdAt: Date.now(), updatedAt: Date.now(), totalElapsedMs: 0 };
       this.jobs.set(job.id, job);
       this.launch(job);
@@ -49,7 +51,7 @@ export class Tasks {
       canRetry: this.retryable(job) };
   }
   snapshotJob(job) {
-    return { ...this.view(job), runtime: job.runtime, budget: job.budget, pendingAppends: job.pendingAppends,
+    return { ...this.view(job), profile: job.profile, materials: job.materials, sourceKey: job.sourceKey, runtime: job.runtime, budget: job.budget, pendingAppends: job.pendingAppends,
       resultId: job.resultId, notified: job.notified, notificationHeld: !!job.notificationHeld, previousResults: job.previousResults, parentContext: job.parentContext,
       persistenceVersion: job.persistenceVersion, sessionFile: job.sessionFile ?? null, historySaved: job.historySaved ?? false,
       createdAt: job.createdAt, updatedAt: job.updatedAt };
@@ -194,7 +196,7 @@ export class Tasks {
     }
   }
   pendingNotifications() {
-    return [...this.jobs.values()].flatMap(job => [
+    return [...this.jobs.values()].filter(job => job.profile?.purpose !== 'memory-maintain').flatMap(job => [
       ...Object.values(job.previousResults || {}).filter(result => result.resultId && !result.notified && !result.notificationHeld),
       ...(job.resultId && !job.notified && !job.notificationHeld ? [{ id: job.id, resultId: job.resultId, status: job.status }] : []),
     ]);
@@ -209,7 +211,7 @@ export class Tasks {
     });
   }
   async finalize(job) {
-    job.resultId = randomUUID(); job.notified = false; this.publish(job);
+    job.resultId = randomUUID(); job.notified = job.profile?.purpose === 'memory-maintain'; this.publish(job);
     try { await this.onComplete(job); }
     catch (error) { this.emit({ type: "error", data: { message: `子任务通知失败：${error.message}` } }); }
   }

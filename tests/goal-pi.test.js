@@ -109,6 +109,76 @@ test("universal tools are registered and ask/let execute the same description th
   `);
 });
 
+test('memory profiles enforce SDK tool isolation and read/write through instructions', async () => {
+  await run(`
+        const { createInstructions } = await import('./src/instructions.js');
+        const { createMemoryStore, registerMemoryAccess } = await import('./src/long-term-memory.js');
+        const store = createMemoryStore({ cwd, root: join(cwd, 'memory') });
+        await writeFile(join(cwd, 'AGENTS.md'), 'PROJECT-PROMPT-MUST-NOT-LOAD');
+        await writeFile(join(cwd, 'SYSTEM.md'), 'PROJECT-SYSTEM-MUST-NOT-LOAD');
+        for (const purpose of ['memory-maintain', 'memory-query']) {
+          const instructions = createInstructions();
+          registerMemoryAccess(instructions, store, { profile: { purpose }, materials: '原始工具确认 FACT' });
+          const agent = await factory([probe], { profile: { role: 'subagent', purpose, systemPrompt: 'CUSTOM-MUST-NOT-GRANT-TOOLS' }, instructions });
+          try {
+            assert.deepEqual(agent.config().activeTools.sort(), ['ask_axiom', 'let_axiom']);
+            agent.enableTools(['bash', 'read', 'write', 'probe', 'history_read', 'obs_recall']);
+            assert.deepEqual(agent.config().activeTools.sort(), ['ask_axiom', 'let_axiom'], 'activation cannot bypass registration allowlist');
+            assert.deepEqual(await agent.refreshSkills(), []);
+            assert.deepEqual(agent.config().capabilities, { skills: [], plugins: [], mcp: [] });
+            n = 0; requests.length = 0; schemas.length = 0;
+            script = purpose === 'memory-maintain' ? [
+              { tool: 'ask_axiom', args: { name: 'memory.save' } },
+              { tool: 'let_axiom', args: { name: 'memory.material', arguments: {} } },
+              { tool: 'let_axiom', args: { name: 'memory.save', arguments: { scope: 'project', id: 'fact', version: 0, summary: '实际工具事实', content: '# FACT' } } },
+              { text: 'saved' },
+            ] : [
+              { tool: 'ask_axiom', args: { name: 'memory.save' } },
+              { tool: 'let_axiom', args: { name: 'memory.index', arguments: { scope: 'project' } } },
+              { tool: 'let_axiom', args: { name: 'memory.card', arguments: { scope: 'project', id: 'fact' } } },
+              { text: 'found' },
+            ];
+            await agent.prompt('execute fixture');
+            for (const names of schemas) assert.deepEqual(names.sort(), ['ask_axiom', 'let_axiom']);
+            assert.doesNotMatch(flat(requests[0]), /PROJECT-PROMPT-MUST-NOT-LOAD|PROJECT-SYSTEM-MUST-NOT-LOAD|CUSTOM-MUST-NOT-GRANT-TOOLS/);
+            const tools = requests.at(-1).filter(m => m.role === 'tool');
+            assert.match(flat(tools), purpose === 'memory-maintain' ? /saved/ : /Unknown instruction: memory.save/);
+            assert.match(flat(tools), /FACT/);
+          } finally { await agent.dispose(); }
+        }
+        assert.equal((await store.index({ scope: 'project' })).version, 1);
+  `);
+});
+
+test('business task and Todo contracts are callable in real SDK without legacy tools', async () => {
+  await run(`
+        const { createBusinessInstructions } = await import('./src/business-instructions.js');
+        const { Tasks } = await import('./src/tasks.js');
+        const { Todo, createTodoStore } = await import('./src/todo.js');
+        const tasks = new Tasks(() => ({ subscribe: () => () => {}, prompt: async () => {}, result: () => 'result', dispose: async () => {} }), () => {});
+        const todoStore = createTodoStore();
+        const todo = new Todo({ sessionId: 's', store: todoStore });
+        const agent = await factory([], { profile: { role: 'main' }, instructions: createBusinessInstructions(tasks, todo) });
+        try {
+          script = [
+            { tool: 'ask_axiom', args: { name: 'task.start' } },
+            { tool: 'let_axiom', args: { name: 'task.start', arguments: { context: 'known context', tasks: [{ task: 'work', systemPrompt: 'custom role' }] } } },
+            { tool: 'let_axiom', args: { name: 'todo.read', arguments: {} } },
+            { text: 'done' },
+          ];
+          await agent.prompt('Use business instructions.');
+          for (const names of schemas) for (const legacy of ['delegate','read_result','append','cancel_task','todo_read','todo_update','history_read','history.read','obs_recall']) assert.ok(!names.includes(legacy));
+          assert.match(flat(requests.at(-1)), /taskIds/);
+          assert.equal(tasks.jobs.size, 1);
+          const job = [...tasks.jobs.values()][0]; await job.done;
+          assert.equal(job.profile.systemPrompt, 'custom role');
+          const toolResult = agent.historyEntries().find(e => e.message?.role === 'toolResult' && e.message.details?.axiomInstruction === 'task.start');
+          assert.ok(toolResult, 'instruction identity survives SDK history');
+          assert.match(JSON.stringify(toolResult.message.content), new RegExp(job.id));
+        } finally { await agent.dispose(); todoStore.database.close(); }
+  `);
+});
+
 test("executionContext 每请求注入（工具后续轮+子代理），空串不注入，不改用户原文", async () => {
   await run(`
         let ctx = '【目标背景】甲';

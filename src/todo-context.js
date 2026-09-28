@@ -29,7 +29,7 @@ export function createTodoContextBridge(session, context) {
       const entries = branch();
       if (ref?.toolCallId) {
         const entry = entries.find(e => e.type === 'message' && e.message?.role === 'toolResult' && e.message.toolCallId === ref.toolCallId);
-        return entry ? {entryId:entry.id,toolName:entry.message.toolName} : null;
+        return entry ? {entryId:entry.id,toolName:entry.message.toolName, ...(entry.message.details?.axiomInstruction ? {instruction:entry.message.details.axiomInstruction} : {})} : null;
       }
       if (ref?.messageId) {
         const entry = entries.find(e => e.id === ref.messageId && e.type === 'message');

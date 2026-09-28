@@ -1,5 +1,16 @@
 # 开发记录
 
+## 2026-09-29 通用子代理、业务指令与长期记忆
+
+- 原因：先形成执行计划，再把通用子代理职责、权限和生命周期分离；缩减常驻工具与提示词，按需查询和整理可溯源经验，避免每次重复探索。
+- 修改：新增显式 profile 及持久化，普通任务可传职责提示词；task/Todo/记忆查询迁入 ask/let，保留取消、确认、结构化输出及指令身份。记忆查询/整理复用 Tasks 的预算、恢复、通知、结果与计费；整理从新压缩的指定原始材料增量维护全局/项目索引和自由格式 Markdown 卡片。
+- 决策：不接 Jev/Laya、不增加独立 memory 工具；移除 history_read/history.read/obs_recall 模型入口但保留归档、压缩、检查点与恢复。正式规程放在版本库按需读取，不可由经验整理覆盖。记忆任务只注册 ask/let，隔离项目提示词、技能、插件和 MCP；查询不可写，整理仅受限记忆指令。普通子代理不宣称为只读沙箱。
+- 五轮复核：架构权限（修复隔离资源 agentDir 并补激活绕过测试）、生命周期（修复自动解冻、暂停续接和未确认清理写任务）、指令迁移（新旧历史锚点、Todo 证据与确认、无旧工具的检查点）、提示词/记忆质量（来源、双索引、增量更新与无价值不写）、最终回归/交付（文档、差异、生成索引及主分支同步）。逐轮范围、发现、处理与证据见 `docs/unified-agent-memory-plan.md`。
+- 范围控制：工作分支 `feat/unified-agent-memory` 自 `origin/master b1682fa` 建立；主 checkout 未提交资料保持原样。自动生成 INDEX.md 含大量先前未同步的历史漂移，不纳入本次提交，仅登记新文件职责；测试仍可重建索引。
+- 验证：首轮全量 910 项（908 通过、2 跳过），跨层定向 48 项及最终补充定向 9 项通过；最终获取最新 master（仍为 b1682fa）后全量 913 项，911 通过、2 跳过、0 失败。真实 Pi SDK 接线测试仅使用本地假供应商；未进行真实模型筛选质量、端到端延迟或费用验收。原子写入、并发版本冲突、目录链接/硬链接、查询只读和暂停重启边界有确定性测试。
+- 限制：项目按绝对工作路径隔离，不跨 worktree 归并；旧卡片保留，崩溃锁需人工确认后清理；不防御同权限恶意进程的路径替换竞态，取消不回滚已提交写入。
+- 文件：`src/agent-profile.js`、`business-instructions.js`、`long-term-memory.js`、`operating-guides.js`、`instructions.js`、`instruction-tools.js`、`capabilities.js`、`pi.js`、`sessions.js`、`tasks.js`、`tools.js`、`prompts.js`、`todo-context.js`、`todo-prompts.js`、`tool-execution.js`；`public/app.js`；相关 tests；`.pi/skills/codebase-map/scripts/reindex.mjs`；README、计划和本记录。
+
 ## 2026-09-27 十二轮 UI 阅读与布局优化
 
 - 原因：用户要求至少10轮优化，重点指出任务确认显示原始JSON、内容难读且滚动过多；同时覆盖弹窗、Subagent、压缩会话、对齐、密度与图标。

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Sessions } from "../src/sessions.js";
+import { instructionTools } from '../src/instruction-tools.js';
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,10 +16,10 @@ const until = async (check) => {
 
 test("cancel_task preserves siblings and delivers its persisted result after the parent settles", async () => {
   const mains = [], children = [];
-  const factory = async (tools) => {
+  const factory = async (tools, selection) => {
     let finish;
     const agent = {
-      tools, calls: [], aborts: 0,
+      tools: [...tools, ...instructionTools(selection.instructions)], calls: [], aborts: 0,
       config: () => ({ model: "test/model" }), subscribe(listener) { agent.listener = listener; return () => {}; },
       prompt(text) {
         this.calls.push(text);
@@ -40,9 +41,9 @@ test("cancel_task preserves siblings and delivers its persisted result after the
     await sessions.prompt(id, "parent work");
     const [target, sibling] = item.tasks.start(["cancel me", "keep working"]);
     await until(() => children.length === 2 && children.every((child) => child.calls.length));
-    const tool = mains[0].tools.find((tool) => tool.name === "cancel_task");
+    const tool = mains[0].tools.find((tool) => tool.name === "let_axiom");
     assert.ok(tool, "the main agent receives the registered tool");
-    await tool.execute("cancel-call", { taskId: target });
+    await tool.execute("cancel-call", { name: 'task.cancel', arguments: { taskId: target } });
     assert.equal(children[0].aborts, 1);
     assert.equal(children[1].aborts, 0);
     assert.equal(mains[0].aborts, 0);

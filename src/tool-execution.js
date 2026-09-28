@@ -21,7 +21,8 @@ export function createToolExecutionPolicy({ subagent = false, summarizing = () =
   const extension = pi => {
     pi.on("tool_call", event => {
       if (summarizing()) return { block: true, reason: "停止后总结禁止工具调用；只基于已有历史输出总结。" };
-      if (!subagent && requiresPlan() && !['question', 'todo_read', 'todo_update'].includes(event.toolName))
+      const planning = ['question', 'todo_read', 'todo_update'].includes(event.toolName) || ['ask_axiom', 'let_axiom'].includes(event.toolName) && ['todo.read', 'todo.update', 'guide.todo'].includes(event.input?.name);
+      if (!subagent && requiresPlan() && !planning)
         return { block: true, reason: 'TODO_GOAL_NOT_CONFIRMED：先创建并确认一级目标，再开始实施。' };
       if (!["bash", "powershell"].includes(event.toolName)) return;
       const value = event.input.timeout;
