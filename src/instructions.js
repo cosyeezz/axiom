@@ -23,7 +23,7 @@ function check(validator, value) {
 export function createInstructions() {
   const definitions = new Map();
   const registry = {
-    register({ name, description, parameters, handler }) {
+    register({ name, description, parameters, handler, toolResult = false, guidance }) {
       if (typeof name !== "string" || !name.trim() || name !== name.trim()) throw new Error("Invalid instruction name");
       if (definitions.has(name)) throw new Error(`Instruction already registered: ${name}`);
       if (typeof description !== "string" || typeof handler !== "function" || !parameters || parameters.type !== "object") {
@@ -31,16 +31,19 @@ export function createInstructions() {
       }
       // Schemas are supplied by trusted registration code, never by model input.
       // Keep a private snapshot so descriptions and validation cannot drift.
-      const contract = structuredClone({ name, description, parameters });
+      const contract = structuredClone({ name, description, parameters, ...(guidance ? { guidance } : {}) });
       const validator = Compile(contract.parameters);
-      definitions.set(name, { contract, validator, handler });
+      definitions.set(name, { contract, validator, handler, toolResult });
     },
-    async execute(name, args) {
+    async execute(name, args, context = {}) {
       check(validateCall, { name, arguments: args });
       const definition = definitions.get(name);
       if (!definition) throw new Error(`Unknown instruction: ${name}`);
       check(definition.validator, args);
-      return await definition.handler(args);
+      context.signal?.throwIfAborted();
+      const result = await definition.handler(args, context);
+      if (definition.toolResult && context.asToolResult) return { instructionResult: true, name, result };
+      return result;
     },
   };
   registry.register({

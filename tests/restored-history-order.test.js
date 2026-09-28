@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { Sessions } from '../src/sessions.js';
 import { bootSessionPage, until } from './helpers/session-page.js';
 
-test('重启后大量子代理历史不挤走最新主会话正文，子历史同批下发', async t => {
+for (const instruction of [null, 'task.start', 'memory.query']) test(`重启后子历史保留任务锚点与主会话末条 (${instruction ?? 'legacy'})`, async t => {
+  const modern = !!instruction;
   const root = mkdtempSync(join(tmpdir(), 'axiom-restored-order-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const writeHistory = (name, messages) => {
@@ -17,8 +18,8 @@ test('重启后大量子代理历史不挤走最新主会话正文，子历史�
   };
   const file = writeHistory('main', [
     { role: 'user', content: [{ type: 'text', text: '历史用户请求' }] },
-    { role: 'assistant', content: [{ type: 'toolCall', id: 'delegate-call', name: 'delegate', arguments: {} }] },
-    { role: 'toolResult', toolCallId: 'delegate-call', toolName: 'delegate', content: [{ type: 'text', text: JSON.stringify({ taskIds: ['child'] }) }] },
+    { role: 'assistant', content: [{ type: 'toolCall', id: 'delegate-call', name: modern ? 'let_axiom' : 'delegate', arguments: modern ? {name:instruction,arguments:{}} : {} }] },
+    { role: 'toolResult', toolCallId: 'delegate-call', toolName: modern ? 'let_axiom' : 'delegate', ...(modern ? { details: { axiomInstruction: instruction } } : {}), content: [{ type: 'text', text: JSON.stringify({ taskIds: ['child'] }) }] },
     { role: 'assistant', content: [{ type: 'text', text: '<axiom_display>历史主会话最终回答</axiom_display>' }] },
   ]);
   const childFile = writeHistory('child', Array.from({ length: 130 }, (_, n) => ({ role: n % 2 ? 'assistant' : 'user', content: [{ type: 'text', text: `子历史 ${n}` }] })));

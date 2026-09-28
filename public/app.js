@@ -2007,7 +2007,7 @@ function renderCompactionRun() {
   }
 }
 function trackTaskEntries(message, entryId) {
-  if (message.isError || message.role !== "toolResult" || message.toolName?.replace(/^functions\./, "") !== "delegate") return;
+  if (message.isError || message.role !== "toolResult" || !(message.toolName?.replace(/^functions\./, "") === "delegate" || message.toolName === 'let_axiom' && ['task.start', 'memory.query'].includes(message.details?.axiomInstruction))) return;
   for (const block of Array.isArray(message.content) ? message.content : []) {
     if (block.type !== "text") continue;
     try {

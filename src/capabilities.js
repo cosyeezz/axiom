@@ -1,4 +1,5 @@
 import { MAIN_AGENT_PROMPT, SUBAGENT_PROMPT } from "./prompts.js";
+import { isMemoryProfile, MEMORY_QUERY_PROMPT, MEMORY_MAINTAIN_PROMPT } from './agent-profile.js';
 import { realpath } from "node:fs/promises";
 import { inlineImagesExtension } from "./inline-images.js";
 import { basename, dirname, join, resolve, relative, isAbsolute, sep } from "node:path";
@@ -115,19 +116,19 @@ export function refreshProjectSkills(loader, selected, catalog, all = false, exc
   return loader.getSkills().skills.map(({ name, description }) => ({ name, description }));
 }
 
-export function capabilityLoader(resources, selection, customTools, extraFactories = [], budgetPrompt = null) {
+export function capabilityLoader(resources, selection, customTools, extraFactories = [], budgetPrompt = null, profile = { role: 'main' }) {
   const { catalog, settingsManager, paths, adapter, mcpConfig, createMcpAdapter, cwd, agentDir } = resources;
-  const selected = resolveCapabilities(selection, catalog);
-  // 主代理（customTools 非空）不装配导航类技能：仅 loader 装配集剔除，选择集保持原样，
-  // 子代理 inherit 与能力持久化不受影响。子代理（customTools 为空）装配全部。
+  const isolated = isMemoryProfile(profile);
+  const selected = isolated ? { skills: [], plugins: [], mcp: [] } : resolveCapabilities(selection, catalog);
+  // 角色显式指定；自定义工具的数量不改变提示词或技能权限。
   // skillsOverride 闭包必须实时计算：refreshProjectSkills 会扩充 selected.skills，
   // 快照会把运行中新选入的技能一并滤掉；排除集合（按技能名）在 catalog 快照内固定。
   const excludedSkillIds = new Set(catalog.skills.filter((skill) => MAIN_EXCLUDED_SKILLS.includes(skill.name)).map((skill) => skill.id));
-  const loaderSkills = () => (customTools.length
+  const loaderSkills = () => (profile.role === 'main'
     ? selected.skills.filter((id) => !excludedSkillIds.has(id))
     : selected.skills);
-  const factories = [...extraFactories, { name: "axiom-inline-images", factory: inlineImagesExtension }];
-  if (adapter && (selection == null || selected.mcp.length)) {
+  const factories = [...extraFactories, ...(!isolated ? [{ name: "axiom-inline-images", factory: inlineImagesExtension }] : [])];
+  if (!isolated && adapter && (selection == null || selected.mcp.length)) {
     factories.push({ name: "axiom-mcp", factory: createMcpAdapter({ config: {
       ...mcpConfig,
       mcpServers: Object.fromEntries(selected.mcp.map((id) => {
@@ -143,16 +144,17 @@ export function capabilityLoader(resources, selection, customTools, extraFactori
       noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true,
       additionalExtensionPaths: selected.plugins,
       additionalSkillPaths: loaderSkills(),
-      additionalPromptTemplatePaths: paths.prompts.filter((r) => r.enabled).map((r) => r.path),
-      additionalThemePaths: paths.themes.filter((r) => r.enabled).map((r) => r.path),
+      additionalPromptTemplatePaths: isolated ? [] : paths.prompts.filter((r) => r.enabled).map((r) => r.path),
+      additionalThemePaths: isolated ? [] : paths.themes.filter((r) => r.enabled).map((r) => r.path),
+      ...(isolated ? { agentsFilesOverride: () => ({ agentsFiles: [] }), systemPromptOverride: () => profile.purpose === 'memory-query' ? MEMORY_QUERY_PROMPT : MEMORY_MAINTAIN_PROMPT } : {}),
       extensionFactories: factories,
       // Preserve the custom allowlist even when an extension contributes more skills on startup.
-      skillsOverride: (current) => ({ ...current, skills: current.skills.filter((s) => selection == null || loaderSkills().includes(s.filePath)) }),
-      appendSystemPromptOverride: (current) => [...current,
+      skillsOverride: (current) => ({ ...current, skills: isolated ? [] : current.skills.filter((s) => selection == null || loaderSkills().includes(s.filePath)) }),
+      appendSystemPromptOverride: (current) => [...(isolated ? [] : current),
         // 子代理轮次预算的开工告知，原文固定，来自 task-budget；
         // 动态 [轮次预算] 收尾提示由代码按累计 turn 注入，不让模型计数。
         ...(budgetPrompt ? [budgetPrompt] : []),
-        ...(customTools.length ? [MAIN_AGENT_PROMPT] : [SUBAGENT_PROMPT])],
+        ...(!isolated ? [profile.role === 'main' ? MAIN_AGENT_PROMPT : SUBAGENT_PROMPT, ...(profile.systemPrompt ? [profile.systemPrompt] : [])] : [])],
     }),
   };
 }

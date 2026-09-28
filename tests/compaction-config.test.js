@@ -38,7 +38,7 @@ test("compaction settings, message IDs and successful records survive restart; f
     delete config.memory;
     delete config.executionContext;
     delete config.shouldPause;
-    delete config.requiresPlan; delete config.todoContext;
+    delete config.requiresPlan; delete config.todoContext; delete config.instructions;
     return {
       config: () => config, configure: async (value) => (config = { ...config, ...value }),
       historyEntries: () => [{ id: "m1", type: "message", message: { role: "user", content: "old" } }],
@@ -71,7 +71,7 @@ test("compaction settings, message IDs and successful records survive restart; f
     await restored.load();
     await restored.ensureLoaded(id);
     assert.deepEqual((await restored.workspaceDefaults(dir)).compaction, config);
-    assert.deepEqual(restored.snapshot(id).compactions, [record]);
+    assert.deepEqual(restored.snapshot(id).compactions, [{ ...record, memoryEligible: true }]);
     // 被摘要折叠的消息随快照下发精简版（带 compacted 标记）；完整原文点开摘要卡时按 compactionId 取。
     const lite = restored.snapshot(id).messages.find((entry) => entry.entryId === "m1");
     assert.equal(lite?.compacted, true);
@@ -94,7 +94,7 @@ test("session compaction remains independent of later default changes and surviv
     delete config.memory;
     delete config.executionContext;
     delete config.shouldPause;
-    delete config.requiresPlan; delete config.todoContext;
+    delete config.requiresPlan; delete config.todoContext; delete config.instructions;
     return {
       config: () => config, configure: async (value) => (config = { ...config, ...value }),
       historyEntries: () => [], compactions: () => [],
@@ -138,7 +138,7 @@ test("删除目录默认配置只影响新会话，不覆盖已有会话", async
   await mkdir(b);
   const factory = async (_tools, selection) => {
     let config = { thinking: "off", compaction: { ...compactionDefaults }, ...selection };
-    delete config.requiresPlan; delete config.todoContext;
+    delete config.requiresPlan; delete config.todoContext; delete config.instructions;
     delete config.memory;
     delete config.executionContext;
     delete config.shouldPause;

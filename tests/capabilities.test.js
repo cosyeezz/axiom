@@ -17,7 +17,7 @@ test("main policy is appended without replacing Pi defaults or leaking to subage
     await writeFile(join(agentDir, "APPEND_SYSTEM.md"), "Existing user instructions");
     const resources = await discoverCapabilities(cwd, { agentDir, loadAdapter: false });
     for (const main of [true, false]) {
-      const { loader } = capabilityLoader(resources, { skills: [], plugins: [], mcp: [] }, main ? [{}] : []);
+      const { loader } = capabilityLoader(resources, { skills: [], plugins: [], mcp: [] }, main ? [] : [{}], [], null, { role: main ? 'main' : 'subagent' });
       try {
         await loader.reload();
         assert.equal(loader.getSystemPrompt(), undefined, "leave Pi's default prompt intact");
@@ -315,8 +315,9 @@ test("mcp catalog is per-project isolated, marks global servers and re-reads con
 });
 
 
-test('Todo rules belong only to the static main system prompt', () => {
-  assert.equal(MAIN_AGENT_PROMPT.split('Todo task tracking:').length - 1, 1);
-  assert.match(MAIN_AGENT_PROMPT, /不要为了确认、等待或凑进度反复读取/);
+test('main keeps critical Todo boundaries and a discoverable on-demand guide', () => {
+  assert.match(MAIN_AGENT_PROMPT, /guide.todo/);
+  assert.match(MAIN_AGENT_PROMPT, /不为等待或凑进度反复读取/);
+  assert.match(MAIN_AGENT_PROMPT, /逐条验收/);
   assert.doesNotMatch(SUBAGENT_PROMPT, /Todo task tracking:/);
 });
