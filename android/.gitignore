@@ -1,4 +1,5 @@
 .gradle/
+build-evidence/
 **/build/
 local.properties
 app/libs/*.aar

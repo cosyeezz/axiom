@@ -2,11 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <application android:allowBackup="false" android:label="Axiom" android:icon="@drawable/ic_launcher"
+    <application android:name=".AxiomApplication" android:allowBackup="false" android:label="Axiom" android:icon="@drawable/ic_launcher"
         android:theme="@style/AppTheme" android:supportsRtl="true"
         android:usesCleartextTraffic="true">
         <!-- Cleartext is loopback only in the WebView. Go encrypts tailnet traffic. -->
-        <activity android:name=".MainActivity" android:exported="true" android:windowSoftInputMode="adjustResize">
+        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

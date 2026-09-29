@@ -123,7 +123,6 @@ public final class MainActivity extends Activity {
         if(s.optBoolean("running")&&web==null&&!loading&&!busy&&!currentTarget.isEmpty())openWorkspace();
     }
     private void openLogin(){
-        if(!authUrl.isEmpty()){launchAuth(authUrl);return;}
         final int ticket=generation;setBusy(true);status.setText("正在准备登录…");
         NETWORK.execute(()->{try{Bridge.login();JSONObject s=new JSONObject(Bridge.status());handler.post(()->{if(stale(ticket))return;setBusy(false);renderStatus(s);if(!authUrl.isEmpty())launchAuth(authUrl);else status.setText("正在生成授权链接，请稍后点击登录。");});}catch(Exception e){handler.post(()->{if(stale(ticket))return;setBusy(false);status.setText(safeMessage(e));});}});
     }
@@ -185,7 +184,7 @@ public final class MainActivity extends Activity {
     }
     private void resetIdentity(){
         ++generation;loading=false;currentTarget="";destroyWeb();setBusy(true);
-        NETWORK.execute(()->{try{Bridge.reset();handler.post(()->{if(destroyed)return;setBusy(false);authUrl="";login.setVisibility(View.GONE);status.setText("已清除本机登录。点击连接后重新授权。");});}catch(Exception e){handler.post(()->{if(destroyed)return;setBusy(false);status.setText(safeMessage(e));});}});
+        NETWORK.execute(()->{try{Bridge.reset(getNoBackupFilesDir().getAbsolutePath()+"/tailscale");handler.post(()->{if(destroyed)return;setBusy(false);authUrl="";login.setVisibility(View.GONE);status.setText("已清除本机登录。点击连接后重新授权。");});}catch(Exception e){handler.post(()->{if(destroyed)return;setBusy(false);status.setText(safeMessage(e));});}});
     }
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==10&&fileCallback!=null){Uri[] files=null;if(result==RESULT_OK&&data!=null){if(data.getClipData()!=null){int n=Math.min(data.getClipData().getItemCount(),4);files=new Uri[n];for(int i=0;i<n;i++)files[i]=data.getClipData().getItemAt(i).getUri();}else if(data.getData()!=null)files=new Uri[]{data.getData()};}fileCallback.onReceiveValue(files);fileCallback=null;}}
     @Override protected void onResume(){super.onResume();foreground=true;if(web!=null)web.onResume();NETWORK.execute(()->Bridge.renew());handler.removeCallbacks(poll);handler.post(poll);}

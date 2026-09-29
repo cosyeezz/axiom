@@ -50,7 +50,9 @@ jobs:
       - name: Build Android network AAR
         run: bash android/scripts/build-bridge.sh
       - name: Collect third-party notices
-        run: node android/scripts/notices.mjs
+        run: |
+          (cd android/go && go mod download all)
+          node android/scripts/notices.mjs
       - name: Restore release signing identity
         if: github.event_name != 'pull_request'
         env:

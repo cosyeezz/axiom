@@ -7,7 +7,10 @@
 - Cookie 不隔离端口，因此同批实现精确 origin CSP、禁 worker/frame/form、原生导航/资源限制、WebView 销毁后释放代理与旧 WS。图片由系统文档选择器提供，不申请存储或 VPN 权限。
 - 签名：已生成一次持久 RSA-4096 PKCS#12 并配置四项 Actions Secrets；备份位于用户 `.axiom/signing/android-release`（Git 外且限制 ACL），公开指纹见实施计划。使用专用生成脚本且拒绝覆盖已有签名，不打印私钥或密码。
 - 设计：完整读取设计 skills 与默认 Linear 规范；原生页采用 canvas/surface/ink/primary tokens、8dp 控件圆角、24dp 页面留白和 ≥48dp 触摸区。无品牌外强调色或装饰渐变。
-- 验证尚在进行；不将代码静态检查等同实际 Android 构建或真实登录验收。涉及 `android/`、Android 实施计划、README 和本记录。
+- 首轮 CI `36569024545`：Go race 测试通过，arm64/x86_64 AAR 实编成功；第三方许可收集因 gomobile 新增模块未完整下载失败，已补下载步骤，不将该失败写成 APK 已生成。导入实际解析的 go.mod/go.sum 锁定依赖。
+- Android 适配：Application 在 tsnet 启动前注册 Java NetworkInterface getter，避免 SDK30+ 禁用 Go 接口枚举；非 nil AltAddrs 防回退。新增模拟器不登录的官方 AuthURL 获取测试，验证 DNS/TLS/启动路径但不访问用户 tailnet。
+- 审查修正：清凭据显式接收私有节点目录，避免未成功 Start 时假成功；登录按钮总调用 StartLoginInteractive 更新过期URL；Activity限制 singleTask。节点目录清理与接口解析补自动测试。
+- 验证尚在进行；不将代码静态检查等同实际 APK 构建或本人账号登录验收。涉及 `android/`、Android 实施计划、README 和本记录。
 
 ## 2026-09-29 Android 内嵌 Tailscale：计划先行
 

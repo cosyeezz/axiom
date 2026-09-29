@@ -84,10 +84,12 @@ func Renew(){state.Lock();defer state.Unlock();if state.gateway!=nil{state.gatew
 // Disconnect revokes local browser access. Keep the node until process exit so
 // Activity recreation doesn't race asynchronous tsnet initialization/Close.
 func Disconnect(){state.Lock();defer state.Unlock();if state.gateway!=nil{state.gateway.Close();state.gateway=nil};state.target=""}
-func Reset() error {
+func Reset(directory string) error {
+ if !filepath.IsAbs(directory)||filepath.Base(directory)!="tailscale"{return errors.New("拒绝清理非节点私有目录")}
  state.Lock();defer state.Unlock()
+ if state.dir!=""&&state.dir!=directory{return errors.New("节点目录不一致")}
  if state.gateway!=nil{state.gateway.Close();state.gateway=nil}
  if state.server!=nil{if err:=state.server.Close();err!=nil{return errors.New("关闭应用内网络失败，请重启应用后重试")};state.server=nil;state.client=nil}
- if state.dir!=""{if err:=os.RemoveAll(state.dir);err!=nil{return errors.New("删除本机节点状态失败")}}
+ if err:=os.RemoveAll(directory);err!=nil{return errors.New("删除本机节点状态失败")}
  state.dir="";state.target="";return nil
 }
