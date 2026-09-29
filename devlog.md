@@ -1,5 +1,14 @@
 # 开发记录
 
+## 2026-09-29 Android 内嵌 Tailscale：计划先行
+
+- 原因：用户选择仅安装 Axiom APK、在应用内自动连接 Tailscale 私网，并要求先写计划再实施，最终在 GitHub 页面直接下载 APK。
+- 范围：原生 Android 壳复用现有网页，Go tsnet 桥接应用网络；不使用系统 VPN，不开放公网入口，不预置用户入网密钥，保留现有个人账号 whois 鉴权。
+- 计划：实现前先写入 `docs/android-tsnet-plan.md`，明确身份与代理安全、生命周期、工具链、测试、持久签名和 Release 交付。实现细节待依赖核实后更新，不能把计划当作验证结果。
+- 基线：获取最新 `origin/master` 4a42624，在独立 `feat/android-tsnet` / `../worktrees/Axiom-android-tsnet` 开发；主 checkout 现有修改和未跟踪资料不动。
+- 发布条件：已只读核实仓库 Actions 开启、当前 GitHub 身份有 ADMIN 权限；尚无签名 Secrets，需单独生成持久签名，不在 Git 中保存私钥。
+- 文件：`docs/android-tsnet-plan.md`、`README.md`、`devlog.md`。当前仅完成计划初稿，尚无 APK 或真机验证结果。
+
 ## 2026-09-29 远程服务重启同权
 
 - 原因：远程连接被后端固定报告为不受管，且重启/更新检查被二次拒绝，导致服务面板置灰并误提示直接启动。

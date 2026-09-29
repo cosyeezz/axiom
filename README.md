@@ -347,6 +347,10 @@ macOS 同时支持两种芯片时，先执行 `rustup target add aarch64-apple-d
 
 配置复用 `public/favicon.svg`，保留系统标题栏，允许新窗口与拖放；`forceInternalNavigation` 保证连接跳转留在壳内；无需启动 Axiom 就能打包。壳默认入口是本地连接页而非固定端口，不会误连 `npm run dev` 的 `4320`；自定义地址在入口页/连接面板配置，不需要重新打包。不要将本地 Agent 服务暴露到公网。Pake 只作为构建工具安装，不加入 Axiom 运行依赖。
 
+### Android 客户端（内嵌 Tailscale，实施中）
+
+正在实现独立 Android APK：复用 Axiom 网页，通过应用内 tsnet 连接私网，无需另装 Tailscale App，也不占用系统 VPN。首次仍需本人登录授权，电脑需保持 Axiom 与 Tailscale 在线。计划、验证边界及签名发布步骤见 [Android 实施计划](docs/android-tsnet-plan.md)。此处仅记录已开始实施，不表示 APK 已构建或发布。
+
 ### 更新后页面一直「连接中」
 
 若 `/health` 正常但页面一直连接中，检查浏览器是否有前端模块 404。标签解析公共模块 `/markdown-scan.js` 已补入静态路由；修复版需更新并重启服务后刷新页面，单纯刷新不会重载生产服务的路由表。SQLite 的 ExperimentalWarning 本身不是启动失败。
