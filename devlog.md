@@ -14,6 +14,7 @@
 - 交付前生命周期审查：状态轮询改为单次在途、完成后延迟调度，并在执行前检查前台/代次，避免慢 LocalAPI 堵塞登录/清除；每次新地址尝试先清空旧目标，防新地址失败后自动打开旧工作台。涉及 `MainActivity.java`，回归验证进行中。
 - 第三轮 CI `36571028167` 实际生成并签名 release APK、通过 lint；模拟器 instrumentation 进程崩溃，尚未达到发布条件。新增 `android/scripts/emulator-smoke.sh` 在模拟器退出前采集 logcat、隐去授权URL并输出崩溃上下文。
 - 通过 artifact ZIP 显式HTTP range取得旧logcat，确证 `panic: no safe place found to store log state`。核实固定v1.102.4源：LocalBackend sockstat参数独立调用LogsDir，不继承tsnet.Server.Dir。节点私有目录建立后、Start前设置官方 `TS_LOGS_DIR`，不依赖Android默认HOME/tmp。保留Tailscale默认诊断上传以兼容强制审计tailnet，不将quiet误称禁上传；隐私说明同步android/README。
+- 修复后 CI `36574348195`：Go race、双架构AAR、APK/lint、签名与指纹全部通过；Android11模拟器5项测试全部通过，包含实际获取官方AuthURL及生命周期状态回归。后置无条件卸载返回DELETE_FAILED_INTERNAL_ERROR导致release安装尚未执行；脚本改为检查包存在才卸载，仍保留实际卸载/安装失败门禁。
 - 发布门禁复核：显式 bash pipefail 避免 apksigner 错误被 tee 掩盖；校验持久证书指纹，并在 debug 仪表测试后卸载测试签名包、安装真实 release APK。当前等待 CI 实测，不以配置存在代替校验通过。
 - 再次同步 `origin/master` 仍为 `4a42624`；现有 Node 全量回归 925 项，923 通过、2 跳过、0 失败。保留主 checkout 原有资料及自动索引差异，不纳入本任务提交。
 - 验证尚在进行；不将代码静态检查等同实际 APK 构建或本人账号登录验收。涉及 `android/`、`.github/workflows/android.yml`、Android 实施计划、README 和本记录。

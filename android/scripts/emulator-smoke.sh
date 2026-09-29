@@ -21,6 +21,10 @@ trap capture_logs EXIT
 adb logcat -b all -c
 gradle -p android --no-daemon :app:connectedDebugAndroidTest
 if [ -f dist/Axiom-Android.apk ]; then
-  adb uninstall com.axiom.android
+  # AGP can remove the debug app during instrumentation cleanup.
+  installed=$(adb shell pm list packages com.axiom.android | tr -d '\r')
+  if grep -qx 'package:com.axiom.android' <<< "$installed"; then
+    adb uninstall com.axiom.android
+  fi
   adb install dist/Axiom-Android.apk
 fi
