@@ -1,34 +1,264 @@
 import { actionIconNode } from './icons.js';
-export function createTodoUI({root,request}) {
-const KEY='axiom.todoExpanded';
-const paths={pending:'<rect x="3" y="3" width="14" height="14" rx="3"/>',running:'<circle cx="10" cy="10" r="7"/><path d="M10 6v4l3 2"/>',done:'<path d="m4 10 4 4 8-9"/>',blocked:'<circle cx="10" cy="10" r="7"/><path d="M10 6v5m0 3h.01"/>'};
-const names={pending:'待处理',running:'进行中',done:'已完成',blocked:'受阻'};
-const checks={tool:'工具验证',review:'检查确认',user:'由你验收'};
-const el=(tag,cls,text)=>{const n=document.createElement(tag);n.className=cls;if(text!=null)n.textContent=text;return n;};
-const icon=state=>{const n=el('span','');n.innerHTML=`<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">${paths[state]??paths.pending}</svg>`;return n;};
- let todo=null,sessionId=null,connected=true,expanded=false,generation=0,nextOffset=null,loading=false;
- const rows=new Map();
- try{expanded=localStorage.getItem(KEY)==='1';}catch{}
- const head=el('div','todo-header'),toggle=el('button','todo-toggle'),action=el('button','todo-action'),list=el('div','todo-list'),notice=el('p','todo-reason'),more=el('button','todo-action','显示更多');
- toggle.type=action.type=more.type='button';list.id='todo-list';toggle.setAttribute('aria-controls',list.id);head.append(toggle,action);root.replaceChildren(head,notice,list,more);
- const error=e=>{notice.textContent=e.message;notice.setAttribute('role','alert');};
- async function query(params={}){const id=sessionId,token=generation;const {id:itemId,...rest}=params;const value=await request('todo.get',{sessionId:id,listId:todo?.listId,...rest,...(itemId?{itemId}:{})});if(id!==sessionId||token!==generation)return null;return value;}
- async function details(item,node){const existing=node.querySelector('.todo-detail');if(existing){existing.remove();node.querySelector('.todo-item-title').setAttribute('aria-expanded','false');return;}try{const view=await query({id:item.id,detail:true,limit:20});if(!view||!node.isConnected)return;let detail=node.querySelector('.todo-detail');if(detail){detail.remove();return;}detail=el('div','todo-detail');if(view.item.description)detail.append(el('p','',view.item.description));const criteria=el('ul','');for(const c of view.item.acceptance??[])criteria.append(el('li','',`${c.text}（${checks[c.check]??'检查确认'}）`));if(criteria.childNodes.length)detail.append(criteria);if(view.item.summary)detail.append(el('p','',view.item.summary));
- const verification=await query({id:item.id,section:'verification',limit:10});if(!verification||!node.isConnected)return;for(const v of verification.verification??[]){const label=view.item.acceptance?.find(c=>c.criterionId===v.criterionId)?.text??v.criterionId;detail.append(el('p','',`${label}：${v.result}`));for(const ref of v.refs??[])detail.append(el('small','todo-evidence',ref.messageId?`消息依据：${ref.messageId}`:`工具依据：${ref.toolCallId}`));}
- for(const child of view.items??[])detail.append(makeRow(child));
- if(view.hasMore){const button=el('button','todo-action','显示更多步骤');button.type='button';let offset=view.nextOffset;button.onclick=async()=>{button.disabled=true;try{const page=await query({id:item.id,offset,limit:20});if(!page||!node.isConnected)return;for(const child of page.items)detail.insertBefore(makeRow(child),button);offset=page.nextOffset;button.hidden=!page.hasMore;}catch(e){error(e);}finally{button.disabled=false;}};detail.append(button);}
- if((view.items??[]).length&&!view.hasMore&&view.items.every(c=>c.status==='done')&&view.item.status!=='done')detail.append(el('p','todo-reason','步骤已完成，待目标验收'));node.append(detail);node.querySelector('.todo-item-title').setAttribute('aria-expanded','true');
- }catch(e){error(e);}}
- function makeRow(item){const node=el('div',`todo-row${item.level===2?' todo-child':''}`);node.dataset.id=item.id;const state=icon(item.status),button=el('button','todo-item-title',item.title),summary=el('small','',item.summary||item.blocker);button.type='button';button.setAttribute('aria-expanded','false');state.setAttribute('aria-label',names[item.status]??names.pending);summary.hidden=!summary.textContent;button.title=item.level===1?'目标要求已确认；修改需再次确认。':names[item.status];button.onclick=()=>details(item,node);node.append(state,button,summary);node.dataset.status=item.status;return node;}
- function put(item){let row=rows.get(item.id);if(!row){row=makeRow(item);rows.set(item.id,row);list.append(row);}else{row.dataset.status=item.status;row.firstChild.replaceWith(icon(item.status));const button=row.querySelector('.todo-item-title');button.textContent=item.title;button.onclick=()=>details(item,row);const summary=row.querySelector('small');summary.textContent=item.summary||item.blocker||'';summary.hidden=!summary.textContent;row.firstChild.setAttribute('aria-label',names[item.status]??names.pending);button.setAttribute('aria-expanded','false');row.querySelector('.todo-detail')?.remove();}}
- async function load(offset=0){if(loading||!expanded||!todo?.listId)return;loading=true;const token=generation;try{const view=await query({offset,limit:20});if(!view||!expanded)return;if(view.version<todo.version)return;todo={...todo,...view};for(const i of view.items)put(i);nextOffset=view.nextOffset;renderHeader();}catch(e){error(e);}finally{if(token===generation)loading=false;}}
- function renderHeader(){root.hidden=!todo?.listId;if(root.hidden)return;const chevron=actionIconNode('chevron');chevron.classList.add('todo-chevron');toggle.replaceChildren(chevron,el('span','todo-heading','任务清单'));const counts=todo.counts?.targets??{};toggle.append(el('span','todo-count',`${counts.done??0} / ${counts.total??0} 已完成`));for(const state of ['running','blocked']){if(!counts[state])continue;const badge=el('span','todo-count');badge.dataset.status=state;badge.title=names[state];badge.append(icon(state),document.createTextNode(`${counts[state]} ${names[state]}`));toggle.append(badge);}toggle.setAttribute('aria-expanded',String(expanded));toggle.setAttribute('aria-label',`${expanded?'收起':'展开'}任务清单，${counts.done??0} / ${counts.total??0} 已完成，${counts.pending??0} 待处理，${counts.running??0} 进行中，${counts.blocked??0} 受阻`);
- const h=todo.header??{};action.textContent=todo.completed?'已完成':todo.cancelled?'已取消':h.requirePlan?'取消创建':h.paused?'恢复':'暂停';action.disabled=!connected||todo.completed||todo.cancelled;
- notice.textContent=h.runtimeBlock?.reason||h.pauseReason||(h.requirePlan?'等待填写目标或确认目标':todo.cancelled?'已取消，未完成':'');notice.hidden=!notice.textContent;list.hidden=!expanded;more.hidden=!expanded||nextOffset==null;more.disabled=!connected||loading;}
- function collapse(){rows.clear();list.replaceChildren();nextOffset=null;}
- toggle.onclick=()=>{expanded=!expanded;try{localStorage.setItem(KEY,expanded?'1':'0');}catch{}if(!expanded)collapse();renderHeader();if(expanded)void load();};more.onclick=()=>load(nextOffset);
- action.onclick=async()=>{const token=generation;action.disabled=true;try{const value=await request('todo.action',{sessionId,action:todo.header?.requirePlan?'cancel_prepare':todo.header?.paused?'resume':'pause'});if(token===generation&&value?.listId)show(sessionId,value);}catch(e){if(token===generation)error(e);}finally{if(token===generation)renderHeader();}};
- function show(id,value){if(id!==sessionId||value?.listId!==todo?.listId){generation++;loading=false;collapse();sessionId=id;todo=null;}if(todo&&value&&value.version<todo.version)return;todo=value;renderHeader();if(!expanded){collapse();return;}for(const item of value?.changed??value?.items??[])if(item.level===1)put(item);for(const removed of value?.removedIds??[]){rows.get(removed)?.remove();rows.delete(removed);}if(value?.items){const ids=new Set(value.items.map(i=>i.id));if(value.coverage?.complete)for(const [id,row]of rows)if(!ids.has(id)){row.remove();rows.delete(id);}}if(!rows.size)void load();}
- window.addEventListener('storage',event=>{if(event.key!==KEY)return;expanded=event.newValue==='1';if(!expanded)collapse();renderHeader();if(expanded)void load();});
- return {show,setConnected(value){connected=value;renderHeader();},expand(){expanded=true;renderHeader();void load();}};
+
+export function createTodoUI({ root, request }) {
+  const KEY = 'axiom.todoExpanded';
+  const stateIcons = { pending: 'pending', running: 'clock', done: 'check', blocked: 'blocked' };
+  const names = { pending: '待处理', running: '进行中', done: '已完成', blocked: '受阻' };
+  const checks = { tool: '工具验证', review: '检查确认', user: '由你验收' };
+  const el = (tag, cls, text) => {
+    const node = document.createElement(tag);
+    node.className = cls;
+    if (text != null) node.textContent = text;
+    return node;
+  };
+  const icon = (state) => {
+    const slot = el('span', 'todo-state-icon');
+    slot.setAttribute('aria-hidden', 'true');
+    slot.append(actionIconNode(stateIcons[state] ?? stateIcons.pending));
+    return slot;
+  };
+  let todo = null, sessionId = null, connected = true, expanded = false;
+  let generation = 0, nextOffset = null, loading = false;
+  const rows = new Map();
+  try { expanded = localStorage.getItem(KEY) === '1'; } catch {}
+
+  const head = el('div', 'todo-header');
+  const toggle = el('button', 'todo-toggle');
+  const action = el('button', 'todo-action');
+  const list = el('div', 'todo-list');
+  const notice = el('p', 'todo-reason');
+  const more = el('button', 'todo-action', '显示更多');
+  toggle.type = action.type = more.type = 'button';
+  list.id = 'todo-list';
+  toggle.setAttribute('aria-controls', list.id);
+
+  // Keep the identity intact when counts wrap. The chevron conveys disclosure only.
+  const identity = el('span', 'todo-identity');
+  const chevron = actionIconNode('chevron');
+  chevron.classList.add('todo-chevron');
+  identity.append(chevron, actionIconNode('checklist'), el('span', 'todo-heading', '任务清单'));
+  const metrics = el('span', 'todo-metrics');
+  toggle.append(identity, metrics);
+  head.append(toggle, action);
+  root.replaceChildren(head, notice, list, more);
+
+  const error = (e) => {
+    notice.textContent = e.message;
+    notice.hidden = false;
+    notice.setAttribute('role', 'alert');
+  };
+
+  async function query(params = {}) {
+    const id = sessionId, token = generation;
+    const { id: itemId, ...rest } = params;
+    try {
+      const value = await request('todo.get', {
+        sessionId: id, listId: todo?.listId, ...rest, ...(itemId ? { itemId } : {}),
+      });
+      if (id !== sessionId || token !== generation) return null;
+      return value;
+    } catch (error) {
+      if (id !== sessionId || token !== generation) return null;
+      throw error;
+    }
+  }
+
+  async function details(item, node) {
+    const existing = node.querySelector('.todo-detail');
+    if (existing) {
+      existing.remove();
+      node.querySelector('.todo-item-title').setAttribute('aria-expanded', 'false');
+      return;
+    }
+    try {
+      const view = await query({ id: item.id, detail: true, limit: 20 });
+      if (!view || !node.isConnected) return;
+      let detail = node.querySelector('.todo-detail');
+      if (detail) { detail.remove(); return; }
+      detail = el('div', 'todo-detail');
+      if (view.item.description) detail.append(el('p', '', view.item.description));
+      const criteria = el('ul', '');
+      for (const c of view.item.acceptance ?? []) {
+        criteria.append(el('li', '', `${c.text}（${checks[c.check] ?? '检查确认'}）`));
+      }
+      if (criteria.childNodes.length) detail.append(criteria);
+      if (view.item.summary) detail.append(el('p', '', view.item.summary));
+      const verification = await query({ id: item.id, section: 'verification', limit: 10 });
+      if (!verification || !node.isConnected) return;
+      for (const v of verification.verification ?? []) {
+        const label = view.item.acceptance?.find(c => c.criterionId === v.criterionId)?.text ?? v.criterionId;
+        detail.append(el('p', '', `${label}：${v.result}`));
+        for (const ref of v.refs ?? []) {
+          detail.append(el('small', 'todo-evidence', ref.messageId ? `消息依据：${ref.messageId}` : `工具依据：${ref.toolCallId}`));
+        }
+      }
+      for (const child of view.items ?? []) detail.append(makeRow(child));
+      if (view.hasMore) {
+        const button = el('button', 'todo-action', '显示更多步骤');
+        button.type = 'button';
+        let offset = view.nextOffset;
+        button.onclick = async () => {
+          button.disabled = true;
+          try {
+            const page = await query({ id: item.id, offset, limit: 20 });
+            if (!page || !node.isConnected) return;
+            for (const child of page.items) detail.insertBefore(makeRow(child), button);
+            offset = page.nextOffset;
+            button.hidden = !page.hasMore;
+          } catch (e) { error(e); }
+          finally { button.disabled = false; }
+        };
+        detail.append(button);
+      }
+      if ((view.items ?? []).length && !view.hasMore && view.items.every(c => c.status === 'done') && view.item.status !== 'done') {
+        detail.append(el('p', 'todo-reason', '步骤已完成，待目标验收'));
+      }
+      node.append(detail);
+      node.querySelector('.todo-item-title').setAttribute('aria-expanded', 'true');
+    } catch (e) { error(e); }
+  }
+
+  function updateRow(node, item) {
+    node.dataset.status = item.status;
+    const button = node.querySelector('.todo-item-title');
+    // Icon and text share one hit target and one first-line alignment context.
+    button.replaceChildren(icon(item.status), el('span', 'todo-item-label', item.title));
+    button.setAttribute('aria-label', `${item.title}，${names[item.status] ?? names.pending}`);
+    button.setAttribute('aria-expanded', 'false');
+    button.title = item.level === 1 ? '目标要求已确认；修改需再次确认。' : names[item.status];
+    button.onclick = () => details(item, node);
+    const summary = node.querySelector('.todo-summary');
+    summary.textContent = item.summary || item.blocker || '';
+    summary.hidden = !summary.textContent;
+    node.querySelector('.todo-detail')?.remove();
+  }
+
+  function makeRow(item) {
+    const node = el('div', `todo-row${item.level === 2 ? ' todo-child' : ''}`);
+    node.dataset.id = item.id;
+    const button = el('button', 'todo-item-title');
+    button.type = 'button';
+    node.append(button, el('small', 'todo-summary'));
+    updateRow(node, item);
+    return node;
+  }
+
+  function put(item) {
+    let row = rows.get(item.id);
+    if (!row) {
+      row = makeRow(item);
+      rows.set(item.id, row);
+      list.append(row);
+    } else updateRow(row, item);
+  }
+
+  async function load(offset = 0) {
+    if (loading || !expanded || !todo?.listId) return;
+    loading = true;
+    more.disabled = true;
+    const token = generation;
+    try {
+      const view = await query({ offset, limit: 20 });
+      if (!view || !expanded) return;
+      if (view.version < todo.version) return;
+      todo = { ...todo, ...view };
+      for (const item of view.items) put(item);
+      nextOffset = view.nextOffset;
+      renderHeader();
+    } catch (e) { error(e); }
+    finally {
+      if (token === generation) {
+        loading = false;
+        more.disabled = !connected;
+      }
+    }
+  }
+
+  function renderHeader() {
+    root.hidden = !todo?.listId;
+    if (root.hidden) return;
+    const counts = todo.counts?.targets ?? {};
+    metrics.replaceChildren(el('span', 'todo-count', `${counts.done ?? 0} / ${counts.total ?? 0} 已完成`));
+    for (const state of ['running', 'blocked']) {
+      if (!counts[state]) continue;
+      const badge = el('span', 'todo-count');
+      badge.dataset.status = state;
+      badge.append(icon(state), el('span', '', `${counts[state]} ${names[state]}`));
+      metrics.append(badge);
+    }
+    toggle.setAttribute('aria-expanded', String(expanded));
+    toggle.setAttribute('aria-label', `${expanded ? '收起' : '展开'}任务清单，${counts.done ?? 0} / ${counts.total ?? 0} 已完成，${counts.pending ?? 0} 待处理，${counts.running ?? 0} 进行中，${counts.blocked ?? 0} 受阻`);
+    toggle.title = `${expanded ? '收起' : '展开'}任务清单`;
+    const h = todo.header ?? {};
+    action.textContent = todo.completed ? '已完成' : todo.cancelled ? '已取消' : h.requirePlan ? '取消创建' : h.paused ? '恢复' : '暂停';
+    action.disabled = !connected || todo.completed || todo.cancelled;
+    notice.textContent = h.runtimeBlock?.reason || h.pauseReason || (h.requirePlan ? '等待填写目标或确认目标' : todo.cancelled ? '已取消，未完成' : '');
+    notice.hidden = !notice.textContent;
+    list.hidden = !expanded;
+    more.hidden = !expanded || nextOffset == null;
+    more.disabled = !connected || loading;
+  }
+
+  function collapse() {
+    rows.clear();
+    list.replaceChildren();
+    nextOffset = null;
+  }
+
+  toggle.onclick = () => {
+    expanded = !expanded;
+    try { localStorage.setItem(KEY, expanded ? '1' : '0'); } catch {}
+    if (!expanded) collapse();
+    renderHeader();
+    if (expanded) void load();
+  };
+  more.onclick = () => load(nextOffset);
+  action.onclick = async () => {
+    const token = generation;
+    action.disabled = true;
+    try {
+      const value = await request('todo.action', {
+        sessionId, action: todo.header?.requirePlan ? 'cancel_prepare' : todo.header?.paused ? 'resume' : 'pause',
+      });
+      if (token === generation && value?.listId) show(sessionId, value);
+    } catch (e) { if (token === generation) error(e); }
+    finally { if (token === generation) renderHeader(); }
+  };
+
+  function show(id, value) {
+    if (id !== sessionId || value?.listId !== todo?.listId) {
+      generation++;
+      loading = false;
+      collapse();
+      sessionId = id;
+      todo = null;
+    }
+    if (todo && value && value.version < todo.version) return;
+    todo = value;
+    renderHeader();
+    if (!expanded) { collapse(); return; }
+    for (const item of value?.changed ?? value?.items ?? []) if (item.level === 1) put(item);
+    for (const removed of value?.removedIds ?? []) {
+      rows.get(removed)?.remove();
+      rows.delete(removed);
+    }
+    if (value?.items && value.coverage?.complete) {
+      const ids = new Set(value.items.map(i => i.id));
+      for (const [id, row] of rows) if (!ids.has(id)) { row.remove(); rows.delete(id); }
+    }
+    if (!rows.size) void load();
+  }
+
+  window.addEventListener('storage', event => {
+    if (event.key !== KEY) return;
+    expanded = event.newValue === '1';
+    if (!expanded) collapse();
+    renderHeader();
+    if (expanded) void load();
+  });
+  return {
+    show,
+    setConnected(value) { connected = value; renderHeader(); },
+    expand() { expanded = true; renderHeader(); void load(); },
+  };
 }

@@ -57,6 +57,11 @@ export const actionIconPaths = Object.freeze({
   external: 'M9 5H5v14h14v-4M13 5h6v6M19 5 9 15',
   collapse: 'M5 4h14M12 20V9m-5 5 5-5 5 5',
   check: 'm5 12 4.5 4.5L19 6.5',
+  // Todo: checklist identity is separate from the disclosure chevron and item state.
+  checklist: 'm3 6 2 2 3-4M11 6h10M3 12h4m4 0h10M3 18h4m4 0h10',
+  pending: 'M7 4h10a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3Z',
+  clock: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM12 7v5l3 2',
+  blocked: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM12 7v6m0 4h.01',
   copy: 'M8 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v2M11 9h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z',
   duplicate: 'M8 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v2M11 9h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2ZM14.5 12v5M12 14.5h5',
   edit: 'm15 5 4 4M4 20l5-1L20 8a2.83 2.83 0 0 0-4-4L5 15l-1 5Z',

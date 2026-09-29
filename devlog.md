@@ -1,5 +1,15 @@
 # 开发记录
 
+## 2026-09-29 Todo 清单图标语义与首行对齐重构
+
+- 原因：浏览器复现桌面标题继承全局按钮 40px 最小高度，而状态图标槽仅 21px，中心相差 9.5px；全局 `white-space:nowrap` 使长标题溢出。仅修复换行又会暴露移动端固定 44px 图标槽与多行文字错位。收起入口此前只有展开箭头，缺少清单身份图标。
+- 调研与决策：参考 Primer ActionList 的 leading visual/label 分槽、VS Code checklist 与 disclosure chevron 的语义分工、Radix/WAI-ARIA Disclosure 的原生按钮和键盘契约。保留清单文字、独立暂停/恢复和全部 Todo 协议；不新增 UI 框架或后端改动。
+- 修改：共享 24px/1.75 描边 SVG，增加清单、待处理、时钟、受阻图形；身份组不可拆分，计数整组换行；状态图标放入标题按钮并按首行对齐，触控高度由按钮内边距提供。局部覆盖全局 nowrap/primary hover，状态标签随增量同步更新。采用 Linear 4/8/12/16px 间距、8px 圆角、14px/1.5 标题及现有主题色变量。
+- 文件：`public/todo.js`、`public/todo.css`、`public/icons.js`、`tests/todo-ui.test.js`、新增 `tests/todo-ui-browser.py`、`README.md`、`devlog.md`。
+- 审查修正：读取失败与成功回执一样按会话代次隔离，旧会话迟到错误不污染新面板；修复已有「显示更多」完成加载后未解锁的问题，补顶层与子步骤分页测试。确认 fixture 实际英文使用 Segoe UI，与正式页面字体一致，不根据截图观感硬编码另一套字体。
+- 验证：定向 Todo/图标 30 项通过；最终全量 928 项，926 通过、2 跳过、0 失败。首轮全量发现测试 helper 拼接模块产生顶层 `el` 重名，已恢复 helper 在工厂函数内的原作用域，复测通过。浏览器使用真实 ESM/CSS 内存路由，五档宽度、双主题下首行中心差不超过 0.5px、无横向溢出；检查键盘、折叠偏好、状态增量、详情/子项/验收依据、暂停/恢复、200% CSS 缩放和高对比。焦点验证显式通过 Tab 进入键盘模式，避免鼠标交互后的 `focus-visible` 假阴性。
+- 边界：不启动用户服务、不读取真实会话、不调用模型。Chromium fixture 不等于真实移动设备、屏幕阅读器或端到端模型验收。截图与指标保存在仓库外；测试生成的无关 `INDEX.md` 漂移不纳入提交。
+
 ## 2026-09-29 Android 内嵌 Tailscale：客户端实施
 
 - 计划先行提交 `0c03d3a` 后新增独立 `android/`。本机无 Go/JDK/SDK，采用 GitHub Actions 固定工具链编译 AAR/APK，不安装或修改用户现有服务。
