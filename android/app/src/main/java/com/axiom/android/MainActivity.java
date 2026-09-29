@@ -242,15 +242,16 @@ public final class MainActivity extends Activity {
         loading=true;setBusy(true);final int ticket=generation;showStatusMessage("正在检查电脑连接…");
         NETWORK.execute(()->{try{
             JSONObject probe=new JSONObject(Bridge.probeState());final String origin=Bridge.localURL();final String token=Bridge.sessionToken();
-            handler.post(()->{
-                if(stale(ticket))return;
-                if(!probe.optBoolean("ok")){failedProbe(probe.optString("message"),probe.optBoolean("retryable"));return;}
-                loading=false;setBusy(false);
-                if(!foreground){nextProbeAt=0;return;}
-                if(web==null)buildWebView(origin,token);
-                else if(!documentReady&&origin.equals(localOrigin))buildWebView(origin,token);
-            });
+            handler.post(()->applyProbeResult(ticket,probe,origin,token));
         }catch(Exception e){handler.post(()->{if(!stale(ticket))failedProbe(safeMessage(e),true);});}});
+    }
+    private void applyProbeResult(int ticket,JSONObject probe,String origin,String token){
+        if(stale(ticket))return;
+        if(!probe.optBoolean("ok")){failedProbe(probe.optString("message"),probe.optBoolean("retryable"));return;}
+        loading=false;setBusy(false);
+        if(!foreground){nextProbeAt=0;return;}
+        if(web==null)buildWebView(origin,token);
+        else if(!documentReady&&origin.equals(localOrigin))buildWebView(origin,token);
     }
     private boolean initialDocument(WebView view,int ticket,WebResourceRequest request){
         return view==web&&!stale(ticket)&&!documentReady&&pageLoading&&request.isForMainFrame()

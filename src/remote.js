@@ -212,7 +212,7 @@ export async function createRemoteAccess({
   let authUrl = "";
   let statusAt = 0;
   let refresh = null; // status 刷新 in-flight 去重，防同一瞬间 fork 多个 tailscale status
-  let loginSession = null;
+  let loginSession = null, loginFlight = null;
   const whoisCache = new Map();
   const inflight = new Map();
   let chain = Promise.resolve();
@@ -429,7 +429,7 @@ export async function createRemoteAccess({
     url = null;
   };
 
-  // 串行化所有更改（先校验再持久化后应用），避免并发互相覆盖。
+  // 串行化所有更改；合法配置意图先撤销旧许可，再校验环境并应用。
   const configure = (request) =>
     enqueue(async () => {
       if (disposed) throw new Error("远程访问已关闭");
@@ -438,6 +438,15 @@ export async function createRemoteAccess({
       // LoginName 不一定是传统邮箱（如 GitHub 登录为 alice@github），只做最宽松校验。
       if (enabled && !email.includes("@"))
         throw new Error("启用远程访问需要 Tailscale LoginName（如 user@example.com 或 alice@github）");
+      // A well-formed explicit attempt supersedes even an old startup recovery.
+      // Persist before probing so a failed environment check cannot revive the old grant.
+      const disabled = { enabled: false, email };
+      await persistConfig(disabled);
+      clearRecovery(); recoveryAttempts = 0;
+      config = disabled;
+      await stop();
+      whoisCache.clear();
+      if (disposed) throw new Error("远程访问已关闭");
       if (enabled) {
         statusAt = 0; // 强制取最新本机账号
         const fresh = await status();
@@ -448,15 +457,6 @@ export async function createRemoteAccess({
         if (fresh.loginEmail.toLowerCase() !== email.toLowerCase())
           throw new Error(`允许邮箱须与本机登录账号一致（当前登录：${fresh.loginEmail}）`);
       }
-      if (disposed) throw new Error("远程访问已关闭");
-      // An explicit attempt supersedes old startup recovery. Persist a disabled fence
-      // first, so failure (including a crash during listen) cannot grant future startup.
-      const disabled = { enabled: false, email };
-      await persistConfig(disabled);
-      clearRecovery(); recoveryAttempts = 0;
-      config = disabled;
-      await stop();
-      whoisCache.clear();
       if (disposed) throw new Error("远程访问已关闭");
       if (enabled) {
         config = { enabled: true, email };
@@ -475,9 +475,8 @@ export async function createRemoteAccess({
   // remote.login：仅本地显式触发的登录（固定 argv：bare up，不改任何网络配置）。
   // 按完整行有界扫描 stdout/stderr 提取官方 AuthURL；child 生命周期有界（timer 兜底 kill），
   // 进行中重复调用复用同一会话；收到完整换行即返回。
-  const endLogin = () => {
-    const session = loginSession;
-    loginSession = null;
+  const endLogin = (session = loginSession) => {
+    if (loginSession === session) loginSession = null;
     if (!session) return;
     clearTimeout(session.timer);
     try {
@@ -486,7 +485,7 @@ export async function createRemoteAccess({
     session.wake?.(); // 唤醒等待者，避免悬挂
   };
   const assertRunning = () => { if (disposed) throw new Error("远程访问已关闭"); };
-  const login = async () => {
+  const beginLogin = async () => {
     assertRunning();
     statusAt = 0; // 强制取最新登录态
     const fresh = await status();
@@ -535,7 +534,7 @@ export async function createRemoteAccess({
       session.wake = done;
     });
     loginSession = session;
-    session.timer = setTimeout(endLogin, loginTimeoutMs); // 外部有界兜底 kill
+    session.timer = setTimeout(() => endLogin(session), loginTimeoutMs); // 外部有界兜底 kill
     const scanners = [];
     const scanLine = (line) => {
       const found = line.match(AUTH_URL);
@@ -561,7 +560,7 @@ export async function createRemoteAccess({
         if (session.output > LOGIN_OUTPUT_CAP) {
           session.closed = true;
           session.wake?.();
-          endLogin(); // 有界：输出异常膨胀即终止
+          endLogin(session); // 只清理自身，旧输出不能终止后来的会话
           return;
         }
         scanner.feed(chunk);
@@ -591,6 +590,13 @@ export async function createRemoteAccess({
       };
     // authUrl 空串 = 仍在获取中，前端稍后重试 remote.login 或轮询 remote.get。
     return { state: "pending", loginEmail: "", authUrl: session.url ?? "" };
+  };
+
+  // Deduplicate before the first await, including bin/spawn and URL discovery.
+  const login = () => {
+    if (disposed) return Promise.reject(new Error("远程访问已关闭"));
+    if (!loginFlight) loginFlight = beginLogin().finally(() => { loginFlight = null; });
+    return loginFlight;
   };
 
   const shutdown = () => {

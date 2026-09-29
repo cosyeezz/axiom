@@ -6,7 +6,7 @@
 
 共享网页传输增加 15 秒握手超时、120 秒恢复无回执进展截止和 25 秒间隔/10 秒超时的只读心跳。普通故障按 1/2/4/8/16/30/30/30 秒最多自动重试 8 次，随后等待 online/页面恢复/回前台触发新窗口（30 秒去重）或手动连接；保护性停机不会被自动解除。不自动刷新已建立页面、不重放结果未知的请求。Android 首次健康检查或根文档 GET 的瞬时故障保留目标，最多 8 次失败后暂停；权限拒绝仍需人工处理，Cookie 清除与写入按完成回调串行。
 
-Windows Pake/WebView2、iOS 浏览器共用上述网页传输；仓库没有 iOS 原生客户端。共享测试不能代替 Windows 睡眠唤醒、iOS 锁屏/网络切换或 Android 真 tailnet 验收。电脑端已保存启用许可但启动早于 Tailscale/监听暂时失败时，串行退避最多重试 8 次（30 秒封顶），每次重新校验本机账号、Running 状态和目标 IP；禁用/退出取消重试，不后台登录或改写许可。显式启用先保存停用栅栏，仅监听成功后持久化启用；失败不产生后台重试或下次启动许可。耗尽后需在电脑端显式重新启用。电脑关机、长期休眠或实际网络不可达仍无法由客户端修复。新版 APK 构建与发布结果以 Release notes 和实际 CI 为准。
+Windows Pake/WebView2、iOS 浏览器共用上述网页传输；仓库没有 iOS 原生客户端。共享测试不能代替 Windows 睡眠唤醒、iOS 锁屏/网络切换或 Android 真 tailnet 验收。电脑端已保存启用许可但启动早于 Tailscale/监听暂时失败时，串行退避最多重试 8 次（30 秒封顶），每次重新校验本机账号、Running 状态和目标 IP；禁用/退出取消重试，不后台登录或改写许可。格式合法的显式启用先保存停用栅栏并取消旧恢复，再检查当前环境；仅监听成功后持久化启用，失败不留下后台重试或下次启动许可。并发登录共用在途操作，退出清理登录子进程。耗尽后需在电脑端显式重新启用。电脑关机、长期休眠或实际网络不可达仍无法由客户端修复。新版 APK 构建与发布结果以 Release notes 和实际 CI 为准。
 
 回归：`node --test tests/realtime-transport.test.js tests/app.test.js tests/prompt-resize.test.js tests/service-initialization.test.js tests/connection-recovery.test.js tests/remote.test.js`；`python tests/mobile-reading-ui.py` 自动启动/清理隔离预览，截图目录用 `UI_EVIDENCE_DIR` 指定（默认临时目录），不调用真实模型。Android instrumentation 另验证设置保留、Cookie 首次导航、502 初始化恢复及重试边界。
 

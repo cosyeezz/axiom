@@ -6,6 +6,8 @@ import android.os.Handler;
 import android.webkit.CookieManager;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import org.json.JSONObject;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.platform.app.InstrumentationRegistry;
 import org.junit.Test;
@@ -48,15 +50,26 @@ public final class ConnectionRecoveryTest {
             AtomicReference<WebView> old=new AtomicReference<>();
             s.onActivity(a->{
                 call(a,"buildWebView",new Class<?>[]{String.class,String.class},server.origin(),"old-token");
-                old.set((WebView)get(a,"web"));
+                old.set((WebView)get(a,"web"));WebViewClient client=old.get().getWebViewClient();
                 call(a,"buildWebView",new Class<?>[]{String.class,String.class},server.origin(),"new-token");
                 assertNotSame(old.get(),get(a,"web"));
-                call(a,"completeDocument",new Class<?>[]{WebView.class,int.class,String.class},old.get(),get(a,"generation"),server.origin()+"/");
+                client.onPageCommitVisible(old.get(),server.origin()+"/");
                 assertFalse((Boolean)get(a,"documentReady"));
             });
             waitFor(()->bool(s,"documentReady"),"new instance navigation");
             assertEquals(0,server.oldCookies.get());
             assertTrue(server.cookie.get(),server.cookie.get().contains("axiom_local_session=new-token"));
+        }
+    }
+    @Test public void sameInstanceCallbackWithOldGenerationCannotCommit() throws Exception {
+        try(Server server=new Server();ActivityScenario<MainActivity> s=launch()){
+            s.onActivity(a->{
+                call(a,"buildWebView",new Class<?>[]{String.class,String.class},server.origin(),"new-token");
+                WebView web=(WebView)get(a,"web");WebViewClient client=web.getWebViewClient();
+                set(a,"generation",(Integer)get(a,"generation")+1);
+                client.onPageCommitVisible(web,server.origin()+"/");
+                assertFalse((Boolean)get(a,"documentReady"));assertTrue((Boolean)get(a,"pageLoading"));
+            });
         }
     }
     @Test public void establishedExplicitReloadUsesSameInstanceWithoutReenablingAutomaticReload() throws Exception {
@@ -73,7 +86,7 @@ public final class ConnectionRecoveryTest {
                 WebView web=(WebView)get(a,"web");
                 web.getWebViewClient().onReceivedHttpError(web,new Request(server.origin()+"/",true),new WebResourceResponse("text/plain","UTF-8",502,"Bad Gateway",Collections.emptyMap(),new ByteArrayInputStream(new byte[0])));
                 set(a,"lastRecoveryWake",-30000L);call(a,"wakeRecovery");
-                assertEquals(0,get(a,"retryFailures"));assertEquals(false,call(a,"shouldProbe"));
+                assertEquals(0,get(a,"retryFailures"));assertReadyBlocksProbe(a);
             });
         }
     }
@@ -106,7 +119,7 @@ public final class ConnectionRecoveryTest {
             });
         }
     }
-    @Test public void firstDocument502RecoversButEstablishedPageNeverAutomaticallyReloads() throws Exception {
+    @Test public void firstDocument502RecoversFromAutomaticProbeContinuationButEstablishedPageNeverReloads() throws Exception {
         try(Server server=new Server();ActivityScenario<MainActivity> s=launch()){
             server.code.set(502);
             s.onActivity(a->call(a,"buildWebView",new Class<?>[]{String.class,String.class},server.origin(),"new-token"));
@@ -114,10 +127,17 @@ public final class ConnectionRecoveryTest {
             assertFalse(bool(s,"documentReady"));assertFalse(bool(s,"pageLoading"));
             server.code.set(200);
             AtomicReference<WebView> failed=new AtomicReference<>();
-            // Explicit refresh uses the same tracked initial-document path as automatic probe success.
-            s.onActivity(a->{failed.set((WebView)get(a,"web"));call(a,"reloadWorkspace");
+            // Exercise the production UI continuation with a controlled read-only probe result.
+            // This covers WebView recovery, not a real tsnet health check.
+            JSONObject probe=new JSONObject().put("ok",true);
+            s.onActivity(a->{
+                failed.set((WebView)get(a,"web"));WebViewClient client=failed.get().getWebViewClient();
+                set(a,"foreground",true);set(a,"currentTarget","100.64.0.1:4319");set(a,"nextProbeAt",0L);
+                assertEquals(true,call(a,"shouldProbe"));
+                call(a,"applyProbeResult",new Class<?>[]{int.class,JSONObject.class,String.class,String.class},get(a,"generation"),probe,server.origin(),"new-token");
+                set(a,"foreground",false);
                 assertNotSame(failed.get(),get(a,"web"));
-                call(a,"completeDocument",new Class<?>[]{WebView.class,int.class,String.class},failed.get(),get(a,"generation"),server.origin()+"/");
+                client.onPageCommitVisible(failed.get(),server.origin()+"/");
                 assertEquals(false,get(a,"documentReady"));
             });
             waitFor(()->bool(s,"documentReady"),"successful retry");
@@ -125,10 +145,21 @@ public final class ConnectionRecoveryTest {
             s.onActivity(a->{
                 WebView web=(WebView)get(a,"web");
                 web.getWebViewClient().onReceivedHttpError(web,new Request(server.origin()+"/",true),new WebResourceResponse("text/plain","UTF-8",502,"Bad Gateway",Collections.emptyMap(),new ByteArrayInputStream(new byte[0])));
-                assertEquals(0,get(a,"retryFailures"));assertEquals(false,call(a,"shouldProbe"));
+                assertEquals(0,get(a,"retryFailures"));assertReadyBlocksProbe(a);
+                WebView established=(WebView)get(a,"web");set(a,"foreground",true);
+                call(a,"applyProbeResult",new Class<?>[]{int.class,JSONObject.class,String.class,String.class},get(a,"generation"),probe,server.origin(),"new-token");
+                set(a,"foreground",false);assertSame(established,get(a,"web"));
             });
             assertEquals(before,js(s,"draft.value+'|'+sentinel"));
         }
+    }
+    private void assertReadyBlocksProbe(MainActivity a){
+        set(a,"foreground",true);set(a,"currentTarget","100.64.0.1:4319");
+        set(a,"pageLoading",false);set(a,"loading",false);set(a,"busy",false);
+        set(a,"retryBlocked",false);set(a,"retryFailures",0);set(a,"nextProbeAt",0L);
+        assertTrue((Boolean)get(a,"documentReady"));assertEquals(false,call(a,"shouldProbe"));
+        set(a,"documentReady",false);assertEquals(true,call(a,"shouldProbe"));
+        set(a,"documentReady",true);set(a,"foreground",false);
     }
     private String js(ActivityScenario<MainActivity> s,String code)throws Exception{
         CountDownLatch latch=new CountDownLatch(1);AtomicReference<String> value=new AtomicReference<>();

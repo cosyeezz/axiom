@@ -247,6 +247,20 @@ test("failed explicit enable never persists future permission or schedules recov
   assert.equal((await r.remote.status()).active, false);
 });
 
+test("failed explicit enable revokes an existing startup recovery grant", async t => {
+  const r = await recoveryRig(t);
+  const [, old] = r.timers.entries().next().value;
+  r.ts.state.fail = false;
+  const status = r.ts.status;
+  r.ts.status = async () => ({ ...await status(), BackendState: "NeedsLogin" });
+  await assert.rejects(r.remote.configure({ enabled: true, email: EMAIL }), /尚未就绪/);
+  assert.equal(JSON.parse(r.database.store.get("remote/config")).enabled, false);
+  assert.equal(r.timers.size, 0);
+  r.ts.status = status; old.fn();
+  for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve));
+  assert.equal((await r.remote.status()).active, false);
+});
+
 test("configure invalidates a startup timer already queued behind persistence", async t => {
   const r = await recoveryRig(t);
   r.ts.state.fail = false; r.ts.state.ips = [];
@@ -261,7 +275,7 @@ test("configure invalidates a startup timer already queued behind persistence", 
   await new Promise(resolve => setTimeout(resolve, 5)); // Ensure returned status is fresh even with millisecond clocks.
   release(); await configuring;
   for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve));
-  assert.equal(r.calls(), before + 2, "one start and returned status only; no stale retry");
+  assert.equal(r.calls(), before + 2, "fresh preflight and start only; returned status cached, no stale retry");
   assert.equal(r.timers.size, 0);
   assert.equal(JSON.parse(r.database.store.get("remote/config")).enabled, false);
 });
@@ -281,6 +295,31 @@ test("shutdown fences login before bin resolves and kills a late spawned child",
     assert.equal(spawns, stage === "spawn" ? 1 : 0);
     assert.equal(child.killed, stage === "spawn");
     await assert.rejects(fx.remote.login(), /已关闭/);
+  }
+});
+
+test("concurrent login calls share pending bin/spawn and shutdown kills the sole child", async t => {
+  for (const stage of ["bin", "spawn"]) {
+    let release, spawns = 0, bins = 0;
+    const child = fakeChild("");
+    const fx = await setup({ email: null, loginEmail: "", spawnLogin: async () => {
+      spawns++;
+      if (stage === "spawn") await new Promise(resolve => { release = resolve; });
+      return child;
+    } });
+    t.after(() => fx.close());
+    fx.ts.bin = async () => {
+      bins++;
+      if (stage === "bin") await new Promise(resolve => { release = resolve; });
+      return "mock";
+    };
+    const first = fx.remote.login(), second = fx.remote.login();
+    assert.equal(first, second, "same in-flight login promise before any await");
+    for (let i = 0; !release && i < 20; i++) await new Promise(resolve => setImmediate(resolve));
+    assert.ok(release); release();
+    await Promise.all([first, second]);
+    assert.equal(bins, 1); assert.equal(spawns, 1);
+    await fx.remote.shutdown(); assert.equal(child.killed, true);
   }
 });
 
@@ -777,6 +816,8 @@ test("撤权 fail closed：本机身份变更 → 停用并断开旧远程连接
     /一致|账号/,
   );
 
+  assert.equal((await fx.remote.status()).active, false, "failed new permission revokes old listener");
+  await fx.remote.configure({ enabled: true, email: "alice@github" });
   // 本机身份变更（换账号登录）→ 旧许可立即失效，远程连接被断开
   const ws = new WebSocket(`${(await fx.remote.status()).url.replace("http", "ws")}/ws`);
   await once(ws, "open");

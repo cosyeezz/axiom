@@ -78,15 +78,22 @@ public final class ConnectionUiTest {
             long now=SystemClock.uptimeMillis();
             MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,xy[0],xy[1],0);
             MotionEvent up=MotionEvent.obtain(now,now+60,MotionEvent.ACTION_UP,xy[0],xy[1],0);
-            inst.sendPointerSync(down);inst.sendPointerSync(up);down.recycle();up.recycle();inst.waitForIdleSync();
+            inst.sendPointerSync(down);inst.sendPointerSync(up);down.recycle();up.recycle();
+            waitPanel(s,true);
             s.onActivity(a->{assertNotNull("real user gesture opens native settings",get(a,"connectionPanel"));assertSame(saved.get(),get(a,"web"));});
-            inst.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);inst.waitForIdleSync();
+            inst.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);waitPanel(s,false);
             s.onActivity(a->{assertNull(get(a,"connectionPanel"));assertSame(saved.get(),get(a,"web"));});
             assertEquals(content,js(s,"document.getElementById('draft').value+'|'+sentinel"));
             js(s,"window.scrollTo(0,500)");
             String scroll=waitScrolled(s);
-            inst.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);inst.waitForIdleSync();
+            s.onActivity(a->{
+                WebView web=(WebView)get(a,"web");
+                assertTrue("activity must own input focus",a.hasWindowFocus());
+                assertFalse("fallback requires no history: url="+web.getUrl()+" index="+web.copyBackForwardList().getCurrentIndex(),web.canGoBack());
+            });
+            inst.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);waitPanel(s,true);
             s.onActivity(a->{assertNotNull("back fallback opens settings",get(a,"connectionPanel"));call(a,"closeConnectionPanel");assertSame(saved.get(),get(a,"web"));});
+            waitPanel(s,false);
             assertEquals(scroll,js(s,"window.scrollY"));
             assertEquals(content,js(s,"document.getElementById('draft').value+'|'+sentinel"));
         }
@@ -124,6 +131,19 @@ public final class ConnectionUiTest {
                 call(a,"closeConnectionPanel");
             });
         }
+    }
+    private void waitPanel(ActivityScenario<MainActivity> s,boolean open) throws Exception {
+        AtomicReference<Boolean> ready=new AtomicReference<>(false);
+        AtomicReference<String> detail=new AtomicReference<>("");
+        for(int i=0;i<50;i++){
+            s.onActivity(a->{
+                AlertDialog panel=(AlertDialog)get(a,"connectionPanel");WebView web=(WebView)get(a,"web");
+                ready.set(open?panel!=null&&panel.isShowing()&&panel.getWindow().getDecorView().hasWindowFocus():panel==null&&a.hasWindowFocus());
+                detail.set("panel="+(panel!=null)+" activityFocus="+a.hasWindowFocus()+" url="+web.getUrl()+" canGoBack="+web.canGoBack()+" historyIndex="+web.copyBackForwardList().getCurrentIndex());
+            });
+            if(ready.get())return;Thread.sleep(100);
+        }
+        fail("panel open="+open+" did not settle: "+detail.get());
     }
     private String waitScrolled(ActivityScenario<MainActivity> s) throws Exception {
         for(int i=0;i<30;i++){String value=js(s,"window.scrollY");if(Double.parseDouble(value)>0)return value;Thread.sleep(100);}

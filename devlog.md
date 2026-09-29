@@ -1,5 +1,14 @@
 # 开发记录
 
+## 2026-09-29 Android候选门禁与恢复竞态补修
+
+- 时间：2026-09-29 11:28（本机 -07:00）。候选13fd7a2后合入最新master10c21d1，集成提交6376296。Node1047项1045通过/2平台跳过/0失败；mobile-reading、focus-ui、ui-polish及compact-composer四套Chromium检查通过，语法/打包/diff检查通过。
+- CI36610909059实际通过Go race、arm64/x86_64 AAR、APK/lint和固定签名核验；模拟器15项中14过/1失败（ConnectionUiTest系统返回入口断言），因此未发布，不把生成APK当门禁通过。
+- 独立审查补修：格式合法的显式启用先撤销旧持久许可及恢复timer，再检查环境，避免NeedsLogin失败后旧启动恢复仍生效；并发登录在第一个await之前共用flight，清理回调只针对自身child。新增旧许可与并发bin/spawn回归，remote定向22项通过。
+- Android测试证据修正：自动probe的UI回调抽成applyProbeResult，受控结果测试与真实loopback首屏结合，不冒充真实tsnet探测；旧WebView/同实例旧generation通过真实client入口验证；建立页面的shouldProbe断言解除其他短路条件，并对照仅移除documentReady即可探测。仍未做真机/tailnet/Windows睡眠/iOS切网测试。
+- 最新隔离全量1049项1047通过/2平台跳过/0失败。读取模拟器独立诊断：第一次真实点击打开设置/返回关闭已通过，但第二次BACK前未等Activity输入焦点，日志不能唯一证明产品缺陷。ConnectionUiTest补有界窗口焦点/弹窗等待及无网页历史前提诊断，只发一次真实BACK，不调用设置方法代替输入。
+- 文件：src/remote.js、tests/remote.test.js、android/MainActivity与ConnectionRecoveryTest/ConnectionUiTest、README.md、本记录。后续CI验收通过后才发布。
+
 ## 2026-09-29 移动聊天空间与有界连接恢复
 
 - 时间：2026-09-29 11:04（本机 -07:00）。方案8521e09先于实现，工作分支feat/mobile-chat-density已合入master fa913c8（8301f21）；保留上游视图popover、用量详情和输入区精简，不触碰主checkout既有差异。
