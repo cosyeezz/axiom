@@ -163,6 +163,15 @@ test("local connection without token, foreign origin rejection, recovery and shu
       true,
     );
     assert.equal(sessions.get(sessionId).status, "idle");
+    const second = await sessions.create();
+    const switched = await request(ws, { id: 'switch', type: 'session.attach', sessionId: second });
+    assert.equal(switched.data.sessionId, second);
+    assert.equal(switched.data.epoch, attached.data.epoch);
+    assert.equal(sessions.get(sessionId).listeners.size, 0);
+    assert.equal(sessions.get(second).listeners.size, 1);
+    ws.close(); await once(ws, 'close');
+    for (let i = 0; i < 100 && sessions.get(second).listeners.size; i++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(sessions.get(second).listeners.size, 0);
   } finally {
     ws?.terminate();
     await app.close();

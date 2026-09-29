@@ -9,7 +9,18 @@
 - 验证：定向 Node 41 项通过；独立静态审查未发现阻断，但不代替浏览器验证。新增 focus-ui-browser.py 覆盖五视口双主题、Tab/Shift+Tab/Enter/Space/Escape、点外关闭与焦点返回、详情/主题/字号/原文、长模型名、触控尺寸和断线；现有 ui-polish-browser.py 的问题确认、子任务和压缩全部通过。与改前同夹具相比，1440px 顶栏工具宽 297→72px、输入区域高约185.6→160px；320px 输入区域180→168px。产物在 F:/worktrees/artifacts/focus-ui-*。
 - 全量环境诊断：首次 npm test 15 项失败，来源是 SDK 从用户 HOME 及临时目录祖先加载 .agents/skills，污染技能断言及4096窗口压缩预算。仅隔离 HOME/USERPROFILE 仍有14项失败；测试子进程同时隔离 HOME/USERPROFILE/TMP/TEMP 到仓库外空目录后，代表集61项及全量970项（968通过、2平台跳过）全部通过，不修改用户配置、不放宽断言。无真实模型调用或用户历史访问；未验收读屏、移动真机或原生桌面壳。
 - 集成复验：合入 origin/master b659451（会话标题搜索、Todo 两级详情）后，Escape 冲突同时保留 defaultPrevented 与 utility-popover 守卫，开发记录两边保留。全量976项、974通过、2平台跳过、0失败；focus-ui、ui-polish、Todo、会话搜索和侧栏五套浏览器验证通过。侧栏旧断言要求折叠进行中时外层必须溢出，但精简后测得 scrollHeight=clientHeight=741，内容可放下；改验已完成末行可达，并在展开44条进行中后验证外层真实滚动及末行可达，不放宽滚动功能要求。node --check、npm pack --dry-run（本次界面文件已入包）、git diff --check通过。
+- 后续同步：再次合入远端143f2ca代码审查修复，仅devlog头部冲突，完整保留双方记录；隔离全量1021项、1019通过、2平台跳过、0失败。focus-ui与ui-polish五视口双主题重跑通过；语法/打包检查通过。
 - 文件：public/app.js、index.html、style.css、composer-controls.js/.css、icons.js；tests/app.test.js、composer-controls.test.js、session-sidebar-ui.py、新增 focus-ui.test.js 与 focus-ui-browser.py；README.md、本记录。测试自动重建的 INDEX 漂移不纳入本改动。
+
+## 2026-09-29 代码审阅逐项修复
+
+- 原因与范围：按用户报告核对18项执行控制、一致性、性能与维护性问题；16项实施，P02与D02有据保留。不扩展架构、不碰主工作区未提交资料。基线origin/master e116f12d，独立feat/review-20260929-fixes工作树。
+- 执行控制：IPC非对象帧关闭连接；单独取消子任务不恢复父会话；idle通知按新入历史输入确认，running通知跨收尾补调度；停止先发信号，保存/清理失败独立汇总，并发取消共用控制；启动保存及Pi异步准备结束重验停止版本，不能迟发模型请求。
+- 一致性：每次压缩flight捕获当前目录/runtime，工厂刷新完整后原子发布；冷热复制首次await前占用并finally释放，recall与预排队续接也受守卫；长标题预留序号；done一级Todo摘要集中不变量与基础schema共享；SDK/冷热主子历史及压缩展开共用custom_message映射。
+- 优化与局部清理：snapshot直接runtime调用2→1而config仍独立克隆；限流单次sweep统计模型占用，保持TTL/超时策略；Web白名单投影不克隆/下发内部大材料，完整持久化和结果凭证保留，冷读重算派生canRetry避免取消期间暂态false。冷热删除共用纯文件清单，保留生命周期及先删库顺序；移除goalExited与同步attachSequence。
+- 保留决定：P02同步列表探测经10/100/1000会话测量后保留，避免永久缓存改变外部删除即时可见性；D02虽无仓内调用，但Sessions导出且src入包，外部私有深导入约束无法确认，试删后恢复pushCompaction兼容入口。微基准范围与端到端/堆峰值未测限制写入docs/review-20260929-resolution.md。
+- 验证过程：定向复制/通知/IPC/停止/限流/Todo/历史/计费/记忆/持久化组通过。原基线15失败来自真实HOME祖先目录自动发现9个宿主技能；HOME与TEMP/TMP一同隔离后原失败组61/61通过。共享SDK后来缺dist，仅本工作树断开node_modules链接并独立npm ci，未改主工作区依赖。隔离全量1013项1011通过2平台跳过0失败（约74.5秒）；补canRetry测试初次被未通知任务不可release的既有守卫拒绝，fixture先确认指定结果后13项边界回归全过，不放宽生产守卫。补测后最终全量1014项1012通过2跳过0失败（约71.1秒，review-20260929-full-verified.log）；P04独立只读复审未发现阻断。合入最新origin/master 859270e后，全量1020项1018通过2平台跳过0失败（约70.2秒，review-20260929-full-integrated.log）。仅devlog头部冲突，完整保留双方条目；未改动上游Todo前端实现。推送前再次fetch发现master新增会话搜索b659451，重新合入并全量复验1020项1018通过2跳过0失败（约70.1秒，review-20260929-full-integrated2.log）；仍只有devlog头部冲突，保留全部上游记录。npm pack --dry-run验证共享schema/历史/任务模块及README入包（327文件），git diff --check通过。
+- 文件：src/compaction.js、gate-ipc.js、pi.js、request-gate.js、server.js、session-history.js、sessions.js、tasks.js、todo.js、新todo-schema.js；对应tests及新增边界回归；README、逐项处理文档、本记录与代码索引。INDEX变化来自既有codebase-index测试运行reindex，新增文件已登记。
 
 ## 2026-09-29 会话标题列表体验优化
 

@@ -41,6 +41,17 @@ test("empty Pi starts, then a configured model becomes usable without restarting
       assert.equal(factory.catalog()[0].key, 'onboarding/local-test');
       const agent = await factory([], { capabilities: { skills: [], plugins: [], mcp: [] } });
       assert.equal(agent.config().model, 'onboarding/local-test');
+      // B05: keep this old controller alive while a new provider/catalog is published.
+      const initial = JSON.parse(await (await import('node:fs/promises')).readFile(join(cwd, 'models.json'), 'utf8'));
+      initial.providers.newprovider = { ...initial.providers.onboarding,
+        models: [{ ...initial.providers.onboarding.models[0], id: 'new-model' }] };
+      await writeFile(join(cwd, 'models.json'), JSON.stringify(initial));
+      await factory.refreshModels();
+      await agent.configure({ model: 'onboarding/local-test',
+        compaction: { ...agent.config().compaction, model: 'newprovider/new-model' } });
+      assert.equal(agent.config().compaction.model, 'newprovider/new-model');
+      await assert.rejects(agent.configure({ model: 'onboarding/local-test',
+        compaction: { ...agent.config().compaction, model: 'missing/model' } }), /Unknown compaction model/);
       await agent.dispose();
       // Fresh-install defaults must work for reasoning-only models that reject off.
       const modelsPath = join(cwd, 'models.json');
