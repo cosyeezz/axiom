@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-29 手机UI与连接恢复候选验收
+
+- 时间：2026-09-29 12:08（本机 -07:00）。64bbc7b候选CI36615974900实际全部通过：Go race、AAR双架构、APK/lint、持久签名、Android11 x86_64模拟器16项0失败、release包安装。版本0.1.1/code2，候选SHA-256 f8437fec050cc42698877b3114364bc65b07e1867a14803ccfda1f934e926fa8；标签发布重建后以最终附件哈希为准。
+- 返回键失败只补测试输入焦点与Dialog异步完成等待、无历史前提诊断，未改产品返回逻辑；保留真实单次输入及草稿/滚动/实例断言。probe受控continuation、Cookie FIFO及真实client旧回调测试均通过。
+- 最新master10c21d1已在工作分支内；Node1049项1047过/2平台跳过/0失败，四套Chromium与语法/打包/diff均通过。记录方案实施结果、更新README和0.1.1发布说明；真实设备、tailnet聊天/上传、Windows睡眠、iOS切网、真实IME/读屏仍未测试。
+- 文件：docs/mobile-chat-density-plan.md、android/RELEASE-NOTES.md、README.md、devlog.md。证据保存在仓库外mobile-chat-density-evidence；合并/标签发布与下载核验继续按真实结果记录。
+
 ## 2026-09-29 Android候选门禁与恢复竞态补修
 
 - 时间：2026-09-29 11:28（本机 -07:00）。候选13fd7a2后合入最新master10c21d1，集成提交6376296。Node1047项1045通过/2平台跳过/0失败；mobile-reading、focus-ui、ui-polish及compact-composer四套Chromium检查通过，语法/打包/diff检查通过。
