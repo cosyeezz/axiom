@@ -69,6 +69,7 @@ jobs:
           printf '%s' "$KEYSTORE" | base64 --decode > "$RUNNER_TEMP/axiom-release.p12"
           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/axiom-release.p12" >> "$GITHUB_ENV"
       - name: Build, lint and verify APK
+        shell: bash
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -83,6 +84,9 @@ jobs:
             cp android/app/build/outputs/apk/debug/app-debug.apk dist/Axiom-Android-debug.apk
           fi
           "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose --print-certs dist/*.apk | tee dist/SIGNATURE.txt
+          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+            grep -iq 'certificate SHA-256 digest: b93d54203f14f8befc5b7522f8c430163b3b99de2659896476b2f0ece677a2ad' dist/SIGNATURE.txt
+          fi
           "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging dist/*.apk > dist/APK-INFO.txt
           cp android/app/src/main/assets/THIRD-PARTY-NOTICES.txt dist/
           (cd dist && sha256sum *.apk > SHA256SUMS.txt)
@@ -98,7 +102,7 @@ jobs:
           arch: x86_64
           target: default
           disable-animations: true
-          script: gradle -p android --no-daemon :app:connectedDebugAndroidTest
+          script: bash android/scripts/emulator-smoke.sh
       - name: Save APK and dependency lock evidence
         if: always()
         uses: actions/upload-artifact@v4

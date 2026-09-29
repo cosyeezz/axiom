@@ -42,6 +42,8 @@ cd ..
 gradle --no-daemon :app:assembleDebug :app:lint
 ```
 
+CI 使用 `scripts/emulator-smoke.sh` 执行仪表测试并安装实际 release APK；失败时在模拟器关闭前采集脱敏 logcat 到 Actions artifact 的 `dist/diagnostics/`，保留原测试退出码。签名检查启用 pipefail 并核对下列持久证书指纹。
+
 发布签名需要 `ANDROID_KEYSTORE_PATH`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`。没有签名不能把 unsigned release 当作可安装交付。
 
 维护者可在可信本机执行 `node android/scripts/create-signing.mjs` **首次**生成签名并配置 Secrets；已存在时脚本拒绝覆盖。密钥及密码备份在用户 `.axiom/signing/android-release`，必须安全备份，不能提交 Git、发到聊天或上传 artifact。GitHub Secrets 不能导出明文。

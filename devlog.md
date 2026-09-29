@@ -12,6 +12,8 @@
 - 审查修正：清凭据显式接收私有节点目录，避免未成功 Start 时假成功；登录按钮总调用 StartLoginInteractive 更新过期URL；Activity限制 singleTask。节点目录清理与接口解析补自动测试。
 - 第二轮 CI `36570096276`：Go、双架构 AAR、许可收集与生产 Java 编译通过；旧 `android.test` 在 SDK35 不可用导致测试APK编译失败。改用仅测试依赖 AndroidX Test 1.6.x/JUnit4，生产壳仍使用平台 Activity；补缓存和格式化源码构建证据。提交 `2d0dd72`，第三轮验证中。
 - 交付前生命周期审查：状态轮询改为单次在途、完成后延迟调度，并在执行前检查前台/代次，避免慢 LocalAPI 堵塞登录/清除；每次新地址尝试先清空旧目标，防新地址失败后自动打开旧工作台。涉及 `MainActivity.java`，回归验证进行中。
+- 第三轮 CI `36571028167` 实际生成并签名 release APK、通过 lint；模拟器 instrumentation 进程崩溃，尚未达到发布条件。两次只读 artifact 下载超时未取得堆栈，新增 `android/scripts/emulator-smoke.sh` 在模拟器退出前采集 logcat、隐去授权URL并输出崩溃上下文，不猜测根因。
+- 发布门禁复核：显式 bash pipefail 避免 apksigner 错误被 tee 掩盖；校验持久证书指纹，并在 debug 仪表测试后卸载测试签名包、安装真实 release APK。当前等待 CI 实测，不以配置存在代替校验通过。
 - 再次同步 `origin/master` 仍为 `4a42624`；现有 Node 全量回归 925 项，923 通过、2 跳过、0 失败。保留主 checkout 原有资料及自动索引差异，不纳入本任务提交。
 - 验证尚在进行；不将代码静态检查等同实际 APK 构建或本人账号登录验收。涉及 `android/`、`.github/workflows/android.yml`、Android 实施计划、README 和本记录。
 
