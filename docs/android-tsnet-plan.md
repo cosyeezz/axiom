@@ -1,6 +1,6 @@
 # Axiom Android 内嵌 Tailscale 实施计划
 
-状态：计划先行，实施中。范围：独立 Android APK；不改变现有桌面壳，不把服务开放到公网。
+状态：计划先行，实现及自动化验证完成；按下列记录集成发布。范围：独立 Android APK；不改变现有桌面壳，不把服务开放到公网。
 
 ## 1. 用户交付目标
 
@@ -116,4 +116,7 @@ WebView --应用级代理--> 127.0.0.1 临时端口
 - Go 测试增加真实 RFC6455 握手响应检查及单帧回显（不是仅裸TCP回显）；仍不替代 WebView/真实 tailnet 端到端测试。
 - Android 网络接口由 Application 注册 Java NetworkInterface 回调，避免 SDK30+ Go 枚举限制；状态轮询单次在途，换目标失败不会恢复旧工作台。凭据清除显式校验私有目录；登录按钮重新请求官方授权链接。
 - 首两轮 CI 的 Go race 测试、双架构 AAR 及生产 Java 编译通过；许可收集缺失依赖与旧测试API编译问题分别修复，Android 测试改用 AndroidX Test。
-- CI `36571028167` 已生成并签名 release APK、lint通过，但模拟器因 Tailscale `LogsDir` 默认目录查找 panic 崩溃；启动前显式设置 `TS_LOGS_DIR` 到私有节点目录。保留默认诊断上传及审计兼容性，不误称静默回调禁上传。修复后 CI `36574348195` 模拟器5项测试全部通过（含未登录节点获取官方AuthURL），签名指纹比对通过；后置卸载脚本失败已修正，release实际安装及最终发布仍待验证。
+- CI `36571028167` 已生成并签名 release APK、lint通过，但模拟器因 Tailscale `LogsDir` 默认目录查找 panic 崩溃；启动前显式设置 `TS_LOGS_DIR` 到私有节点目录。保留默认诊断上传及审计兼容性，不误称静默回调禁上传。修复后 CI `36574348195` 模拟器5项测试全部通过（含未登录节点获取官方AuthURL），签名指纹比对通过；后置卸载脚本改为检查包存在后才卸载。
+- 最终实现提交 `520f157` 的 [CI 36575755333 / attempt 2](https://github.com/cosyeezz/axiom/actions/runs/36575755333/attempts/2) 全绿：Go race、arm64/x86_64 AAR、debug/test/release APK、lint、持久证书指纹比对、Android11模拟器5项测试及真实release APK的 `adb install` Success。首次attempt因Go模块代理HTTP2传输失败，核实无发布副作用后重跑一次通过。
+- 已复核最新远端 `master` 为 `4a42624`，工作分支包含该基线；现有Node全量925项、923通过、2跳过、0失败。发布版本 `android-v0.1.0`，标签工作流在相同门禁成功后创建GitHub预发布及直接APK附件；真实Release资产需发布后独立核对。
+- 未覆盖：本人账号授权后的真实私网连接、真机聊天/图片上传、锁屏恢复、蜂窝/Wi-Fi切换及arm64实体机运行。模拟器AuthURL验证不代表已完成这些端到端验收，首版按Preview交付。

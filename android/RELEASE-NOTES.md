@@ -16,10 +16,11 @@ Android 独立客户端，内嵌 Tailscale tsnet；无需独立 Tailscale App，
 - 不承诺锁屏后台永久在线，不含推送、原生下载管理或手机端 Agent。
 - 本地代理端口变化时网页 localStorage 不保证保留；电脑端会话仍在，可重新选择。
 - 没有预置入网密钥。清除本机登录不等于在 Tailscale 管理后台撤销设备。
+- 保留 Tailscale 默认诊断日志上传及 tailnet 审计兼容性；本地状态/日志存于应用私有禁备份目录。
 
 ## 验证范围
 
-发布流水线要求：Go 离线代理测试（含认证拒绝、目标限制、HTTP 上传与 WebSocket Upgrade 隧道）、Android APK 构建/签名/静态检查、模拟器连接页与 JNI 桥接拒绝非法地址、未授权节点获取官方登录链接测试（不代替用户登录）。
+已通过：[实现验证 CI](https://github.com/cosyeezz/axiom/actions/runs/36575755333/attempts/2) 的 Go race/离线代理测试（认证拒绝、目标限制、HTTP 上传与 RFC6455 握手/帧回显）、arm64/x86_64 AAR、APK 构建/lint、签名指纹比对；Android11 x86_64 模拟器5项检查（连接页、JNI拒绝非法地址、未授权节点获取官方登录链接、两项生命周期回归），以及正式 release APK 的实际安装。标签发布流水线再次执行相同门禁。
 
 **这些不替代真实 tailnet 端到端验收。尚未代替用户完成本人账号授权、真机聊天/图片上传/锁屏恢复；请先在可信测试环境试用。** 未测试项目不标为通过。
 

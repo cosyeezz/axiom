@@ -17,7 +17,8 @@
 - 修复后 CI `36574348195`：Go race、双架构AAR、APK/lint、签名与指纹全部通过；Android11模拟器5项测试全部通过，包含实际获取官方AuthURL及生命周期状态回归。后置无条件卸载返回DELETE_FAILED_INTERNAL_ERROR导致release安装尚未执行；脚本改为检查包存在才卸载，仍保留实际卸载/安装失败门禁。
 - 发布门禁复核：显式 bash pipefail 避免 apksigner 错误被 tee 掩盖；校验持久证书指纹，并在 debug 仪表测试后卸载测试签名包、安装真实 release APK。当前等待 CI 实测，不以配置存在代替校验通过。
 - 再次同步 `origin/master` 仍为 `4a42624`；现有 Node 全量回归 925 项，923 通过、2 跳过、0 失败。保留主 checkout 原有资料及自动索引差异，不纳入本任务提交。
-- 验证尚在进行；不将代码静态检查等同实际 APK 构建或本人账号登录验收。涉及 `android/`、`.github/workflows/android.yml`、Android 实施计划、README 和本记录。
+- 最终验证：`520f157` 的 CI `36575755333` attempt2全绿（首次Go代理HTTP2下载错误，核实后只重跑一次）。Go race、AAR、APK/lint、证书指纹、模拟器5项测试及release `adb install` Success均有日志；artifact11038012936。卸载分支另用本地桩覆盖存在/不存在及卸载/安装失败保留退出码。
+- 交付：README、计划与发行说明同步真实证据及限制，准备同步合并master后发布 `android-v0.1.0` 预览；标签流水线再验证并生成APK/校验/签名/许可附件。没有用户账号授权或真机，未标为真实聊天/图片/锁屏/网络切换通过。涉及 `android/`、`.github/workflows/android.yml`、Android 实施计划、README 和本记录。
 
 ## 2026-09-29 Android 内嵌 Tailscale：计划先行
 

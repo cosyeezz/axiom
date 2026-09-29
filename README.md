@@ -347,15 +347,15 @@ macOS 同时支持两种芯片时，先执行 `rustup target add aarch64-apple-d
 
 配置复用 `public/favicon.svg`，保留系统标题栏，允许新窗口与拖放；`forceInternalNavigation` 保证连接跳转留在壳内；无需启动 Axiom 就能打包。壳默认入口是本地连接页而非固定端口，不会误连 `npm run dev` 的 `4320`；自定义地址在入口页/连接面板配置，不需要重新打包。不要将本地 Agent 服务暴露到公网。Pake 只作为构建工具安装，不加入 Axiom 运行依赖。
 
-### Android 客户端（内嵌 Tailscale，实施中）
+### Android 客户端（内嵌 Tailscale，Preview）
 
 独立 Android APK 复用 Axiom 网页，通过应用内 tsnet 连接私网，无需另装 Tailscale App，也不占用系统 VPN。首次仍需本人在系统浏览器登录授权，电脑需保持 Axiom 与 Tailscale 在线并开启远程入口。支持 Android 8.0+、arm64/x86_64，首版按预发布交付。
 
-下载入口：[GitHub Releases](https://github.com/cosyeezz/axiom/releases)（选择 Android 版本的 `Axiom-Android.apk`，不是源码 ZIP）。构建尚在验证时，以页面实际出现的 APK 为准；不把 workflow 配置当作已发布。
+下载入口：[Android v0.1.0 预发布页](https://github.com/cosyeezz/axiom/releases/tag/android-v0.1.0)（下载 `Axiom-Android.apk`，不是源码 ZIP）。安装要求 Android 8.0+、64 位设备；签名与校验文件随 Release 附件提供。
 
 首次使用：填写电脑 `100.x.x.x:4319` 或完整 `.ts.net:4319` 地址 → 连接 → 登录 Tailscale → 完成授权后回到应用。电脑许可账号须与 APK 登录的个人账号一致；开启审批的 tailnet 需先批准设备。后续打开自动恢复，不预置入网密钥。
 
-本地会话代理严格限定一个目标，保留电脑端 whois 鉴权；不开放公网端口，不依赖系统 VPN。首版不承诺锁屏永久在线，前台可重新连接；节点状态保存在应用私有禁备份目录。完整安装、构建、签名、权限及已知限制见 [Android 说明](android/README.md)，实现顺序和真实验证记录见 [实施计划](docs/android-tsnet-plan.md)。
+本地会话代理严格限定一个目标，保留电脑端 whois 鉴权；不开放公网端口，不依赖系统 VPN。首版不承诺锁屏永久在线，前台可重新连接；节点状态保存在应用私有禁备份目录。Go/Android 构建、lint、5项 Android11 模拟器检查及 release APK 安装已通过；尚未完成用户本人账号登录后的真机聊天、图片和后台恢复验收。完整安装、构建、签名、权限及已知限制见 [Android 说明](android/README.md)，实现顺序和真实验证记录见 [实施计划](docs/android-tsnet-plan.md)。
 
 ### 更新后页面一直「连接中」
 
