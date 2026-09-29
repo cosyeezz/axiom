@@ -810,38 +810,46 @@ function capabilityName(id) {
 }
 function runtimeSummary(value = {}) {
   const { usage, context, model, thinking } = value;
+  const valid = (n) => Number.isFinite(n) && n >= 0;
   const input = (usage?.input ?? 0) + (usage?.cacheRead ?? 0) + (usage?.cacheWrite ?? 0);
-  const count = (n) => Number.isFinite(n) ? n.toLocaleString("en-US") : "—";
-  const cache = input > 0 && Number.isFinite(usage?.cacheRead)
-    ? `${(usage.cacheRead / input * 100).toFixed(1)}% (${count(usage.cacheRead)} tokens)` : usage ? "供应商未报告缓存用量" : "尚无已报告用量的请求";
-  const contextText = context?.contextWindow > 0
-    ? `${count(context.tokens)} / ${count(context.contextWindow)} tokens${Number.isFinite(context.percent) ? ` · ${context.percent.toFixed(1)}%` : " · 待更新"}`
-    : Number.isFinite(context?.tokens) ? `${count(context.tokens)} tokens · 窗口未配置` : "等待首条消息";
+  const count = (n) => valid(n) ? n.toLocaleString("en-US") : "—";
+  const cache = valid(input) && input > 0 && valid(usage?.cacheRead)
+    && [usage?.input, usage?.cacheWrite].every(valid)
+    ? `${(usage.cacheRead / input * 100).toFixed(1)}%` : "—";
+  const contextText = context?.contextWindow > 0 && valid(context.contextWindow)
+    ? `${count(context.tokens)} / ${count(context.contextWindow)} · ${valid(context.percent) ? `${context.percent.toFixed(1)}%` : "—"}`
+    : valid(context?.tokens) ? `${count(context.tokens)} tokens · 窗口未知` : "—";
   const split = model?.indexOf("/") ?? -1;
   const identity = split >= 0 ? `${model.slice(0, split)} · ${model.slice(split + 1)}` : model || "模型待加载";
-  const lines = [`cache ${input > 0 ? (usage.cacheRead / input * 100).toFixed(0) + '%' : '—'}`, `context ${context?.contextWindow > 0 ? `${count(context.tokens)}/${count(context.contextWindow)} · ${Number.isFinite(context.percent) ? context.percent.toFixed(0) + '%' : '—'}` : '—'}`, `${identity} · ${thinking || '—'}`];
-  return lines;
+  return [`缓存 ${cache}`, `上下文${context?.estimated ? "（估算）" : ""} ${contextText}`, `${identity} · ${thinking || '—'}`];
 }
 function renderRuntime(node, value) {
   if (node.id === "session-runtime") {
     $("session-system-prompt").textContent = value?.systemPrompt ?? "系统提示词尚未加载；会话启动后可查看。";
     renderTools($("session-active-tools"), value?.tools);
     renderBill($("session-bill-body"), sessionBill ?? value?.billing);
-    $("session-bill-total").textContent = (sessionBill ?? value?.billing)?.records ? `${money((sessionBill ?? value.billing).cost.total)}${sessionBill ? " · 含子代理" : ""}` : "主代理与子代理";
-    const { usage, context } = value || {};
-    const input = (usage?.input ?? 0) + (usage?.cacheRead ?? 0) + (usage?.cacheWrite ?? 0);
-    const cache = input > 0 && Number.isFinite(usage?.cacheRead) ? `${(usage.cacheRead / input * 100).toFixed(1)}%` : "—";
-    const percent = Number.isFinite(context?.percent) ? `${context.percent.toFixed(1)}%` : "—";
-    const identity = runtimeSummary(sessionBill ? { ...value, billing: sessionBill } : value)[2];
-    $("mobile-runtime").textContent = `${cache} · ${percent} · ${identity}`;
-    $("mobile-runtime").setAttribute("aria-label", `缓存命中率 ${cache}，上下文占比 ${percent}，${identity}`);
+    const bill = sessionBill ?? value?.billing;
+    const partial = bill?.incomplete || bill?.unpriced > 0 || !sessionBill;
+    $("session-bill-total").textContent = bill?.records ? `≈ ${money(bill.cost.total)}${partial ? " · 不完整" : ""}` : "账单 —";
+    $("session-billing-trigger").title = bill?.records
+      ? `会话累计估算费用${sessionBill ? "，含主代理与子代理" : "，仅有主代理数据"}${partial ? "；部分用量或价格缺失" : ""}，非供应商实际扣款。点击查看明细。`
+      : "尚无已报告的账单记录；不代表没有费用。点击查看明细。";
+    $("mobile-runtime").textContent = runtimeSummary(value).join(" · ");
   }
-  node.replaceChildren(...runtimeSummary(node.id === "session-runtime" && sessionBill ? { ...value, billing: sessionBill } : value).map((text) => {
+  const { usage, context } = value || {};
+  const count = (n) => Number.isFinite(n) && n >= 0 ? n.toLocaleString("en-US") : "未报告";
+  const titles = [
+    `最近一次已报告用量的缓存读取占输入总量比例，非累计命中率。输入 ${count(usage?.input)}；缓存读取 ${count(usage?.cacheRead)}；缓存写入 ${count(usage?.cacheWrite)}；输出 ${count(usage?.output)} tokens。— 表示用量字段未完整报告或输入总量为零。`,
+    `当前上下文${context?.estimated ? "为估算值" : "按运行态报告"}，非累计消耗，也不保证等于下一次实际请求。窗口 ${context?.contextWindow > 0 ? count(context.contextWindow) : "未知"} tokens。`,
+    "当前模型与思考等级；最近用量可能来自切换前的模型。",
+  ];
+  const lines = runtimeSummary(value);
+  node.replaceChildren(...(node.id === "session-runtime" ? lines.slice(0, 2) : lines).map((text, index) => {
     const span = document.createElement("span");
-    span.textContent = text;
+    span.textContent = text; span.title = titles[index];
     return span;
   }));
-  node.title = "cache：最近一次请求的缓存读取占输入总量比例；context：当前上下文估算，非累计消耗。";
+  node.title = "缓存：最近报告用量；上下文：当前占用；费用：会话累计估算。";
 }
 function updateTaskRuntime(task, value) {
   if (!task) return;
@@ -4635,6 +4643,12 @@ $("context-menu").addEventListener("beforetoggle", (event) => {
   $("context-menu").style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 192))}px`;
   $("context-menu").style.bottom = `${window.innerHeight - rect.top + 8}px`;
   $("context-menu").style.maxHeight = `${Math.max(80, rect.top - 16)}px`;
+});
+$("context-menu").addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  event.preventDefault(); event.stopPropagation();
+  $("context-menu").hidePopover();
+  $("add-context").focus(); // Do not let menu dismissal withdraw queued input or stop a running turn.
 });
 for (const button of document.querySelectorAll("[data-context]")) button.onclick = async (event) => {
   const mode = button.dataset.context;

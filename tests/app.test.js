@@ -778,6 +778,13 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     };
     openContext();
     assert.equal($("context-picker").hidden, true);
+    const queuedBeforeEscape = requests.filter(req => req.type === "queue.withdraw").length;
+    const dismissContext = new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    $("context-menu").dispatchEvent(dismissContext);
+    assert.equal(dismissContext.defaultPrevented, true);
+    await new Promise(resolve => setTimeout(resolve, 350));
+    assert.equal(requests.filter(req => req.type === "queue.withdraw").length, queuedBeforeEscape, "关闭上下文菜单不能撤回队列");
+    openContext();
     window.document.querySelector('[data-context="skill"]').click();
     assert.equal($("context-picker").tagName, "SECTION", "skills stay inside the plus menu, not a modal");
     assert.equal($("context-picker").parentElement, $("context-menu"));
@@ -934,15 +941,24 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     sockets[1].receive({ type: "session.state", sessionId: onScreen, data: { status: "idle" } });
     assert.ok(JSON.parse(window.localStorage.getItem("axiom.sessionSeen"))[onScreen] > 0, "the session on screen is marked seen when it finishes");
     input("");
-    assert.match($("session-runtime").textContent, /cache —.*context —.*test · model · off/);
+    assert.match($("session-runtime").textContent, /缓存 —.*上下文 —/);
+    assert.doesNotMatch($("session-runtime").textContent, /test · model/, "模型仅显示在选择器");
     assert.equal($("thinking").selectedOptions[0].textContent, "off");
     assert.equal(window.runtimeSummary({ model: "zai-coding-cn/glm-5.3-flash", thinking: "max" })[2], "zai-coding-cn · glm-5.3-flash · max");
     assert.match(window.runtimeSummary({ usage: { input: 100, cacheRead: 0, cacheWrite: 0 } })[0], /0%/);
-    assert.match(window.runtimeSummary({ usage: { input: 0, cacheRead: 0 } })[0], /cache —/);
-    assert.match(window.runtimeSummary({ context: { tokens: null, contextWindow: 10000, percent: null } })[1], /—\/10,000 · —/);
+    assert.match(window.runtimeSummary({ usage: { input: 0, cacheRead: 0 } })[0], /缓存 —/);
+    for (const usage of [{ input: 100 }, { cacheRead: 100 }, { input: 100, cacheRead: 0 }, { input: 100, cacheRead: NaN }, { input: -1, cacheRead: 20 }, { input: Infinity, cacheRead: 20 }]) {
+      assert.equal(window.runtimeSummary({ usage })[0], "缓存 —", "缺失或无效用量不显示 NaN/伪造比例");
+    }
+    assert.match(window.runtimeSummary({ context: { tokens: null, contextWindow: 10000, percent: null } })[1], /— \/ 10,000 · —/);
+    assert.equal(window.runtimeSummary({ context: { tokens: 1200, contextWindow: 0, estimated: true } })[1], "上下文（估算） 1,200 tokens · 窗口未知");
+    assert.match(window.runtimeSummary({ context: { tokens: 12000, contextWindow: 10000, percent: 120 } })[1], /120\.0%/, "超窗口不钳制为100%");
     assert.equal(window.runtimeSummary({ observationPack: { folded: 3 } }).length, 3, 'OP 不再占用信息栏');
-    assert.equal($("session-runtime").parentElement.className, "actions");
-    assert.equal($("session-runtime").nextElementSibling.className, "composer-model-trigger");
+    assert.equal($("session-runtime").parentElement.id, "composer-status");
+    assert.equal(window.document.querySelector('.composer-model-trigger').parentElement.id, "composer-status");
+    assert.equal($("composer-action-help"), null);
+    assert.equal($("composer-help").className, "sr-only");
+    assert.equal(window.document.querySelector('.composer-split').parentElement.className, "actions");
     assert.equal($("subagent-model").value, "");
     assert.equal($("subagent-model").disabled, true);
     assert.equal($("composer").contains($("subagent-model")), false);
@@ -1173,7 +1189,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("task-overlays").contains(historicalTask), true);
     assert.equal(historicalTask.open, false);
     assert.equal(historicalTask.querySelector(".message > .markdown").textContent, "");
-    assert.match(historicalTask.querySelector(".runtime-summary").textContent, /80%.*1,200\/10,000 · 12%.*other · child · high/);
+    assert.match(historicalTask.querySelector(".runtime-summary").textContent, /80\.0%.*1,200 \/ 10,000 · 12\.0%.*other · child · high/);
     assert.equal(historicalTask.querySelector(".task-top .runtime-summary")?.parentElement.nextElementSibling.className, "task-body");
     assert.equal(historicalTask.querySelector(".task-system-prompt pre").textContent, "Historical system prompt");
     assert.equal(historicalTask.querySelector(".task-description").textContent, "Historical task");
@@ -1452,9 +1468,21 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       context: { tokens: 1200, contextWindow: 10000, percent: 12 },
     };
     emit("agent.runtime", runtime, { agentId: "child" });
-    assert.match($("session-runtime").textContent, /cache —/);
+    assert.match($("session-runtime").textContent, /缓存 —/);
     emit("agent.runtime", { ...runtime, model: "test/model" });
-    assert.match($("session-runtime").textContent, /80%.*test · model · high/);
+    assert.match($("session-runtime").textContent, /缓存 80\.0%/);
+    assert.match($("session-runtime").firstElementChild.title, /缓存读取 800；缓存写入 100/);
+    assert.equal($("session-runtime").children.length, 2, "主状态不重复模型");
+    const bill = { records: 1, unpriced: 0, incomplete: false, groups: [], agents: [], cost: { total: .023 } };
+    emit("session.billing", bill);
+    assert.equal($("session-bill-total").textContent, "≈ $0.023");
+    emit("session.billing", { ...bill, unpriced: 1 });
+    assert.match($("session-bill-total").textContent, /不完整/);
+    emit("session.billing", { ...bill, incomplete: true });
+    assert.match($("session-bill-total").textContent, /不完整/);
+    emit("session.billing", { ...bill, records: 0 });
+    assert.equal($("session-bill-total").textContent, "账单 —");
+    assert.match($("session-billing-trigger").title, /不代表没有费用/);
     assert.equal($("session-system-prompt").textContent, runtime.systemPrompt);
     assert.equal($("session-active-tools").querySelector(".inspector-tool .tool-name").textContent, "read");
     assert.equal($("session-active-tools").querySelector(".inspector-tool p").textContent, runtime.tools[0].description);
@@ -1480,7 +1508,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     const trigger = window.document.querySelector(".task-card");
     const task = $(trigger.getAttribute("aria-controls"));
     assert.equal(renders, beforeHidden, "closed overlays skip Markdown parsing");
-    assert.match(task.querySelector(".runtime-summary").textContent, /80%.*other · child/);
+    assert.match(task.querySelector(".runtime-summary").textContent, /80\.0%.*other · child/);
     assert.equal(trigger.querySelector(".runtime-summary"), null, "runtime information is pinned in the overlay, not duplicated in the transcript");
     assert.equal(task.querySelector(".task-system-prompt pre").textContent, runtime.systemPrompt);
     assert.equal(task.querySelector(".task-system-prompt img"), null, "system prompts are plain text, not executable markup");
@@ -1601,7 +1629,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("task-runs").children.length, 1);
     row("b").querySelector(".session-item").click();
     await settle();
-    assert.match($("session-runtime").textContent, /cache —/, "switching sessions clears previous usage");
+    assert.match($("session-runtime").textContent, /缓存 —/, "switching sessions clears previous usage");
     assert.doesNotMatch($("session-system-prompt").textContent, /System instructions/, "switching sessions clears previous prompt");
     assert.equal($("session-active-tools").textContent, "工具信息尚未加载。");
     assert.equal($("task-runs").hidden, true, "switching sessions resets the run summary");

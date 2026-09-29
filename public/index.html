@@ -108,7 +108,6 @@
               </div>
               <input id="image-files" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
               <div id="context-chips" aria-label="待发送上下文"></div>
-              <span id="task-timer" role="timer" aria-label="当前任务累计运行时间" hidden><span class="task-timer-dot" aria-hidden="true"></span><span id="task-timer-value">0s</span></span>
             </div>
             <div id="context-menu" popover>
               <button type="button" data-context="skill" title="加载技能指令"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 3 6 6 3-6 3-3 6-3-6-6-3 6-3Z"/></svg><span>Skill</span><span class="context-chevron" aria-hidden="true">›</span></button>
@@ -127,7 +126,7 @@
               ><textarea
                 id="prompt"
                 rows="1"
-                placeholder="描述任务… / 选择 Skill，@ 引用文件或文件夹"
+                placeholder="描述任务…"
                 aria-controls="prompt-completion"
                 aria-autocomplete="list"
                 aria-expanded="false"
@@ -154,20 +153,20 @@
                 ><button type="button" class="danger" id="force-stop" title="强制停止：立即中断，本轮未完成的回答与工具产出会丢失" aria-label="强制停止当前会话任务" hidden>Force <span aria-hidden="true">⚠</span></button
                 ><button type="submit" class="secondary" id="send-steer" data-queue="steer" title="在下一个可介入节点补充指令，不中断正在运行的工具" hidden>Steer</button><button type="submit" class="secondary" id="send-followup" data-queue="followUp" title="等待当前这一轮结束后发送，不影响当前执行" hidden>Follow-up</button><button id="send">发送</button>
               </div>
-              <div id="session-runtime" class="runtime-summary" role="status" aria-live="polite"></div>
               <div class="session-detail-rows">
                 <button type="button" id="session-inspector-trigger" class="session-detail-row" aria-haspopup="dialog"><span>主代理配置</span><span class="detail-summary-meta">系统提示词与工具</span></button>
-                <button type="button" id="session-billing-trigger" class="session-detail-row" aria-haspopup="dialog"><span>会话账单</span><span id="session-bill-total" class="detail-summary-meta">查看明细</span></button>
               </div>
               <div class="mobile-controls">
                 <span id="mobile-runtime" aria-live="polite"></span>
                 <button type="button" id="mobile-expand" class="secondary" aria-expanded="false" aria-controls="composer earliest session-title">展开</button>
               </div>
             </form>
-            <div class="composer-footer" id="composer-help">
-              <span>/ Skill · @ 文件/文件夹 · Enter 发送 · Shift / Ctrl / ⌘ + Enter 换行 · Ctrl+Z 撤销 · Ctrl+C 清空文字</span
-              ><span id="composer-action-help">Enter 发送 · 右侧下拉点击即执行 · 双按 Esc stop</span>
+            <div class="composer-footer" id="composer-status" aria-label="会话上下文与用量">
+              <div id="session-runtime" class="runtime-summary" role="status" aria-live="polite"></div>
+              <span id="task-timer" role="timer" aria-label="当前任务累计运行时间" hidden><span class="task-timer-dot" aria-hidden="true"></span><span id="task-timer-value">0s</span></span>
+              <button type="button" id="session-billing-trigger" class="composer-billing" aria-haspopup="dialog" aria-label="查看会话累计估算账单"><span id="session-bill-total">账单</span></button>
             </div>
+            <span class="sr-only" id="composer-help">/ 选择 Skill，@ 引用文件或文件夹；Enter 发送；Shift、Ctrl 或 Command + Enter 换行；Ctrl+Z 撤销；Ctrl+C 清空文字；双按 Esc 安全停止。</span>
           </div>
         </section>
         <p id="error" role="alert"></p>
