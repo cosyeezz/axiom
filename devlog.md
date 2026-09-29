@@ -7,8 +7,20 @@
 - 一致性：每次压缩flight捕获当前目录/runtime，工厂刷新完整后原子发布；冷热复制首次await前占用并finally释放，recall与预排队续接也受守卫；长标题预留序号；done一级Todo摘要集中不变量与基础schema共享；SDK/冷热主子历史及压缩展开共用custom_message映射。
 - 优化与局部清理：snapshot直接runtime调用2→1而config仍独立克隆；限流单次sweep统计模型占用，保持TTL/超时策略；Web白名单投影不克隆/下发内部大材料，完整持久化和结果凭证保留，冷读重算派生canRetry避免取消期间暂态false。冷热删除共用纯文件清单，保留生命周期及先删库顺序；移除goalExited与同步attachSequence。
 - 保留决定：P02同步列表探测经10/100/1000会话测量后保留，避免永久缓存改变外部删除即时可见性；D02虽无仓内调用，但Sessions导出且src入包，外部私有深导入约束无法确认，试删后恢复pushCompaction兼容入口。微基准范围与端到端/堆峰值未测限制写入docs/review-20260929-resolution.md。
-- 验证过程：定向复制/通知/IPC/停止/限流/Todo/历史/计费/记忆/持久化组通过。原基线15失败来自真实HOME祖先目录自动发现9个宿主技能；HOME与TEMP/TMP一同隔离后原失败组61/61通过。共享SDK后来缺dist，仅本工作树断开node_modules链接并独立npm ci，未改主工作区依赖。隔离全量1013项1011通过2平台跳过0失败（约74.5秒）；补canRetry测试初次被未通知任务不可release的既有守卫拒绝，fixture先确认指定结果后13项边界回归全过，不放宽生产守卫。补测后最终全量1014项1012通过2跳过0失败（约71.1秒，review-20260929-full-verified.log）；P04独立只读复审未发现阻断。合入最新origin/master 859270e后，全量1020项1018通过2平台跳过0失败（约70.2秒，review-20260929-full-integrated.log）。仅devlog头部冲突，完整保留双方条目；未改动上游Todo前端实现。npm pack --dry-run验证共享schema/历史/任务模块及README入包（327文件），git diff --check通过。
+- 验证过程：定向复制/通知/IPC/停止/限流/Todo/历史/计费/记忆/持久化组通过。原基线15失败来自真实HOME祖先目录自动发现9个宿主技能；HOME与TEMP/TMP一同隔离后原失败组61/61通过。共享SDK后来缺dist，仅本工作树断开node_modules链接并独立npm ci，未改主工作区依赖。隔离全量1013项1011通过2平台跳过0失败（约74.5秒）；补canRetry测试初次被未通知任务不可release的既有守卫拒绝，fixture先确认指定结果后13项边界回归全过，不放宽生产守卫。补测后最终全量1014项1012通过2跳过0失败（约71.1秒，review-20260929-full-verified.log）；P04独立只读复审未发现阻断。合入最新origin/master 859270e后，全量1020项1018通过2平台跳过0失败（约70.2秒，review-20260929-full-integrated.log）。仅devlog头部冲突，完整保留双方条目；未改动上游Todo前端实现。推送前再次fetch发现master新增会话搜索b659451，重新合入并全量复验1020项1018通过2跳过0失败（约70.1秒，review-20260929-full-integrated2.log）；仍只有devlog头部冲突，保留全部上游记录。npm pack --dry-run验证共享schema/历史/任务模块及README入包（327文件），git diff --check通过。
 - 文件：src/compaction.js、gate-ipc.js、pi.js、request-gate.js、server.js、session-history.js、sessions.js、tasks.js、todo.js、新todo-schema.js；对应tests及新增边界回归；README、逐项处理文档、本记录与代码索引。INDEX变化来自既有codebase-index测试运行reindex，新增文件已登记。
+
+## 2026-09-29 会话标题列表体验优化
+
+- 时间：2026-09-29 10:04（本机 -07:00）。用户确认对象是左侧会话标题列表，目标为提高查找、长标题阅读及键盘/触屏操作体验；不扩展正文搜索、数据结构、分类或排序规则。
+- 调研：参考 ChatGPT 官方历史查找说明、Claude 重命名/删除入口与 Linear 标题即时过滤/Esc 恢复，链接见 README。仅借鉴交互原则；ChatGPT 官网直抓有 403、Claude 部分步骤由官方搜索收录返回，不声称登录实测。主代理定向核查 Linear 原文与本项目搜索/折叠代码。
+- 实施：搜索临时展开匹配工作空间及状态组，包括已完成；匹配词以安全文本节点高亮，提供结果计数、清空及零结果引导。搜索渲染和异步 toggle 不写回浏览折叠偏好，退出恢复折叠与滚动；修正 README 原有“仅当前空间搜索/固定创建时间排序”与实际代码不符的描述。
+- 阅读与操作：沿用 Linear 的 --surface/--raised/--accent(#5e6ad2)、系统字体、14px/1.5 和 8px 内边距；长标题最多两行，完整文本可在焦点提示与菜单顶部读取。触屏三点常显且至少 44px，固定预留宽度；Ctrl/⌘ K 聚焦搜索，方向键/Home/End 只移动焦点，Enter 打开，Esc 按搜索/菜单层级处理，不顺带触发队列撤回/安全停止。重绘保留会话按钮及三点触发器焦点。
+- 审查补修：独立只读审查发现长标题菜单在触屏横屏超高及 İ 小写转换使高亮下标偏移，已增加菜单视口约束/滚动与原始 UTF-16 偏移映射。浏览器额外覆盖 667×375 横屏，底部删除入口可滚动到达；三点的视觉提示缩为“会话操作”，无障碍名称仍包含完整标题。
+- 验证：定向 app 测试 5 项通过；隔离测试子进程的 HOME/USERPROFILE/TEMP/TMP/TMPDIR/Pi 目录后全量 975 项、973 通过、2 平台条件跳过、0 失败。隔离只避免用户技能目录污染 fixture，不改用户配置；首次测试本身全绿但打印尾日志遇 Windows GBK 编码错误，已直接核查完整日志，不误记为测试失败。
+- 浏览器：两套 Chromium 测试通过；原分组/状态/复制菜单回归保留，新增 1440/768/390/320px、深浅主题、触摸模拟与横屏验收，覆盖折叠偏好刷新保持、Unicode/HTML 字面匹配、焦点重绘、Enter 打开、两行截断与完整标题。截图已人工核查，产物位于仓库外 F:/worktrees/artifacts/session-list-ux。旧测试依赖已隐藏的 mobile-expand，改用本次新增搜索快捷入口打开侧栏。未声称真机、软键盘或屏幕阅读器验收。
+- 集成验证：获取并合入最新 origin/master（859270e，已是最新基线）后再次全量 975 项、973 通过、2 跳过、0 失败（70.7 秒）；两套浏览器回归在最终交互改动后重跑通过。node --check public/app.js 与 git diff --check 通过。
+- 文件：public/app.js、public/index.html、public/style.css、tests/app.test.js、tests/session-sidebar-ui.py、新增 tests/session-search-ui.py、README.md、devlog.md。全量测试自动生成的代码索引漂移不纳入本次提交。
 
 ## 2026-09-29 Todo 卡片默认两级展示与独立详情
 
