@@ -1,5 +1,12 @@
 # 开发记录
 
+## 2026-09-29 Android 0.1.1发布与下载核验
+
+- 时间：2026-09-29 12:20（本机 -07:00）。最新master10c21d1已集成验证，工作分支58d302b快进合并并推送master；同提交标签android-v0.1.1触发CI36617388755，build/release均success。候选与发布源代码相同，仅补验收文档。
+- 发布门禁再次通过Go race、双架构AAR、APK/lint、固定证书签名、Android11 x86_64模拟器16/16与release包安装；0.1.1/code2 Preview已公开，APK为16,319,451字节。无鉴权curl下载、Release附件和CI artifact三者SHA-256一致：f04ab4ceeafe5d77b4f2d777b9a9d7b1cbb7eabe00bcd8c93e2489da32788fe9。APK ZIP完整性、原生库架构和许可附件一致。
+- 签名在CI中通过apksigner实际验证，证书仍为b93d54203f14f8befc5b7522f8c430163b3b99de2659896476b2f0ece677a2ad。本机没有Android SDK，下载产物以相同哈希关联CI签名证据，不冒充本机签名命令。真实设备/tailnet、Windows睡眠与iOS切网仍未测；网页及服务端修复需同步更新电脑Axiom。
+- 主checkout原有29个未跟踪文件合并前后哈希一致，无tracked本地差异；日志/截图/下载产物留在F:/worktrees/mobile-chat-density-evidence，清理仅限本任务worktree。此次仅更新README.md、docs/mobile-chat-density-plan.md、本记录中的最终发布证据，不改标签或二进制。
+
 ## 2026-09-29 手机UI与连接恢复候选验收
 
 - 时间：2026-09-29 12:08（本机 -07:00）。64bbc7b候选CI36615974900实际全部通过：Go race、AAR双架构、APK/lint、持久签名、Android11 x86_64模拟器16项0失败、release包安装。版本0.1.1/code2，候选SHA-256 f8437fec050cc42698877b3114364bc65b07e1867a14803ccfda1f934e926fa8；标签发布重建后以最终附件哈希为准。

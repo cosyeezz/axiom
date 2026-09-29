@@ -146,7 +146,8 @@
 - 正常态不再创建48dp连接工具行。Android 11 x86_64模拟器验证WebView占满非系统内容区、条件恢复提示为GONE；真实点击和一次系统返回打开设置，关闭/取消保留同一实例、动态草稿、sentinel与滚动位置。无效origin/方法/手势/redirect/保留路径变体不能执行原生动作。
 - Chromium同一夹具390px测得正文14px不变，行高25.2→22.4px、内容高度676.23→623.27px（约减少7.8%）、网页顶栏64→56px。320×568、390×844、390×420、667×375通过；桌面几何和正文样式不变。focus-ui、ui-polish及compact-composer覆盖双主题、键盘/焦点/触控尺寸、长输入和运行操作；不把短视口当真机IME。
 - 最新隔离Node全量1049项，1047通过、2平台跳过、0失败。新增回归覆盖半开只读心跳、握手/恢复期限、有限重试、未发心跳不误判断网、未知业务请求不重放、快照失败去重、恢复期新草稿/滚动保存、电脑端旧许可撤销及并发登录清理。
-- [候选CI36615974900](https://github.com/cosyeezz/axiom/actions/runs/36615974900)通过Go race、arm64-v8a/x86_64 AAR、APK/lint、持久签名门禁、Android 11 x86_64模拟器16项（0失败/0跳过）和正式包实际安装。APK元数据为0.1.1/code2；发布标签流水线会再次构建与执行门禁，最终下载哈希以Release附件为准。
+- [候选CI36615974900](https://github.com/cosyeezz/axiom/actions/runs/36615974900)及[标签发布CI36617388755](https://github.com/cosyeezz/axiom/actions/runs/36617388755)均通过Go race、arm64-v8a/x86_64 AAR、APK/lint、持久签名门禁、Android 11 x86_64模拟器16项（0失败/0跳过）和正式包实际安装。`58d302b`已合并推送master并标记`android-v0.1.1`；[Release](https://github.com/cosyeezz/axiom/releases/tag/android-v0.1.1)已实际发布，版本0.1.1/code2。
+- 公开无鉴权URL实下APK为16,319,451字节，SHA-256 `f04ab4ceeafe5d77b4f2d777b9a9d7b1cbb7eabe00bcd8c93e2489da32788fe9`，与Release附件及CI验证产物一致。CI用apksigner验证v2签名并固定证书`b93d54203f14f8befc5b7522f8c430163b3b99de2659896476b2f0ece677a2ad`；本机无SDK，依同字节产物关联签名证据，没有声称本机运行apksigner。原生库双架构与notices一致。主目录原有29个未跟踪文件在合并前后SHA-256一致。
 - 首次候选CI36610909059曾15项中1项失败；诊断后只补Dialog关闭/Activity焦点恢复的有界等待和无网页历史前提，不重复按键、不调用设置方法替代真实输入，不修改产品返回策略。新测试通过不能证明所有设备的返回行为。
 - 自动首屏恢复采用受控probe结果进入生产UI continuation，并真实加载loopback HTTP；不是实际tailnet连接。旧实例/旧generation经过WebViewClient入口测试，已建立页面不会被迟到错误或probe自动重载。Cookie串行写入/清除测试通过，未放宽鉴权。
 - Windows Pake/WebView2与iOS浏览器复用网页恢复层，仓库无iOS原生客户端。尚未实测Windows睡眠唤醒、iOS锁屏/网络切换、本人tailnet授权后聊天/上传、Android实体机锁屏/蜂窝切换、真实软键盘和读屏。
