@@ -80,6 +80,7 @@
             <button type="button" id="toggle-theme" class="icon-button" aria-pressed="false"><svg class="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.2v2.4M12 19.4v2.4M4.2 12H1.8M22.2 12h-2.4M6.5 6.5 4.8 4.8M19.2 19.2l-1.7-1.7M17.5 6.5l1.7-1.7M4.8 19.2l1.7-1.7"/></svg><svg class="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.6A8.6 8.6 0 0 1 9.4 3.5a8.6 8.6 0 1 0 11.1 11.1Z"/></svg></button>
             </div>
           </div>
+          <button type="button" id="mobile-more" class="icon-button" aria-label="更多：连接与界面设置" aria-haspopup="dialog" aria-controls="mobile-menu"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
         </header>
         <form id="login" hidden>
           <span>连接已断开，正在自动重连；消息和草稿仍保留在此页面。</span>
@@ -190,6 +191,12 @@
         <p id="error" role="alert"></p>
       </main>
     </div>
+    <dialog id="mobile-menu" aria-labelledby="mobile-menu-title">
+      <div class="mobile-menu-heading"><h2 id="mobile-menu-title">连接与界面</h2><button id="mobile-menu-close" type="button" class="secondary" aria-label="关闭更多">关闭</button></div>
+      <a id="mobile-connection" href="/_axiom/native/connection">连接设置</a>
+      <div id="mobile-workspace-slot"></div>
+      <div id="mobile-service-slot"></div>
+    </dialog>
     <dialog id="session-action" aria-labelledby="session-action-title">
       <form id="session-action-form" class="settings-body">
         <h2 id="session-action-title"></h2>
@@ -336,6 +343,7 @@
           <h3 id="connection-current-title">当前连接</h3>
           <p id="connection-current" role="status">…</p>
         </section>
+        <p id="native-connection-help" hidden>Android 应用通过内嵌 Tailscale 连接电脑，本地代理地址不是电脑地址。<a href="/_axiom/native/connection">打开手机连接设置</a>；空白或旧页面也可用系统返回键打开。</p>
         <form id="connection-form">
           <label for="connection-address">服务地址</label>
           <input id="connection-address" type="text" inputmode="url" autocomplete="off" spellcheck="false"

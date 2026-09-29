@@ -155,6 +155,8 @@ for (const mode of ["constructor", "postMessage", "onerror", "onmessageerror", "
     assert.equal(r.workers.length, mode === "constructor" ? 0 : 1, "坏 Worker 不会被复用或反复创建");
     ws.message({ type: "response", id: "3", ok: true });
     await retry;
+    assert.deepEqual([...r.timers.values()].map(timer => timer.delay), [25000], "仅连接心跳保留，无请求/序列化计时器泄漏");
+    r.transport.dispose();
     assert.equal(r.timers.size, 0);
     assert.doesNotMatch(JSON.stringify(r.logs), /secret|xxxx/);
   });
@@ -175,7 +177,7 @@ for (const mode of ["abort", "timeout", "disconnect", "dispose"]) {
     if (mode === "dispose") r.transport.dispose();
     await check;
     assert.equal(worker.terminated, true);
-    assert.equal(r.timers.size, 0);
+    assert.deepEqual([...r.timers.values()].map(timer => timer.delay), ["abort", "timeout"].includes(mode) ? [25000] : []);
     late({ data: { key, raw: JSON.stringify(command), bytes: BIG.length } });
     await r.flush();
     assert.equal(ws.sent.length, 0);
@@ -209,6 +211,8 @@ for (const mode of ["success-then-error", "malformed", "error-then-late-success"
     assert.equal(ws.sent[0], raw);
     ws.message({ type: "response", id: "1", ok: true });
     await result;
+    assert.deepEqual([...r.timers.values()].map(timer => timer.delay), [25000]);
+    r.transport.dispose();
     assert.equal(r.timers.size, 0);
   });
 }

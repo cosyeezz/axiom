@@ -1,5 +1,15 @@
 # 开发记录
 
+## 2026-09-29 移动聊天空间与有界连接恢复
+
+- 时间：2026-09-29 11:04（本机 -07:00）。方案8521e09先于实现，工作分支feat/mobile-chat-density已合入master fa913c8（8301f21）；保留上游视图popover、用量详情和输入区精简，不触碰主checkout既有差异。
+- 实施：原生正常态移除48dp栏，受限GET导航/返回键打开无损设置，危险动作确认；跨Activity Cookie FIFO后才导航，失败首屏新建WebView隔离迟到回调。网页手机更多面板移动真实控件，正文14px/1.6，输入限高依据可视视口；Linear近黑/表面/蓝紫token与触控尺寸保持。
+- 恢复：Android瞬时Probe及首次根GET错误保留目标，8次失败暂停；建立页面后绝不自动reload。共享传输握手/只读心跳、无进展恢复截止、有限网络退避和前台恢复，不重放未知请求、不解除快照/1009保护停机；本地发送饱和不作为断网证据。重连保留等待期间的草稿与阅读位置，历史reset在快照后补取；仅列表确认会话消失才进入替代恢复路径。
+- 服务端：已保存启用许可在Tailscale未就绪/监听失败时最多8次串行退避；每次重新验证Running、个人账号和IP。关闭/禁用取消定时与在途启动；不后台登录、不改变许可。Windows Pake/WebView2和iOS浏览器共享网页路径，未做平台睡眠/网络切换实测。
+- 验证中间记录：集成后的mobile-reading四视口/桌面对照、focus-ui与ui-polish五视口双主题通过。正文行高25.2→22.4px，同内容高676→623px，网页顶栏64→56px。隔离全量1039项1036通过/2跳过/1失败，新增回归准确发现快照等待时旧阅读位置覆盖，已修正并继续复验，不把此轮当全绿。Android本机缺工具链，待CI构建/签名/Go race/模拟器门禁。
+- 审查补修：未发出的心跳排队超时不判断网；同代快照失败只计一次；显式远程启用先落停用栅栏、监听成功才落启用许可；recovery代次拒绝已排队旧timer；关闭后在途bin/spawn不得遗留登录child。对应40项Node定向通过；Android UI夹具改为真实loopback首屏并等待documentReady，不再用作废generation掩盖加载生命周期。后续构建记录按实际结果补齐。
+- 文件：public/{app.js,index.html,style.css,transport.js}；src/{remote.js,server.js}；android原生MainActivity/LocalCookies、Go bridge/gateway、版本配置、连接instrumentation；对应Node与浏览器测试；README、android文档、本记录。真实tailnet、真机、软键盘和读屏未验收。
+
 ## 2026-09-29 手机高密度对话：方案先行
 
 - 时间：2026-09-29 09:52（本机 -07:00）。用户要求深度研究成熟手机对话设计，减少顶部连接设置占位、略缩行间距；追加授权方案落盘后直接实施交付，无需再确认方案。

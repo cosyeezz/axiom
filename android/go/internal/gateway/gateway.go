@@ -142,12 +142,19 @@ func (g *Gateway) modifyResponse(r *http.Response) error {
 
 // Probe uses the gateway only after node connectivity is established. It never
 // includes a body or URL in errors (credentials and remote content stay private).
+type ProbeError struct { Status int }
+func (e *ProbeError) Error() string { return fmt.Sprintf("远端返回 HTTP %d，请检查 Tailscale 账号和 Axiom 远程权限",e.Status) }
+func RetryableProbe(err error) bool {
+ var httpErr *ProbeError
+ if errors.As(err,&httpErr) { return httpErr.Status==408||httpErr.Status==429||httpErr.Status>=500 }
+ return true
+}
 func (g *Gateway) Probe() error {
  req, _ := http.NewRequest("GET",g.origin+"/health",nil)
  req.AddCookie(&http.Cookie{Name:CookieName,Value:g.token})
  c := &http.Client{Timeout:12*time.Second, CheckRedirect:func(*http.Request,[]*http.Request)error{return http.ErrUseLastResponse}}
  resp, err := c.Do(req); if err != nil { return errors.New("远端健康检查失败，请检查网络") }
  defer resp.Body.Close(); _, _ = io.Copy(io.Discard,io.LimitReader(resp.Body,4096))
- if resp.StatusCode != 200 { return fmt.Errorf("远端返回 HTTP %d，请检查 Tailscale 账号和 Axiom 远程权限",resp.StatusCode) }
+ if resp.StatusCode != 200 { return &ProbeError{Status:resp.StatusCode} }
  return nil
 }

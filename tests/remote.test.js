@@ -165,6 +165,125 @@ const wsRequest = (ws, value) =>
     ws.send(JSON.stringify(value));
   });
 
+async function recoveryRig(t, mutate) {
+  const home = await mkdtemp(join(tmpdir(), "axiom-remote-recovery-"));
+  const ts = mockTailscale(), database = fakeDatabase(), service = {}, timers = new Map();
+  database.store.set("remote/config", JSON.stringify({ enabled: true, email: EMAIL }));
+  ts.state.fail = true;
+  const app = createServerApp({ list: () => [], close: async () => {} }, service);
+  const original = ts.status;
+  let calls = 0, next = 0;
+  ts.status = async () => { calls++; return mutate ? mutate(original) : original(); };
+  const remote = await createRemoteAccess({ home, app, database, tailscale: ts, bindHost: "127.0.0.1", ttlMs: 0,
+    setTimer(fn, delay) { const id = ++next; timers.set(id, { fn, delay }); return id; }, clearTimer(id) { timers.delete(id); } });
+  service.remoteShutdown = remote.shutdown;
+  t.after(async () => { await app.close(); await rm(home, { recursive: true, force: true }); });
+  const step = async () => { const [id, timer] = timers.entries().next().value; timers.delete(id); timer.fn(); for (let i = 0; i < 20; i++) await new Promise(r => setImmediate(r)); };
+  return { remote, ts, timers, database, app, step, calls: () => calls };
+}
+
+test("startup before Tailscale retries fresh identity, recovers once and never rewrites permission", async t => {
+  const r = await recoveryRig(t);
+  assert.equal(r.timers.size, 1);
+  r.ts.state.fail = false; r.ts.state.ips = []; await r.step();
+  assert.equal((await r.remote.status()).active, false);
+  r.ts.state.ips = ["100.64.0.3"]; r.ts.state.loginEmail = "other@example.com"; await r.step();
+  assert.equal((await r.remote.status()).active, false);
+  r.ts.state.loginEmail = EMAIL; await r.step();
+  assert.equal((await r.remote.status()).active, true);
+  assert.equal(r.timers.size, 0); assert.equal(r.database.calls.set, 0);
+  await r.remote.configure({ enabled: false });
+  assert.equal((await r.remote.status()).active, false); assert.equal(r.timers.size, 0);
+});
+
+test("startup retries are bounded and explicit disable/dispose cannot be revived", async t => {
+  const r = await recoveryRig(t);
+  for (let i = 0; i < 8; i++) { assert.equal(r.timers.size, 1); assert.ok([...r.timers.values()][0].delay <= 30000); await r.step(); }
+  assert.equal(r.timers.size, 0); assert.equal(r.calls(), 9);
+  await r.remote.configure({ enabled: false });
+  r.ts.state.fail = false;
+  assert.equal((await r.remote.status()).active, false);
+  await r.remote.shutdown();
+  await assert.rejects(r.remote.configure({ enabled: true, email: EMAIL }), /已关闭/);
+});
+
+test("shutdown during a startup retry waits for it and rejects a late successful probe", async t => {
+  let release, delayed = false;
+  const r = await recoveryRig(t, original => delayed ? new Promise(resolve => { release = async () => resolve(await original()); }) : original());
+  r.ts.state.fail = false; delayed = true;
+  const [, timer] = r.timers.entries().next().value; r.timers.clear(); timer.fn();
+  for (let i = 0; !release && i < 20; i++) await new Promise(r => setImmediate(r));
+  assert.ok(release);
+  const shutdown = r.remote.shutdown();
+  await release(); await shutdown; delayed = false;
+  assert.equal((await r.remote.status()).active, false); assert.equal(r.timers.size, 0);
+});
+
+test("stale account fields under NeedsLogin never create a recovery listener", async t => {
+  const r = await recoveryRig(t, async original => ({ ...await original(), BackendState: "NeedsLogin" }));
+  r.ts.state.fail = false; await r.step();
+  assert.equal((await r.remote.status()).active, false);
+  assert.equal(r.timers.size, 1);
+  await r.remote.configure({ enabled: false }); assert.equal(r.timers.size, 0);
+});
+
+test("failed explicit enable never persists future permission or schedules recovery", async t => {
+  const r = await recoveryRig(t);
+  await r.remote.configure({ enabled: false }); r.ts.state.fail = false;
+  const status = r.ts.status;
+  r.ts.status = async () => ({ ...await status(), BackendState: "NeedsLogin" });
+  await assert.rejects(r.remote.configure({ enabled: true, email: EMAIL }), /尚未就绪/);
+  assert.equal(JSON.parse(r.database.store.get("remote/config")).enabled, false);
+  assert.equal(r.timers.size, 0);
+  r.ts.status = status;
+  // A valid account with an unavailable listener must also leave no persisted grant.
+  const create = r.app.createRemoteServer;
+  r.app.createRemoteServer = () => { throw new Error("listen unavailable"); };
+  const failed = await r.remote.configure({ enabled: true, email: EMAIL });
+  assert.equal(failed.enabled, false); assert.equal(failed.active, false);
+  assert.equal(JSON.parse(r.database.store.get("remote/config")).enabled, false);
+  assert.equal(r.timers.size, 0);
+  r.app.createRemoteServer = create;
+  assert.equal((await r.remote.status()).active, false);
+});
+
+test("configure invalidates a startup timer already queued behind persistence", async t => {
+  const r = await recoveryRig(t);
+  r.ts.state.fail = false; r.ts.state.ips = [];
+  const [, old] = r.timers.entries().next().value;
+  const persist = r.database.set;
+  let release;
+  r.database.set = async (...args) => { await new Promise(resolve => { release = resolve; }); return persist(...args); };
+  const configuring = r.remote.configure({ enabled: true, email: EMAIL });
+  for (let i = 0; !release && i < 20; i++) await new Promise(resolve => setImmediate(resolve));
+  assert.ok(release); const before = r.calls();
+  r.timers.clear(); old.fn();
+  await new Promise(resolve => setTimeout(resolve, 5)); // Ensure returned status is fresh even with millisecond clocks.
+  release(); await configuring;
+  for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(r.calls(), before + 2, "one start and returned status only; no stale retry");
+  assert.equal(r.timers.size, 0);
+  assert.equal(JSON.parse(r.database.store.get("remote/config")).enabled, false);
+});
+
+test("shutdown fences login before bin resolves and kills a late spawned child", async t => {
+  for (const stage of ["bin", "spawn"]) {
+    let release, spawns = 0;
+    const child = fakeChild("");
+    const fx = await setup({ email: null, loginEmail: "", spawnLogin: async () => {
+      spawns++; if (stage === "spawn") await new Promise(resolve => { release = resolve; }); return child;
+    } });
+    t.after(() => fx.close());
+    if (stage === "bin") fx.ts.bin = async () => { await new Promise(resolve => { release = resolve; }); return "mock"; };
+    const pending = fx.remote.login(); const rejected = assert.rejects(pending, /已关闭/);
+    for (let i = 0; !release && i < 20; i++) await new Promise(resolve => setImmediate(resolve));
+    assert.ok(release); await fx.remote.shutdown(); release(); await rejected;
+    assert.equal(spawns, stage === "spawn" ? 1 : 0);
+    assert.equal(child.killed, stage === "spawn");
+    await assert.rejects(fx.remote.login(), /已关闭/);
+  }
+});
+
 test("selfStatus/whoisUser/isTailnetIPv4 严密字段验证（status/whois 输出非稳定）", () => {
   assert.deepEqual(
     selfStatus({

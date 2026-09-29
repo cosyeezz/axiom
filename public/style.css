@@ -562,6 +562,20 @@ h1 {
   #view-options-trigger, .sidebar-tool { width: 44px; flex-basis: 44px; }
   .sidebar-tool, #new { min-height: 44px; }
 }
+#mobile-more { display: none; }
+#mobile-menu { width: min(420px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 16px; overflow: auto; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.mobile-menu-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.mobile-menu-heading h2 { font-size: 16px; margin: 0; }
+#mobile-menu button, #mobile-menu a { min-height: 48px; }
+#mobile-menu button { white-space: normal; }
+#mobile-connection { display: flex; align-items: center; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--surface); text-decoration: none; }
+#mobile-workspace-slot { margin-block: 16px; }
+#mobile-menu .workspace-location { display: flex; flex-wrap: wrap; }
+#mobile-menu #workspace-label { flex-basis: 100%; white-space: normal; overflow-wrap: anywhere; }
+#mobile-menu .service-controls { flex-wrap: wrap; gap: 12px; }
+#mobile-menu :is(#status, #service-version) { display: inline-flex; }
+#mobile-menu :is(#mobile-menu-close, #view-options-trigger) { width: 48px; min-width: 48px; height: 48px; }
+#mobile-menu #view-options :is(button, a, select) { min-height: 48px; }
 /* 主题切换：显示「点一下会变成的那个主题」的图标，深色下是太阳、浅色下是月亮。 */
 #toggle-theme { display: grid; place-items: center; }
 #toggle-theme svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
@@ -1373,6 +1387,7 @@ textarea {
     border-bottom: 1px solid var(--line);
   }
 }
+#mobile-menu::backdrop,
 #settings::backdrop,
 #session-action::backdrop,
 #manual-compaction::backdrop,
@@ -1919,6 +1934,19 @@ summary:hover > .disclosure-action { color: var(--ink); }
 .diff-column-title { font-weight: bold; }
 .diff-view-unified .diff-split, .diff-view-split .diff-unified { display: none; }
 @media (max-width: 700px) {
+  /* Same 14px text; reclaim repeated chrome and spacing, not touch targets. */
+  main > header { height: 56px; gap: 8px; padding: 0 12px; }
+  #mobile-more { display: grid; place-items: center; min-width: 48px; width: 48px; height: 48px; }
+  #toggle-sidebar { min-width: 48px; min-height: 48px; }
+  #output { padding-block: 16px; }
+  .message { margin-bottom: 16px; }
+  .markdown { line-height: 1.6; }
+  .markdown p { margin-bottom: 8px; }
+  .markdown :is(h1, h2, h3) { margin-block: 20px 8px; }
+  .markdown :is(ul, ol) { margin-bottom: 12px; }
+  .markdown li { margin-block: 2px; }
+  .markdown li > p { margin-bottom: 4px; }
+  .markdown :is(blockquote, hr), .code-block, .table-scroll { margin-block: 12px; }
   /* Phone reading takes priority over stacked sticky disclosure bars. */
   .call-group[open] > summary,
   :is(.tool-record, .thinking-record, .skill-invocation, .retry-card, .compaction-card, .task-system-prompt)[open] > summary { position: static; }

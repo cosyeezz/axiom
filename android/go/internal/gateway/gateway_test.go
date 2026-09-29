@@ -63,6 +63,19 @@ func TestRedirectRestricted(t *testing.T){
   if strings.Contains(loc,"evil")||strings.Contains(loc,"steal"){if resp.StatusCode!=502{t.Fatal(resp.StatusCode)}}else if resp.Header.Get("Location")!=g.URL()+"/next"{t.Fatal(resp.Header.Get("Location"))}
  })}
 }
+func TestProbeClassificationAndRecovery(t *testing.T){
+ var code atomic.Int32;code.Store(502)
+ g,_:=fixture(t,func(w http.ResponseWriter,r *http.Request){if r.URL.Path!="/health"||r.Method!="GET"{t.Error("not a read-only probe")};w.WriteHeader(int(code.Load()));w.Write([]byte("private body"))})
+ for _,status:=range []int32{502,503,408,429,401,403,404,302,200}{
+  code.Store(status);err:=g.Probe()
+  if status==200 {if err!=nil{t.Fatal(err)};continue}
+  if err==nil{t.Fatal("failed probe accepted")}
+  if strings.Contains(err.Error(),"private"){t.Fatal("body leaked")}
+  want:=status>=500||status==408||status==429
+  if RetryableProbe(err)!=want{t.Fatalf("status %d classification",status)}
+ }
+ g.Close();if err:=g.Probe();err==nil||!RetryableProbe(err){t.Fatal("network failure classification")}
+}
 func TestWebSocketUpgradeAndClose(t *testing.T){
  g,_:=fixture(t,func(w http.ResponseWriter,r *http.Request){
   if r.Header.Get("Sec-WebSocket-Protocol")!="axiom"||r.Header.Get("Origin")!="http://100.64.0.1:4319"||r.Header.Get("Cookie")!=""{t.Error("WS identity headers")}

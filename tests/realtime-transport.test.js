@@ -18,7 +18,7 @@ function rig(options = {}) {
       this.readyState = 3; this.onclose?.({ code });
     }
   }
-  const transport = createTransport({ url: "ws://test", WebSocket: Socket,
+  const transport = createTransport({ url: "ws://test", WebSocket: Socket, heartbeatInterval: 0,
     setTimer: (fn, delay) => { const id = ++tick; timers.set(id, { fn, delay }); return id; },
     clearTimer: id => timers.delete(id), report: entry => logs.push(entry), ...options });
   const open = async () => { const p = transport.connect(); sockets.at(-1).open(); await p; return sockets.at(-1); };
@@ -99,16 +99,113 @@ test("authoritative failure never advances watermark; queues and retries are bou
   r.transport.commitSnapshot({ sessionId: "s", seq: 9 });
   r.transport.receive({ type: "agent.delta", sessionId: "s", seq: 10 });
   assert.equal(r.transport.getWatermark("s"), 9);
-  for (let i = 0; i < 3 && r.timers.size; i++) {
+  for (let i = 0; i < 2; i++) {
     const timer = [...r.timers.values()][0]; r.timers.clear(); timer.fn(); await flush();
-    r.sockets.at(-1).readyState = 3; r.sockets.at(-1).onclose({ code: 1006 }); await flush();
+    r.sockets.at(-1).open(); await flush();
+    r.transport.receive({ type: "agent.delta", sessionId: "s", seq: 10 }); await flush();
   }
   assert.equal(r.transport.getConnectionState(), "limited"); assert.equal(r.timers.size, 0);
+  const stoppedSockets = r.sockets.length;
+  for (let i = 0; i < 5; i++) await r.transport.resume();
+  assert.equal(r.sockets.length, stoppedSockets);
   r.transport.dispose();
   const q = rig({ maxEvents: 1 }); await q.open(); q.transport.beginSnapshot();
   q.transport.receive({ type: "agent.delta", sessionId: "s" });
   q.transport.receive({ type: "agent.delta", sessionId: "s" });
   assert.equal(q.transport.getDiagnostics().queued, 0); assert(q.logs.some(x => x.code === "receive_limit")); q.transport.dispose();
+});
+
+test("long outages exhaust bounded retries; a throttled lifecycle event recovers", async () => {
+  let now = 0;
+  const r = rig({ now: () => now }); const ws = await r.open();
+  ws.readyState = 3; ws.onclose({ code: 1006 });
+  for (let i = 0; i < 8; i++) {
+    assert.equal(r.timers.size, 1);
+    const timer = [...r.timers.values()][0]; assert(timer.delay <= 30000);
+    r.timers.clear(); timer.fn(); await flush();
+    const next = r.sockets.at(-1); next.readyState = 3; next.onclose({ code: 1006 }); await flush();
+    assert.equal(r.transport.getConnectionState(), i === 7 ? "waiting" : "disconnected");
+  }
+  assert.equal(r.timers.size, 0);
+  const resumed = r.transport.resume(); r.sockets.at(-1).open(); await resumed;
+  assert.equal(r.transport.getConnectionState(), "open");
+  r.sockets.at(-1).onclose({ code: 1006 });
+  const count = r.sockets.length;
+  for (let i = 0; i < 20; i++) await r.transport.resume();
+  assert.equal(r.sockets.length, count); assert.equal(r.timers.size, 1);
+  now = 30001;
+  const wake = r.transport.resume(); r.sockets.at(-1).open(); await wake;
+  assert.equal(r.sockets.length, count + 1); assert.equal(r.timers.size, 0);
+  r.transport.dispose();
+});
+
+test("handshake deadline invalidates silent sockets and ignores late events", async () => {
+  const r = rig({ connectTimeout: 99 });
+  const first = r.transport.connect(); const rejected = assert.rejects(first, { code: "connect_timeout" });
+  const old = r.sockets[0]; old.close = () => {}; // No close callback from a stuck browser network stack.
+  const deadline = [...r.timers.values()][0]; assert.equal(deadline.delay, 99);
+  r.timers.clear(); deadline.fn(); await rejected;
+  const retry = [...r.timers.values()][0]; r.timers.clear(); retry.fn(); await flush();
+  old.open(); old.message({ type: "agent.end" }); old.onclose({ code: 1006 });
+  assert.equal(r.transport.getConnectionState(), "connecting");
+  r.sockets.at(-1).open(); await flush(); assert.equal(r.transport.getConnectionState(), "open");
+  r.transport.dispose();
+});
+
+test("restoration without progress has a deadline; late initialization cannot revive it", async () => {
+  let finish;
+  const r = rig({ restoreTimeout: 91, initialize: () => new Promise(resolve => { finish = resolve; }) });
+  const attempt = r.transport.connect(); const rejected = assert.rejects(attempt, { code: "restore_timeout" });
+  r.sockets[0].open(); await flush();
+  assert.equal(r.transport.getConnectionState(), "restoring");
+  const deadline = [...r.timers.values()].find(t => t.delay === 91);
+  r.timers.clear(); deadline.fn(); await rejected;
+  finish(); await flush();
+  assert.equal(r.transport.getConnectionState(), "disconnected");
+  assert.equal(r.timers.size, 1); r.transport.dispose();
+});
+
+test("wake probes half-open socket, preserves unknown requests and never replays", async () => {
+  const r = rig({ heartbeatTimeout: 77 }); const ws = await r.open();
+  const pending = r.transport.request({ type: "prompt", text: "do once" });
+  const rejected = assert.rejects(pending, { code: "disconnected", unknown: true }); await flush();
+  ws.close = () => {};
+  const wake = r.transport.resume(); assert.equal(wake, r.transport.resume()); await flush();
+  assert.deepEqual(ws.sent.map(x => x.type), ["prompt", "service.status"]);
+  const deadline = [...r.timers.values()].find(t => t.delay === 77); deadline.fn(); await wake; await rejected;
+  assert.equal(r.transport.getConnectionState(), "disconnected");
+  const recovered = r.transport.resume(); r.sockets.at(-1).open(); await recovered;
+  assert.deepEqual(r.sockets.at(-1).sent, []);
+  r.transport.dispose(); await r.transport.resume(); assert.equal(r.transport.getConnectionState(), "disposed");
+});
+
+test("heartbeat is single-flight and safety stops cannot be resumed by lifecycle events", async () => {
+  const r = rig({ heartbeatInterval: 55 }); const ws = await r.open();
+  assert.equal([...r.timers.values()][0].delay, 55);
+  const timer = [...r.timers.values()][0]; r.timers.clear(); timer.fn(); await flush();
+  const wake = r.transport.resume(); await flush(); assert.equal(ws.sent.length, 1);
+  ws.message({ type: "response", id: ws.sent[0].id, ok: true, data: {} }); await wake;
+  assert.equal(r.timers.size, 1);
+  ws.onclose({ code: 1009 }); await r.transport.resume();
+  assert.equal(r.sockets.length, 1); assert.equal(r.timers.size, 0);
+  r.transport.dispose();
+  const q = rig(); const p = q.transport.connect(); const done = assert.rejects(p, { code: "disposed" });
+  q.transport.dispose(); await done; assert.equal(q.timers.size, 0);
+});
+
+test("heartbeat skips local saturation without disconnecting business requests", async () => {
+  const r = rig({ maxPending: 1, heartbeatInterval: 55, maxBytes: 1000 }); const ws = await r.open();
+  const business = r.transport.request({ type: "prompt" }); await flush();
+  await r.transport.resume();
+  assert.equal(r.transport.getConnectionState(), "open"); assert.equal(ws.sent.length, 1);
+  ws.message({ type: "response", id: ws.sent[0].id, ok: true }); await business;
+  ws.bufferedAmount = 1000;
+  await r.transport.resume();
+  assert.equal(r.transport.getConnectionState(), "open"); assert.equal(ws.sent.length, 1);
+  ws.bufferedAmount = 0;
+  const wake = r.transport.resume(); await flush();
+  r.transport.dispose(); await wake;
+  assert.equal(r.timers.size, 0); assert.equal(r.transport.getConnectionState(), "disposed");
 });
 
 test("direct/broadcast/deletion share bounded sends; slow/throwing client cannot stop fast client", () => {
@@ -141,6 +238,31 @@ test("broadcast uses UTF-8 limits per client and preserves exclusions and async 
   const oversize = socket();
   createSender({ maxBytes: bytes - 1, report() {} }).broadcast([oversize], message);
   assert.equal(oversize.code, 1009); assert.deepEqual(oversize.sent, []);
+});
+
+test("heartbeat queued behind serialization cannot diagnose a dead peer before send", async t => {
+  class StalledWorker { postMessage() {} terminate() {} }
+  const r = rig({ Serializer: StalledWorker, heartbeatTimeout: 77 });
+  t.after(() => r.transport.dispose()); const ws = await r.open();
+  const business = r.transport.request({ type: "prompt", text: "x".repeat((1 << 20) + 1) });
+  const cancelled = assert.rejects(business, { code: "disconnected", unknown: false });
+  await flush(); const probe = r.transport.resume(); await flush();
+  assert.equal(ws.sent.length, 0);
+  [...r.timers.values()].find(timer => timer.delay === 77).fn(); await probe;
+  assert.equal(r.transport.getConnectionState(), "open"); assert.equal(ws.readyState, 1);
+  r.transport.dispose(); await cancelled;
+});
+
+test("duplicate snapshot failure counts once per connection and cannot revive its state", async () => {
+  const r = rig({ maxRetries: 1 }); await r.open();
+  r.transport.failSnapshot(new Error("mount")); r.transport.failSnapshot(new Error("same mount"));
+  assert.equal(r.transport.getConnectionState(), "disconnected"); assert.equal(r.timers.size, 1);
+  assert.equal(r.logs.filter(log => log.code === "snapshot_failed").length, 1);
+  const retry = [...r.timers.values()][0]; r.timers.clear(); retry.fn(); await flush();
+  r.sockets.at(-1).open(); await flush();
+  r.transport.failSnapshot(new Error("next mount"));
+  assert.equal(r.transport.getConnectionState(), "limited"); assert.equal(r.timers.size, 0);
+  await r.transport.resume(); assert.equal(r.sockets.length, 2); r.transport.dispose();
 });
 
 test("oversize close stops automatic snapshot download loop", async () => {

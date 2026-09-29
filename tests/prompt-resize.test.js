@@ -17,6 +17,7 @@ async function page(media = { matches: false }) {
   const dom = new JSDOM(html, { url: "http://localhost", runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window;
   w.matchMedia = () => media;
+  Object.defineProperty(w, "visualViewport", { value: Object.assign(new w.EventTarget(), { height: 768 }), configurable: true });
   Object.defineProperty(w.document, "fonts", { value: new w.EventTarget(), configurable: true });
   w.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
   w.HTMLDialogElement.prototype.close = function () { this.open = false; };
@@ -126,23 +127,23 @@ test("必要的变化仍然重算：输入、视口、桌面侧栏折叠", async
   } finally { dom.window.close(); }
 });
 
-test("手机展开与断点切换仍然重算，收起时不白量", async () => {
+test("手机始终可输入，内容与断点改变才重算且限制短视口占位", async () => {
   const media = { matches: true };
-  const { dom, w, input, reads, size } = await page(media);
+  const { dom, w, input, reads, size, paint } = await page(media);
   try {
     size(300);
     reads.count = 0;
-    w.document.getElementById("mobile-expand").click();
+    w.resizePrompt();
     assert.equal(reads.count, 0, "手机空输入固定高度，无需读取几何");
     assert.equal(input.style.height, "44px", "手机空输入固定 44px");
-
-    w.document.getElementById("mobile-expand").click();
-    assert.equal(reads.count, 0, "收起时不做无谓测量");
-
     input.value = "有内容";
-    w.document.getElementById("mobile-expand").click();
+    w.resizePrompt();
     assert.equal(reads.count, 1);
-    assert.equal(input.style.height, "240px", "非空按 scrollHeight 且封顶 240");
+    assert.equal(input.style.height, "120px", "手机非空封顶120，留出聊天空间");
+    w.visualViewport.height = 420;
+    w.visualViewport.dispatchEvent(new w.Event("resize"));
+    paint();
+    assert.equal(input.style.height, "84px", "短视口仅占20%高度");
 
     // 跨断点：手机 → 桌面要改 rows 与封顶规则。
     media.matches = false;
@@ -157,6 +158,9 @@ test("手机展开与断点切换仍然重算，收起时不白量", async () =>
     media.matches = true;
     media.onchange();
     assert.equal(input.rows, 1, "回手机回到 1 行");
+    assert.equal(input.style.height, "84px");
+    assert.equal(w.document.querySelector('.service-controls').parentElement.id, 'mobile-service-slot');
+    assert.equal(w.document.querySelector('.workspace-location').parentElement.id, 'mobile-workspace-slot');
   } finally { dom.window.close(); }
 });
 

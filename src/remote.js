@@ -147,6 +147,7 @@ export async function createRemoteAccess({
   urlWaitMs = 1500,
   loginTimeoutMs = 150_000,
   bindHost = null, // 测试注入：默认用验证过的本机 Tailscale IP
+  setTimer = setTimeout, clearTimer = clearTimeout, maxRecoveryAttempts = 8,
 }) {
   const path = join(home, "remote.json");
   const NAMESPACE = "remote";
@@ -215,6 +216,22 @@ export async function createRemoteAccess({
   const whoisCache = new Map();
   const inflight = new Map();
   let chain = Promise.resolve();
+  let disposed = false, recoveryTimer, recoveryAttempts = 0, recoveryGeneration = 0, shutdownFlight;
+  const clearRecovery = () => { ++recoveryGeneration; clearTimer(recoveryTimer); recoveryTimer = undefined; };
+  const scheduleRecovery = () => {
+    if (disposed || !config.enabled || server || recoveryTimer != null || recoveryAttempts >= maxRecoveryAttempts) return;
+    const generation = recoveryGeneration;
+    recoveryTimer = setTimer(() => {
+      if (generation !== recoveryGeneration) return;
+      recoveryTimer = undefined;
+      void enqueue(async () => {
+        if (generation !== recoveryGeneration || disposed || !config.enabled || server) return;
+        try { await start(); } catch (cause) { error = describeError(cause); }
+        scheduleRecovery();
+      });
+    }, Math.min(1000 * 2 ** recoveryAttempts++, 30000));
+    recoveryTimer?.unref?.();
+  };
 
   const enqueue = (fn) => {
     const result = chain.then(fn, fn);
@@ -296,7 +313,7 @@ export async function createRemoteAccess({
 
   // 唯一信任来源：socket 对端地址 + tailscaled whois；请求头一律不可信。
   const authorize = async (req) => {
-    if (!config.enabled) return false;
+    if (disposed || !config.enabled) return false;
     const host = String(req.headers.host || "").toLowerCase();
     if (!hosts.includes(host)) return false;
     const origin = req.headers.origin;
@@ -320,6 +337,7 @@ export async function createRemoteAccess({
   };
 
   const start = async () => {
+    if (disposed || !config.enabled) return false;
     error = "";
     let self;
     try {
@@ -330,6 +348,7 @@ export async function createRemoteAccess({
       error = describeError(e);
       return false;
     }
+    if (disposed || !config.enabled) return false;
     loginEmail = self.loginEmail;
     backend = self.backend;
     selfTagged = self.tagged;
@@ -350,6 +369,10 @@ export async function createRemoteAccess({
       error = "Tailscale 已停用（Stopped），请先在官方客户端恢复连接";
       return false;
     }
+    if (self.backend !== "Running") {
+      error = `Tailscale 尚未就绪（${self.backend || "未知状态"}），保持停用`;
+      return false;
+    }
     if (!self.ip) {
       // selfStatus 仅接受 100.64.0.0/10 真实 v4；0.0.0.0/DNS/环回等异常值都落到这里。
       error = "未获取到本机 Tailscale IP（100.64.0.0/10；tailscale 可能未连接）";
@@ -360,8 +383,9 @@ export async function createRemoteAccess({
       return false;
     }
     const host = bindHost ?? self.ip;
-    const rs = app.createRemoteServer(authorize);
+    let rs;
     try {
+      rs = app.createRemoteServer(authorize);
       await new Promise((resolve, reject) => {
         const fail = (e) => reject(e);
         rs.once("error", fail);
@@ -373,8 +397,13 @@ export async function createRemoteAccess({
         });
       });
     } catch (e) {
-      rs.close(); // 释放失败的 server 引用，否则之后重试会命中「已在运行」
+      if (rs) await new Promise(done => rs.close(done)); // 等待失败实例释放，再安排恢复
       error = `远程 server 监听 ${host} 失败：${describeError(e)}`;
+      return false;
+    }
+    if (disposed || !config.enabled) {
+      rs.closeAllConnections();
+      await new Promise(done => rs.close(done));
       return false;
     }
     const bound = rs.address();
@@ -384,6 +413,7 @@ export async function createRemoteAccess({
     ].filter(Boolean);
     url = `http://${host.includes(":") ? `[${host}]` : host}:${bound.port}`;
     server = rs;
+    clearRecovery(); recoveryAttempts = 0;
     return true;
   };
 
@@ -402,6 +432,7 @@ export async function createRemoteAccess({
   // 串行化所有更改（先校验再持久化后应用），避免并发互相覆盖。
   const configure = (request) =>
     enqueue(async () => {
+      if (disposed) throw new Error("远程访问已关闭");
       const enabled = Boolean(request.enabled);
       const email = String(request.email ?? "").trim();
       // LoginName 不一定是传统邮箱（如 GitHub 登录为 alice@github），只做最宽松校验。
@@ -413,15 +444,31 @@ export async function createRemoteAccess({
         if (!fresh.installed) throw new Error("未找到 tailscale 命令：请先安装 Tailscale");
         if (fresh.tagged) throw new Error("本机是 tag 设备（无个人 Tailscale 账号），远程访问不可用");
         if (!fresh.loginEmail) throw new Error("本机 Tailscale 未登录，请先完成登录");
+        if (!fresh.online) throw new Error("Tailscale 尚未就绪，请先在官方客户端恢复连接或登录");
         if (fresh.loginEmail.toLowerCase() !== email.toLowerCase())
           throw new Error(`允许邮箱须与本机登录账号一致（当前登录：${fresh.loginEmail}）`);
       }
-      const next = { enabled, email };
-      await persistConfig(next); // SQLite 或原子落盘 remote.json（按是否传入 database）
-      config = next;
+      if (disposed) throw new Error("远程访问已关闭");
+      // An explicit attempt supersedes old startup recovery. Persist a disabled fence
+      // first, so failure (including a crash during listen) cannot grant future startup.
+      const disabled = { enabled: false, email };
+      await persistConfig(disabled);
+      clearRecovery(); recoveryAttempts = 0;
+      config = disabled;
       await stop();
       whoisCache.clear();
-      if (enabled) await start();
+      if (disposed) throw new Error("远程访问已关闭");
+      if (enabled) {
+        config = { enabled: true, email };
+        try {
+          if (await start()) await persistConfig(config);
+          else config = disabled;
+        } catch (cause) {
+          config = disabled;
+          await stop();
+          throw cause;
+        }
+      }
       return status();
     });
 
@@ -438,9 +485,12 @@ export async function createRemoteAccess({
     } catch {}
     session.wake?.(); // 唤醒等待者，避免悬挂
   };
+  const assertRunning = () => { if (disposed) throw new Error("远程访问已关闭"); };
   const login = async () => {
+    assertRunning();
     statusAt = 0; // 强制取最新登录态
     const fresh = await status();
+    assertRunning();
     if (fresh.tagged)
       return {
         state: "unavailable",
@@ -457,6 +507,7 @@ export async function createRemoteAccess({
     try {
       bin = await tailscale.bin();
     } catch {
+      assertRunning();
       return {
         state: "unavailable",
         loginEmail: "",
@@ -464,10 +515,12 @@ export async function createRemoteAccess({
         guidance: "未找到 tailscale 命令：请安装官方 Tailscale 客户端",
       };
     }
+    assertRunning();
     let child;
     try {
       child = await spawnLogin(bin);
     } catch {
+      assertRunning();
       return {
         state: "unavailable",
         loginEmail: "",
@@ -475,6 +528,8 @@ export async function createRemoteAccess({
         guidance: "无法启动 tailscale 命令行：请打开官方 Tailscale 客户端完成登录",
       };
     }
+    if (disposed) { try { child?.kill?.(); } catch {} }
+    assertRunning();
     const session = { child, url: null, closed: false, timer: null, output: 0, wake: null };
     const waitForUrl = new Promise((done) => {
       session.wake = done;
@@ -538,9 +593,15 @@ export async function createRemoteAccess({
     return { state: "pending", loginEmail: "", authUrl: session.url ?? "" };
   };
 
-  const shutdown = () => endLogin(); // 进程退出时清理登录子进程
+  const shutdown = () => {
+    if (shutdownFlight) return shutdownFlight;
+    disposed = true; clearRecovery(); endLogin();
+    return shutdownFlight = enqueue(stop);
+  };
+  // Also terminate the owner if an embedding caller closes the app without its service hook.
+  app.server?.once("close", shutdown);
 
-  if (config.enabled) await start();
+  if (config.enabled) { await start(); scheduleRecovery(); }
 
   return { authorize, configure, status, login, shutdown };
 }

@@ -22,9 +22,13 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
   setTimer = setTimeout, clearTimer = clearTimeout, now = Date.now,
   timeout = 120000, maxPending = 256, maxBytes = 32 * 1024 * 1024,
   maxEvents = 10000, maxRetries = 5, Serializer = globalThis.Worker,
-  serializeTimeout = 10000 } = {}) {
+  serializeTimeout = 10000, connectTimeout = 15000, restoreTimeout = 120000,
+  heartbeatInterval = 25000, heartbeatTimeout = 10000,
+  maxNetworkRetries = 8, resumeCooldown = 30000 } = {}) {
   let socket, opening, disposed = false, state = "closed", timer, failures = 0, id = 0;
   let generation = 0, epoch, gate = null, queuedBytes = 0, oldest = 0;
+  let endConnection, handshakeTimer, heartbeatTimer, restoreTimer, healthCheck, protectionFailures = 0;
+  let lastResume = -Infinity;
   // 发送序链（D4）：入队后统一序列化/发送，与同步路径保同等顺序。
   let queueTail = Promise.resolve();
   let serializer, serializerUrl, serialKey = 0, serializerDisabled = false;
@@ -112,20 +116,22 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
         clearGate();
         try { for (const message of queued) deliver(message); }
         catch { recover("merge_failed"); }
-      } else if (!["disconnected"].includes(error.code)) recover("snapshot_request_failed");
+      } else if (error.code === "timeout") endConnection?.(failure("snapshot_timeout", "读取会话超时，正在恢复"));
+      else if (!["disconnected"].includes(error.code)) recover("snapshot_request_failed");
     }
   };
   const disconnectPending = () => {
     for (const [key, entry] of pending) settle(key, failure("disconnected", entry.sent
       ? "连接断开，请求结果未知；请确认状态后再操作" : "连接断开，消息尚未发送，请重新连接", entry.sent));
   };
-  function recover(code) {
-    if (disposed || state === "limited") return;
+  function recover(code, cause) {
+    // A failed connection owns at most one recovery transition/budget charge.
+    if (disposed || state === "limited" || !endConnection) return;
     diagnostic(code);
+    // Bound data/merge failures separately from ordinary network outages.
+    const limited = ++protectionFailures > maxRetries;
     status("recovering");
-    // A failed reducer may have partially changed state: never process more events until a snapshot.
-    clearGate();
-    socket?.close(4001, "recovery required");
+    endConnection?.(cause || failure(code, "消息恢复失败"), { limited });
   }
   function deliver(message) {
     if (message.seq != null) {
@@ -206,75 +212,126 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
       sent.catch((error) => settle(key, error));
     });
   }
+  function clearConnectionTimers() {
+    clearTimer(handshakeTimer); clearTimer(heartbeatTimer); clearTimer(restoreTimer);
+    handshakeTimer = heartbeatTimer = restoreTimer = undefined;
+    healthCheck = undefined;
+  }
+  function restoreProgress() {
+    clearTimer(restoreTimer);
+    restoreTimer = setTimer(() => endConnection?.(failure("restore_timeout", "恢复长时间无进展，正在重试")), restoreTimeout);
+  }
+  function scheduleHeartbeat() {
+    clearTimer(heartbeatTimer);
+    if (!heartbeatInterval || disposed || state !== "open") return;
+    heartbeatTimer = setTimer(() => { heartbeatTimer = undefined; void checkHealth(); }, heartbeatInterval);
+  }
+  function checkHealth() {
+    if (disposed || state !== "open") return Promise.resolve();
+    if (healthCheck) return healthCheck;
+    clearTimer(heartbeatTimer); heartbeatTimer = undefined;
+    const current = generation;
+    // Existing read-only command: compatible with older servers, never replay business requests.
+    const probe = request({ type: "service.status" }, { timeoutMs: heartbeatTimeout })
+      .catch(error => {
+        if (current !== generation || disposed) return;
+        // An error response still proves the bidirectional connection is alive.
+        // Local backpressure is not evidence of a dead peer: the probe never left this client.
+        if (error.code === "timeout" && !error.unknown) return;
+        if (!["response_error", "pending_limit", "send_limit"].includes(error.code))
+          endConnection?.(failure("heartbeat_timeout", "连接无响应，正在恢复"));
+      }).finally(() => {
+        if (current !== generation || disposed) return;
+        healthCheck = undefined; scheduleHeartbeat();
+      });
+    healthCheck = probe;
+    return probe;
+  }
   function connect({ retry = false } = {}) {
     if (disposed) return Promise.reject(failure("disposed", "连接已销毁"));
-    if (opening) {
-      if (socket) return opening;
-      return opening.catch(() => {}).then(() => connect({ retry }));
-    }
+    if (opening) return opening;
     if (socket?.readyState === 1) return Promise.resolve();
-    if (!retry) failures = 0;
-    clearTimer(timer);
-    timer = undefined;
+    if (!retry) { failures = 0; protectionFailures = 0; lastResume = -Infinity; }
+    clearTimer(timer); timer = undefined;
     const current = ++generation;
     status("connecting");
-    opening = (async () => {
-      const ws = socket = new Socket(typeof url === "function" ? url() : url, ["axiom"]);
-      await new Promise((resolve, reject) => {
-        ws.onopen = resolve;
-        ws.onerror = () => { diagnostic("socket_error"); reject(failure("connect_failed", "连接失败，请检查服务是否运行")); };
+    let ws, rejectLifetime;
+    const lifetime = new Promise((_, reject) => { rejectLifetime = reject; });
+    const isCurrent = () => current === generation && !disposed;
+    const end = (error, { normal = false, limited = false } = {}) => {
+      if (!isCurrent()) return;
+      ++generation; // Invalidate even when close() never produces an event.
+      socket = undefined; opening = undefined; endConnection = undefined;
+      clearConnectionTimers();
+      clearGate(); disconnectPending();
+      rejectLifetime(error);
+      try { ws?.close(normal ? 1000 : 4001, "connection ended"); } catch {}
+      status(limited ? "limited" : normal ? "closed" : "disconnected");
+      if (limited) diagnostic("recovery_limit");
+      else if (!normal) scheduleReconnect();
+    };
+    endConnection = end;
+    const run = (async () => {
+      ws = socket = new Socket(typeof url === "function" ? url() : url, ["axiom"]);
+      await new Promise(resolve => {
+        handshakeTimer = setTimer(() => end(failure("connect_timeout", "连接超时，正在重试")), connectTimeout);
+        ws.onopen = () => {
+          if (!isCurrent()) return;
+          clearTimer(handshakeTimer); handshakeTimer = undefined; resolve();
+        };
+        ws.onerror = () => { if (isCurrent()) { diagnostic("socket_error"); end(failure("connect_failed", "连接失败，正在重试")); } };
         ws.onmessage = ({ data }) => {
-          if (current !== generation || socket !== ws || disposed) return;
+          if (!isCurrent() || socket !== ws) return;
           try {
             const message = JSON.parse(data);
             if (message.type === "response") {
               const entry = pending.get(message.id);
               if (!entry) return;
+              if (state === "restoring") restoreProgress();
               if (message.ok && ["session.attach", "session.create", "session.import"].includes(entry.command)) beginSnapshot();
               settle(message.id, message.ok ? null : failure("response_error", message.error), message.data);
             } else receive(message);
           } catch { recover("invalid_message"); }
         };
-        ws.onclose = (event = {}) => {
-          if (current !== generation) return;
-          socket = undefined;
-          disconnectPending();
-          reject(failure("disconnected", "连接断开"));
-          if (disposed) return;
-          if (event.code === 1009) { clearGate(); status("limited"); diagnostic("message_limit"); return; }
-          const normal = event.code === 1000;
-          status(normal ? "closed" : "disconnected");
-          clearGate();
-          if (!normal) scheduleReconnect();
-        };
+        ws.onclose = (event = {}) => end(failure("disconnected", "连接断开"), { normal: event.code === 1000, limited: event.code === 1009 });
       });
-      if (current !== generation || disposed) return;
-      status("restoring");
-      await initialize({ isCurrent: () => current === generation && socket?.readyState === 1 && !disposed });
-      if (current !== generation || !socket || disposed) return;
+      if (!isCurrent()) return;
+      status("restoring"); restoreProgress();
+      await initialize({ isCurrent: () => isCurrent() && socket?.readyState === 1 });
+      if (!isCurrent() || !socket) return;
+      clearTimer(restoreTimer); restoreTimer = undefined;
       failures = 0;
-      status("open");
-    })().catch((error) => {
-      if (!disposed && state !== "limited") {
-        diagnostic("restore_failed");
-        socket?.close(4001, "recovery required");
-        scheduleReconnect();
-      }
+      status("open"); scheduleHeartbeat();
+    })();
+    const attempt = Promise.race([run, lifetime]).catch(error => {
+      if (isCurrent()) { diagnostic("restore_failed"); end(error); }
       throw error;
-    }).finally(() => { opening = undefined; });
-    return opening;
+    }).finally(() => { if (opening === attempt) opening = undefined; });
+    opening = attempt;
+    return attempt;
   }
   function scheduleReconnect() {
     if (disposed || state === "limited" || timer != null) return;
-    if (++failures > maxRetries) { status("limited"); diagnostic("retry_limit"); return; }
+    if (++failures > maxNetworkRetries) {
+      status("waiting"); diagnostic("network_retry_limit"); return;
+    }
     timer = setTimer(() => {
       timer = undefined;
-      void connect({ retry: true }).catch(() => {}); // connect reports failures and bounds retries.
-    }, Math.min(1000 * 2 ** (failures - 1), 15000));
+      void connect({ retry: true }).catch(() => {});
+    }, Math.min(1000 * 2 ** (failures - 1), 30000));
+  }
+  function resume() {
+    // Data safety stops and intentional closure cannot be bypassed by wake/online events.
+    if (disposed || ["limited", "closed"].includes(state)) return Promise.resolve();
+    if (state === "open") return checkHealth();
+    if (opening || now() - lastResume < resumeCooldown) return opening?.catch(() => {}) || Promise.resolve();
+    lastResume = now();
+    if (state === "waiting") failures = 0; // A new visible/network event opens one bounded retry window.
+    return connect({ retry: true }).catch(() => {});
   }
   return {
-    connect, request, receive, beginSnapshot, commitSnapshot,
-    failSnapshot: () => recover("snapshot_failed"),
+    connect, resume, request, receive, beginSnapshot, commitSnapshot,
+    failSnapshot: (cause) => recover("snapshot_failed", cause),
     getConnectionState: () => state,
     getDiagnostics: () => ({ state, pending: pending.size, queued: gate?.length || 0, queuedBytes, failures }),
     getSnapshotQueue: () => gate,
@@ -289,8 +346,10 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
     },
     dispose() {
       if (disposed) return;
+      endConnection?.(failure("disposed", "连接已销毁"), { normal: true });
       disposed = true;
       ++generation;
+      clearConnectionTimers();
       clearTimer(timer);
       timer = undefined;
       disconnectPending(); clearGate(); watermarks.clear();

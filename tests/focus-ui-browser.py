@@ -46,13 +46,17 @@ try:
                 page.wait_for_timeout(120)
                 metrics.append({'width': width, 'height': height, 'theme': theme,
                     'composerHeight': page.locator('.composer-wrap').bounding_box()['height'],
-                    'headerControlsWidth': page.locator('.service-controls').bounding_box()['width']})
+                    'headerControlsWidth': (page.locator('.service-controls').bounding_box() or page.locator('#mobile-more').bounding_box())['width']})
                 page.screenshot(path=str(OUT / f'workspace-{width}-{theme}.png'))
                 if BASELINE: continue
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), (width, theme)
                 expect(page.locator('#github-link')).not_to_be_visible()
                 expect(page.locator('#composer-help')).not_to_be_visible()
                 expect(page.locator('#composer-action-help')).not_to_be_visible()
+                phone = width <= 700
+                if phone:
+                    expect(page.locator('#status')).not_to_be_visible()
+                    page.locator('#mobile-more').click()
                 expect(page.locator('#status')).to_be_visible()
                 expect(page.locator('.composer-model-effort')).to_be_visible()
                 for selector in ['#view-options-trigger', '#session-runtime', '.composer-split', '.composer-model-trigger', '.composer-help-trigger']:
@@ -80,13 +84,14 @@ try:
                 page.keyboard.press('Escape')
                 expect(panel).not_to_be_visible()
                 expect(more).to_be_focused()
-                more.click(); page.locator('#prompt').click()
+                more.click()
+                page.locator('#mobile-menu-title' if phone else '#prompt').click()
                 expect(panel).not_to_be_visible()
                 more.click(); page.locator('#open-raw-io').click()
                 expect(panel).not_to_be_visible()
                 expect(page.locator('#raw-io')).to_be_visible()
                 page.locator('#close-raw-io').click()
-                expect(more).to_be_focused()
+                expect(page.locator('#mobile-more') if phone else more).to_be_focused()
                 page.locator('#session-runtime').click()
                 expect(page.locator('#session-usage')).to_have_attribute('open', '')
                 expect(page.locator('#session-usage-body')).to_contain_text('5,000 tokens')
@@ -111,9 +116,13 @@ try:
                 bounds = page.locator('.composer-split').bounding_box()
                 assert bounds['x'] + bounds['width'] <= width + 1
                 model_name.evaluate('(e, text) => e.textContent = text', original)
-                if width < 720:
-                    for selector in ['#status', '#view-options-trigger', '.composer-help-trigger', '.composer-session-info', '.composer-model-trigger', '#session-runtime']:
+                if phone:
+                    for selector in ['#mobile-more', '.composer-help-trigger', '.composer-session-info', '.composer-model-trigger', '#session-runtime']:
                         assert page.locator(selector).bounding_box()['height'] >= 44, selector
+                    page.locator('#mobile-more').click()
+                    for selector in ['#status', '#view-options-trigger']:
+                        assert page.locator(selector).bounding_box()['height'] >= 44, selector
+                    page.keyboard.press('Escape')
             if not BASELINE:
                 page.goto(url + '/#session=ui-waiting')
                 page.reload()  # Hash-only navigation does not bootstrap another session.
@@ -121,9 +130,13 @@ try:
                 expect(page.locator('#composer-action-help')).to_contain_text('Enter 介入')
                 expect(page.locator('#composer-action-help')).to_contain_text('按钮执行 stop')
                 page.evaluate('previewCommands.length = 0')
+                if phone: page.locator('#mobile-more').click()
                 for selector in ['#view-options-trigger', '.composer-help-trigger']:
                     page.locator(selector).focus(); page.keyboard.press('Enter')
                     page.keyboard.press('Escape')
+                    if phone and selector == '#view-options-trigger':
+                        expect(page.locator('#mobile-menu')).to_be_visible()
+                        page.keyboard.press('Escape')
                 page.wait_for_timeout(400)
                 assert not page.evaluate('previewCommands.some(type => /stop|withdraw|recall/i.test(type))')
                 expect(page.locator('#composer-action-help')).to_contain_text('按钮执行 stop')
@@ -131,6 +144,7 @@ try:
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
                 page.emulate_media(reduced_motion='reduce')
                 # Connection settings stay reachable, including on narrow viewports.
+                if phone: page.locator('#mobile-more').click()
                 page.locator('#status').click()
                 expect(page.locator('#connection-current')).to_be_visible()
                 page.keyboard.press('Escape')
@@ -138,6 +152,7 @@ try:
                 # Offline emulation does not close an already established WebSocket.
                 page.evaluate('previewSockets.forEach(socket => socket.close(4001, "fixture disconnect"))')
                 expect(page.locator('#status')).not_to_have_attribute('data-connected', 'true')
+                if phone: page.locator('#mobile-more').click()
                 expect(page.locator('#status span')).to_be_visible()
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
                 page.screenshot(path=str(OUT / f'disconnected-{width}.png'))

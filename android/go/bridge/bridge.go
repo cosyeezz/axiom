@@ -83,6 +83,26 @@ func Login() error {
 func LocalURL() string {state.Lock();defer state.Unlock();if state.gateway==nil{return ""};return state.gateway.URL()}
 func SessionToken() string {state.Lock();defer state.Unlock();if state.gateway==nil{return ""};return state.gateway.Token()}
 func Probe() error {state.Lock();defer state.Unlock();if state.gateway==nil{return errors.New("本地连接尚未建立")};return state.gateway.Probe()}
+// ProbeState preserves HTTP classification across gomobile without exposing remote bodies.
+func ProbeState() string {
+ state.Lock();defer state.Unlock()
+ result:=map[string]any{"ok":false,"retryable":false,"message":"本地连接尚未建立"}
+ if state.gateway!=nil {
+  err:=state.gateway.Probe()
+  if err==nil {result["ok"]=true;result["message"]=""} else {result["message"]=err.Error();result["retryable"]=gateway.RetryableProbe(err)}
+ }
+ b,_:=json.Marshal(result);return string(b)
+}
+// Resume only restores an explicitly active connection. Never rebuild the gateway,
+// change identity, start interactive login or change the WebView's origin/token.
+func Resume() error {
+ state.Lock();defer state.Unlock()
+ if state.gateway==nil||state.client==nil{return nil}
+ ctx,cancel:=context.WithTimeout(context.Background(),5*time.Second);defer cancel()
+ st,err:=state.client.Status(ctx);if err!=nil{return err}
+ if st.BackendState!="Stopped"{return nil}
+ _,err=state.client.EditPrefs(ctx,&ipn.MaskedPrefs{Prefs:ipn.Prefs{WantRunning:true},WantRunningSet:true});return err
+}
 func Renew(){state.Lock();defer state.Unlock();if state.gateway!=nil{state.gateway.Renew()}}
 // Disconnect revokes local browser access. Keep the node until process exit so
 // Activity recreation doesn't race asynchronous tsnet initialization/Close.

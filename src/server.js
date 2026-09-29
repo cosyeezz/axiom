@@ -570,7 +570,7 @@ export function createServerApp(sessions, service = {}) {
     async close() {
       closing = true;
       stopping = true;
-      service.remoteShutdown?.(); // 清理登录子进程
+      await service.remoteShutdown?.(); // 停止恢复调度/在途监听，再清理服务
       dropRemote();
       const remoteClosed = remoteServer
         ? new Promise((done) => {

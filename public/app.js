@@ -250,15 +250,15 @@ window.addEventListener("storage", (event) => {
 });
 function saveView() {
   if (!sessionId) return;
-  // 快照同步中保留原阅读位置，草稿仍保存。
-  const previous = views.get(sessionId)?.scroll;
+  // Waiting for attach only gates events; the existing DOM is still readable/scrollable.
+  // History mounting is synchronous, so capture the live position, not the pre-request one.
   const anchor = !follow && rawEntries.find(entry => entry.item?.node?.getBoundingClientRect().bottom > transcript.getBoundingClientRect().top);
   views.set(sessionId, {
     draft: $("prompt").value,
     contextFiles: [...contextFiles],
     images: [...images],
     selectedSkill,
-    scroll: transport.getSnapshotQueue() ? (previous ?? 0) : $("transcript").scrollTop,
+    scroll: $("transcript").scrollTop,
     follow,
     anchor: anchor?.messageId,
     anchorOffset: anchor ? anchor.item.node.getBoundingClientRect().top - transcript.getBoundingClientRect().top : 0,
@@ -278,7 +278,8 @@ function resizePrompt() {
   promptFit = { layout: promptLayout, phone, value: input.value, collapsed };
   input.rows = 1;
   input.style.height = "auto";
-  input.style.height = (phone && !input.value ? 44 : Math.min(input.scrollHeight, 240)) + "px";
+  const limit = phone ? Math.max(44, Math.min(120, (window.visualViewport?.height || window.innerHeight) * .2)) : 240;
+  input.style.height = (phone && !input.value ? 44 : Math.min(input.scrollHeight, limit)) + "px";
 }
 // 可用宽度或字体度量可能变了（断点、侧栏折叠、手机展开、视口尺寸、字体晚到）：先标脏再重算。
 function invalidatePrompt() { promptLayout++; resizePrompt(); }
@@ -386,6 +387,7 @@ $("toggle-sidebar").onclick = () =>
   sidebar($("toggle-sidebar").getAttribute("aria-expanded") !== "true");
 $("sidebar-backdrop").onclick = () => sidebar(false);
 mobile.onchange = () => {
+  placeMobileControls();
   sidebar(!mobile.matches);
   applyComposerCollapsed();
   invalidatePrompt();
@@ -395,10 +397,12 @@ sidebar(!mobile.matches);
 resizePrompt();
 let promptResizeFrame;
 // 同断点内拖窗口会连发 resize，按帧合并，一帧最多重算一次。
-addEventListener("resize", () => {
+function schedulePromptResize() {
   if (promptResizeFrame !== undefined) return;
   promptResizeFrame = requestAnimationFrame(() => { promptResizeFrame = undefined; invalidatePrompt(); });
-});
+}
+addEventListener("resize", schedulePromptResize);
+window.visualViewport?.addEventListener("resize", schedulePromptResize);
 // 目前全站用系统字体；万一以后引入 webfont，度量变化同样要重算。
 document.fonts?.addEventListener?.("loadingdone", invalidatePrompt);
 // 输入区折叠（仅桌面，手机已有 mobile-expanded 那套）：默认只留一行，点击/聚焦/输入即展开，
@@ -492,6 +496,41 @@ $("mobile-expand").onclick = () => {
   $("mobile-expand").textContent = expanded ? "收起" : "展开";
   if (expanded) invalidatePrompt();
 };
+// Move the actual controls into a modal disclosure on phones: no duplicate IDs/state.
+// UA is a presentation hint only; native validates the fixed navigation independently.
+const nativeConnection = /(?:^|\s)AxiomAndroid\/\S+ NativeConnection\/1(?:\s|$)/.test(navigator.userAgent);
+const mobileMenu = $("mobile-menu"), serviceControls = document.querySelector(".service-controls");
+const workspaceLocation = document.querySelector(".workspace-location");
+const serviceHome = document.createComment("service controls"), workspaceHome = document.createComment("workspace location");
+serviceControls.before(serviceHome); workspaceLocation.before(workspaceHome);
+function placeMobileControls() {
+  $("view-options").hidePopover?.();
+  if (mobile.matches) {
+    $("mobile-service-slot").append(serviceControls);
+    $("mobile-workspace-slot").append(workspaceLocation);
+  } else {
+    if (mobileMenu.open) mobileMenu.close();
+    serviceHome.after(serviceControls); workspaceHome.after(workspaceLocation);
+  }
+}
+placeMobileControls();
+$("mobile-more").onclick = () => { mobileMenu.returnValue = ""; mobileMenu.showModal(); };
+$("mobile-menu-close").onclick = () => mobileMenu.close();
+mobileMenu.addEventListener("keydown", e => {
+  if (e.key === "Escape" && !document.querySelector(".utility-popover:popover-open")) { e.preventDefault(); e.stopPropagation(); mobileMenu.close(); }
+});
+mobileMenu.addEventListener("close", () => {
+  if (mobile.matches && !mobileMenu.open && mobileMenu.returnValue !== "transfer") $("mobile-more").focus();
+});
+mobileMenu.onclick = e => {
+  if (e.target !== mobileMenu) return;
+  const r = mobileMenu.getBoundingClientRect();
+  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) mobileMenu.close();
+};
+$("mobile-connection").onclick = e => {
+  mobileMenu.close("transfer");
+  if (!nativeConnection) { e.preventDefault(); $("status").click(); }
+};
 const live = new Map(), tasks = new Map();
 function error(e) {
   $("error").textContent = e.message || String(e);
@@ -506,6 +545,7 @@ function rawMode(open) {
 }
 $("open-raw-io").onclick = () => {
   $("view-options").hidePopover?.();
+  if (mobileMenu.open) mobileMenu.close("transfer");
   const opening = $("raw-io").hidden;
   rawMode(opening);
   if (opening) {
@@ -515,9 +555,10 @@ $("open-raw-io").onclick = () => {
       return rect?.height > 0 && rect.bottom > bounds.top && rect.top < bounds.bottom;
     });
     selectRaw(visible || rawEntries.at(-1));
+    $("close-raw-io").focus();
   }
 };
-$("close-raw-io").onclick = () => { rawMode(false); $("view-options-trigger").focus(); };
+$("close-raw-io").onclick = () => { rawMode(false); $(mobile.matches ? "mobile-more" : "view-options-trigger").focus(); };
 function rawChanged() {
   if (!$("raw-io").hidden && rawFrame === undefined) rawFrame = requestAnimationFrame(() => {
     rawFrame = undefined;
@@ -1024,6 +1065,7 @@ $("settings-service-tab").onclick = () => showSettingsPanel("service");
 $("settings-usage-tab").onclick = () => showSettingsPanel("usage");
 // 顶部连接状态可点击直达「连接」面板（切地址）；顶部只保留状态/DEV/版本，不暴露源码路径。
 $("status").onclick = () => {
+  if (mobileMenu.open) mobileMenu.close("transfer");
   defaultsMode = "global"; defaultsScope = ""; defaultsTarget = null;
   renderDefaultsScope();
   showSettingsPanel("connection");
@@ -1046,6 +1088,8 @@ function normalizeBackendAddress(raw) {
   return `${url.protocol}//${hostPart}`;
 }
 function openConnectionPanel() {
+  $("connection-form").hidden = nativeConnection;
+  $("native-connection-help").hidden = !nativeConnection;
   let saved = "";
   try { saved = localStorage.getItem(CONNECTION_KEY) || ""; } catch {}
   $("connection-current").textContent = `本页当前来自 ${location.origin}（${connected ? "连接正常" : "连接已断开"}）。`;
@@ -1054,6 +1098,7 @@ function openConnectionPanel() {
 }
 $("connection-form").onsubmit = (e) => {
   e.preventDefault();
+  if (nativeConnection) return; // Native target is not the loopback URL.
   const origin = normalizeBackendAddress($("connection-address").value);
   if (!origin) {
     $("connection-feedback").textContent = "地址无效：请输入 host:port 或 http(s)://host:port";
@@ -2982,7 +3027,7 @@ function snapshot(state, onReady) {
     transport.commitSnapshot(state);
   } catch (e) {
     error(e); // 在主动断线使初始化代次失效前保留真实渲染错误。
-    transport.failSnapshot();
+    transport.failSnapshot(e);
     throw e;
   }
 }
@@ -2999,6 +3044,7 @@ function mountHistory(state, onReady) {
 async function reattach({ keepView = false } = {}) {
   if (attaching || changing || !connected || !sessionId) return;
   saveView();
+  hiddenDirty = false;
   const target = sessionId, token = ++attachToken;
   attaching = true;
   try {
@@ -3007,17 +3053,20 @@ async function reattach({ keepView = false } = {}) {
     saveView();
     const view = views.get(target);
     if (view && !keepView) { view.follow = true; view.anchor = undefined; }
-    snapshot(state);
-  } catch (e) { if (target === sessionId) { transport.failSnapshot(); error(e); } }
-  finally { if (token === attachToken) attaching = false; }
+    await snapshot(state);
+  } catch (e) { if (target === sessionId) { transport.failSnapshot(e); error(e); } }
+  finally {
+    if (token === attachToken) attaching = false;
+    if (connected && hiddenDirty && !document.hidden) queueMicrotask(() => reattach({ keepView: !follow }));
+  }
 }
 function receiveHistoryEvent(message) {
   if (message.type === "session.deleted" || message.sessionId !== sessionId) return applyEvent(message);
   const { type } = message;
   // 历史被改写（撤回截断）：增量事件表达不了「消息消失」，整份重取。
   if (type === "session.history.reset") {
-    if (document.hidden) hiddenDirty = true;
-    else void reattach({ keepView: !follow });
+    hiddenDirty = true;
+    if (!document.hidden) void reattach({ keepView: !follow });
     return;
   }
   // 后台标签页不建历史 DOM：只记脏，回到前台再按需重取一份完整快照。
@@ -3029,7 +3078,6 @@ function receiveHistoryEvent(message) {
 }
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden && hiddenDirty) {
-    hiddenDirty = false;
     // 后台期间没建 DOM，回到前台重取一份完整历史；没贴底跟随的视角保留阅读位置。
     void reattach({ keepView: !follow });
   }
@@ -3349,7 +3397,7 @@ const transport = createTransport({
   onState(state) {
     if (["connecting", "restoring"].includes(state)) {
       connected = false;
-    } else if (["disconnected", "closed", "recovering", "limited"].includes(state)) {
+    } else if (["disconnected", "closed", "recovering", "limited", "waiting"].includes(state)) {
       configureSeq++;
       connected = false;
       for (const id of new Set(["main", ...tasks.keys(), ...waitingItems.keys()])) stopActivity(id, "连接断开，等待恢复");
@@ -3364,6 +3412,8 @@ const transport = createTransport({
     updateAvailability();
     if (["connecting", "restoring"].includes(state)) setConnectionStatus("连接中");
     if (state === "limited") setConnectionStatus("连接受限，请手动重试");
+    if (state === "waiting") setConnectionStatus("等待网络恢复，可手动重试");
+    if (state === "open" && hiddenDirty && !document.hidden) void reattach({ keepView: !follow });
   },
 });
 transport.subscribe("models.favorites.changed", {}, (message) => {
@@ -3371,6 +3421,11 @@ transport.subscribe("models.favorites.changed", {}, (message) => {
   modelPicker.syncAll();
 });
 transport.subscribe("models.config.changed", {}, () => refreshModelCatalog());
+// Wake/network recovery checks the existing socket; never reloads the document or replays commands.
+const resumeConnection = () => { if (!document.hidden) void transport.resume(); };
+window.addEventListener("online", resumeConnection);
+window.addEventListener("pageshow", resumeConnection);
+document.addEventListener("visibilitychange", resumeConnection);
 window.addEventListener("pagehide", (event) => {
   if (event.persisted) return;
   transport.dispose();
@@ -3410,10 +3465,15 @@ async function initializeConnection({ isCurrent }) {
       try { state = await request("session.attach", { sessionId }); }
       catch (e) {
         if (e.code !== "response_error") throw e;
+        const listed = await request("sessions.list");
+        if (!isCurrent()) return;
+        if (listed.some(item => item.id === sessionId)) throw e;
         initialized = false;
         return initializeConnection({ isCurrent });
       }
       if (!isCurrent()) return;
+      // The editor stays usable offline; attach must preserve edits made while it was in flight.
+      if (!$("workspace").hidden) saveView();
       await snapshot(state);
       if (!isCurrent()) return;
       connected = true;
@@ -3450,6 +3510,10 @@ async function initializeConnection({ isCurrent }) {
       try {
         state = await request("session.attach", { sessionId });
       } catch (e) {
+        if (e.code !== "response_error") throw e;
+        const listed = await request("sessions.list");
+        if (!isCurrent()) return;
+        if (listed.some(item => item.id === sessionId)) throw e;
         if (currentCwd) {
           saveView();
           const draft = views.get(sessionId);

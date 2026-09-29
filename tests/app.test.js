@@ -543,7 +543,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("close-raw-io").click();
     assert.equal($("raw-io").hidden, true);
     assert.equal($("open-raw-io").getAttribute("aria-pressed"), "false");
-    assert.equal(window.document.activeElement, $("view-options-trigger"), "关闭后焦点回到可见的更多入口");
+    assert.equal(window.document.activeElement, $("mobile-more"), "手机关闭后焦点回到可见的更多入口");
     sockets[1].receive({ type: "agent.delta", sessionId: rawSession, agentId: "child", data: { type: "text_delta", delta: "关闭后仍记录子代理" } });
     paint();
     $("open-raw-io").click();
@@ -555,8 +555,11 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.doesNotMatch($("service-dev").outerHTML, /[DF]:[\\/]/, "dev badge must not expose the source path");
     assert.equal($("service-update-section").hidden, true, "dev hides the update group");
     assert.equal(window.sessionStorage.getItem("axiom.maintenance"), JSON.stringify({ url: "http://127.0.0.1:4567", token: "secret" }));
-    $("status").click();
-    assert.equal($("settings").open, true, "header status opens settings");
+    $("mobile-more").click();
+    assert.equal($("mobile-menu").open, true);
+    $("mobile-connection").click();
+    assert.equal($("mobile-menu").open, false);
+    assert.equal($("settings").open, true, "mobile connection entry opens web settings without native hint");
     assert.equal($("connection-panel").hidden, false, "header status opens the connection panel");
     assert.equal($("service-panel").hidden, true);
     assert.equal($("defaults-panel").hidden, true);
