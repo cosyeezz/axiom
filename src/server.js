@@ -130,8 +130,8 @@ export function createServerApp(sessions, service = {}) {
         ETag: asset.etag,
         "X-Content-Type-Options": "nosniff",
         "Content-Security-Policy":
-          // img-src 加 data: 仅为显示消息内嵌的 base64 图片预览，其余策略不放宽。
-          `default-src 'self'; connect-src 'self'${isLocal && /^http:\/\/127\.0\.0\.1:\d+$/.test(service.maintenance?.url || "") ? ` ${service.maintenance.url}` : ""}; img-src 'self' data:; frame-ancestors 'none'`,
+          // data: 仅用于图片预览；blob: 仅允许本地序列化 Worker，不放宽脚本来源。
+          `default-src 'self'; connect-src 'self'${isLocal && /^http:\/\/127\.0\.0\.1:\d+$/.test(service.maintenance?.url || "") ? ` ${service.maintenance.url}` : ""}; img-src 'self' data:; worker-src 'self' blob:; frame-ancestors 'none'`,
       });
       res.end(unchanged ? undefined : asset.body);
       return;

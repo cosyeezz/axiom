@@ -21,37 +21,69 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
   report = (entry) => console.warn("[transport]", entry),
   setTimer = setTimeout, clearTimer = clearTimeout, now = Date.now,
   timeout = 120000, maxPending = 256, maxBytes = 32 * 1024 * 1024,
-  maxEvents = 10000, maxRetries = 5, Serializer = globalThis.Worker } = {}) {
+  maxEvents = 10000, maxRetries = 5, Serializer = globalThis.Worker,
+  serializeTimeout = 10000 } = {}) {
   let socket, opening, disposed = false, state = "closed", timer, failures = 0, id = 0;
   let generation = 0, epoch, gate = null, queuedBytes = 0, oldest = 0;
   // 发送序链（D4）：入队后统一序列化/发送，与同步路径保同等顺序。
   let queueTail = Promise.resolve();
-  let serializer, serializerUrl, serialKey = 0;
+  let serializer, serializerUrl, serialKey = 0, serializerDisabled = false;
   const pendingSerial = new Map();
-  function serializeOffThread(command) {
-    if (!serializer) {
-      serializerUrl = URL.createObjectURL(new Blob([WORKER_SOURCE], { type: "text/javascript" }));
-      serializer = new Serializer(serializerUrl);
-      serializer.onmessage = ({ data }) => {
-        const waiter = pendingSerial.get(data.key);
-        if (waiter) { pendingSerial.delete(data.key); waiter.resolve(data); }
-      };
-      serializer.onerror = () => {
-        for (const waiter of pendingSerial.values()) waiter.reject(failure("serialize_failed", "后台序列化失败，请重试"));
-        pendingSerial.clear();
-      };
+  function releaseSerializer() {
+    if (serializer) {
+      serializer.onmessage = serializer.onerror = serializer.onmessageerror = null;
+      serializer.terminate(); serializer = undefined;
     }
-    return new Promise((resolve, reject) => {
+    if (serializerUrl) { URL.revokeObjectURL(serializerUrl); serializerUrl = undefined; }
+  }
+  function fallbackSerializer() {
+    serializerDisabled = true;
+    releaseSerializer();
+    diagnostic("serialize_fallback"); // No payloads or browser exception details.
+    for (const finish of pendingSerial.values()) finish(null);
+  }
+  function serializeOffThread(command, entry) {
+    if (!serializer) {
+      try {
+        serializerUrl = URL.createObjectURL(new Blob([WORKER_SOURCE], { type: "text/javascript" }));
+        const worker = serializer = new Serializer(serializerUrl);
+        worker.onmessage = ({ data }) => {
+          if (serializer !== worker) return;
+          if (typeof data?.raw !== "string" || !Number.isSafeInteger(data.bytes) || data.bytes < 0)
+            return fallbackSerializer();
+          pendingSerial.get(data.key)?.(data);
+        };
+        worker.onerror = worker.onmessageerror = () => {
+          if (serializer === worker) fallbackSerializer();
+        };
+      } catch { fallbackSerializer(); return Promise.resolve(null); }
+    }
+    return new Promise((resolve) => {
       const key = ++serialKey;
-      pendingSerial.set(key, { resolve, reject });
+      const finish = (data) => {
+        if (!pendingSerial.delete(key)) return;
+        clearTimer(serialTimer);
+        entry.cancelSerialize = null;
+        resolve(data);
+      };
+      const serialTimer = setTimer(fallbackSerializer, serializeTimeout);
+      pendingSerial.set(key, finish);
+      // Cancellation must release the send chain even when the Worker never replies.
+      entry.cancelSerialize = () => { releaseSerializer(); finish(null); };
       try { serializer.postMessage({ key, command }); }
-      catch (e) { pendingSerial.delete(key); reject(e); }
+      catch { fallbackSerializer(); }
     });
   }
-  const serializeCommand = (full) =>
-    Serializer && estimateBytes(full) > SERIALIZE_THRESHOLD
-      ? serializeOffThread(full)
-      : Promise.resolve({ raw: JSON.stringify(full), bytes: null });
+  async function serializeCommand(full, key, entry) {
+    if (Serializer && !serializerDisabled && estimateBytes(full) > SERIALIZE_THRESHOLD) {
+      const result = await serializeOffThread(full, entry);
+      if (pending.get(key) !== entry) return null;
+      if (result) return result;
+    }
+    // Only serialize again before send: never replay a command whose delivery is unknown.
+    try { return { raw: JSON.stringify(full), bytes: null }; }
+    catch { throw failure("serialize_failed", "消息序列化失败，尚未发送；请检查输入后重试"); }
+  }
   const pending = new Map(), listeners = new Set(), watermarks = new Map();
   const diagnostic = (code) => {
     // Never include payloads, exception messages, request bodies or credentials.
@@ -71,6 +103,7 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
     if (!entry) return;
     pending.delete(key);
     clearTimer(entry.timer);
+    entry.cancelSerialize?.();
     entry.signal?.removeEventListener("abort", entry.abort);
     error ? entry.reject(error) : entry.resolve(data);
     if (error && gate && ["session.attach", "session.create", "session.import"].includes(entry.command)) {
@@ -83,7 +116,8 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
     }
   };
   const disconnectPending = () => {
-    for (const key of pending.keys()) settle(key, failure("disconnected", "连接断开，请求结果未知；请确认状态后再操作", true));
+    for (const [key, entry] of pending) settle(key, failure("disconnected", entry.sent
+      ? "连接断开，请求结果未知；请确认状态后再操作" : "连接断开，消息尚未发送，请重新连接", entry.sent));
   };
   function recover(code) {
     if (disposed || state === "limited") return;
@@ -91,7 +125,7 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
     status("recovering");
     // A failed reducer may have partially changed state: never process more events until a snapshot.
     clearGate();
-    socket?.close(1011, "recovery required");
+    socket?.close(4001, "recovery required");
   }
   function deliver(message) {
     if (message.seq != null) {
@@ -146,14 +180,16 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
     // Buffer before sending attach; do not lose events emitted while the snapshot loads.
     if (["session.attach", "session.create", "session.import"].includes(command.type)) beginSnapshot();
     return new Promise((resolve, reject) => {
-      const abort = () => settle(key, failure("aborted", "已取消本地等待，服务端操作可能仍在执行", true));
-      const entry = { resolve, reject, signal, abort, command: command.type,
-        timer: setTimer(() => settle(key, failure("timeout", "回执超时，请求结果未知；请确认状态后再操作", true)), timeoutMs) };
+      const abort = () => settle(key, failure("aborted", entry.sent
+        ? "已取消本地等待，服务端操作可能仍在执行" : "已取消，消息尚未发送", entry.sent));
+      const entry = { resolve, reject, signal, abort, command: command.type, sent: false,
+        timer: setTimer(() => settle(key, failure("timeout", entry.sent
+          ? "回执超时，请求结果未知；请确认状态后再操作" : "消息准备超时，尚未发送，请重试", entry.sent)), timeoutMs) };
       pending.set(key, entry);
       signal?.addEventListener("abort", abort, { once: true });
       // 序列化与发送进入保序链：大命令的 stringify 在后台 Worker，小命令同步路径不变。
       const sent = queueTail
-        .then(() => (pending.get(key) === entry ? serializeCommand({ ...command, id: key }) : null))
+        .then(() => (pending.get(key) === entry ? serializeCommand({ ...command, id: key }, key, entry) : null))
         .then((serialized) => {
           if (!serialized || pending.get(key) !== entry) return; // 已超时/取消：不再发送。
           if (socket?.readyState !== 1 || ["recovering", "limited"].includes(state) || disposed)
@@ -162,6 +198,7 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
           const size = serialized.bytes ?? new Blob([serialized.raw]).size;
           if ((socket.bufferedAmount || 0) + size > maxBytes)
             throw failure("send_limit", "发送缓冲超限，请稍后重试");
+          entry.sent = true;
           try { socket.send(serialized.raw); }
           catch { throw failure("send_failed", "发送失败，请求结果未知", true); }
         });
@@ -220,7 +257,7 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
     })().catch((error) => {
       if (!disposed && state !== "limited") {
         diagnostic("restore_failed");
-        socket?.close(1011, "recovery required");
+        socket?.close(4001, "recovery required");
         scheduleReconnect();
       }
       throw error;
@@ -259,8 +296,7 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
       disconnectPending(); clearGate(); watermarks.clear();
       for (const entry of listeners) entry.controller.abort();
       listeners.clear();
-      serializer?.terminate(); serializer = undefined;
-      if (serializerUrl) { URL.revokeObjectURL(serializerUrl); serializerUrl = undefined; }
+      releaseSerializer();
       socket?.close(1000, "disposed"); socket = undefined;
       status("disposed");
     },

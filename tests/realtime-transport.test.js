@@ -12,7 +12,11 @@ function rig(options = {}) {
     open() { this.readyState = 1; this.onopen(); }
     send(raw) { this.sent.push(JSON.parse(raw)); }
     message(message) { this.onmessage({ data: JSON.stringify(message) }); }
-    close(code) { this.readyState = 3; this.onclose?.({ code }); }
+    close(code) {
+      // Browser API accepts only 1000 or private application codes, unlike a server socket.
+      assert(code === undefined || code === 1000 || (code >= 3000 && code <= 4999));
+      this.readyState = 3; this.onclose?.({ code });
+    }
   }
   const transport = createTransport({ url: "ws://test", WebSocket: Socket,
     setTimer: (fn, delay) => { const id = ++tick; timers.set(id, { fn, delay }); return id; },
@@ -57,13 +61,15 @@ test("pending cleanup on receipt, duplicate, timeout, abort, send failure and di
   assert.equal(await p, 7); assert.equal(r.timers.size, 0);
   const timed = r.transport.request({ type: "cancel" });
   const checkTimed = assert.rejects(timed, { code: "timeout", unknown: true });
+  await flush(); // 已发送后的回执超时才是结果未知。
   [...r.timers.values()][0].fn(); await checkTimed;
   const controller = new AbortController();
   const aborted = r.transport.request({ type: "cancel" }, { signal: controller.signal });
   const checkAbort = assert.rejects(aborted, { code: "aborted" }); controller.abort(); await checkAbort;
   const disconnected = r.transport.request({ type: "prompt" });
   const checkDisconnect = assert.rejects(disconnected, { code: "disconnected", unknown: true });
-  ws.close(1006); await checkDisconnect;
+  await flush();
+  ws.readyState = 3; ws.onclose({ code: 1006 }); await checkDisconnect;
   assert.equal(r.transport.getDiagnostics().pending, 0);
   const retry = [...r.timers.values()][0]; r.timers.clear(); retry.fn(); await flush();
   r.sockets.at(-1).open(); await flush(); assert.deepEqual(r.sockets.at(-1).sent, []);
@@ -95,7 +101,7 @@ test("authoritative failure never advances watermark; queues and retries are bou
   assert.equal(r.transport.getWatermark("s"), 9);
   for (let i = 0; i < 3 && r.timers.size; i++) {
     const timer = [...r.timers.values()][0]; r.timers.clear(); timer.fn(); await flush();
-    r.sockets.at(-1).close(1006); await flush();
+    r.sockets.at(-1).readyState = 3; r.sockets.at(-1).onclose({ code: 1006 }); await flush();
   }
   assert.equal(r.transport.getConnectionState(), "limited"); assert.equal(r.timers.size, 0);
   r.transport.dispose();
@@ -140,7 +146,7 @@ test("broadcast uses UTF-8 limits per client and preserves exclusions and async 
 test("oversize close stops automatic snapshot download loop", async () => {
   const r = rig(); const ws = await r.open();
   r.transport.beginSnapshot(); r.transport.receive({ type: "agent.delta", sessionId: "s" });
-  ws.close(1009);
+  ws.readyState = 3; ws.onclose({ code: 1009 });
   assert.equal(r.transport.getSnapshotQueue(), null);
   assert.equal(r.transport.getConnectionState(), "limited"); assert.equal(r.timers.size, 0); r.transport.dispose();
 });

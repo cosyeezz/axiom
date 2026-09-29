@@ -23,9 +23,10 @@ function rig(options = {}) {
     postMessage(data) { this.posted.push(data); }
     terminate() { this.terminated = true; }
   }
-  const created = [];
-  const realCreate = URL.createObjectURL;
-  URL.createObjectURL = (blob) => `blob:fake-${++blobSeq}`;
+  const created = [], revoked = [];
+  const realCreate = URL.createObjectURL, realRevoke = URL.revokeObjectURL;
+  URL.createObjectURL = () => `blob:fake-${++blobSeq}`;
+  URL.revokeObjectURL = (url) => revoked.push(url);
   const transport = createTransport({ url: "ws://test", WebSocket: Socket, Serializer,
     setTimer: (fn, delay) => { const id = ++tick; timers.set(id, { fn, delay }); return id; },
     clearTimer: (id) => timers.delete(id), report: (entry) => logs.push(entry),
@@ -33,8 +34,8 @@ function rig(options = {}) {
     initialize: options.initialize ?? (() => { created.push(1); }) });
   const open = async () => { const p = transport.connect(); sockets.at(-1).open(); await p; return sockets.at(-1); };
   const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
-  const restore = () => { URL.createObjectURL = realCreate; };
-  return { transport, sockets, timers, logs, workers, open, flush, restore, Serializer };
+  const restore = () => { URL.createObjectURL = realCreate; URL.revokeObjectURL = realRevoke; };
+  return { transport, sockets, timers, logs, workers, revoked, open, flush, restore, Serializer };
 }
 
 const BIG = "x".repeat((1 << 20) + 1000); // 估算超 1MiB 阈值
@@ -125,4 +126,100 @@ test("dispose 终止后台序列化器并回收 blob URL", async (t) => {
   r.transport.dispose();
   assert.equal(worker.terminated, true, "dispose 终止 Worker");
   await check;
+});
+
+for (const mode of ["constructor", "postMessage", "onerror", "onmessageerror", "timeout"]) {
+  test(`Worker ${mode} 故障只在发送前降级，后续大小消息不阻塞也不重发`, async (t) => {
+    const r = rig(mode === "constructor" ? { Serializer: class { constructor() { throw new Error("CSP secret"); } } } : {});
+    t.after(() => { r.transport.dispose(); r.restore(); });
+    if (mode === "postMessage") r.Serializer.prototype.postMessage = () => { throw new Error("clone secret"); };
+    const ws = await r.open();
+    const big = r.transport.request({ type: "prompt", images: [BIG] });
+    const small = r.transport.request({ type: "cancel" });
+    await r.flush();
+    if (["onerror", "onmessageerror"].includes(mode)) r.workers[0][mode]({});
+    if (mode === "timeout") [...r.timers.values()].find((timer) => timer.delay === 10000).fn();
+    await r.flush();
+    await r.flush();
+    assert.equal(ws.sent.length, 2);
+    assert.deepEqual(ws.sent.map((raw) => JSON.parse(raw).id), ["1", "2"]);
+    assert.deepEqual(JSON.parse(ws.sent[0]).images, [BIG]);
+    assert.equal(r.revoked.length, 1);
+    if (r.workers.length) assert.equal(r.workers[0].terminated, true);
+    ws.message({ type: "response", id: "1", ok: true });
+    ws.message({ type: "response", id: "2", ok: true });
+    await Promise.all([big, small]);
+    const retry = r.transport.request({ type: "prompt", images: [BIG] });
+    await r.flush();
+    assert.equal(ws.sent.length, 3);
+    assert.equal(r.workers.length, mode === "constructor" ? 0 : 1, "坏 Worker 不会被复用或反复创建");
+    ws.message({ type: "response", id: "3", ok: true });
+    await retry;
+    assert.equal(r.timers.size, 0);
+    assert.doesNotMatch(JSON.stringify(r.logs), /secret|xxxx/);
+  });
+}
+
+for (const mode of ["abort", "timeout", "disconnect", "dispose"]) {
+  test(`序列化未完成时 ${mode} 是确定未发送，解除队列且忽略迟到结果`, async (t) => {
+    const r = rig(); t.after(() => { r.transport.dispose(); r.restore(); });
+    const ws = await r.open(), controller = new AbortController();
+    const big = r.transport.request({ type: "prompt", images: [BIG] }, { signal: controller.signal });
+    const check = assert.rejects(big, { code: mode === "abort" ? "aborted" : mode === "timeout" ? "timeout" : "disconnected", unknown: false });
+    await r.flush();
+    const worker = r.workers[0], late = worker.onmessage;
+    const { key, command } = worker.posted[0];
+    if (mode === "abort") controller.abort();
+    if (mode === "timeout") [...r.timers.values()].find((timer) => timer.delay === 120000).fn();
+    if (mode === "disconnect") ws.close(1000);
+    if (mode === "dispose") r.transport.dispose();
+    await check;
+    assert.equal(worker.terminated, true);
+    assert.equal(r.timers.size, 0);
+    late({ data: { key, raw: JSON.stringify(command), bytes: BIG.length } });
+    await r.flush();
+    assert.equal(ws.sent.length, 0);
+    if (mode !== "dispose") {
+      const next = mode === "disconnect" ? await r.open() : ws;
+      const small = r.transport.request({ type: "cancel" });
+      await r.flush(); await r.flush();
+      assert.equal(next.sent.length, 1);
+      assert.equal(JSON.parse(next.sent[0]).type, "cancel");
+      next.message({ type: "response", id: "2", ok: true });
+      await small;
+    }
+  });
+}
+
+for (const mode of ["success-then-error", "malformed", "error-then-late-success"]) {
+  test(`Worker ${mode} 交错回调不重复发送`, async (t) => {
+    const r = rig(); t.after(() => { r.transport.dispose(); r.restore(); });
+    const ws = await r.open();
+    const result = r.transport.request({ type: "prompt", images: [BIG] });
+    await r.flush();
+    const worker = r.workers[0], message = worker.onmessage, error = worker.onerror;
+    const { key, command } = worker.posted[0], raw = JSON.stringify(command);
+    const event = { data: { key, raw, bytes: raw.length } };
+    if (mode === "success-then-error") { message(event); error(); }
+    if (mode === "malformed") message({ data: { key, raw: 42, bytes: -1 } });
+    if (mode === "error-then-late-success") error();
+    message(event); message(event);
+    await r.flush(); await r.flush();
+    assert.equal(ws.sent.length, 1);
+    assert.equal(ws.sent[0], raw);
+    ws.message({ type: "response", id: "1", ok: true });
+    await result;
+    assert.equal(r.timers.size, 0);
+  });
+}
+
+test("本地序列化也失败时确定未发送，不阻塞下一条消息", async (t) => {
+  const r = rig({ Serializer: null }); t.after(() => { r.transport.dispose(); r.restore(); });
+  const ws = await r.open(), circular = {}; circular.self = circular;
+  await assert.rejects(r.transport.request({ type: "prompt", circular }), { code: "serialize_failed", unknown: false });
+  const next = r.transport.request({ type: "cancel" });
+  await r.flush();
+  assert.equal(ws.sent.length, 1);
+  ws.message({ type: "response", id: "2", ok: true });
+  await next;
 });

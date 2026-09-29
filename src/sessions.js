@@ -1480,16 +1480,19 @@ export class Sessions {
     }
   }
 
-  async todoAction(id, action, text = '') {
+  async todoAction(id, action, text = '', images) {
     const item = await this.ensureLoaded(id);
     if (action === 'pause') { await this.safeStop(id); return item.todo.snapshot(); }
     if (item.compacting || item.closing || item.configuring || item.cancelling) throw new Error('会话忙，请稍后重试');
     if (action === 'prepare') {
       if (item.status !== 'idle') throw new Error('请等待当前执行结束');
       const before = item.todo.snapshot();
-      if (before.counts.targets.total && !before.completed) return before;
+      if (before.counts.targets.total && !before.completed) {
+        if (images?.length) throw new Error('当前已有未完成目标，请去掉 /goal 后发送图片；图片尚未发送');
+        return before;
+      }
       item.todo.prepare(text);
-      if (text) this.startRun(item, () => item.agent.prompt(`${GOAL_PREPARE_PROMPT}\n\n${text}`));
+      if (text || images?.length) this.startRun(item, () => item.agent.prompt(`${GOAL_PREPARE_PROMPT}\n\n${text}`, images?.length ? { images } : undefined));
     } else if (action === 'cancel_prepare') {
       item.questions.cancel(); item.todo.cancelPrepare();
       item.agent.requestSafeStop?.();
@@ -2038,16 +2041,16 @@ export class Sessions {
     if (!text.trim() && !images?.length) throw new Error("请求内容不能为空：请输入文本或附加图片");
     const item = this.get(id).loaded ? this.get(id) : await this.ensureLoaded(id);
     if (item.compacting || item.configuring || item.closing || item.releasing) throw new Error("Session is busy");
-    if (/^\/goal(?:\s|$)/.test(text.trim())) {
-      await this.todoAction(id, 'prepare', text.trim().replace(/^\/goal\s*/, ''));
-      return item.runId;
-    }
     if (images?.length) {
       // 必须在回执前拒绝：一旦入队或启动，SDK 会静默丢弃不支持模型的图片。
       assertPromptImages(images);
       const model = this.createAgent.catalog().find((m) => m.key === item.agent.config?.()?.model);
       if (model?.input && !model.input.includes("image"))
         throw new Error(`当前模型 ${model.key} 不支持图片输入，请先切换到具备视觉能力的模型`);
+    }
+    if (/^\/goal(?:\s|$)/.test(text.trim())) {
+      await this.todoAction(id, 'prepare', text.trim().replace(/^\/goal\s*/, ''), images);
+      return item.runId;
     }
     if (item.status === "running") {
       await item.agent.enqueue(text, queueType || item.queueType, images);
@@ -2059,7 +2062,7 @@ export class Sessions {
     // 用户显式输入：退出目标模式后的通知/续跑冻结到此为止，恢复正常会话行为。
     if (item.todo.requiresPlan && !item.todo.header.prepareText) {
       item.todo.prepare(text);
-      return this.startRun(item, () => item.agent.prompt(`${GOAL_PREPARE_PROMPT}\n\n${text}`));
+      return this.startRun(item, () => item.agent.prompt(`${GOAL_PREPARE_PROMPT}\n\n${text}`, images?.length ? { images } : undefined));
     }
     if (item.title === "新会话" && !item.titleManual) item.title = fallbackTitle(text);
     // 标题未定案（模型没自报过、也没手动命名）就持续索要：本轮靠 item.titlePending（context 钩子

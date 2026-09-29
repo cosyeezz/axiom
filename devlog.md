@@ -9,7 +9,28 @@
 - 接线：新增模块登记生产静态路由及代码索引；独立服务测试夹具复制 public 共享依赖，仍不加载待修复 SDK。沿用现有 Linear token 与菜单样式，不增加依赖。默认模型未确定时只保存偏好，不借用当前会话能力或收藏上下文；旧隐藏思考控件脱离消息表单，保留配置错误但不阻断已有会话发送。
 - 验证：npm test 共 937 项，935 通过、0 失败、2 项因 Windows 平台条件跳过（POSIX SQLite 文件权限、非 Windows revealWorkspace 分支），无取消或待办，耗时约 68.9 秒。Chromium 输入区级联回归通过，覆盖桌面三级菜单定位、键盘焦点、收藏与选择关闭，以及菜单关闭后的 390/320px 页面无横向溢出；无 pageerror。已修复服务夹具缺失共享文件和隐藏控件拦截发送问题，新增 SDK 全能力子集合约、选择生命周期及手动压缩回归。npm pack --dry-run 确认三个共享模块入包；git diff --check 通过。
 - 文件：public/app.js、composer-controls.js、model-manager.js、service-settings.js、index.html 与三个共享模块；src/protocol.js、model-config.js、pi.js、compaction.js、server.js；scripts/pi-repair.mjs；相关 tests、README、研究文档、代码导航与本记录。发布版本升至 0.1.9。
-- 交付过程：首次获取最新 master 被 SSH publickey 认证拒绝，按约定保留现场；用户要求重试后 fetch 成功，确认远端基线为 70dd7cc。后续在 feat/thinking-selector 整合最新 master 并重新验证，不以缓存远端状态替代最新状态；主工作区无关改动单独保留。
+- 集成验证：整合最新 origin/master（70dd7cc）后，全量 969 项、967 通过、2 项平台条件跳过、0 失败/取消/待办（约 71.4 秒）；Composer 浏览器检查通过，图片输入在 Worker 正常/禁用两种模式均通过（每种 2 次 prompt，Worker 数分别为 1/0）。静态自动合并审查无阻断；devlog 仅头部冲突，保留双方全部条目。索引重建 313 文件、0 未登记，索引回归及打包共享模块检查通过。
+- 交付过程与决策：首次获取最新 master 被 SSH publickey 认证拒绝，按约定保留现场；用户要求重试后 fetch 成功，再整合验证。用户确认主工作区旧 INDEX.md 完整备份后采用整合后新生成索引，其他无关改动不动；旧索引原文件、差异、基线/哈希及验证产物保留在工作区外，Git 中保留命名 stash。不以缓存远端状态替代最新状态，推送成功才清理本任务 worktree。
+
+## 2026-09-29 图片输入可靠性：连续粘贴、Worker 与规划附件
+
+- 根因：超过约 1 MiB 的编码命令转 Blob Worker，但服务端 CSP 没有放行；Worker 错误后复用坏实例，序列化等待不随请求超时/取消释放，后续小消息也堵队。`public/transport.js` 增加发送前本地降级、10 秒 watchdog、终止/URL 回收和取消清理；已送出结果未知的消息绝不重发，未送出超时/断线明确可恢复草稿。`src/server.js` 只增加 `worker-src 'self' blob:`，不放宽脚本策略，Android 禁 Worker 策略不变。
+- 连续粘贴：原全局读图锁直接吞掉第二次粘贴。`public/app.js` 改为同步预留稳定附件对象、即时占位、每批并行读取和原子发布；用 WeakSet 保存本地读取态，浅拷贝会话草稿共享附件身份，异步回调不再追加/创建旧 view。最多 4 张含在途；读图期间当前草稿禁发送/移除/撤回，但其他会话不被锁。失败撤销该批并重排编号、保留光标；读取 30 秒有界退出；增加 clipboard.files 回退及不可添加时的明确提示。沿用既有 UI 样式/设计 token，仅增加读取状态文字。
+- 独立审查补修：选区中的图片引用绑定附件身份，其他批次失败重编号后恢复不串图；同批首个读取失败立即 abort 其余 reader、清除读取定时器，防释放容量后残留读图。新增多批失败、真实会话删除迁移、Worker 成功/错误/迟到回包交错、规划纯图和拒绝不变更状态回归。
+- 附件透传：`src/sessions.js` 的目标规划首条输入及 `/goal` 原先漏传图片；图片校验提前到任何 Todo 状态变更之前，规划启动保留 images；已有未完成目标时 `/goal + 图片` 明确拒绝而非静默 no-op，普通无附件行为不变。
+- 真实浏览器测试发现客户端 `WebSocket.close(1011)` 无效（浏览器仅允许1000或3000–4999），改4001并在模拟 Socket 加合法性断言。浏览器装配最初使用 route.fulfill 修改 CSP 导致 Chromium 本地网络检查阻断 WS；改为隔离 fixture 服务器修改响应头，不绕过 CSP 或网络安全策略。
+- 测试文件：扩充 `tests/serialize-worker.test.js`、`tests/realtime-transport.test.js`、`tests/server.test.js`、`tests/image-input.test.js`；新增 `tests/paste-images.test.js`、`tests/image-input-preview.mjs`、`tests/image-input-ui.py`。已验证真实 Chromium 正常 CSP 有1个 Blob Worker、禁 Worker 无 Worker，两组均成功发送连续两张约1.97MB PNG及后续小文本（各2个prompt成功回执）；测试使用真实 ClipboardEvent，不宣称系统剪贴板权限或Android真机已验收。集成前最终全量954项：952通过、2跳过、0失败；正常/禁 Worker 浏览器回归各2个prompt成功且无重复，静态语法与diff检查通过，窄范围独立复审无阻断项。合入最新 master `71e0906` 后最终全量957项：955通过、2跳过、0失败；两种CSP浏览器用例及语法/diff检查再次通过。合并仅devlog头部冲突，保留双方记录；测试自动重建的INDEX仅恢复工作树副本，不纳入提交。
+- 范围决策：保留单图5MiB/每条4张限制，不自动压缩。已发现累积图片历史可能突破32MiB整快照上限，本轮不扩展成附件按需读取架构，也不提高常量掩盖，README 明确记录此残余限制。未触碰主checkout既有文档、素材与索引改动。
+
+## 2026-09-29 Todo 清单图标语义与首行对齐重构
+
+- 原因：浏览器复现桌面标题继承全局按钮 40px 最小高度，而状态图标槽仅 21px，中心相差 9.5px；全局 `white-space:nowrap` 使长标题溢出。仅修复换行又会暴露移动端固定 44px 图标槽与多行文字错位。收起入口此前只有展开箭头，缺少清单身份图标。
+- 调研与决策：参考 Primer ActionList 的 leading visual/label 分槽、VS Code checklist 与 disclosure chevron 的语义分工、Radix/WAI-ARIA Disclosure 的原生按钮和键盘契约。保留清单文字、独立暂停/恢复和全部 Todo 协议；不新增 UI 框架或后端改动。
+- 修改：共享 24px/1.75 描边 SVG，增加清单、待处理、时钟、受阻图形；身份组不可拆分，计数整组换行；状态图标放入标题按钮并按首行对齐，触控高度由按钮内边距提供。局部覆盖全局 nowrap/primary hover，状态标签随增量同步更新。采用 Linear 4/8/12/16px 间距、8px 圆角、14px/1.5 标题及现有主题色变量。
+- 文件：`public/todo.js`、`public/todo.css`、`public/icons.js`、`tests/todo-ui.test.js`、新增 `tests/todo-ui-browser.py`、`README.md`、`devlog.md`。
+- 审查修正：读取失败与成功回执一样按会话代次隔离，旧会话迟到错误不污染新面板；修复已有「显示更多」完成加载后未解锁的问题，补顶层与子步骤分页测试。确认 fixture 实际英文使用 Segoe UI，与正式页面字体一致，不根据截图观感硬编码另一套字体。
+- 验证：定向 Todo/图标 30 项通过；最终全量 928 项，926 通过、2 跳过、0 失败。首轮全量发现测试 helper 拼接模块产生顶层 `el` 重名，已恢复 helper 在工厂函数内的原作用域，复测通过。浏览器使用真实 ESM/CSS 内存路由，五档宽度、双主题下首行中心差不超过 0.5px、无横向溢出；检查键盘、折叠偏好、状态增量、详情/子项/验收依据、暂停/恢复、200% CSS 缩放和高对比。焦点验证显式通过 Tab 进入键盘模式，避免鼠标交互后的 `focus-visible` 假阴性。
+- 边界：不启动用户服务、不读取真实会话、不调用模型。Chromium fixture 不等于真实移动设备、屏幕阅读器或端到端模型验收。截图与指标保存在仓库外；测试生成的无关 `INDEX.md` 漂移不纳入提交。
 
 ## 2026-09-29 Android 内嵌 Tailscale：客户端实施
 
