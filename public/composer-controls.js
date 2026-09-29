@@ -17,14 +17,19 @@ export function mountComposerControls({ state, providers, models, levels, select
   const info = document.createElement('button'); info.type = 'button'; info.className = 'icon-button composer-session-info';
   info.title = '会话详情：上下文、主代理配置与账单'; info.setAttribute('aria-label', info.title); info.append(icon('info'));
   info.onclick = () => $('session-inspector-trigger').click();
-  document.querySelector('.context-bar').append(info);
+  const tools = document.querySelector('.context-bar .icon-group') || document.createElement('div');
+  tools.classList.add('composer-tools'); tools.id = 'composer-tools';
+  tools.append(info);
+  const more = document.createElement('button'); more.type = 'button'; more.className = 'icon-button composer-tools-trigger';
+  more.title = '输入操作'; more.setAttribute('aria-label', '更多输入操作'); more.setAttribute('aria-expanded', 'false'); more.setAttribute('aria-controls', tools.id);
+  more.append(document.createTextNode('…'));
   const helpPanel = $('composer-help');
   if (helpPanel) {
     const help = document.createElement('button'); help.type = 'button'; help.className = 'icon-button composer-help-trigger';
     help.title = '输入快捷键'; help.setAttribute('aria-label', help.title);
     help.setAttribute('popovertarget', 'composer-help'); help.setAttribute('aria-controls', 'composer-help');
     help.setAttribute('aria-expanded', 'false'); help.setAttribute('aria-haspopup', 'dialog');
-    help.append(actionIconNode('keyboard')); document.querySelector('.context-bar').append(help);
+    help.append(actionIconNode('keyboard')); tools.append(help);
     const placeHelp = () => {
       const rect = help.getBoundingClientRect();
       helpPanel.style.left = `${Math.max(8, Math.min(rect.right - helpPanel.offsetWidth, innerWidth - helpPanel.offsetWidth - 8))}px`;
@@ -45,9 +50,9 @@ export function mountComposerControls({ state, providers, models, levels, select
   const arrow = document.createElement('button'); arrow.type = 'button'; arrow.append(icon('chevron'));
   arrow.setAttribute('aria-label', '选择运行操作'); arrow.setAttribute('aria-haspopup', 'menu');
   split.append(primary, arrow);
-  const runtime = $('session-runtime');
-  if (runtime) actions.append(runtime);
-  actions.append(trigger, split);
+  actions.append(tools, more, split);
+  const footer = $('composer-status') || actions;
+  footer.insertBefore(trigger, $('session-billing-trigger') || null);
   const modelPanel = document.createElement('div');
   modelPanel.className = 'composer-model-panel'; modelPanel.popover = 'auto';
   modelPanel.setAttribute('role', 'dialog'); modelPanel.setAttribute('aria-label', '模型配置');
@@ -61,6 +66,27 @@ export function mountComposerControls({ state, providers, models, levels, select
     panel.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - panel.offsetWidth - 8))}px`;
     panel.style.top = `${Math.max(8, rect.top - panel.offsetHeight - 8)}px`;
   };
+  function syncToolsLayout() {
+    const compact = window.matchMedia?.('(max-width: 1000px)').matches || false;
+    if (compact && !tools.hasAttribute('popover')) tools.setAttribute('popover', 'auto');
+    if (!compact && tools.hasAttribute('popover')) {
+      if (tools.matches(':popover-open')) tools.hidePopover();
+      tools.removeAttribute('popover');
+    }
+    more.setAttribute('aria-expanded', String(compact && tools.matches(':popover-open')));
+  }
+  more.onclick = () => open(tools, more);
+  tools.addEventListener('toggle', () => more.setAttribute('aria-expanded', String(tools.matches(':popover-open'))));
+  tools.addEventListener('click', (event) => {
+    const button = event.target.closest('button');
+    // Native child popovers need their invoker to stay visible for positioning and focus return.
+    if (button && !button.hasAttribute('popovertarget') && tools.hasAttribute('popover')) close(tools, false);
+  });
+  tools.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || helpPanel?.matches(':popover-open')) return;
+    event.preventDefault(); event.stopPropagation(); close(tools, false); more.focus();
+  });
+  syncToolsLayout();
   const children = [];
   function clearChildren(from = 0) { for (const panel of children.splice(from)) { if (panel.matches(':popover-open')) panel.hidePopover(); panel.remove(); } }
   modelPanel.addEventListener('toggle', () => { if (!modelPanel.matches(':popover-open')) clearChildren(); });
@@ -68,7 +94,7 @@ export function mountComposerControls({ state, providers, models, levels, select
   function open(panel, anchor) {
     if (panel.matches(':popover-open')) return close(panel);
     panel.showPopover(); position(panel, anchor);
-    panel.querySelector('input,button')?.focus();
+    panel.querySelector('input:not([disabled]),button:not([disabled])')?.focus();
   }
   for (const [panel, anchor] of [[modelPanel, trigger], [menu, arrow]]) {
     anchor.setAttribute('aria-expanded', 'false');
@@ -146,7 +172,10 @@ export function mountComposerControls({ state, providers, models, levels, select
   function refresh() {
     const current = state();
     if ((!previousBusy && current.busy) || identity !== current.sessionId) operation = 'stop';
-    if (identity !== current.sessionId || !current.available) close(modelPanel, false);
+    if (identity !== current.sessionId || !current.available) {
+      close(modelPanel, false);
+      if (tools.hasAttribute('popover')) close(tools, false);
+    }
     identity = current.sessionId; previousBusy = current.busy;
     const modelName = document.createElement('span'); modelName.className = 'composer-model-name';
     modelName.textContent = current.model ? current.model.slice(current.model.indexOf('/') + 1) : '选择模型';
@@ -161,6 +190,7 @@ export function mountComposerControls({ state, providers, models, levels, select
     primary.disabled = underlying.disabled || (current.busy && operation === 'stop' && current.safeStopping);
     $('composer-action-help').textContent = current.busy ? `Enter ${operation === 'followUp' ? '排队发送' : '介入'} · 按钮执行 ${operation} · 双按 Esc 安全停止` : 'Enter 发送';
     $('composer-action-help').hidden = !current.busy;
+    primary.setAttribute('aria-label', primary.title);
     arrow.disabled = !current.busy;
     for (const item of menu.children) {
       const name = item.dataset.operation;
@@ -169,7 +199,7 @@ export function mountComposerControls({ state, providers, models, levels, select
     }
   }
 
-  window.addEventListener('resize', () => { close(modelPanel, false); for (const [panel, anchor] of [[modelPanel, trigger], [menu, split]]) if (panel.matches(':popover-open')) position(panel, anchor); });
+  window.addEventListener('resize', () => { syncToolsLayout(); close(modelPanel, false); for (const [panel, anchor] of [[modelPanel, trigger], [menu, split], [tools, more]]) if (panel.matches(':popover-open')) position(panel, anchor); });
   // Do not steal focus from searches, dialogs, selections or other controls.
   document.addEventListener('keydown', (event) => {
     if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing || event.key.length !== 1 || document.querySelector('dialog[open], :popover-open') || getSelection()?.toString()) return;

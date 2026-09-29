@@ -131,6 +131,28 @@ test("键盘聚焦立即显示，失焦恢复（真实焦点移动）", () => {
   assert.ok(!t.classList.contains("ax-show"));
 });
 
+test("指针/触摸打开菜单的聚焦不弹提示，仍保留悬停及键盘即时提示", () => {
+  for (const pointerType of ["mouse", "touch"]) {
+    const window = boot(`<button id="open">打开</button><button id="a" title="A">a</button><button id="b" title="B">b</button>`);
+    const [open, a, b] = ["open", "a", "b"].map(id => window.document.getElementById(id));
+    const t = tip(window);
+    open.addEventListener("pointerdown", e => { e.stopPropagation(); a.focus(); });
+    fire(open, "pointerdown", { pointerType });
+    window.flush();
+    assert.equal(a.title, "A");
+    assert.ok(!t.classList.contains("ax-show"), "capture 在组件聚焦前识别输入方式");
+    fire(a, "pointerover", { pointerType: "mouse" });
+    window.flush();
+    assert.ok(t.classList.contains("ax-show"), "实际鼠标悬停仍可查看");
+    fire(a, "pointerdown", { pointerType });
+    a.addEventListener("keydown", e => { e.stopPropagation(); b.focus(); });
+    fire(a, "keydown", { key: "ArrowDown" });
+    assert.ok(t.classList.contains("ax-show"), "keydown capture 恢复键盘即时提示");
+    assert.equal(t.textContent, "B");
+    window.close();
+  }
+});
+
 test("关闭时焦点仍在元素上（如滚动关闭）则暂缓恢复，真正离开才恢复", () => {
   const window = boot(`<button id="b" title="滚动提示">x</button><button id="c">c</button>`);
   const b = window.document.getElementById("b");

@@ -90,16 +90,21 @@ window.redrawSearchFixture = () => renderSessions();
             assert more.bounding_box()['x'] >= size['x'] + size['width']
             more.tap()
         else:
-            button.focus()
+            # Keyboard tooltip requires keyboard navigation, not focus() after a pointer click.
+            page.locator('#search').fill('修复会话标题搜索')
+            page.locator('#search').press('ArrowDown')
+            expect(button).to_be_focused()
+            expect(page.locator('#ax-tooltip')).to_have_class('ax-show')
             expect(page.locator('#ax-tooltip')).to_have_text(LONG)
             assert more.evaluate('(el) => getComputedStyle(el).opacity') == '1'
             more.click()
-        menu = page.locator('[data-session-id="long-title"] .session-actions').first
+        # details toggles asynchronously: wait for top-layer placement, not only display:flex.
+        menu = page.locator('[data-session-id="long-title"] .session-actions:popover-open').first
         expect(menu).to_be_visible()
         expect(menu.locator('.session-menu-title')).to_have_text(LONG)
         box = menu.bounding_box()
         assert box['x'] >= 0 and box['x'] + box['width'] <= width
-        assert box['y'] >= 0 and box['y'] + box['height'] <= height
+        assert box['y'] >= 0 and box['y'] + box['height'] <= height, (width, height, touch, box)
         # Menu title is visually before actions even though appended after their stable DOM order.
         assert menu.locator('.session-menu-title').bounding_box()['y'] < menu.locator('.session-pin').bounding_box()['y']
         page.screenshot(path=str(OUT / f'{width}-{touch}-menu.png'))

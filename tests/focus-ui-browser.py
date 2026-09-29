@@ -41,6 +41,15 @@ try:
             page.goto(url + '/#session=ui-review')
             page.wait_for_selector('#workspace:not([hidden])')
             page.wait_for_function("document.querySelector('#status').dataset.connected === 'true'")
+            def show_tools():
+                if width <= 1000 and not page.locator('#composer-tools').is_visible():
+                    page.locator('.composer-tools-trigger').click()
+                    expect(page.locator('#composer-tools')).to_be_visible()
+            def close_tools():
+                if width <= 1000 and page.locator('#composer-tools').is_visible():
+                    page.keyboard.press('Escape')
+                    expect(page.locator('#composer-tools')).not_to_be_visible()
+                    expect(page.locator('.composer-tools-trigger')).to_be_focused()
             for theme in ['dark', 'light']:
                 page.evaluate('(theme) => document.documentElement.dataset.theme = theme', theme)
                 page.wait_for_timeout(120)
@@ -59,7 +68,7 @@ try:
                     page.locator('#mobile-more').click()
                 expect(page.locator('#status')).to_be_visible()
                 expect(page.locator('.composer-model-effort')).to_be_visible()
-                for selector in ['#view-options-trigger', '#session-runtime', '.composer-split', '.composer-model-trigger', '.composer-help-trigger']:
+                for selector in ['#view-options-trigger', '#session-runtime', '.composer-split', '.composer-model-trigger']:
                     bounds = page.locator(selector).bounding_box()
                     assert bounds and bounds['x'] >= 0 and bounds['x'] + bounds['width'] <= width + 1, (selector, bounds)
                 # Native disclosure keyboard, light-dismiss and focus return.
@@ -97,17 +106,29 @@ try:
                 expect(page.locator('#session-usage-body')).to_contain_text('5,000 tokens')
                 expect(page.locator('#session-usage-body')).to_contain_text('缓存命中率')
                 page.keyboard.press('Escape')
+                show_tools()
                 page.locator('.composer-session-info').click()
                 expect(page.locator('#session-inspector')).to_have_attribute('open', '')
                 page.locator('#session-billing > summary').click()
                 expect(page.locator('#session-billing')).to_have_attribute('open', '')
                 page.keyboard.press('Escape')
+                show_tools()
                 help_button = page.locator('.composer-help-trigger')
+                for selector in ['.composer-help-trigger', '.composer-session-info']:
+                    bounds = page.locator(selector).bounding_box()
+                    assert bounds and bounds['x'] >= 0 and bounds['x'] + bounds['width'] <= width + 1, (selector, bounds)
+                    if width < 720: assert bounds['height'] >= 44, selector
                 help_button.focus(); page.keyboard.press('Space')
                 expect(page.locator('#composer-help')).to_be_visible()
                 expect(page.locator('#composer-help')).to_contain_text('双按 Esc')
                 page.keyboard.press('Escape')
                 expect(help_button).to_be_focused()
+                close_tools()
+                assert page.locator('#session-runtime').evaluate('(e) => e.parentElement.id') == 'composer-status'
+                prompt_bounds = page.locator('#prompt').bounding_box()
+                action_bounds = page.locator('.composer-split').bounding_box()
+                assert abs(prompt_bounds['y'] - action_bounds['y']) <= 4
+                assert prompt_bounds['x'] + prompt_bounds['width'] <= action_bounds['x']
                 model_name = page.locator('.composer-model-name')
                 original = model_name.inner_text()
                 model_name.evaluate('(e) => e.textContent = "long-model-name-that-must-truncate-without-hiding-effort"')
@@ -117,7 +138,7 @@ try:
                 assert bounds['x'] + bounds['width'] <= width + 1
                 model_name.evaluate('(e, text) => e.textContent = text', original)
                 if phone:
-                    for selector in ['#mobile-more', '.composer-help-trigger', '.composer-session-info', '.composer-model-trigger', '#session-runtime']:
+                    for selector in ['#mobile-more', '.composer-model-trigger', '#session-runtime']:
                         assert page.locator(selector).bounding_box()['height'] >= 44, selector
                     page.locator('#mobile-more').click()
                     for selector in ['#status', '#view-options-trigger']:
@@ -126,17 +147,23 @@ try:
             if not BASELINE:
                 page.goto(url + '/#session=ui-waiting')
                 page.reload()  # Hash-only navigation does not bootstrap another session.
-                expect(page.locator('#composer-action-help')).to_be_visible()
+                expect(page.locator('#composer-action-help')).not_to_be_visible()
                 expect(page.locator('#composer-action-help')).to_contain_text('Enter 介入')
                 expect(page.locator('#composer-action-help')).to_contain_text('按钮执行 stop')
                 page.evaluate('previewCommands.length = 0')
                 if phone: page.locator('#mobile-more').click()
                 for selector in ['#view-options-trigger', '.composer-help-trigger']:
+                    if selector == '.composer-help-trigger': show_tools()
                     page.locator(selector).focus(); page.keyboard.press('Enter')
+                    if selector == '.composer-help-trigger':
+                        expect(page.locator('#composer-action-help')).to_be_visible()
+                        expect(page.locator('#composer-action-help')).to_contain_text('按钮执行 stop')
                     page.keyboard.press('Escape')
+                    expect(page.locator(selector)).to_be_focused()
                     if phone and selector == '#view-options-trigger':
                         expect(page.locator('#mobile-menu')).to_be_visible()
                         page.keyboard.press('Escape')
+                    close_tools()
                 page.wait_for_timeout(400)
                 assert not page.evaluate('previewCommands.some(type => /stop|withdraw|recall/i.test(type))')
                 expect(page.locator('#composer-action-help')).to_contain_text('按钮执行 stop')

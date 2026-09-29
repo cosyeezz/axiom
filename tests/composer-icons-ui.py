@@ -31,11 +31,11 @@ try:
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.goto(url)
         page.locator('#prompt').click()
-        page.wait_for_function("document.querySelector('.composer-wrap').dataset.collapsed === 'false'")
+        page.wait_for_function("() => document.querySelector('.composer-wrap').dataset.collapsed === 'false'")
         for theme in ['dark', 'light']:
             page.evaluate('(theme) => document.documentElement.dataset.theme = theme', theme)
             page.wait_for_timeout(250)
-            icons = page.locator('.context-bar .composer-icon')
+            icons = page.locator('#composer-tools .composer-icon')
             assert icons.count() == 5
             metrics = icons.evaluate_all('''nodes => nodes.map(svg => {
                 const box = svg.getBoundingClientRect();
@@ -57,8 +57,8 @@ try:
             assert all(m['width'] == 20 and m['height'] == 20 for m in metrics), metrics
             assert all(m['stroke'] == '1.75px' for m in metrics), metrics
             assert len(set(m['background'] for m in metrics)) == 1, metrics
-            # Every glyph is optically centred in its own button, including the one
-            # that lives outside .icon-group, and none bleeds past the button edge.
+            # Every glyph is optically centred in its own button, including info,
+            # and none bleeds past the button edge.
             assert all(m['offsetY'] == 0 for m in metrics), metrics
             assert all(m['overflow'] == 0 for m in metrics), metrics
             # Compare actual artwork bounds and row centres, not merely each SVG box.
@@ -110,21 +110,26 @@ try:
         page.set_viewport_size({'width': 390, 'height': 844})
         page.wait_for_timeout(250)
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-        mobile = page.locator('.context-bar .composer-icon').evaluate_all('''nodes => nodes.map(svg => {
+        page.locator('.composer-tools-trigger').click()
+        mobile = page.locator('#composer-tools .composer-icon').evaluate_all('''nodes => nodes.map(svg => {
             const r = svg.getBoundingClientRect(), b = svg.getBBox();
             return { width: r.width, height: r.height, y: r.y + r.height / 2,
                      glyphWidth: b.width, glyphHeight: b.height };
         })''')
         assert all(m['width'] == 20 and m['height'] == 20 for m in mobile), mobile
-        row = page.locator('.context-bar').evaluate('''el => {
-            const selectors = ['#goal-enter', '.composer-session-info', '#context-chips', '#task-timer'];
-            return selectors.map(s => el.querySelector(s).getBoundingClientRect()).map(r => ({left:r.left, right:r.right, y:r.y+r.height/2}));
+        row = page.locator('#composer-tools').evaluate('''el => {
+            return [...el.querySelectorAll('button')].map(b => b.getBoundingClientRect()).map(r => ({left:r.left, right:r.right, y:r.y+r.height/2}));
         }''')
         assert max(r['y'] for r in row) - min(r['y'] for r in row) < .5, row
         ordered = sorted(row, key=lambda r: r['left'])
         assert all(a['right'] <= b['left'] for a, b in zip(ordered, ordered[1:])), row
         assert max(m['y'] for m in mobile) - min(m['y'] for m in mobile) < .5, mobile
         assert all(abs(m['glyphWidth'] - 18) < .1 and abs(m['glyphHeight'] - 18) < .1 for m in mobile), mobile
+        page.keyboard.press('Escape')
+        assert page.locator('#context-chips').is_visible()
+        assert page.locator('#task-timer').is_visible()
+        assert page.locator('#context-chips').bounding_box()['y'] < page.locator('#prompt').bounding_box()['y']
+        assert page.locator('#task-timer').bounding_box()['y'] >= page.locator('#prompt').bounding_box()['y'] + page.locator('#prompt').bounding_box()['height']
         page.locator('.composer-wrap').screenshot(path=str(artifacts / 'mobile.png'))
         assert not errors, errors
         browser.close()

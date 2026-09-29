@@ -22,6 +22,7 @@ let deferred = null; // 关闭时指针/焦点仍在其上的元素，离开时�
 let popped = false; // 提示当前是否在 top layer（Popover API）
 let showTimer = 0;
 let hideTimer = 0;
+let keyboardFocus = true; // Pointer-opened menus also move focus; that is not a keyboard tooltip request.
 
 const tip = document.createElement("div");
 tip.id = "ax-tooltip";
@@ -197,6 +198,7 @@ document.addEventListener("pointerout", (e) => {
 });
 
 document.addEventListener("focusin", (e) => {
+  if (!keyboardFocus) return;
   const el = lookup(e.target);
   if (!el || el === current) return;
   showFor(el, 0); // 键盘聚焦立即显示
@@ -211,12 +213,14 @@ document.addEventListener("focusout", (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
+  if (!["Shift", "Control", "Alt", "Meta"].includes(e.key)) keyboardFocus = true;
   if (e.key === "Escape") hide(true);
-});
+}, true); // Before a menu's key handler focuses an item or stops propagation.
 
-document.addEventListener("pointerdown", (e) => {
-  if (e.pointerType !== "touch") hide(true); // 与原生一致：按下即收起
-});
+document.addEventListener("pointerdown", () => {
+  keyboardFocus = false;
+  hide(true); // Capture before component handlers move focus, including touch.
+}, true);
 
 addEventListener("scroll", (e) => {
   if (!tip.contains(e.target)) hide(true); // 提示内容自身滚动不关闭

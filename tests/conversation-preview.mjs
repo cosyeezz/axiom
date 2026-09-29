@@ -178,6 +178,8 @@ const sessions = {
   list: () => states.map((s) => ({ id: s.sessionId, cwd: s.cwd, title: s.title, status: s.status, updatedAt: Date.now(), sessionFile: `preview-${s.sessionId}.jsonl` })),
   get: (id) => states.find((s) => s.sessionId === id) || state,
   ensureLoaded: async (id) => sessions.get(id),
+  withdraw: async () => ({ steering: [], followUp: [] }),
+  refreshSkills: async () => [],
   // 展开摘要卡取回原文：按 compactedMessageIds 回放该段主消息与子代理消息，没有这个桩验收时会报错。
   compactionMessages: async (id, compactionId) => {
     const item = sessions.get(id);
@@ -221,6 +223,9 @@ const sessions = {
   },
   subscribe: () => () => {},
 };
-const app = createServerApp(sessions);
+const app = createServerApp(sessions, { models: { listCatalog: sessions.createAgent.catalog, handle: async (request) => {
+  if (request.type === 'models.favorites.get') return { provider: [], model: [], thinking: [] };
+  throw new Error('预览仅提供只读收藏');
+} } });
 const port = Number(process.env.PREVIEW_PORT || 4321);
 app.server.listen(port, "127.0.0.1", () => console.log(`UI preview: http://127.0.0.1:${port} (Ctrl+C to stop)`));
