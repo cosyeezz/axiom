@@ -1,39 +1,51 @@
 package com.axiom.android;
 
-import android.test.ActivityInstrumentationTestCase2;
+import android.app.Instrumentation;
+import android.content.Intent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.WebView;
 import android.widget.Button;
 import android.widget.EditText;
+import android.net.Uri;
+import androidx.test.platform.app.InstrumentationRegistry;
 import bridge.Bridge;
 import org.json.JSONObject;
-import android.net.Uri;
+import org.junit.Before;
+import org.junit.After;
+import org.junit.Test;
 import java.io.File;
+import static org.junit.Assert.*;
 
-@SuppressWarnings("deprecation")
-public final class LaunchTest extends ActivityInstrumentationTestCase2<MainActivity> {
-    public LaunchTest() { super(MainActivity.class); }
-    public void testNativeConnectionScreen() throws Throwable {
-        MainActivity a=getActivity();
-        getInstrumentation().waitForIdleSync();
-        View root=a.findViewById(android.R.id.content);
-        assertTrue("address input missing",count(root,EditText.class)>=1);
-        assertTrue("connection actions missing",count(root,Button.class)>=3);
-        assertEquals("must not load a page before authentication",0,count(root,WebView.class));
+public final class LaunchTest {
+    private Instrumentation instrumentation;
+    private MainActivity activity;
+    @Before public void launch(){
+        instrumentation=InstrumentationRegistry.getInstrumentation();
+        Intent intent=new Intent(instrumentation.getTargetContext(),MainActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        activity=(MainActivity)instrumentation.startActivitySync(intent);
+        instrumentation.waitForIdleSync();
     }
-    public void testNativeBridgeRejectsPublicAndLoopbackTargets() throws Throwable {
-        getActivity();
+    @After public void finish(){instrumentation.runOnMainSync(()->activity.finish());instrumentation.waitForIdleSync();}
+    @Test public void nativeConnectionScreen(){
+        instrumentation.runOnMainSync(()->{
+            View root=activity.findViewById(android.R.id.content);
+            assertTrue("address input missing",count(root,EditText.class)>=1);
+            assertTrue("connection actions missing",count(root,Button.class)>=3);
+            assertEquals("must not load a page before authentication",0,count(root,WebView.class));
+        });
+    }
+    @Test public void nativeBridgeRejectsPublicAndLoopbackTargets(){
         for(String target:new String[]{"127.0.0.1:4319","https://example.com","http://u:p@100.64.0.1"}){
             boolean rejected=false;
-            try { Bridge.start(getActivity().getNoBackupFilesDir().getAbsolutePath()+"/test-state",target); }
+            try { Bridge.start(activity.getNoBackupFilesDir().getAbsolutePath()+"/test-state",target); }
             catch(Exception expected){rejected=true;}
             assertTrue("unsafe destination accepted",rejected);
         }
     }
-    public void testUnauthenticatedNodeReachesOfficialLogin() throws Exception {
-        MainActivity a=getActivity();
-        String dir=new File(a.getNoBackupFilesDir(),"tailscale").getAbsolutePath();
+    @Test public void unauthenticatedNodeReachesOfficialLogin() throws Exception {
+        String dir=new File(activity.getNoBackupFilesDir(),"tailscale").getAbsolutePath();
         try {
             Bridge.start(dir,"100.64.0.1:4319");
             long deadline=System.currentTimeMillis()+90000;

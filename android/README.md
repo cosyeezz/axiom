@@ -32,7 +32,7 @@
 
 ## 构建
 
-工具链固定于 `../.github/workflows/android.yml`：Java 17、AGP 8.7.3、Gradle 8.9、SDK 35、Build Tools 34.0.0、NDK 27.0.12077973。Go/tsnet/gomobile 固定版本与命令见 workflow 和 `go/go.mod`。直接执行 CI 或使用相同工具链本机构建；本工程不依赖 AndroidX/Kotlin。
+工具链固定于 `../.github/workflows/android.yml`：Java 17、AGP 8.7.3、Gradle 8.9、SDK 35、Build Tools 34.0.0、NDK 27.0.12077973。Go/tsnet/gomobile 固定版本与命令见 workflow 和 `go/go.mod`。直接执行 CI 或使用相同工具链本机构建；生产壳不依赖 AndroidX/Kotlin；模拟器测试使用 AndroidX Test 1.6.x 与 JUnit 4.13.2。
 
 ```sh
 cd android/go

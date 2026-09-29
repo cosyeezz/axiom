@@ -12,7 +12,7 @@ android {
         targetSdk 35
         versionCode 1
         versionName '0.1.0'
-        testInstrumentationRunner 'android.test.InstrumentationTestRunner'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
     buildFeatures { buildConfig true }
     compileOptions {
@@ -41,4 +41,10 @@ android {
     packaging { jniLibs { useLegacyPackaging true } }
     lint { abortOnError true }
 }
-dependencies { implementation files('libs/bridge.aar') }
+dependencies {
+    implementation files('libs/bridge.aar')
+    // AndroidX is test-only; the shipped UI remains a platform Activity.
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test:core:1.6.1'
+    androidTestImplementation 'junit:junit:4.13.2'
+}

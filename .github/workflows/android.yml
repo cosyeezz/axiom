@@ -40,6 +40,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: android-go-1.26.6-${{ hashFiles('android/go/go.sum') }}
       - name: Resolve and test network bridge
         working-directory: android/go
         run: |
@@ -102,6 +108,8 @@ jobs:
             dist/
             android/go/go.mod
             android/go/go.sum
+            android/go/bridge/
+            android/go/internal/
             android/app/build/reports/
             android/app/build/outputs/androidTest-results/
           retention-days: 30
