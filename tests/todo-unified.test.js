@@ -33,6 +33,22 @@ test('strict operation fields, atomic failure and CAS',async()=>{
  await assert.rejects(update(todo,[{op:'add',id:'child',level:2,parentId:'target',title:'child'},{op:'status',id:'missing',status:'done'}]));assert.deepEqual(todo.snapshot(),before);
  await assert.rejects(todo.update({listId:before.listId,baseVersion:0,ops:[{op:'edit',id:'target',summary:'x'}]}),/TODO_VERSION_CONFLICT/);
 });
+test('done targets retain nonempty summaries across edits and atomic batches',async()=>{
+ const todo=fixture();await todo.update({baseVersion:0,ops:[target]});
+ await update(todo,[{op:'status',id:'target',status:'done',summary:'验收完成',verification:[{criterionId:'check',result:'已核对',refs:[{messageId:'report'}]}]}]);
+ const before=todo.read({id:'target',detail:true});
+ for(const summary of ['', ' \t\n ']){
+  await assert.rejects(update(todo,[{op:'edit',id:'target',summary}]),/TODO_SUMMARY_REQUIRED/);
+  assert.deepEqual(todo.read({id:'target',detail:true}),before);
+ }
+ await assert.rejects(update(todo,[{op:'edit',id:'target',summary:'有效改正'},{op:'edit',id:'target',summary:''}]),e=>e.code==='TODO_SUMMARY_REQUIRED'&&e.operationIndex===1);
+ assert.deepEqual(todo.read({id:'target',detail:true}),before);
+ await update(todo,[{op:'edit',id:'target',summary:'有效改正'}]);assert.equal(todo.read({id:'target',detail:true}).item.summary,'有效改正');
+ assert.equal(todo.snapshot().completed,true);
+ await assert.rejects(update(todo,[{op:'edit',id:'target',title:'新定义'}]),/TODO_REOPEN_REQUIRED/);
+ await update(todo,[{op:'reopen',id:'target',reason:'重新核实'},{op:'edit',id:'target',summary:''}]);
+ assert.equal(todo.read({id:'target',detail:true}).item.summary,'');assert.equal(todo.snapshot().completed,false);
+});
 test('reset touches only task tables and normal initialization preserves application data',()=>{
  const store=createTodoStore();store.database.exec("CREATE TABLE sessions(id TEXT); INSERT INTO sessions VALUES('keep'); CREATE TABLE goals(id TEXT); CREATE TABLE todos(id TEXT)");
  const counts=resetTodo(store.database);assert.deepEqual(Object.keys(counts),['todo_events','todo_items','todo_lists','todos','goals']);assert.equal(store.database.prepare('SELECT id FROM sessions').get().id,'keep');resetTodo(store.database);

@@ -6,6 +6,7 @@ import { safePoints, requireSafePoint, navigationState } from "./safe-points.js"
 import { wrapUsageStream } from "./usage-stream.js";
 import { createToolExecutionPolicy } from "./tool-execution.js";
 import { sessionBilling, usageRuntime } from "./session-billing.js";
+import { messageEntries as projectMessageEntries } from "./session-history.js";
 import { TITLE_INSTRUCTION } from "./prompts.js";
 import { createObservationStats, observationRuntime } from "./legacy-observation.js";
 import { createHistoryReader } from "./history-tools.js";
@@ -304,6 +305,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
     // 两个来源共用这条路径：goal 外层的安全暂停（requestPause）与用户的安全停止（requestSafeStop）。
     // 都只请求边界即停，没有边界可等时（自动重试退避）由 retry.cancel() 取消等待。
     let paused = false;          // goal 暂停：result()/paused() 据此不把收尾当失败
+    let stopRevision = 0;
     let safeStopPending = false; // 用户安全停止：前端据此显示等待提示条与停下提醒点
     const shouldPause = selection.shouldPause;
     const stopping = () => paused || safeStopPending;
@@ -341,11 +343,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
     const queueState = () => queueStateOf(session.agent.steeringQueue, session.agent.followUpQueue);
     // 历史条目含 custom_message（SDK sendCustomMessage 的持久化形态）：转回 message 结构供 UI/恢复使用，
     // 否则 custom 通知在恢复后的消息历史与锚点下标中丢失。
-    const messageEntries = () => session.sessionManager.getBranch()
-      .filter((entry) => entry.type === "message" || entry.type === "custom_message")
-      .map((entry) => entry.type === "custom_message"
-        ? { ...entry, message: { role: "custom", customType: entry.customType, content: entry.content ?? [], display: entry.display, details: entry.details, timestamp: new Date(entry.timestamp).getTime() } }
-        : entry);
+    const messageEntries = () => projectMessageEntries(session.sessionManager.getBranch());
     const compactionRecords = () => session.sessionManager.getBranch().filter((entry) => entry.type === "compaction").map((entry) => {
       const branch = session.sessionManager.getBranch(entry.id);
       return { id: entry.id, summary: entry.summary, ...(entry.details?.checkpoint ? { checkpoint: true } : {}), ...(entry.details?.progress ? { progress: entry.details.progress } : {}), firstKeptEntryId: entry.firstKeptEntryId,
@@ -362,8 +360,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
     };
     const compactionCtrl = createBackgroundCompaction({
       session,
-      modelRuntime,
-      available,
+      getModelContext: () => ({ modelRuntime, available }),
       config: initialCompaction,
       beforeCommit: async ({ compactedMessageIds }) => {
         await history?.barrier();
@@ -585,15 +582,19 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       // 没有轮次边界可等的场景也要能停：退避等待期由 retry.cancel() 取消等待（无等待时是 no-op，
       // 在飞请求与正在跑的工具不受影响）。
       requestSafeStop: () => {
+        stopRevision++;
         compactionCtrl.cancel();
         safeStopPending = true;
         retry.cancel();
       },
       safeStopPending: () => safeStopPending,
       prompt: async (text, options) => {
-        if (await compactionCtrl.maybeApply()) emitAxiom({ type: "agent.runtime", data: agentRuntime(session, observations) });
-        await todoBridge.apply();
+        const revision = stopRevision;
         beginRun();
+        if (await compactionCtrl.maybeApply()) emitAxiom({ type: "agent.runtime", data: agentRuntime(session, observations) });
+        if (revision !== stopRevision) return;
+        await todoBridge.apply();
+        if (revision !== stopRevision) return;
         // 背景与标题指令都由 context 钩子按请求实时取（memory.wantsTitle 读会话实时状态，无需透传选项）。
         try {
           await retry.run(() => session.prompt(text, options?.images ? { images: options.images } : undefined));
@@ -647,10 +648,12 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       // 已入队消息不被消费；随后 shouldStopAfterTurn 在下一个安全边界结束本轮。
       // 置 paused：result() 据此不把“暂停导致的取消/失败”当错误（见 paused()）。
       requestPause() {
+        stopRevision++;
         paused = true;
         retry.cancel();
       },
       async abort() {
+        stopRevision++;
         safeStopPending = false; // 强制停止后不该留个待停标志误停下一次运行
         reaskController?.abort();
         retry.cancel(); // 先中断等待中的自动重试，避免 abort 后又发起 continue
@@ -693,8 +696,10 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
   factory.capabilities = async (workspace = cwd, trustProject = false) =>
     (await discoverCapabilities(workspace, { trustProject, loadAdapter: false })).catalog;
   factory.refreshModels = async () => {
-    modelRuntime = await ModelRuntime.create(modelRuntimeOptions);
-    available = await modelRuntime.getAvailable();
+    const nextRuntime = await ModelRuntime.create(modelRuntimeOptions);
+    const nextAvailable = await nextRuntime.getAvailable();
+    modelRuntime = nextRuntime;
+    available = nextAvailable;
     return factory.catalog();
   };
   factory.authProviders = () => modelRuntime.getProviders().map((provider) => ({

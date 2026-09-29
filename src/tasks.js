@@ -8,6 +8,16 @@ const historyResult = history => {
   return message?.role === "assistant" ? (message.content ?? []).filter(b => b.type === "text").map(b => b.text).join("\n").trim() : "";
 };
 
+// Browser-only projection. Persistence retains materials, credentials and resume state.
+const CLIENT_TASK_FIELDS = ['id', 'task', 'status', 'text', 'error', 'executionId', 'startedAt', 'endedAt',
+  'softDeadline', 'hardDeadline', 'totalElapsedMs', 'stop', 'cleanupStatus', 'canRetry',
+  'runtime', 'profile', 'resultId', 'createdAt', 'updatedAt'];
+export const taskClientView = record => Object.fromEntries(CLIENT_TASK_FIELDS
+  .filter(key => Object.hasOwn(record, key)).map(key => [key, record[key]]));
+// canRetry is derived, not a durable credential: cancellation may persist a temporary false.
+export const taskCanRetry = (job, cancelling = false) => !cancelling && job.cleanupStatus !== "unconfirmed" && job.status !== "completed" &&
+  (!ACTIVE.includes(job.status) || job.interrupted) && (!!job.historySaved || !!job.sessionFile || job.agent?.resumable?.() === true);
+
 export class Tasks {
   constructor(createAgent, emit, onComplete = async () => {}, options = {}) {
     this.createAgent = createAgent;
@@ -61,10 +71,10 @@ export class Tasks {
     this.emit({ type: "task.state", taskId: job.id, data: { ...this.view(job), runtime: job.runtime }, saved: this.snapshotJob(job) });
   }
   retryable(job) {
-    return !this.cancelling && job.cleanupStatus !== "unconfirmed" && job.status !== "completed" &&
-      (!ACTIVE.includes(job.status) || job.interrupted) && (!!job.historySaved || !!job.sessionFile || job.agent?.resumable?.() === true);
+    return taskCanRetry(job, this.cancelling);
   }
   snapshot() { return [...this.jobs.values()].map(job => this.snapshotJob(job)); }
+  clientSnapshot() { return [...this.jobs.values()].map(job => taskClientView({ ...job, canRetry: this.retryable(job) })); }
 
   async run(job, resume = false, continuation = null) {
     // 恢复旧任务也必须建立本轮外部预算；保留已持久化的截止时间，不因重启续期。
@@ -202,10 +212,10 @@ export class Tasks {
     ]);
   }
   resumeQueued(job) {
-    if (job.notificationHeld || !job.notified || !job.pendingAppends?.some(entry => !entry.retained) || this.cancelling || job.cleanupStatus === "unconfirmed") return;
+    if (this.resumeHeld?.() || job.notificationHeld || !job.notified || !job.pendingAppends?.some(entry => !entry.retained) || this.cancelling || job.cleanupStatus === "unconfirmed") return;
     const executionId = job.executionId;
     setImmediate(() => {
-      if (job.executionId !== executionId || ACTIVE.includes(job.status) || this.cancelling || job.notificationHeld || !job.notified) return;
+      if (this.resumeHeld?.() || job.executionId !== executionId || ACTIVE.includes(job.status) || this.cancelling || job.notificationHeld || !job.notified || !job.pendingAppends?.some(entry => !entry.retained)) return;
       const messages = job.pendingAppends.splice(0).map(entry => entry.text);
       this.launch(job, true, messages.join("\n\n"));
     });

@@ -8,8 +8,18 @@
 - 设计：复用 Linear 风格现有 `--muted` / `--mono`、8px 列间距与 `.tool-target` 布局，不新增样式或颜色；手机沿用工具名下方的摘要行，不强行挤在一行。
 - 验证：新增 4 项真实页面处理器回归，覆盖正式/前缀工具名、异常 name、HTML 字面量、结果不带参数、正常与结果先到历史、实时快照及压缩子代理补参；定向 21 项通过。隔离 HOME/USERPROFILE/临时目录/Pi 目录的全量 979 项：977 通过、2 项平台跳过、0 失败。没有独立 build 脚本，`node --check public/app.js`、`npm pack --dry-run` 与 `git diff --check` 通过。测试自动重建的无关 INDEX 漂移已恢复，不纳入提交。
 - 浏览器：真实页面模块/CSS 的 Chromium 内存路由 fixture，1280/768/390/320 四宽度、深浅主题、长名省略与完整 title、键盘展开/收起、实时开始/完成均通过，无 pageerror；沿用手机第二行摘要，无横向溢出。截图与脚本在仓库外 `F:/artifacts/tool-instruction-label/`。未启动真实服务、未读取用户会话、未调用模型；无后台 fixture 的设置状态提示不在此次验收范围。
-- 集成：工作分支提交后合入最新 `origin/master`（b659451），仅 devlog 头部冲突，保留双方完整条目；源码自动合并。整合后全量 979 项（977 通过、2 平台跳过、0 失败）与 Chromium 全部检查再次通过。
+- 集成：工作分支提交后合入最新 `origin/master`（b659451），仅 devlog 头部冲突，保留双方完整条目；源码自动合并。整合后全量 979 项（977 通过、2 平台跳过、0 失败）与 Chromium 全部检查再次通过。推送前远端又加入代码审阅修复（143f2ca），重新合入并再次全量：1024 项、1022 通过、2 平台跳过、0 失败；浏览器检查再次通过，日志 `integration-tests-2.log`。
 - 文件：`public/app.js`、`tests/message-activity.test.js`、`README.md`、`devlog.md`。
+
+## 2026-09-29 代码审阅逐项修复
+
+- 原因与范围：按用户报告核对18项执行控制、一致性、性能与维护性问题；16项实施，P02与D02有据保留。不扩展架构、不碰主工作区未提交资料。基线origin/master e116f12d，独立feat/review-20260929-fixes工作树。
+- 执行控制：IPC非对象帧关闭连接；单独取消子任务不恢复父会话；idle通知按新入历史输入确认，running通知跨收尾补调度；停止先发信号，保存/清理失败独立汇总，并发取消共用控制；启动保存及Pi异步准备结束重验停止版本，不能迟发模型请求。
+- 一致性：每次压缩flight捕获当前目录/runtime，工厂刷新完整后原子发布；冷热复制首次await前占用并finally释放，recall与预排队续接也受守卫；长标题预留序号；done一级Todo摘要集中不变量与基础schema共享；SDK/冷热主子历史及压缩展开共用custom_message映射。
+- 优化与局部清理：snapshot直接runtime调用2→1而config仍独立克隆；限流单次sweep统计模型占用，保持TTL/超时策略；Web白名单投影不克隆/下发内部大材料，完整持久化和结果凭证保留，冷读重算派生canRetry避免取消期间暂态false。冷热删除共用纯文件清单，保留生命周期及先删库顺序；移除goalExited与同步attachSequence。
+- 保留决定：P02同步列表探测经10/100/1000会话测量后保留，避免永久缓存改变外部删除即时可见性；D02虽无仓内调用，但Sessions导出且src入包，外部私有深导入约束无法确认，试删后恢复pushCompaction兼容入口。微基准范围与端到端/堆峰值未测限制写入docs/review-20260929-resolution.md。
+- 验证过程：定向复制/通知/IPC/停止/限流/Todo/历史/计费/记忆/持久化组通过。原基线15失败来自真实HOME祖先目录自动发现9个宿主技能；HOME与TEMP/TMP一同隔离后原失败组61/61通过。共享SDK后来缺dist，仅本工作树断开node_modules链接并独立npm ci，未改主工作区依赖。隔离全量1013项1011通过2平台跳过0失败（约74.5秒）；补canRetry测试初次被未通知任务不可release的既有守卫拒绝，fixture先确认指定结果后13项边界回归全过，不放宽生产守卫。补测后最终全量1014项1012通过2跳过0失败（约71.1秒，review-20260929-full-verified.log）；P04独立只读复审未发现阻断。合入最新origin/master 859270e后，全量1020项1018通过2平台跳过0失败（约70.2秒，review-20260929-full-integrated.log）。仅devlog头部冲突，完整保留双方条目；未改动上游Todo前端实现。推送前再次fetch发现master新增会话搜索b659451，重新合入并全量复验1020项1018通过2跳过0失败（约70.1秒，review-20260929-full-integrated2.log）；仍只有devlog头部冲突，保留全部上游记录。npm pack --dry-run验证共享schema/历史/任务模块及README入包（327文件），git diff --check通过。
+- 文件：src/compaction.js、gate-ipc.js、pi.js、request-gate.js、server.js、session-history.js、sessions.js、tasks.js、todo.js、新todo-schema.js；对应tests及新增边界回归；README、逐项处理文档、本记录与代码索引。INDEX变化来自既有codebase-index测试运行reindex，新增文件已登记。
 
 ## 2026-09-29 会话标题列表体验优化
 

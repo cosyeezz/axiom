@@ -72,6 +72,11 @@ export class RequestGate {
     const now = this.#now();
     for (const [provider, state] of this.#states) {
       for (const [key, lease] of state.leases) if (lease.expires <= now) state.leases.delete(key);
+      // Sweep-local counts: no cache to synchronize across release, expiry or reconfiguration.
+      const modelCounts = new Map();
+      if (state.concurrency.length && this.#limits[provider]?.models) {
+        for (const lease of state.leases.values()) modelCounts.set(lease.model, (modelCounts.get(lease.model) ?? 0) + 1);
+      }
       state.attempts = state.attempts.filter(at => at > now - this.#window);
       for (const kind of ["concurrency", "rpm"]) {
         const queue = state[kind];
@@ -81,14 +86,18 @@ export class RequestGate {
           const bypassed = this.#closed || now - entry.at >= this.#maxWait;
           const occupied = kind === "concurrency" ? state.leases.size : state.attempts.length;
           const modelLimit = kind === "concurrency" ? this.#limits[provider]?.models?.[entry.model]?.concurrency ?? 0 : 0;
-          const modelActive = modelLimit ? [...state.leases.values()].filter(lease => lease.model === entry.model).length : 0;
+          // Preserve the old strict-equality behavior even for a direct caller passing NaN.
+          const modelActive = modelLimit && !Number.isNaN(entry.model) ? modelCounts.get(entry.model) ?? 0 : 0;
           if (!bypassed && ((limit && (occupied >= limit || (kind === "rpm" && state.cooldownUntil > now))) || (modelLimit && modelActive >= modelLimit))) { index++; continue; }
           queue.splice(index, 1);
           entry.signal?.removeEventListener("abort", entry.abort);
           const token = Symbol();
           if (bypassed) state.bypassed++;
           else {
-            if (kind === "concurrency") state.leases.set(token, { expires: now + this.#ttl, model: entry.model });
+            if (kind === "concurrency") {
+              state.leases.set(token, { expires: now + this.#ttl, model: entry.model });
+              modelCounts.set(entry.model, (modelCounts.get(entry.model) ?? 0) + 1);
+            }
             else state.attempts.push(now);
           }
           let released = false;

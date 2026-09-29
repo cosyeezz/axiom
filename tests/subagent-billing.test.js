@@ -93,7 +93,7 @@ test("实时总账包含子任务；冷快照与恢复不漏账；缺失文件�
     let runtimeCalls = 0;
     item.agent.runtime = () => { runtimeCalls++; return originalRuntime(); };
     const live = sessions.snapshot(id);
-    assert.equal(runtimeCalls, 2, "快照账单复用 runtime；配置保留独立的动态 runtime");
+    assert.equal(runtimeCalls, 1, "同一快照复用runtime计算，配置保留独立副本");
     assert.deepEqual(live.billing, last);
     assert.notEqual(live.runtime, live.config.runtime);
     live.runtime.billing.cost.total = -1;
