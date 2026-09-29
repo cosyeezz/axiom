@@ -7,7 +7,7 @@
 - 独立审查补修：选区中的图片引用绑定附件身份，其他批次失败重编号后恢复不串图；同批首个读取失败立即 abort 其余 reader、清除读取定时器，防释放容量后残留读图。新增多批失败、真实会话删除迁移、Worker 成功/错误/迟到回包交错、规划纯图和拒绝不变更状态回归。
 - 附件透传：`src/sessions.js` 的目标规划首条输入及 `/goal` 原先漏传图片；图片校验提前到任何 Todo 状态变更之前，规划启动保留 images；已有未完成目标时 `/goal + 图片` 明确拒绝而非静默 no-op，普通无附件行为不变。
 - 真实浏览器测试发现客户端 `WebSocket.close(1011)` 无效（浏览器仅允许1000或3000–4999），改4001并在模拟 Socket 加合法性断言。浏览器装配最初使用 route.fulfill 修改 CSP 导致 Chromium 本地网络检查阻断 WS；改为隔离 fixture 服务器修改响应头，不绕过 CSP 或网络安全策略。
-- 测试文件：扩充 `tests/serialize-worker.test.js`、`tests/realtime-transport.test.js`、`tests/server.test.js`、`tests/image-input.test.js`；新增 `tests/paste-images.test.js`、`tests/image-input-preview.mjs`、`tests/image-input-ui.py`。已验证真实 Chromium 正常 CSP 有1个 Blob Worker、禁 Worker 无 Worker，两组均成功发送连续两张约1.97MB PNG及后续小文本（各2个prompt成功回执）；测试使用真实 ClipboardEvent，不宣称系统剪贴板权限或Android真机已验收。集成前最终全量954项：952通过、2跳过、0失败；正常/禁 Worker 浏览器回归各2个prompt成功且无重复，静态语法与diff检查通过，窄范围独立复审无阻断项。最终集成基线复核见后续记录。
+- 测试文件：扩充 `tests/serialize-worker.test.js`、`tests/realtime-transport.test.js`、`tests/server.test.js`、`tests/image-input.test.js`；新增 `tests/paste-images.test.js`、`tests/image-input-preview.mjs`、`tests/image-input-ui.py`。已验证真实 Chromium 正常 CSP 有1个 Blob Worker、禁 Worker 无 Worker，两组均成功发送连续两张约1.97MB PNG及后续小文本（各2个prompt成功回执）；测试使用真实 ClipboardEvent，不宣称系统剪贴板权限或Android真机已验收。集成前最终全量954项：952通过、2跳过、0失败；正常/禁 Worker 浏览器回归各2个prompt成功且无重复，静态语法与diff检查通过，窄范围独立复审无阻断项。合入最新 master `71e0906` 后最终全量957项：955通过、2跳过、0失败；两种CSP浏览器用例及语法/diff检查再次通过。合并仅devlog头部冲突，保留双方记录；测试自动重建的INDEX仅恢复工作树副本，不纳入提交。
 - 范围决策：保留单图5MiB/每条4张限制，不自动压缩。已发现累积图片历史可能突破32MiB整快照上限，本轮不扩展成附件按需读取架构，也不提高常量掩盖，README 明确记录此残余限制。未触碰主checkout既有文档、素材与索引改动。
 
 ## 2026-09-29 Todo 清单图标语义与首行对齐重构
