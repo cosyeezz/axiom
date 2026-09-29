@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/29 10:02:24）
+# Axiom 多级代码索引（生成于 2026/9/29 10:12:31）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -38,8 +38,8 @@
 | public/theme.js | 11 | 首帧前阻塞应用明/暗主题（localStorage axiom.theme，默认深色） | - |
 | public/thinking-picker.js | 81 | 模型能力驱动的思考选择视图与表单/输入区共用渲染器 | thinkingSelection, createThinkingPicker |
 | public/thinking.js | 28 | 统一思考等级、能力规范化、场景适配策略与收藏键（前后端共享） | THINKING_LEVELS, THINKING_HELP, thinkingLevels, resolveThinking |
-| public/todo.css | 45 | 任务清单面板样式 | - |
-| public/todo.js | 265 | 输入区任务清单：SVG 计数、全局折叠偏好与暂停恢复 | createTodoUI |
+| public/todo.css | 52 | 任务清单面板样式 | - |
+| public/todo.js | 381 | 输入区任务清单：SVG 计数、全局折叠偏好与暂停恢复 | createTodoUI |
 | public/tooltip.css | 50 | 共享悬停说明样式（浅色主题下反色） | - |
 | public/tooltip.js | 225 | 共享悬停说明：动态 title、键盘、定位与无障碍 | SHOW_DELAY, HIDE_DELAY, GAP, EDGE |
 | public/transport.js | 305 | 业务 WS 唯一所有者：请求回执、逻辑订阅、快照事件闸门与有界恢复 | SERIALIZE_THRESHOLD, WORKER_SOURCE, estimateBytes, createTransport |
@@ -304,8 +304,8 @@
 | tests/todo-preparation.test.js | 21 | node --test 测试（npm test） | - |
 | tests/todo-safe-points.test.js | 160 | node --test 测试（npm test） | factoryFixture, tick, until, ordinary |
 | tests/todo-schema.test.js | 40 | node --test 测试（npm test） | - |
-| tests/todo-ui-browser.py | 241 | node --test 测试（npm test） | items |
-| tests/todo-ui.test.js | 160 | node --test 测试（npm test） | source, child, snapshot |
+| tests/todo-ui-browser.py | 281 | node --test 测试（npm test） | items, children |
+| tests/todo-ui.test.js | 276 | node --test 测试（npm test） | source, tick, parent, child |
 | tests/todo-unified-ui.test.js | 13 | node --test 测试（npm test） | - |
 | tests/todo-unified.test.js | 59 | node --test 测试（npm test） | target, fixture, update |
 | tests/todo.test.js | 28 | node --test 测试（npm test） | goal, fixture, update |
@@ -1046,7 +1046,7 @@
 | resolveThinking | function | 12 |
 | thinkingFavoriteKey | function | 25 |
 
-### public/todo.js（265 行） — 输入区任务清单：SVG 计数、全局折叠偏好与暂停恢复
+### public/todo.js（381 行） — 输入区任务清单：SVG 计数、全局折叠偏好与暂停恢复
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -3538,19 +3538,23 @@
 | check | method | 24 |
 | check | method | 25 |
 
-### tests/todo-ui-browser.py（241 行） — node --test 测试（npm test）
+### tests/todo-ui-browser.py（281 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | items | const | 23 |
+| children | const | 27 |
 
-### tests/todo-ui.test.js（160 行） — node --test 测试（npm test）
+### tests/todo-ui.test.js（276 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | source | const | 6 |
-| child | const | 7 |
-| snapshot | const | 8 |
+| tick | const | 7 |
+| parent | const | 8 |
+| child | const | 9 |
+| snapshot | const | 10 |
+| setup | function | 13 |
 
 ### tests/todo-unified.test.js（59 行） — node --test 测试（npm test）
 

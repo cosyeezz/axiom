@@ -7,8 +7,19 @@
 - 一致性：每次压缩flight捕获当前目录/runtime，工厂刷新完整后原子发布；冷热复制首次await前占用并finally释放，recall与预排队续接也受守卫；长标题预留序号；done一级Todo摘要集中不变量与基础schema共享；SDK/冷热主子历史及压缩展开共用custom_message映射。
 - 优化与局部清理：snapshot直接runtime调用2→1而config仍独立克隆；限流单次sweep统计模型占用，保持TTL/超时策略；Web白名单投影不克隆/下发内部大材料，完整持久化和结果凭证保留，冷读重算派生canRetry避免取消期间暂态false。冷热删除共用纯文件清单，保留生命周期及先删库顺序；移除goalExited与同步attachSequence。
 - 保留决定：P02同步列表探测经10/100/1000会话测量后保留，避免永久缓存改变外部删除即时可见性；D02虽无仓内调用，但Sessions导出且src入包，外部私有深导入约束无法确认，试删后恢复pushCompaction兼容入口。微基准范围与端到端/堆峰值未测限制写入docs/review-20260929-resolution.md。
-- 验证过程：定向复制/通知/IPC/停止/限流/Todo/历史/计费/记忆/持久化组通过。原基线15失败来自真实HOME祖先目录自动发现9个宿主技能；HOME与TEMP/TMP一同隔离后原失败组61/61通过。共享SDK后来缺dist，仅本工作树断开node_modules链接并独立npm ci，未改主工作区依赖。隔离全量1013项1011通过2平台跳过0失败（约74.5秒）；补canRetry测试初次被未通知任务不可release的既有守卫拒绝，fixture先确认指定结果后13项边界回归全过，不放宽生产守卫。补测后最终全量1014项1012通过2跳过0失败（约71.1秒，review-20260929-full-verified.log）；P04独立只读复审未发现阻断。下一步合入最新master并复验。
+- 验证过程：定向复制/通知/IPC/停止/限流/Todo/历史/计费/记忆/持久化组通过。原基线15失败来自真实HOME祖先目录自动发现9个宿主技能；HOME与TEMP/TMP一同隔离后原失败组61/61通过。共享SDK后来缺dist，仅本工作树断开node_modules链接并独立npm ci，未改主工作区依赖。隔离全量1013项1011通过2平台跳过0失败（约74.5秒）；补canRetry测试初次被未通知任务不可release的既有守卫拒绝，fixture先确认指定结果后13项边界回归全过，不放宽生产守卫。补测后最终全量1014项1012通过2跳过0失败（约71.1秒，review-20260929-full-verified.log）；P04独立只读复审未发现阻断。合入最新origin/master 859270e后，全量1020项1018通过2平台跳过0失败（约70.2秒，review-20260929-full-integrated.log）。仅devlog头部冲突，完整保留双方条目；未改动上游Todo前端实现。npm pack --dry-run验证共享schema/历史/任务模块及README入包（327文件），git diff --check通过。
 - 文件：src/compaction.js、gate-ipc.js、pi.js、request-gate.js、server.js、session-history.js、sessions.js、tasks.js、todo.js、新todo-schema.js；对应tests及新增边界回归；README、逐项处理文档、本记录与代码索引。INDEX变化来自既有codebase-index测试运行reindex，新增文件已登记。
+
+## 2026-09-29 Todo 卡片默认两级展示与独立详情
+
+- 时间：2026-09-29 09:40（本机 -07:00）。原因：二级步骤原先嵌在一级详情里，必须逐项展开，阅读和定位成本高。默认直接显示两级任务树，点击各级任务仅开关自身详情，说明、摘要、阻塞与验收信息不再挤占任务行。
+- 设计：沿用 Linear token 和共享 SVG，用缩进与细连接线区分步骤，一级标题适度强调；四状态保留形状及可访问名称，图标对齐多行标题首行，窄屏保留至少 44px 点击高度。整张清单仍可主动收起，并尊重已保存的明确收起偏好。
+- 边界：不改后端协议及任务状态语义。每页最多 20 项（仍受响应预算约束），步骤摘要并发最多 4；详情按需读取，收起卸载行，异步请求按会话和代次隔离。新版有界广播不能证明旧尾页仍有效，因此刷新时使旧尾页失效，保留“显示更多”重新加载入口；子步骤全完成仍提示等待目标验收。
+- 审查修复：刷新不移动已正确排序的 DOM，必要重排恢复焦点，删除焦点步骤时回到父目标，避免复用节点却仍丢失键盘焦点。新增独立两级详情、快速开关、状态更新/增删排序、尾页失效、并发与重试、分页及跨会话/收起隔离回归。
+- 验证：定向 Todo 测试 21 项通过；最终全量 975 项，973 通过、0 失败、2 项平台条件跳过。最初常规 npm test 的 15 项失败来自用户 .agents/skills 及临时目录祖先扫描污染技能/压缩 fixture；仅对测试子进程隔离 HOME/USERPROFILE/TEMP/TMP/TMPDIR 和 Pi 目录后全绿，不修改用户配置或放宽断言。日志位于仓库外 artifacts/todo-card-tests-isolated.log。
+- 浏览器：真实模块/CSS 的 Chromium 内存路由 fixture，1440/768/480/390/320 五宽度及深浅主题通过，覆盖首行对齐、换行无溢出、独立详情、状态/焦点刷新、键盘、暂停/恢复、200% 缩放与高对比；截图和指标位于 artifacts/todo-card-after。不启动用户服务或调用模型，不宣称真机或屏幕阅读器验收。
+- 交付检查：项目没有独立 build 脚本，原生 ES 模块直接提供；node --check public/todo.js、npm pack --dry-run（Todo JS/CSS 与 README 入包）及 git diff --check 通过。全量测试自动生成的代码索引时间/行号漂移不纳入本次提交。
+- 文件：public/todo.js、public/todo.css、tests/todo-ui.test.js、tests/todo-unified-ui.test.js、tests/todo-ui-browser.py、README.md、devlog.md。
 
 ## 2026-09-29 统一模型思考等级机制与选择组件
 

@@ -11,31 +11,38 @@
 .todo-toggle[aria-expanded="true"] .todo-chevron { transform: rotate(90deg); }
 .todo-state-icon { display: inline-flex; align-items: center; justify-content: center; width: 16px; flex: 0 0 16px; }
 .todo-count { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.todo-count[data-status="running"] { color: var(--accent); }
+.todo-count[data-status="running"] { color: var(--accent-ink); }
 .todo-action { flex: 0 0 auto; }
 .todo-action:disabled { opacity: .5; cursor: default; }
 /* Outrank the global primary-button hover without changing controls elsewhere. */
 #todo-dock button:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
-#todo-dock button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.todo-list { border-top: 1px solid var(--line); max-height: 240px; overflow: auto; padding: 4px 8px; }
+#todo-dock button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.todo-list { border-top: 1px solid var(--line); max-height: min(320px, 40vh); overflow: auto; overscroll-behavior: contain; padding: 4px 8px; }
 .todo-list[hidden] { display: none; }
 .todo-row { --todo-title-line: 21px; --todo-title-padding: 8px; min-width: 0; overflow-wrap: anywhere; line-height: 1.5; }
-/* Both slots share the title's first line. Padding provides the 40/44px target,
-   never a fixed-height sibling icon that drifts with wrapping or global button CSS. */
+.todo-list > .todo-row + .todo-row { border-top: 1px solid var(--line); }
+/* SVG and text share the first line, even when the label wraps. Touch padding
+   belongs to the button, not to a separate fixed-height icon slot. */
 .todo-item-title { display: flex; align-items: flex-start; gap: 8px; width: 100%; min-width: 0; min-height: 40px; padding: var(--todo-title-padding) 4px; color: var(--ink); font-size: 14px; line-height: var(--todo-title-line); text-align: left; white-space: normal; }
-.todo-item-title > .todo-state-icon { height: var(--todo-title-line); }
+.todo-item-title > .todo-state-icon { height: var(--todo-title-line); color: var(--muted); }
 .todo-item-label { display: block; min-width: 0; overflow-wrap: anywhere; }
-.todo-summary, .todo-detail { margin-left: 28px; }
-.todo-summary { display: block; padding-bottom: 8px; color: var(--muted); font-size: 12px; }
-.todo-summary[hidden] { display: none; }
-.todo-child { margin-left: 8px; }
+.todo-list > .todo-row > .todo-item-title .todo-item-label { font-family: var(--display); font-weight: 500; }
+.todo-children { margin: 0 0 4px 12px; padding-left: 12px; border-left: 1px solid var(--line-strong); }
+.todo-children:empty { display: none; }
+.todo-child { position: relative; }
+.todo-child::before { content: ''; position: absolute; left: -12px; top: calc(var(--todo-title-padding) + var(--todo-title-line) / 2); width: 12px; border-top: 1px solid var(--line-strong); pointer-events: none; }
 .todo-row[data-status="done"] > .todo-item-title { color: var(--muted); }
-.todo-row[data-status="running"] > .todo-item-title > .todo-state-icon { color: var(--accent); }
+.todo-row[data-status="done"] > .todo-item-title > .todo-state-icon { color: var(--success); }
+.todo-row[data-status="running"] > .todo-item-title > .todo-state-icon { color: var(--accent-ink); }
+.todo-row[data-status="blocked"] > .todo-item-title > .todo-state-icon { color: var(--ink); }
+.todo-item-title[aria-expanded="true"] { background: var(--hover); }
 .todo-reason { margin: 4px 12px; overflow-wrap: anywhere; }
-.todo-detail { border-top: 1px solid var(--line); white-space: pre-wrap; }
+.todo-children > .todo-reason { margin: 4px; }
+.todo-detail { margin: 0 4px 8px 28px; padding: 4px 12px; border-left: 2px solid var(--line-strong); background: var(--hover); border-radius: 0 8px 8px 0; white-space: pre-wrap; }
 .todo-detail ul { padding-left: 16px; }
 .todo-detail p, .todo-detail ul { margin: 8px 0; }
 .todo-detail li + li { margin-top: 4px; }
+.todo-detail-label { display: block; margin-top: 8px; color: var(--ink); font-weight: 500; }
 .todo-evidence { display: block; overflow-wrap: anywhere; }
 @media (max-width: 480px), (pointer: coarse) {
   .todo-action, .todo-toggle { min-height: 44px; }
