@@ -84,10 +84,9 @@ with sync_playwright() as p:
     for width in [1440, 320]:
         page.set_viewport_size({"width": width, "height": 960})
         page.wait_for_timeout(150)
-        # 移动端 header 默认隐藏：先展开 composer 区域露出 ☰，再打开侧栏。
+        # 使用会话搜索入口打开侧栏，不依赖旧版移动端 composer 展开按钮。
         if page.locator('#toggle-sidebar').get_attribute('aria-expanded') != 'true':
-            page.locator('#mobile-expand').click()
-            page.locator('#toggle-sidebar').click()
+            page.keyboard.press('Control+k')
             page.wait_for_timeout(150)
         row = page.locator('[data-session-id="new"]')
         assert not row.locator('.session-rename').is_visible()
