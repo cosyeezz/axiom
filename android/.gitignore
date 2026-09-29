@@ -1,0 +1,11 @@
+.gradle/
+**/build/
+local.properties
+app/libs/*.aar
+app/libs/*-sources.jar
+*.jks
+*.keystore
+*.p12
+*.pem
+signing.properties
+app/src/main/assets/THIRD-PARTY-NOTICES.txt

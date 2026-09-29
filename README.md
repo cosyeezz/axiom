@@ -349,7 +349,13 @@ macOS 同时支持两种芯片时，先执行 `rustup target add aarch64-apple-d
 
 ### Android 客户端（内嵌 Tailscale，实施中）
 
-正在实现独立 Android APK：复用 Axiom 网页，通过应用内 tsnet 连接私网，无需另装 Tailscale App，也不占用系统 VPN。首次仍需本人登录授权，电脑需保持 Axiom 与 Tailscale 在线。计划、验证边界及签名发布步骤见 [Android 实施计划](docs/android-tsnet-plan.md)。此处仅记录已开始实施，不表示 APK 已构建或发布。
+独立 Android APK 复用 Axiom 网页，通过应用内 tsnet 连接私网，无需另装 Tailscale App，也不占用系统 VPN。首次仍需本人在系统浏览器登录授权，电脑需保持 Axiom 与 Tailscale 在线并开启远程入口。支持 Android 8.0+、arm64/x86_64，首版按预发布交付。
+
+下载入口：[GitHub Releases](https://github.com/cosyeezz/axiom/releases)（选择 Android 版本的 `Axiom-Android.apk`，不是源码 ZIP）。构建尚在验证时，以页面实际出现的 APK 为准；不把 workflow 配置当作已发布。
+
+首次使用：填写电脑 `100.x.x.x:4319` 或完整 `.ts.net:4319` 地址 → 连接 → 登录 Tailscale → 完成授权后回到应用。电脑许可账号须与 APK 登录的个人账号一致；开启审批的 tailnet 需先批准设备。后续打开自动恢复，不预置入网密钥。
+
+本地会话代理严格限定一个目标，保留电脑端 whois 鉴权；不开放公网端口，不依赖系统 VPN。首版不承诺锁屏永久在线，前台可重新连接；节点状态保存在应用私有禁备份目录。完整安装、构建、签名、权限及已知限制见 [Android 说明](android/README.md)，实现顺序和真实验证记录见 [实施计划](docs/android-tsnet-plan.md)。
 
 ### 更新后页面一直「连接中」
 
@@ -417,10 +423,10 @@ Axiom 使用原生 JavaScript，目前没有编译脚本，因此重建时不会
 
 ### Tailscale 远程控制
 
-设置左侧「默认新会话设置」下方新增「远程控制」。电脑和手机都安装 [Tailscale 官方客户端](https://tailscale.com/download)，以同一登录方式和账号登录，并保持连接。面板自动识别本机 Tailscale 登录名；未安装时提供下载入口，未登录时点击「登录 Tailscale」获取本机设备的官方授权链接，完成授权后刷新状态。登录不会自动开启远程访问；确认后手动开启并保存，在手机浏览器打开面板显示的地址。Wi-Fi 与手机流量使用同一个入口，不需要路由器端口映射。
+设置左侧「默认新会话设置」下方新增「远程控制」。电脑安装 [Tailscale 官方客户端](https://tailscale.com/download) 并保持连接。手机浏览器路线也需要官方 Tailscale；Android APK 路线由应用内 tsnet 联网，无需另装客户端。两端以同一登录方式和个人账号登录。面板自动识别本机 Tailscale 登录名；未安装时提供下载入口，未登录时点击「登录 Tailscale」获取本机设备的官方授权链接，完成授权后刷新状态。登录不会自动开启远程访问；确认后手动开启并保存，在手机浏览器打开面板显示的地址。Wi-Fi 与手机流量使用同一个入口，不需要路由器端口映射。
 
 ```text
-手机 Tailscale → 本机 Tailscale 地址 → 验证登录账号 → Axiom
+手机 Tailscale / APK 内嵌 tsnet → 本机 Tailscale 地址 → 验证登录账号 → Axiom
 电脑本机      → 127.0.0.1          → 原有本机访问
 ```
 

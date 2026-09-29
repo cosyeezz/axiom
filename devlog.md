@@ -1,5 +1,14 @@
 # 开发记录
 
+## 2026-09-29 Android 内嵌 Tailscale：客户端实施
+
+- 计划先行提交 `0c03d3a` 后新增独立 `android/`。本机无 Go/JDK/SDK，采用 GitHub Actions 固定工具链编译 AAR/APK，不安装或修改用户现有服务。
+- 网络决策：WebView 407 认证缺乏完整 WS 兼容契约，改用随机 HttpOnly 会话保护的 loopback 固定目标反向代理。验证本地 Host/Origin 后才映射远端 Host/Origin；远端仍使用 tsnet 对端 whois。拒绝通用 CONNECT、外部重定向和未认证请求，Cookie 不发送给上游。
+- Cookie 不隔离端口，因此同批实现精确 origin CSP、禁 worker/frame/form、原生导航/资源限制、WebView 销毁后释放代理与旧 WS。图片由系统文档选择器提供，不申请存储或 VPN 权限。
+- 签名：已生成一次持久 RSA-4096 PKCS#12 并配置四项 Actions Secrets；备份位于用户 `.axiom/signing/android-release`（Git 外且限制 ACL），公开指纹见实施计划。使用专用生成脚本且拒绝覆盖已有签名，不打印私钥或密码。
+- 设计：完整读取设计 skills 与默认 Linear 规范；原生页采用 canvas/surface/ink/primary tokens、8dp 控件圆角、24dp 页面留白和 ≥48dp 触摸区。无品牌外强调色或装饰渐变。
+- 验证尚在进行；不将代码静态检查等同实际 Android 构建或真实登录验收。涉及 `android/`、Android 实施计划、README 和本记录。
+
 ## 2026-09-29 Android 内嵌 Tailscale：计划先行
 
 - 原因：用户选择仅安装 Axiom APK、在应用内自动连接 Tailscale 私网，并要求先写计划再实施，最终在 GitHub 页面直接下载 APK。

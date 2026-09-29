@@ -28,10 +28,11 @@ WebView --应用级代理--> 127.0.0.1 临时端口
 ```
 
 - 单独新增 `android/` 工程，优先使用简单原生 Java 壳和 Go AAR；具体版本在构建依赖核实后固定。
-- WebView 直接加载用户确认的远端 URL，不复制一份前端再跨域连 API，不使用 iframe。
-- 使用 AndroidX WebKit 的应用级代理能力，保留原始 Host、Origin 和 `/ws` 子协议 `axiom`；不把所有网页请求改写为 localhost Origin。
+- 实施核实后的调整：WebView 加载应用私有会话保护的 loopback 固定上游反向代理，仍实时复用服务端网页，不复制前端，不使用 iframe。
+- 不依赖 WebView 407 代理认证：公开 API 不足以保证 HTTP/WS 完整覆盖。原生 CookieManager 安装随机 HttpOnly 会话 Cookie；代理先验证本地 Host/Origin/Cookie，再将合法请求映射为目标 Host/Origin，保留 `/ws` 子协议 `axiom`。服务端仍通过实际 tsnet 对端进行 whois，不信任新增身份请求头。
+- Cookie 不隔离端口，因此强制精确 origin CSP（含 WebSocket）、禁止 worker/frame/表单外发、拦截外部导航及资源、拒绝外部重定向；token 不写 URL/日志/上游请求。旧 WebView 销毁后才释放代理端口。
 - Go 端用 `tsnet.Server.Dial` 连接目标，而不是手机操作系统默认网络直连目标。
-- HTTP 代理需正确处理普通资源、上传、WebSocket Upgrade；若支持 HTTPS，还须支持严格限定目标的 CONNECT，证书校验由 WebView 完成，不忽略证书错误。
+- 固定目标反向代理正确处理普通资源、上传、WebSocket Upgrade；拒绝 CONNECT 和 absolute-form 请求。远端 HTTPS 由 Go 默认信任链校验，不忽略证书错误。
 - `tsnet` 是嵌入式 Go 网络库，不是现成完整 Android SDK；先验证 Android 编译和 WebView 网络桥接，再完善交互。
 - 默认保持现有服务端 socket 对端 IP + Tailscale whois 个人账号鉴权；不使用 tag 设备身份，不放宽现有认证。
 
@@ -64,7 +65,7 @@ WebView --应用级代理--> 127.0.0.1 临时端口
 ### 阶段 C：Android 客户端
 
 - 原生连接界面遵守项目设计 token，显示地址、登录/连接状态及有意义的错误。
-- 在代理配置回调确认后才加载远端网页；不支持代理 API 时给出明确升级 WebView 提示，而不是绕过代理。
+- 原生安装会话 Cookie 并收到成功回调后才加载本地入口；失败时禁止绕过认证。每次重建重新安装会话，进程重启生成新 token。
 - 外部浏览器完成首次授权，回到应用检查连接状态并继续加载。
 - 支持返回键、图片文件选择、外部链接安全处理；必要时补下载或明确首版限制。
 - 前台恢复检查节点与页面连接，提供可操作的重试；不承诺锁屏期间永久在线，不默认加入常驻前台服务。
@@ -108,4 +109,8 @@ WebView --应用级代理--> 127.0.0.1 临时端口
 
 ## 7. 实施记录
 
-- 已在实现前形成此计划；工具链版本、签名选择、测试和发布地址将在实际核实后补充，禁止预填通过结果。
+- 计划先行提交：`0c03d3a`。实现时选择固定目标反向代理而非 WebView 正向代理，原因是 407 回调及 WS 认证缺少稳定契约；明确补上 Cookie 跨端口防泄露边界。
+- 签名：一次生成 RSA-4096 PKCS#12，已存入仓库 Actions Secrets；本地私密备份位于用户 `.axiom/signing/android-release`，不提交。公开证书 SHA-256：`B9:3D:54:20:3F:14:F8:BE:FC:5B:75:22:F8:C4:30:16:3B:3B:99:DE:26:59:89:64:76:B2:F0:EC:E6:77:A2:AD`。
+- 本机无可用 Go/JDK/Android SDK，使用 GitHub Actions 实际构建和签名。固定 tsnet `v1.102.4`（核实时官方稳定版）与 Go `1.26.6`；Android Java 17、AGP 8.7.3、Gradle 8.9、compile/target SDK 35、minSdk 26、Build Tools 34.0.0、NDK 27.0.12077973。
+- 已运行现有 Node 全量测试：925 项，923 通过、2 跳过、0 失败。独立静态审查发现探测中重复点击导致 loading 不释放，已以探测期间禁用操作修复；续期加入前台轮询，固定目标 URL 复制为私有值。
+- Go 测试增加真实 RFC6455 握手响应检查及单帧回显（不是仅裸TCP回显）；仍不替代 WebView/真实 tailnet 端到端测试。Android 构建、模拟器和发布结果待实际运行后填入。
