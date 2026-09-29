@@ -15,6 +15,7 @@
 ## 安全边界
 
 - 节点密钥仅存于应用私有 `noBackupFilesDir`；禁 Android 备份，不在 APK 预置 auth key。
+- Tailscale 日志状态也明确指向同一私有目录，避免 Android 默认目录缺失导致启动崩溃。保留 Tailscale 默认的诊断日志上传行为及 tailnet 审计兼容性；静默输出回调不等于禁用诊断上传，使用时同时适用 Tailscale 的隐私政策。
 - 只有本应用的显式连接经 tsnet，手机其他应用流量不受控制；仍受底层网络或其他 VPN 的网络规则影响。
 - 本地代理绑定 `127.0.0.1` 随机端口，所有 HTTP/WS 先检查随机 HttpOnly 会话 Cookie、Host 与 Origin，再转为唯一配置目标。
 - 拒绝 loopback/LAN/公网目标、CONNECT、外部重定向；本地会话不发往上游。Tailscale IP 与完整 `.ts.net` 名称以外的自定义域名首版不支持。

@@ -115,4 +115,5 @@ WebView --应用级代理--> 127.0.0.1 临时端口
 - 已运行现有 Node 全量测试：925 项，923 通过、2 跳过、0 失败。独立静态审查发现探测中重复点击导致 loading 不释放，已以探测期间禁用操作修复；续期加入前台轮询，固定目标 URL 复制为私有值。
 - Go 测试增加真实 RFC6455 握手响应检查及单帧回显（不是仅裸TCP回显）；仍不替代 WebView/真实 tailnet 端到端测试。
 - Android 网络接口由 Application 注册 Java NetworkInterface 回调，避免 SDK30+ Go 枚举限制；状态轮询单次在途，换目标失败不会恢复旧工作台。凭据清除显式校验私有目录；登录按钮重新请求官方授权链接。
-- 首两轮 CI 的 Go race 测试、双架构 AAR 及生产 Java 编译通过；许可收集缺失依赖与旧测试API编译问题分别修复，Android 测试改用 AndroidX Test。完整 APK、模拟器和发布结果待实际运行后填入。
+- 首两轮 CI 的 Go race 测试、双架构 AAR 及生产 Java 编译通过；许可收集缺失依赖与旧测试API编译问题分别修复，Android 测试改用 AndroidX Test。
+- CI `36571028167` 已生成并签名 release APK、lint通过，但模拟器因 Tailscale `LogsDir` 默认目录查找 panic 崩溃；启动前显式设置 `TS_LOGS_DIR` 到私有节点目录。保留默认诊断上传及审计兼容性，不误称静默回调禁上传。模拟器及发布最终结果待实际运行后填入。

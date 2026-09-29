@@ -36,6 +36,9 @@ func Start(directory, target string) error {
  if state.server==nil{
   if err=os.MkdirAll(directory,0700);err!=nil{return errors.New("无法创建私有节点目录")}
   _=os.Chmod(directory,0700)
+  // LocalBackend's sockstat logger resolves LogsDir independently of Server.Dir.
+  // Android has no usable default HOME/cwd/tmp for that lookup.
+  if err=os.Setenv("TS_LOGS_DIR",directory);err!=nil{return errors.New("无法设置私有日志目录")}
   quiet:=func(string,...any){}
   s:=&tsnet.Server{Dir:directory,Hostname:"axiom-android",Ephemeral:false,Logf:quiet,UserLogf:quiet}
   if err=s.Start();err!=nil{return errors.New("Tailscale 网络启动失败："+err.Error())}
