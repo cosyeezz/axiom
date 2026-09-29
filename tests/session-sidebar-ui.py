@@ -144,13 +144,28 @@ with sync_playwright() as p:
     completed = cur.locator('.session-completed')
     assert completed.evaluate('(el) => el.getBoundingClientRect().height <= 0.45 * innerHeight + 48')
     assert completed.evaluate("(el) => { const cs = getComputedStyle(el, '::details-content'); return parseFloat(cs.maxHeight) <= 0.45 * innerHeight + 1 && cs.overflowY === 'auto'; }")
-    assert page.locator('#sessions').evaluate('(el) => el.scrollHeight > el.clientHeight')
+    # 折叠进行中后内容可能恰好放得下；验证滚动策略和已完成末行可达，不强求溢出。
+    assert page.locator('#sessions').evaluate('(el) => getComputedStyle(el).overflowY === "auto"')
+    last_completed = cur.locator('[data-session-id="done-39"]')
+    last_completed.scroll_into_view_if_needed()
+    box = last_completed.bounding_box()
+    group_box = completed.bounding_box()
+    assert box['y'] >= group_box['y'] and box['y'] + box['height'] <= group_box['y'] + group_box['height'] + 1
     # 折叠状态跨重绘保留
     page.evaluate('window.sidebarFixture((sessions) => sessions)')
     assert not cur.locator('[data-group="active"]').evaluate('(el) => el.open')
     assert cur.locator('.session-completed').evaluate('(el) => el.open')
     cur.locator('[data-group="active"] > .session-group-toggle').click()
     assert cur.locator('[data-session-id="run"]').is_visible()
+    # 展开大量进行中会话后必须实际可滚动，且末行落在列表可视区。
+    sessions = page.locator('#sessions')
+    assert sessions.evaluate('(el) => el.scrollHeight > el.clientHeight')
+    last_active = cur.locator('[data-session-id="active-39"]')
+    last_active.scroll_into_view_if_needed()
+    assert sessions.evaluate('(el) => el.scrollTop > 0')
+    box = last_active.bounding_box()
+    list_box = sessions.bounding_box()
+    assert box['y'] >= list_box['y'] and box['y'] + box['height'] <= list_box['y'] + list_box['height'] + 1
     # ── 复制会话 ──（回桌面视口：移动端选中会话会自动收起侧栏，副本行就不可见了）
     page.set_viewport_size({"width": 1440, "height": 960})
     page.wait_for_timeout(200)

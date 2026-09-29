@@ -46,7 +46,8 @@ try:
                 assert '上下文 5,000 / 128,000' in page.locator('#session-runtime').inner_text()
                 assert '≈ $0.023' in page.locator('#session-bill-total').inner_text()
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), width
-                assert not page.locator('#composer-action-help').count()
+                expect(page.locator('#composer-action-help')).not_to_be_visible()
+                expect(page.locator('#composer-help')).not_to_be_visible()
                 prompt.fill('长文本与换行\n' + '保留完整编辑能力，不遮挡按钮。' * 100)
                 page.wait_for_timeout(60)
                 assert 44 < prompt.bounding_box()['height'] <= 240

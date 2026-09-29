@@ -4,7 +4,7 @@ import { JSDOM } from 'jsdom';
 import { publicSource } from './helpers/public-source.js';
 const source = await publicSource('composer-controls');
 function fixture() {
-  const dom = new JSDOM(`<body><div class="context-bar"><div class="icon-group"><button type="button" id="add-context" popovertarget="context-menu"></button></div></div><button id="session-inspector-trigger"></button><form id="composer"><textarea id="prompt"></textarea><div class="actions"></div><button id="send"></button><button id="send-steer"></button><button id="send-followup"></button></form><div id="composer-status"><div id="session-runtime"></div><button id="session-billing-trigger"></button></div><button id="stop"></button><button id="force-stop"></button></body>`, { runScripts: 'outside-only' });
+  const dom = new JSDOM(`<body><div class="context-bar"><div class="icon-group"><button type="button" id="add-context" popovertarget="context-menu"></button></div></div><button id="session-inspector-trigger"></button><div id="composer-help" popover><p id="composer-action-help" hidden></p></div><form id="composer"><textarea id="prompt"></textarea><div class="actions"></div><button id="send"></button><button id="send-steer"></button><button id="send-followup"></button></form><div id="composer-status"><div id="session-runtime"></div><button id="session-billing-trigger"></button></div><button id="stop"></button><button id="force-stop"></button></body>`, { runScripts: 'outside-only' });
   const w = dom.window;
   w.matchMedia = () => ({ matches: w.innerWidth <= 1000 });
   const original = w.Element.prototype.matches;
@@ -49,7 +49,15 @@ test('one stable split button defaults to stop; menu clicks execute immediately'
     assert.deepEqual(submissions, ['send-steer', 'send-followup']);
     assert.equal(api.queue(), 'followUp');
     state.busy = false; api.refresh(); state.busy = true; api.refresh(); assert.equal(primary.textContent, 'stop');
-    assert.ok(primary.querySelector('svg')); assert.equal(w.document.querySelector('.composer-model-trigger span').textContent, 'claude · opus · high');
+    assert.ok(primary.querySelector('svg'));
+    assert.equal(w.document.querySelector('.composer-model-name').textContent, 'opus');
+    assert.equal(w.document.querySelector('.composer-model-effort').textContent, 'high');
+    assert.equal(w.document.querySelector('.composer-model-trigger').title, 'claude/opus · high');
+    assert.match(w.document.querySelector('.composer-model-trigger').getAttribute('aria-label'), /claude\/opus/);
+    assert.equal(w.document.getElementById('composer-action-help').hidden, false);
+    assert.match(w.document.getElementById('composer-action-help').textContent, /Enter 介入.*按钮执行 stop/);
+    state.busy = false; api.refresh();
+    assert.equal(w.document.getElementById('composer-action-help').hidden, true);
   } finally { dom.window.close(); }
 });
 test('unavailable menu actions cannot execute or submit an idle message', () => {

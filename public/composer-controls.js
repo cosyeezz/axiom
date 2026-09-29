@@ -1,4 +1,4 @@
-import { composerIconNode } from './icons.js';
+import { composerIconNode, actionIconNode } from './icons.js';
 import { createChoiceColumn } from './choice-column.js';
 import { createThinkingPicker } from './thinking-picker.js';
 
@@ -15,7 +15,7 @@ export function mountComposerControls({ state, providers, models, levels, select
   }
   const actions = document.querySelector('#composer .actions');
   const info = document.createElement('button'); info.type = 'button'; info.className = 'icon-button composer-session-info';
-  info.title = '主代理配置与会话账单'; info.setAttribute('aria-label', info.title); info.append(icon('info'));
+  info.title = '会话详情：上下文、主代理配置与账单'; info.setAttribute('aria-label', info.title); info.append(icon('info'));
   info.onclick = () => $('session-inspector-trigger').click();
   const tools = document.querySelector('.context-bar .icon-group') || document.createElement('div');
   tools.classList.add('composer-tools'); tools.id = 'composer-tools';
@@ -23,6 +23,24 @@ export function mountComposerControls({ state, providers, models, levels, select
   const more = document.createElement('button'); more.type = 'button'; more.className = 'icon-button composer-tools-trigger';
   more.title = '输入操作'; more.setAttribute('aria-label', '更多输入操作'); more.setAttribute('aria-expanded', 'false'); more.setAttribute('aria-controls', tools.id);
   more.append(document.createTextNode('…'));
+  const helpPanel = $('composer-help');
+  if (helpPanel) {
+    const help = document.createElement('button'); help.type = 'button'; help.className = 'icon-button composer-help-trigger';
+    help.title = '输入快捷键'; help.setAttribute('aria-label', help.title);
+    help.setAttribute('popovertarget', 'composer-help'); help.setAttribute('aria-controls', 'composer-help');
+    help.setAttribute('aria-expanded', 'false'); help.setAttribute('aria-haspopup', 'dialog');
+    help.append(actionIconNode('keyboard')); tools.append(help);
+    const placeHelp = () => {
+      const rect = help.getBoundingClientRect();
+      helpPanel.style.left = `${Math.max(8, Math.min(rect.right - helpPanel.offsetWidth, innerWidth - helpPanel.offsetWidth - 8))}px`;
+      helpPanel.style.top = `${Math.max(8, rect.top - helpPanel.offsetHeight - 8)}px`;
+    };
+    helpPanel.addEventListener('toggle', (event) => {
+      help.setAttribute('aria-expanded', String(event.newState === 'open'));
+      if (event.newState === 'open') placeHelp();
+    });
+    window.addEventListener('resize', () => { if (helpPanel.matches(':popover-open')) placeHelp(); });
+  }
   const trigger = document.createElement('button');
   trigger.type = 'button'; trigger.className = 'composer-model-trigger';
   trigger.setAttribute('aria-label', '选择供应商、模型和思考等级');
@@ -65,7 +83,7 @@ export function mountComposerControls({ state, providers, models, levels, select
     if (button && !button.hasAttribute('popovertarget') && tools.hasAttribute('popover')) close(tools, false);
   });
   tools.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
+    if (event.key !== 'Escape' || helpPanel?.matches(':popover-open')) return;
     event.preventDefault(); event.stopPropagation(); close(tools, false); more.focus();
   });
   syncToolsLayout();
@@ -159,12 +177,19 @@ export function mountComposerControls({ state, providers, models, levels, select
       if (tools.hasAttribute('popover')) close(tools, false);
     }
     identity = current.sessionId; previousBusy = current.busy;
-    const modelName = document.createElement('span'); modelName.textContent = current.model ? `${current.model.replace('/', ' · ')} · ${current.thinking || 'off'}` : '选择模型';
-    trigger.replaceChildren(modelName, icon('chevron'));
-    trigger.title = current.model ? `${current.model} · ${current.thinking || 'off'}` : '选择模型'; trigger.disabled = !current.available;
+    const modelName = document.createElement('span'); modelName.className = 'composer-model-name';
+    modelName.textContent = current.model ? current.model.slice(current.model.indexOf('/') + 1) : '选择模型';
+    const effort = document.createElement('span'); effort.className = 'composer-model-effort';
+    effort.textContent = current.model ? current.thinking || 'off' : '';
+    trigger.replaceChildren(modelName, effort, icon('chevron'));
+    trigger.title = current.model ? `${current.model} · ${current.thinking || 'off'}` : '选择模型';
+    trigger.setAttribute('aria-label', `选择供应商、模型和思考等级：${trigger.title}`);
+    trigger.disabled = !current.available;
     primary.replaceChildren(icon(current.busy ? operation : 'send'), document.createTextNode(current.busy ? operation : '发送')); primary.title = current.busy ? labels[operation] : '发送消息';
     const underlying = current.busy ? $(operation === 'stop' ? 'stop' : operation === 'force' ? 'force-stop' : operation === 'steer' ? 'send-steer' : 'send-followup') : $('send');
     primary.disabled = underlying.disabled || (current.busy && operation === 'stop' && current.safeStopping);
+    $('composer-action-help').textContent = current.busy ? `Enter ${operation === 'followUp' ? '排队发送' : '介入'} · 按钮执行 ${operation} · 双按 Esc 安全停止` : 'Enter 发送';
+    $('composer-action-help').hidden = !current.busy;
     primary.setAttribute('aria-label', primary.title);
     arrow.disabled = !current.busy;
     for (const item of menu.children) {

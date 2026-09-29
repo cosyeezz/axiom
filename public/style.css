@@ -152,20 +152,19 @@ aside {
   color: var(--ink);
 }
 /* 新会话是侧栏唯一主按钮（primary CTA），其余动作降为幽灵行，不再用三个描边按钮堆叠。 */
-#new { min-height: 36px; }
+#new { min-height: 36px; flex: 1; min-width: 0; }
 .sidebar-tools {
   display: flex;
   gap: 6px;
 }
 .sidebar-tool {
-  flex: 1;
-  min-width: 0;
+  flex: 0 0 36px;
+  width: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  min-height: 30px;
-  padding: 4px 8px;
+  min-height: 36px;
+  padding: 8px;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -542,7 +541,27 @@ h1 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.service-controls { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.service-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+/* Low-frequency controls share one labeled popover rather than permanent header chrome. */
+.utility-popover { position: fixed; inset: auto; margin: 0; width: 280px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow: auto; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font-size: 12px; box-shadow: none; }
+.utility-popover h2 { margin: 0 0 12px; font: 500 14px/1.5 var(--display); }
+.utility-popover label { display: block; color: var(--muted); margin-bottom: 4px; }
+.utility-popover p { color: var(--muted); margin: 12px 0 0; overflow-wrap: anywhere; }
+#view-options #conversation-font-scale { display: block; width: 100%; margin-bottom: 8px; }
+#view-options :is(button, a) { display: flex; align-items: center; gap: 12px; width: 100%; height: auto; min-height: 40px; padding: 8px; border: 0; border-radius: 8px; font-size: 14px; text-decoration: none; color: var(--body-ink); background: transparent; }
+#view-options :is(button, a):hover { background: var(--hover); }
+#view-options button[aria-pressed="true"] { color: var(--accent-ink); }
+#view-options #service-version { display: inline-block; padding: 8px; }
+#view-options :is(button, a, select):focus-visible, #view-options-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+#view-options-trigger { display: grid; place-items: center; min-height: 32px; border-radius: 8px; }
+.shortcut-list { margin: 0; display: grid; gap: 8px; }
+.shortcut-list dt { font-family: var(--mono); color: var(--ink); }
+.shortcut-list dd { margin: -4px 0 4px; color: var(--muted); }
+@media (pointer: coarse) {
+  #view-options :is(button, a, select), #view-options-trigger { min-height: 44px; }
+  #view-options-trigger, .sidebar-tool { width: 44px; flex-basis: 44px; }
+  .sidebar-tool, #new { min-height: 44px; }
+}
 /* 主题切换：显示「点一下会变成的那个主题」的图标，深色下是太阳、浅色下是月亮。 */
 #toggle-theme { display: grid; place-items: center; }
 #toggle-theme svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
@@ -561,6 +580,13 @@ h1 {
   background: none;
   border: 0;
   white-space: nowrap;
+  max-width: 180px;
+}
+#status[data-connected="true"] { width: 32px; min-height: 32px; justify-content: center; padding: 8px; }
+#status:not([data-connected="true"]) { white-space: normal; text-align: left; }
+#status::before { flex-shrink: 0; }
+@media (pointer: coarse) {
+  #status, #status[data-connected="true"] { min-width: 44px; min-height: 44px; }
 }
 #status:hover:not(:disabled) { background: var(--surface); }
 #service-dev {
@@ -1025,6 +1051,10 @@ button.danger:hover:not(:disabled) { background: light-dark(#a92f41, #c13e50); }
 .workspace-location { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .workspace-location #workspace-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .workspace-location .icon-button { width: 24px; height: 24px; min-height: 24px; border: 0; background: transparent; display: grid; place-items: center; }
+@media (hover: hover) and (pointer: fine) {
+  .workspace-location .icon-button { opacity: 0; }
+  .workspace-location:hover .icon-button, .workspace-location:focus-within .icon-button { opacity: 1; }
+}
 .workspace-location svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; flex-shrink: 0; }
 .image-attachments { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 8px; }
 .image-attachments > div { position: relative; flex-shrink: 0; }
@@ -1713,9 +1743,7 @@ textarea {
     padding: 0 12px;
     gap: 8px;
   }
-  #status {
-    display: none;
-  }
+  #status { max-width: 112px; }
   #output {
     padding: 24px 5%;
   }
@@ -1913,7 +1941,7 @@ summary:hover > .disclosure-action { color: var(--ink); }
 }
 /* Desktop conversation typography only; no page zoom or inherited composer/sidebar scale. */
 #conversation-font-scale { width: auto; min-height: 32px; padding: 4px 8px; border-radius: 8px; font-size: 12px; background: var(--surface); color: var(--body-ink); border: 1px solid var(--line); }
-@media (max-width: 700px) { #conversation-font-scale { display: none; } }
+/* The font scale remains desktop-only; the menu label makes that scope explicit. */
 @media (min-width: 701px) {
   :root[data-conversation-font-scale="125"] { --conversation-font-scale: 1.25; }
   :root[data-conversation-font-scale="150"] { --conversation-font-scale: 1.5; }

@@ -11,7 +11,21 @@
 - 交付检查：无独立 build 脚本，原生 ES 模块直接提供；语法检查、npm pack --dry-run 与 git diff --check 通过。测试自动重建的代码索引漂移不纳入提交；主 checkout 原有未跟踪资料不动。
 - 集成验证：合入上游 b659451（会话标题搜索）后全量仍为 975 通过、2 跳过、0 失败；输入区、模型级联、图标专项通过。会话搜索测试改用真实 ArrowDown 验证键盘 tooltip，并等待 :popover-open 后验证几何，避免 details 异步定位尚未完成时误判；连续两轮搜索浏览器验收和侧栏回归通过。未放宽 tooltip 可见性或菜单视口断言。
 - 最终同步验证：远端新增审阅修复与 Ask/Let 摘要后，再合入 ba9702d；保留全部上游源码、索引和开发记录。最新全量 1026 项、1024 通过、2 平台跳过、0 失败（89.7 秒，仓库外 compact-composer-integrated-latest.log）；五套浏览器回归（紧凑输入、模型级联、图标、会话搜索、侧栏）与语法/打包/diff 检查全通过。人工复核最新 320/1440px 深色截图，输入与最右操作同排，底栏状态可见。
-- 文件：public/index.html、app.js、composer-controls.js/css、tooltip.js；tests/app.test.js、composer-controls.test.js、tooltip.test.js、conversation-preview.mjs、composer-icons-ui.py、session-search-ui.py、新增 compact-composer-ui.py；README.md、devlog.md。
+- 最终界面整合（2026-09-29 10:50，本机 -07:00）：远端 fa913c8 新增按需详情，与输入布局出现七处冲突；逐块整合而非整文件覆盖。保留上游顶栏视图选项、连接状态、侧栏图标、独立模型名/思考等级、可键盘操作的用量详情和快捷键弹层；底栏仍显示真实缓存/上下文/估算账单，运行 Enter/按钮差异移入帮助，不重新常驻。帮助入口进入窄屏辅助菜单，Esc 先关帮助再关父菜单，工具菜单允许换行且限制视口。详情与底栏共用完整用量规则，不把缺失缓存写入字段补成零。README 同步去掉旧大工具区展开描述。
+- 最终复验：定向 27 项及隔离全量 1027 项（1025 通过、0 失败、2 平台跳过，71.4 秒）通过；七套 Chromium 回归通过（紧凑输入、模型级联、图标、按需详情/焦点、会话搜索、侧栏、问题/子任务/压缩）。新增帮助/详情测试保留键盘、触控尺寸和焦点断言，未知数据保持 —；人工复核最终 320/1440px 截图。搜索首轮误用了默认预览地址，等待 fixture 列表超时；改为管理生命周期的独立空闲端口预览后搜索与侧栏通过，未修改断言或用户服务。语法、打包和 diff 检查通过，截图/日志在仓库外 compact-*-artifacts、compact-browser-integrated 与 compact-composer-focus-full.log；仍未进行真机软键盘/读屏验收。
+- 文件：public/index.html、app.js、composer-controls.js/css、tooltip.js；tests/app.test.js、composer-controls.test.js、tooltip.test.js、conversation-preview.mjs、composer-icons-ui.py、session-search-ui.py、新增 compact-composer-ui.py、同步上游 focus-ui.test.js/focus-ui-browser.py；README.md、devlog.md。
+
+## 2026-09-29 主界面信息精简与按需详情
+
+- 原因与范围：常驻低频工具、快捷键说明和运行指标分散注意力；保留已有能力，不重做已折叠的输入配置，不隐藏问题确认、任务受阻、队列及安全停止状态。
+- 实施：顶栏更多集中字号、主题、源码、版本与原文对照；健康连接只留状态点，异常继续显示文字并可打开连接设置。输入底栏改为上下文摘要、短模型名及思考等级、主操作；上下文/缓存明细进会话详情，未知与 0、估算与累计用量明确区分。快捷键按需展开，运行中保留 Enter 与按钮动作差异。侧栏辅助操作图标化同排，工作空间辅助按钮桌面悬停/聚焦显示、触屏常显。
+- 设计：沿用 Linear surface/ink/accent/line、4/8/12px 间距、8px 弹层圆角与无阴影层次；补图标名称/提示、44px 新触控入口，320px 底栏压缩间距而不增加常驻行。
+- 实际修正：浏览器发现全局 Escape 阻止原生弹层关闭，增加 utility-popover 守卫，关闭详情后焦点回到可见入口；连接提示使用稳定文字，避免状态变更期间悬浮提示仍显示旧连接状态。
+- 验证：定向 Node 41 项通过；独立静态审查未发现阻断，但不代替浏览器验证。新增 focus-ui-browser.py 覆盖五视口双主题、Tab/Shift+Tab/Enter/Space/Escape、点外关闭与焦点返回、详情/主题/字号/原文、长模型名、触控尺寸和断线；现有 ui-polish-browser.py 的问题确认、子任务和压缩全部通过。与改前同夹具相比，1440px 顶栏工具宽 297→72px、输入区域高约185.6→160px；320px 输入区域180→168px。产物在 F:/worktrees/artifacts/focus-ui-*。
+- 全量环境诊断：首次 npm test 15 项失败，来源是 SDK 从用户 HOME 及临时目录祖先加载 .agents/skills，污染技能断言及4096窗口压缩预算。仅隔离 HOME/USERPROFILE 仍有14项失败；测试子进程同时隔离 HOME/USERPROFILE/TMP/TEMP 到仓库外空目录后，代表集61项及全量970项（968通过、2平台跳过）全部通过，不修改用户配置、不放宽断言。无真实模型调用或用户历史访问；未验收读屏、移动真机或原生桌面壳。
+- 集成复验：合入 origin/master b659451（会话标题搜索、Todo 两级详情）后，Escape 冲突同时保留 defaultPrevented 与 utility-popover 守卫，开发记录两边保留。全量976项、974通过、2平台跳过、0失败；focus-ui、ui-polish、Todo、会话搜索和侧栏五套浏览器验证通过。侧栏旧断言要求折叠进行中时外层必须溢出，但精简后测得 scrollHeight=clientHeight=741，内容可放下；改验已完成末行可达，并在展开44条进行中后验证外层真实滚动及末行可达，不放宽滚动功能要求。node --check、npm pack --dry-run（本次界面文件已入包）、git diff --check通过。
+- 后续同步：再次合入远端143f2ca代码审查修复，仅devlog头部冲突，完整保留双方记录；隔离全量1021项、1019通过、2平台跳过、0失败。随后合入ba9702d工具摘要指令名展示，仍仅devlog冲突，源码自动合并；最终全量1025项、1023通过、2平台跳过、0失败（focus-ui-latest-full.log）。两次同步后focus-ui与ui-polish五视口双主题均重跑通过；语法/打包检查通过。
+- 文件：public/app.js、index.html、style.css、composer-controls.js/.css、icons.js；tests/app.test.js、composer-controls.test.js、session-sidebar-ui.py、新增 focus-ui.test.js 与 focus-ui-browser.py；README.md、本记录。测试自动重建的 INDEX 漂移不纳入本改动。
 
 ## 2026-09-29 会话工具摘要显示 Ask／Let 指令名
 
