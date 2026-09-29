@@ -124,7 +124,10 @@ const compactionSegments = new Map();
 // 后台压缩的可观测状态：条幅与详情弹窗共用这一份（最后一次 agent.compaction.status 的载荷）。
 // compactionRunPick 记住用户在弹窗里手选的历史 run，不被新事件抽走。
 let compactionStatus = null, compactionRunPick = null;
-let images = [], imageLoading = false;
+let images = [];
+// Stable slot identities survive shallow view copies; pending state never enters the wire protocol.
+const readingImages = new WeakSet();
+const imageLoading = () => images.some((image) => readingImages.has(image));
 let completionVersion = 0, completionToken, completionEntries = [], completionIndex = 0;
 let selectedSkill = "", contextFiles = [], pickingWorkspace = false, currentCwd = "";
 try {
@@ -707,11 +710,11 @@ function updateComposer() {
   $("composer-skill").value = selectedSkill;
   if (unavailable) closeCompletion();
   $("prompt").required = !selectedSkill && !images.length && !contextFiles.length;
-  $("add-image").disabled = unavailable || imageLoading;
+  $("add-image").disabled = unavailable || images.length >= 4;
   $("add-context").disabled = unavailable;
   renderContextChips();
   for (const id of ["send", "send-steer", "send-followup"])
-    $(id).disabled = unavailable || !sessionId || sessionMissing || imageLoading || (!$("prompt").value.trim() && !selectedSkill && !images.length && !contextFiles.length);
+    $(id).disabled = unavailable || !sessionId || sessionMissing || imageLoading() || (!$("prompt").value.trim() && !selectedSkill && !images.length && !contextFiles.length);
   $("send-steer").hidden = $("send-followup").hidden = !busy;
   $("stop").disabled = $("force-stop").disabled = !busy || unavailable || sessionMissing;
   // 已经在等安全点了就只留强停：再点一次安全停止没任何效果，反而像没生效。
@@ -3475,7 +3478,7 @@ $("composer").onsubmit = async (e) => {
   const files = [...contextFiles], skill = selectedSkill, sentImages = [...images];
   const body = [draft.trim(), files.length ? `工作空间引用（按需读取；文件夹不代表已读取全部内容）：\n${files.map((file) => `- ${file.directory ? "文件夹" : "文件"}：${JSON.stringify(file.path)}`).join("\n")}` : ""].filter(Boolean).join("\n\n");
   const text = skill ? `/skill:${skill} ${body}` : body;
-  if ((!draft.trim() && !skill && !sentImages.length && !files.length) || imageLoading || (changing && !configuringSessions.has(sessionId)) || sessionMissing || !connected) return;
+  if ((!draft.trim() && !skill && !sentImages.length && !files.length) || imageLoading() || (changing && !configuringSessions.has(sessionId)) || sessionMissing || !connected) return;
   closeCompletion();
   if (sentImages.length > 4) return error(new Error("每条消息最多发送 4 张图片，请移除多余附件后分批发送"));
   const wasBusy = busy;
@@ -3608,16 +3611,23 @@ function renderImages() {
   $("image-attachments").hidden = !images.length;
   $("image-attachments").replaceChildren(...images.map((image, index) => {
     const tile = document.createElement("div");
-    const preview = document.createElement("img");
-    preview.src = `data:${image.mimeType};base64,${image.data}`;
-    preview.alt = `待发送图片 ${index + 1}`;
-    enableImagePreview(preview);
+    const loading = readingImages.has(image);
+    const preview = document.createElement(loading ? "span" : "img");
+    if (loading) {
+      preview.textContent = "读取中…";
+      preview.setAttribute("role", "status");
+    } else {
+      preview.src = `data:${image.mimeType};base64,${image.data}`;
+      preview.alt = `待发送图片 ${index + 1}`;
+      enableImagePreview(preview);
+    }
     const remove = document.createElement("button");
     remove.type = "button";
     remove.innerHTML = actionIcon("close");
     remove.setAttribute("aria-label", `移除图片 ${index + 1}`);
-    remove.disabled = imageLoading;
+    remove.disabled = imageLoading();
     remove.onclick = () => {
+      if (imageLoading()) return;
       $("prompt").value = $("prompt").value.replace(/\[image(\d+)\]/g, (marker, n) =>
         Number(n) === index + 1 ? "" : Number(n) > index + 1 ? `[image${Number(n) - 1}]` : marker);
       images = images.filter((item) => item !== image);
@@ -3629,52 +3639,117 @@ function renderImages() {
     return tile;
   }));
 }
-async function addImages(files, target = sessionId) {
-  if (files.length > 4) throw new Error("每条消息最多添加 4 张图片");
-  const added = [];
-  for (const file of files) {
-    if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type)) throw new Error("仅支持 PNG、JPEG、GIF、WebP 图片");
-    if (!file.size || file.size > 5 * 1024 * 1024) throw new Error("每张图片必须大于 0 且不超过 5 MiB");
-    const dataUrl = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(new Error("图片读取失败，请重试"));
-      reader.onabort = () => reject(new Error("图片读取已取消"));
-      reader.readAsDataURL(file);
-    });
-    added.push({ type: "image", mimeType: file.type, data: dataUrl.slice(dataUrl.indexOf(",") + 1) });
-  }
-  const view = target === sessionId ? null : (views.get(target) || {});
-  const current = view ? (view.images || []) : images;
-  if (current.length + added.length > 4) throw new Error("每条消息最多添加 4 张图片");
-  if (view) { view.images = [...current, ...added]; views.set(target, view); }
-  else { images = [...current, ...added]; renderImages(); region("输入操作", updateComposer); }
+function readImage(file, signal) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    let done = false, timer;
+    const finish = (error, result) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      signal.removeEventListener("abort", cancel);
+      error ? reject(error) : resolve(result);
+    };
+    const cancel = () => {
+      finish(new Error("图片读取已取消"));
+      reader.abort();
+    };
+    timer = setTimeout(() => {
+      finish(new Error("图片读取超时，请重试"));
+      reader.abort();
+    }, 30000);
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      if (typeof dataUrl !== "string" || !/^data:[^,]*;base64,.+$/s.test(dataUrl))
+        return finish(new Error("图片读取结果无效，请重试"));
+      finish(null, dataUrl.slice(dataUrl.indexOf(",") + 1));
+    };
+    reader.onerror = () => finish(new Error("图片读取失败，请重试"));
+    reader.onabort = () => finish(new Error("图片读取已取消"));
+    signal.addEventListener("abort", cancel, { once: true });
+    if (signal.aborted) return cancel();
+    try { reader.readAsDataURL(file); }
+    catch { finish(new Error("图片读取失败，请重试")); }
+  });
 }
 async function loadImages(files) {
-  if (imageLoading || withdrawing || changing || !connected) return;
   if (!files.length) return;
-  const target = sessionId, input = $("prompt"), start = input.selectionStart;
-  const selected = input.value.slice(start, input.selectionEnd);
-  const markers = files.map((_, index) => `[image${images.length + index + 1}]`).join(" ");
+  if (withdrawing || changing || !connected || sessionMissing)
+    return error(new Error("当前正在切换会话、撤回消息或连接不可用，请稍后重新粘贴图片"));
+  if (images.length + files.length > 4) return error(new Error("每条消息最多添加 4 张图片（含读取中的图片）"));
+  for (const file of files) {
+    if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type)) return error(new Error("仅支持 PNG、JPEG、GIF、WebP 图片"));
+    if (!file.size || file.size > 5 * 1024 * 1024) return error(new Error("每张图片必须大于 0 且不超过 5 MiB"));
+  }
+  const input = $("prompt"), selected = input.value.slice(input.selectionStart, input.selectionEnd);
+  // A replaced image reference follows its slot, not a number that another failure may renumber.
+  const selectedParts = selected.split(/(\[image\d+\])/g).map((part) => {
+    const match = /^\[image(\d+)\]$/.exec(part);
+    return match && images[Number(match[1]) - 1] || part;
+  });
+  const controller = new AbortController();
+  const slots = files.map((file) => ({ type: "image", mimeType: file.type, data: "" }));
+  const markers = slots.map((_, index) => `[image${images.length + index + 1}]`).join(" ");
+  for (const slot of slots) readingImages.add(slot);
+  images = [...images, ...slots]; // Reserve before yielding: numbering and capacity follow paste order.
   input.setRangeText(markers, input.selectionStart, input.selectionEnd, "end");
   input.dispatchEvent(new Event("input", { bubbles: true }));
-  imageLoading = true;
   renderImages(); region("输入操作", updateComposer);
-  try { await addImages(files, target); }
-  catch (e) {
-    // ponytail: only roll back an unchanged insertion; edited markers remain ordinary draft text.
-    const rollback = (text) => text.slice(start, start + markers.length) === markers
-      ? text.slice(0, start) + selected + text.slice(start + markers.length) : text;
-    if (sessionId === target) {
-      input.value = rollback(input.value);
+  try {
+    const data = await Promise.all(files.map((file) => readImage(file, controller.signal)));
+    slots.forEach((slot, index) => { slot.data = data[index]; });
+  } catch (e) {
+    controller.abort(); // Release every sibling reader before freeing this batch's capacity.
+    // Locate by slot identity in the current draft and its latest cached copies, including migration.
+    // Never recreate a deleted view or apply an old callback to a new draft.
+    const rollback = (text, current) => {
+      const indices = slots.map((slot) => current.indexOf(slot) + 1).filter((n) => n > 0);
+      const block = indices.map((n) => `[image${n}]`).join(" ");
+      const position = block ? text.indexOf(block) : -1;
+      const unique = position >= 0 && text.indexOf(block, position + block.length) < 0;
+      const edits = [];
+      const remaining = current.filter((slot) => !slots.includes(slot));
+      const restored = selectedParts.map((part) => typeof part === "string" ? part
+        : remaining.includes(part) ? `[image${remaining.indexOf(part) + 1}]` : "").join("");
+      if (unique) edits.push({ start: position, end: position + block.length, value: restored });
+      for (const match of text.matchAll(/\[image(\d+)\]/g)) {
+        if (unique && match.index >= position && match.index < position + block.length) continue;
+        const n = Number(match[1]);
+        if (n > current.length) continue;
+        const value = indices.includes(n) ? "" : `[image${n - indices.filter((i) => i < n).length}]`;
+        if (value !== match[0]) edits.push({ start: match.index, end: match.index + match[0].length, value });
+      }
+      edits.sort((a, b) => a.start - b.start);
+      const cursor = (offset) => {
+        let shift = 0;
+        for (const edit of edits) {
+          if (offset < edit.start) break;
+          if (offset <= edit.end) return edit.start + shift + edit.value.length;
+          shift += edit.value.length - (edit.end - edit.start);
+        }
+        return offset + shift;
+      };
+      let result = text;
+      for (const edit of [...edits].reverse()) result = result.slice(0, edit.start) + edit.value + result.slice(edit.end);
+      return { text: result, cursor };
+    };
+    if (images.some((slot) => slots.includes(slot))) {
+      const result = rollback(input.value, images), start = result.cursor(input.selectionStart), end = result.cursor(input.selectionEnd);
+      input.value = result.text;
+      input.setSelectionRange(start, end);
+      images = images.filter((slot) => !slots.includes(slot));
       resizePrompt();
-    } else {
-      const view = views.get(target);
-      if (view) view.draft = rollback(view.draft || "");
+    }
+    for (const view of views.values()) {
+      if (!view.images?.some((slot) => slots.includes(slot))) continue;
+      view.draft = rollback(view.draft || "", view.images).text;
+      view.images = view.images.filter((slot) => !slots.includes(slot));
     }
     error(e);
+  } finally {
+    for (const slot of slots) readingImages.delete(slot);
+    renderImages(); region("输入操作", updateComposer);
   }
-  finally { imageLoading = false; renderImages(); region("输入操作", updateComposer); }
 }
 $("add-image").onclick = () => $("image-files").click();
 $("image-files").onchange = async () => {
@@ -3718,7 +3793,8 @@ async function copySelection(e) {
 document.addEventListener("pointerup", copySelection);
 document.addEventListener("keyup", copySelection);
 $("prompt").onpaste = (e) => {
-  const files = [...(e.clipboardData?.items || [])].filter((item) => item.kind === "file" && item.type.startsWith("image/")).map((item) => item.getAsFile()).filter(Boolean);
+  let files = [...(e.clipboardData?.items || [])].filter((item) => item.kind === "file" && item.type.startsWith("image/")).map((item) => item.getAsFile()).filter(Boolean);
+  if (!files.length) files = [...(e.clipboardData?.files || [])].filter((file) => file.type.startsWith("image/"));
   if (!files.length) return;
   e.preventDefault();
   void loadImages(files);
@@ -3759,7 +3835,7 @@ $("prompt").onkeydown = (e) => {
 };
 let escapeTimer, withdrawing, recallArmedUntil = 0;
 async function withdrawQueue(recall = false) {
-  if (withdrawing || imageLoading || !connected || changing) return;
+  if (withdrawing || imageLoading() || !connected || changing) return;
   const target = sessionId;
   withdrawing = true;
   try {

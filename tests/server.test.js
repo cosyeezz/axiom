@@ -67,6 +67,10 @@ test("local connection without token, foreign origin rejection, recovery and shu
         first.headers.get("content-security-policy"),
         /frame-ancestors 'none'/,
       );
+      const csp = first.headers.get("content-security-policy");
+      assert.match(csp, /(?:^|; )worker-src 'self' blob:(?:;|$)/);
+      assert.match(csp, /^default-src 'self';/);
+      assert.doesNotMatch(csp, /(?:script-src|default-src)[^;]*blob:/);
       const etag = first.headers.get("etag");
       assert(etag);
       assert((await first.text()).length > 0);

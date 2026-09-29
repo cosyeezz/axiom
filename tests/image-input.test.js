@@ -9,6 +9,7 @@ import { command, promptImages, assertPromptImages } from "../src/protocol.js";
 import { queueStateOf, withdrawQueue } from "../src/pi.js";
 import { Sessions } from "../src/sessions.js";
 import { createServerApp } from "../src/server.js";
+import { GOAL_PREPARE_PROMPT } from "../src/todo-prompts.js";
 
 const pngBase64 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]).toString("base64");
 const jpegBase64 = Buffer.from([0xff, 0xd8, 0xff, 0xe0]).toString("base64");
@@ -83,6 +84,60 @@ test("不支持图片的模型在回执前拒绝，支持时透传 prompt 与队
     await sessions?.close();
     await rm(root, { recursive: true, force: true });
   }
+});
+
+async function planningFixture(t, model = "test/vision") {
+  const calls = [];
+  let finish;
+  const factory = async () => ({
+    config: () => ({ model }), subscribe: () => () => {},
+    prompt(text, options) { calls.push({ text, options }); return new Promise((resolve) => { finish = resolve; }); },
+    queue: () => ({ steering: [], followUp: [] }), requestSafeStop() {},
+    abort: async () => finish?.(), result: () => "", dispose: async () => {},
+  });
+  factory.catalog = () => [{ key: "test/vision", input: ["text", "image"] }, { key: "test/text-only", input: ["text"] }];
+  const sessions = new Sessions(factory);
+  t.after(() => sessions.close());
+  const id = await sessions.create();
+  return { sessions, id, calls, item: sessions.get(id) };
+}
+
+for (const direct of [false, true]) for (const text of ["", "看图"]) {
+  test(`规划图片透传：${direct ? "/goal 附图" : "先进入规划再附图"}，${text ? "图文" : "纯图"}`, async (t) => {
+    const { sessions, id, calls, item } = await planningFixture(t);
+    if (!direct) {
+      await sessions.prompt(id, "/goal");
+      assert.equal(calls.length, 0);
+      assert.equal(item.todo.requiresPlan, true);
+    }
+    const images = [image()];
+    await sessions.prompt(id, direct ? `/goal ${text}` : text, undefined, images);
+    assert.deepEqual(calls, [{ text: `${GOAL_PREPARE_PROMPT}\n\n${text}`, options: { images } }]);
+  });
+}
+
+test("/goal 图片先校验：无视觉能力或无效图片不改变Todo也不启动", async (t) => {
+  const { sessions, id, calls, item } = await planningFixture(t, "test/text-only");
+  const before = item.todo.snapshot();
+  await assert.rejects(sessions.prompt(id, "/goal 看图", undefined, [image()]), /不支持图片输入/);
+  await assert.rejects(sessions.prompt(id, "/goal", undefined, [image(jpegBase64)]), /格式不符/);
+  assert.deepEqual(item.todo.snapshot(), before);
+  assert.equal(item.status, "idle");
+  assert.deepEqual(calls, []);
+});
+
+test("已有未完成Todo的 /goal 附图明确拒绝而非吞图，无图保留原行为", async (t) => {
+  const { sessions, id, calls, item } = await planningFixture(t);
+  item.todo.questions = { confirmTodo: async () => ({ approved: true }) };
+  await item.todo.update({ baseVersion: 0, ops: [{ op: "add", level: 1, id: "a", title: "交付", description: "范围", acceptance: [{ criterionId: "c", text: "核对", check: "review" }] }] });
+  await sessions.todoAction(id, "pause");
+  const before = item.todo.snapshot(), runId = item.runId;
+  for (const text of ["/goal", "/goal 新要求"])
+    await assert.rejects(sessions.prompt(id, text, undefined, [image()]), /图片尚未发送/);
+  await sessions.prompt(id, "/goal");
+  assert.deepEqual(item.todo.snapshot(), before);
+  assert.equal(item.runId, runId);
+  assert.deepEqual(calls, []);
 });
 
 test("队列展示结构：同文本不碰撞，文本与图片按位置平行，纯图片文本为空", () => {
