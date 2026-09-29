@@ -1689,10 +1689,20 @@ function toolState(agentId, data) {
   if (data.args) tool.args = data.args;
   if (data.result || data.partialResult) tool.result = data.result || data.partialResult;
   else if (data.content) tool.result = data;
-  const args = tool.args || {};
-  const detail = args.path || args.file_path || args.command || args.query || (Array.isArray(args.queries) ? args.queries.join(" · ") : "") || args.url || (Array.isArray(args.urls) ? args.urls.join(" · ") : "") || (Array.isArray(args.tasks) ? args.tasks.map((task) => task?.task).join(" · ") : "") || args.taskId || args.tool || args.search || "";
   if (data.toolName) tool.name = data.toolName;
+  renderToolSummary(tool);
+  const state = data.phase === "end" ? (data.isError ? "failed" : "done") : data.phase === "history" ? "stopped" : "running";
+  setActivity(tool.node, { running: "", done: "", failed: "FAILED", stopped: "" }[state], state);
+  renderToolTiming(tool);
+  renderToolDetail(tool);
+  scrollLatest();
+}
+function renderToolSummary(tool) {
+  const args = tool.args || {};
   const name = (tool.name || "").replace(/^functions\./, "");
+  const instructionTool = name === "ask_axiom" || name === "let_axiom";
+  const detail = instructionTool ? (typeof args.name === "string" ? args.name : "")
+    : args.path || args.file_path || args.command || args.query || (Array.isArray(args.queries) ? args.queries.join(" · ") : "") || args.url || (Array.isArray(args.urls) ? args.urls.join(" · ") : "") || (Array.isArray(args.tasks) ? args.tasks.map((task) => task?.task).join(" · ") : "") || args.taskId || args.tool || args.search || "";
   const icon = ({ __proto__: null, read: "read", edit: "edit", write: "write", bash: "bash", powershell: "bash", pwsh: "bash", web_search: "search", source_check: "search", fetch_content: "web", get_search_content: "web", delegate: "agents", read_result: "agents", append: "agents" })[name] || "tool";
   tool.node.dataset.toolIcon = icon;
   tool.node.querySelector(".activity-label").textContent = name || "tool";
@@ -1701,13 +1711,8 @@ function toolState(agentId, data) {
   const fullDetail = typeof detail === "string" ? detail.replace(/\s+/g, " ").trim() : "";
   const cwd = currentCwd.replaceAll("\\", "/").replace(/\/$/, "");
   const normalized = fullDetail.replaceAll("\\", "/");
-  target.textContent = (args.path || args.file_path) && cwd && normalized.startsWith(`${cwd}/`) ? normalized.slice(cwd.length + 1) : fullDetail;
+  target.textContent = !instructionTool && (args.path || args.file_path) && cwd && normalized.startsWith(`${cwd}/`) ? normalized.slice(cwd.length + 1) : fullDetail;
   target.title = fullDetail;
-  const state = data.phase === "end" ? (data.isError ? "failed" : "done") : data.phase === "history" ? "stopped" : "running";
-  setActivity(tool.node, { running: "", done: "", failed: "FAILED", stopped: "" }[state], state);
-  renderToolTiming(tool);
-  renderToolDetail(tool);
-  scrollLatest();
 }
 function renderToolTiming(tool) {
   const status = tool.node.querySelector(".tool-status");
@@ -2265,7 +2270,12 @@ function mountCompactionSegment(id, payload) {
     for (const call of Array.isArray(message.content) ? message.content : [])
       if (call.type === "toolCall") {
         const known = toolItems.get(`${agentId}:${call.id}`);
-        if (known) { known.args ||= call.arguments; item.tools.append(known.container); }
+        if (known) {
+          known.args ||= call.arguments;
+          known.name ||= call.name;
+          renderToolSummary(known);
+          item.tools.append(known.container);
+        }
         else toolState(agentId, { phase: "history", toolCallId: call.id, toolName: call.name, args: call.arguments });
       }
     live.delete(agentId);
@@ -3146,7 +3156,13 @@ function placeSnapshotMessage(ctx, index, { agentId, message, entryId, compacted
         const existing = toolItems.get(`${agentId}:${call.id}`);
         // The result may have been loaded first at the window boundary. Rehome its
         // existing detail node rather than leaving the delegate anchor at the tail.
-        if (existing) { existing.args ||= call.arguments; existing.item = item; item.tools.append(existing.container); }
+        if (existing) {
+          existing.args ||= call.arguments;
+          existing.name ||= call.name;
+          renderToolSummary(existing);
+          existing.item = item;
+          item.tools.append(existing.container);
+        }
         else toolState(agentId, { phase: "history", toolCallId: call.id, toolName: call.name, args: call.arguments });
       }
     live.delete(agentId);

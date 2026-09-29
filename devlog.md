@@ -9,8 +9,19 @@
 - 验证：定向 Node 41 项通过；独立静态审查未发现阻断，但不代替浏览器验证。新增 focus-ui-browser.py 覆盖五视口双主题、Tab/Shift+Tab/Enter/Space/Escape、点外关闭与焦点返回、详情/主题/字号/原文、长模型名、触控尺寸和断线；现有 ui-polish-browser.py 的问题确认、子任务和压缩全部通过。与改前同夹具相比，1440px 顶栏工具宽 297→72px、输入区域高约185.6→160px；320px 输入区域180→168px。产物在 F:/worktrees/artifacts/focus-ui-*。
 - 全量环境诊断：首次 npm test 15 项失败，来源是 SDK 从用户 HOME 及临时目录祖先加载 .agents/skills，污染技能断言及4096窗口压缩预算。仅隔离 HOME/USERPROFILE 仍有14项失败；测试子进程同时隔离 HOME/USERPROFILE/TMP/TEMP 到仓库外空目录后，代表集61项及全量970项（968通过、2平台跳过）全部通过，不修改用户配置、不放宽断言。无真实模型调用或用户历史访问；未验收读屏、移动真机或原生桌面壳。
 - 集成复验：合入 origin/master b659451（会话标题搜索、Todo 两级详情）后，Escape 冲突同时保留 defaultPrevented 与 utility-popover 守卫，开发记录两边保留。全量976项、974通过、2平台跳过、0失败；focus-ui、ui-polish、Todo、会话搜索和侧栏五套浏览器验证通过。侧栏旧断言要求折叠进行中时外层必须溢出，但精简后测得 scrollHeight=clientHeight=741，内容可放下；改验已完成末行可达，并在展开44条进行中后验证外层真实滚动及末行可达，不放宽滚动功能要求。node --check、npm pack --dry-run（本次界面文件已入包）、git diff --check通过。
-- 后续同步：再次合入远端143f2ca代码审查修复，仅devlog头部冲突，完整保留双方记录；隔离全量1021项、1019通过、2平台跳过、0失败。focus-ui与ui-polish五视口双主题重跑通过；语法/打包检查通过。
+- 后续同步：再次合入远端143f2ca代码审查修复，仅devlog头部冲突，完整保留双方记录；隔离全量1021项、1019通过、2平台跳过、0失败。随后合入ba9702d工具摘要指令名展示，仍仅devlog冲突，源码自动合并；最终全量1025项、1023通过、2平台跳过、0失败（focus-ui-latest-full.log）。两次同步后focus-ui与ui-polish五视口双主题均重跑通过；语法/打包检查通过。
 - 文件：public/app.js、index.html、style.css、composer-controls.js/.css、icons.js；tests/app.test.js、composer-controls.test.js、session-sidebar-ui.py、新增 focus-ui.test.js 与 focus-ui-browser.py；README.md、本记录。测试自动重建的 INDEX 漂移不纳入本改动。
+
+## 2026-09-29 会话工具摘要显示 Ask／Let 指令名
+
+- 时间：2026-09-29 10:12（本机 -07:00）。原因：`ask_axiom`／`let_axiom` 原先只显示工具名，需展开参数才知道咨询或执行哪个指令。
+- 实施：共享工具摘要仅对这两个工具（含既有 `functions.` 前缀）读取顶层字符串 `name`；空白、缺失或异常类型不显示对象名，嵌套 `arguments.name` 不冒充指令名。沿用 `textContent`、完整 title 与原有截断，不解析 HTML，不改执行协议。
+- 历史边界：抽出纯摘要刷新，在普通历史与压缩段子代理记录后补参数时复用，不覆盖已完成/失败状态。实时流、执行事件和历史快照共用展示；参数流尚未完成前仍保持既有 calling 状态。
+- 设计：复用 Linear 风格现有 `--muted` / `--mono`、8px 列间距与 `.tool-target` 布局，不新增样式或颜色；手机沿用工具名下方的摘要行，不强行挤在一行。
+- 验证：新增 4 项真实页面处理器回归，覆盖正式/前缀工具名、异常 name、HTML 字面量、结果不带参数、正常与结果先到历史、实时快照及压缩子代理补参；定向 21 项通过。隔离 HOME/USERPROFILE/临时目录/Pi 目录的全量 979 项：977 通过、2 项平台跳过、0 失败。没有独立 build 脚本，`node --check public/app.js`、`npm pack --dry-run` 与 `git diff --check` 通过。测试自动重建的无关 INDEX 漂移已恢复，不纳入提交。
+- 浏览器：真实页面模块/CSS 的 Chromium 内存路由 fixture，1280/768/390/320 四宽度、深浅主题、长名省略与完整 title、键盘展开/收起、实时开始/完成均通过，无 pageerror；沿用手机第二行摘要，无横向溢出。截图与脚本在仓库外 `F:/artifacts/tool-instruction-label/`。未启动真实服务、未读取用户会话、未调用模型；无后台 fixture 的设置状态提示不在此次验收范围。
+- 集成：工作分支提交后合入最新 `origin/master`（b659451），仅 devlog 头部冲突，保留双方完整条目；源码自动合并。整合后全量 979 项（977 通过、2 平台跳过、0 失败）与 Chromium 全部检查再次通过。推送前远端又加入代码审阅修复（143f2ca），重新合入并再次全量：1024 项、1022 通过、2 平台跳过、0 失败；浏览器检查再次通过，日志 `integration-tests-2.log`。
+- 文件：`public/app.js`、`tests/message-activity.test.js`、`README.md`、`devlog.md`。
 
 ## 2026-09-29 代码审阅逐项修复
 

@@ -14,6 +14,8 @@
 
 主代理基础直接工具为 `read/bash/edit/write/question/ask_axiom/let_axiom`，选中的插件/MCP 另按能力配置装配。先 `ask_axiom({name})` 读取已知契约，再 `let_axiom({name,arguments})` 调用，无参数传 `{}`。主会话登记 `task.start/read/append/cancel`、`todo.read/update`、`memory.query` 和 `guide.task/todo/git`；不提供名称搜索或列表。详细规程按需读取，常驻提示词仅保留能力入口、关键授权/暂停/验收边界与输出协议。正式规程由版本库维护，后台记忆整理不能覆盖。
 
+会话中的 `ask_axiom`／`let_axiom` 工具标题会在工具名后显示调用参数 `name`（例如 `ask_axiom guide.git`、`let_axiom task.start`），无需展开参数即可识别咨询或执行的指令。实时调用与历史回放使用相同展示逻辑；缺失、空白或非字符串 `name` 时只显示原工具名，不改变执行状态与折叠行为。
+
 指令执行器不自行管理任务生命周期；业务指令复用 Tasks、Todo 与既有确认流程。Goal 准备阶段只放行 question 及 Todo 契约/规程；工具验收仍拒绝 ask/let 自证。原 `delegate/read_result/append/cancel_task/todo_read/todo_update/history_read/obs_recall` 不再由 Axiom 注册为模型工具，不新增 `history.read`。旧历史展示和内部归档模块保留。验证：`node --test tests/instructions.test.js tests/business-instructions.test.js tests/goal-pi.test.js`，使用本地假供应商，无付费模型调用。
 
 ### 长期记忆与通用子代理
