@@ -47,15 +47,15 @@ public final class MainActivity extends Activity {
     private Button connect, login;
     private WebView web;
     private String localOrigin="", authUrl="", currentTarget="";
-    private boolean busy=false, foreground=false, destroyed=false, loading=false;
-    private int generation=0;
+    private boolean busy=false, loading=false, statusInFlight=false;
+    private volatile boolean foreground=false, destroyed=false;
+    private volatile int generation=0;
     private ValueCallback<Uri[]> fileCallback;
     private SharedPreferences preferences;
     private final Runnable poll=new Runnable(){public void run(){
         if(!foreground||destroyed)return;
         if(!busy) refreshStatus();
-        NETWORK.execute(()->Bridge.renew());
-        handler.postDelayed(this,2500);
+        else schedulePoll();
     }};
 
     @Override public void onCreate(Bundle state){
@@ -100,21 +100,41 @@ public final class MainActivity extends Activity {
     private void startConnection(){
         if(busy)return;
         final String target=address.getText().toString().trim();
+        final int ticket=++generation;currentTarget="";authUrl="";
+        login.setVisibility(View.GONE);
         if(target.isEmpty()){status.setText("请输入电脑的 Tailscale 地址。");return;}
-        final int ticket=++generation;setBusy(true);status.setText("正在启动应用内网络…");
+        setBusy(true);status.setText("正在启动应用内网络…");
         NETWORK.execute(()->{
             try{
                 Bridge.start(getNoBackupFilesDir().getAbsolutePath()+"/tailscale",target);
                 JSONObject result=new JSONObject(Bridge.status());
                 handler.post(()->{if(stale(ticket))return;setBusy(false);currentTarget=target;preferences.edit().putString("target",target).apply();renderStatus(result);});
-            }catch(Exception e){handler.post(()->{if(stale(ticket))return;setBusy(false);status.setText("连接失败："+safeMessage(e));});}
+            }catch(Exception e){handler.post(()->{if(stale(ticket))return;setBusy(false);currentTarget="";status.setText("连接失败："+safeMessage(e));});}
         });
     }
     private boolean stale(int ticket){return destroyed||ticket!=generation;}
     private String safeMessage(Exception e){String s=e.getMessage();return s==null?"请稍后重试":s;}
+    private void schedulePoll(){
+        handler.removeCallbacks(poll);
+        if(foreground&&!destroyed)handler.postDelayed(poll,2500);
+    }
     private void refreshStatus(){
+        // Only one queued/running query. Slow LocalAPI must not starve user actions.
+        if(statusInFlight)return;
+        statusInFlight=true;
         final int ticket=generation;
-        NETWORK.execute(()->{try{JSONObject result=new JSONObject(Bridge.status());handler.post(()->{if(!stale(ticket))renderStatus(result);});}catch(Exception ignored){}});
+        NETWORK.execute(()->{
+            JSONObject result=null;
+            try{
+                if(foreground&&!stale(ticket)){Bridge.renew();result=new JSONObject(Bridge.status());}
+            }catch(Exception ignored){}
+            final JSONObject snapshot=result;
+            handler.post(()->{
+                statusInFlight=false;
+                if(foreground&&!stale(ticket)&&!busy&&snapshot!=null)renderStatus(snapshot);
+                schedulePoll();
+            });
+        });
     }
     private void renderStatus(JSONObject s){
         authUrl=s.optString("authUrl","");
@@ -187,7 +207,7 @@ public final class MainActivity extends Activity {
         NETWORK.execute(()->{try{Bridge.reset(getNoBackupFilesDir().getAbsolutePath()+"/tailscale");handler.post(()->{if(destroyed)return;setBusy(false);authUrl="";login.setVisibility(View.GONE);status.setText("已清除本机登录。点击连接后重新授权。");});}catch(Exception e){handler.post(()->{if(destroyed)return;setBusy(false);status.setText(safeMessage(e));});}});
     }
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==10&&fileCallback!=null){Uri[] files=null;if(result==RESULT_OK&&data!=null){if(data.getClipData()!=null){int n=Math.min(data.getClipData().getItemCount(),4);files=new Uri[n];for(int i=0;i<n;i++)files[i]=data.getClipData().getItemAt(i).getUri();}else if(data.getData()!=null)files=new Uri[]{data.getData()};}fileCallback.onReceiveValue(files);fileCallback=null;}}
-    @Override protected void onResume(){super.onResume();foreground=true;if(web!=null)web.onResume();NETWORK.execute(()->Bridge.renew());handler.removeCallbacks(poll);handler.post(poll);}
+    @Override protected void onResume(){super.onResume();foreground=true;if(web!=null)web.onResume();handler.removeCallbacks(poll);handler.post(poll);}
     @Override protected void onPause(){foreground=false;handler.removeCallbacks(poll);if(web!=null)web.onPause();super.onPause();}
     @Override public void onBackPressed(){if(web!=null){if(web.canGoBack())web.goBack();else leaveWorkspace();}else super.onBackPressed();}
     @Override protected void onDestroy(){destroyed=true;foreground=false;++generation;handler.removeCallbacksAndMessages(null);destroyWeb();NETWORK.execute(()->Bridge.disconnect());super.onDestroy();}

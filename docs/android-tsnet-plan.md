@@ -59,7 +59,7 @@ WebView --应用级代理--> 127.0.0.1 临时端口
 
 - 导出 gomobile 可绑定的最小接口：启动、状态、登录入口、设置目标、代理地址及停止。
 - 节点状态持久化；启动后查询状态，未登录时显式发起交互式登录，不把“正在连接”误报为在线。
-- 实现受限 HTTP 正向代理和 WebSocket 隧道；关闭时清理监听器、传输连接和 tsnet。
+- 实现受限 HTTP 固定目标反向代理和 WebSocket 隧道；关闭时清理监听器、传输连接和 tsnet。
 - 编写可离线运行的单元测试：目标校验、代理认证/拒绝路径、Host/Origin 保持、HTTP、升级连接、关闭行为。测试不得要求真实私网凭据。
 
 ### 阶段 C：Android 客户端
@@ -113,4 +113,6 @@ WebView --应用级代理--> 127.0.0.1 临时端口
 - 签名：一次生成 RSA-4096 PKCS#12，已存入仓库 Actions Secrets；本地私密备份位于用户 `.axiom/signing/android-release`，不提交。公开证书 SHA-256：`B9:3D:54:20:3F:14:F8:BE:FC:5B:75:22:F8:C4:30:16:3B:3B:99:DE:26:59:89:64:76:B2:F0:EC:E6:77:A2:AD`。
 - 本机无可用 Go/JDK/Android SDK，使用 GitHub Actions 实际构建和签名。固定 tsnet `v1.102.4`（核实时官方稳定版）与 Go `1.26.6`；Android Java 17、AGP 8.7.3、Gradle 8.9、compile/target SDK 35、minSdk 26、Build Tools 34.0.0、NDK 27.0.12077973。
 - 已运行现有 Node 全量测试：925 项，923 通过、2 跳过、0 失败。独立静态审查发现探测中重复点击导致 loading 不释放，已以探测期间禁用操作修复；续期加入前台轮询，固定目标 URL 复制为私有值。
-- Go 测试增加真实 RFC6455 握手响应检查及单帧回显（不是仅裸TCP回显）；仍不替代 WebView/真实 tailnet 端到端测试。Android 构建、模拟器和发布结果待实际运行后填入。
+- Go 测试增加真实 RFC6455 握手响应检查及单帧回显（不是仅裸TCP回显）；仍不替代 WebView/真实 tailnet 端到端测试。
+- Android 网络接口由 Application 注册 Java NetworkInterface 回调，避免 SDK30+ Go 枚举限制；状态轮询单次在途，换目标失败不会恢复旧工作台。凭据清除显式校验私有目录；登录按钮重新请求官方授权链接。
+- 首两轮 CI 的 Go race 测试、双架构 AAR 及生产 Java 编译通过；许可收集缺失依赖与旧测试API编译问题分别修复，Android 测试改用 AndroidX Test。完整 APK、模拟器和发布结果待实际运行后填入。

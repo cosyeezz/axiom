@@ -19,7 +19,7 @@ Android 独立客户端，内嵌 Tailscale tsnet；无需独立 Tailscale App，
 
 ## 验证范围
 
-发布流水线要求：Go 离线代理测试（含认证拒绝、目标限制、HTTP 上传与 WebSocket Upgrade 隧道）、Android APK 构建/签名/静态检查、模拟器连接页与 JNI 桥接拒绝非法地址测试。
+发布流水线要求：Go 离线代理测试（含认证拒绝、目标限制、HTTP 上传与 WebSocket Upgrade 隧道）、Android APK 构建/签名/静态检查、模拟器连接页与 JNI 桥接拒绝非法地址、未授权节点获取官方登录链接测试（不代替用户登录）。
 
 **这些不替代真实 tailnet 端到端验收。尚未代替用户完成本人账号授权、真机聊天/图片上传/锁屏恢复；请先在可信测试环境试用。** 未测试项目不标为通过。
 

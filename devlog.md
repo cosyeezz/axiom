@@ -10,7 +10,10 @@
 - 首轮 CI `36569024545`：Go race 测试通过，arm64/x86_64 AAR 实编成功；第三方许可收集因 gomobile 新增模块未完整下载失败，已补下载步骤，不将该失败写成 APK 已生成。导入实际解析的 go.mod/go.sum 锁定依赖。
 - Android 适配：Application 在 tsnet 启动前注册 Java NetworkInterface getter，避免 SDK30+ 禁用 Go 接口枚举；非 nil AltAddrs 防回退。新增模拟器不登录的官方 AuthURL 获取测试，验证 DNS/TLS/启动路径但不访问用户 tailnet。
 - 审查修正：清凭据显式接收私有节点目录，避免未成功 Start 时假成功；登录按钮总调用 StartLoginInteractive 更新过期URL；Activity限制 singleTask。节点目录清理与接口解析补自动测试。
-- 验证尚在进行；不将代码静态检查等同实际 APK 构建或本人账号登录验收。涉及 `android/`、Android 实施计划、README 和本记录。
+- 第二轮 CI `36570096276`：Go、双架构 AAR、许可收集与生产 Java 编译通过；旧 `android.test` 在 SDK35 不可用导致测试APK编译失败。改用仅测试依赖 AndroidX Test 1.6.x/JUnit4，生产壳仍使用平台 Activity；补缓存和格式化源码构建证据。提交 `2d0dd72`，第三轮验证中。
+- 交付前生命周期审查：状态轮询改为单次在途、完成后延迟调度，并在执行前检查前台/代次，避免慢 LocalAPI 堵塞登录/清除；每次新地址尝试先清空旧目标，防新地址失败后自动打开旧工作台。涉及 `MainActivity.java`，回归验证进行中。
+- 再次同步 `origin/master` 仍为 `4a42624`；现有 Node 全量回归 925 项，923 通过、2 跳过、0 失败。保留主 checkout 原有资料及自动索引差异，不纳入本任务提交。
+- 验证尚在进行；不将代码静态检查等同实际 APK 构建或本人账号登录验收。涉及 `android/`、`.github/workflows/android.yml`、Android 实施计划、README 和本记录。
 
 ## 2026-09-29 Android 内嵌 Tailscale：计划先行
 
