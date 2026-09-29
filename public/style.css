@@ -191,9 +191,17 @@ aside {
 }
 .search-wrap input {
   min-height: 36px;
-  padding: 6px 10px 6px 30px;
+  padding: 8px 40px 8px 32px;
   background: var(--canvas);
 }
+.search-wrap input::-webkit-search-cancel-button { display: none; }
+#clear-session-search { position: absolute; right: 4px; top: 4px; width: 32px; min-height: 32px; padding: 0; border: 0; background: transparent; color: var(--muted); }
+#clear-session-search:hover { background: var(--raised); color: var(--ink); }
+#clear-session-search[hidden] { display: none; }
+.session-search-help, .session-search-status { margin: -4px 4px 0; font-size: 12px; line-height: 1.4; color: var(--muted); }
+.session-search-status { color: var(--body-ink); }
+.session-search-reset { white-space: normal; margin: 8px 4px; font-size: 12px; }
+#sessions.is-searching .session-completed::details-content { max-height: none; overflow: visible; }
 @media (pointer: coarse) {
   #new, .search-wrap input { min-height: 40px; }
   .sidebar-tool { min-height: 40px; }
@@ -375,25 +383,32 @@ summary {
 .workspace-new-btn svg, .workspace-config-btn svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .workspace-content { padding-left: 10px; }
 @media (pointer: coarse) { .workspace-new-btn, .workspace-config-btn { opacity: 1; width: 28px; height: 28px; } }
-/* 会话行：桌面 32px 紧凑行；悬停必须用 --hover —— 侧栏底就是 --surface，再用 surface 会完全看不见。 */
+/* 标题优先：短标题紧凑、长标题最多两行；菜单预留固定宽度，出现时不挤动文字。 */
 .session-row { display: flex; flex-wrap: wrap; align-items: center; min-width: 0; padding-right: 2px; border-radius: 6px; position: relative; }
 .session-row > .session-item { flex-basis: 100%; padding-right: 34px; }
 .session-row:hover, .session-row:focus-within { background: var(--hover); }
 .session-options { width: 100%; }
 .session-more { position: absolute; top: 2px; right: 2px; display: grid; place-items: center; width: 28px; min-height: 28px; cursor: pointer; list-style: none; color: var(--muted); border-radius: 6px; font-size: 16px; opacity: 0; }
-.session-row:hover .session-more, .session-more:focus-visible { opacity: 1; }
+.session-row:hover .session-more, .session-row:focus-within .session-more, .session-options[open] > .session-more { opacity: 1; }
 .session-more::marker { content: ""; }
 .session-more::-webkit-details-marker { display: none; }
 .session-more:hover { background: var(--raised); color: var(--ink); }
 .session-more:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.session-actions { position: fixed; inset: auto; margin: 0; width: 192px; max-width: calc(100vw - 16px); padding: 4px; background: var(--raised); color: var(--ink); border: 1px solid var(--line-strong); border-radius: 8px; z-index: 20; box-shadow: 0 8px 24px var(--shadow-mid); }
+.session-actions { display: flex; flex-direction: column; position: fixed; inset: auto; margin: 0; width: 192px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow-y: auto; padding: 4px; background: var(--raised); color: var(--ink); border: 1px solid var(--line-strong); border-radius: 8px; z-index: 20; box-shadow: 0 8px 24px var(--shadow-mid); }
 .session-options[open] > .session-more { background: var(--raised); color: var(--ink); }
 .session-options:not([open]) > .session-actions { display: none; }
-.session-actions button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 8px; background: transparent; border-color: transparent; color: var(--ink); text-align: left; font-weight: 400; }
+.session-actions button { flex-shrink: 0; display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 8px; background: transparent; border-color: transparent; color: var(--ink); text-align: left; font-weight: 400; }
 .session-actions button:hover:not(:disabled) { background: var(--surface); }
 .session-copy-arrow { margin-left: auto; font-size: 20px; line-height: 1; }
 .session-copy-menu[hidden] { display: none; }
-@media (pointer: coarse) { .session-more, .session-actions button { min-height: 44px; } .session-more { width: 44px; } .session-item { min-height: 40px; } }
+.session-menu-title { flex-shrink: 0; order: -1; margin: 0 0 4px; padding: 8px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; max-height: 144px; overflow-y: auto; }
+@media (pointer: coarse), (hover: none) {
+  .session-more, .session-actions button { min-height: 44px; }
+  .session-more { width: 44px; top: 0; opacity: 1; }
+  .session-row > .session-item { min-height: 44px; padding-right: 48px; }
+  #search { min-height: 48px; padding-right: 48px; }
+  #clear-session-search { width: 44px; min-height: 44px; top: 2px; right: 2px; }
+}
 .session-actions svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .session-item {
   min-width: 0;
@@ -406,21 +421,28 @@ summary {
   color: var(--body-ink);
   background: transparent;
   border: 0;
-  min-height: 32px;
-  padding: 4px 8px 4px 10px;
+  min-height: 36px;
+  padding: 8px;
+  font-size: 14px;
+  line-height: 1.5;
   font-weight: 400;
   border-radius: 6px;
 }
+.session-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .session-item:hover:not(:disabled) {
   background: transparent;
 }
-.session-item span {
+.session-item .session-row-title {
   flex: 1;
   min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
+.session-row-title mark { color: var(--accent-ink); background: transparent; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 /* 正在看的会话：淡强调底 + 左侧 2px 实键 + 文字提重（成熟侧栏的选中语汇）。 */
 .session-row:has(.session-item[aria-current="page"]) {
   background: color-mix(in srgb, var(--accent) 10%, transparent);

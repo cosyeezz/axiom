@@ -8,7 +8,31 @@
 - 实际修正：浏览器发现全局 Escape 阻止原生弹层关闭，增加 utility-popover 守卫，关闭详情后焦点回到可见入口；连接提示使用稳定文字，避免状态变更期间悬浮提示仍显示旧连接状态。
 - 验证：定向 Node 41 项通过；独立静态审查未发现阻断，但不代替浏览器验证。新增 focus-ui-browser.py 覆盖五视口双主题、Tab/Shift+Tab/Enter/Space/Escape、点外关闭与焦点返回、详情/主题/字号/原文、长模型名、触控尺寸和断线；现有 ui-polish-browser.py 的问题确认、子任务和压缩全部通过。与改前同夹具相比，1440px 顶栏工具宽 297→72px、输入区域高约185.6→160px；320px 输入区域180→168px。产物在 F:/worktrees/artifacts/focus-ui-*。
 - 全量环境诊断：首次 npm test 15 项失败，来源是 SDK 从用户 HOME 及临时目录祖先加载 .agents/skills，污染技能断言及4096窗口压缩预算。仅隔离 HOME/USERPROFILE 仍有14项失败；测试子进程同时隔离 HOME/USERPROFILE/TMP/TEMP 到仓库外空目录后，代表集61项及全量970项（968通过、2平台跳过）全部通过，不修改用户配置、不放宽断言。无真实模型调用或用户历史访问；未验收读屏、移动真机或原生桌面壳。
-- 文件：public/app.js、index.html、style.css、composer-controls.js/.css、icons.js；tests/app.test.js、composer-controls.test.js、新增 focus-ui.test.js 与 focus-ui-browser.py；README.md、本记录。测试自动重建的 INDEX 漂移不纳入本改动。
+- 集成复验：合入 origin/master b659451（会话标题搜索、Todo 两级详情）后，Escape 冲突同时保留 defaultPrevented 与 utility-popover 守卫，开发记录两边保留。全量976项、974通过、2平台跳过、0失败；focus-ui、ui-polish、Todo、会话搜索和侧栏五套浏览器验证通过。侧栏旧断言要求折叠进行中时外层必须溢出，但精简后测得 scrollHeight=clientHeight=741，内容可放下；改验已完成末行可达，并在展开44条进行中后验证外层真实滚动及末行可达，不放宽滚动功能要求。node --check、npm pack --dry-run（本次界面文件已入包）、git diff --check通过。
+- 文件：public/app.js、index.html、style.css、composer-controls.js/.css、icons.js；tests/app.test.js、composer-controls.test.js、session-sidebar-ui.py、新增 focus-ui.test.js 与 focus-ui-browser.py；README.md、本记录。测试自动重建的 INDEX 漂移不纳入本改动。
+
+## 2026-09-29 会话标题列表体验优化
+
+- 时间：2026-09-29 10:04（本机 -07:00）。用户确认对象是左侧会话标题列表，目标为提高查找、长标题阅读及键盘/触屏操作体验；不扩展正文搜索、数据结构、分类或排序规则。
+- 调研：参考 ChatGPT 官方历史查找说明、Claude 重命名/删除入口与 Linear 标题即时过滤/Esc 恢复，链接见 README。仅借鉴交互原则；ChatGPT 官网直抓有 403、Claude 部分步骤由官方搜索收录返回，不声称登录实测。主代理定向核查 Linear 原文与本项目搜索/折叠代码。
+- 实施：搜索临时展开匹配工作空间及状态组，包括已完成；匹配词以安全文本节点高亮，提供结果计数、清空及零结果引导。搜索渲染和异步 toggle 不写回浏览折叠偏好，退出恢复折叠与滚动；修正 README 原有“仅当前空间搜索/固定创建时间排序”与实际代码不符的描述。
+- 阅读与操作：沿用 Linear 的 --surface/--raised/--accent(#5e6ad2)、系统字体、14px/1.5 和 8px 内边距；长标题最多两行，完整文本可在焦点提示与菜单顶部读取。触屏三点常显且至少 44px，固定预留宽度；Ctrl/⌘ K 聚焦搜索，方向键/Home/End 只移动焦点，Enter 打开，Esc 按搜索/菜单层级处理，不顺带触发队列撤回/安全停止。重绘保留会话按钮及三点触发器焦点。
+- 审查补修：独立只读审查发现长标题菜单在触屏横屏超高及 İ 小写转换使高亮下标偏移，已增加菜单视口约束/滚动与原始 UTF-16 偏移映射。浏览器额外覆盖 667×375 横屏，底部删除入口可滚动到达；三点的视觉提示缩为“会话操作”，无障碍名称仍包含完整标题。
+- 验证：定向 app 测试 5 项通过；隔离测试子进程的 HOME/USERPROFILE/TEMP/TMP/TMPDIR/Pi 目录后全量 975 项、973 通过、2 平台条件跳过、0 失败。隔离只避免用户技能目录污染 fixture，不改用户配置；首次测试本身全绿但打印尾日志遇 Windows GBK 编码错误，已直接核查完整日志，不误记为测试失败。
+- 浏览器：两套 Chromium 测试通过；原分组/状态/复制菜单回归保留，新增 1440/768/390/320px、深浅主题、触摸模拟与横屏验收，覆盖折叠偏好刷新保持、Unicode/HTML 字面匹配、焦点重绘、Enter 打开、两行截断与完整标题。截图已人工核查，产物位于仓库外 F:/worktrees/artifacts/session-list-ux。旧测试依赖已隐藏的 mobile-expand，改用本次新增搜索快捷入口打开侧栏。未声称真机、软键盘或屏幕阅读器验收。
+- 集成验证：获取并合入最新 origin/master（859270e，已是最新基线）后再次全量 975 项、973 通过、2 跳过、0 失败（70.7 秒）；两套浏览器回归在最终交互改动后重跑通过。node --check public/app.js 与 git diff --check 通过。
+- 文件：public/app.js、public/index.html、public/style.css、tests/app.test.js、tests/session-sidebar-ui.py、新增 tests/session-search-ui.py、README.md、devlog.md。全量测试自动生成的代码索引漂移不纳入本次提交。
+
+## 2026-09-29 Todo 卡片默认两级展示与独立详情
+
+- 时间：2026-09-29 09:40（本机 -07:00）。原因：二级步骤原先嵌在一级详情里，必须逐项展开，阅读和定位成本高。默认直接显示两级任务树，点击各级任务仅开关自身详情，说明、摘要、阻塞与验收信息不再挤占任务行。
+- 设计：沿用 Linear token 和共享 SVG，用缩进与细连接线区分步骤，一级标题适度强调；四状态保留形状及可访问名称，图标对齐多行标题首行，窄屏保留至少 44px 点击高度。整张清单仍可主动收起，并尊重已保存的明确收起偏好。
+- 边界：不改后端协议及任务状态语义。每页最多 20 项（仍受响应预算约束），步骤摘要并发最多 4；详情按需读取，收起卸载行，异步请求按会话和代次隔离。新版有界广播不能证明旧尾页仍有效，因此刷新时使旧尾页失效，保留“显示更多”重新加载入口；子步骤全完成仍提示等待目标验收。
+- 审查修复：刷新不移动已正确排序的 DOM，必要重排恢复焦点，删除焦点步骤时回到父目标，避免复用节点却仍丢失键盘焦点。新增独立两级详情、快速开关、状态更新/增删排序、尾页失效、并发与重试、分页及跨会话/收起隔离回归。
+- 验证：定向 Todo 测试 21 项通过；最终全量 975 项，973 通过、0 失败、2 项平台条件跳过。最初常规 npm test 的 15 项失败来自用户 .agents/skills 及临时目录祖先扫描污染技能/压缩 fixture；仅对测试子进程隔离 HOME/USERPROFILE/TEMP/TMP/TMPDIR 和 Pi 目录后全绿，不修改用户配置或放宽断言。日志位于仓库外 artifacts/todo-card-tests-isolated.log。
+- 浏览器：真实模块/CSS 的 Chromium 内存路由 fixture，1440/768/480/390/320 五宽度及深浅主题通过，覆盖首行对齐、换行无溢出、独立详情、状态/焦点刷新、键盘、暂停/恢复、200% 缩放与高对比；截图和指标位于 artifacts/todo-card-after。不启动用户服务或调用模型，不宣称真机或屏幕阅读器验收。
+- 交付检查：项目没有独立 build 脚本，原生 ES 模块直接提供；node --check public/todo.js、npm pack --dry-run（Todo JS/CSS 与 README 入包）及 git diff --check 通过。全量测试自动生成的代码索引时间/行号漂移不纳入本次提交。
+- 文件：public/todo.js、public/todo.css、tests/todo-ui.test.js、tests/todo-unified-ui.test.js、tests/todo-ui-browser.py、README.md、devlog.md。
 
 ## 2026-09-29 统一模型思考等级机制与选择组件
 

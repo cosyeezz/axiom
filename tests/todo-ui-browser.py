@@ -21,14 +21,18 @@ main { max-width:860px; margin:auto; }</style></head><body><main>
 <script type="module">
 import { createTodoUI } from '/todo.js';
 const items = [
-  { id:'running', status:'running', title:'修复 Todo 图标与任务标题对齐', summary:'检查桌面、移动端和键盘操作。' },
-  { id:'pending', status:'pending', title:'核对多行标题：中文和 English words 应正常换行，图标始终对齐标题首行。'.repeat(3) },
-  { id:'blocked', status:'blocked', title:'确认受阻任务', blocker:'等待验收，不把颜色作为唯一状态信息。' },
-  { id:'done', status:'done', title:'完成成熟实现调研' },
-  { id:'long', status:'pending', title:'VeryLongUnbrokenIdentifier'.repeat(15) },
+  { id:'running', status:'running', title:'优化任务清单的两级展示', summary:'检查桌面、移动端和键盘操作。' },
+  { id:'next', status:'pending', title:'同步文档并交付验证结果' },
 ].map(item => ({ ...item, level:1 }));
+const children = window.children = [
+  { id:'research', status:'done', title:'确认交互与布局方案' },
+  { id:'implementation', status:'running', title:'默认展示两级任务，点击查看详情', summary:'将步骤列表与目标详情分离。' },
+  { id:'pending', status:'pending', title:'核对多行标题：中文和 English words 应正常换行，图标始终对齐标题首行。' },
+  { id:'blocked', status:'blocked', title:'确认受阻任务', blocker:'等待验收，不把颜色作为唯一状态信息。' },
+  { id:'long', status:'pending', title:'VeryLongUnbrokenIdentifier'.repeat(15) },
+].map(item => ({...item,level:2,parentId:'running'}));
 window.fixture = { listId:'fixture-list', version:1, header:{paused:false},
-  counts:{targets:{total:5,done:1,pending:2,running:1,blocked:1}},
+  counts:{targets:{total:2,done:0,pending:1,running:1,blocked:0}},
   items, coverage:{complete:true}, hasMore:false, nextOffset:null };
 window.requests = [];
 window.ui = createTodoUI({root:document.querySelector('#todo-dock'), request:async(method, params) => {
@@ -39,11 +43,13 @@ window.ui = createTodoUI({root:document.querySelector('#todo-dock'), request:asy
       header:{paused:params.action==='pause'}, cancelled:params.action==='cancel_prepare'};
     return structuredClone(fixture);
   }
-  if (params.section === 'verification') return {verification:[
-    {criterionId:'aligned',result:'首行图标偏移小于1px',refs:[{toolCallId:'browser-check'}]}]};
-  if (params.itemId) return {item:{...items.find(i=>i.id===params.itemId),
-    description:'保持已确认的目标要求。',acceptance:[{criterionId:'aligned',text:'首行对齐',check:'tool'}]},
-    items:[{id:'child',level:2,status:'done',title:'已完成的子步骤'}],hasMore:false};
+  if (params.section === 'verification') return {version:fixture.version,verification:params.itemId==='running' ? [
+    {criterionId:'aligned',result:'首行图标偏移小于1px',refs:[{toolCallId:'browser-check'}]}] : []};
+  if (params.itemId) return {version:fixture.version,
+    item:{...[...items,...children].find(i=>i.id===params.itemId),
+      description:params.itemId==='running'?'保持已确认的目标要求。':'当前步骤的独立说明。',
+      acceptance:params.itemId==='running'?[{criterionId:'aligned',text:'首行对齐',check:'tool'}]:[]},
+    items:params.itemId==='running'?children:[],hasMore:false,nextOffset:null};
   return structuredClone(fixture);
 }});
 window.reset = () => ui.show('fixture', fixture);
@@ -76,15 +82,19 @@ with sync_playwright() as p:
     '''), 'Fixture must inherit the real application font, not a browser serif default'
     toggle = page.locator('.todo-toggle')
     action = page.locator('.todo-header > .todo-action')
-    expect(toggle).to_have_attribute('aria-expanded', 'false')
+    expect(toggle).to_have_attribute('aria-expanded', 'true')
     expect(toggle).to_have_attribute('aria-controls', 'todo-list')
     expect(toggle.locator('[data-icon="checklist"]')).to_have_count(1)
+    expect(page.locator('.todo-child')).to_have_count(5)
+    expect(page.locator('.todo-detail')).to_have_count(0)
+    assert page.evaluate('requests.every(r=>!r.params.detail&&!r.params.section)'), 'Default tree loads summaries only'
+    toggle.click()
     expect(page.locator('.todo-row')).to_have_count(0)
-    assert page.evaluate('requests.length') == 0, 'Collapsed list must not fetch rows'
     toggle.focus()
     page.keyboard.press('Enter')
     expect(toggle).to_have_attribute('aria-expanded', 'true')
-    expect(page.locator('.todo-list > .todo-row')).to_have_count(5)
+    expect(page.locator('.todo-list > .todo-row')).to_have_count(2)
+    expect(page.locator('.todo-child')).to_have_count(5)
     expect(toggle).to_be_focused()
     assert page.evaluate('localStorage.getItem("axiom.todoExpanded")') == '1'
     metrics = []
@@ -109,7 +119,7 @@ with sync_playwright() as p:
                 assert metric['height'] >= (44 if width <= 480 else 40), metric
                 assert metric['wraps'] == 'normal', metric
                 assert metric['svgWidth'] == 16, metric
-            assert measurements[1]['lines'] > 1, 'Multiline case must actually wrap'
+            assert next(m for m in measurements if m['title'].startswith('VeryLongUnbroken'))['lines'] > 1, 'Multiline case must actually wrap'
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
             for selector in ('.todo-list', '.todo-toggle', '.todo-header'):
                 assert page.locator(selector).evaluate('(e)=>e.scrollWidth <= e.clientWidth+1'), (width, selector)
@@ -143,7 +153,8 @@ with sync_playwright() as p:
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
             page.screenshot(path=str(OUT / f'todo-collapsed-{width}-{theme}.png'))
             toggle.click()
-            expect(page.locator('.todo-list > .todo-row')).to_have_count(5)
+            expect(page.locator('.todo-list > .todo-row')).to_have_count(2)
+            expect(page.locator('.todo-child')).to_have_count(5)
 
     # Detail/child/evidence UI and disclosure keyboard behavior use actual request parameters.
     title = page.locator('.todo-item-title').first
@@ -151,12 +162,29 @@ with sync_playwright() as p:
     page.keyboard.press('Space')
     expect(title).to_have_attribute('aria-expanded', 'true')
     expect(page.locator('.todo-evidence')).to_have_text('工具依据：browser-check')
-    expect(page.locator('.todo-child .todo-item-title')).to_have_accessible_name('已完成的子步骤，已完成')
-    expect(page.get_by_text('步骤已完成，待目标验收', exact=True)).to_be_visible()
+    expect(page.locator('.todo-child')).to_have_count(5)
+    expect(page.locator('[data-id="research"] .todo-item-title')).to_have_accessible_name('确认交互与布局方案，已完成')
     assert page.evaluate("requests.some(r=>r.params.itemId==='running'&&r.params.detail===true)")
     page.keyboard.press('Enter')
     expect(title).to_have_attribute('aria-expanded', 'false')
     expect(page.locator('.todo-detail')).to_have_count(0)
+    expect(page.locator('.todo-child')).to_have_count(5)
+    child_title = page.locator('[data-id="implementation"] .todo-item-title')
+    child_title.focus()
+    page.keyboard.press('Enter')
+    expect(page.locator('.todo-child .todo-detail')).to_contain_text('将步骤列表与目标详情分离。')
+    expect(page.locator('.todo-child .todo-detail')).to_contain_text('当前步骤的独立说明。')
+    expect(page.locator('.todo-list > .todo-row > .todo-detail')).to_have_count(0)
+    page.keyboard.press('Space')
+    expect(page.locator('.todo-detail')).to_have_count(0)
+
+    # Real Chromium must retain focused child buttons during unchanged and reordered reads.
+    page.evaluate('fixture.version++; reset()')
+    expect(child_title).to_be_focused()
+    page.evaluate('children.reverse(); fixture.version++; reset()')
+    expect(child_title).to_be_focused()
+    page.evaluate('children.reverse(); fixture.version++; reset()')
+    expect(child_title).to_be_focused()
 
     # Delta updates replace both the icon and accessible status, not just the visible title.
     page.evaluate('''() => { fixture.version++; fixture.items[0].status='done';
@@ -192,7 +220,8 @@ with sync_playwright() as p:
     page.reload()
     page.wait_for_function('window.ready')
     expect(toggle).to_have_attribute('aria-expanded', 'true')
-    expect(page.locator('.todo-list > .todo-row')).to_have_count(5)
+    expect(page.locator('.todo-list > .todo-row')).to_have_count(2)
+    expect(page.locator('.todo-child')).to_have_count(5)
     page.evaluate("window.dispatchEvent(new StorageEvent('storage',{key:'axiom.todoExpanded',newValue:'0'}))")
     expect(toggle).to_have_attribute('aria-expanded', 'false')
     expect(page.locator('.todo-row')).to_have_count(0)
@@ -204,7 +233,8 @@ with sync_playwright() as p:
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
     page.screenshot(path=str(OUT / 'todo-collapsed-zoom-200.png'))
     toggle.click()
-    expect(page.locator('.todo-list > .todo-row')).to_have_count(5)
+    expect(page.locator('.todo-list > .todo-row')).to_have_count(2)
+    expect(page.locator('.todo-child')).to_have_count(5)
     assert page.locator('.todo-list').evaluate('(e)=>e.scrollWidth <= e.clientWidth+1')
     page.screenshot(path=str(OUT / 'todo-expanded-zoom-200.png'))
     toggle.click()
@@ -218,6 +248,16 @@ with sync_playwright() as p:
     page.screenshot(path=str(OUT / 'todo-forced-colors.png'))
     page.emulate_media(forced_colors='none')
 
+    # A representative compact tree (without stress-test identifiers) for visual review.
+    page.evaluate("children.pop(); fixture.counts.targets={total:2,done:0,pending:1,running:1,blocked:0}; fixture.version++; reset(); document.activeElement.blur()")
+    page.mouse.move(0, 0)
+    for width in (1440, 390, 320):
+        page.set_viewport_size({'width': width, 'height': 900})
+        for theme in ('light', 'dark'):
+            page.evaluate('(theme)=>document.documentElement.dataset.theme=theme', theme)
+            page.locator('.todo-list').evaluate('(e)=>e.scrollTop=0')
+            page.screenshot(path=str(OUT / f'todo-tree-{width}-{theme}.png'))
+
     # Completed/cancelled/preparation semantics remain intact.
     page.evaluate("ui.show('fixture',{...fixture,completed:true})")
     expect(action).to_have_text('已完成')
@@ -229,7 +269,7 @@ with sync_playwright() as p:
     expect(action).to_have_text('取消创建')
     action.click()
     expect(action).to_have_text('已取消')
-    assert page.evaluate("requests.at(-1).params.action") == 'cancel_prepare'
+    assert page.evaluate("requests.filter(r=>r.method==='todo.action').at(-1).params.action") == 'cancel_prepare'
     page.evaluate("ui.show('other-session',null)")
     expect(page.locator('#todo-dock')).to_be_hidden()
     expect(page.locator('.todo-row')).to_have_count(0)
