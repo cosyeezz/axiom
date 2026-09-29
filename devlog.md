@@ -9,7 +9,20 @@
 - 验证：隔离测试子进程 HOME/USERPROFILE/TEMP/TMP/TMPDIR/Pi 目录，不改用户配置；全量 977 项、975 通过、0 失败、2 项平台跳过。Chromium 紧凑输入检查覆盖 1440/1024/1000/768/700/480/390/320px、深浅主题、长文本、辅助/上下文菜单坐标与焦点、账单及运行强停确认；模型级联和图标专项亦通过。截图在仓库外 F:/worktrees/compact-composer-artifacts。不调用模型、不读取用户会话，未做真机软键盘/屏幕阅读器验收。
 - 验证过程：首次浏览器运行暴露 tooltip 遮挡和上下文锚点问题，补几何与真实点击断言后修复；预览 fixture 补只读收藏/模型目录/技能列表与撤回桩。图标旧测试依赖 context-bar 结构，随工具迁入 composer-tools 更新定位并保留原图形/颜色/对齐断言。测试进程已成功退出后的 Python 控制台 GBK 打印报错不等于测试失败，以保存的完整日志核对 0 失败。
 - 交付检查：无独立 build 脚本，原生 ES 模块直接提供；语法检查、npm pack --dry-run 与 git diff --check 通过。测试自动重建的代码索引漂移不纳入提交；主 checkout 原有未跟踪资料不动。
-- 文件：public/index.html、app.js、composer-controls.js/css、tooltip.js；tests/app.test.js、composer-controls.test.js、tooltip.test.js、conversation-preview.mjs、composer-icons-ui.py、新增 compact-composer-ui.py；README.md、devlog.md。
+- 集成验证：合入上游 b659451（会话标题搜索）后全量仍为 975 通过、2 跳过、0 失败；输入区、模型级联、图标专项通过。会话搜索测试改用真实 ArrowDown 验证键盘 tooltip，并等待 :popover-open 后验证几何，避免 details 异步定位尚未完成时误判；连续两轮搜索浏览器验收和侧栏回归通过。未放宽 tooltip 可见性或菜单视口断言。
+- 文件：public/index.html、app.js、composer-controls.js/css、tooltip.js；tests/app.test.js、composer-controls.test.js、tooltip.test.js、conversation-preview.mjs、composer-icons-ui.py、session-search-ui.py、新增 compact-composer-ui.py；README.md、devlog.md。
+
+## 2026-09-29 会话标题列表体验优化
+
+- 时间：2026-09-29 10:04（本机 -07:00）。用户确认对象是左侧会话标题列表，目标为提高查找、长标题阅读及键盘/触屏操作体验；不扩展正文搜索、数据结构、分类或排序规则。
+- 调研：参考 ChatGPT 官方历史查找说明、Claude 重命名/删除入口与 Linear 标题即时过滤/Esc 恢复，链接见 README。仅借鉴交互原则；ChatGPT 官网直抓有 403、Claude 部分步骤由官方搜索收录返回，不声称登录实测。主代理定向核查 Linear 原文与本项目搜索/折叠代码。
+- 实施：搜索临时展开匹配工作空间及状态组，包括已完成；匹配词以安全文本节点高亮，提供结果计数、清空及零结果引导。搜索渲染和异步 toggle 不写回浏览折叠偏好，退出恢复折叠与滚动；修正 README 原有“仅当前空间搜索/固定创建时间排序”与实际代码不符的描述。
+- 阅读与操作：沿用 Linear 的 --surface/--raised/--accent(#5e6ad2)、系统字体、14px/1.5 和 8px 内边距；长标题最多两行，完整文本可在焦点提示与菜单顶部读取。触屏三点常显且至少 44px，固定预留宽度；Ctrl/⌘ K 聚焦搜索，方向键/Home/End 只移动焦点，Enter 打开，Esc 按搜索/菜单层级处理，不顺带触发队列撤回/安全停止。重绘保留会话按钮及三点触发器焦点。
+- 审查补修：独立只读审查发现长标题菜单在触屏横屏超高及 İ 小写转换使高亮下标偏移，已增加菜单视口约束/滚动与原始 UTF-16 偏移映射。浏览器额外覆盖 667×375 横屏，底部删除入口可滚动到达；三点的视觉提示缩为“会话操作”，无障碍名称仍包含完整标题。
+- 验证：定向 app 测试 5 项通过；隔离测试子进程的 HOME/USERPROFILE/TEMP/TMP/TMPDIR/Pi 目录后全量 975 项、973 通过、2 平台条件跳过、0 失败。隔离只避免用户技能目录污染 fixture，不改用户配置；首次测试本身全绿但打印尾日志遇 Windows GBK 编码错误，已直接核查完整日志，不误记为测试失败。
+- 浏览器：两套 Chromium 测试通过；原分组/状态/复制菜单回归保留，新增 1440/768/390/320px、深浅主题、触摸模拟与横屏验收，覆盖折叠偏好刷新保持、Unicode/HTML 字面匹配、焦点重绘、Enter 打开、两行截断与完整标题。截图已人工核查，产物位于仓库外 F:/worktrees/artifacts/session-list-ux。旧测试依赖已隐藏的 mobile-expand，改用本次新增搜索快捷入口打开侧栏。未声称真机、软键盘或屏幕阅读器验收。
+- 集成验证：获取并合入最新 origin/master（859270e，已是最新基线）后再次全量 975 项、973 通过、2 跳过、0 失败（70.7 秒）；两套浏览器回归在最终交互改动后重跑通过。node --check public/app.js 与 git diff --check 通过。
+- 文件：public/app.js、public/index.html、public/style.css、tests/app.test.js、tests/session-sidebar-ui.py、新增 tests/session-search-ui.py、README.md、devlog.md。全量测试自动生成的代码索引漂移不纳入本次提交。
 
 ## 2026-09-29 Todo 卡片默认两级展示与独立详情
 
