@@ -33,7 +33,8 @@ test("header path icons do not inherit the global button minimum height", async 
     const github = dom.window.document.getElementById("github-link");
     assert.equal(github.getAttribute("href"), "https://github.com/cosyeezz/axiom", "右上角图标指向开源页");
     assert.equal(github.getAttribute("rel"), "noopener noreferrer", "新标签页打开不泄露 opener");
-    assert.equal(computed("#github-link").height, "32px", "与其他 .icon-button 等高");
+    assert.equal(computed("#github-link").minHeight, "40px", "更多面板保留可点击文字行");
+    assert.equal(github.closest('[popover]').id, 'view-options');
     assert.equal(computed("#github-link").textDecoration, "none");
     assert.equal(dom.window.document.getElementById("text-contrast-button"), null, "对比度按钮已移除");
     const runs = dom.window.document.getElementById("task-runs");
@@ -542,7 +543,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("close-raw-io").click();
     assert.equal($("raw-io").hidden, true);
     assert.equal($("open-raw-io").getAttribute("aria-pressed"), "false");
-    assert.equal(window.document.activeElement, $("open-raw-io"), "关闭后焦点回到开关按钮");
+    assert.equal(window.document.activeElement, $("view-options-trigger"), "关闭后焦点回到可见的更多入口");
     sockets[1].receive({ type: "agent.delta", sessionId: rawSession, agentId: "child", data: { type: "text_delta", delta: "关闭后仍记录子代理" } });
     paint();
     $("open-raw-io").click();
@@ -934,7 +935,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     sockets[1].receive({ type: "session.state", sessionId: onScreen, data: { status: "idle" } });
     assert.ok(JSON.parse(window.localStorage.getItem("axiom.sessionSeen"))[onScreen] > 0, "the session on screen is marked seen when it finishes");
     input("");
-    assert.match($("session-runtime").textContent, /cache —.*context —.*test · model · off/);
+    assert.equal($("session-runtime").hidden, true, "无数据不常驻占位符");
+    assert.match($("session-usage-body").textContent, /待报告/);
     assert.equal($("thinking").selectedOptions[0].textContent, "off");
     assert.equal(window.runtimeSummary({ model: "zai-coding-cn/glm-5.3-flash", thinking: "max" })[2], "zai-coding-cn · glm-5.3-flash · max");
     assert.match(window.runtimeSummary({ usage: { input: 100, cacheRead: 0, cacheWrite: 0 } })[0], /0%/);
@@ -1452,9 +1454,10 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
       context: { tokens: 1200, contextWindow: 10000, percent: 12 },
     };
     emit("agent.runtime", runtime, { agentId: "child" });
-    assert.match($("session-runtime").textContent, /cache —/);
+    assert.equal($("session-runtime").hidden, true);
     emit("agent.runtime", { ...runtime, model: "test/model" });
-    assert.match($("session-runtime").textContent, /80%.*test · model · high/);
+    assert.equal($("session-runtime").textContent, "上下文 12%");
+    assert.match($("session-usage-body").textContent, /80.0%/);
     assert.equal($("session-system-prompt").textContent, runtime.systemPrompt);
     assert.equal($("session-active-tools").querySelector(".inspector-tool .tool-name").textContent, "read");
     assert.equal($("session-active-tools").querySelector(".inspector-tool p").textContent, runtime.tools[0].description);
@@ -1601,7 +1604,8 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("task-runs").children.length, 1);
     row("b").querySelector(".session-item").click();
     await settle();
-    assert.match($("session-runtime").textContent, /cache —/, "switching sessions clears previous usage");
+    assert.equal($("session-runtime").hidden, true, "switching sessions clears previous usage");
+    assert.doesNotMatch($("session-usage-body").textContent, /80.0%/);
     assert.doesNotMatch($("session-system-prompt").textContent, /System instructions/, "switching sessions clears previous prompt");
     assert.equal($("session-active-tools").textContent, "工具信息尚未加载。");
     assert.equal($("task-runs").hidden, true, "switching sessions resets the run summary");

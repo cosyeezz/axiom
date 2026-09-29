@@ -94,6 +94,7 @@ export const actionIconPaths = Object.freeze({
   vertical: 'M12 3v18m-4-4 4 4 4-4M8 7l4-4 4 4',
   space: 'M4 9v6h16V9',
   enter: 'M20 5v9H4m5-5-5 5 5 5',
+  keyboard: 'M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2ZM6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 15h10',
 });
 // Static controls are hydrated once, including inert dialog templates.
 export function initActionIcons(root) {

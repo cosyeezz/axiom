@@ -31,12 +31,35 @@ const sessionDetail = $("session-detail");
 function openSessionDetail(section) {
   $("session-inspector").open = section === "inspector";
   $("session-billing").open = section === "billing";
+  $("session-usage").open = section === "usage";
   sessionDetail.showModal();
   sessionDetail.querySelector(".task-body").scrollTop = 0;
 }
 $("session-inspector-trigger").onclick = () => openSessionDetail("inspector");
 $("session-billing-trigger").onclick = () => openSessionDetail("billing");
 $("session-detail-close").onclick = () => sessionDetail.close();
+$("session-runtime").onclick = () => openSessionDetail("usage");
+
+// Native popovers provide light-dismiss, Escape and focus return; only positioning is custom.
+function bindUtilityPopover(trigger, panel, above = false) {
+  const position = () => {
+    const rect = trigger.getBoundingClientRect();
+    panel.style.left = `${Math.max(8, Math.min(rect.right - panel.offsetWidth, innerWidth - panel.offsetWidth - 8))}px`;
+    const top = above ? rect.top - panel.offsetHeight - 8 : rect.bottom + 8;
+    panel.style.top = `${Math.max(8, Math.min(top, innerHeight - panel.offsetHeight - 8))}px`;
+  };
+  panel.addEventListener("toggle", (event) => {
+    const open = event.newState === "open";
+    trigger.setAttribute("aria-expanded", String(open));
+    if (open) position();
+  });
+  window.addEventListener("resize", () => { if (panel.matches(":popover-open")) position(); });
+}
+$("view-options-trigger").innerHTML = actionIcon("more");
+for (const [id, text] of [["github-link", "GitHub 源码"], ["open-raw-io", "原文对照"], ["toggle-theme", "切换主题"]]) {
+  $(id).append(document.createTextNode(text));
+}
+bindUtilityPopover($("view-options-trigger"), $("view-options"));
 let sessionId,
   models = [],
   config,
@@ -482,6 +505,7 @@ function rawMode(open) {
   if (open) paintRaw();
 }
 $("open-raw-io").onclick = () => {
+  $("view-options").hidePopover?.();
   const opening = $("raw-io").hidden;
   rawMode(opening);
   if (opening) {
@@ -493,7 +517,7 @@ $("open-raw-io").onclick = () => {
     selectRaw(visible || rawEntries.at(-1));
   }
 };
-$("close-raw-io").onclick = () => { rawMode(false); $("open-raw-io").focus(); };
+$("close-raw-io").onclick = () => { rawMode(false); $("view-options-trigger").focus(); };
 function rawChanged() {
   if (!$("raw-io").hidden && rawFrame === undefined) rawFrame = requestAnimationFrame(() => {
     rawFrame = undefined;
@@ -652,8 +676,7 @@ function updateAvailability() {
   }
 }
 function updateConnection() {
-  $("status").dataset.connected = String(connected);
-  $("status").textContent = serviceUi.restarting ? "正在重启…" : connected ? "已连接" : "连接断开";
+  setConnectionStatus(serviceUi.restarting ? "正在重启…" : connected ? "已连接" : "连接断开", connected && !serviceUi.restarting);
   serviceUi.sync();
 }
 function updateModelAvailability() {
@@ -808,6 +831,17 @@ function capabilityName(id) {
   }
   return /^index\.[cm]?[jt]s$/i.test(parts.at(-1)) ? parts.at(-2) || id : parts.at(-1) || id;
 }
+function setConnectionStatus(text, healthy = false) {
+  const status = $("status");
+  status.dataset.connected = String(healthy);
+  status.replaceChildren();
+  const label = document.createElement("span");
+  label.textContent = text;
+  if (healthy) label.className = "sr-only";
+  status.append(label);
+  status.title = "查看连接设置";
+  status.setAttribute("aria-label", `${text} · 查看连接设置`);
+}
 function runtimeSummary(value = {}) {
   const { usage, context, model, thinking } = value;
   const input = (usage?.input ?? 0) + (usage?.cacheRead ?? 0) + (usage?.cacheWrite ?? 0);
@@ -835,6 +869,23 @@ function renderRuntime(node, value) {
     const identity = runtimeSummary(sessionBill ? { ...value, billing: sessionBill } : value)[2];
     $("mobile-runtime").textContent = `${cache} · ${percent} · ${identity}`;
     $("mobile-runtime").setAttribute("aria-label", `缓存命中率 ${cache}，上下文占比 ${percent}，${identity}`);
+    const count = (n) => Number.isFinite(n) ? n.toLocaleString("en-US") : "—";
+    const known = Number.isFinite(context?.tokens);
+    const hasPercent = known && context?.contextWindow > 0 && Number.isFinite(context.percent);
+    node.hidden = !known;
+    node.textContent = hasPercent ? `上下文 ${context.percent.toFixed(0)}%` : known ? `上下文 ${count(context.tokens)}` : "";
+    node.setAttribute("aria-label", `${node.textContent || "上下文待报告"}，查看上下文与缓存用量`);
+    node.dataset.warning = String(hasPercent && context.percent >= 80);
+    const detail = [
+      `当前上下文${context?.estimated ? "（估算）" : ""}：${known ? count(context.tokens) + " tokens" : "待报告"}`,
+      `上下文窗口：${context?.contextWindow > 0 ? count(context.contextWindow) + " tokens" : "未配置"}${hasPercent ? ` · ${percent}` : ""}`,
+      `最近请求缓存命中率：${cache}${input > 0 && Number.isFinite(usage?.cacheRead) ? `（${count(usage.cacheRead)} / ${count(input)} tokens）` : "（暂无可用数据）"}`,
+      "上下文是当前占用，不是累计消耗；缓存命中率是最近一次请求的缓存读取占输入总量比例。",
+    ];
+    $("session-usage-body").replaceChildren(...detail.map(text => {
+      const p = document.createElement("p"); p.textContent = text; return p;
+    }));
+    return;
   }
   node.replaceChildren(...runtimeSummary(node.id === "session-runtime" && sessionBill ? { ...value, billing: sessionBill } : value).map((text) => {
     const span = document.createElement("span");
@@ -3295,8 +3346,8 @@ const transport = createTransport({
       if (state === "limited") error("自动恢复已暂停：快照过大或连续恢复失败。请确认服务状态后手动连接。");
     }
     updateAvailability();
-    if (["connecting", "restoring"].includes(state)) $("status").textContent = "连接中";
-    if (state === "limited") $("status").textContent = "连接受限，请手动重试";
+    if (["connecting", "restoring"].includes(state)) setConnectionStatus("连接中");
+    if (state === "limited") setConnectionStatus("连接受限，请手动重试");
   },
 });
 transport.subscribe("models.favorites.changed", {}, (message) => {
@@ -3877,7 +3928,7 @@ document.addEventListener("click", (e) => {
   document.querySelectorAll(".session-options[open]").forEach((menu) => { if (!menu.contains(e.target)) menu.open = false; });
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" || e.isComposing || document.querySelector("dialog[open]")) return;
+  if (e.key !== "Escape" || e.isComposing || document.querySelector("dialog[open], .utility-popover:popover-open")) return;
   const menu = document.querySelector(".session-options[open]");
   if (menu) {
     e.preventDefault();
