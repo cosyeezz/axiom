@@ -112,7 +112,9 @@ export async function createMaintState({ database, key, legacyFile, redactions =
     begin(operationId, operation) {
       // 新操作与上一次彻底隔离：阶段时间线与证据窗口清空，结果字段覆盖为 running。
       Object.assign(data, {
-        operation, operationId, status: "running", startedAt: now(), error: null,
+        operation, operationId, status: "running",
+        // 持久化起点严格递增，供页面识别覆盖旧记录的后续操作（含同毫秒/时钟回拨）。
+        startedAt: Math.max(now(), (Number.isFinite(data.startedAt) ? data.startedAt : 0) + 1), error: null,
         phases: [], log: "",
       });
       return persist();

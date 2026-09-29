@@ -62,7 +62,7 @@ retry(() => fs.writeFileSync('workerPid', String(process.pid)));
 process.on('message', (m) => {
   if (m.type === 'service.stop') { const code = fs.existsSync('stop-exit') ? fs.readFileSync('stop-exit', 'utf8').trim() : '0'; fs.writeFileSync('stopped', code); process.exit(parseInt(code, 10)); }
   if (m.type === 'service.resume') fs.writeFileSync('resumed', 'yes');
-  if (m.type === 'service.accepted') fs.writeFileSync('accepted-' + m.requestId, String(m.operationId));
+  if (m.type === 'service.accepted') { fs.writeFileSync('accepted-' + m.requestId, String(m.operationId)); fs.writeFileSync('accepted-start-' + m.requestId, String(m.startedAt)); }
   if (m.type === 'service.rejected') fs.writeFileSync('rejected-' + m.requestId, String(m.error || ''));
 });
 if (Number(process.env.AXIOM_PORT)) require('node:http').createServer((req, res) => {
@@ -207,6 +207,9 @@ test("quick restart stops worker gracefully and starts a ready replacement", asy
     assert.ok(parseInt(await readFile(join(root, "workers"), "utf8"), 10) >= 2);
     assert.equal(await readMaybe(join(root, "stopped")), "0");
     assert.deepEqual((await stateOf(root)).phases.map((p) => p.phase), ["stopping", "starting", "ready"]);
+    const completed = await getStatus(root);
+    assert.equal(completed.operationId, await readMaybe(join(root, "accepted-q1")));
+    assert.equal(completed.startedAt, Number(await readMaybe(join(root, "accepted-start-q1"))));
   } finally { await teardown(base, child); }
 });
 
@@ -304,6 +307,8 @@ test("update install failure leaves running install untouched and resumes worker
     await until(async () => (await getStatus(root)).status === "failed");
     const state = await stateOf(root, join(base, "home"));
     assert.equal(state.phase, "preparing");
+    assert.equal(state.operationId, await readMaybe(join(root, "accepted-u2")));
+    assert.equal(state.startedAt, Number(await readMaybe(join(root, "accepted-start-u2"))));
     assert.ok(/exited 1/.test(state.error));
     assert.equal(await readMaybe(join(root, "resumed")), "yes", "worker 存活 → resume");
     assert.equal(parseInt(await readFile(join(root, "workers"), "utf8"), 10), 1);
@@ -344,6 +349,8 @@ test("Pi repair missing configuration preserves pre-existing backup", async () =
     await until(async () => await readMaybe(join(root, 'resumed')));
     const state = await getStatus(root);
     assert.equal(state.status, 'failed');
+    assert.equal(state.operationId, await readMaybe(join(root, 'accepted-leftover')));
+    assert.equal(state.startedAt, Number(await readMaybe(join(root, 'accepted-start-leftover'))));
     assert.equal(state.ready, true);
     assert.equal(state.phase, 'preparing');
     assert.match(state.error, /修复配置/);

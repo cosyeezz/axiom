@@ -11,25 +11,29 @@ import { Database } from "../src/database.js";
 const source = (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^export /gm, "");
 const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
 
-async function setup({ ready = true, grace = 5000, respond } = {}) {
+async function setup({ ready = true, grace = 5000, respond, status = async () => ({}) } = {}) {
   const dom = new JSDOM(html, { url: "http://localhost", runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
   window.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new window.Event("close")); };
-  const calls = [];
-  window.request = (type, args) => new Promise((resolve, reject) => calls.push({ type, args, resolve, reject }));
+  const calls = [], statusCalls = [];
+  window.request = (type, args) => {
+    if (type === "service.status") { statusCalls.push(type); return status(); }
+    return new Promise((resolve, reject) => calls.push({ type, args, resolve, reject }));
+  };
+  window.isReady = () => typeof ready === "function" ? ready() : ready;
   const fetches = [];
   window.fetch = async (url, opts = {}) => {
     fetches.push({ url, opts });
     return respond ? respond(url, opts) : { ok: true, json: async () => ({}) };
   };
   const ui = window.eval(
-    `${source.replace("SUBMIT_GRACE = 5000", `SUBMIT_GRACE = ${grace}`)}\ninitServiceSettings({ request, isReady: () => ${ready} })`,
+    `${source.replace("SUBMIT_GRACE = 5000", `SUBMIT_GRACE = ${grace}`)}\ninitServiceSettings({ request, isReady })`,
   );
   const $ = (id) => window.document.getElementById(id);
   const tick = () => new Promise(setImmediate);
   const settle = () => new Promise((r) => setTimeout(r, 30));
-  return { dom, window, ui, $, calls, fetches, tick, settle };
+  return { dom, window, ui, $, calls, statusCalls, fetches, tick, settle };
 }
 
 test("服务与更新面板：顶部三要素不动源码路径，DEV 隐藏更新，未接管全部禁用", async () => {
@@ -74,10 +78,13 @@ test("检查更新与安装分离：结果确认后才出现安装，提交携�
   } finally { dom.window.close(); }
 });
 
-test("重启对话框：quick/rebuild 不带 sha，拒绝时反馈且解锁，取消不发送", async () => {
-  const { dom, ui, $, calls, tick } = await setup();
+test("远程无维护凭证仍可重启：拒绝解锁、取消不发送、重复确认只发送一次", async () => {
+  const { dom, window, ui, $, calls, fetches, tick } = await setup();
   try {
-    ui.apply({ managed: true });
+    ui.apply({ managed: true }); // 认证远程 status 不含 maintenance，仍与本机同权。
+    for (const id of ["restart-quick", "restart-rebuild", "update-check"]) assert.equal($(id).disabled, false);
+    assert.equal(window.sessionStorage.getItem("axiom.maintenance"), null);
+    assert.equal(fetches.length, 0, "不请求远程浏览器自己的 loopback");
     $("restart-quick").click();
     assert.match($("restart-description").textContent, /不修复依赖/);
     $("restart-cancel").click();
@@ -90,6 +97,8 @@ test("重启对话框：quick/rebuild 不带 sha，拒绝时反馈且解锁，�
     assert.equal(calls[0].args.mode, "quick");
     assert.equal(calls[0].args.sha, undefined, "quick/rebuild 不携带 sha");
     assert.equal($("restart-quick").disabled, true, "提交后锁定，等待权威结果");
+    $("restart-form").dispatchEvent(new dom.window.Event("submit", { cancelable: true }));
+    assert.equal(calls.length, 1, "重复确认不重复发送");
     calls[0].reject(new Error("请先停止正在运行的会话"));
     await tick();
     assert.match($("service-feedback").textContent, /请先停止/);
@@ -258,6 +267,136 @@ test("在线轮询权威更新重启锁：准备失败/完成后无需重连即�
   } finally { dom.window.close(); }
 });
 
+test("远程在线读取权威结果：ACK 后准备失败无需断线即解锁；迟到旧结果、查询失败不解锁", async () => {
+  let resolveOld, response;
+  const old = { ready: true, operation: "quick", operationId: "old", startedAt: 100, status: "succeeded", phases: [] };
+  const { dom, ui, $, calls, fetches, tick } = await setup({ status: () => response ? Promise.resolve(response) : new Promise(resolve => { resolveOld = resolve; }) });
+  const poll = async () => { ui.stop(); ui.watch(); await tick(); };
+  try {
+    ui.apply({ managed: true, operation: old });
+    $("restart-quick").click();
+    $("restart-form").dispatchEvent(new dom.window.Event("submit", { cancelable: true }));
+    calls[0].resolve({ operationId: "new", startedAt: 200 });
+    await tick();
+    resolveOld({ operation: old }); // 提交之前的在飞查询迟到。
+    await tick();
+    assert.equal($("restart-quick").disabled, true);
+    response = { operation: old };
+    await poll();
+    assert.equal($("restart-quick").disabled, true, "旧终态不能完成新操作");
+    response = { operationError: "unavailable" };
+    await poll();
+    assert.equal($("restart-quick").disabled, true);
+    assert.match($("maintenance-state").textContent, /尚未确认/);
+    response = { operation: { ...old, operationId: "new", startedAt: 200, status: "running", phase: "preparing" } };
+    await poll();
+    assert.match($("service-history").textContent, /进行中/);
+    response = { operation: { ...response.operation, status: "failed", error: "修复准备失败" } };
+    await poll();
+    assert.equal($("restart-quick").disabled, false);
+    assert.match($("service-history").textContent, /失败：修复准备失败/);
+    assert.equal(fetches.length, 0);
+    assert.equal($("service-recover").hidden, true);
+  } finally { ui.stop(); dom.window.close(); }
+});
+
+test("远程断线/未知回执不判完成，不以其他操作猜测本次结果；离线不访问 loopback", async () => {
+  let ready = true, rejectStatus = false;
+  let operation = { ready: true, operation: null, operationId: null, status: "idle", phases: [] };
+  const { dom, ui, $, calls, fetches, statusCalls, tick } = await setup({ ready: () => ready, status: async () => {
+    if (rejectStatus) throw new Error("disconnected");
+    return { operation };
+  } });
+  const poll = async () => { ui.stop(); ui.watch(); await tick(); };
+  try {
+    ui.apply({ managed: true, operation });
+    await tick();
+    $("repair-provider").value = "openai";
+    $("repair-model").value = "test/model";
+    $("restart-rebuild").click();
+    $("restart-form").dispatchEvent(new dom.window.Event("submit", { cancelable: true }));
+    assert.equal(calls[0].args.mode, "rebuild");
+    assert.equal(calls[0].args.repair.model, "test/model");
+    calls[0].reject(Object.assign(new Error("结果未知"), { unknown: true }));
+    await tick();
+    assert.equal(ui.restarting, true);
+    rejectStatus = true;
+    await poll();
+    assert.equal(ui.restarting, true);
+    ready = false;
+    ui.cancelRestart(); // app 断线回调不能把已发送操作当作完成。
+    const count = statusCalls.length;
+    await poll();
+    assert.equal(statusCalls.length, count);
+    assert.equal(ui.restarting, true);
+    assert.equal($("service-recover").hidden, true);
+    assert.equal($("restart-rebuild").disabled, true);
+    ready = true; rejectStatus = false;
+    operation = { ...operation, operation: "rebuild", operationId: "new", status: "running" };
+    await poll();
+    assert.equal(ui.restarting, true);
+    operation = { ...operation, status: "succeeded" };
+    await poll();
+    assert.equal($("restart-quick").disabled, true, "缺少操作身份时不同 ID 的成功不能确认原请求");
+    assert.doesNotMatch($("service-history").textContent, /Pi 修复并重启：成功/);
+    assert.equal(fetches.length, 0);
+  } finally { ui.stop(); dom.window.close(); }
+});
+
+test("后续操作覆盖 ACK 对应记录：按服务端起点跟踪，不回退旧结果或冒称原请求成功", async () => {
+  let operation = { operationId: "old", startedAt: 100, status: "succeeded", operation: "quick", phases: [] };
+  const { dom, ui, $, calls, tick } = await setup({ status: async () => ({ operation }) });
+  const poll = async () => { ui.stop(); ui.watch(); await tick(); };
+  try {
+    ui.apply({ managed: true, operation }); await tick();
+    $("restart-quick").click();
+    $("restart-form").dispatchEvent(new dom.window.Event("submit", { cancelable: true }));
+    calls[0].resolve({ operationId: "A", startedAt: 200 }); await tick();
+    operation = { ...operation, updatedAt: 9999 };
+    await poll(); assert.equal(ui.restarting, true, "不能用 updatedAt 当操作起点");
+    operation = { ...operation, operationId: "B", startedAt: 300, status: "running" };
+    await poll(); assert.equal(ui.restarting, true);
+    assert.match($("service-history").textContent, /不代表原请求成功/);
+    operation = { ...operation, operationId: "A", startedAt: 200, status: "succeeded" };
+    await poll(); assert.equal(ui.restarting, true, "迟到 A 终态不能解锁 B");
+    operation = { ...operation, operationId: "B", startedAt: 300, status: "failed", error: "后续失败" };
+    await poll(); assert.equal(ui.restarting, false);
+    assert.match($("service-history").textContent, /失败：后续失败/);
+    ui.apply({ managed: true, operation });
+    assert.match($("service-history").textContent, /原请求的最终结果未能确认/);
+    operation = { ...operation, status: "running" };
+    await poll(); assert.equal(ui.restarting, false, "同操作终态不回退到 running");
+    operation = { ...operation, operationId: "A", startedAt: 200, status: "succeeded" };
+    await poll(); assert.match($("service-history").textContent, /失败：后续失败/);
+  } finally { ui.stop(); dom.window.close(); }
+});
+
+test("错过自身操作全程：后续终态可恢复；旧 ACK 缺时间及 unconfirmed 保守锁定", async () => {
+  for (const ack of [{ operationId: "A", startedAt: 200 }, { operationId: "A" }, { unconfirmed: true }]) {
+    for (const status of ["succeeded", "failed", "interrupted"]) {
+      let operation = { operationId: "B", startedAt: 300, status, operation: "quick", phases: [] };
+      const { dom, ui, $, calls, tick } = await setup({ status: async () => ({ operation }) });
+      try {
+        ui.apply({ managed: true });
+        $("restart-quick").click();
+        $("restart-form").dispatchEvent(new dom.window.Event("submit", { cancelable: true }));
+        calls[0].resolve(ack); await tick();
+        ui.stop(); ui.watch(); await tick();
+        assert.equal(ui.restarting, !ack.startedAt);
+        if (ack.startedAt) assert.match($("service-history").textContent, /不代表原请求成功/);
+        else assert.doesNotMatch($("service-history").textContent, /重启服务：成功/);
+        if (ack.operationId && !ack.startedAt) {
+          operation = { ...operation, operationId: "A", startedAt: 200, status: "running" };
+          ui.stop(); ui.watch(); await tick();
+          operation = { ...operation, operationId: "B", startedAt: 300, status };
+          ui.stop(); ui.watch(); await tick();
+          assert.equal(ui.restarting, false, "先见过 A 后旧 ACK 也可可靠识别后续 B");
+        }
+      } finally { ui.stop(); dom.window.close(); }
+    }
+  }
+});
+
 test("维护通道真实 HTTP 契约：/status 扁平记录、Bearer 404、/recover 202/409/400，前端实测", async () => {
   const dir = await mkdtemp(join(tmpdir(), "axiom-maint-"));
   const database = new Database(join(dir, "axiom.db"));
@@ -351,6 +490,14 @@ test("maint-state 持久化：先清过期 persistenceError 再存，失败只�
   };
   const opts = { database, key: "state-k", legacyFile: join(dir, "state.json"), redactions: [["hunter2", "***"]] };
   try {
+    // 操作起点同毫秒/回拨后严格递增，持久化恢复也保留排序基准。
+    let order = await createMaintState({ ...opts, now: () => 100 });
+    await order.begin("A", "quick");
+    await order.begin("B", "quick");
+    assert.equal(order.data.startedAt, 101);
+    order = await createMaintState({ ...opts, now: () => 50 });
+    await order.begin("C", "quick");
+    assert.equal(order.data.startedAt, 102);
     // 成功路径：库中快照永不携带 persistenceError
     let clock = 100;
     let state = await createMaintState({ ...opts, now: () => ++clock });

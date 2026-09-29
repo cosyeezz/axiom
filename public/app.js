@@ -2917,7 +2917,11 @@ function snapshot(state, onReady) {
     if (!document.hidden) mountHistory({ ...state, messages: [...state.messages] }, onReady);
     else { sessionId = state.sessionId; onReady?.(); }
     transport.commitSnapshot(state);
-  } catch (e) { transport.failSnapshot(); throw e; }
+  } catch (e) {
+    error(e); // 在主动断线使初始化代次失效前保留真实渲染错误。
+    transport.failSnapshot();
+    throw e;
+  }
 }
 function mountHistory(state, onReady) {
   const job = ++snapshotJob;
@@ -3310,10 +3314,26 @@ $("login").onsubmit = (e) => {
   });
 };
 let initialized = false;
+async function waitForServiceInitialization(isCurrent) {
+  while (isCurrent()) {
+    let service;
+    try { service = await request("service.status"); }
+    catch (e) { if (!isCurrent()) return null; throw e; }
+    if (!isCurrent()) return null;
+    importDir = service.importDir || "";
+    region("连接状态", () => serviceUi.apply(service));
+    // 维护等待不消耗连接重试预算；状态不可读也不能视为维护已结束。
+    if (!service.operationError && service.operation?.status !== "running") return service;
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+  return null;
+}
 async function initializeConnection({ isCurrent }) {
   $("error").textContent = "";
   let initializingSession = false;
   try {
+    // 首连/重连均先等待维护结束，不提前开放业务请求或将 connected 置真。
+    if (!await waitForServiceInitialization(isCurrent)) return;
     // Reconnect restores the active conversation first; configuration does not gate it.
     if (initialized && sessionId) {
       if (!$("workspace").hidden) saveView();
@@ -3332,9 +3352,6 @@ async function initializeConnection({ isCurrent }) {
       updateAvailability();
       return;
     }
-    const service = await request("service.status");
-    importDir = service.importDir || "";
-    region("连接状态", () => serviceUi.apply(service));
     models = await request("models.list");
     try { modelFavorites = await request("models.favorites.get"); }
     catch (e) { error(`收藏读取失败：${e.message}`); }
@@ -3407,7 +3424,8 @@ async function initializeConnection({ isCurrent }) {
     resizePrompt();
     updateAvailability();
   } catch (e) {
-    if (initializingSession && isCurrent()) {
+    if (!isCurrent()) return;
+    if (initializingSession) {
       // 业务配置失败不等于断线：保留设置/更新入口，避免安装后陷入重连死循环。
       sessionMissing = true;
       connected = true;
@@ -3423,8 +3441,10 @@ async function initializeConnection({ isCurrent }) {
       throw e;
     }
   } finally {
-    $("connect").disabled = false;
-    updateAvailability();
+    if (isCurrent()) {
+      $("connect").disabled = false;
+      updateAvailability();
+    }
   }
 }
 let importDir = "";

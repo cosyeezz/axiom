@@ -25,8 +25,7 @@ try:
             page.goto(f"http://127.0.0.1:{port}")
             page.wait_for_function("document.querySelector('#open-settings').onclick !== null")
             if width < 700:
-                # 移动端顶栏默认隐藏，先展开顶栏才能点到 #toggle-sidebar。
-                page.locator("#mobile-expand").click()
+                # 手机输入区常显，直接打开侧栏进入设置。
                 page.locator("#toggle-sidebar").click()
             page.locator("#open-settings").click()
             bounds = page.locator("#settings").bounding_box()

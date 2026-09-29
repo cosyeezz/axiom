@@ -58,6 +58,7 @@ scripts/autostart.mjs  Windows/macOS/Linux 用户登录自动启动注册
        └─ src/main.js  入口：端口/cwd 校验，组装并 listen(127.0.0.1)
   ├─ server.js       HTTP 静态路由 + /health + WS 升级分发
   │    ├─ transport.js  所有回执/广播/删除通知统一有界发送
+  │    ├─ service-operation.js  在线只读代理守护状态，维护凭据仅留本机
   │    └─ remote.js  可选 Tailscale 独立监听、同账号 whois 验证、本机远程配置
   ├─ model-config.js SQLite 模型配置、版本冲突保护与全局收藏（pi-model-storage.js 自动派生 SDK 兼容文件）
   ├─ Sessions        会话生命周期/队列、元数据启动与 SDK 按需恢复；Pi JSONL 为历史权威

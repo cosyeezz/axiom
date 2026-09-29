@@ -1,8 +1,8 @@
 // 设置页「服务与更新」面板：重启、检查更新/安装、持久化操作记录与维护通道轮询。
 // 协议：
 //   service.status → { managed, error?, version?, dev?, importDir?, maintenance?:{url,token}, operation? }
-//     当前实现不带 operation；维护进行中该命令仍只读放行，worker 存活时刷新可重取 maintenance 令牌，
-//     其余 WS 命令在维护期间被拒绝。operation 字段（若有）与 GET /status 记录同构。
+//     operation 为守护实时记录；读取失败带 operationError，不伪造空闲/成功。
+//     maintenance 仅本机可取；认证远程在线经此命令读状态，其余 WS 命令在维护期间被拒绝。
 //   service.update.check → { available, sha, local, remote }；service.restart 传 { mode } 或 { mode:"update", sha }。
 // 维护通道（scripts/maint-server.mjs，均带 Authorization: Bearer，鉴权/源不符一律 404）：
 //   GET /status → 守护持久化记录（扁平）
@@ -20,6 +20,10 @@ export function initServiceSettings({ request, isReady }) {
   const $ = (id) => document.getElementById(id);
   let managed = false, restarting = false, checking = false, update = null;
   let pollTimer, polling = false, lastState = null, recovering = false, submittedAt = 0;
+  let pendingOperation = null, submission = 0, pollGeneration = 0;
+  let observedOperation = null, supersededNotice = "";
+  const hasStart = state => Number.isFinite(state?.startedAt);
+  const terminal = state => ["succeeded", "failed", "interrupted"].includes(state?.status);
   const names = { quick: "重启服务", rebuild: "Pi 修复并重启", update: "安装更新", install: "安装更新" };
   const statusNames = { running: "进行中", succeeded: "成功", failed: "失败", interrupted: "已中断" };
   // 阶段名本地化，未知阶段原样展示。
@@ -90,22 +94,55 @@ export function initServiceSettings({ request, isReady }) {
     $("service-feedback").textContent = service.error || (managed
       ? "重启前请停止所有会话任务；页面会自动重连。"
       : "当前为直接启动，请改用 npm start 以启用重启和更新。");
-    // service.status 不带 operation：无字段时沿用轮询 lastState，不抹掉历史、不误解锁进行中操作。
-    if (service.operation) lastState = service.operation;
-    const op = service.operation ?? lastState;
-    // 重连不把请求接受当完成：进行中的持久化操作维持锁定；安装成功后清空检查结果防止重复安装，
-    // 其余情况保留用户已确认的检查信息（update-result / 安装按钮）。
-    restarting = !!op && op.status === "running";
-    if (restarting || (op && op.operation === "update" && op.status === "succeeded")) {
+    if (service.operation) applyOperation(service.operation);
+    if (service.operationError) $("service-feedback").textContent = service.operationError;
+    const previousMaintenance = readMaintenance();
+    saveMaintenance(service.maintenance);
+    if (JSON.stringify(previousMaintenance) !== JSON.stringify(readMaintenance())) stopPolling();
+    if (readMaintenance() || managed) watch();
+    else stopPolling();
+    sync();
+  }
+
+  function applyOperation(state) {
+    if (!state || !["idle", "running", "succeeded", "failed", "interrupted"].includes(state.status)) return;
+    const previous = observedOperation;
+    if (previous?.operationId && state.operationId !== previous.operationId) {
+      if (!hasStart(previous) || !hasStart(state) || state.startedAt <= previous.startedAt) return;
+    } else if (previous?.operationId && previous.operationId === state.operationId
+      && terminal(previous) && !terminal(state)) return;
+    if (pendingOperation) {
+      const pending = pendingOperation;
+      if (pending.awaiting) return; // ACK 前的旧终态不能解除新操作锁。
+      if (pending.id) {
+        if (state.operationId !== pending.id) {
+          if (!state.operationId || !hasStart(pending) || !hasStart(state) || state.startedAt <= pending.startedAt) return;
+          supersededNotice = "原请求的最终结果未能确认，记录已被后续操作覆盖；以下为最近操作，不代表原请求成功。";
+          pending.id = state.operationId;
+          pending.startedAt = state.startedAt;
+        } else if (!hasStart(pending) && hasStart(state)) pending.startedAt = state.startedAt;
+        if (terminal(state)) pendingOperation = null;
+      } else {
+        // 未知回执没有操作身份，不能以不同 ID 猜测本次请求已完成。
+        const legacyIdle = pending.legacy && state.status === "idle" && Date.now() - submittedAt >= SUBMIT_GRACE;
+        if (!legacyIdle) return;
+        pendingOperation = null;
+      }
+    }
+    observedOperation = state;
+    lastState = state;
+    restarting = !!pendingOperation || state.status === "running";
+    if (restarting || (state.operation === "update" && state.status === "succeeded")) {
       update = null;
       $("update-result").textContent = "";
       $("update-install").hidden = true;
     }
-    if (op) renderOperation(op);
-    saveMaintenance(service.maintenance);
-    if (readMaintenance()) watch(); // 有维护凭证就轮询（在线也轮询：准备阶段可观测）
-    else stopPolling();
-    sync();
+    renderOperation(state);
+    if (supersededNotice) {
+      const notice = document.createElement("p");
+      notice.textContent = supersededNotice;
+      $("service-history").prepend(notice);
+    }
   }
 
   function openDialog(mode) {
@@ -163,15 +200,22 @@ export function initServiceSettings({ request, isReady }) {
     }
     if (!isReady() || !managed || restarting) return;
     restarting = true;
-    submittedAt = Date.now(); // 守护记账前的短暂窗口内，轮询不因 idle 提前解锁
+    submission++;
+    pendingOperation = { awaiting: true };
+    supersededNotice = "";
+    submittedAt = Date.now(); // 旧快照和 ACK 都不能作为本次操作的最终结果
     sync();
     // 不提示成功：接受请求只代表开始执行，真实结果按持久化操作记录展示（轮询或重连后覆盖）。
     $("service-feedback").textContent = `${names[mode]}请求已提交，服务将重启并断开页面连接；请勿重复操作，结果以最近操作为准。`;
     try {
-      await request("service.restart", mode === "install" ? { mode: "update", sha: update.sha } : { mode, ...(mode === "rebuild" ? { repair: repairConfig() } : {}) });
+      const result = await request("service.restart", mode === "install" ? { mode: "update", sha: update.sha } : { mode, ...(mode === "rebuild" ? { repair: repairConfig() } : {}) });
+      pendingOperation.awaiting = false;
+      pendingOperation.id = result?.operationId;
+      pendingOperation.startedAt = result?.startedAt;
+      pendingOperation.legacy = !result?.operationId && !result?.unconfirmed;
     } catch (e) {
-      restarting = false;
-      submittedAt = 0;
+      if (e.unknown) pendingOperation.awaiting = false;
+      else { pendingOperation = null; restarting = false; submittedAt = 0; }
       $("service-feedback").textContent = e.message;
     }
     sync();
@@ -245,33 +289,44 @@ export function initServiceSettings({ request, isReady }) {
   }
 
   function stopPolling() {
+    pollGeneration++;
     clearInterval(pollTimer);
     pollTimer = undefined;
-    lastState = null;
     $("maintenance-state").hidden = true;
   }
 
   function watch() {
-    if (pollTimer || !readMaintenance()) return;
+    if (pollTimer || (!readMaintenance() && !managed)) return;
     const line = $("maintenance-state");
-    line.hidden = false;
+    line.hidden = !readMaintenance();
     const poll = async () => {
       if (polling) return; // 上一次请求未返回前不重叠发起
+      const local = !!readMaintenance();
+      if (!local && !isReady()) {
+        line.hidden = !restarting;
+        line.textContent = "连接断开，等待自动重连后确认操作结果；无法恢复时请在电脑本机处理。";
+        sync();
+        return;
+      }
       polling = true;
+      const atSubmission = submission, generation = pollGeneration;
       try {
-        const state = await maintenanceRequest("/status");
-        if (!pollTimer || !state) return;
-        lastState = state;
-        line.textContent = describe(state);
-        if (!state.unreachable) {
-          renderOperation(state);
-          // 权威 state 每次都更新重启锁（在线也更新）：准备阶段失败时 worker 在线、无重连，
-          // 只能靠轮询解锁；提交后守护记账前的短暂窗口宽限，防止提前解锁导致重复提交。
-          const running = state.status === "running"
-            || (state.status === "idle" && Date.now() - submittedAt < SUBMIT_GRACE);
-          if (restarting !== running) restarting = running;
+        const state = local ? await maintenanceRequest("/status") : (await request("service.status")).operation;
+        if (!pollTimer || generation !== pollGeneration || atSubmission !== submission) return;
+        if (!state || state.unreachable) {
+          if (local) { lastState = state; line.hidden = false; line.textContent = describe(state || { unreachable: true }); }
+          else if (restarting) { line.hidden = false; line.textContent = "维护状态暂时无法读取，操作结果尚未确认，请稍后重试。"; }
+        } else {
+          line.hidden = !local;
+          if (local) line.textContent = describe(state);
+          applyOperation(state);
         }
         sync();
+      } catch {
+        if (pollTimer && generation === pollGeneration && atSubmission === submission) {
+          line.hidden = false;
+          line.textContent = "维护状态暂时无法读取，操作结果尚未确认，请稍后重试。";
+        }
       } finally {
         polling = false;
       }
@@ -296,7 +351,7 @@ export function initServiceSettings({ request, isReady }) {
     watch,
     check,
     stop: stopPolling,
-    cancelRestart: () => { restarting = false; sync(); },
+    cancelRestart: () => { if (!pendingOperation && lastState?.status !== "running") restarting = false; sync(); },
     recover: (mode = "quick") => maintenanceRequest("/recover", { method: "POST", body: { mode } }),
     get restarting() { return restarting; },
   };

@@ -1,5 +1,16 @@
 # 开发记录
 
+## 2026-09-29 远程服务重启同权
+
+- 原因：远程连接被后端固定报告为不受管，且重启/更新检查被二次拒绝，导致服务面板置灰并误提示直接启动。
+- 修改：认证远程与本地共用在线重启、Pi 修复和更新入口；worker 固定只读代理守护 `/status`，远程通过现有 `service.status` 读取权威结果，不取得维护凭据。前端补在线轮询，以操作 ID 和提交序号屏蔽迟到旧结果，准备失败无需断线即可解锁；未知回执、查询失败和断线不当作成功。
+- 决策：保留 Tailscale/Host/Origin/逐消息重验、活动任务拒绝与维护锁；本地维护凭据、远程准入配置和 CLI 停止边界不变，不新增远程离线维护通道。复用现有 Linear 按钮、表单与状态文本，不改颜色/字体/token。独立 worktree 基于 origin/master f865035，未改主 checkout 既有资料，不重启活动服务或调用付费修复模型。
+- 复核：维护期间刷新/重连先串行查询状态再恢复业务初始化；守护 ACK 补严格递增的操作起点，后续操作覆盖时可恢复按钮但不误报原请求成功。未知回执缺身份时保持未确认，刷新只观察最新状态。修正手机浏览器测试的旧折叠入口，不修改生产布局。
+- 验证：最终同步 origin/master（仍 f865035）后全量 925 项：923 通过、2 跳过、0 失败；维护初始化/首屏错误反馈定向 8 项通过；浏览器 1440/390/320/844 四视口通过。覆盖同权与撤权、活动任务/维护锁、状态坏响应、准备失败、重连/销毁代次、后续操作覆盖及隔离守护 ACK。首屏渲染异常先展示再主动断线，避免新代次守卫吞掉真实错误。未在实际 Tailscale 设备发起重启或安装，也未调用付费修复模型。
+- 交付保护：提交前记录主目录已有 29 个未提交/未跟踪文件的内容哈希与 Git 差异；合并采用原位快进，不移动 master 引用或暂存用户改动，推送成功后再清理任务 worktree。
+- 索引决策：已登记新文件、更新 L0 和坑库，并随测试重建索引；沿用已有交付先例，不提交自动生成 INDEX.md，以保留主 checkout 同名用户修改，不 stash 或覆盖已有资料。
+- 文件：src/server.js、main.js、service-operation.js；public/app.js、service-settings.js；scripts/service.mjs、maint-state.mjs；tests/service-api.test.js、remote.test.js、service-operation.test.js、service-initialization.test.js、service-settings-api.test.js、service-settings.test.js、service-settings-ui.py、service.test.js；README.md、docs/service-maintenance.md、代码索引/坑库与本记录。
+
 ## 2026-09-29 通用子代理、业务指令与长期记忆
 
 - 原因：先形成执行计划，再把通用子代理职责、权限和生命周期分离；缩减常驻工具与提示词，按需查询和整理可溯源经验，避免每次重复探索。

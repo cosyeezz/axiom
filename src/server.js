@@ -6,6 +6,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { command } from "./protocol.js";
 import { ACTIVE_TASK_STATES } from "./task-execution.js";
 import { createModelAuthService } from "./model-auth.js";
+import { OPERATION_ERROR } from "./service-operation.js";
 
 // 开发模式下前端资源按 mtime 惰性重读（改完刷新页面即可，不必重启服务）；
 // 生产沿用启动期预读，请求路径上零额外 IO。
@@ -295,16 +296,18 @@ export function createServerApp(sessions, service = {}) {
           let data;
           switch (request.type) {
             case "service.status":
-              data = { managed: Boolean(service.restart) && !ws.isRemote, error: service.error || "", version: service.version || "", importDir: service.importDir || "", dev: Boolean(service.dev), ...(!ws.isRemote && service.maintenance ? { maintenance: service.maintenance } : {}) };
+              data = { managed: Boolean(service.restart), error: service.error || "", version: service.version || "", importDir: service.importDir || "", dev: Boolean(service.dev), ...(!ws.isRemote && service.maintenance ? { maintenance: service.maintenance } : {}) };
+              if (service.getOperation) {
+                try { data.operation = await service.getOperation(); }
+                catch { data.operationError = OPERATION_ERROR; }
+              }
               break;
             case "service.update.check":
-              if (ws.isRemote) throw new Error("请在本机检查服务更新");
               if (service.dev) throw new Error("开发环境通过 Git 更新，不执行安装版更新");
               if (!service.checkUpdate) throw new Error("更新检查不可用");
               data = await service.checkUpdate();
               break;
             case "service.restart":
-              if (ws.isRemote) throw new Error("远程连接不允许重启服务");
               if (!service.restart) throw new Error("请通过 npm start 启动服务后再使用重启功能");
               if (request.mode === "update" && service.dev) throw new Error("开发环境不执行安装版更新");
               if (request.mode === "update" && !request.sha) throw new Error("请先检查更新并确认目标版本");

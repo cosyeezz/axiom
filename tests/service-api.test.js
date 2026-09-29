@@ -56,16 +56,17 @@ test("stop rejects foreign origins and busy sessions, accepts one managed shutdo
   } finally { await app.close(); }
 });
 
-test("service restart validates mode, rejects active work and duplicate requests", async () => {
+for (const remote of [false, true]) test(`${remote ? "remote" : "local"} service restart validates mode, rejects active work and duplicate requests`, async () => {
   let status = "running";
   const modes = [];
   const service = {
     restart: async (mode) => modes.push(mode), error: "previous build failed", importDir: "C:\\pi\\sessions",
   };
   const app = createServerApp({ list: () => [{ status }], close: async () => {} }, service);
-  app.server.listen(0, "127.0.0.1");
-  await once(app.server, "listening");
-  const ws = new WebSocket(`ws://127.0.0.1:${app.server.address().port}/ws`, ["axiom"]);
+  const server = remote ? app.createRemoteServer(async () => true) : app.server;
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const ws = new WebSocket(`ws://127.0.0.1:${server.address().port}/ws`, ["axiom"]);
   await once(ws, "open");
   const request = async (type, extra = {}) => {
     const response = once(ws, "message");

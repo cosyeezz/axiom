@@ -13,6 +13,7 @@ import { createPiModelStorage } from "./pi-model-storage.js";
 import { Sessions } from "./sessions.js";
 import { createModelsService } from "./model-config.js";
 import { createServerApp } from "./server.js";
+import { readServiceOperation } from "./service-operation.js";
 import { createRemoteAccess, createTailscale } from "./remote.js";
 import { checkUpdate, validateCommit } from "./update.js";
 import { randomUUID } from "node:crypto";
@@ -80,7 +81,7 @@ const service = {
     const finish = () => { clearTimeout(timer); process.off("message", onMessage); };
     const onMessage = (message) => {
       if (message?.requestId !== requestId) return;
-      if (message.type === "service.accepted") { finish(); resolve({ operationId: message.operationId }); }
+      if (message.type === "service.accepted") { finish(); resolve({ operationId: message.operationId, startedAt: message.startedAt }); }
       if (message.type === "service.rejected") { finish(); reject(new Error(message.error)); }
     };
     // 回执超时不等于拒绝：保留维护锁，由守护进程状态给出最终结论。
@@ -91,6 +92,7 @@ const service = {
     });
   }) : undefined,
 };
+if (service.maintenance) service.getOperation = () => readServiceOperation(service.maintenance);
 const app = createServerApp(sessions, service);
 // 远程访问初始化必须等端口绑定（remote 要读 app.server.address().port），所以只能放在 listen 回调里；
 // 但它首次运行会往库里写 remote/config，必须让 stop() 能等到它落定再关库，

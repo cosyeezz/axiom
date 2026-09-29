@@ -118,12 +118,12 @@ const setup = async ({
   urlWaitMs = 20,
   loginTimeoutMs = 150_000,
   spawnLogin,
+  service = {},
 } = {}) => {
   const home = await mkdtemp(join(tmpdir(), "axiom-remote-"));
   const ts = mockTailscale();
   if (loginEmail !== undefined) ts.state.loginEmail = loginEmail;
-  const service = {};
-  const app = createServerApp({ close: async () => {} }, service);
+  const app = createServerApp({ list: () => [], close: async () => {} }, service);
   const remote = await createRemoteAccess({
     home,
     app,
@@ -447,13 +447,14 @@ test("whois 认证：同账号放行；tag/他账号/未启用/伪造头/Host/Or
   assert.equal(results.filter(Boolean).length, 0);
 });
 
-test("远程 HTTP/WS 需验证且受限；本地 server 不受影响", async (t) => {
-  const fx = await setup();
+test("远程 HTTP/WS 需验证；服务重启同权，准入配置仍限本机", async (t) => {
+  const restarts = [];
+  const fx = await setup({ service: { restart: async (...args) => { restarts.push(args); return { operationId: "remote-restart" }; } } });
   t.after(() => fx.close());
   const { url } = await fx.remote.status();
   assert.equal((await fetch(`${url}/health`)).status, 200); // 本机来源 = 同账号
 
-  // 远程入口禁用服务管理
+  // CLI 停止整个守护进程仍是本机入口，不影响在线服务重启
   assert.equal((await fetch(`${url}/service/stop`, { method: "POST" })).status, 403);
 
   // 外来 Origin 的 WS 握手 401
@@ -463,7 +464,7 @@ test("远程 HTTP/WS 需验证且受限；本地 server 不受影响", async (t)
   assert.equal(res.statusCode, 401);
   bad.terminate();
 
-  // 远程 WS：remote.get 可读（local:false），configure/login/restart 全被拒
+  // 远程 WS：remote.get 可读（local:false），configure/login 仍被拒
   const ws = new WebSocket(`${url.replace("http", "ws")}/ws`);
   await once(ws, "open");
   const got = await wsRequest(ws, { id: "1", type: "remote.get" });
@@ -492,9 +493,9 @@ test("远程 HTTP/WS 需验证且受限；本地 server 不受影响", async (t)
   assert.match(deniedConfigure.error, /远程连接不允许修改/);
   const deniedLogin = await wsRequest(ws, { id: "3", type: "remote.login" });
   assert.equal(deniedLogin.ok, false);
-  const deniedRestart = await wsRequest(ws, { id: "4", type: "service.restart", mode: "quick" });
-  assert.equal(deniedRestart.ok, false);
-  ws.close();
+  const status = await wsRequest(ws, { id: "4", type: "service.status" });
+  assert.equal(status.data.managed, true);
+  assert.equal(status.data.maintenance, undefined);
 
   // 本地 server 一切照旧：remote.get local:true，configure 可用
   await new Promise((done) => fx.app.server.listen(0, "127.0.0.1", done));
@@ -504,6 +505,11 @@ test("远程 HTTP/WS 需验证且受限；本地 server 不受影响", async (t)
   const localGet = await wsRequest(lws, { id: "1", type: "remote.get" });
   assert.equal(localGet.data.local, true);
   lws.close();
+  const restarted = await wsRequest(ws, { id: "5", type: "service.restart", mode: "quick" });
+  assert.equal(restarted.ok, true);
+  assert.equal(restarted.data.operationId, "remote-restart");
+  assert.deepEqual(restarts, [["quick", undefined, undefined]]);
+  ws.close();
 });
 
 test("remote.login：未登录复用/新取官方 authUrl；已登录返回空；缺失给指引；child 有界", async (t) => {

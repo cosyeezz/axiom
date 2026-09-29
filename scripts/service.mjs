@@ -454,7 +454,7 @@ export async function supervise() {
     void state.begin(operationId, mode);
     if (mode === "rebuild") state.appendLog(diagnostic);
     // Allow the WebSocket acknowledgment to flush before closing the worker.
-    child.send({ type: "service.accepted", requestId, operationId }, () => {});
+    child.send({ type: "service.accepted", requestId, operationId, startedAt: state.data.startedAt }, () => {});
     setTimeout(() => { void runOp(mode, message.sha, operationId, message.repair).catch((error) => { console.error(error); process.exitCode = 1; }); }, 150);
   }
   async function restoreWorker(error) {
