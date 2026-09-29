@@ -1,5 +1,13 @@
 # Axiom
 
+## 2026-09-29 审阅修复
+
+本轮逐项核实 18 条审阅意见，实施 16 项修复/局部优化。IPC 拒绝非对象帧；停止信号不再被保存错误阻断，异步启动准备也遵守停止；通知以输入实际入历史确认。复制源跨异步占用（含撤回和已排队子任务续接），长标题保留唯一序号；统一 Todo 基础约束、完成摘要不变量和冷热 `custom_message` 投影。旧会话压缩读取刷新后的目录/runtime，并为每次摘要固定上下文。
+
+快照复用一次 runtime，限流仅在单次扫描内复用模型租约计数，不改变超时放行策略。Web 任务白名单不再携带记忆原始材料、内部恢复背景或旧结果集合；持久化材料与结果凭证完整保留，冷读重算重试资格但不写库或启动任务。冷热删除共用文件清单，移除无作用的 attach 序号检查。
+
+完整决定、实际回归与测量边界见 [逐项处理记录](docs/review-20260929-resolution.md)。P02 列表同步探测保留，以维持外部删除即时可见性；D02 `pushCompaction()` 保留，因仓外私有深导入契约尚未确认。局部微基准不代表端到端提速；大历史快照仍可能触及 32MiB 传输上限。
+
 ## 通用指令组件
 
 `src/instructions.js` 提供 `createInstructions()`、`register({name,description,parameters,handler,toolResult?,guidance?})` 与 `execute(name, arguments, context?)`。名称精确匹配，可信 JSON Schema 注册时保存快照，TypeBox 严格校验且不转换类型。宿主传递 `toolCallId/signal/onUpdate/ctx`，保留取消、错误及原有结构化工具结果；成功结果通过 `details.axiomInstruction` 保存真实指令身份。

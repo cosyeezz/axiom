@@ -6,7 +6,7 @@ import { realpath, stat, readFile, mkdir, writeFile, copyFile, rm, readdir } fro
 import { homedir } from "node:os";
 import { Database } from "./database.js";
 import { SessionStore } from "./session-store.js";
-import { readSessionManager, toWireRecord } from "./session-history.js";
+import { readSessionManager, readSessionHistory, messageEntries, toWireRecord } from "./session-history.js";
 import { sessionBilling, combinedBilling, usageRuntime } from "./session-billing.js";
 import { GOAL_PREPARE_PROMPT, TODO_CONTINUE_PROMPT, TODO_RESUME_PROMPT, TODO_DELIVERY_RETRY_PROMPT } from './todo-prompts.js';
 import { Todo, createTodoStore } from "./todo.js";
@@ -14,7 +14,7 @@ import { basename, dirname, join, relative, isAbsolute, resolve, sep, parse } fr
 
 import { selection as selectionSchema, taskBudget as taskBudgetSchema, compaction as compactionSchema, compactionDefaults, resolveCompaction, assertPromptImages } from "./protocol.js";
 import { taskBudgetDefaults } from "./task-budget.js";
-import { Tasks } from "./tasks.js";
+import { Tasks, taskClientView, taskCanRetry } from "./tasks.js";
 import { ACTIVE_TASK_STATES } from "./task-execution.js";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { createInstructions } from './instructions.js';
@@ -26,6 +26,19 @@ import { resolveCapabilities } from "./capabilities.js";
 import { memoryHooks } from "./session-memory.js";
 import { TITLE_MAX, stripMemoryTags } from "../public/memory-tags.js";
 import { splitAnswer } from "../public/answer-tags.js";
+
+// Only the file inventory; callers retain lifecycle and database-before-files ordering.
+async function cleanupSessionFiles(storageDir, id, file) {
+  if (!storageDir) return;
+  if (file) {
+    await rm(file, { force: true });
+    for (const suffix of ['.compaction-attempts.json', '.compaction-attempts.json.tmp', '.compaction-diagnostics.json'])
+      await rm(`${file}${suffix}`, { force: true });
+  }
+  await rm(join(storageDir, `${id}-tasks`), { recursive: true, force: true });
+  await rm(join(storageDir, `${id}-observations`), { recursive: true, force: true });
+  await rm(join(storageDir, `${id}.json`), { force: true }); // Legacy snapshot compatibility.
+}
 
 // 在飞子任务：状态在跑且真有运行 promise（恢复时被暂停的 starting 没有 done，不算在飞）。
 const hasRunningTasks = (item) => [...item.tasks.jobs.values()].some((job) => ACTIVE_TASK_STATES.includes(job.status) && job.done);
@@ -355,15 +368,18 @@ function importedTitle(lines, source) {
 // 复制会话的标题：原名去掉结尾序号后接下一个可用序号（xxx → xxx 1，再复制 → xxx 2；
 // 复制「xxx 1」也回到同一条 xxx N 序列，不会出现「xxx 1 1」）。序号只避开同工作区现有
 // 标题与源会话自身，副本绝不与源同名。
-function duplicateTitle(base, taken) {
+export function duplicateTitle(base, taken) {
   const raw = String(base || "").trim() || "新会话";
   const stem = raw.replace(/\s+\d+$/, "").trim() || raw;
   const titles = new Set(taken);
   for (let n = 1; n <= 999; n++) {
-    const candidate = `${stem} ${n}`.slice(0, 60);
+    const suffix = ` ${n}`;
+    const candidate = stem.slice(0, 60 - suffix.length) + suffix;
     if (!titles.has(candidate)) return candidate;
   }
-  return `${stem} 副本`.slice(0, 60);
+  const suffix = " 副本", candidate = stem.slice(0, 60 - suffix.length) + suffix;
+  if (!titles.has(candidate)) return candidate;
+  throw new Error("没有可用的副本标题，请先重命名源会话");
 }
 
 // 主机快速位置：主目录 + 文件系统根；Windows 盘符仅全局模式用 fs stat 探测，不 shell。
@@ -650,7 +666,7 @@ export class Sessions {
     // 当前会话的热更新统一走 session.configure。
     return result;
   }
-  // 压缩配置直推：只改选中会话的压缩部分，等级由实际模型适配，单会话失败不影响调用方。
+  // 仓内无调用；保留深导入兼容入口，未确认仓外调用契约前不删除。
   async pushCompaction(match, compaction) {
     for (const item of this.items.values()) {
       if (!item.loaded || item.configuring) continue;
@@ -734,6 +750,7 @@ export class Sessions {
     const item = this.get(id);
     if (item.releasing) { await item.releasing; return this.ensureLoaded(id); }
     if (item.closing) throw new Error("Session is closing");
+    if (item.copying) throw new Error("Session is busy copying");
     item.lastUsedAt = Date.now();
     if (item.loaded) return item;
     if (!item.loading) item.loading = (async () => {
@@ -876,6 +893,7 @@ export class Sessions {
     if (this.get(id).loading) await this.get(id).loading;
     const item = this.get(id);
     if (item.closing) throw new Error("Session is closing");
+    if (item.copying) throw new Error("Session is busy copying");
     item.title = title;
     item.titleManual = true;
     item.titlePending = false;
@@ -933,6 +951,7 @@ export class Sessions {
 
   async revert(id, entryId) {
     const item = await this.navigationItem(id);
+    if (item.copying) throw new Error("Session is busy copying");
     item.configuring = true;
     try {
       const point = await item.agent.revertTo(entryId);
@@ -960,6 +979,7 @@ export class Sessions {
   async fork(id, entryId) {
     const item = await this.navigationItem(id);
     if (!this.storagePath) throw new Error("当前实例未启用会话存储");
+    if (item.copying) throw new Error("Session is busy copying");
     item.configuring = true;
     try {
       await this.persist(item);
@@ -977,8 +997,8 @@ export class Sessions {
 
   async continueFromPoint(id) {
     const item = await this.navigationItem(id);
+    if (item.copying) throw new Error("Session is busy copying");
     if (!item.agent.navigationState?.()) throw new Error("当前不在恢复后的安全点");
-    item.goalExited = false;
     return this.startRun(item, () => item.agent.continueFromPoint());
   }
 
@@ -988,57 +1008,68 @@ export class Sessions {
     if (this.get(id).loading) await this.get(id).loading;
     const item = this.get(id);
     if (item.closing) throw new Error("Session is closing");
-    if (pointStatus(item) !== "idle") throw new Error("会话正在运行，请等任务结束或停止后再复制");
+    if (pointStatus(item) !== "idle" || item.configuring || item.compacting || item.agent?.compactionStatus?.()?.runId || item.notifying || item.cancelling || item.releasing)
+      throw new Error("会话正在运行或切换状态，请等任务结束或停止后再复制");
     const file = landedSessionFile(item);
     if (!file) throw new Error("会话还没有历史文件，发送首条消息后再复制");
-    // 先冲刷内存里的最新状态到库（标题/时间/累计用时等，失败按原语义上抛，不做降级复制）。
-    await this.persist(item);
-    const saved = this.store.getSession(id);
-    const cwd = item.cwd;
-    const newId = randomUUID();
-    const storageDir = join(this.storagePath, createHash("sha256").update(process.platform === "win32" ? cwd.toLowerCase() : cwd).digest("hex"));
-    const tasksDir = join(storageDir, `${newId}-tasks`);
-    await mkdir(tasksDir, { recursive: true });
-    // 主历史：只重写首行身份（id/cwd），其余条目与分支 ID 原样保留，与导入同一口径。
-    const lines = (await readFile(file, "utf8")).split("\n").filter((line) => line.trim());
-    let header;
-    try { header = JSON.parse(lines[0]); }
-    catch { throw new Error("会话历史文件损坏，无法复制"); }
-    const mainCopy = join(storageDir, `${newId}.jsonl`);
-    await writeFile(mainCopy, [JSON.stringify({ ...header, id: newId, cwd }), ...lines.slice(1)].join("\n"), { mode: 0o600 });
-    // 子任务历史：逐个复制到副本自己的 -tasks 目录；文件缺失（历史已丢失）的旧任务保留
-    // 记录但不再引用源路径——副本绝不能读回源会话的文件，否则删除源会把副本变成坏引用。
-    const tasks = [];
-    for (const task of saved?.tasks || []) {
-      const record = { ...task };
-      if (record.sessionFile && existsSync(record.sessionFile)) {
-        const target = join(tasksDir, `${record.id}.jsonl`);
-        try { await copyFile(record.sessionFile, target); }
-        catch (error) { throw new Error(`复制子任务历史失败：${error.message}`); }
-        record.sessionFile = target;
-      } else delete record.sessionFile;
-      // 副本不接管未完成的子任务；通知也一律视为已消费：用户在源会话已看过结果，
-      // 副本重启后不该再自动唤醒一轮通知（与 goal 退出的 notified 归一口径一致）。
-      if (ACTIVE_TASK_STATES.includes(record.status))
-        Object.assign(record, { status: "cancelled", error: "副本不接管未完成的子任务" });
-      record.notified = true;
-      if (record.previousResults) record.previousResults = Object.fromEntries(
-        Object.entries(record.previousResults).map(([key, result]) => [key, { ...result, notified: true }]));
-      tasks.push(record);
+    // Reserve the source before the first await, including cold stubs that must not be loaded/replaced.
+    item.copying = true;
+    item.configuring = true;
+    try {
+      // 先冲刷内存里的最新状态到库（标题/时间/累计用时等，失败按原语义上抛，不做降级复制）。
+      await this.persist(item);
+      const saved = this.store.getSession(id);
+      const cwd = item.cwd;
+      const newId = randomUUID();
+      const storageDir = join(this.storagePath, createHash("sha256").update(process.platform === "win32" ? cwd.toLowerCase() : cwd).digest("hex"));
+      const tasksDir = join(storageDir, `${newId}-tasks`);
+      await mkdir(tasksDir, { recursive: true });
+      // 主历史：只重写首行身份（id/cwd），其余条目与分支 ID 原样保留，与导入同一口径。
+      const lines = (await readFile(file, "utf8")).split("\n").filter((line) => line.trim());
+      let header;
+      try { header = JSON.parse(lines[0]); }
+      catch { throw new Error("会话历史文件损坏，无法复制"); }
+      const mainCopy = join(storageDir, `${newId}.jsonl`);
+      await writeFile(mainCopy, [JSON.stringify({ ...header, id: newId, cwd }), ...lines.slice(1)].join("\n"), { mode: 0o600 });
+      // 子任务历史：逐个复制到副本自己的 -tasks 目录；文件缺失（历史已丢失）的旧任务保留
+      // 记录但不再引用源路径——副本绝不能读回源会话的文件，否则删除源会把副本变成坏引用。
+      const tasks = [];
+      for (const task of saved?.tasks || []) {
+        const record = { ...task };
+        if (record.sessionFile && existsSync(record.sessionFile)) {
+          const target = join(tasksDir, `${record.id}.jsonl`);
+          try { await copyFile(record.sessionFile, target); }
+          catch (error) { throw new Error(`复制子任务历史失败：${error.message}`); }
+          record.sessionFile = target;
+        } else delete record.sessionFile;
+        // 副本不接管未完成的子任务；通知也一律视为已消费：用户在源会话已看过结果，
+        // 副本重启后不该再自动唤醒一轮通知（与 goal 退出的 notified 归一口径一致）。
+        if (ACTIVE_TASK_STATES.includes(record.status))
+          Object.assign(record, { status: "cancelled", error: "副本不接管未完成的子任务" });
+        record.notified = true;
+        if (record.previousResults) record.previousResults = Object.fromEntries(
+          Object.entries(record.previousResults).map(([key, result]) => [key, { ...result, notified: true }]));
+        tasks.push(record);
+      }
+      return await this.create(cwd, saved?.selection ?? {}, {
+        ...saved,
+        id: newId,
+        sessionFile: mainCopy,
+        title: duplicateTitle(item.title, [item.title, ...[...this.items.values()].filter((other) => other !== item && other.cwd === cwd).map((other) => other.title)]),
+        titleManual: true,
+        titleRequested: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        elapsedMs: 0,
+        runningSince: null,
+        tasks,
+      });
+    } finally {
+      item.copying = false;
+      item.configuring = false;
+      for (const job of item.tasks.jobs.values()) item.tasks.resumeQueued?.(job);
+      if (item.loaded) { this.scheduleMemory(item); this.scheduleTaskNotifications(item); this.scheduleTodo(item); }
     }
-    return this.create(cwd, saved?.selection ?? {}, {
-      ...saved,
-      id: newId,
-      sessionFile: mainCopy,
-      title: duplicateTitle(item.title, [item.title, ...[...this.items.values()].filter((other) => other !== item && other.cwd === cwd).map((other) => other.title)]),
-      titleManual: true,
-      titleRequested: true,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      elapsedMs: 0,
-      runningSince: null,
-      tasks,
-    });
   }
 
   async create(workspace, selection = {}, saved, deferStart = false) {
@@ -1281,6 +1312,7 @@ export class Sessions {
       { workMs: item.taskBudget.workSeconds * 1000, wrapUpMs: item.taskBudget.wrapUpSeconds * 1000,
         summaryMs: item.taskBudget.summarySeconds * 1000 },
     );
+    item.tasks.resumeHeld = () => !!item.copying;
     for (const task of saved?.tasks || []) {
       const interrupted = ACTIVE_TASK_STATES.includes(task.status);
       const resumable = interrupted && (!!task.sessionFile || task.persistenceVersion >= 1);
@@ -1325,7 +1357,7 @@ export class Sessions {
       if (!job.sessionFile || !existsSync(job.sessionFile)) continue;
       try {
         const taskManager = readSessionManager(job.sessionFile, item.cwd);
-        const entries = taskManager.getBranch().filter(entry => entry.type === "message");
+        const entries = messageEntries(taskManager.getBranch());
         job.runtime = { ...job.runtime, billing: sessionBilling(taskManager.getEntries()) };
         item.messages.push(...entries.map(entry => ({ agentId: job.id, entryId: entry.id, message: entry.message })));
       } catch (error) {
@@ -1550,7 +1582,7 @@ export class Sessions {
   scheduleTaskNotifications(item) {
     // 通知双通道：running 时经 SDK custom message（task-notification）在轮次边界注入，不打断工具、
     // 不等待运行结束；idle 时经 prompt 直接唤醒，走完整 startRun 状态机。见 deliverTaskNotifications。
-    if (item.notificationScheduled || item.closing || item.notificationsPaused) return;
+    if (item.notificationScheduled || item.notifying || item.closing || item.notificationsPaused) return;
     item.notificationScheduled = true;
     setImmediate(() => {
       item.notificationScheduled = false;
@@ -1574,10 +1606,12 @@ export class Sessions {
       try {
         await this.persist(item, {});
         if (item.closing || item.notificationsPaused || item.configuring) return;
-        await item.agent.notifyTask(text);
+        if (item.status !== "idle") await item.agent.notifyTask(text);
       } finally {
         item.notifying = false;
       }
+      // The run may have ended during persistence/injection. Do not lose its deferred wakeup.
+      if (item.status === "idle") this.scheduleTaskNotifications(item);
       return;
     }
     item.notifying = true;
@@ -1585,9 +1619,18 @@ export class Sessions {
       // 结果先落盘再触达；idle 通道直接唤醒，走完整 startRun 状态机。
       await this.persist(item, {});
       if (item.closing || item.notificationsPaused || item.configuring || item.status !== "idle") return;
+      const from = item.messages.length;
       await this.prompt(item.id, text);
       await item.work;
       if (item.notificationsPaused || item.closing) return;
+      // Work may fulfill after a caught startup failure. Only a new history input proves delivery;
+      // a failed answer after input was appended must not cause a duplicate wakeup.
+      const delivered = item.messages.slice(from).some(record => {
+        if (record.agentId !== "main" || record.message?.role !== "user") return false;
+        const content = record.message.content;
+        return (typeof content === "string" ? content : (content ?? []).filter(b => b?.type === "text").map(b => b.text).join("\n")) === text;
+      });
+      if (!delivered) return; // Keep pending until a later explicit run/retry; no immediate failure loop.
       for (const job of jobs) {
         await this.confirmTaskNotification(item, job);
       }
@@ -1726,14 +1769,15 @@ export class Sessions {
     return item.agent.refreshSkills();
   }
 
-  configData(item) {
+  configData(item, runtime) {
+    if (arguments.length < 2) runtime = item.agent.runtime?.();
     return {
       canReconfigure: this.canReconfigure(item), queueType: item.queueType,
       ...item.agent.config?.(), subagentModel: item.subagentModel,
       subagentThinking: item.subagentThinking,
       subagentResolvedCapabilities: item.subagentResolvedCapabilities,
       capabilitySelection: item.capabilities, subagentCapabilities: item.subagentCapabilities,
-      runtime: item.agent.runtime?.(),
+      runtime,
     };
   }
 
@@ -1745,10 +1789,11 @@ export class Sessions {
     if (!item.loaded) {
       const saved = item.draft ?? this.store.getSession(id);
       let messages = [];
-      const tasks = structuredClone(saved.tasks ?? []);
+      // Clone only client fields plus the private path required to reconstruct cold history/billing.
+      const tasks = structuredClone((saved.tasks ?? []).map(task => ({ ...taskClientView(task), canRetry: taskCanRetry(task), sessionFile: task.sessionFile })));
       const manager = saved.sessionFile ? readSessionManager(saved.sessionFile, saved.cwd) : null;
       const branch = manager?.getBranch() ?? [];
-      messages.push(...branch.filter(entry => entry.type === "message").map(entry => ({ agentId: "main", entryId: entry.id, message: entry.message })));
+      messages.push(...messageEntries(branch).map(entry => ({ agentId: "main", entryId: entry.id, message: entry.message })));
       const selection = saved.selection ?? {};
       const model = (this.createAgent?.modelCatalog?.() ?? this.createAgent?.catalog?.() ?? []).find(model => model.key === selection.model) ?? {};
       const restoredRuntime = {
@@ -1763,7 +1808,7 @@ export class Sessions {
         try {
           const taskManager = readSessionManager(task.sessionFile, saved.cwd);
           task.runtime = { ...task.runtime, billing: sessionBilling(taskManager.getEntries()) };
-          messages.push(...taskManager.getBranch().filter(entry => entry.type === "message").map(entry => ({ agentId: task.id, entryId: entry.id, message: entry.message })));
+          messages.push(...messageEntries(taskManager.getBranch()).map(entry => ({ agentId: task.id, entryId: entry.id, message: entry.message })));
         } catch (error) { task.error = `子任务历史读取失败：${error.message}`; }
       }
       messages = projectTimeline(messages);
@@ -1790,7 +1835,7 @@ export class Sessions {
         messageIndexes: fold.indexes, messageCount: messages.length,
         compactions, retries: historyRetries(saved.retries ?? [], visibleIds, fold.keptBefore, messages.length),
         live: {}, tools: {},
-        questions: [], tasks, todo: todo.snapshot(), canReask: false, compactionStatus: restoredCompactionStatus });
+        questions: [], tasks: tasks.map(taskClientView), todo: todo.snapshot(), canReask: false, compactionStatus: restoredCompactionStatus });
     }
     // 读时投影：live 数组保持到达序（撤回/重试/压缩等内部逻辑依赖它），下发按锚点顺序。
     const projected = projectTimeline(item.messages);
@@ -1812,7 +1857,7 @@ export class Sessions {
       runtime,
       billing: combinedBilling(runtime?.billing, [...item.tasks.jobs.values()]),
       queue: item.agent.queue?.(),
-      config: this.configData(item),
+      config: this.configData(item, structuredClone(runtime)),
       runId: item.runId,
       messages: fold.records.map(toWireRecord),
       // 折叠前的下标与总数：前端按历史下标登记目标轮次锚点，压缩折叠不能让计数漂移。
@@ -1826,7 +1871,7 @@ export class Sessions {
       questions: item.questions.snapshot(),
       canReask: item.status === 'idle' && !!item.agent.canReask?.(),
       // 任务卡按 delegate 锚点渲染，折叠段里的委派入口也要能落到摘要卡内，所以任务不做裁剪。
-      tasks: item.tasks.snapshot(),
+      tasks: item.tasks.clientSnapshot(),
       todo: item.todo?.snapshot() ?? null,
       // 活动流的身份：前端要按 agent.message.end 带的 messageId 把半成品原文接到正确槽位。
       liveMessageIds: Object.fromEntries(item.liveIds),
@@ -1864,13 +1909,13 @@ export class Sessions {
       const saved = this.store.getSession(id);
       const raw = [];
       if (saved.sessionFile)
-        raw.push(...readSessionManager(saved.sessionFile, saved.cwd).getBranch()
-          .filter(entry => entry.type === "message").map(entry => ({ agentId: "main", entryId: entry.id, message: entry.message })));
+        raw.push(...readSessionHistory(saved.sessionFile, saved.cwd)
+          .map(entry => ({ agentId: "main", entryId: entry.id, message: entry.message })));
       for (const task of saved.tasks ?? []) {
         if (!task.sessionFile) continue;
         try {
-          raw.push(...readSessionManager(task.sessionFile, saved.cwd).getBranch()
-            .filter(entry => entry.type === "message").map(entry => ({ agentId: task.id, entryId: entry.id, message: entry.message })));
+          raw.push(...readSessionHistory(task.sessionFile, saved.cwd)
+            .map(entry => ({ agentId: task.id, entryId: entry.id, message: entry.message })));
         } catch {}
       }
       records = projectTimeline(raw);
@@ -1989,6 +2034,7 @@ export class Sessions {
     item.work = (async () => {
       try {
         await this.persist(item);
+        if (item.safeStopping || item.cancelling || item.closing || item.notificationsPaused) return;
         await run();
         item.agent.result();
       } catch (error) {
@@ -2075,56 +2121,64 @@ export class Sessions {
   // 队列撤回放在 recall 之后，recall 被拒绝时队列原样保留，不会丢消息。
   async withdraw(id, recall = false) {
     const item = await this.ensureLoaded(id);
+    if (item.copying) throw new Error("Session is busy copying");
     if (!recall) return item.agent.withdraw();
-    if (item.status !== "idle" || item.cancelling) await this.cancel(id);
-    const recalled = await item.agent.recall();
-    // 历史真被截断时通知所有客户端重取快照：撤回重写了历史，增量事件无法表达「消息消失」。
-    let truncated = false;
-    if (recalled) {
-      const changes = [];
-      // 网页历史跟着回退：否则重新 attach 仍会画出被撤回的输入和被打断的半截回答。
-      const cut = item.messages.findIndex((record) => record.agentId === "main" && record.entryId === recalled.entryId);
-      if (cut >= 0) {
-        const previousMessages = item.messages;
-        // 撤回只回退主代理，独立子任务已经发生的输出必须保留。
-        const keptBefore = [0];
-        item.messages = previousMessages.filter((record, index) => {
-          const keep = index < cut || record.agentId !== "main";
-          keptBefore.push(keptBefore.at(-1) + Number(keep));
-          return keep;
-        });
-        // 撤回区间内的主代理重试一并移除（子代理重试保留）；保留记录不得残留越界 count
-        // 或失效锚点，否则后续新消息会让旧卡在错位处漂移。无可靠位置 → 前端未知区归档。
-        const surviving = new Map();
-        for (const record of item.messages)
-          if (record.entryId) surviving.set(record.agentId, (surviving.get(record.agentId) ?? new Set()).add(record.entryId));
-        const previousRetries = item.retries;
-        item.retries = item.retries.filter((retry) => {
-          const agent = retry.agentId || "main";
-          if (agent !== "main") return true;
-          if (Number.isInteger(retry.messageCount)) return retry.messageCount <= cut;
-          return retry.anchorEntryId == null || surviving.get("main")?.has(retry.anchorEntryId);
-        });
-        for (const retry of item.retries) {
-          if (Number.isInteger(retry.messageCount) && retry.messageCount >= 0 && retry.messageCount <= previousMessages.length)
-            retry.messageCount = keptBefore[retry.messageCount];
-          else delete retry.messageCount;
-          const anchors = surviving.get(retry.agentId || "main");
-          if (retry.anchorEntryId && !anchors?.has(retry.anchorEntryId)) delete retry.anchorEntryId;
-          changes.push({ event: { type: "retry", record: retry } });
+    if (item.configuring || item.compacting || item.closing) throw new Error("Session is busy");
+    item.configuring = true;
+    try {
+      if (item.status !== "idle" || item.cancelling) await this.cancel(id);
+      const recalled = await item.agent.recall();
+      // 历史真被截断时通知所有客户端重取快照：撤回重写了历史，增量事件无法表达「消息消失」。
+      let truncated = false;
+      if (recalled) {
+        const changes = [];
+        // 网页历史跟着回退：否则重新 attach 仍会画出被撤回的输入和被打断的半截回答。
+        const cut = item.messages.findIndex((record) => record.agentId === "main" && record.entryId === recalled.entryId);
+        if (cut >= 0) {
+          const previousMessages = item.messages;
+          // 撤回只回退主代理，独立子任务已经发生的输出必须保留。
+          const keptBefore = [0];
+          item.messages = previousMessages.filter((record, index) => {
+            const keep = index < cut || record.agentId !== "main";
+            keptBefore.push(keptBefore.at(-1) + Number(keep));
+            return keep;
+          });
+          // 撤回区间内的主代理重试一并移除（子代理重试保留）；保留记录不得残留越界 count
+          // 或失效锚点，否则后续新消息会让旧卡在错位处漂移。无可靠位置 → 前端未知区归档。
+          const surviving = new Map();
+          for (const record of item.messages)
+            if (record.entryId) surviving.set(record.agentId, (surviving.get(record.agentId) ?? new Set()).add(record.entryId));
+          const previousRetries = item.retries;
+          item.retries = item.retries.filter((retry) => {
+            const agent = retry.agentId || "main";
+            if (agent !== "main") return true;
+            if (Number.isInteger(retry.messageCount)) return retry.messageCount <= cut;
+            return retry.anchorEntryId == null || surviving.get("main")?.has(retry.anchorEntryId);
+          });
+          for (const retry of item.retries) {
+            if (Number.isInteger(retry.messageCount) && retry.messageCount >= 0 && retry.messageCount <= previousMessages.length)
+              retry.messageCount = keptBefore[retry.messageCount];
+            else delete retry.messageCount;
+            const anchors = surviving.get(retry.agentId || "main");
+            if (retry.anchorEntryId && !anchors?.has(retry.anchorEntryId)) delete retry.anchorEntryId;
+            changes.push({ event: { type: "retry", record: retry } });
+          }
+          changes.push({ deletedEvents: { type: "retry", records: previousRetries.filter((entry) => !item.retries.includes(entry)) } });
+          truncated = true;
         }
-        changes.push({ deletedEvents: { type: "retry", records: previousRetries.filter((entry) => !item.retries.includes(entry)) } });
-        truncated = true;
+        delete item.live.main;
+        item.liveIds.delete("main");
+        changes.push({ session: this.sessionData(item) });
+        // SDK分支已经回退：写库失败也必须同步网页并交还输入。整组短事务，
+        // 错误由既有error事件报告，失败增量留到下次保存/关闭重试。
+        this.saveChange(item, changes);
       }
-      delete item.live.main;
-      item.liveIds.delete("main");
-      changes.push({ session: this.sessionData(item) });
-      // SDK分支已经回退：写库失败也必须同步网页并交还输入。整组短事务，
-      // 错误由既有error事件报告，失败增量留到下次保存/关闭重试。
-      this.saveChange(item, changes);
+      if (truncated) item.emit({ type: "session.history.reset", data: { reason: "recall" } });
+      return { ...item.agent.withdraw(), recalled };
+    } finally {
+      item.configuring = false;
+      this.scheduleTaskNotifications(item);
     }
-    if (truncated) item.emit({ type: "session.history.reset", data: { reason: "recall" } });
-    return { ...item.agent.withdraw(), recalled };
   }
 
   replyQuestion(id, toolCallId, answers) {
@@ -2142,21 +2196,31 @@ export class Sessions {
       await item.loading.catch(() => {});
       return this.safeStop(id);
     }
-    item.todo?.pause();
     item.notificationsPaused = true;
     item.memoryPaused = true;
-    if (item.loaded) {
-      if (item.todo?.header) await this.holdTodoNotifications(item, true);
-      item.questions.cancel();
-      // Stop background writers even when the parent is already idle; stopping must not write more memory.
-      await Promise.all([...item.tasks.jobs.values()].filter(job => job.profile?.purpose === 'memory-maintain' && ACTIVE_TASK_STATES.includes(job.status)).map(job => item.tasks.cancelTask(job.id, { mode: 'immediate', source: 'user', reason: '主会话已暂停' })));
+    const errors = [];
+    const attempt = async action => { try { await action(); } catch (error) { errors.push(error); } };
+    // Execution control must not wait for (or be skipped by) storage writes.
+    if (item.loaded && !item.cancelling && item.status !== "idle" && !item.safeStopping) {
+      item.safeStopping = true;
+      await attempt(() => item.agent.requestSafeStop?.());
+      item.emit({ type: "session.state", data: { status: item.status, runId: item.runId, safeStop: true } });
     }
-    if (item.loaded) await this.persist(item);
-    if (!item.loaded || item.cancelling || item.status === "idle") return;
-    item.safeStopping = true;
-    item.agent.requestSafeStop?.();
-    // 状态仍是 running：不新增状态值，避免前端 busy 判定连带影响按钮与队列。
-    item.emit({ type: "session.state", data: { status: item.status, runId: item.runId, safeStop: true } });
+    if (item.loaded) {
+      await attempt(() => item.questions.cancel());
+      // Stop all background writers even when a sibling's cleanup fails.
+      await Promise.all([...item.tasks.jobs.values()].filter(job => job.profile?.purpose === 'memory-maintain' && ACTIVE_TASK_STATES.includes(job.status)).map(job => attempt(() => item.tasks.cancelTask(job.id, { mode: 'immediate', source: 'user', reason: '主会话已暂停' }))));
+    }
+    await attempt(() => item.todo?.pause());
+    if (item.loaded) {
+      if (item.todo?.header) await attempt(() => this.holdTodoNotifications(item, true));
+      await attempt(() => this.persist(item));
+    }
+    if (errors.length) {
+      const message = errors.map(error => error.message ?? String(error)).join('; ');
+      item.emit({ type: "error", data: { message: `停止处理失败（已请求安全停止）：${message}` } });
+      throw new AggregateError(errors, message);
+    }
   }
 
   // 用户从压缩进程面板取消本次后台摘要：只动后台摘要，不影响主会话运行。
@@ -2194,47 +2258,55 @@ export class Sessions {
       return this.cancel(id);
     }
     if (!item.loaded) return;
-    item.todo?.pause();
-    if (item.todo?.header) await this.holdTodoNotifications(item, true);
     if (item.cancelling) return item.cancelling;
     item.notificationsPaused = true;
     item.memoryPaused = true;
-    await this.persist(item);
     item.status = "cancelling";
     item.emit({ type: "session.state", data: { status: "cancelling" } });
-    item.cancelling = (async () => {
+    // Assign the in-flight operation before invoking any callback; concurrent stops share it.
+    item.cancelling = Promise.resolve().then(async () => {
+      const errors = [];
+      const attempt = async action => { try { await action(); } catch (error) { errors.push(error); } };
       try {
-        const abort = item.agent.abort();
-        item.questions.cancel();
-        await Promise.all([abort, item.tasks.cancel()]);
-        await item.work;
+        const abort = attempt(() => item.agent.abort());
+        const tasks = attempt(() => item.tasks.cancel());
+        await attempt(() => item.questions.cancel());
+        await attempt(() => item.todo?.pause());
+        if (item.todo?.header) await attempt(() => this.holdTodoNotifications(item, true));
+        await attempt(() => this.persist(item));
+        await Promise.all([abort, tasks]);
+        await attempt(() => item.work);
+        if (errors.length) {
+          const message = errors.map(error => error.message ?? String(error)).join('; ');
+          item.emit({ type: "error", data: { message: `停止处理失败（已请求中断）：${message}` } });
+          throw new AggregateError(errors, message);
+        }
       } finally {
         item.status = "idle";
         item.cancelling = undefined;
         item.emit({ type: "session.state", data: { status: "idle", canReask: !!item.agent.canReask?.() } });
       }
-    })();
+    });
     return item.cancelling;
   }
   async cancelTask(id, taskId, options = {}) {
     const item = await this.ensureLoaded(id);
-    if (item.closing) throw new Error("会话正在关闭");
-    item.notificationsPaused = false;
-    item.goalExited = false;
+    if (item.closing || item.copying) throw new Error("会话正在关闭或复制");
+    // Cancelling a child is not an explicit resume of its parent.
     const result = await item.tasks.cancelTask(taskId, { ...options, source: "user" });
     this.scheduleTaskNotifications(item);
     return result;
   }
   async appendTask(id, taskId, text, mode = "steer") {
     const item = await this.ensureLoaded(id);
-    if (item.closing || item.cancelling || item.safeStopping) throw new Error("会话正在停止，暂时无法发送子代理消息");
+    if (item.closing || item.copying || item.cancelling || item.safeStopping) throw new Error("会话正在停止或复制，暂时无法发送子代理消息");
     // 子代理对话不等于恢复主会话；保留用户停止后的通知冻结。
     if (item.tasks.jobs.get(taskId)?.profile?.purpose === 'memory-maintain' && (item.memoryPaused || item.todo.header?.paused)) throw new Error('记忆整理已暂停，请先恢复主会话');
     return item.tasks.append(taskId, text, mode);
   }
   async retryTask(id, taskId) {
     const item = await this.ensureLoaded(id);
-    if (item.closing || item.cancelling) throw new Error("会话正在停止，暂时无法重试子任务");
+    if (item.closing || item.copying || item.cancelling) throw new Error("会话正在停止或复制，暂时无法重试子任务");
     if (item.tasks.jobs.get(taskId)?.profile?.purpose === 'memory-maintain' && (item.memoryPaused || item.todo.header?.paused)) throw new Error('记忆整理已暂停，请先恢复主会话');
     // Explicit retry starts a new execution; Tasks.launch clears only its held flag.
     item.notificationsPaused = false;
@@ -2279,11 +2351,13 @@ export class Sessions {
 
   async remove(id, deleting = true) {
     let item = this.get(id);
+    if (item.copying) throw new Error("Session is busy copying");
     if (item.releasing) { await item.releasing; item = this.get(id); }
     if (item.loading) {
       await item.loading.catch(() => {});
       item = this.get(id);
     }
+    if (item.copying) throw new Error("Session is busy copying");
     item.closing = true;
     if (!deleting) { item.todo?.pause('服务已停止，请核对后恢复'); }
     if (!item.loaded) {
@@ -2291,15 +2365,7 @@ export class Sessions {
       if (deleting) {
         this.deleteRecords(id);
         const storageDir = this.storagePath && join(this.storagePath, createHash("sha256").update(process.platform === "win32" ? item.cwd.toLowerCase() : item.cwd).digest("hex"));
-        if (storageDir) {
-          if (item.sessionFile) {
-        await rm(item.sessionFile, { force: true });
-        for (const suffix of ['.compaction-attempts.json', '.compaction-attempts.json.tmp', '.compaction-diagnostics.json']) await rm(`${item.sessionFile}${suffix}`, { force: true });
-      }
-          await rm(join(storageDir, `${id}-tasks`), { recursive: true, force: true });
-          await rm(join(storageDir, `${id}-observations`), { recursive: true, force: true });
-          await rm(join(storageDir, `${id}.json`), { force: true });
-        }
+        await cleanupSessionFiles(storageDir, id, item.sessionFile);
       }
       item.listeners.clear();
       this.items.delete(id);
@@ -2320,17 +2386,7 @@ export class Sessions {
     if (deleting) {
       // 删除顺序：先删库记录再清理文件；若中途崩溃，标记过的旧 JSON 不会复活会话。
       this.deleteRecords(id);
-      if (item.storageDir) {
-        if (item.agent.sessionFile?.()) {
-        const file = item.agent.sessionFile();
-        await rm(file, { force: true });
-        for (const suffix of ['.compaction-attempts.json', '.compaction-attempts.json.tmp', '.compaction-diagnostics.json']) await rm(`${file}${suffix}`, { force: true });
-      }
-        await rm(join(item.storageDir, `${id}-tasks`), { recursive: true, force: true });
-        await rm(join(item.storageDir, `${id}-observations`), { recursive: true, force: true });
-        // 旧版磁盘快照兜底清理（已迁移标记的目录不会再被扫描）。
-        await rm(join(item.storageDir, `${id}.json`), { force: true });
-      }
+      await cleanupSessionFiles(item.storageDir, id, item.agent.sessionFile?.());
     }
     item.listeners.clear();
     this.items.delete(id);

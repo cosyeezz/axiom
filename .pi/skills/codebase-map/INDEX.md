@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/9/29 08:18:44）
+# Axiom 多级代码索引（生成于 2026/9/29 10:02:24）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -62,10 +62,10 @@
 | src/compaction-budget.js | 21 | 统一完整请求预算、高低水位及压缩错误分级 | requestBudget, compactionError |
 | src/compaction-display.js | 24 | 原生压缩可选展示指令与标题概述容错解析 | DISPLAY_INSTRUCTIONS, parseDisplay |
 | src/compaction-excerpt.js | 22 | 内联原文逐字匹配、消息ID替换与Unicode关键词窗口 | messageText, messageWindow |
-| src/compaction.js | 639 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
+| src/compaction.js | 641 | 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交 | contextTokens, prepareBackgroundCompaction, DEFAULT_COMPACTION_CONFIG, normalizeCompaction |
 | src/data-owner.js | 26 | 写库前数据根独占：内核管道或socket持有，禁止同根双写 | claimDataRoot, claimArchiveOwner, claimJournalOwner, claimOwner |
 | src/database.js | 122 | 共享 SQLite 连接、小配置 KV、WAL 与一致性备份 | nodeOk, DATA_VERSION, assertDataVersion, Database |
-| src/gate-ipc.js | 126 | 共享闸门认证IPC与连接租约回收 | MAX_LINE, authenticated, serveGate, connectGate |
+| src/gate-ipc.js | 128 | 共享闸门认证IPC与连接租约回收 | MAX_LINE, authenticated, serveGate, connectGate |
 | src/history-journal.js | 121 | 磁盘 journal 原文投影、持久屏障与提交确认 | readDurableJournal, installDurableJournal, confirmDurableAppend, createJournalArchive |
 | src/history-tools.js | 127 | 鉴权历史检索、原文分页及游标签名 | createHistoryReader |
 | src/inline-images.js | 32 | 模型上下文图片定位：将占位符与真实附件交错排列，不改存储与队列 | inlineImages, inlineImagesExtension |
@@ -79,30 +79,31 @@
 | src/native-summary.js | 61 | 原生摘要请求、split-turn附加证据提示与只读流观察 | observeSummaryStream, summarizeNative |
 | src/operating-guides.js | 9 | 按需加载的任务、Todo、Git 正式操作规程 | TASK_GUIDE, GIT_GUIDE, registerOperatingGuides |
 | src/pi-model-storage.js | 409 | 模型与凭据 SQLite 权威存储、Pi 派生兼容文件 | sdkResolveConfigValue, sdkIsCommandConfigValue, NAMESPACE, AUTH_NAMESPACE |
-| src/pi.js | 726 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | forkSafePoint, agentRuntime, queueStateOf, hasModelOutput |
+| src/pi.js | 731 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | forkSafePoint, agentRuntime, queueStateOf, hasModelOutput |
 | src/prompts.js | 33 | Axiom 自有提示词按 main/subagent/compaction 角色集中维护 | MAIN_AGENT_PROMPT, TITLE_INSTRUCTION, SUBAGENT_PROMPT, WRAP_UP_PROMPT |
 | src/protocol.js | 385 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/questions.js | 108 | 主代理 question 工具、参数校验与可取消的回答等待 | text, option, input, questionAnswers |
 | src/raw-history.js | 121 | 完整原文耐久归档、身份幂等与恢复校验 | historyError, canonical, contentHash, isOriginal |
 | src/remote.js | 547 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
-| src/request-gate.js | 127 | FIFO并发令牌与RPM滑动窗口 | validateLimits, RequestGate, retryAfterMs |
+| src/request-gate.js | 136 | FIFO并发令牌与RPM滑动窗口 | validateLimits, RequestGate, retryAfterMs |
 | src/retry.js | 196 | 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续 | RETRY_DELAYS_MS, MAX_DELAY_MS, MAX_RETRIES, RECOVERY_PROMPT |
 | src/safe-points.js | 37 | 完整会话前缀安全点、恢复状态与工具批次边界校验 | safePoints, navigationState, requireSafePoint |
-| src/server.js | 593 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | dev, digest, load, freshen |
+| src/server.js | 591 | createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发 | dev, digest, load, freshen |
 | src/service-operation.js | 36 | 在线守护状态只读代理：固定本机端点、字段投影与错误隔离 | STATUSES, OPERATION_ERROR, readServiceOperation |
 | src/session-billing.js | 63 | 全会话 entries 用量与费用统计、当前上下文估算 | keys, zero, number, sessionBilling |
-| src/session-history.js | 37 | 稳定消息身份、线缆记录投影与只读 JSONL 历史读取 | messageIdOf, toWireRecord, readSessionManager, readSessionHistory |
+| src/session-history.js | 45 | 稳定消息身份、线缆记录投影与只读 JSONL 历史读取 | messageIdOf, toWireRecord, readSessionManager, messageEntries |
 | src/session-memory.js | 38 | 标题提取登记、轮次预算挂钩与委派背景 | textOf, memoryHooks |
 | src/session-store.js | 489 | 会话三表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, TABLES, INDEXES |
-| src/sessions.js | 2348 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | hasRunningTasks, referencedToolKeys, relevantTools, ownedTools |
+| src/sessions.js | 2404 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | cleanupSessionFiles, hasRunningTasks, referencedToolKeys, relevantTools |
 | src/shared-gate.js | 130 | 用户级共享闸门端点与远程服务适配 | gateLayout, reconnectingGate, remoteService, shareGate |
 | src/task-budget.js | 36 | 主子代理轮次预算规则、收尾提示词与配置页参数校验 | TASK_BUDGET_LIMITS, taskBudgetDefaults, within, taskBudgetPolicy |
 | src/task-execution.js | 23 | 子任务活动阶段、独立时间预算、停止事实与总结提示 | EXECUTION_DEFAULTS, ACTIVE_TASK_STATES, stopReport, stopSummaryPrompt |
-| src/tasks.js | 297 | Tasks：子任务（委托）生命周期 | historyResult, Tasks |
+| src/tasks.js | 307 | Tasks：子任务（委托）生命周期 | historyResult, CLIENT_TASK_FIELDS, taskClientView, taskCanRetry |
 | src/todo-context.js | 42 | 压缩边界任务恢复包、持久消息与引用解析 | createTodoContextBridge |
 | src/todo-prompts.js | 178 | 统一任务准备、执行、恢复与验收提示 | TODO_MAIN_RULES, TODO_DELEGATION_RULES, TODO_RESPONSE_RULES, GOAL_PREPARE_PROMPT |
+| src/todo-schema.js | 49 | Todo 工具与运行时共享基础字段约束，保留分操作严格校验 | string, enumeration, integer, object |
 | src/todo-store.js | 62 | 统一任务三表、事务 CAS、有界查询与审计事件 | TODO_SCHEMA, parse, header, item |
-| src/todo.js | 148 | 主会话 Todo：SQLite 权威存储、版本 CAS、两级工具与暂停状态机 | id, status, acceptance, ref |
+| src/todo.js | 134 | 主会话 Todo：SQLite 权威存储、版本 CAS、两级工具与暂停状态机 | result, compact, fail, same |
 | src/tool-execution.js | 56 | 命令默认超时策略、角色限制与工具耗时观察 | TOOL_TIMEOUT_PROMPT, createToolExecutionPolicy |
 | src/tools.js | 159 | delegationTools：委托/凭证读取/追加工具定义（zod 入参） | delegateInput, readInput, appendInput, result |
 | src/transport.js | 37 | 统一有界 WS 发送：回执、广播、删除通知与慢客户端隔离 | createSender |
@@ -132,7 +133,7 @@
 | tests/compaction-ui.py | 109 | node --test 测试（npm test） | - |
 | tests/compaction-ui.test.js | 398 | node --test 测试（npm test） | page |
 | tests/compaction-view.test.js | 31 | node --test 测试（npm test） | - |
-| tests/compaction.test.js | 1334 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
+| tests/compaction.test.js | 1368 | node --test 测试（npm test） | fakeModel, createTestSession, seq, userMsg |
 | tests/composer-cascade-ui.py | 61 | node --test 测试（npm test） | - |
 | tests/composer-controls.test.js | 123 | node --test 测试（npm test） | source, fixture |
 | tests/composer-icons-ui.py | 135 | node --test 测试（npm test） | - |
@@ -152,6 +153,8 @@
 | tests/dev-assets.test.js | 46 | node --test 测试（npm test） | - |
 | tests/dev-vite-ui.py | 52 | node --test 测试（npm test） | - |
 | tests/dev-vite.test.js | 52 | node --test 测试（npm test） | - |
+| tests/duplicate-lock.test.js | 62 | node --test 测试（npm test） | - |
+| tests/duplicate-title.test.js | 19 | node --test 测试（npm test） | - |
 | tests/empty-session-config-preview.mjs | 30 | node --test 测试（npm test） | home, catalog, factory, sessions |
 | tests/empty-session-config-ui.py | 41 | node --test 测试（npm test） | - |
 | tests/empty-session-config.test.js | 99 | node --test 测试（npm test） | empty, chosen, fixture |
@@ -160,6 +163,7 @@
 | tests/frontend-regions-preview.mjs | 64 | node --test 测试（npm test） | home, catalog, factory, sessions |
 | tests/frontend-regions-ui.py | 462 | node --test 测试（npm test） | - |
 | tests/frontend-regions.test.js | 214 | node --test 测试（npm test） | appSource, pickerSource, modelPickerSource, modelSources |
+| tests/gate-ipc-shape.test.js | 73 | node --test 测试（npm test） | imports, endpoint, frames, isolated |
 | tests/gate-ipc.test.js | 100 | node --test 测试（npm test） | - |
 | tests/git-log-ui.py | 39 | node --test 测试（npm test） | - |
 | tests/git-log.test.js | 53 | node --test 测试（npm test） | - |
@@ -197,11 +201,11 @@
 | tests/message-activity.test.js | 523 | node --test 测试（npm test） | page, assistant, thought, call |
 | tests/mobile-reading-ui.py | 130 | node --test 测试（npm test） | - |
 | tests/model-auth.test.js | 133 | node --test 测试（npm test） | SECRET, fakeAuth, waitFor, noLeak |
-| tests/model-concurrency.test.js | 52 | node --test 测试（npm test） | - |
+| tests/model-concurrency.test.js | 80 | node --test 测试（npm test） | - |
 | tests/model-config.test.js | 1159 | node --test 测试（npm test） | sha, EMPTY, tempDir, openDatabases |
 | tests/model-manager.test.js | 1567 | node --test 测试（npm test） | authSource, limitsSource, source, tick |
 | tests/model-onboarding-ui.test.js | 185 | node --test 测试（npm test） | stripImports, modelSources, pickerSource, memoryTagsSource |
-| tests/model-onboarding.test.js | 78 | node --test 测试（npm test） | - |
+| tests/model-onboarding.test.js | 89 | node --test 测试（npm test） | - |
 | tests/model-picker.test.js | 423 | node --test 测试（npm test） | source, tick, nap, OPTS |
 | tests/model-runtime-catalog.test.js | 27 | node --test 测试（npm test） | - |
 | tests/model-selection-preview.mjs | 52 | node --test 测试（npm test） | home, catalog, factory, sessions |
@@ -240,11 +244,12 @@
 | tests/retry-projection-differential.test.js | 44 | node --test 测试（npm test） | source, body, translate, reference |
 | tests/retry-settings-ui.py | 30 | node --test 测试（npm test） | - |
 | tests/retry.test.js | 407 | node --test 测试（npm test） | RATE_LIMIT, QUOTA, ABORTED, fakeSession |
+| tests/review-session-boundaries.test.js | 178 | node --test 测试（npm test） | tick, deferred, fixture |
 | tests/safe-points.test.js | 47 | node --test 测试（npm test） | - |
-| tests/safe-stop.test.js | 254 | node --test 测试（npm test） | - |
+| tests/safe-stop.test.js | 263 | node --test 测试（npm test） | - |
 | tests/send-optimistic.test.js | 225 | node --test 测试（npm test） | userEnd |
 | tests/serialize-worker.test.js | 226 | node --test 测试（npm test） | rig, BIG |
-| tests/server.test.js | 172 | node --test 测试（npm test） | - |
+| tests/server.test.js | 181 | node --test 测试（npm test） | - |
 | tests/service-api.test.js | 107 | node --test 测试（npm test） | - |
 | tests/service-initialization.test.js | 105 | node --test 测试（npm test） | wait, until, service |
 | tests/service-operation.test.js | 63 | node --test 测试（npm test） | maintenance, state |
@@ -260,7 +265,7 @@
 | tests/session-created-at.test.js | 45 | node --test 测试（npm test） | factory |
 | tests/session-details.test.js | 36 | node --test 测试（npm test） | - |
 | tests/session-flow.test.js | 596 | node --test 测试（npm test） | flowFactory, jsonlFactory |
-| tests/session-history.test.js | 239 | node --test 测试（npm test） | build, fakeSource, append |
+| tests/session-history.test.js | 293 | node --test 测试（npm test） | build, fakeSource, append |
 | tests/session-memory.test.js | 174 | node --test 测试（npm test） | reply |
 | tests/session-migration.test.js | 282 | node --test 测试（npm test） | factory, workspaceHash |
 | tests/session-model-restore.test.js | 61 | node --test 测试（npm test） | stubFactory, cleanup |
@@ -274,8 +279,10 @@
 | tests/smooth-stream.test.js | 108 | node --test 测试（npm test） | fixture |
 | tests/snapshot-chunk.test.js | 104 | node --test 测试（npm test） | messageEvent, login |
 | tests/snapshot-first-screen.test.js | 88 | node --test 测试（npm test） | TOTAL, login |
+| tests/snapshot-runtime.test.js | 21 | node --test 测试（npm test） | - |
 | tests/snapshot-switch.test.js | 221 | node --test 测试（npm test） | messageEvent, login, holdReattach |
 | tests/sqlite-benchmark.mjs | 914 | node --test 测试（npm test） | parseArgs, args, scriptPath, repoDir |
+| tests/stop-storage-failure.test.js | 80 | node --test 测试（npm test） | - |
 | tests/stream-playback.test.js | 321 | node --test 测试（npm test） | segmenter, boundaries, assertBoundary |
 | tests/stream-renderer.test.js | 532 | node --test 测试（npm test） | setVisibility, virtualTimers, streamItem |
 | tests/subagent-billing.test.js | 123 | node --test 测试（npm test） | usage, billed, factory |
@@ -284,7 +291,7 @@
 | tests/task-cancel-notifications.test.js | 66 | node --test 测试（npm test） | until |
 | tests/task-execution-ui.test.js | 56 | node --test 测试（npm test） | pageFor, taskState |
 | tests/task-execution.test.js | 106 | node --test 测试（npm test） | delay, until, setup |
-| tests/task-notifications.test.js | 274 | node --test 测试（npm test） | factoryFixture, tick, until |
+| tests/task-notifications.test.js | 380 | node --test 测试（npm test） | factoryFixture, tick, until |
 | tests/task-resume.test.js | 183 | node --test 测试（npm test） | fakeAgent, fixture, restored |
 | tests/task-timer.test.js | 59 | node --test 测试（npm test） | emit, factory, state, settle |
 | tests/tasks.test.js | 345 | node --test 测试（npm test） | fixtures, fixture |
@@ -296,10 +303,11 @@
 | tests/todo-context.test.js | 22 | node --test 测试（npm test） | - |
 | tests/todo-preparation.test.js | 21 | node --test 测试（npm test） | - |
 | tests/todo-safe-points.test.js | 160 | node --test 测试（npm test） | factoryFixture, tick, until, ordinary |
+| tests/todo-schema.test.js | 40 | node --test 测试（npm test） | - |
 | tests/todo-ui-browser.py | 241 | node --test 测试（npm test） | items |
 | tests/todo-ui.test.js | 160 | node --test 测试（npm test） | source, child, snapshot |
 | tests/todo-unified-ui.test.js | 13 | node --test 测试（npm test） | - |
-| tests/todo-unified.test.js | 43 | node --test 测试（npm test） | target, fixture, update |
+| tests/todo-unified.test.js | 59 | node --test 测试（npm test） | target, fixture, update |
 | tests/todo.test.js | 28 | node --test 测试（npm test） | goal, fixture, update |
 | tests/tool-detail-reclaim.test.js | 162 | node --test 测试（npm test） | page, toggle, entry |
 | tests/tool-execution.test.js | 53 | node --test 测试（npm test） | fixture |
@@ -1303,7 +1311,7 @@
 | messageText | function | 3 |
 | messageWindow | function | 8 |
 
-### src/compaction.js（639 行） — 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交
+### src/compaction.js（641 行） — 后台独立摘要、token/占比阈值、快照校验与 turn 安全提交
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1347,14 +1355,14 @@
 | exec | method | 114 |
 | close | method | 118 |
 
-### src/gate-ipc.js（126 行） — 共享闸门认证IPC与连接租约回收
+### src/gate-ipc.js（128 行） — 共享闸门认证IPC与连接租约回收
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | MAX_LINE | const | 4 |
 | authenticated | const | 5 |
 | serveGate | function | 9 |
-| connectGate | function | 75 |
+| connectGate | function | 76 |
 
 ### src/history-journal.js（121 行） — 磁盘 journal 原文投影、持久屏障与提交确认
 
@@ -1557,19 +1565,19 @@
 | isPlainObject | method | 43 |
 | createPiModelStorage | function | 51 |
 
-### src/pi.js（726 行） — createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）
+### src/pi.js（731 行） — createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| forkSafePoint | function | 32 |
-| agentRuntime | function | 52 |
-| queueStateOf | function | 69 |
-| hasModelOutput | function | 98 |
-| withdrawQueue | function | 109 |
-| recallLastMessage | function | 127 |
-| CHECKPOINT_BOUNDARY | const | 155 |
-| memoryExtension | function | 166 |
-| createPiFactory | function | 190 |
+| forkSafePoint | function | 33 |
+| agentRuntime | function | 53 |
+| queueStateOf | function | 70 |
+| hasModelOutput | function | 99 |
+| withdrawQueue | function | 110 |
+| recallLastMessage | function | 128 |
+| CHECKPOINT_BOUNDARY | const | 156 |
+| memoryExtension | function | 167 |
+| createPiFactory | function | 191 |
 
 ### src/prompts.js（33 行） — Axiom 自有提示词按 main/subagent/compaction 角色集中维护
 
@@ -1661,7 +1669,7 @@
 | LOGIN_OUTPUT_CAP | const | 138 |
 | createRemoteAccess | function | 140 |
 
-### src/request-gate.js（127 行） — FIFO并发令牌与RPM滑动窗口
+### src/request-gate.js（136 行） — FIFO并发令牌与RPM滑动窗口
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1671,10 +1679,10 @@
 | configure | method | 47 |
 | acquire | method | 53 |
 | sweep | method | 71 |
-| cooldown | method | 101 |
-| snapshot | method | 106 |
-| close | method | 117 |
-| retryAfterMs | function | 120 |
+| cooldown | method | 110 |
+| snapshot | method | 115 |
+| close | method | 126 |
+| retryAfterMs | function | 129 |
 
 ### src/retry.js（196 行） — 模型失败重试：可取消退避、最多45次、16分钟封顶、自定义错误词表、保留已有工具结果继续
 
@@ -1701,7 +1709,7 @@
 | navigationState | function | 27 |
 | requireSafePoint | function | 32 |
 
-### src/server.js（593 行） — createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发
+### src/server.js（591 行） — createServerApp：HTTP 静态路由 + /health + WebSocket 升级与消息分发
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1731,14 +1739,15 @@
 | combinedBilling | function | 35 |
 | usageRuntime | function | 54 |
 
-### src/session-history.js（37 行） — 稳定消息身份、线缆记录投影与只读 JSONL 历史读取
+### src/session-history.js（45 行） — 稳定消息身份、线缆记录投影与只读 JSONL 历史读取
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | messageIdOf | const | 10 |
 | toWireRecord | const | 13 |
 | readSessionManager | function | 27 |
-| readSessionHistory | function | 34 |
+| messageEntries | function | 35 |
+| readSessionHistory | function | 42 |
 
 ### src/session-memory.js（38 行） — 标题提取登记、轮次预算挂钩与委派背景
 
@@ -1776,124 +1785,125 @@
 | saveTask | method | 456 |
 | listTasks | method | 483 |
 
-### src/sessions.js（2348 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
+### src/sessions.js（2404 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| hasRunningTasks | const | 31 |
-| referencedToolKeys | const | 34 |
-| relevantTools | function | 47 |
-| ownedTools | function | 56 |
-| delegateTaskIds | const | 67 |
-| projectTimeline | function | 80 |
-| entryIdSet | const | 103 |
-| compactedAnswer | const | 107 |
-| compactedRecord | function | 116 |
-| foldCompacted | function | 140 |
-| historyRetries | function | 174 |
-| translateRetries | function | 192 |
-| BROWSE_PAGE | const | 213 |
-| SEARCH_LIMIT | const | 215 |
-| SEARCH_DIR_LIMIT | const | 216 |
-| IGNORED_ENTRIES | const | 218 |
-| fuzzyHit | function | 221 |
-| matchRank | function | 232 |
-| searchEntries | function | 241 |
-| pointStatus | function | 269 |
-| trackElapsed | function | 276 |
-| fallbackTitle | function | 287 |
-| resolveDir | function | 292 |
-| parentOf | function | 303 |
-| absoluteCrumbs | function | 312 |
-| importedTitle | function | 334 |
-| duplicateTitle | function | 358 |
-| hostLocations | function | 370 |
-| landedSessionFile | function | 389 |
-| RETRYABLE_SQLITE | const | 396 |
-| retryableWrite | const | 397 |
-| DEFAULTS_NS | const | 402 |
-| WORKSPACE_PREFIX | const | 403 |
-| workspaceKeyOf | const | 404 |
-| CAPABILITY_KINDS | const | 405 |
-| catalogProjectsOf | const | 407 |
-| validateProjectSkills | function | 410 |
-| validateProjectSkillEntry | function | 414 |
-| mergeLegacyProjectSkills | function | 422 |
-| Sessions | class | 431 |
-| constructor | method | 432 |
-| applyDefaults | method | 459 |
-| loadDefaults | method | 465 |
-| migrateDefaults | method | 477 |
-| migrateLegacyStore | method | 492 |
-| loadWorkspaceDefaults | method | 516 |
-| loadTaskBudget | method | 535 |
-| getTaskBudget | method | 550 |
-| configureTaskBudget | method | 556 |
-| getDefaults | method | 563 |
-| defaultsFor | method | 567 |
-| listDefaults | method | 571 |
-| deleteDefaults | method | 577 |
-| removeDefaults | method | 582 |
-| workspaceDefaults | method | 591 |
-| configureDefaults | method | 611 |
-| saveDefaults | method | 617 |
-| pushCompaction | method | 654 |
-| validateSelection | method | 665 |
-| validateCompaction | method | 696 |
-| load | method | 710 |
-| ensureLoaded | method | 733 |
-| migrateLegacySessions | method | 759 |
-| sessionData | method | 783 |
-| persist | method | 803 |
-| writeChange | method | 837 |
-| saveChange | method | 853 |
-| list | method | 858 |
-| rename | method | 875 |
-| importSession | method | 889 |
-| safePoints | method | 919 |
-| navigationItem | method | 925 |
-| revert | method | 934 |
-| fork | method | 960 |
-| continueFromPoint | method | 978 |
-| duplicate | method | 985 |
-| create | method | 1044 |
-| scheduleTodo | method | 1463 |
-| holdTodoNotifications | method | 1475 |
-| todoAction | method | 1483 |
-| advanceTodo | method | 1511 |
-| scheduleMemory | method | 1529 |
-| scheduleTaskNotifications | method | 1550 |
-| deliverTaskNotifications | method | 1563 |
-| confirmTaskNotification | method | 1604 |
-| settleTaskNotifications | method | 1617 |
-| get | method | 1636 |
-| revealWorkspace | method | 1641 |
-| browse | method | 1655 |
-| listFiles | method | 1661 |
-| refreshSkills | method | 1723 |
-| configData | method | 1729 |
-| snapshot | method | 1743 |
-| compactionAttempt | method | 1838 |
-| compactionMessages | method | 1852 |
-| subscribe | method | 1901 |
-| canReconfigure | method | 1909 |
-| configure | method | 1915 |
-| startRun | method | 1977 |
-| retry | method | 2025 |
-| prompt | method | 2040 |
-| withdraw | method | 2076 |
-| replyQuestion | method | 2130 |
-| safeStop | method | 2139 |
-| startCompaction | method | 2164 |
-| cancelCompaction | method | 2182 |
-| cancel | method | 2190 |
-| cancelTask | method | 2219 |
-| appendTask | method | 2228 |
-| retryTask | method | 2235 |
-| deleteRecords | method | 2246 |
-| releaseIdle | method | 2257 |
-| remove | method | 2280 |
-| close | method | 2338 |
+| cleanupSessionFiles | function | 31 |
+| hasRunningTasks | const | 44 |
+| referencedToolKeys | const | 47 |
+| relevantTools | function | 60 |
+| ownedTools | function | 69 |
+| delegateTaskIds | const | 80 |
+| projectTimeline | function | 93 |
+| entryIdSet | const | 116 |
+| compactedAnswer | const | 120 |
+| compactedRecord | function | 129 |
+| foldCompacted | function | 153 |
+| historyRetries | function | 187 |
+| translateRetries | function | 205 |
+| BROWSE_PAGE | const | 226 |
+| SEARCH_LIMIT | const | 228 |
+| SEARCH_DIR_LIMIT | const | 229 |
+| IGNORED_ENTRIES | const | 231 |
+| fuzzyHit | function | 234 |
+| matchRank | function | 245 |
+| searchEntries | function | 254 |
+| pointStatus | function | 282 |
+| trackElapsed | function | 289 |
+| fallbackTitle | function | 300 |
+| resolveDir | function | 305 |
+| parentOf | function | 316 |
+| absoluteCrumbs | function | 325 |
+| importedTitle | function | 347 |
+| duplicateTitle | function | 371 |
+| hostLocations | function | 386 |
+| landedSessionFile | function | 405 |
+| RETRYABLE_SQLITE | const | 412 |
+| retryableWrite | const | 413 |
+| DEFAULTS_NS | const | 418 |
+| WORKSPACE_PREFIX | const | 419 |
+| workspaceKeyOf | const | 420 |
+| CAPABILITY_KINDS | const | 421 |
+| catalogProjectsOf | const | 423 |
+| validateProjectSkills | function | 426 |
+| validateProjectSkillEntry | function | 430 |
+| mergeLegacyProjectSkills | function | 438 |
+| Sessions | class | 447 |
+| constructor | method | 448 |
+| applyDefaults | method | 475 |
+| loadDefaults | method | 481 |
+| migrateDefaults | method | 493 |
+| migrateLegacyStore | method | 508 |
+| loadWorkspaceDefaults | method | 532 |
+| loadTaskBudget | method | 551 |
+| getTaskBudget | method | 566 |
+| configureTaskBudget | method | 572 |
+| getDefaults | method | 579 |
+| defaultsFor | method | 583 |
+| listDefaults | method | 587 |
+| deleteDefaults | method | 593 |
+| removeDefaults | method | 598 |
+| workspaceDefaults | method | 607 |
+| configureDefaults | method | 627 |
+| saveDefaults | method | 633 |
+| pushCompaction | method | 670 |
+| validateSelection | method | 681 |
+| validateCompaction | method | 712 |
+| load | method | 726 |
+| ensureLoaded | method | 749 |
+| migrateLegacySessions | method | 776 |
+| sessionData | method | 800 |
+| persist | method | 820 |
+| writeChange | method | 854 |
+| saveChange | method | 870 |
+| list | method | 875 |
+| rename | method | 892 |
+| importSession | method | 907 |
+| safePoints | method | 937 |
+| navigationItem | method | 943 |
+| revert | method | 952 |
+| fork | method | 979 |
+| continueFromPoint | method | 998 |
+| duplicate | method | 1005 |
+| create | method | 1075 |
+| scheduleTodo | method | 1495 |
+| holdTodoNotifications | method | 1507 |
+| todoAction | method | 1515 |
+| advanceTodo | method | 1543 |
+| scheduleMemory | method | 1561 |
+| scheduleTaskNotifications | method | 1582 |
+| deliverTaskNotifications | method | 1595 |
+| confirmTaskNotification | method | 1647 |
+| settleTaskNotifications | method | 1660 |
+| get | method | 1679 |
+| revealWorkspace | method | 1684 |
+| browse | method | 1698 |
+| listFiles | method | 1704 |
+| refreshSkills | method | 1766 |
+| configData | method | 1772 |
+| snapshot | method | 1787 |
+| compactionAttempt | method | 1883 |
+| compactionMessages | method | 1897 |
+| subscribe | method | 1946 |
+| canReconfigure | method | 1954 |
+| configure | method | 1960 |
+| startRun | method | 2022 |
+| retry | method | 2071 |
+| prompt | method | 2086 |
+| withdraw | method | 2122 |
+| replyQuestion | method | 2184 |
+| safeStop | method | 2193 |
+| startCompaction | method | 2228 |
+| cancelCompaction | method | 2246 |
+| cancel | method | 2254 |
+| cancelTask | method | 2292 |
+| appendTask | method | 2300 |
+| retryTask | method | 2307 |
+| deleteRecords | method | 2318 |
+| releaseIdle | method | 2329 |
+| remove | method | 2352 |
+| close | method | 2394 |
 
 ### src/shared-gate.js（130 行） — 用户级共享闸门端点与远程服务适配
 
@@ -1924,32 +1934,36 @@
 | stopSummaryPrompt | function | 9 |
 | bounded | function | 14 |
 
-### src/tasks.js（297 行） — Tasks：子任务（委托）生命周期
+### src/tasks.js（307 行） — Tasks：子任务（委托）生命周期
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | historyResult | const | 6 |
-| Tasks | class | 11 |
-| constructor | method | 12 |
-| start | method | 19 |
-| launch | method | 30 |
-| view | method | 48 |
-| snapshotJob | method | 53 |
-| publish | method | 59 |
-| retryable | method | 63 |
-| snapshot | method | 67 |
-| run | method | 69 |
-| pendingNotifications | method | 198 |
-| resumeQueued | method | 204 |
-| finalize | method | 213 |
-| read | method | 218 |
-| retry | method | 224 |
-| applyModel | method | 233 |
-| configureModel | method | 248 |
-| append | method | 254 |
-| cancelTask | method | 271 |
-| cancel | method | 286 |
-| interrupt | method | 291 |
+| CLIENT_TASK_FIELDS | const | 12 |
+| taskClientView | const | 15 |
+| taskCanRetry | const | 18 |
+| Tasks | class | 21 |
+| constructor | method | 22 |
+| start | method | 29 |
+| launch | method | 40 |
+| view | method | 58 |
+| snapshotJob | method | 63 |
+| publish | method | 69 |
+| retryable | method | 73 |
+| snapshot | method | 76 |
+| clientSnapshot | method | 77 |
+| run | method | 79 |
+| pendingNotifications | method | 208 |
+| resumeQueued | method | 214 |
+| finalize | method | 223 |
+| read | method | 228 |
+| retry | method | 234 |
+| applyModel | method | 243 |
+| configureModel | method | 258 |
+| append | method | 264 |
+| cancelTask | method | 281 |
+| cancel | method | 296 |
+| interrupt | method | 301 |
 
 ### src/todo-context.js（42 行） — 压缩边界任务恢复包、持久消息与引用解析
 
@@ -1981,6 +1995,27 @@
 | buildTodoContextMessage | function | 164 |
 | buildTodoRuntimeBlockMessage | function | 172 |
 
+### src/todo-schema.js（49 行） — Todo 工具与运行时共享基础字段约束，保留分操作严格校验
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| string | const | 5 |
+| enumeration | const | 11 |
+| integer | const | 12 |
+| object | const | 13 |
+| array | const | 14 |
+| fields | const | 15 |
+| p | const | 24 |
+| MAX_CRITERIA | const | 25 |
+| acceptance | const | 26 |
+| ref | const | 27 |
+| verification | const | 28 |
+| operation | const | 29 |
+| todoUpdateSchema | const | 37 |
+| todoReadSchema | const | 38 |
+| todoReadParameters | const | 39 |
+| todoUpdateParameters | const | 40 |
+
 ### src/todo-store.js（62 行） — 统一任务三表、事务 CAS、有界查询与审计事件
 
 | 符号 | 类型 | 行 |
@@ -2004,25 +2039,16 @@
 | remove | method | 57 |
 | list | method | 58 |
 
-### src/todo.js（148 行） — 主会话 Todo：SQLite 权威存储、版本 CAS、两级工具与暂停状态机
+### src/todo.js（134 行） — 主会话 Todo：SQLite 权威存储、版本 CAS、两级工具与暂停状态机
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| id | const | 6 |
-| status | const | 7 |
-| acceptance | const | 8 |
-| ref | const | 9 |
-| verification | const | 10 |
-| description | const | 11 |
-| operation | const | 12 |
-| todoUpdateSchema | const | 20 |
-| todoReadSchema | const | 21 |
-| result | const | 22 |
-| compact | const | 23 |
-| fail | const | 24 |
-| same | const | 25 |
-| emptyCounts | const | 26 |
-| Todo | class | 28 |
+| result | const | 7 |
+| compact | const | 8 |
+| fail | const | 9 |
+| same | const | 10 |
+| emptyCounts | const | 11 |
+| Todo | class | 13 |
 
 ### src/tool-execution.js（56 行） — 命令默认超时策略、角色限制与工具耗时观察
 
@@ -2196,7 +2222,7 @@
 | page | function | 11 |
 | restore | method | 43 |
 
-### tests/compaction.test.js（1334 行） — node --test 测试（npm test）
+### tests/compaction.test.js（1368 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -2210,17 +2236,17 @@
 | settle | const | 116 |
 | waitFor | function | 118 |
 | enabledConfig | const | 126 |
-| fakeSummarize | function | 327 |
-| startFakeLlmServer | function | 339 |
-| zodError | method | 416 |
-| zodError | method | 417 |
-| zodError | method | 418 |
-| zodError | method | 419 |
-| zodError | method | 420 |
-| zodError | method | 421 |
-| hangingSummarize | function | 891 |
-| createLoopSession | function | 988 |
-| writeFileSync | method | 989 |
+| fakeSummarize | function | 361 |
+| startFakeLlmServer | function | 373 |
+| zodError | method | 450 |
+| zodError | method | 451 |
+| zodError | method | 452 |
+| zodError | method | 453 |
+| zodError | method | 454 |
+| zodError | method | 455 |
+| hangingSummarize | function | 925 |
+| createLoopSession | function | 1022 |
+| writeFileSync | method | 1023 |
 
 ### tests/composer-controls.test.js（123 行） — node --test 测试（npm test）
 
@@ -2388,6 +2414,17 @@
 | bootPage | function | 36 |
 | values | const | 99 |
 | MODEL_IDS | const | 100 |
+
+### tests/gate-ipc-shape.test.js（73 行） — node --test 测试（npm test）
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| imports | const | 5 |
+| endpoint | const | 14 |
+| frames | const | 15 |
+| isolated | function | 17 |
+| gate | const | 24 |
+| server | const | 25 |
 
 ### tests/goal-pi.test.js（378 行） — node --test 测试（npm test）
 
@@ -3012,12 +3049,21 @@
 | recordedSleep | const | 63 |
 | lastAssistant | const | 73 |
 
-### tests/safe-stop.test.js（254 行） — node --test 测试（npm test）
+### tests/review-session-boundaries.test.js（178 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| finish | method | 202 |
-| finish | method | 213 |
+| tick | const | 12 |
+| deferred | const | 13 |
+| fixture | function | 14 |
+| test | method | 79 |
+
+### tests/safe-stop.test.js（263 行） — node --test 测试（npm test）
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| finish | method | 211 |
+| finish | method | 222 |
 
 ### tests/send-optimistic.test.js（225 行） — node --test 测试（npm test）
 
@@ -3127,13 +3173,14 @@
 | flowFactory | const | 92 |
 | jsonlFactory | const | 102 |
 
-### tests/session-history.test.js（239 行） — node --test 测试（npm test）
+### tests/session-history.test.js（293 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | build | const | 10 |
 | fakeSource | function | 24 |
 | append | const | 41 |
+| writeFileSync | method | 234 |
 
 ### tests/session-memory.test.js（174 行） — node --test 测试（npm test）
 
@@ -3337,6 +3384,13 @@
 | line | method | 907 |
 | emit | method | 909 |
 
+### tests/stop-storage-failure.test.js（80 行） — node --test 测试（npm test）
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| release | method | 21 |
+| release | method | 48 |
+
 ### tests/stream-playback.test.js（321 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
@@ -3402,7 +3456,7 @@
 | finishSummary | method | 40 |
 | create | method | 56 |
 
-### tests/task-notifications.test.js（274 行） — node --test 测试（npm test）
+### tests/task-notifications.test.js（380 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -3476,6 +3530,14 @@
 | until | function | 62 |
 | ordinary | function | 67 |
 
+### tests/todo-schema.test.js（40 行） — node --test 测试（npm test）
+
+| 符号 | 类型 | 行 |
+|---|---|---|
+| check | method | 22 |
+| check | method | 24 |
+| check | method | 25 |
+
 ### tests/todo-ui-browser.py（241 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
@@ -3490,7 +3552,7 @@
 | child | const | 7 |
 | snapshot | const | 8 |
 
-### tests/todo-unified.test.js（43 行） — node --test 测试（npm test）
+### tests/todo-unified.test.js（59 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|

@@ -1,5 +1,15 @@
 # 开发记录
 
+## 2026-09-29 代码审阅逐项修复
+
+- 原因与范围：按用户报告核对18项执行控制、一致性、性能与维护性问题；16项实施，P02与D02有据保留。不扩展架构、不碰主工作区未提交资料。基线origin/master e116f12d，独立feat/review-20260929-fixes工作树。
+- 执行控制：IPC非对象帧关闭连接；单独取消子任务不恢复父会话；idle通知按新入历史输入确认，running通知跨收尾补调度；停止先发信号，保存/清理失败独立汇总，并发取消共用控制；启动保存及Pi异步准备结束重验停止版本，不能迟发模型请求。
+- 一致性：每次压缩flight捕获当前目录/runtime，工厂刷新完整后原子发布；冷热复制首次await前占用并finally释放，recall与预排队续接也受守卫；长标题预留序号；done一级Todo摘要集中不变量与基础schema共享；SDK/冷热主子历史及压缩展开共用custom_message映射。
+- 优化与局部清理：snapshot直接runtime调用2→1而config仍独立克隆；限流单次sweep统计模型占用，保持TTL/超时策略；Web白名单投影不克隆/下发内部大材料，完整持久化和结果凭证保留，冷读重算派生canRetry避免取消期间暂态false。冷热删除共用纯文件清单，保留生命周期及先删库顺序；移除goalExited与同步attachSequence。
+- 保留决定：P02同步列表探测经10/100/1000会话测量后保留，避免永久缓存改变外部删除即时可见性；D02虽无仓内调用，但Sessions导出且src入包，外部私有深导入约束无法确认，试删后恢复pushCompaction兼容入口。微基准范围与端到端/堆峰值未测限制写入docs/review-20260929-resolution.md。
+- 验证过程：定向复制/通知/IPC/停止/限流/Todo/历史/计费/记忆/持久化组通过。原基线15失败来自真实HOME祖先目录自动发现9个宿主技能；HOME与TEMP/TMP一同隔离后原失败组61/61通过。共享SDK后来缺dist，仅本工作树断开node_modules链接并独立npm ci，未改主工作区依赖。隔离全量1013项1011通过2平台跳过0失败（约74.5秒）；补canRetry测试初次被未通知任务不可release的既有守卫拒绝，fixture先确认指定结果后13项边界回归全过，不放宽生产守卫。补测后最终全量1014项1012通过2跳过0失败（约71.1秒，review-20260929-full-verified.log）；P04独立只读复审未发现阻断。下一步合入最新master并复验。
+- 文件：src/compaction.js、gate-ipc.js、pi.js、request-gate.js、server.js、session-history.js、sessions.js、tasks.js、todo.js、新todo-schema.js；对应tests及新增边界回归；README、逐项处理文档、本记录与代码索引。INDEX变化来自既有codebase-index测试运行reindex，新增文件已登记。
+
 ## 2026-09-29 统一模型思考等级机制与选择组件
 
 - 原因：主/子代理、输入区、压缩和修复器分散维护选项；换模型时存在借用旧模型能力、补回不支持的 off、继承联动和显示/保存偏好不一致。
