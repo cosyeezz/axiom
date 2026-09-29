@@ -1,5 +1,9 @@
 # Axiom
 
+## 手机对话空间优化（实施中）
+
+[调研与实施方案](docs/mobile-chat-density-plan.md)：手机正常聊天移除 Android 常驻连接工具栏，设置按需打开并保留页面；网页低频工具收纳到更多面板，正文保持字号并适度收紧行高和块间距。方案先于实现提交，当前不代表新版 APK 或本轮验证已完成。
+
 ## 通用指令组件
 
 `src/instructions.js` 提供 `createInstructions()`、`register({name,description,parameters,handler,toolResult?,guidance?})` 与 `execute(name, arguments, context?)`。名称精确匹配，可信 JSON Schema 注册时保存快照，TypeBox 严格校验且不转换类型。宿主传递 `toolCallId/signal/onUpdate/ctx`，保留取消、错误及原有结构化工具结果；成功结果通过 `details.axiomInstruction` 保存真实指令身份。
