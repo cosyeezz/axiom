@@ -41,6 +41,9 @@ desktop/main.mjs ── Electron 桌面入口（Windows x64 已冒烟，macOS �
                  ├─ question.js/css     主代理多题回答卡、键盘操作与回执
                  ├─ service-settings.js  服务设置：更新确认、维护阶段与断线诊断
                  ├─ model-picker.js      共享供应商/模型/思考下拉，星标收藏与键盘操作
+                 ├─ thinking.js          前后端共享等级/能力/适配策略（能力来自Pi SDK）
+                 ├─ thinking-picker.js   共用选择视图：表单增强与输入区列渲染
+                 │    └─ choice-column.js 可搜索收藏列，不负责供应商参数映射
                  ├─ model-manager.js     设置页 Pi 供应商/模型管理，模板与安全编辑
                  ├─ file-picker.js       共享文件/目录选择、分类图标、按目录分页加载
                  ├─ tooltip.js/css       全站统一暗色悬停提示（接管原生 title、键盘/Popover/Esc）

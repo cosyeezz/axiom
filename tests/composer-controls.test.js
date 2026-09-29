@@ -1,9 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { readFile } from 'node:fs/promises';
-const iconSource = (await readFile(new URL('../public/icons.js', import.meta.url), 'utf8')).replaceAll('export ', '');
-const source = (await readFile(new URL('../public/composer-controls.js', import.meta.url), 'utf8')).replace(/^import .*;\r?\n/m, '').replace('export function', 'function');
+import { publicSource } from './helpers/public-source.js';
+const source = await publicSource('composer-controls');
 function fixture() {
   const dom = new JSDOM(`<body><div class="context-bar"></div><button id="session-inspector-trigger"></button><form id="composer"><textarea id="prompt"></textarea><div class="actions"></div><button id="send"></button><button id="send-steer"></button><button id="send-followup"></button></form><button id="stop"></button><button id="force-stop"></button><span id="composer-action-help"></span></body>`, { runScripts: 'outside-only' });
   const w = dom.window;
@@ -13,7 +12,7 @@ function fixture() {
   w.HTMLElement.prototype.hidePopover = function () { this.open = false; };
   let state = { busy: false, available: true, sessionId: 'a', model: 'claude/opus', thinking: 'high' }, selected;
   const favorites = { provider: [], model: [], thinking: [] }, favoriteCalls = [];
-  w.eval(`${iconSource}\n${source}`);
+  w.eval(source);
   const api = w.mountComposerControls({ getFavorites: () => favorites, toggleFavorite: async (kind, key, favorite) => { favoriteCalls.push([kind, key, favorite]); favorites[kind] = favorite ? [...favorites[kind], key] : favorites[kind].filter((entry) => entry !== key); }, state: () => state, providers: () => [['claude', 'claude'], ['openai', 'openai']], models: () => [['claude/opus', 'opus']], levels: () => ['low', 'high'], selectModel: async (...args) => { selected = args; } });
   return { dom, w, api, state, favoriteCalls, selected: () => selected };
 }
@@ -68,6 +67,24 @@ test('unavailable menu actions cannot execute or submit an idle message', () => 
     assert.equal(executions, 0);
   } finally { dom.window.close(); }
 });
+test('open model menus close when unavailable and stale choices cannot commit', async () => {
+  const { dom, w, api, state, selected } = fixture();
+  try {
+    w.document.querySelector('.composer-model-trigger').click();
+    w.document.querySelector('.composer-choice-row > button').click();
+    w.document.querySelectorAll('.composer-choice-column')[1].querySelector('.composer-choice-row > button').click();
+    const stale = w.document.querySelectorAll('.composer-choice-column')[2].querySelector('.composer-choice-row > button');
+    state.available = false; api.refresh();
+    assert.equal(w.document.querySelector('.composer-model-panel').open, false);
+    stale.click(); await Promise.resolve();
+    assert.equal(selected(), undefined);
+    state.available = true; api.refresh();
+    w.document.querySelector('.composer-model-trigger').click();
+    api.invalidateModels();
+    assert.equal(w.document.querySelector('.composer-model-panel').open, false);
+  } finally { dom.window.close(); }
+});
+
 test('favorites persist through the shared callback without choosing a model', async () => {
   const { dom, w, favoriteCalls, selected } = fixture();
   try {

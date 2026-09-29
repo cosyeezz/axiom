@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { access, appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { redact } from "./maint-state.mjs";
+import { THINKING_LEVELS } from "../public/thinking.js";
 
 export function validateRepairConfig(value) {
   if (!value || typeof value !== "object" || Array.isArray(value) ||
@@ -11,7 +12,7 @@ export function validateRepairConfig(value) {
   const { provider, model, thinking } = value;
   if (typeof provider !== "string" || !/^[\w.-]{1,100}$/.test(provider) ||
       typeof model !== "string" || !/^[\w./:@+-]{1,200}$/.test(model) ||
-      !["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(thinking))
+      !THINKING_LEVELS.includes(thinking))
     throw new Error("请填写供应商、模型 ID 和有效的思考程度");
   return { provider, model, thinking };
 }

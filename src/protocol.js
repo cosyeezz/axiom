@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { THINKING_LEVELS, resolveThinking } from "../public/thinking.js";
 import { questionAnswers } from "./questions.js";
 import { TASK_BUDGET_LIMITS } from "./task-budget.js";
 
@@ -7,7 +8,7 @@ const capabilities = z.object({
   skills: z.array(id), mcp: z.array(id), plugins: z.array(id),
 }).strict().nullable();
 const workspace = z.string().trim().min(1).optional();
-const thinking = z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]).optional();
+const thinking = z.enum(THINKING_LEVELS).optional();
 const queueType = z.enum(["steer", "followUp"]);
 // 图片附件：SDK ImageContent（{type:'image',mimeType,data:base64}）。安全上限 4 张、单张 5MiB、共 20MiB。
 const base64Pattern = /^[A-Za-z0-9+/]+={0,2}$/;
@@ -62,9 +63,10 @@ export const compaction = z.object({
 // 仍严格校验输入，且不修改保存的默认值；返回本次实际配置。
 export function resolveCompaction(value, levels) {
   const config = compaction.parse(value ?? compactionDefaults);
-  if (config.enabled && levels && !levels.includes(config.thinking)) {
+  // enabled only controls automatic triggering; manual compaction uses this too.
+  if (levels && !levels.includes(config.thinking)) {
     if (!levels.length) throw new Error("压缩模型没有可用的思考等级，请检查模型配置");
-    config.thinking = levels[0];
+    config.thinking = resolveThinking(config.thinking, levels, { policy: "lowest" });
   }
   return config;
 }
@@ -115,7 +117,7 @@ export const secretValueIn = z.union([
 const secretHeadersIn = z.record(z.string().min(1).max(256), secretValueIn);
 const thinkingLevelMapIn = z.object(
   Object.fromEntries(
-    ["off", "minimal", "low", "medium", "high", "xhigh", "max"].map((level) => [
+    THINKING_LEVELS.map((level) => [
       level,
       z.union([z.string().max(200), z.null()]).optional(),
     ]),
@@ -187,7 +189,7 @@ export const command = z.discriminatedUnion("type", [
 
   z.object({ id, type: z.literal("service.status") }).strict(),
   z.object({ id, type: z.literal("service.update.check") }).strict(),
-  z.object({ id, type: z.literal("service.restart"), mode: z.enum(["quick", "rebuild", "update"]), sha: z.string().regex(/^[0-9a-f]{40}$/i).optional(), repair: z.object({ provider: z.string().regex(/^[\w.-]{1,100}$/), model: z.string().regex(/^[\w./:@+-]{1,200}$/), thinking: z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]) }).strict().optional() }).strict(),
+  z.object({ id, type: z.literal("service.restart"), mode: z.enum(["quick", "rebuild", "update"]), sha: z.string().regex(/^[0-9a-f]{40}$/i).optional(), repair: z.object({ provider: z.string().regex(/^[\w.-]{1,100}$/), model: z.string().regex(/^[\w./:@+-]{1,200}$/), thinking: thinking.unwrap() }).strict().optional() }).strict(),
   // 远程访问（Tailscale）：get 本地/远程均可读；configure/login 仅限本地连接（server.js 内拦截远程）。
   z.object({ id, type: z.literal("remote.get") }).strict(),
   z.object({ id, type: z.literal("remote.login") }).strict(),

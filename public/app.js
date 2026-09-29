@@ -14,6 +14,8 @@ import { splitAnswer } from "./answer-tags.js";
 import { createFilePicker, fileIcon } from "./file-picker.js";
 import "./tooltip.js";
 import { createModelPicker } from "./model-picker.js";
+import { thinkingLevels, thinkingFavoriteKey } from "./thinking.js";
+import { createThinkingPicker } from "./thinking-picker.js";
 import { initModelManager } from "./model-manager.js";
 import { initServiceSettings } from "./service-settings.js";
 import { createUsageAudit } from "./usage-audit.js";
@@ -71,13 +73,12 @@ $('goal-enter').onclick = async () => {
 const compactionDefaults = { enabled: true, tokenThreshold: 100000, percentThreshold: 50, model: null, thinking: "off", keepRecentTokens: 5000, syncKeepRecentTokens: 20000, asyncKeepRecentTokens: 5000 };
 // 子代理轮次预算默认值，与 src/task-budget.js 的 taskBudgetDefaults 保持一致。
 const taskBudgetDefaults = { maxTurns: 20, wrapUpWindow: 2, workSeconds: 600, wrapUpSeconds: 180, summarySeconds: 60 };
-// 有效思考等级：只展示目标模型真正支持的等级（目录条目的 levels 由 SDK 的
-// getSupportedThinkingLevels 派生）。找不到模型时退回当前会话主模型的等级，
-// 再退到 ["off"]——绝不展示一份写死的「全部等级」，否则界面会给出模型根本不支持的选项。
-function effectiveLevels(modelKey) {
-  const levels = models.find((entry) => entry.key === modelKey)?.levels;
-  if (Array.isArray(levels) && levels.length) return levels;
-  return Array.isArray(config?.levels) && config.levels.length ? config.levels : ["off"];
+// Only the selected model's SDK capability (or that same live model's snapshot)
+// is authoritative. A missing model must never borrow another model's levels.
+function effectiveLevels(modelKey = config?.model) {
+  const key = modelKey;
+  const model = models.find((entry) => entry.key === key);
+  return thinkingLevels(model ? model.levels : key === config?.model ? config?.levels : undefined);
 }
 let modelFavorites = { provider: [], model: [], thinking: [] };
 // 思考收藏键带模型上下文，符合后端 provider/model:level 契约（model id 含冒号时后端按最后一个冒号切分）；
@@ -85,8 +86,8 @@ let modelFavorites = { provider: [], model: [], thinking: [] };
 function favoriteKey(kind, value, select) {
   if (!["provider", "model", "thinking"].includes(kind)) return "";
   if (kind !== "thinking") return value;
-  const model = select.closest(".selectors")?.querySelector('select[data-model-kind="model"]')?.value;
-  return model ? `${model}:${value}` : "";
+  const model = select.dataset.thinkingModel || select.closest(".selectors")?.querySelector('select[data-model-kind="model"]')?.value;
+  return thinkingFavoriteKey(model, value) || "";
 }
 const modelPicker = createModelPicker({
   getFavorites: () => modelFavorites,
@@ -97,7 +98,8 @@ const modelPicker = createModelPicker({
   },
   onError: error,
 });
-for (const id of ["provider", "model", "thinking", "subagent-provider", "subagent-model"]) {
+const thinkingPicker = createThinkingPicker({ picker: modelPicker });
+for (const id of ["provider", "model", "subagent-provider", "subagent-model"]) {
   const kind = id.split("-").at(-1);
   $(id).dataset.modelKind = kind;
   modelPicker.enhance($(id), kind);
@@ -756,10 +758,8 @@ async function refreshModelCatalog() {
     const provider = select.closest(".selectors")?.querySelector('select[data-model-kind="provider"]');
     refill(select, provider ? (provider.value ? modelEntries(provider.value) : []) : modelEntries());
   }
-  for (const select of document.querySelectorAll('select[data-model-kind="thinking"]')) {
-    const model = select.closest(".selectors")?.querySelector('select[data-model-kind="model"]');
-    refill(select, effectiveLevels(model?.value).map((level) => [level, level]));
-  }
+  thinkingPicker.refreshAll();
+  compactComposer?.invalidateModels();
   updateNavigation();
   // 首次配置保存模型后解除引导态（并发重复刷新只在状态变化时执行一次）。
   if (onboarding && models.length) {
@@ -778,9 +778,11 @@ function renderAgentConfig() {
   const current = models.find((m) => m.key === key);
   options($("provider"), [...(child ? [["", "跟随主代理"]] : []), ...providerEntries()], current?.provider || "");
   fillModels();
-  const levels = effectiveLevels(key);
-  options($("thinking"), [...(child ? [["", "跟随主代理思考等级"]] : []), ...levels.map((v) => [v, v])],
-    child ? config.subagentThinking || "" : config.thinking);
+  thinkingPicker.sync($("thinking"), {
+    value: child ? config.subagentThinking : config.thinking,
+    inherit: child ? "跟随主代理思考等级" : undefined,
+    context: () => ({ model: $("model").value || config?.model, levels: effectiveLevels($("model").value || config?.model) }),
+  });
   modelPicker.sync($("model"));
 }
 function fillSubagentModels(selected = config?.subagentModel || "") {
@@ -2280,8 +2282,8 @@ function compactionEditor(initial, mainModel) {
   modelPicker.enhance(model, "model");
   options(model, initialProvider ? modelEntries(initialProvider) : [["", "跟随主代理模型"]], initial.model || "");
   const thinking = field("压缩思考等级", document.createElement("select"));
-  thinking.dataset.modelKind = "thinking";
-  modelPicker.enhance(thinking, "thinking");
+  thinkingPicker.sync(thinking, { value: initial.thinking, policy: "lowest",
+    context: () => defaultThinkingContext(model.value || mainModel()) });
   const read = () => {
     const kept = number(keep, 100000000);
     const syncKept = number(syncKeep, 100000000);
@@ -2290,7 +2292,7 @@ function compactionEditor(initial, mainModel) {
       tokenThreshold: number(token, Number.MAX_SAFE_INTEGER),
       percentThreshold: number(percent, 100, true),
       model: model.value || null,
-      thinking: thinking.value,
+      thinking: defaultsMode === "session" ? thinking.value : thinkingPicker.requested(thinking) || thinking.value,
       keepRecentTokens: kept ?? compactionDefaults.asyncKeepRecentTokens,
       asyncKeepRecentTokens: kept ?? compactionDefaults.asyncKeepRecentTokens,
       syncKeepRecentTokens: syncKept ?? compactionDefaults.syncKeepRecentTokens,
@@ -2300,16 +2302,13 @@ function compactionEditor(initial, mainModel) {
     if (Number.isNaN(number(token, Number.MAX_SAFE_INTEGER))) return "Token 阈值需为大于 0 的整数";
     if (Number.isNaN(number(percent, 100, true))) return "百分比阈值需为大于 0 且不超过 100 的数值";
     if (Number.isNaN(number(keep, 100000000)) || Number.isNaN(number(syncKeep, 100000000))) return "保留 tokens 需为 1–100000000 的整数";
+    if (thinking.dataset.thinkingUnavailable === "true") return thinking.title;
     const value = read();
     return value.enabled && value.tokenThreshold == null && value.percentThreshold == null
       ? "启用自动压缩时至少设置一个触发阈值" : "";
   };
   const valid = () => !error();
-  const fillThinking = () => {
-    const levels = effectiveLevels(model.value || mainModel());
-    const current = thinking.value || initial.thinking;
-    options(thinking, levels.map((v) => [v, v]), levels.includes(current) ? current : "off");
-  };
+  const fillThinking = () => thinkingPicker.sync(thinking);
   provider.onchange = () => {
     const entries = provider.value ? modelEntries(provider.value) : [["", "跟随主代理模型"]];
     options(model, entries, entries.some(([key]) => key === model.value) ? model.value : entries[0]?.[0] || "");
@@ -4802,15 +4801,20 @@ function renderDefaultsScope() {
   $("config-assembly-help").textContent = defaultsMode === "session" && config.canReconfigure === true
     ? "当前会话尚未发送消息。能力与重试可连续修改，点击「应用能力与重试配置」后统一装配；仅作用于本会话。"
     : "Skills、MCP、Extensions 能力选择及自动重试在创建会话时装配；已开始的会话不能修改这些配置。";
-  $("config-subagent-title").textContent = defaultsMode === "session" ? "子代理设置 · 下次委派生效" : "子代理默认值 · 新会话采用";
+  $("config-subagent-title").textContent = defaultsMode === "session" ? "子代理设置 · 模型与思考" : "子代理默认值 · 新会话采用";
   $("config-subagent-help").textContent = defaultsMode === "session"
-    ? "子代理模型与思考在下次委派的新子任务中生效，无需重启会话；新子任务采用当前会话的压缩设置，运行中的子任务不变。"
+    ? "子代理思考偏好在后续创建的子执行器中生效（含重试），不修改运行中的子任务；子代理模型沿用运行时切换行为，新建子执行器采用当前会话的压缩设置。"
     : "保存新会话的子代理默认模型与思考；子代理创建时采用所在会话的压缩设置。";
   $("config-timing-help").textContent = defaultsMode === "session"
     ? "只修改当前会话。模型、思考和压缩在下次请求生效；已发出的请求不变。"
     : "这里保存新会话的默认值，不修改已有会话。未配置的工作空间跟随全局默认。";
 }
 async function refreshDefaultsScope() { renderDefaultsScope(); }
+
+function defaultThinkingContext(key) {
+  const model = key || (defaultsMode === "session" ? config?.model : "");
+  return { model, levels: effectiveLevels(model), deferred: !model && defaultsMode !== "session" };
+}
 
 function createAgentPicker(role, title, catalog, initial) {
   const fieldset = document.createElement("fieldset");
@@ -4828,7 +4832,7 @@ function createAgentPicker(role, title, catalog, initial) {
     node.id = `create-${role}-${name}`;
     node.title = labelText;
     label.append(text, node);
-    if (["provider", "model", "thinking", "mode"].includes(name)) {
+    if (["provider", "model", "mode"].includes(name)) {
       node.dataset.modelKind = name;
       modelPicker.enhance(node, name);
     }
@@ -4847,13 +4851,14 @@ function createAgentPicker(role, title, catalog, initial) {
   };
   fill(key);
   const thinking = select("thinking", `${title}思考等级`);
-  const fillThinking = () => {
-    const levels = effectiveLevels(model.value);
-    options(thinking, [["", role === "main" ? "沿用默认思考等级" : "跟随主代理思考等级"], ...levels.map((v) => [v, v])], thinking.value || initial.thinking || "");
-  };
+  thinkingPicker.sync(thinking, { value: initial.thinking,
+    inherit: role === "main" ? "沿用默认思考等级" : "跟随主代理思考等级",
+    context: () => {
+      return defaultThinkingContext(model.value || (role === "subagent" ? $("create-main-model")?.value : ""));
+    } });
+  const fillThinking = () => thinkingPicker.sync(thinking);
   model.onchange = fillThinking;
   provider.onchange = () => { fill(provider.value ? modelEntries(provider.value)[0]?.[0] || "" : ""); fillThinking(); };
-  fillThinking();
   const mode = select("mode", `${title}能力模式`);
   options(mode, [...(role === "subagent" ? [["inherit", "跟随主代理能力"]] : []), ["all", "全部能力"], ["custom", "自定义能力"]], initial.capabilities === "inherit" ? "inherit" : initial.capabilities == null ? "all" : "custom");
   fieldset.append(selectors);
@@ -4901,7 +4906,7 @@ function createAgentPicker(role, title, catalog, initial) {
   $(role === "subagent" ? "create-subagent-settings" : "create-agents").append(fieldset);
   return () => ({
     model: model.value || null,
-    thinking: thinking.value || null,
+    thinking: defaultsMode === "session" ? thinking.value || null : thinkingPicker.requested(thinking),
     capabilities: mode.value === "inherit" ? "inherit" : mode.value === "all" ? null : Object.fromEntries(
       ["skills", "mcp", "plugins"].map((kind) => [kind,
         [...pickers.querySelectorAll(`input[data-kind="${kind}"]:checked`)].map((input) => input.value)])),
@@ -4954,7 +4959,12 @@ async function loadCreation() {
     current.subagent = createAgentPicker("subagent", "子代理", catalog, { model: selected.subagentModel, thinking: selected.subagentThinking, capabilities: selected.subagentCapabilities });
     current.compaction = compactionEditor(selected.compaction || compactionDefaults, () => $("create-main-model").value);
     $("create-compaction").replaceChildren(current.compaction.node);
-    $("create-main-model").addEventListener("change", current.compaction.fillThinking);
+    const refreshDependents = () => {
+      thinkingPicker.sync($("create-subagent-thinking"));
+      current.compaction.fillThinking();
+    };
+    $("create-main-model").addEventListener("change", refreshDependents);
+    $("create-main-provider").addEventListener("change", refreshDependents);
     current.retry = retryEditor(selected.retry);
     $("create-retry").replaceChildren(current.retry.node);
     for (const node of $("create-retry").querySelectorAll("input, textarea, select, button")) node.disabled = mode === "session" && config.canReconfigure !== true;
@@ -4969,7 +4979,10 @@ async function loadCreation() {
 }
 
 function disposePickers(root) {
-  for (const select of root.querySelectorAll("select[data-model-kind]")) modelPicker.dispose(select);
+  for (const select of root.querySelectorAll("select[data-model-kind]")) {
+    if (select.dataset.modelKind === "thinking") thinkingPicker.dispose(select);
+    else modelPicker.dispose(select);
+  }
 }
 async function openDefaults() {
   const active = settingsTicket();

@@ -19,9 +19,12 @@ test("compaction config validates OR thresholds and rejects unsafe/unsupported s
 
 test("compaction adapts valid preferences without mutating defaults or accepting invalid input", () => {
   for (const [levels, expected] of [[["low", "high"], "low"], [["off"], "off"]]) {
-    const input = { ...compactionDefaults, thinking: "max" };
-    assert.equal(resolveCompaction(input, levels).thinking, expected);
-    assert.equal(input.thinking, "max");
+    for (const enabled of [true, false]) {
+      const input = { ...compactionDefaults, enabled, thinking: "max" };
+      assert.equal(resolveCompaction(input, levels).thinking, expected);
+      assert.equal(input.thinking, "max");
+      assert.throws(() => resolveCompaction(input, []), /没有可用/);
+    }
   }
   assert.equal(resolveCompaction(undefined, ["low", "high"]).thinking, "low");
   assert.equal(resolveCompaction({ ...compactionDefaults, thinking: "high" }, ["low", "high"]).thinking, "high");

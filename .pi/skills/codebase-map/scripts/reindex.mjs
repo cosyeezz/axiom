@@ -52,6 +52,11 @@ const MODULE_INFO = {
   "src/legacy-observation.js": "旧观察归档只读分页兼容，不折叠或写入",
   "scripts/legacy-history-dryrun.mjs": "旧历史只读盘点，不迁移或写入",
 
+  "public/thinking.js": "统一思考等级、能力规范化、场景适配策略与收藏键（前后端共享）",
+  "public/thinking-picker.js": "模型能力驱动的思考选择视图与表单/输入区共用渲染器",
+  "public/choice-column.js": "可搜索选择列、收藏排序与键盘导航",
+  "tests/thinking.test.js": "思考机制、七档能力子集与真实Pi SDK合约回归",
+  "tests/thinking-picker.test.js": "思考组件继承、偏好恢复、不可用与销毁回归",
   "public/composer-controls.js": "紧凑输入区：三级搜索模型菜单、固定运行操作与焦点管理",
   "public/composer-controls.css": "输入区扁平按钮、级联菜单、分组信息与窄屏布局",
   "tests/composer-controls.test.js": "级联搜索提交和运行操作默认值回归",

@@ -10,6 +10,9 @@ import { compaction, compactionDefaults } from "./protocol.js";
 import { confirmDurableAppend } from "./history-journal.js";
 import { requestBudget, compactionError } from "./compaction-budget.js";
 import { contentHash } from "./raw-history.js";
+import { resolveThinking } from "../public/thinking.js";
+import { createJiti } from "jiti";
+const { getSupportedThinkingLevels } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai");
 
 // SDK usage 未知（尤其刚压缩后）时只估算现有内容，不能重新信任旧 usage。
 function contextTokens(messages) {
@@ -363,14 +366,15 @@ export function createBackgroundCompaction({
 
   function runFlight(preparation, run) {
     const model = resolveModel(); // 快照时同步捕获 model/thinking，配置漂移不影响在途 flight
+    const thinking = resolveThinking(current.thinking, getSupportedThinkingLevels(model), { policy: "lowest" });
     controller = new AbortController();
-    if (run) run.model = model?.name || model?.id || run.model;
+    if (run) { run.model = model?.name || model?.id || run.model; run.thinking = thinking; }
     return summarize({
       preparation: structuredClone(preparation.nativePreparation),
       messages: structuredClone(preparation.messagesToSummarize), // 冻结快照，防消息对象后续被原地改写
       previousSummary: preparation.previousSummary,
       model,
-      thinking: current.thinking,
+      thinking,
       modelRuntime,
       usage,
       audit,

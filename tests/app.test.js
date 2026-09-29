@@ -13,7 +13,7 @@ const modelSources = await Promise.all(["model-picker", "model-auth", "model-man
   const exports = [...source.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map((m) => m[1]);
   return `Object.assign(window, (() => { ${source.replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "")}\nreturn {${exports.join(",")}}; })());`;
 })).then((parts) => parts.join("\n"));
-const serviceSource = (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+const serviceSource = (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^import .*;\r?\n/gm, "").replace(/^export /gm, "");
 
 test("header path icons do not inherit the global button minimum height", async () => {
   const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
@@ -1021,15 +1021,21 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("create-main-provider").value, "", "defaults do not take the current model implicitly");
     assert.equal(window.document.querySelectorAll('.settings-nav button').length, 6, "连接 + 默认新会话设置 + 远程控制 + 模型与供应商 + 用量与限流 + 服务与更新");
     assert.equal($("create-subagent-mode").querySelector('option[value="inherit"]').textContent, "跟随主代理能力");
-    // 思考等级只列出「当前选中模型真正支持的等级」：还没选模型时回退到当前会话的等级集合。
-    assert.deepEqual([...$("create-subagent-thinking").options].map((option) => option.value), ["", "off"],
-      "未选模型时不再罗列 max 等模型并不支持的等级");
+    // 默认模型未确定时只编辑偏好，不借用当前会话能力或模型收藏上下文。
+    assert.deepEqual([...$("create-subagent-thinking").options].map((option) => option.value), ["", "off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+    assert.match($("create-subagent-thinking").title, /仅保存思考偏好/);
+    assert.equal($("create-subagent-thinking").dataset.thinkingModel, "");
+    assert.equal($("create-subagent-thinking").checkValidity(), true);
     $("create-subagent-thinking").value = "off";
     $("create-main-provider").value = "other";
     $("create-main-provider").dispatchEvent(new window.Event("change"));
     // 选中 other/child（levels: off/medium/high）后，等级列表随即跟上。
     assert.deepEqual([...$("create-main-thinking").options].map((option) => option.value), ["", "off", "medium", "high"],
       "换模型后等级列表跟着换");
+    assert.equal($("create-subagent-model").value, "", "子代理保持继承模型");
+    assert.deepEqual([...$("create-subagent-thinking").options].map((option) => option.value), ["", "off", "medium", "high"],
+      "更换主供应商立即更新继承子代理的能力，而不是借用旧会话等级");
+    assert.equal($("create-subagent-thinking").dataset.thinkingModel, "other/child", "收藏绑定有效继承模型");
     $("create-main-thinking").value = "high";
     $("create-main-mode").value = "custom";
     $("create-main-mode").dispatchEvent(new window.Event("change"));

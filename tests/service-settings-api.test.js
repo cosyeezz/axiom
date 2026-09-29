@@ -27,6 +27,12 @@ test("authenticated remote service controls match local; maintenance credentials
       const page = await fetch(base);
       assert.equal(page.headers.get("content-security-policy").includes(maintenance.url), local);
       assert.equal((await page.text()).includes(maintenance.token), false);
+      for (const file of ["thinking.js", "thinking-picker.js", "choice-column.js"]) {
+        const asset = await fetch(`${base}/${file}`);
+        assert.equal(asset.status, 200, file);
+        assert.match(asset.headers.get("content-type"), /javascript/);
+        assert.match(await asset.text(), /export /, "shared modules are served through production routing");
+      }
       const ws = new WebSocket(base.replace("http:", "ws:") + "/ws", ["axiom"]);
       sockets.push(ws);
       await once(ws, "open");

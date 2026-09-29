@@ -163,6 +163,22 @@ test("manual async bypasses threshold, rejects duplicate and applies at idle", a
   } finally { ctrl?.dispose(); cleanup(); }
 });
 
+for (const mode of ["sync", "async"]) test(`manual ${mode} compaction adapts thinking at execution and reports the same effective level`, async () => {
+  const { session, cleanup } = await createTestSession();
+  let ctrl, received;
+  try {
+    seed(session, Array.from({ length: 12 }, (_, i) => i % 2 ? assistantMsg(big("a")) : userMsg(big("u"))));
+    session.agent.state.model = { ...session.model, reasoning: true, thinkingLevelMap: { off: null, minimal: null, medium: null }, contextWindow: 8192 };
+    const config = { ...enabledConfig, enabled: false, thinking: "max", syncKeepRecentTokens: 200 };
+    ctrl = createBackgroundCompaction({ session, config, summarize: async options => { received = options.thinking; return { summary: "Short summary" }; } });
+    await ctrl.runNow(mode);
+    await waitFor(() => ctrl.getStatus().status === "applied");
+    assert.equal(received, "low");
+    assert.equal(ctrl.getStatus().runs.at(-1).thinking, "low");
+    assert.equal(config.thinking, "max", "saved preference is not mutated");
+  } finally { ctrl?.dispose(); cleanup(); }
+});
+
 test("manual sync failure preserves messages and permits retry", async () => {
   const { session, cleanup } = await createTestSession();
   let ctrl;

@@ -21,11 +21,11 @@ import {
 import { capabilityLoader, discoverCapabilities, refreshProjectSkills, MAIN_EXCLUDED_SKILLS } from "./capabilities.js";
 import { createBackgroundCompaction, entryIdFor, normalizeCompaction, summarizedEntryIds } from "./compaction.js";
 import { resolveCompaction } from "./protocol.js";
+import { resolveThinking } from "../public/thinking.js";
 import { WRAP_UP_PROMPT, budgetSystemPrompt } from "./task-budget.js";
 import { canResume, createAutoRetry, dropFailedAssistant } from "./retry.js";
 import { createJiti } from "jiti";
-const { AssistantMessageEventStream } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai");
-const { getSupportedThinkingLevels } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai/compat");
+const { AssistantMessageEventStream, getSupportedThinkingLevels } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai");
 
 if (Object.hasOwn(process.env, "AXIOM_OBSERVATION_PACK")) process.emitWarning("AXIOM_OBSERVATION_PACK 已弃用并被忽略，旧归档仅只读取回", { code: "AXIOM_OP_DEPRECATED" });
 
@@ -537,7 +537,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
           || (key === currentKey ? session.model : undefined);
         if (!selected) throw new Error("模型当前不可用，请在模型配置页检查凭据或重新选择模型");
         const nextCompaction = validateCompaction(compaction ?? compactionCtrl.getConfig(), selected);
-        if (thinking && !getSupportedThinkingLevels(selected).includes(thinking)) throw new Error("Unsupported thinking level");
+        if (thinking) resolveThinking(thinking, getSupportedThinkingLevels(selected), { policy: "strict" });
         const previous = session.model;
         const previousThinking = session.thinkingLevel;
         compactionCtrl.cancel();

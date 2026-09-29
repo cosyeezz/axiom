@@ -1,8 +1,11 @@
 import { composerIconNode } from './icons.js';
+import { createChoiceColumn } from './choice-column.js';
+import { createThinkingPicker } from './thinking-picker.js';
 
 // Compact composer controls. Existing session handlers remain the authority.
 export function mountComposerControls({ state, providers, models, levels, selectModel, getFavorites = () => ({}), toggleFavorite = async () => {} }) {
   const $ = (id) => document.getElementById(id);
+  const thinkingPicker = createThinkingPicker();
   const paths = { chevron: 'm8 10 4 4 4-4', next: 'm10 6 6 6-6 6', back: 'm14 6-6 6 6 6', check: 'm5 12 4 4L19 6', stop: 'M7 7h10v10H7z', force: 'm7 7 10 10M17 7 7 17', steer: 'M5 19V9a4 4 0 0 1 4-4h10m-4-4 4 4-4 4', followUp: 'M5 6h14M5 12h14M5 18h8m3-3 3 3-3 3', send: 'M12 20V4m-6 6 6-6 6 6', info: 'M12 8h.01M12 11v6M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0' };
   function icon(name) {
     if (['stop', 'force', 'steer', 'followUp', 'send', 'info'].includes(name)) return composerIconNode(name);
@@ -64,49 +67,16 @@ export function mountComposerControls({ state, providers, models, levels, select
       items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus();
     });
   }
+  function columnOptions(kind) {
+    return { icon, getFavorites: () => getFavorites()[kind] || [],
+      toggleFavorite: (key, favorite) => toggleFavorite(kind, key, favorite),
+      onBack: kind === 'provider' ? undefined : () => {
+        const index = kind === 'thinking' ? 1 : 0;
+        clearChildren(index); (index ? children[0] : modelPanel)?.querySelector('input')?.focus();
+      } };
+  }
   function column(title, entries, selected, choose, kind) {
-    const section = document.createElement('section'); section.className = 'composer-choice-column';
-    const heading = document.createElement('h3'); heading.textContent = title;
-    const search = document.createElement('input'); search.type = 'search'; search.placeholder = `搜索${title}…`; search.setAttribute('aria-label', `搜索${title}`);
-    const list = document.createElement('div'); list.className = 'composer-choice-list';
-    function render() {
-      list.replaceChildren();
-      const favoriteKey = (value) => kind === 'thinking' ? `${model}:${value}` : value;
-      const favorites = getFavorites()[kind] || [];
-      const filtered = entries.filter((entry) => entry.join(' ').toLowerCase().includes(search.value.toLowerCase()));
-      filtered.sort((a, b) => Number(favorites.includes(favoriteKey(b[0]))) - Number(favorites.includes(favoriteKey(a[0]))));
-      for (const [value, label] of filtered) {
-        const item = document.createElement('button'); item.type = 'button';
-        const text = document.createElement('span'); text.textContent = label;
-        item.append(text);
-        if (value === selected) item.append(icon('check'));
-        else if (kind !== 'thinking') item.append(icon('next'));
-        item.title = label; item.setAttribute('aria-pressed', String(value === selected));
-        item.onclick = () => choose(value, item);
-        const row = document.createElement('div'); row.className = 'composer-choice-row';
-        const star = document.createElement('button'); star.type = 'button'; star.className = 'composer-favorite';
-        const favorite = favorites.includes(favoriteKey(value));
-        star.textContent = favorite ? '★' : '☆'; star.setAttribute('aria-label', `${favorite ? '取消收藏' : '收藏'} ${label}`); star.setAttribute('aria-pressed', String(favorite));
-        star.onclick = async () => {
-          star.disabled = true;
-          try {
-            const key = favoriteKey(value);
-            await toggleFavorite(kind, key, !favorite); render();
-            [...list.querySelectorAll('.composer-favorite')].find((button) => button.dataset.favoriteKey === key)?.focus();
-          }
-          catch (error) { star.title = `收藏失败：${error.message}`; star.disabled = false; }
-        };
-        star.dataset.favoriteKey = favoriteKey(value);
-        row.append(item, star); list.append(row);
-      }
-      if (!list.childElementCount) { const empty = document.createElement('p'); empty.textContent = '没有匹配项'; list.append(empty); }
-    }
-    if (title !== '供应商') {
-      const back = document.createElement('button'); back.type = 'button'; back.className = 'composer-choice-back'; back.append(icon('back'), document.createTextNode('返回'));
-      back.onclick = () => { const index = title === '思考等级' ? 1 : 0; clearChildren(index); (index ? children[0] : modelPanel)?.querySelector('input')?.focus(); };
-      section.append(back);
-    }
-    search.oninput = render; render(); section.append(heading, search, list); return section;
+    return createChoiceColumn({ ...columnOptions(kind), title, entries, selected, choose, next: true });
   }
   function showChild(index, content, anchor) {
     clearChildren(index);
@@ -126,10 +96,14 @@ export function mountComposerControls({ state, providers, models, levels, select
       provider = value; model = null;
       showChild(0, column('模型', models(provider), state().model, (value, anchor) => {
         model = value;
-        showChild(1, column('思考等级', levels(model).map((value) => [value, value]), model === state().model ? state().thinking : null, async (value) => {
-          close(modelPanel); await selectModel(model, value);
-          if (typeof document !== 'undefined' && document?.body) { refresh(); focusPrompt(); }
-        }, 'thinking'), anchor);
+        showChild(1, thinkingPicker.column({ ...columnOptions('thinking'), levels: levels(model), model,
+          value: model === state().model ? state().thinking : null,
+          choose: async (value) => {
+            close(modelPanel);
+            if (!state().available || !levels(model).includes(value)) return;
+            await selectModel(model, value);
+            if (typeof document !== 'undefined' && document?.body) { refresh(); focusPrompt(); }
+          } }), anchor);
       }, 'model'), anchor);
     }, 'provider'));
   }
@@ -154,7 +128,7 @@ export function mountComposerControls({ state, providers, models, levels, select
   function refresh() {
     const current = state();
     if ((!previousBusy && current.busy) || identity !== current.sessionId) operation = 'stop';
-    if (identity !== current.sessionId) close(modelPanel, false);
+    if (identity !== current.sessionId || !current.available) close(modelPanel, false);
     identity = current.sessionId; previousBusy = current.busy;
     const modelName = document.createElement('span'); modelName.textContent = current.model ? `${current.model.replace('/', ' · ')} · ${current.thinking || 'off'}` : '选择模型';
     trigger.replaceChildren(modelName, icon('chevron'));
@@ -179,5 +153,5 @@ export function mountComposerControls({ state, providers, models, levels, select
   });
   $('prompt').autofocus = true;
   refresh();
-  return { refresh, queue: () => operation === 'followUp' ? 'followUp' : 'steer' };
+  return { refresh, invalidateModels: () => close(modelPanel, false), queue: () => operation === 'followUp' ? 'followUp' : 'steer' };
 }

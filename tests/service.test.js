@@ -36,6 +36,8 @@ const buildWorkspace = async (npm = false) => {
   const root = npm ? join(base, "@cosyeezz", "axiom") : base;
   await mkdir(join(root, "scripts"), { recursive: true });
   await mkdir(join(root, "src"), { recursive: true });
+  await mkdir(join(root, "public"), { recursive: true });
+  await writeFile(join(root, "public", "thinking.js"), await readFile(new URL("../public/thinking.js", import.meta.url)));
   await writeFile(join(root, "package.json"), JSON.stringify({ name: "axiom", version: "0.0.0", private: true }));
   await writeFile(join(root, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: {} }));
   for (const name of ["service.mjs", "maint-state.mjs", "maint-server.mjs", "pi-repair.mjs"])
@@ -146,8 +148,8 @@ if (cmd === "install") {
   writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: "@cosyeezz/axiom", version: "9.0.0", _resolved: "github:cosyeezz/axiom#" + sha }));
   writeFileSync(join(stage, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: { "node_modules/@cosyeezz/axiom": { resolved: "github:cosyeezz/axiom#" + sha } } }));
   writeFileSync(join(stage, "node_modules", "dep-new"), "dep\\n");
-  // npm -g 装的是完整包：把现包 scripts/src 复制进 staged，换名后新 worker 才有入口。
-  for (const part of ["scripts", "src"]) cpSync(join(process.env.FAKE_GLOBAL_ROOT, "@cosyeezz", "axiom", part), join(pkg, part), { recursive: true });
+  // npm -g 装的是完整包：把现包 scripts/src/public 复制进 staged，含修复器共享依赖。
+  for (const part of ["scripts", "src", "public"]) cpSync(join(process.env.FAKE_GLOBAL_ROOT, "@cosyeezz", "axiom", part), join(pkg, part), { recursive: true });
   if (process.env.FAKE_SERVED && !existsSync("stopped")) writeFileSync(process.env.FAKE_SERVED, "yes");
   process.exit(0);
 }

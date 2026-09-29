@@ -1,5 +1,16 @@
 # 开发记录
 
+## 2026-09-29 统一模型思考等级机制与选择组件
+
+- 原因：主/子代理、输入区、压缩和修复器分散维护选项；换模型时存在借用旧模型能力、补回不支持的 off、继承联动和显示/保存偏好不一致。
+- 决策：模型能力及供应商参数转换仍以 Pi SDK 0.85.1 为权威，不按供应商名另建表；共享七档词汇与 nearest/strict/lowest 场景策略，null 继承不等于 off，最高档不等于无限预算。调研依据与局限见 docs/thinking-selection.md。
+- 实施：新增 public/thinking.js、thinking-picker.js、choice-column.js，表单和输入区共用选择视图，模型能力编辑复用常量；修复器离线手动模式明确未验证支持性。依赖模型变化刷新等级及收藏上下文，程序刷新不自动保存；保持现有配置字段及收藏键。
+- 边界：主会话热更新严格校验；新建/恢复由 SDK clamp；自动/手动压缩均用最低支持等级，执行参数与运行记录一致。保留子模型既有热切换，纠正子思考仅后续创建执行器（含重试）生效的文案，不扩大运行中子思考热更新。
+- 接线：新增模块登记生产静态路由及代码索引；独立服务测试夹具复制 public 共享依赖，仍不加载待修复 SDK。沿用现有 Linear token 与菜单样式，不增加依赖。默认模型未确定时只保存偏好，不借用当前会话能力或收藏上下文；旧隐藏思考控件脱离消息表单，保留配置错误但不阻断已有会话发送。
+- 验证：npm test 共 937 项，935 通过、0 失败、2 项因 Windows 平台条件跳过（POSIX SQLite 文件权限、非 Windows revealWorkspace 分支），无取消或待办，耗时约 68.9 秒。Chromium 输入区级联回归通过，覆盖桌面三级菜单定位、键盘焦点、收藏与选择关闭，以及菜单关闭后的 390/320px 页面无横向溢出；无 pageerror。已修复服务夹具缺失共享文件和隐藏控件拦截发送问题，新增 SDK 全能力子集合约、选择生命周期及手动压缩回归。npm pack --dry-run 确认三个共享模块入包；git diff --check 通过。
+- 文件：public/app.js、composer-controls.js、model-manager.js、service-settings.js、index.html 与三个共享模块；src/protocol.js、model-config.js、pi.js、compaction.js、server.js；scripts/pi-repair.mjs；相关 tests、README、研究文档、代码导航与本记录。发布版本升至 0.1.9。
+- 交付过程：首次获取最新 master 被 SSH publickey 认证拒绝，按约定保留现场；用户要求重试后 fetch 成功，确认远端基线为 70dd7cc。后续在 feat/thinking-selector 整合最新 master 并重新验证，不以缓存远端状态替代最新状态；主工作区无关改动单独保留。
+
 ## 2026-09-29 Android 内嵌 Tailscale：客户端实施
 
 - 计划先行提交 `0c03d3a` 后新增独立 `android/`。本机无 Go/JDK/SDK，采用 GitHub Actions 固定工具链编译 AAR/APK，不安装或修改用户现有服务。

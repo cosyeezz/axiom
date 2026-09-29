@@ -13,6 +13,7 @@
 // 轮询在线与断线都进行（否则重启准备阶段不可观测），每次以权威 state 更新重启锁与操作记录；
 // 请求接受不等于完成。恢复仅由用户在面板触发，自动重试/限流由守护侧负责。
 // 业务端口离线时刷新/新开页面无法加载本页，维护凭证只缓存于 sessionStorage（已打开页面断线重连用）。
+import { createThinkingPicker } from "./thinking-picker.js";
 const MAINT_URL_RE = /^http:\/\/127\.0\.0\.1:\d+$/;
 const POLL_MS = 3000, FETCH_TIMEOUT = 5000, SUBMIT_GRACE = 5000;
 
@@ -30,11 +31,14 @@ export function initServiceSettings({ request, isReady }) {
   const phaseNames = { repairing: "Pi 诊断修复", preparing: "准备安装", stopping: "保存并停止", swapping: "切换安装", building: "构建", starting: "启动服务", boot: "启动", ready: "就绪", stop: "停止服务", build: "构建", download: "下载更新", install: "安装更新", start: "启动服务", recover: "恢复服务" };
   const phaseText = (phase) => (phase ? (phaseNames[phase] ?? phase) : "…");
 
+  const repairThinking = createThinkingPicker();
+  if ($("repair-thinking")) repairThinking.sync($("repair-thinking"), { manual: true, value: "medium" });
   const repairConfig = () => ({ provider: $("repair-provider")?.value.trim() || "", model: $("repair-model")?.value.trim() || "", thinking: $("repair-thinking")?.value || "medium" });
   for (const key of ["provider", "model", "thinking"]) {
     const field = $(`repair-${key}`);
     if (!field) continue;
     try { const saved = JSON.parse(localStorage.getItem("axiom.service-repair") || "null"); if (saved?.[key]) field.value = saved[key]; } catch {}
+    if (key === "thinking") repairThinking.sync(field, { value: field.value || "medium" });
     field.onchange = () => { try { localStorage.setItem("axiom.service-repair", JSON.stringify(repairConfig())); } catch {} };
   }
 

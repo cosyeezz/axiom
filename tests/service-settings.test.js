@@ -8,7 +8,8 @@ import { createMaintState } from "../scripts/maint-state.mjs";
 import { startMaintServer } from "../scripts/maint-server.mjs";
 import { Database } from "../src/database.js";
 
-const source = (await readFile(new URL("../public/service-settings.js", import.meta.url), "utf8")).replace(/^export /gm, "");
+import { publicSource } from "./helpers/public-source.js";
+const source = await publicSource("service-settings");
 const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
 
 async function setup({ ready = true, grace = 5000, respond, status = async () => ({}) } = {}) {

@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { canonicalModelsJson } from "./pi-model-storage.js";
 import { modelConfigIn, modelOverrideIn, providerConfigIn } from "./protocol.js";
+import { THINKING_LEVELS as LEVELS } from "../public/thinking.js";
 
 // SDK 0.85.1 未公开导出 ModelConfig（models.json schema 校验器），从实际安装位置
 // 经包入口定位后按文件 URL 深路径加载。
@@ -24,7 +25,6 @@ try {
 // 本模块只负责协议语义（指纹乐观锁、合并规则、脱敏、SDK 校验闸门），不再直接读写文件。
 // 协议：docs/model-config-protocol.md。服务端永不读取/回显/记录密钥明文。
 const digest = (raw) => createHash("sha256").update(raw).digest("hex");
-const LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const FAVORITE_GROUPS = ["provider", "model", "thinking"];
 const FAVORITE_CAP = 200;
 // discover（在线拉取模型列表）：接口均已按官方文档核实；重定向可能把凭据带到第三方，直接禁止。

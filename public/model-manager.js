@@ -1,4 +1,5 @@
 import { actionIconNode } from "./icons.js";
+import { THINKING_LEVELS } from "./thinking.js";
 import { createModelLimits } from "./model-limits.js";
 // 设置页「模型与供应商」面板：编辑 Axiom SQLite 中 的自定义/覆盖供应商与模型。
 // 协议见 docs/model-config-protocol.md v1：
@@ -23,7 +24,6 @@ import { createModelLimits } from "./model-limits.js";
 // 选项文案保持短：原生 select 不会截断提示，窄屏下拉框放不下就会被切掉。
 import { createModelAuth } from "./model-auth.js";
 
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const API_TYPES = [
   ["openai-completions", "OpenAI Chat Completions"],
   ["openai-responses", "OpenAI Responses"],
@@ -988,7 +988,7 @@ export function initModelManager({ root, request, onSaved }) {
   //   勾上 → 本次编辑里的自定义字符串保留；已落盘的自定义字符串在勾回来时恢复（别把用户的
   //            API 入参悄悄换成默认）；属于 opt-in（xhigh/max）或落盘里是 null 就写等级名（浅
   //            合并语义下 delete 清不掉已落盘的 null）；其余删除该键，回到 SDK 默认。
-  const defaultLevels = (reasoning) => (reasoning ? ["off", "minimal", "low", "medium", "high"] : ["off"]);
+  const defaultLevels = (reasoning) => (reasoning ? THINKING_LEVELS.slice(0, THINKING_LEVELS.indexOf("xhigh")) : ["off"]);
   // 快照侧的基准等级：目录条目自带 levels；自定义 models 条目是配置原文，回退到目录同名模型，
   // 再回退到 SDK 默认（否则新建行会全部画成未勾，而它们在会话选择器里依旧可选）。
   function baseLevels(model, providerId, reasoning) {

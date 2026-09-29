@@ -147,7 +147,7 @@
                     ><select id="model" title="模型"></select></label
                   ><label
                     ><span class="sr-only">思考程度</span
-                    ><select id="thinking" title="思考程度"></select
+                    ><select id="thinking" form="" title="思考等级"></select
                   ></label>
                 </div>
                 <button type="button" class="secondary" id="stop" title="安全停止：等当前一步跑完再停，不丢已完成的产出" aria-label="安全停止当前会话任务" hidden>Stop <span aria-hidden="true">■</span></button
@@ -426,7 +426,8 @@
             <div class="service-action"><button type="button" id="restart-rebuild" class="secondary" aria-haspopup="dialog" aria-controls="restart-dialog" disabled>Pi 修复并重启</button><p>启动独立 Pi 诊断启动故障并修复，使用本机 Pi 的供应商凭证，可能产生模型费用。</p>
               <label>供应商 <input id="repair-provider" type="text" maxlength="100" placeholder="例如 openai" autocomplete="off"></label>
               <label>模型 ID <input id="repair-model" type="text" maxlength="200" placeholder="使用 Pi 已配置的模型 ID" autocomplete="off"></label>
-              <label>思考程度 <select id="repair-thinking"><option value="off">关闭</option><option value="minimal">最低</option><option value="low">低</option><option value="medium" selected>中</option><option value="high">高</option><option value="xhigh">极高</option><option value="max">最高</option></select></label>
+              <label>思考等级 <select id="repair-thinking"></select></label>
+              <p>离线修复使用手动等级，尚未验证模型支持性；off 不保证关闭模型内部推理。</p>
               <p>配置在本浏览器自动保留，执行时保存到本机。修复经验存入 AXIOM_HOME/service-repair-prompt.md。</p>
             </div>
             <div class="service-action"><button type="button" id="service-recover" class="secondary" hidden>尝试恢复服务</button><p>页面与服务断开且业务进程未运行时，请求守护进程重新拉起。</p></div>

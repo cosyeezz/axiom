@@ -3,6 +3,30 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { bootSessionPage, until, settle } from './helpers/session-page.js';
 
+test('未知模型能力保持配置错误，但不阻断已有会话真实发送路径', async t => {
+  const page = bootSessionPage({ respond: (req, base) => {
+    const result = base(req);
+    if (req.type === 'models.list') return result.map(model => ({ ...model, levels: [] }));
+    if (req.type === 'session.attach') return { ...result, config: { ...result.config, levels: [] } };
+    return result;
+  } });
+  t.after(page.close); page.open();
+  await until(() => page.app.connected(), '连接');
+  const thinking = page.$('thinking');
+  assert.equal(thinking.form, null);
+  assert.equal(thinking.validity.customError, true);
+  assert.equal(thinking.checkValidity(), false, '配置错误仍可观察，不猜测支持off');
+  const before = page.messages();
+  page.$('composer').requestSubmit();
+  assert.equal(page.messages(), before, '空消息仍不能提交');
+  page.$('prompt').value = '继续已有会话';
+  page.$('composer').requestSubmit();
+  assert.equal(page.$('prompt').value, '');
+  assert.equal(page.messages(), before + 1);
+  page.paint();
+  await until(() => page.requests.some(req => req.type === 'prompt'), '发送');
+});
+
 test('配置在飞时发送立即上屏，实际请求等待配置', async t => {
   const page = bootSessionPage({ hold: req => req.type === 'session.configure' });
   t.after(page.close); page.open();

@@ -95,7 +95,7 @@ export function bootSessionPage({ sessionId = "long", title = "长会话", epoch
   const defaultRespond = (req) => {
     switch (req.type) {
       case "service.status": return { managed: false, error: "", version: "9.9.9" };
-      case "models.list": return [{ key: "test/model", provider: "test", name: "Model" }];
+      case "models.list": return [{ key: "test/model", provider: "test", name: "Model", levels: ["off"] }];
       case "models.favorites.get": return { provider: [], model: [], thinking: [] };
       case "capabilities.list": return { needsTrust: false, warnings: [], skills: [], mcp: [], plugins: [] };
       case "sessions.list": return [{ id: sessionId, title, cwd: "C:/work", status: "idle", sessionFile: "C:\\axiom\\long.jsonl", updatedAt: 1 }];
