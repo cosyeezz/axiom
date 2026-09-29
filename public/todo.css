@@ -1,32 +1,44 @@
-/* Linear: existing semantic surfaces, hairline borders and restrained accent. */
-#todo-dock { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); margin-bottom: 6px; color: var(--muted); font-size: 12px; }
-.todo-header { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 2px 8px; }
-.todo-toggle, .todo-action { border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; padding: 4px; }
-.todo-toggle { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; text-align: left; }
+/* Linear: 4/8/12/16px spacing, 8px corners, semantic surfaces and quiet accent. */
+#todo-dock { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); margin-bottom: 8px; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.todo-header { display: flex; align-items: flex-start; gap: 8px; padding: 4px 8px; }
+.todo-toggle, .todo-action, .todo-item-title { border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.todo-toggle, .todo-action { min-height: 40px; padding: 8px 4px; }
+.todo-toggle { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; flex: 1; min-width: 0; text-align: left; white-space: normal; }
+.todo-identity { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 8px; white-space: nowrap; }
 .todo-heading { color: var(--ink); font-weight: 500; }
-.todo-chevron { width: 14px; height: 14px; }
+.todo-metrics { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; min-width: 0; }
+#todo-dock svg.action-icon { display: block; width: 16px; height: 16px; }
 .todo-toggle[aria-expanded="true"] .todo-chevron { transform: rotate(90deg); }
-.todo-count { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+.todo-state-icon { display: inline-flex; align-items: center; justify-content: center; width: 16px; flex: 0 0 16px; }
+.todo-count { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .todo-count[data-status="running"] { color: var(--accent); }
+.todo-action { flex: 0 0 auto; }
 .todo-action:disabled { opacity: .5; cursor: default; }
-.todo-toggle:focus-visible, .todo-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
-.todo-list { border-top: 1px solid var(--line); max-height: 240px; overflow: auto; padding: 6px 10px; }
+/* Outrank the global primary-button hover without changing controls elsewhere. */
+#todo-dock button:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
+#todo-dock button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.todo-list { border-top: 1px solid var(--line); max-height: 240px; overflow: auto; padding: 4px 8px; }
 .todo-list[hidden] { display: none; }
-.todo-row { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 4px 8px; padding: 8px 0; overflow-wrap: anywhere; line-height: 1.5; }
-.todo-row > span:first-child { display: flex; align-items: center; height: 21px; }
-.todo-row small { grid-column: 2; color: var(--muted); font-size: 12px; }
-.todo-row small[hidden] { display: none; }
-.todo-child { margin-left: 20px; }
-.todo-row[data-status="done"] { opacity: .6; }
-.todo-row[data-status="running"] > span:first-child { color: var(--accent); }
-.todo-reason { margin: 4px 8px; overflow-wrap: anywhere; }
-.todo-item-title { border: 0; background: transparent; color: var(--ink); font: inherit; font-size: 14px; line-height: 1.5; text-align: left; padding: 0; cursor: pointer; overflow-wrap: anywhere; }
-.todo-item-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.todo-detail { grid-column: 2; border-top: 1px solid var(--line); white-space: pre-wrap; }
+.todo-row { --todo-title-line: 21px; --todo-title-padding: 8px; min-width: 0; overflow-wrap: anywhere; line-height: 1.5; }
+/* Both slots share the title's first line. Padding provides the 40/44px target,
+   never a fixed-height sibling icon that drifts with wrapping or global button CSS. */
+.todo-item-title { display: flex; align-items: flex-start; gap: 8px; width: 100%; min-width: 0; min-height: 40px; padding: var(--todo-title-padding) 4px; color: var(--ink); font-size: 14px; line-height: var(--todo-title-line); text-align: left; white-space: normal; }
+.todo-item-title > .todo-state-icon { height: var(--todo-title-line); }
+.todo-item-label { display: block; min-width: 0; overflow-wrap: anywhere; }
+.todo-summary, .todo-detail { margin-left: 28px; }
+.todo-summary { display: block; padding-bottom: 8px; color: var(--muted); font-size: 12px; }
+.todo-summary[hidden] { display: none; }
+.todo-child { margin-left: 8px; }
+.todo-row[data-status="done"] > .todo-item-title { color: var(--muted); }
+.todo-row[data-status="running"] > .todo-item-title > .todo-state-icon { color: var(--accent); }
+.todo-reason { margin: 4px 12px; overflow-wrap: anywhere; }
+.todo-detail { border-top: 1px solid var(--line); white-space: pre-wrap; }
 .todo-detail ul { padding-left: 16px; }
 .todo-detail p, .todo-detail ul { margin: 8px 0; }
 .todo-detail li + li { margin-top: 4px; }
 .todo-evidence { display: block; overflow-wrap: anywhere; }
-.todo-toggle { flex-wrap: wrap; }
-.todo-count { white-space: nowrap; }
-@media (max-width: 480px) { .todo-toggle { gap: 8px; } .todo-list { max-height: 240px; } .todo-action, .todo-toggle { min-height: 44px; } .todo-item-title { min-height: 44px; } .todo-row > span:first-child { height: 44px; } .todo-child { margin-left: 8px; } }
+@media (max-width: 480px), (pointer: coarse) {
+  .todo-action, .todo-toggle { min-height: 44px; }
+  .todo-row { --todo-title-padding: 12px; }
+  .todo-item-title { min-height: 44px; }
+}

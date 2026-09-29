@@ -587,6 +587,9 @@ pi 会话 .jsonl（~/.pi/agent/sessions/...）
 - 暂停在安全边界生效，不强行中断在飞工具；暂停后普通输入、子任务通知和重启不能自行恢复执行。恢复须先核对保存状态与实际产物，避免盲目重放。空闲推进有界，仅剩受阻项时不循环唤醒。
 - 协议为 `todo.action`（`prepare | cancel_prepare | pause | resume`，可带 `text`）与 `todo.get`；旧 `goal.action` 不再支持。子代理不维护主清单，主代理读取结果并验收后更新。
 - 输入区「添加、图片、目标」继续共用工具栏外框，各按钮独立操作。Todo 不是权限沙箱，不改变目录信任或插件权限。
+- 清单收起后保留「清单图标 + 任务清单」身份、完成数与运行/受阻计数；独立箭头表示展开状态，暂停/恢复仍是独立操作。图标统一使用 24px 网格、16px 显示尺寸，任务标题按首行对齐，中英混排与长标识符可换行，移动端点击区域不小于 44px。展开偏好保存在本地，收起时卸载任务行。
+- UI 采用 [Primer 的图标/标签分槽](https://primer.style/product/components/action-list/guidelines/)、[VS Code 的功能图标语义](https://code.visualstudio.com/api/references/icons-in-labels)及 [Disclosure 键盘/ARIA 模式](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/)，复用现有 Linear 主题，不增加框架依赖。
+- 浏览器回归：`python tests/todo-ui-browser.py [截图输出目录]`（需 Python Playwright 与 Chromium）。通过内存路由加载真实 Todo ES 模块及页面样式，不启动服务、不读取用户会话；检查五档宽度、深浅主题、首行对齐、换行溢出、状态更新、键盘及暂停/恢复。默认将截图与指标存入临时目录。
 
 ### 发布复位与性能验证
 
