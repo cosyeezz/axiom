@@ -132,6 +132,40 @@ const enabledConfig = {
   keepRecentTokens: 200,
 };
 
+for (const mode of ['sync', 'async']) test(`B05 ${mode} captures current catalog/runtime once per flight without switching in-flight work`, async () => {
+  const { session, cleanup } = await createTestSession();
+  let ctrl, resolve;
+  const calls = [];
+  try {
+    session.agent.state.model = { ...session.model, contextWindow: 16384 };
+    seed(session, [userMsg(big('u')), assistantMsg(big('a')), userMsg(big('v'))]);
+    const a = { ...session.model, provider: 'old', id: 'a' }, b = { ...a, provider: 'new', id: 'b' };
+    const first = { available: [a], modelRuntime: { generation: 1 } };
+    let context = first, reads = 0;
+    ctrl = createBackgroundCompaction({ session,
+      config: { ...enabledConfig, enabled: false, model: 'old/a', syncKeepRecentTokens: 200 },
+      getModelContext: () => { reads++; return context; },
+      summarize: options => { calls.push(options); return new Promise(done => { resolve = done; }); } });
+    const pending = ctrl.runNow(mode);
+    assert.equal(reads, 1);
+    context = { available: [a, b], modelRuntime: { generation: 2 } };
+    assert.equal(calls[0].model, a); assert.equal(calls[0].modelRuntime, first.modelRuntime);
+    assert.equal(calls[0].signal.aborted, false);
+    resolve({ summary: 'first' }); await pending;
+    await waitFor(() => ctrl.getStatus().status === 'applied');
+    ctrl.setConfig({ ...ctrl.getConfig(), model: 'new/b' });
+    seed(session, [userMsg(big('x')), assistantMsg(big('y')), userMsg(big('z'))]);
+    reads = 0;
+    const second = ctrl.runNow(mode);
+    assert.equal(reads, 1); assert.equal(calls[1].model, b); assert.equal(calls[1].modelRuntime, context.modelRuntime);
+    resolve({ summary: 'second' }); await second;
+    await waitFor(() => ctrl.getStatus().status === 'applied');
+    assert.throws(() => ctrl.setConfig({ ...ctrl.getConfig(), model: 'missing/b' }), /Unknown compaction model/);
+    context = { ...context, available: [a] };
+    assert.throws(() => ctrl.setConfig({ ...ctrl.getConfig(), model: 'new/b' }), /Unknown compaction model/);
+  } finally { resolve?.({ summary: 'cleanup' }); ctrl?.dispose(); cleanup(); }
+});
+
 test("manual sync compaction bypasses disabled auto and uses its larger retention", async () => {
   const { session, cleanup } = await createTestSession();
   let ctrl;

@@ -1,10 +1,20 @@
 # Axiom
 
+## 2026-09-29 审阅修复
+
+本轮逐项核实 18 条审阅意见，实施 16 项修复/局部优化。IPC 拒绝非对象帧；停止信号不再被保存错误阻断，异步启动准备也遵守停止；通知以输入实际入历史确认。复制源跨异步占用（含撤回和已排队子任务续接），长标题保留唯一序号；统一 Todo 基础约束、完成摘要不变量和冷热 `custom_message` 投影。旧会话压缩读取刷新后的目录/runtime，并为每次摘要固定上下文。
+
+快照复用一次 runtime，限流仅在单次扫描内复用模型租约计数，不改变超时放行策略。Web 任务白名单不再携带记忆原始材料、内部恢复背景或旧结果集合；持久化材料与结果凭证完整保留，冷读重算重试资格但不写库或启动任务。冷热删除共用文件清单，移除无作用的 attach 序号检查。
+
+完整决定、实际回归与测量边界见 [逐项处理记录](docs/review-20260929-resolution.md)。P02 列表同步探测保留，以维持外部删除即时可见性；D02 `pushCompaction()` 保留，因仓外私有深导入契约尚未确认。局部微基准不代表端到端提速；大历史快照仍可能触及 32MiB 传输上限。
+
 ## 通用指令组件
 
 `src/instructions.js` 提供 `createInstructions()`、`register({name,description,parameters,handler,toolResult?,guidance?})` 与 `execute(name, arguments, context?)`。名称精确匹配，可信 JSON Schema 注册时保存快照，TypeBox 严格校验且不转换类型。宿主传递 `toolCallId/signal/onUpdate/ctx`，保留取消、错误及原有结构化工具结果；成功结果通过 `details.axiomInstruction` 保存真实指令身份。
 
 主代理基础直接工具为 `read/bash/edit/write/question/ask_axiom/let_axiom`，选中的插件/MCP 另按能力配置装配。先 `ask_axiom({name})` 读取已知契约，再 `let_axiom({name,arguments})` 调用，无参数传 `{}`。主会话登记 `task.start/read/append/cancel`、`todo.read/update`、`memory.query` 和 `guide.task/todo/git`；不提供名称搜索或列表。详细规程按需读取，常驻提示词仅保留能力入口、关键授权/暂停/验收边界与输出协议。正式规程由版本库维护，后台记忆整理不能覆盖。
+
+会话中的 `ask_axiom`／`let_axiom` 工具标题会在工具名后显示调用参数 `name`（例如 `ask_axiom guide.git`、`let_axiom task.start`），无需展开参数即可识别咨询或执行的指令。实时调用与历史回放使用相同展示逻辑；缺失、空白或非字符串 `name` 时只显示原工具名，不改变执行状态与折叠行为。
 
 指令执行器不自行管理任务生命周期；业务指令复用 Tasks、Todo 与既有确认流程。Goal 准备阶段只放行 question 及 Todo 契约/规程；工具验收仍拒绝 ask/let 自证。原 `delegate/read_result/append/cancel_task/todo_read/todo_update/history_read/obs_recall` 不再由 Axiom 注册为模型工具，不新增 `history.read`。旧历史展示和内部归档模块保留。验证：`node --test tests/instructions.test.js tests/business-instructions.test.js tests/goal-pi.test.js`，使用本地假供应商，无付费模型调用。
 

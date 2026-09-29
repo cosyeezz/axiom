@@ -76,6 +76,15 @@ test("safe stop ends the run at a turn boundary: tools finish, output is kept, r
           },
         };
         const agent = await factory([mark]);
+        // B04: cancellation in both asynchronous prompt preparation gaps must prevent HTTP.
+        for (const method of ['requestSafeStop', 'abort', 'requestPause']) for (const delayed of [false, true]) {
+          const pending = agent.prompt('do not send this preparation');
+          if (delayed) await Promise.resolve();
+          await agent[method]();
+          await pending;
+          assert.equal(requests.length, 0, method + ':' + delayed);
+          assert.equal(agent.historyEntries().length, 0);
+        }
         // 同时排队一条 steer：SDK 在轮次边界后还会按 hasQueuedMessages 继续抽干队列，
         // 只靠 shouldStopAfterTurn 停不住——这条排队消息必须留到下一次显式运行。
         armStop = async () => {

@@ -10,7 +10,29 @@
 - 验证过程：首次浏览器运行暴露 tooltip 遮挡和上下文锚点问题，补几何与真实点击断言后修复；预览 fixture 补只读收藏/模型目录/技能列表与撤回桩。图标旧测试依赖 context-bar 结构，随工具迁入 composer-tools 更新定位并保留原图形/颜色/对齐断言。测试进程已成功退出后的 Python 控制台 GBK 打印报错不等于测试失败，以保存的完整日志核对 0 失败。
 - 交付检查：无独立 build 脚本，原生 ES 模块直接提供；语法检查、npm pack --dry-run 与 git diff --check 通过。测试自动重建的代码索引漂移不纳入提交；主 checkout 原有未跟踪资料不动。
 - 集成验证：合入上游 b659451（会话标题搜索）后全量仍为 975 通过、2 跳过、0 失败；输入区、模型级联、图标专项通过。会话搜索测试改用真实 ArrowDown 验证键盘 tooltip，并等待 :popover-open 后验证几何，避免 details 异步定位尚未完成时误判；连续两轮搜索浏览器验收和侧栏回归通过。未放宽 tooltip 可见性或菜单视口断言。
+- 最终同步验证：远端新增审阅修复与 Ask/Let 摘要后，再合入 ba9702d；保留全部上游源码、索引和开发记录。最新全量 1026 项、1024 通过、2 平台跳过、0 失败（89.7 秒，仓库外 compact-composer-integrated-latest.log）；五套浏览器回归（紧凑输入、模型级联、图标、会话搜索、侧栏）与语法/打包/diff 检查全通过。人工复核最新 320/1440px 深色截图，输入与最右操作同排，底栏状态可见。
 - 文件：public/index.html、app.js、composer-controls.js/css、tooltip.js；tests/app.test.js、composer-controls.test.js、tooltip.test.js、conversation-preview.mjs、composer-icons-ui.py、session-search-ui.py、新增 compact-composer-ui.py；README.md、devlog.md。
+
+## 2026-09-29 会话工具摘要显示 Ask／Let 指令名
+
+- 时间：2026-09-29 10:12（本机 -07:00）。原因：`ask_axiom`／`let_axiom` 原先只显示工具名，需展开参数才知道咨询或执行哪个指令。
+- 实施：共享工具摘要仅对这两个工具（含既有 `functions.` 前缀）读取顶层字符串 `name`；空白、缺失或异常类型不显示对象名，嵌套 `arguments.name` 不冒充指令名。沿用 `textContent`、完整 title 与原有截断，不解析 HTML，不改执行协议。
+- 历史边界：抽出纯摘要刷新，在普通历史与压缩段子代理记录后补参数时复用，不覆盖已完成/失败状态。实时流、执行事件和历史快照共用展示；参数流尚未完成前仍保持既有 calling 状态。
+- 设计：复用 Linear 风格现有 `--muted` / `--mono`、8px 列间距与 `.tool-target` 布局，不新增样式或颜色；手机沿用工具名下方的摘要行，不强行挤在一行。
+- 验证：新增 4 项真实页面处理器回归，覆盖正式/前缀工具名、异常 name、HTML 字面量、结果不带参数、正常与结果先到历史、实时快照及压缩子代理补参；定向 21 项通过。隔离 HOME/USERPROFILE/临时目录/Pi 目录的全量 979 项：977 通过、2 项平台跳过、0 失败。没有独立 build 脚本，`node --check public/app.js`、`npm pack --dry-run` 与 `git diff --check` 通过。测试自动重建的无关 INDEX 漂移已恢复，不纳入提交。
+- 浏览器：真实页面模块/CSS 的 Chromium 内存路由 fixture，1280/768/390/320 四宽度、深浅主题、长名省略与完整 title、键盘展开/收起、实时开始/完成均通过，无 pageerror；沿用手机第二行摘要，无横向溢出。截图与脚本在仓库外 `F:/artifacts/tool-instruction-label/`。未启动真实服务、未读取用户会话、未调用模型；无后台 fixture 的设置状态提示不在此次验收范围。
+- 集成：工作分支提交后合入最新 `origin/master`（b659451），仅 devlog 头部冲突，保留双方完整条目；源码自动合并。整合后全量 979 项（977 通过、2 平台跳过、0 失败）与 Chromium 全部检查再次通过。推送前远端又加入代码审阅修复（143f2ca），重新合入并再次全量：1024 项、1022 通过、2 平台跳过、0 失败；浏览器检查再次通过，日志 `integration-tests-2.log`。
+- 文件：`public/app.js`、`tests/message-activity.test.js`、`README.md`、`devlog.md`。
+
+## 2026-09-29 代码审阅逐项修复
+
+- 原因与范围：按用户报告核对18项执行控制、一致性、性能与维护性问题；16项实施，P02与D02有据保留。不扩展架构、不碰主工作区未提交资料。基线origin/master e116f12d，独立feat/review-20260929-fixes工作树。
+- 执行控制：IPC非对象帧关闭连接；单独取消子任务不恢复父会话；idle通知按新入历史输入确认，running通知跨收尾补调度；停止先发信号，保存/清理失败独立汇总，并发取消共用控制；启动保存及Pi异步准备结束重验停止版本，不能迟发模型请求。
+- 一致性：每次压缩flight捕获当前目录/runtime，工厂刷新完整后原子发布；冷热复制首次await前占用并finally释放，recall与预排队续接也受守卫；长标题预留序号；done一级Todo摘要集中不变量与基础schema共享；SDK/冷热主子历史及压缩展开共用custom_message映射。
+- 优化与局部清理：snapshot直接runtime调用2→1而config仍独立克隆；限流单次sweep统计模型占用，保持TTL/超时策略；Web白名单投影不克隆/下发内部大材料，完整持久化和结果凭证保留，冷读重算派生canRetry避免取消期间暂态false。冷热删除共用纯文件清单，保留生命周期及先删库顺序；移除goalExited与同步attachSequence。
+- 保留决定：P02同步列表探测经10/100/1000会话测量后保留，避免永久缓存改变外部删除即时可见性；D02虽无仓内调用，但Sessions导出且src入包，外部私有深导入约束无法确认，试删后恢复pushCompaction兼容入口。微基准范围与端到端/堆峰值未测限制写入docs/review-20260929-resolution.md。
+- 验证过程：定向复制/通知/IPC/停止/限流/Todo/历史/计费/记忆/持久化组通过。原基线15失败来自真实HOME祖先目录自动发现9个宿主技能；HOME与TEMP/TMP一同隔离后原失败组61/61通过。共享SDK后来缺dist，仅本工作树断开node_modules链接并独立npm ci，未改主工作区依赖。隔离全量1013项1011通过2平台跳过0失败（约74.5秒）；补canRetry测试初次被未通知任务不可release的既有守卫拒绝，fixture先确认指定结果后13项边界回归全过，不放宽生产守卫。补测后最终全量1014项1012通过2跳过0失败（约71.1秒，review-20260929-full-verified.log）；P04独立只读复审未发现阻断。合入最新origin/master 859270e后，全量1020项1018通过2平台跳过0失败（约70.2秒，review-20260929-full-integrated.log）。仅devlog头部冲突，完整保留双方条目；未改动上游Todo前端实现。推送前再次fetch发现master新增会话搜索b659451，重新合入并全量复验1020项1018通过2跳过0失败（约70.1秒，review-20260929-full-integrated2.log）；仍只有devlog头部冲突，保留全部上游记录。npm pack --dry-run验证共享schema/历史/任务模块及README入包（327文件），git diff --check通过。
+- 文件：src/compaction.js、gate-ipc.js、pi.js、request-gate.js、server.js、session-history.js、sessions.js、tasks.js、todo.js、新todo-schema.js；对应tests及新增边界回归；README、逐项处理文档、本记录与代码索引。INDEX变化来自既有codebase-index测试运行reindex，新增文件已登记。
 
 ## 2026-09-29 会话标题列表体验优化
 

@@ -30,6 +30,34 @@ test("仅模型限制、热更新、取消与配置校验", async () => {
     for (const value of [-1, 1.5, "2", 100001]) assert.throws(() => validateLimits({ p: { models: { a: { concurrency: value } } } }));
   } finally { gate.close(); }
 });
+test("单次 sweep 连续发放更新模型计数，过期与超时放行保持隔离", async () => {
+  let now = 0;
+  const gate = new RequestGate({ now: () => now, leaseMs: 10, maxWaitMs: 30, tickMs: 100000, limits: { p: { concurrency: 4, models: { a: { concurrency: 1 } } } } });
+  try {
+    const first = await gate.acquire("p", { model: "a" });
+    const admitted = [];
+    const waiting = [0, 1, 2].map(n => gate.acquire("p", { model: "a" }).then(lease => { admitted.push(n); return lease; }));
+    const b = await gate.acquire("p", { model: "b" });
+    gate.configure({ p: { concurrency: 4, models: { a: { concurrency: 3 } } } });
+    await Promise.resolve();
+    assert.deepEqual(admitted, [0, 1]);
+    assert.equal(gate.snapshot()[0].active, 4);
+    assert.equal(gate.snapshot()[0].concurrencyQueue, 1);
+    now = 10; gate.sweep();
+    const leases = await Promise.all(waiting);
+    assert.deepEqual(admitted, [0, 1, 2]);
+    first.release(); first.release(); b.release();
+    assert.equal(gate.snapshot()[0].active, 1, "旧租约释放不删除新租约");
+    leases.forEach(lease => lease.release());
+    gate.configure({ p: { models: { a: { concurrency: 1 } } } });
+    const active = await gate.acquire("p", { model: "a" });
+    const pending = gate.acquire("p", { model: "a" });
+    gate.close();
+    assert.equal((await pending).bypassed, true);
+    assert.equal(gate.snapshot()[0].active, 1, "关闭放行不新增租约");
+    active.release();
+  } finally { gate.close(); }
+});
 test("模型页读取并保存双层限额，保留其他供应商配置", async () => {
   const dom = new JSDOM("<!doctype html><body></body>");
   const previous = globalThis.document; globalThis.document = dom.window.document;
