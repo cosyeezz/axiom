@@ -48,7 +48,15 @@ test('one stable split button defaults to stop; menu clicks execute immediately'
     assert.deepEqual(submissions, ['send-steer', 'send-followup']);
     assert.equal(api.queue(), 'followUp');
     state.busy = false; api.refresh(); state.busy = true; api.refresh(); assert.equal(primary.textContent, 'stop');
-    assert.ok(primary.querySelector('svg')); assert.equal(w.document.querySelector('.composer-model-trigger span').textContent, 'claude · opus · high');
+    assert.ok(primary.querySelector('svg'));
+    assert.equal(w.document.querySelector('.composer-model-name').textContent, 'opus');
+    assert.equal(w.document.querySelector('.composer-model-effort').textContent, 'high');
+    assert.equal(w.document.querySelector('.composer-model-trigger').title, 'claude/opus · high');
+    assert.match(w.document.querySelector('.composer-model-trigger').getAttribute('aria-label'), /claude\/opus/);
+    assert.equal(w.document.getElementById('composer-action-help').hidden, false);
+    assert.match(w.document.getElementById('composer-action-help').textContent, /Enter 介入.*按钮执行 stop/);
+    state.busy = false; api.refresh();
+    assert.equal(w.document.getElementById('composer-action-help').hidden, true);
   } finally { dom.window.close(); }
 });
 test('unavailable menu actions cannot execute or submit an idle message', () => {

@@ -1,24 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { z } from 'zod';
+import { todoReadSchema, todoUpdateSchema, todoReadParameters, todoUpdateParameters } from './todo-schema.js';
+export { todoReadSchema, todoUpdateSchema } from './todo-schema.js';
 import { createTodoStore } from './todo-store.js';
 import { TODO_READ_DESCRIPTION, TODO_UPDATE_DESCRIPTION, buildTodoContextMessage } from './todo-prompts.js';
 export { createTodoStore };
-const id=z.string().min(1).max(128), title=z.string().trim().min(1).max(160), reason=z.string().trim().min(1).max(600);
-const status=z.enum(['pending','running','blocked','done']);
-const acceptance=z.array(z.object({criterionId:id,text:z.string().trim().min(1).max(300),check:z.enum(['tool','review','user']).default('review')}).strict()).max(10).refine(a=>new Set(a.map(c=>c.criterionId)).size===a.length);
-const ref=z.union([z.object({toolCallId:id}).strict(),z.object({messageId:id}).strict()]);
-const verification=z.array(z.object({criterionId:id,result:z.string().trim().min(1).max(600),refs:z.array(ref).max(3).default([])}).strict()).max(10);
-const description=z.string().max(2000), summary=z.string().max(800), blocker=z.string().max(600);
-const operation=z.discriminatedUnion('op',[
- z.object({op:z.literal('add'),id:id.optional(),level:z.union([z.literal(1),z.literal(2)]),parentId:id.nullable().optional(),title,description:description.optional(),acceptance:acceptance.optional(),status:status.optional(),summary:summary.optional(),blocker:blocker.optional()}).strict(),
- z.object({op:z.literal('edit'),id,title:title.optional(),description:description.optional(),acceptance:acceptance.optional(),summary:summary.optional()}).strict(),
- z.object({op:z.literal('status'),id,status,summary:summary.optional(),blocker:blocker.optional(),verification:verification.optional()}).strict(),
- z.object({op:z.literal('move'),id,beforeId:id.optional()}).strict(),
- z.object({op:z.literal('delete'),id,reason}).strict(),
- z.object({op:z.literal('reopen'),id,reason}).strict(),
-]);
-export const todoUpdateSchema=z.object({listId:id.optional(),baseVersion:z.number().int().nonnegative(),reason:reason.optional(),ops:z.array(operation).min(1).max(100)}).strict();
-export const todoReadSchema=z.object({listId:id.optional(),id:id.optional(),unfinished:z.boolean().default(false),detail:z.boolean().default(false),section:z.enum(['item','verification']).default('item'),includeDeleted:z.boolean().default(false),offset:z.number().int().nonnegative().default(0),limit:z.number().int().min(1).max(100).default(20)}).strict();
 const result=value=>({content:[{type:'text',text:JSON.stringify(value)}]});
 const compact=i=>({id:i.id,level:i.level,parentId:i.parentId,title:i.title,status:i.status,summary:i.summary.slice(0,100),blocker:i.blocker.slice(0,120),definitionVersion:i.definitionVersion});
 const fail=(code,extra={})=>{throw Object.assign(new Error(code),{code,...extra});};
@@ -126,6 +111,7 @@ export class Todo {
      const siblings=h?this.store.query(listId,{parentId:i.parentId,limit:5000}):[];for(const s of siblings)get(s.id);const ordered=[...rows.values()].filter(s=>!s.deletedAt&&s.parentId===i.parentId&&s.id!==i.id).sort((a,b)=>a.position-b.position);const at=target?ordered.findIndex(s=>s.id===target.id):ordered.length;ordered.splice(at,0,i);ordered.forEach((s,n)=>{s.position=n+1;});
     }
    }
+   if(!i.deletedAt&&i.level===1&&i.status==='done'&&!i.summary.trim())fail('TODO_SUMMARY_REQUIRED');
    if(i.level===1&&(!i.description.trim()||!i.acceptance.length))fail('TODO_TARGET_DEFINITION_REQUIRED');
    if(JSON.stringify({title:i.title,description:i.description,acceptance:i.acceptance}).length>6500)fail('TODO_DEFINITION_TOO_LARGE');
    if(i.status==='blocked'&&!i.blocker.trim())fail('TODO_BLOCKER_REQUIRED');
@@ -142,6 +128,6 @@ export class Todo {
   if(kind==='create'){h.requirePlan=false;h.prepareText='';}this.store.save(h,h.version);return {rows:changed.filter(i=>!i.deletedAt),removed,removedTargets,affectedTargets:[...new Set(changed.filter(i=>i.parentId&&!removedTargets.includes(i.parentId)).map(i=>i.parentId))],individualRemoved:removed.filter(id=>!removedTargets.includes(id)&&!removedTargets.includes(rows.get(id)?.parentId))};
  }
  contextPacket(reason='compaction'){const s=this.read({limit:10});if(!s.listId)return null;const current=this.store.currentTarget(s.listId);const view={...s};if(current){const detail=this.read({id:current.id,detail:true,unfinished:true,limit:10});view.current=detail.item;view.steps=detail.items;}while(JSON.stringify(view).length>11200&&(view.steps?.length||view.items.length)){if(view.steps?.length)view.steps.pop();else view.items.pop();view.hasMore=true;}return {content:buildTodoContextMessage(view,reason),listId:s.listId,version:s.version};}
- readTool(){return {name:'todo_read',label:'读取任务清单',description:TODO_READ_DESCRIPTION,parameters:{type:'object',additionalProperties:false,properties:{listId:{type:'string'},id:{type:'string'},unfinished:{type:'boolean'},detail:{type:'boolean'},section:{type:'string',enum:['item','verification']},includeDeleted:{type:'boolean'},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}}},execute:async(_id,input)=>{try{return result(this.read(input));}catch(error){return {...result({code:error.code??'TODO_INVALID_OPERATION_FIELDS',version:this.store.load(this.id)?.version??0}),isError:true};}}};}
- updateTool(){const fields={op:{type:'string',enum:['add','edit','status','move','delete','reopen']},id:{type:'string',maxLength:128},level:{type:'integer',enum:[1,2]},parentId:{type:['string','null']},title:{type:'string',maxLength:160},description:{type:'string',maxLength:2000},summary:{type:'string',maxLength:800},blocker:{type:'string',maxLength:600},reason:{type:'string',maxLength:600},status:{type:'string',enum:['pending','running','blocked','done']},beforeId:{type:'string'},acceptance:{type:'array',maxItems:10,items:{type:'object',additionalProperties:false,required:['criterionId','text'],properties:{criterionId:{type:'string'},text:{type:'string',maxLength:300},check:{type:'string',enum:['tool','review','user']}}}},verification:{type:'array',maxItems:10,items:{type:'object',additionalProperties:false,required:['criterionId','result'],properties:{criterionId:{type:'string'},result:{type:'string',maxLength:600},refs:{type:'array',maxItems:3,items:{type:'object',properties:{toolCallId:{type:'string'},messageId:{type:'string'}},additionalProperties:false}}}}}};return {name:'todo_update',label:'更新任务清单',description:TODO_UPDATE_DESCRIPTION,parameters:{type:'object',additionalProperties:false,required:['baseVersion','ops'],properties:{listId:{type:'string'},baseVersion:{type:'integer',minimum:0},reason:{type:'string',maxLength:600},ops:{type:'array',minItems:1,maxItems:100,items:{type:'object',required:['op'],additionalProperties:false,properties:fields}}}},execute:async(_id,input,signal)=>{try{return result(await this.update(input,signal));}catch(error){return {...result({applied:false,code:error.code??'TODO_INVALID_OPERATION_FIELDS',operationIndex:error.operationIndex,itemId:error.itemId,version:this.store.load(this.id)?.version??0}),isError:true};}}};}
+ readTool(){return {name:'todo_read',label:'读取任务清单',description:TODO_READ_DESCRIPTION,parameters:todoReadParameters,execute:async(_id,input)=>{try{return result(this.read(input));}catch(error){return {...result({code:error.code??'TODO_INVALID_OPERATION_FIELDS',version:this.store.load(this.id)?.version??0}),isError:true};}}};}
+ updateTool(){return {name:'todo_update',label:'更新任务清单',description:TODO_UPDATE_DESCRIPTION,parameters:todoUpdateParameters,execute:async(_id,input,signal)=>{try{return result(await this.update(input,signal));}catch(error){return {...result({applied:false,code:error.code??'TODO_INVALID_OPERATION_FIELDS',operationIndex:error.operationIndex,itemId:error.itemId,version:this.store.load(this.id)?.version??0}),isError:true};}}};}
 }

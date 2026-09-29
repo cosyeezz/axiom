@@ -37,6 +37,38 @@ async function until(check) {
   assert.fail("notification deadline exceeded");
 }
 
+for (const phase of ['persist', 'inject']) test(`running notification schedules an idle wake after run ends during ${phase}`, async () => {
+  const { factory, mains } = factoryFixture();
+  const sessions = new Sessions(factory);
+  const persist = sessions.persist.bind(sessions);
+  let release;
+  try {
+    const id = await sessions.create(), item = sessions.get(id);
+    await tick();
+    await sessions.prompt(id, 'parent'); await tick();
+    item.tasks.jobs.set('child', { id: 'child', status: 'completed', resultId: 'result', notified: false });
+    let entered;
+    const started = new Promise(resolve => { entered = resolve; });
+    const gate = new Promise(resolve => { release = resolve; });
+    if (phase === 'persist') {
+      let first = true;
+      sessions.persist = async (...args) => { if (first) { first = false; entered(); await gate; } return persist(...args); };
+    } else mains[0].notifyTask = async text => {
+      entered(); await gate;
+      mains[0].listener({ type: 'agent.message.end', data: { message: { role: 'custom', customType: 'task-notification', content: text } } });
+    };
+    const delivery = sessions.deliverTaskNotifications(item);
+    await started;
+    mains[0].finish(); await item.work;
+    assert.equal(item.status, 'idle'); assert.equal(item.notifying, true);
+    release(); await delivery;
+    await until(() => mains[0].calls.length === 2);
+    mains[0].finish(); await until(() => !item.notifying && item.status === 'idle');
+    await tick(); assert.equal(mains[0].calls.length, 2);
+    assert.equal(item.tasks.jobs.get('child').notified, true);
+  } finally { release?.(); mains.forEach(a => a.finish()); sessions.persist = persist; await sessions.close(); }
+});
+
 test("session list stays running until parent and all children finish", async () => {
   const { factory, mains, children } = factoryFixture();
   const sessions = new Sessions(factory);
@@ -150,6 +182,80 @@ test("idle completion wakes parent; cancel suppresses wakeups until next user pr
     await until(() => mains[0].calls.length === 3);
     mains[0].finish();
     await until(() => !item.notifying && item.status === "idle");
+  } finally { await sessions.close(); }
+});
+
+test("单独取消子任务（含无效ID）不恢复已安全停止的主会话", async () => {
+  const { factory, mains, children } = factoryFixture();
+  const sessions = new Sessions(factory);
+  try {
+    const id = await sessions.create(), item = sessions.get(id);
+    const [first, sibling] = item.tasks.start(["first", "sibling"]);
+    await tick();
+    await sessions.safeStop(id);
+    await assert.rejects(sessions.cancelTask(id, "missing"));
+    assert.equal(item.notificationsPaused, true);
+    await sessions.cancelTask(id, first);
+    children[1].finish(); await item.tasks.jobs.get(sibling).done;
+    await tick(); await item.notificationWork;
+    assert.deepEqual(mains[0].calls, []);
+    assert.equal(item.memoryPaused, true);
+    await sessions.prompt(id, "explicit resume"); mains[0].finish();
+    await until(() => mains[0].calls.length === 2);
+    mains[0].finish(); await until(() => !item.notifying && item.status === "idle");
+    assert(item.tasks.jobs.get(first).notified && item.tasks.jobs.get(sibling).notified);
+  } finally { await sessions.close(); }
+});
+
+for (const failure of ["before-persist", "run-persist", "before-history", "after-history"]) test(`idle 通知以输入入历史确认而非work结束：${failure}`, async () => {
+  const { factory, mains } = factoryFixture();
+  const sessions = new Sessions(factory);
+  let originalPersist;
+  try {
+    const id = await sessions.create(), item = sessions.get(id);
+    await tick(); // Drain the create-time empty notification check before injecting a result.
+    const job = { id: "child", task: "done", status: "completed", resultId: "result", notified: false };
+    item.tasks.jobs.set(job.id, job);
+    originalPersist = sessions.persist.bind(sessions);
+    let writes = 0, calls = 0;
+    sessions.persist = async (...args) => {
+      writes++;
+      if ((failure === "before-persist" && writes === 1) || (failure === "run-persist" && args.length === 1 && item.status === "running")) throw new Error("save failed");
+      return originalPersist(...args);
+    };
+    mains[0].prompt = async text => {
+      calls++;
+      if (failure === "after-history") mains[0].listener({ type: "agent.message.end", data: { message: { role: "user", content: [{ type: "text", text }] } } });
+      throw new Error("prompt failed");
+    };
+    if (failure === "before-persist") await assert.rejects(sessions.deliverTaskNotifications(item), /save failed/);
+    else await sessions.deliverTaskNotifications(item);
+    await tick(); await item.notificationWork;
+    assert.equal(job.notified, failure === "after-history");
+    assert.equal(calls, failure.endsWith("persist") ? 0 : 1, "启动失败不即时循环重试");
+  } finally { if (originalPersist) sessions.persist = originalPersist; await sessions.close(); }
+});
+
+test("idle 通知结果版本变化只确认已入历史的旧结果", async () => {
+  const { factory, mains } = factoryFixture();
+  const sessions = new Sessions(factory);
+  try {
+    const id = await sessions.create(), item = sessions.get(id);
+    await tick();
+    const job = { id: "child", task: "done", status: "completed", resultId: "old", notified: false };
+    item.tasks.jobs.set(job.id, job);
+    mains[0].prompt = async text => {
+      mains[0].listener({ type: "agent.message.end", data: { message: { role: "user", content: text } } });
+      Object.assign(job, { resultId: "new", notified: false, previousResults: { old: { notified: false } } });
+      throw new Error("answer failed");
+    };
+    // Do not start another notification in this assertion; explicit replay is covered separately.
+    const schedule = sessions.scheduleTaskNotifications;
+    sessions.scheduleTaskNotifications = () => {};
+    try { await sessions.deliverTaskNotifications(item); }
+    finally { sessions.scheduleTaskNotifications = schedule; }
+    assert.equal(job.notified, false);
+    assert.equal(job.previousResults.old.notified, true);
   } finally { await sessions.close(); }
 });
 

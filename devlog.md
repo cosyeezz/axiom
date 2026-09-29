@@ -7,6 +7,51 @@
 - 决策：先去低频常驻布局，再按需面板；不新增通用JS桥、不缩字号、不隐藏恢复/运行关键动作。沿用Linear token、最新master既有紧凑输入区与两级Todo。独立feat/mobile-chat-density工作树基于origin/master859270e，主目录既有未跟踪资料不动。
 - 此提交仅含docs/mobile-chat-density-plan.md、README.md及本记录，先于实现；Android0.1.1和各项测试均待实际完成。
 
+## 2026-09-29 主界面信息精简与按需详情
+
+- 原因与范围：常驻低频工具、快捷键说明和运行指标分散注意力；保留已有能力，不重做已折叠的输入配置，不隐藏问题确认、任务受阻、队列及安全停止状态。
+- 实施：顶栏更多集中字号、主题、源码、版本与原文对照；健康连接只留状态点，异常继续显示文字并可打开连接设置。输入底栏改为上下文摘要、短模型名及思考等级、主操作；上下文/缓存明细进会话详情，未知与 0、估算与累计用量明确区分。快捷键按需展开，运行中保留 Enter 与按钮动作差异。侧栏辅助操作图标化同排，工作空间辅助按钮桌面悬停/聚焦显示、触屏常显。
+- 设计：沿用 Linear surface/ink/accent/line、4/8/12px 间距、8px 弹层圆角与无阴影层次；补图标名称/提示、44px 新触控入口，320px 底栏压缩间距而不增加常驻行。
+- 实际修正：浏览器发现全局 Escape 阻止原生弹层关闭，增加 utility-popover 守卫，关闭详情后焦点回到可见入口；连接提示使用稳定文字，避免状态变更期间悬浮提示仍显示旧连接状态。
+- 验证：定向 Node 41 项通过；独立静态审查未发现阻断，但不代替浏览器验证。新增 focus-ui-browser.py 覆盖五视口双主题、Tab/Shift+Tab/Enter/Space/Escape、点外关闭与焦点返回、详情/主题/字号/原文、长模型名、触控尺寸和断线；现有 ui-polish-browser.py 的问题确认、子任务和压缩全部通过。与改前同夹具相比，1440px 顶栏工具宽 297→72px、输入区域高约185.6→160px；320px 输入区域180→168px。产物在 F:/worktrees/artifacts/focus-ui-*。
+- 全量环境诊断：首次 npm test 15 项失败，来源是 SDK 从用户 HOME 及临时目录祖先加载 .agents/skills，污染技能断言及4096窗口压缩预算。仅隔离 HOME/USERPROFILE 仍有14项失败；测试子进程同时隔离 HOME/USERPROFILE/TMP/TEMP 到仓库外空目录后，代表集61项及全量970项（968通过、2平台跳过）全部通过，不修改用户配置、不放宽断言。无真实模型调用或用户历史访问；未验收读屏、移动真机或原生桌面壳。
+- 集成复验：合入 origin/master b659451（会话标题搜索、Todo 两级详情）后，Escape 冲突同时保留 defaultPrevented 与 utility-popover 守卫，开发记录两边保留。全量976项、974通过、2平台跳过、0失败；focus-ui、ui-polish、Todo、会话搜索和侧栏五套浏览器验证通过。侧栏旧断言要求折叠进行中时外层必须溢出，但精简后测得 scrollHeight=clientHeight=741，内容可放下；改验已完成末行可达，并在展开44条进行中后验证外层真实滚动及末行可达，不放宽滚动功能要求。node --check、npm pack --dry-run（本次界面文件已入包）、git diff --check通过。
+- 后续同步：再次合入远端143f2ca代码审查修复，仅devlog头部冲突，完整保留双方记录；隔离全量1021项、1019通过、2平台跳过、0失败。随后合入ba9702d工具摘要指令名展示，仍仅devlog冲突，源码自动合并；最终全量1025项、1023通过、2平台跳过、0失败（focus-ui-latest-full.log）。两次同步后focus-ui与ui-polish五视口双主题均重跑通过；语法/打包检查通过。
+- 文件：public/app.js、index.html、style.css、composer-controls.js/.css、icons.js；tests/app.test.js、composer-controls.test.js、session-sidebar-ui.py、新增 focus-ui.test.js 与 focus-ui-browser.py；README.md、本记录。测试自动重建的 INDEX 漂移不纳入本改动。
+
+## 2026-09-29 会话工具摘要显示 Ask／Let 指令名
+
+- 时间：2026-09-29 10:12（本机 -07:00）。原因：`ask_axiom`／`let_axiom` 原先只显示工具名，需展开参数才知道咨询或执行哪个指令。
+- 实施：共享工具摘要仅对这两个工具（含既有 `functions.` 前缀）读取顶层字符串 `name`；空白、缺失或异常类型不显示对象名，嵌套 `arguments.name` 不冒充指令名。沿用 `textContent`、完整 title 与原有截断，不解析 HTML，不改执行协议。
+- 历史边界：抽出纯摘要刷新，在普通历史与压缩段子代理记录后补参数时复用，不覆盖已完成/失败状态。实时流、执行事件和历史快照共用展示；参数流尚未完成前仍保持既有 calling 状态。
+- 设计：复用 Linear 风格现有 `--muted` / `--mono`、8px 列间距与 `.tool-target` 布局，不新增样式或颜色；手机沿用工具名下方的摘要行，不强行挤在一行。
+- 验证：新增 4 项真实页面处理器回归，覆盖正式/前缀工具名、异常 name、HTML 字面量、结果不带参数、正常与结果先到历史、实时快照及压缩子代理补参；定向 21 项通过。隔离 HOME/USERPROFILE/临时目录/Pi 目录的全量 979 项：977 通过、2 项平台跳过、0 失败。没有独立 build 脚本，`node --check public/app.js`、`npm pack --dry-run` 与 `git diff --check` 通过。测试自动重建的无关 INDEX 漂移已恢复，不纳入提交。
+- 浏览器：真实页面模块/CSS 的 Chromium 内存路由 fixture，1280/768/390/320 四宽度、深浅主题、长名省略与完整 title、键盘展开/收起、实时开始/完成均通过，无 pageerror；沿用手机第二行摘要，无横向溢出。截图与脚本在仓库外 `F:/artifacts/tool-instruction-label/`。未启动真实服务、未读取用户会话、未调用模型；无后台 fixture 的设置状态提示不在此次验收范围。
+- 集成：工作分支提交后合入最新 `origin/master`（b659451），仅 devlog 头部冲突，保留双方完整条目；源码自动合并。整合后全量 979 项（977 通过、2 平台跳过、0 失败）与 Chromium 全部检查再次通过。推送前远端又加入代码审阅修复（143f2ca），重新合入并再次全量：1024 项、1022 通过、2 平台跳过、0 失败；浏览器检查再次通过，日志 `integration-tests-2.log`。
+- 文件：`public/app.js`、`tests/message-activity.test.js`、`README.md`、`devlog.md`。
+
+## 2026-09-29 代码审阅逐项修复
+
+- 原因与范围：按用户报告核对18项执行控制、一致性、性能与维护性问题；16项实施，P02与D02有据保留。不扩展架构、不碰主工作区未提交资料。基线origin/master e116f12d，独立feat/review-20260929-fixes工作树。
+- 执行控制：IPC非对象帧关闭连接；单独取消子任务不恢复父会话；idle通知按新入历史输入确认，running通知跨收尾补调度；停止先发信号，保存/清理失败独立汇总，并发取消共用控制；启动保存及Pi异步准备结束重验停止版本，不能迟发模型请求。
+- 一致性：每次压缩flight捕获当前目录/runtime，工厂刷新完整后原子发布；冷热复制首次await前占用并finally释放，recall与预排队续接也受守卫；长标题预留序号；done一级Todo摘要集中不变量与基础schema共享；SDK/冷热主子历史及压缩展开共用custom_message映射。
+- 优化与局部清理：snapshot直接runtime调用2→1而config仍独立克隆；限流单次sweep统计模型占用，保持TTL/超时策略；Web白名单投影不克隆/下发内部大材料，完整持久化和结果凭证保留，冷读重算派生canRetry避免取消期间暂态false。冷热删除共用纯文件清单，保留生命周期及先删库顺序；移除goalExited与同步attachSequence。
+- 保留决定：P02同步列表探测经10/100/1000会话测量后保留，避免永久缓存改变外部删除即时可见性；D02虽无仓内调用，但Sessions导出且src入包，外部私有深导入约束无法确认，试删后恢复pushCompaction兼容入口。微基准范围与端到端/堆峰值未测限制写入docs/review-20260929-resolution.md。
+- 验证过程：定向复制/通知/IPC/停止/限流/Todo/历史/计费/记忆/持久化组通过。原基线15失败来自真实HOME祖先目录自动发现9个宿主技能；HOME与TEMP/TMP一同隔离后原失败组61/61通过。共享SDK后来缺dist，仅本工作树断开node_modules链接并独立npm ci，未改主工作区依赖。隔离全量1013项1011通过2平台跳过0失败（约74.5秒）；补canRetry测试初次被未通知任务不可release的既有守卫拒绝，fixture先确认指定结果后13项边界回归全过，不放宽生产守卫。补测后最终全量1014项1012通过2跳过0失败（约71.1秒，review-20260929-full-verified.log）；P04独立只读复审未发现阻断。合入最新origin/master 859270e后，全量1020项1018通过2平台跳过0失败（约70.2秒，review-20260929-full-integrated.log）。仅devlog头部冲突，完整保留双方条目；未改动上游Todo前端实现。推送前再次fetch发现master新增会话搜索b659451，重新合入并全量复验1020项1018通过2跳过0失败（约70.1秒，review-20260929-full-integrated2.log）；仍只有devlog头部冲突，保留全部上游记录。npm pack --dry-run验证共享schema/历史/任务模块及README入包（327文件），git diff --check通过。
+- 文件：src/compaction.js、gate-ipc.js、pi.js、request-gate.js、server.js、session-history.js、sessions.js、tasks.js、todo.js、新todo-schema.js；对应tests及新增边界回归；README、逐项处理文档、本记录与代码索引。INDEX变化来自既有codebase-index测试运行reindex，新增文件已登记。
+
+## 2026-09-29 会话标题列表体验优化
+
+- 时间：2026-09-29 10:04（本机 -07:00）。用户确认对象是左侧会话标题列表，目标为提高查找、长标题阅读及键盘/触屏操作体验；不扩展正文搜索、数据结构、分类或排序规则。
+- 调研：参考 ChatGPT 官方历史查找说明、Claude 重命名/删除入口与 Linear 标题即时过滤/Esc 恢复，链接见 README。仅借鉴交互原则；ChatGPT 官网直抓有 403、Claude 部分步骤由官方搜索收录返回，不声称登录实测。主代理定向核查 Linear 原文与本项目搜索/折叠代码。
+- 实施：搜索临时展开匹配工作空间及状态组，包括已完成；匹配词以安全文本节点高亮，提供结果计数、清空及零结果引导。搜索渲染和异步 toggle 不写回浏览折叠偏好，退出恢复折叠与滚动；修正 README 原有“仅当前空间搜索/固定创建时间排序”与实际代码不符的描述。
+- 阅读与操作：沿用 Linear 的 --surface/--raised/--accent(#5e6ad2)、系统字体、14px/1.5 和 8px 内边距；长标题最多两行，完整文本可在焦点提示与菜单顶部读取。触屏三点常显且至少 44px，固定预留宽度；Ctrl/⌘ K 聚焦搜索，方向键/Home/End 只移动焦点，Enter 打开，Esc 按搜索/菜单层级处理，不顺带触发队列撤回/安全停止。重绘保留会话按钮及三点触发器焦点。
+- 审查补修：独立只读审查发现长标题菜单在触屏横屏超高及 İ 小写转换使高亮下标偏移，已增加菜单视口约束/滚动与原始 UTF-16 偏移映射。浏览器额外覆盖 667×375 横屏，底部删除入口可滚动到达；三点的视觉提示缩为“会话操作”，无障碍名称仍包含完整标题。
+- 验证：定向 app 测试 5 项通过；隔离测试子进程的 HOME/USERPROFILE/TEMP/TMP/TMPDIR/Pi 目录后全量 975 项、973 通过、2 平台条件跳过、0 失败。隔离只避免用户技能目录污染 fixture，不改用户配置；首次测试本身全绿但打印尾日志遇 Windows GBK 编码错误，已直接核查完整日志，不误记为测试失败。
+- 浏览器：两套 Chromium 测试通过；原分组/状态/复制菜单回归保留，新增 1440/768/390/320px、深浅主题、触摸模拟与横屏验收，覆盖折叠偏好刷新保持、Unicode/HTML 字面匹配、焦点重绘、Enter 打开、两行截断与完整标题。截图已人工核查，产物位于仓库外 F:/worktrees/artifacts/session-list-ux。旧测试依赖已隐藏的 mobile-expand，改用本次新增搜索快捷入口打开侧栏。未声称真机、软键盘或屏幕阅读器验收。
+- 集成验证：获取并合入最新 origin/master（859270e，已是最新基线）后再次全量 975 项、973 通过、2 跳过、0 失败（70.7 秒）；两套浏览器回归在最终交互改动后重跑通过。node --check public/app.js 与 git diff --check 通过。
+- 文件：public/app.js、public/index.html、public/style.css、tests/app.test.js、tests/session-sidebar-ui.py、新增 tests/session-search-ui.py、README.md、devlog.md。全量测试自动生成的代码索引漂移不纳入本次提交。
+
 ## 2026-09-29 Todo 卡片默认两级展示与独立详情
 
 - 时间：2026-09-29 09:40（本机 -07:00）。原因：二级步骤原先嵌在一级详情里，必须逐项展开，阅读和定位成本高。默认直接显示两级任务树，点击各级任务仅开关自身详情，说明、摘要、阻塞与验收信息不再挤占任务行。

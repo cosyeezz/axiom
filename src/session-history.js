@@ -31,6 +31,14 @@ export function readSessionManager(file, cwd) {
   return SessionManager.inMemory(cwd, undefined, entries);
 }
 
+// SDK custom_message entries must retain identity and display metadata in both hot and cold paths.
+export function messageEntries(entries) {
+  return entries.filter(entry => entry.type === "message" || entry.type === "custom_message")
+    .map(entry => entry.type === "custom_message"
+      ? { ...entry, message: { role: "custom", customType: entry.customType, content: entry.content ?? [], display: entry.display, details: entry.details, timestamp: new Date(entry.timestamp).getTime() } }
+      : entry);
+}
+
 export function readSessionHistory(file, cwd) {
-  return readSessionManager(file, cwd).getBranch().filter(entry => entry.type === "message");
+  return messageEntries(readSessionManager(file, cwd).getBranch());
 }

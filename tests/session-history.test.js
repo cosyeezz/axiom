@@ -182,7 +182,7 @@ test("撤回改写历史：广播 session.history.reset 让各端重取快照", 
 // —— Desktop 只读历史：从 JSONL 文件构建，不触磁盘（含空文件与旧版本迁移）。——
 // 复用顶部已导入的 tmpdir/join；只补 fs 同步版与只读函数。
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
-import { readSessionHistory } from "../src/session-history.js";
+import { readSessionHistory, messageEntries } from "../src/session-history.js";
 
 test("未加载会话取快照不创建 SDK，身份/水位/元数据遵守同一协议", () => {
   const root = mkdtempSync(join(tmpdir(), "axiom-history-cold-")), file = join(root, "history.jsonl");
@@ -212,6 +212,60 @@ test("未加载会话取快照不创建 SDK，身份/水位/元数据遵守同�
     assert.deepEqual(state.retries.map((record) => record.messageCount), [1]);
     assert.equal(item.loaded, false);
     assert.equal(readFileSync(file, "utf8"), text);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("custom 消息冷热投影、压缩展开与子历史一致且冷读无副作用", async () => {
+  const root = mkdtempSync(join(tmpdir(), "axiom-custom-history-"));
+  const file = join(root, "main.jsonl"), childFile = join(root, "child.jsonl");
+  const timestamp = "2026-09-29T00:00:00.000Z";
+  const custom = (id, parentId, display) => ({ type: "custom_message", id, parentId, timestamp,
+    customType: "task-notification", content: [{ type: "text", text: id }], display,
+    details: { marker: id, taskIds: ["child"] } });
+  const entries = [
+    { type: "message", id: "u", parentId: null, message: { role: "user", content: "input" } },
+    custom("abandoned", "u", true), custom("visible", "u", true), custom("hidden", "visible", false),
+    { type: "message", id: "tail", parentId: "hidden", message: { role: "user", content: "tail" } },
+    { type: "compaction", id: "cp", parentId: "tail", timestamp, summary: "summary", firstKeptEntryId: "tail", tokensBefore: 100 },
+  ];
+  const childEntries = [custom("child-custom", null, true)];
+  const encode = (id, records) => [{ type: "session", version: 3, id, cwd: root, timestamp }, ...records].map(JSON.stringify).join("\n");
+  const text = encode("main", entries), childText = encode("child", childEntries);
+  writeFileSync(file, text); writeFileSync(childFile, childText);
+  const tasks = [{ id: "child", status: "completed", sessionFile: childFile }];
+  const compactions = [{ id: "cp", compactedMessageIds: ["u", "visible", "hidden"] }];
+  const retries = [{ id: "retry", anchorEntryId: "visible", agentId: "main", status: "failed" }];
+  const saved = { cwd: root, sessionFile: file, tasks, compactions, retries };
+  const item = { loaded: false, cwd: root, title: "custom", seq: 0 };
+  const sessions = Object.create(Sessions.prototype);
+  sessions.get = () => item;
+  sessions.store = { getSession: () => saved };
+  sessions.todoStore = { load: () => null };
+  sessions.ensureLoaded = () => { throw new Error("冷读不得启动SDK"); };
+  try {
+    const current = readSessionHistory(file, root);
+    assert.deepEqual(current.map(entry => entry.id), ["u", "visible", "hidden", "tail"]);
+    assert.equal(current[1].message.timestamp, Date.parse(timestamp));
+    assert.equal(current[2].message.display, false, "隐藏策略元数据不被丢弃/改写");
+    assert.deepEqual(current[1].message.details, { marker: "visible", taskIds: ["child"] });
+    assert.deepEqual(messageEntries(entries.filter(entry => entry.id !== "abandoned")), current);
+    const cold = sessions.snapshot("main");
+    const coldExpanded = await sessions.compactionMessages("main", "cp");
+    const expected = (entry, agentId) => ({ agentId, entryId: entry.id, message: entry.type === "message" ? entry.message
+      : { role: "custom", customType: entry.customType, content: entry.content, display: entry.display, details: entry.details, timestamp: Date.parse(timestamp) } });
+    Object.assign(item, { loaded: true, status: "idle", executionStarted: true,
+      messages: [...entries.filter(entry => entry.type !== "compaction" && entry.id !== "abandoned").map(entry => expected(entry, "main")),
+        ...childEntries.map(entry => expected(entry, "child"))],
+      compactions, retries, agent: {}, tasks: { jobs: new Map(), clientSnapshot: () => tasks },
+      questions: { snapshot: () => [] }, tools: {}, live: {}, liveIds: new Map() });
+    const hot = sessions.snapshot("main");
+    for (const key of ["messages", "messageIndexes", "messageCount", "retries"])
+      assert.deepEqual(cold[key], hot[key], key);
+    assert.deepEqual(coldExpanded, await sessions.compactionMessages("main", "cp"));
+    assert.ok(coldExpanded.messages.some(record => record.entryId === "visible"));
+    assert.ok([...cold.messages, ...coldExpanded.messages].some(record => record.entryId === "child-custom"));
+    assert.equal(readFileSync(file, "utf8"), text);
+    assert.equal(readFileSync(childFile, "utf8"), childText);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

@@ -31,12 +31,35 @@ const sessionDetail = $("session-detail");
 function openSessionDetail(section) {
   $("session-inspector").open = section === "inspector";
   $("session-billing").open = section === "billing";
+  $("session-usage").open = section === "usage";
   sessionDetail.showModal();
   sessionDetail.querySelector(".task-body").scrollTop = 0;
 }
 $("session-inspector-trigger").onclick = () => openSessionDetail("inspector");
 $("session-billing-trigger").onclick = () => openSessionDetail("billing");
 $("session-detail-close").onclick = () => sessionDetail.close();
+$("session-runtime").onclick = () => openSessionDetail("usage");
+
+// Native popovers provide light-dismiss, Escape and focus return; only positioning is custom.
+function bindUtilityPopover(trigger, panel, above = false) {
+  const position = () => {
+    const rect = trigger.getBoundingClientRect();
+    panel.style.left = `${Math.max(8, Math.min(rect.right - panel.offsetWidth, innerWidth - panel.offsetWidth - 8))}px`;
+    const top = above ? rect.top - panel.offsetHeight - 8 : rect.bottom + 8;
+    panel.style.top = `${Math.max(8, Math.min(top, innerHeight - panel.offsetHeight - 8))}px`;
+  };
+  panel.addEventListener("toggle", (event) => {
+    const open = event.newState === "open";
+    trigger.setAttribute("aria-expanded", String(open));
+    if (open) position();
+  });
+  window.addEventListener("resize", () => { if (panel.matches(":popover-open")) position(); });
+}
+$("view-options-trigger").innerHTML = actionIcon("more");
+for (const [id, text] of [["github-link", "GitHub 源码"], ["open-raw-io", "原文对照"], ["toggle-theme", "切换主题"]]) {
+  $(id).append(document.createTextNode(text));
+}
+bindUtilityPopover($("view-options-trigger"), $("view-options"));
 let sessionId,
   models = [],
   config,
@@ -482,6 +505,7 @@ function rawMode(open) {
   if (open) paintRaw();
 }
 $("open-raw-io").onclick = () => {
+  $("view-options").hidePopover?.();
   const opening = $("raw-io").hidden;
   rawMode(opening);
   if (opening) {
@@ -493,7 +517,7 @@ $("open-raw-io").onclick = () => {
     selectRaw(visible || rawEntries.at(-1));
   }
 };
-$("close-raw-io").onclick = () => { rawMode(false); $("open-raw-io").focus(); };
+$("close-raw-io").onclick = () => { rawMode(false); $("view-options-trigger").focus(); };
 function rawChanged() {
   if (!$("raw-io").hidden && rawFrame === undefined) rawFrame = requestAnimationFrame(() => {
     rawFrame = undefined;
@@ -652,8 +676,7 @@ function updateAvailability() {
   }
 }
 function updateConnection() {
-  $("status").dataset.connected = String(connected);
-  $("status").textContent = serviceUi.restarting ? "正在重启…" : connected ? "已连接" : "连接断开";
+  setConnectionStatus(serviceUi.restarting ? "正在重启…" : connected ? "已连接" : "连接断开", connected && !serviceUi.restarting);
   serviceUi.sync();
 }
 function updateModelAvailability() {
@@ -808,6 +831,17 @@ function capabilityName(id) {
   }
   return /^index\.[cm]?[jt]s$/i.test(parts.at(-1)) ? parts.at(-2) || id : parts.at(-1) || id;
 }
+function setConnectionStatus(text, healthy = false) {
+  const status = $("status");
+  status.dataset.connected = String(healthy);
+  status.replaceChildren();
+  const label = document.createElement("span");
+  label.textContent = text;
+  if (healthy) label.className = "sr-only";
+  status.append(label);
+  status.title = "查看连接设置";
+  status.setAttribute("aria-label", `${text} · 查看连接设置`);
+}
 function runtimeSummary(value = {}) {
   const { usage, context, model, thinking } = value;
   const input = (usage?.input ?? 0) + (usage?.cacheRead ?? 0) + (usage?.cacheWrite ?? 0);
@@ -835,6 +869,23 @@ function renderRuntime(node, value) {
     const identity = runtimeSummary(sessionBill ? { ...value, billing: sessionBill } : value)[2];
     $("mobile-runtime").textContent = `${cache} · ${percent} · ${identity}`;
     $("mobile-runtime").setAttribute("aria-label", `缓存命中率 ${cache}，上下文占比 ${percent}，${identity}`);
+    const count = (n) => Number.isFinite(n) ? n.toLocaleString("en-US") : "—";
+    const known = Number.isFinite(context?.tokens);
+    const hasPercent = known && context?.contextWindow > 0 && Number.isFinite(context.percent);
+    node.hidden = !known;
+    node.textContent = hasPercent ? `上下文 ${context.percent.toFixed(0)}%` : known ? `上下文 ${count(context.tokens)}` : "";
+    node.setAttribute("aria-label", `${node.textContent || "上下文待报告"}，查看上下文与缓存用量`);
+    node.dataset.warning = String(hasPercent && context.percent >= 80);
+    const detail = [
+      `当前上下文${context?.estimated ? "（估算）" : ""}：${known ? count(context.tokens) + " tokens" : "待报告"}`,
+      `上下文窗口：${context?.contextWindow > 0 ? count(context.contextWindow) + " tokens" : "未配置"}${hasPercent ? ` · ${percent}` : ""}`,
+      `最近请求缓存命中率：${cache}${input > 0 && Number.isFinite(usage?.cacheRead) ? `（${count(usage.cacheRead)} / ${count(input)} tokens）` : "（暂无可用数据）"}`,
+      "上下文是当前占用，不是累计消耗；缓存命中率是最近一次请求的缓存读取占输入总量比例。",
+    ];
+    $("session-usage-body").replaceChildren(...detail.map(text => {
+      const p = document.createElement("p"); p.textContent = text; return p;
+    }));
+    return;
   }
   node.replaceChildren(...runtimeSummary(node.id === "session-runtime" && sessionBill ? { ...value, billing: sessionBill } : value).map((text) => {
     const span = document.createElement("span");
@@ -1638,10 +1689,20 @@ function toolState(agentId, data) {
   if (data.args) tool.args = data.args;
   if (data.result || data.partialResult) tool.result = data.result || data.partialResult;
   else if (data.content) tool.result = data;
-  const args = tool.args || {};
-  const detail = args.path || args.file_path || args.command || args.query || (Array.isArray(args.queries) ? args.queries.join(" · ") : "") || args.url || (Array.isArray(args.urls) ? args.urls.join(" · ") : "") || (Array.isArray(args.tasks) ? args.tasks.map((task) => task?.task).join(" · ") : "") || args.taskId || args.tool || args.search || "";
   if (data.toolName) tool.name = data.toolName;
+  renderToolSummary(tool);
+  const state = data.phase === "end" ? (data.isError ? "failed" : "done") : data.phase === "history" ? "stopped" : "running";
+  setActivity(tool.node, { running: "", done: "", failed: "FAILED", stopped: "" }[state], state);
+  renderToolTiming(tool);
+  renderToolDetail(tool);
+  scrollLatest();
+}
+function renderToolSummary(tool) {
+  const args = tool.args || {};
   const name = (tool.name || "").replace(/^functions\./, "");
+  const instructionTool = name === "ask_axiom" || name === "let_axiom";
+  const detail = instructionTool ? (typeof args.name === "string" ? args.name : "")
+    : args.path || args.file_path || args.command || args.query || (Array.isArray(args.queries) ? args.queries.join(" · ") : "") || args.url || (Array.isArray(args.urls) ? args.urls.join(" · ") : "") || (Array.isArray(args.tasks) ? args.tasks.map((task) => task?.task).join(" · ") : "") || args.taskId || args.tool || args.search || "";
   const icon = ({ __proto__: null, read: "read", edit: "edit", write: "write", bash: "bash", powershell: "bash", pwsh: "bash", web_search: "search", source_check: "search", fetch_content: "web", get_search_content: "web", delegate: "agents", read_result: "agents", append: "agents" })[name] || "tool";
   tool.node.dataset.toolIcon = icon;
   tool.node.querySelector(".activity-label").textContent = name || "tool";
@@ -1650,13 +1711,8 @@ function toolState(agentId, data) {
   const fullDetail = typeof detail === "string" ? detail.replace(/\s+/g, " ").trim() : "";
   const cwd = currentCwd.replaceAll("\\", "/").replace(/\/$/, "");
   const normalized = fullDetail.replaceAll("\\", "/");
-  target.textContent = (args.path || args.file_path) && cwd && normalized.startsWith(`${cwd}/`) ? normalized.slice(cwd.length + 1) : fullDetail;
+  target.textContent = !instructionTool && (args.path || args.file_path) && cwd && normalized.startsWith(`${cwd}/`) ? normalized.slice(cwd.length + 1) : fullDetail;
   target.title = fullDetail;
-  const state = data.phase === "end" ? (data.isError ? "failed" : "done") : data.phase === "history" ? "stopped" : "running";
-  setActivity(tool.node, { running: "", done: "", failed: "FAILED", stopped: "" }[state], state);
-  renderToolTiming(tool);
-  renderToolDetail(tool);
-  scrollLatest();
 }
 function renderToolTiming(tool) {
   const status = tool.node.querySelector(".tool-status");
@@ -2214,7 +2270,12 @@ function mountCompactionSegment(id, payload) {
     for (const call of Array.isArray(message.content) ? message.content : [])
       if (call.type === "toolCall") {
         const known = toolItems.get(`${agentId}:${call.id}`);
-        if (known) { known.args ||= call.arguments; item.tools.append(known.container); }
+        if (known) {
+          known.args ||= call.arguments;
+          known.name ||= call.name;
+          renderToolSummary(known);
+          item.tools.append(known.container);
+        }
         else toolState(agentId, { phase: "history", toolCallId: call.id, toolName: call.name, args: call.arguments });
       }
     live.delete(agentId);
@@ -3095,7 +3156,13 @@ function placeSnapshotMessage(ctx, index, { agentId, message, entryId, compacted
         const existing = toolItems.get(`${agentId}:${call.id}`);
         // The result may have been loaded first at the window boundary. Rehome its
         // existing detail node rather than leaving the delegate anchor at the tail.
-        if (existing) { existing.args ||= call.arguments; existing.item = item; item.tools.append(existing.container); }
+        if (existing) {
+          existing.args ||= call.arguments;
+          existing.name ||= call.name;
+          renderToolSummary(existing);
+          existing.item = item;
+          item.tools.append(existing.container);
+        }
         else toolState(agentId, { phase: "history", toolCallId: call.id, toolName: call.name, args: call.arguments });
       }
     live.delete(agentId);
@@ -3295,8 +3362,8 @@ const transport = createTransport({
       if (state === "limited") error("自动恢复已暂停：快照过大或连续恢复失败。请确认服务状态后手动连接。");
     }
     updateAvailability();
-    if (["connecting", "restoring"].includes(state)) $("status").textContent = "连接中";
-    if (state === "limited") $("status").textContent = "连接受限，请手动重试";
+    if (["connecting", "restoring"].includes(state)) setConnectionStatus("连接中");
+    if (state === "limited") setConnectionStatus("连接受限，请手动重试");
   },
 });
 transport.subscribe("models.favorites.changed", {}, (message) => {
@@ -3877,7 +3944,7 @@ document.addEventListener("click", (e) => {
   document.querySelectorAll(".session-options[open]").forEach((menu) => { if (!menu.contains(e.target)) menu.open = false; });
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" || e.isComposing || document.querySelector("dialog[open]")) return;
+  if (e.defaultPrevented || e.key !== "Escape" || e.isComposing || document.querySelector("dialog[open], .utility-popover:popover-open")) return;
   const menu = document.querySelector(".session-options[open]");
   if (menu) {
     e.preventDefault();
@@ -4185,9 +4252,23 @@ function sessionDayLabel(ts) {
   return d.getFullYear() === new Date().getFullYear() ? label : `${d.getFullYear()}年${label}`;
 }
 
+// 搜索只是临时视图：不能把自动展开写回日常浏览偏好。
+let sessionSearchView = false;
+let sessionBrowseScroll = 0;
+let sessionBrowseWorkspaceState = new Map();
 function renderSessions() {
+  const list = $("sessions");
+  const focused = document.activeElement;
+  const focusedRow = list.contains(focused) ? focused.closest(".session-row") : null;
+  const focusId = focusedRow?.dataset.sessionId;
+  const focusPart = focused?.matches(".session-item") ? ".session-item" : focused?.matches(".session-more") ? ".session-more" : null;
+  const previousScroll = list.scrollTop;
   const fragment = document.createDocumentFragment();
   const query = $("search").value.trim().toLowerCase();
+  const searching = !!query;
+  const enteringSearch = searching && !sessionSearchView;
+  const leavingSearch = !searching && sessionSearchView;
+  if (enteringSearch) sessionBrowseScroll = previousScroll;
   const running = (s) => s.status !== "idle";
   // 未读 = 打开过它之后又跑完了一轮（updatedAt 是这一轮的开始时刻）。
   const unread = (s) => !hiddenSessions.has(s.id) && s.status === "idle" && s.id !== sessionId && seenSessions[s.id] != null && s.updatedAt > seenSessions[s.id];
@@ -4196,15 +4277,27 @@ function renderSessions() {
 
   // 保存当前 DOM 中各工作区状态：重绘前先取回各分组折叠状态，用户刚点过的不会被重置。
   const groupsOpenByCwd = new Map();
-  for (const el of $("sessions").querySelectorAll(".workspace-group")) {
+  let browsePrefsChanged = false;
+  for (const el of sessionSearchView ? [] : list.querySelectorAll(".workspace-group")) {
     const cwd = el.dataset.cwd;
     if (!cwd) continue;
     if (el.open) openCwds.add(cwd);
     else openCwds.delete(cwd);
+    sessionBrowseWorkspaceState.set(cwd, el.open);
     const state = {};
     for (const section of el.querySelectorAll(".session-section[data-group]")) state[section.dataset.group] = section.open;
-    if (Object.keys(state).length) groupsOpenByCwd.set(cwd, state);
+    if (Object.keys(state).length) {
+      groupsOpenByCwd.set(cwd, state);
+      if (Object.entries(state).some(([key, open]) => sessionGroupPrefs[cwd]?.[key] !== open)) {
+        sessionGroupPrefs[cwd] = { ...sessionGroupPrefs[cwd], ...state };
+        browsePrefsChanged = true;
+      }
+    }
   }
+  if (browsePrefsChanged) saveSessionGroupPrefs();
+  sessionSearchView = searching;
+  list.classList.toggle("is-searching", searching);
+  $("clear-session-search").hidden = !$("search").value;
 
   // 按工作空间分组
   const currentNcwd = normalizeCwd(currentCwd);
@@ -4239,7 +4332,31 @@ function renderSessions() {
     button.className = "session-item";
     button.setAttribute("aria-current", s.id === sessionId ? "page" : "false");
     const title = document.createElement("span");
-    title.textContent = s.title;
+    title.className = "session-row-title";
+    // 用文本节点分段，标题中的 HTML 和正则特殊字符都只按字面展示。
+    let start = 0, match, searchFrom = 0;
+    const normalizedTitle = s.title.toLowerCase();
+    // İ 等字符的小写可能增加 UTF-16 长度；把匹配下标映射回原标题，不能直接 slice。
+    const sourceOffsets = [];
+    if (query) {
+      let offset = 0;
+      for (const character of s.title) {
+        for (let i = 0; i < character.toLowerCase().length; i++) sourceOffsets.push([offset, offset + character.length]);
+        offset += character.length;
+      }
+    }
+    while (query && (match = normalizedTitle.indexOf(query, searchFrom)) !== -1) {
+      const from = sourceOffsets[match][0];
+      const to = sourceOffsets[match + query.length - 1][1];
+      searchFrom = match + query.length;
+      if (from < start) continue;
+      title.append(document.createTextNode(s.title.slice(start, from)));
+      const mark = document.createElement("mark");
+      mark.textContent = s.title.slice(from, to);
+      title.append(mark);
+      start = to;
+    }
+    title.append(document.createTextNode(s.title.slice(start)));
     button.title = s.title;
     const attention = unread(s);
     const status = document.createElement("small");
@@ -4264,8 +4381,8 @@ function renderSessions() {
     const more = document.createElement("summary");
     more.className = "session-more";
     more.innerHTML = actionIcon("more");
-    more.title = `会话操作：${s.title}`;
-    more.setAttribute("aria-label", more.title);
+    more.title = "会话操作";
+    more.setAttribute("aria-label", `会话操作：${s.title}`);
     menu.append(more);
     menu.addEventListener("toggle", () => {
       if (!menu.isConnected) return;
@@ -4346,6 +4463,10 @@ function renderSessions() {
       };
       actions.append(action);
     }
+    const fullTitle = document.createElement("p");
+    fullTitle.className = "session-menu-title";
+    fullTitle.textContent = s.title;
+    actions.append(fullTitle); // CSS 排在操作前，触屏不必依赖悬停读取完整标题。
     menu.append(actions);
     row.append(button, menu);
     return row;
@@ -4358,7 +4479,7 @@ function renderSessions() {
     wsDetail.className = `workspace-group${isCurrent ? " current" : ""}`;
     wsDetail.dataset.cwd = ncwd;
     // 默认：当前展开，其他折叠（除非有保存的状态）
-    wsDetail.open = openCwds.has(ncwd) || (isCurrent && openCwds.size === 0);
+    wsDetail.open = searching || (sessionBrowseWorkspaceState.get(ncwd) ?? (openCwds.has(ncwd) || (isCurrent && openCwds.size === 0)));
 
     // 工作区头 — 两行：名称 + 路径
     const displayName = ncwd.split("/").filter(Boolean).pop() || ncwd;
@@ -4428,6 +4549,8 @@ function renderSessions() {
 
     // 展开/折叠状态持久化
     wsDetail.addEventListener("toggle", () => {
+      if (!wsDetail.isConnected || searching || sessionSearchView) return;
+      sessionBrowseWorkspaceState.set(ncwd, wsDetail.open);
       if (wsDetail.open) openCwds.add(ncwd);
       else openCwds.delete(ncwd);
       try { localStorage.setItem("axiom.openCwds", JSON.stringify([...openCwds])); } catch {}
@@ -4448,16 +4571,18 @@ function renderSessions() {
       for (const [name, groupSessions] of groups) {
         const key = name === "置顶" ? "pinned" : name === "进行中" ? "active" : "completed";
         // 置顶/已完成空组不渲染：没有内容时组头只是噪音；进行中组保留承载空态提示。
-        if (!groupSessions.length && key !== "active") continue;
+        if (!groupSessions.length && (searching || key !== "active")) continue;
         const section = document.createElement("details");
         section.className = `session-section session-${key}`;
         section.dataset.group = key;
         section.setAttribute("aria-label", name);
         // 折叠状态：先看重绘前的 DOM，再看按工作区记住的偏好；置顶/进行中默认展开，已完成默认折叠。
-        section.open = groupsOpenByCwd.get(ncwd)?.[key] ?? sessionGroupPrefs[ncwd]?.[key] ?? key !== "completed";
-        // 渲染时同步固化生效状态：toggle 事件是异步任务，不等它也能保证重绘后立刻一致；仅在变化时写盘。
-        const prefs = (sessionGroupPrefs[ncwd] ??= {});
-        if (prefs[key] !== section.open) { prefs[key] = section.open; saveSessionGroupPrefs(); }
+        section.open = searching || (groupsOpenByCwd.get(ncwd)?.[key] ?? sessionGroupPrefs[ncwd]?.[key] ?? key !== "completed");
+        // 搜索自动展开不得污染偏好，包括程序赋值触发的异步 toggle。
+        if (!searching) {
+          const prefs = (sessionGroupPrefs[ncwd] ??= {});
+          if (prefs[key] !== section.open) { prefs[key] = section.open; saveSessionGroupPrefs(); }
+        }
         const heading = document.createElement("summary");
         heading.className = "session-group-toggle";
         const label = document.createElement("span");
@@ -4476,7 +4601,7 @@ function renderSessions() {
         section.append(heading, content);
         // 用户点折叠后按工作区记下来；读取当前值幂等，程序赋值引发的 toggle 不会造成抖动写库。
         section.addEventListener("toggle", () => {
-          if (!section.isConnected) return;
+          if (!section.isConnected || searching || sessionSearchView) return;
           const prefs = (sessionGroupPrefs[ncwd] ??= {});
           if (prefs[key] !== section.open) { prefs[key] = section.open; saveSessionGroupPrefs(); }
         });
@@ -4517,10 +4642,73 @@ function renderSessions() {
     empty.className = "session-empty";
     empty.textContent = query ? "没有匹配的会话" : "暂无会话";
     fragment.append(empty);
+    if (searching) {
+      empty.textContent = "没有匹配的标题，试试更短的关键词。";
+      const reset = document.createElement("button");
+      reset.type = "button";
+      reset.className = "session-search-reset secondary";
+      reset.textContent = "清空搜索，查看全部会话";
+      reset.onclick = clearSessionSearch;
+      fragment.append(reset);
+    }
   }
-  $("sessions").replaceChildren(fragment);
+  const count = [...wsMap.values()].reduce((total, sessions) => total + sessions.length, 0);
+  $("session-search-status").hidden = !searching;
+  const feedback = searching ? `${count} 个匹配会话 · ${wsMap.size} 个工作空间` : "";
+  if ($("session-search-status").textContent !== feedback) $("session-search-status").textContent = feedback;
+  list.replaceChildren(fragment);
+  list.scrollTop = enteringSearch ? 0 : leavingSearch ? sessionBrowseScroll : previousScroll;
+  // 后台状态刷新重绘列表时不把正在操作的键盘焦点丢到 body。
+  if (focusId && focusPart) {
+    const row = [...list.querySelectorAll(".session-row")].find((row) => row.dataset.sessionId === focusId);
+    const target = row?.querySelector(focusPart);
+    if (target && !row.closest("details:not([open])")) target.focus({ preventScroll: true });
+    else $("search").focus({ preventScroll: true });
+  }
 }
-$("search").oninput = renderSessions;
+function clearSessionSearch() {
+  $("search").value = "";
+  renderSessions();
+  $("search").focus();
+}
+$("search").oninput = () => { renderSessions(); if (sessionSearchView) $("sessions").scrollTop = 0; };
+$("clear-session-search").onclick = clearSessionSearch;
+// 原生按钮保留 Tab / Enter / Space；方向键只移动焦点，不擅自切换会话。
+$("sidebar").addEventListener("keydown", (event) => {
+  if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+  if (document.querySelector(".session-options[open]")) return; // 菜单 Esc 交给既有的分层关闭逻辑。
+  const fromSearch = event.target === $("search");
+  const fromRow = event.target.matches(".session-item");
+  if (event.key === "Escape" && (fromSearch || $("sessions").contains(event.target))) {
+    if ($("search").value) { event.preventDefault(); clearSessionSearch(); }
+    else if (fromRow) { event.preventDefault(); $("search").focus(); }
+    else if (fromSearch && !mobile.matches) event.preventDefault();
+    return;
+  }
+  if (!fromSearch && !fromRow) return;
+  const rows = [...$("sessions").querySelectorAll(".session-item")].filter((row) => !row.closest("details:not([open])"));
+  let index = rows.indexOf(event.target);
+  if (event.key === "ArrowDown") index = Math.min(index + 1, rows.length - 1);
+  else if (event.key === "ArrowUp") index = fromSearch ? rows.length - 1 : Math.max(0, index - 1);
+  else if (!fromSearch && event.key === "Home") index = 0;
+  else if (!fromSearch && event.key === "End") index = rows.length - 1;
+  else if (!(fromSearch && event.key === "Enter" && sessionSearchView)) return;
+  else index = 0;
+  event.preventDefault();
+  const target = rows[index];
+  if (!target) return;
+  target.focus({ preventScroll: true });
+  target.scrollIntoView?.({ block: "nearest" });
+  if (fromSearch && event.key === "Enter") target.click();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.defaultPrevented || event.isComposing || event.repeat || document.querySelector("dialog[open]")) return;
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "k") return;
+  event.preventDefault();
+  sidebar(true);
+  $("search").focus();
+  $("search").select();
+});
 let sessionAction;
 
 function openSessionAction(kind, session) {

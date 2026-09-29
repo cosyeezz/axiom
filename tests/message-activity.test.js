@@ -416,6 +416,106 @@ test("child task cancellation also survives a pending thinking-only frame", asyn
   } finally { dom.window.close(); }
 });
 
+test("instruction tools show their top-level name during streaming and execution", async () => {
+  const { dom, w, emit, restore, output } = await page();
+  try {
+    for (const name of ["ask_axiom", "let_axiom", "functions.ask_axiom", "functions.let_axiom"]) {
+      restore();
+      const args = { name: "  task.start \n", arguments: { name: "not-the-instruction" } };
+      emit("agent.message.start", { message: assistant([]) });
+      emit("agent.delta", { type: "toolcall_end", toolCall: call("instruction", name, args) });
+      const record = output.querySelector(".tool-record");
+      const target = record.querySelector(".tool-target");
+      assert.equal(record.querySelector(".activity-label").textContent, name.replace(/^functions\./, ""));
+      assert.equal(target.textContent, "task.start");
+      assert.equal(target.title, "task.start");
+      assert.equal(record.open, false, "instruction identity is visible without opening parameters");
+      emit("tool.state", { phase: "start", toolCallId: "instruction", toolName: name, args });
+      assert.equal(record.querySelector(".tool-activity").dataset.state, "running");
+      emit("tool.state", { phase: "end", toolCallId: "instruction", toolName: name,
+        result: { content: [{ type: "text", text: "ok" }] } });
+      assert.equal(target.textContent, "task.start", "end without args preserves instruction identity");
+      assert.equal(record.querySelector(".tool-activity").dataset.state, "done");
+      record.open = true;
+      record.dispatchEvent(new w.Event("toggle"));
+      assert.match(record.querySelector(".tool-detail").textContent, /not-the-instruction/);
+      assert.match(record.querySelector(".tool-detail").textContent, /ok/);
+      assert.equal(output.querySelectorAll(".tool-record").length, 1);
+    }
+  } finally { dom.window.close(); }
+});
+
+test("instruction tool summaries safely handle invalid names without changing other tools", async () => {
+  const { dom, emit, restore, output } = await page();
+  try {
+    for (const toolName of ["ask_axiom", "let_axiom"]) {
+      for (const name of [undefined, null, "", " \n\t ", 42, false, {}, ["task.start"]]) {
+        restore();
+        emit("tool.state", { phase: "start", toolCallId: "invalid", toolName,
+          args: { name, arguments: { name: "nested.name" }, path: "not-an-instruction" } });
+        const row = output.querySelector(".tool-activity");
+        assert.equal(row.querySelector(".activity-label").textContent, toolName);
+        assert.equal(row.querySelector(".tool-target").textContent, "");
+        assert.equal(row.querySelector(".tool-target").title, "");
+      }
+    }
+    restore();
+    const literal = '<img src=x onerror=alert(1)>';
+    emit("tool.state", { phase: "start", toolCallId: "safe", toolName: "ask_axiom", args: { name: literal } });
+    assert.equal(output.querySelector(".tool-target").textContent, literal);
+    assert.equal(output.querySelector(".tool-target").title, literal);
+    assert.equal(output.querySelector(".tool-target img"), null);
+    for (const [toolName, args, expected] of [
+      ["read", { path: "C:/work/src/main.js", name: "ignored" }, "src/main.js"],
+      ["bash", { command: "npm test", name: "ignored" }, "npm test"],
+      ["custom.tool", { name: "ignored" }, ""],
+    ]) {
+      restore();
+      emit("tool.state", { phase: "start", toolCallId: "ordinary", toolName, args });
+      assert.equal(output.querySelector(".tool-target").textContent, expected);
+    }
+  } finally { dom.window.close(); }
+});
+
+test("instruction names survive history, live snapshots and result-first restoration", async () => {
+  const { dom, restore, output } = await page();
+  try {
+    for (const name of ["ask_axiom", "functions.let_axiom"]) {
+      const invocation = entry(assistant([call("history", name, { name: "guide.git" })]), "call");
+      const result = entry({ role: "toolResult", toolCallId: "history", toolName: name,
+        isError: true, content: [{ type: "text", text: "failed" }] }, "result");
+      for (const messages of [[invocation, result], [result, invocation]]) {
+        restore({ messages });
+        const row = output.querySelector(".tool-activity");
+        assert.equal(row.querySelector(".tool-target").textContent, "guide.git");
+        assert.equal(row.dataset.state, "failed", "late arguments must not overwrite terminal status");
+        assert.match(row.querySelector(".tool-status").textContent, /FAILED/);
+        assert.equal(output.querySelectorAll(".tool-record").length, 1);
+      }
+      restore({ status: "running", tools: { instruction: { agentId: "main", phase: "start",
+        toolCallId: "live", toolName: name, args: { name: "todo.read" } } } });
+      assert.equal(output.querySelector(".tool-target").textContent, "todo.read");
+      assert.equal(output.querySelector(".tool-activity").dataset.state, "running");
+    }
+  } finally { dom.window.close(); }
+});
+
+test("compacted child history refreshes late instruction names without changing completion", async () => {
+  const { dom, w, restore } = await page();
+  try {
+    restore({ tasks: [{ id: "child", task: "Inspect instructions", status: "completed" }] });
+    w.mountCompactionSegment("segment", { messages: [
+      entry({ role: "toolResult", toolCallId: "late", toolName: "let_axiom",
+        content: [{ type: "text", text: "ok" }] }, "result", "child"),
+      entry(assistant([call("late", "let_axiom", { name: "memory.index" })]), "call", "child"),
+    ] });
+    const row = w.document.querySelector("#task-child .tool-activity");
+    assert.equal(row.querySelector(".tool-target").textContent, "memory.index");
+    assert.equal(row.dataset.state, "done");
+    assert.equal(w.document.querySelectorAll("#task-child .tool-record").length, 1);
+  } finally { dom.window.close(); }
+});
+
 test("live activity tracks thinking, tool completion, errors, cancellation and snapshot boundaries", async () => {
   const { dom, w, emit, restore, paint, output } = await page();
   const start = () => emit("agent.message.start", { message: assistant([]) });

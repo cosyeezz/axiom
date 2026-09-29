@@ -237,7 +237,7 @@ export function createServerApp(sessions, service = {}) {
     for (const ws of remoteClients) ws.terminate();
   };
   wss.on("connection", (ws, source) => {
-    let unsubscribe, attachSequence = 0;
+    let unsubscribe;
     // 远程连接：每条消息与每 30s 重验身份（whois/status 按 IP 短 TTL 缓存，代价有界），
     // 撤权后的旧连接最多存活一个 TTL。
     const reauth = async () => {
@@ -268,13 +268,11 @@ export function createServerApp(sessions, service = {}) {
     }
     const send = (message) => sender.send(ws, message);
     const attach = async (id) => {
-      const sequence = ++attachSequence;
       // 先订阅再取快照；未加载会话只读 JSONL，不为浏览历史恢复 SDK 或唤醒任务。
       // create() 后续恢复时沿用 stub 的 listener 集合。
       unsubscribe?.();
       unsubscribe = sessions.subscribe(id, send);
       if (ws.readyState !== WebSocket.OPEN) return;
-      if (sequence !== attachSequence) throw new Error("会话切换已被后续请求替代");
       return sessions.snapshot(id, { epoch: instanceId });
     };
     ws.on("error", () => {});

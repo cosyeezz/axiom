@@ -171,6 +171,7 @@ export function createBackgroundCompaction({
   session,
   modelRuntime,
   available = [],
+  getModelContext = () => ({ modelRuntime, available }),
   config,
   summarize = summarizeNative,
   beforeCommit,
@@ -343,7 +344,7 @@ export function createBackgroundCompaction({
     return { cancelled: true, reason: null, status: statusPayload() };
   }
 
-  function resolveModel() {
+  function resolveModel(available) {
     if (!current.model) return session.model;
     const found = available.find((m) => `${m.provider}/${m.id}` === current.model);
     if (!found) throw new Error("Unknown compaction model");
@@ -365,7 +366,8 @@ export function createBackgroundCompaction({
   }
 
   function runFlight(preparation, run) {
-    const model = resolveModel(); // 快照时同步捕获 model/thinking，配置漂移不影响在途 flight
+    const context = getModelContext();
+    const model = resolveModel(context.available); // 每次flight固定目录/runtime，刷新不影响在途摘要
     const thinking = resolveThinking(current.thinking, getSupportedThinkingLevels(model), { policy: "lowest" });
     controller = new AbortController();
     if (run) { run.model = model?.name || model?.id || run.model; run.thinking = thinking; }
@@ -375,7 +377,7 @@ export function createBackgroundCompaction({
       previousSummary: preparation.previousSummary,
       model,
       thinking,
-      modelRuntime,
+      modelRuntime: context.modelRuntime,
       usage,
       audit,
       signal: controller.signal,
@@ -620,7 +622,7 @@ export function createBackgroundCompaction({
     },
     setConfig(next) {
       const normalized = normalizeCompaction(next);
-      if (normalized.model && !available.some((m) => `${m.provider}/${m.id}` === normalized.model))
+      if (normalized.model && !getModelContext().available.some((m) => `${m.provider}/${m.id}` === normalized.model))
         throw new Error("Unknown compaction model");
       const changed = JSON.stringify(normalized) !== JSON.stringify(current);
       current = normalized;

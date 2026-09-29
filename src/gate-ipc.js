@@ -23,6 +23,7 @@ export async function serveGate({ endpoint, token, service }) {
         if (Buffer.byteLength(line) > MAX_LINE) { socket.destroy(); return; }
         let request;
         try { request = JSON.parse(line); } catch { socket.destroy(); return; }
+        if (!request || typeof request !== "object" || Array.isArray(request)) { socket.destroy(); return; }
         if (!authenticated(request.token, token) || typeof request.id !== "string" || ++pending > 256) { socket.destroy(); return; }
         void (async () => {
           try {
@@ -89,6 +90,7 @@ export async function connectGate({ endpoint, token, connectTimeoutMs = 1000, ti
       const index = buffer.indexOf("\n"), line = buffer.slice(0, index); buffer = buffer.slice(index + 1);
       if (Buffer.byteLength(line) > 8 * 1024 * 1024) { socket.destroy(); return; }
       let response; try { response = JSON.parse(line); } catch { socket.destroy(); return; }
+      if (!response || typeof response !== "object" || Array.isArray(response)) { socket.destroy(); return; }
       const item = pending.get(response.id);
       if (!item) {
         if (expiredAcquires.delete(response.id) && response.data?.leaseId && !socket.destroyed)
