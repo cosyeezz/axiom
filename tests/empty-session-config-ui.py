@@ -1,7 +1,8 @@
 """Run against empty-session-config-preview.mjs (real Sessions; port 4393)."""
 from pathlib import Path
+import os
 from playwright.sync_api import sync_playwright, expect
-out = Path('artifacts/empty-session-config')
+out = Path(os.environ.get('UI_ARTIFACTS', 'artifacts/empty-session-config'))
 out.mkdir(parents=True, exist_ok=True)
 with sync_playwright() as p:
     browser = p.chromium.launch()
@@ -11,7 +12,7 @@ with sync_playwright() as p:
     page.goto('http://127.0.0.1:4393')
     page.locator('.session-options > summary').first.click()
     page.locator('.session-configure').first.click()
-    expect(page.locator('#config-new-session-title')).to_have_text('首次发送前可修改')
+    expect(page.locator('#config-new-session-title')).to_have_text('能力配置 · 空闲时应用')
     select = page.locator('#create-capabilities select').first
     expect(select).to_be_enabled()
     select.select_option('custom')
@@ -28,11 +29,25 @@ with sync_playwright() as p:
     page.locator('#apply-assembly').click()
     expect(page.locator('#create-feedback')).to_contain_text('已保存')
     expect(select).to_be_enabled()
+    page.locator('#settings').evaluate('(dialog) => dialog.close()')
+    page.locator('#prompt').fill('Start isolated fixture session')
+    page.locator('#prompt').press('Enter')
+    page.locator('.session-options > summary').first.click()
+    page.locator('.session-configure').first.click()
+    expect(select).to_be_enabled(timeout=10000)
+    expect(page.locator('#create-retry')).to_be_hidden()
+    page.locator('#create-capabilities fieldset').first.locator('summary').first.click()
+    skills.nth(0).check()
+    page.locator('#apply-assembly').click()
+    expect(page.locator('#create-feedback')).to_contain_text('已保存')
+    expect(select).to_be_enabled()
     for theme in ['dark', 'light']:
         page.evaluate('(theme) => document.documentElement.dataset.theme = theme', theme)
         page.locator('#config-new-session-title').scroll_into_view_if_needed()
         page.screenshot(path=str(out / f'empty-{theme}.png'))
     page.set_viewport_size({'width': 390, 'height': 844})
+    page.locator('#config-new-session-title').scroll_into_view_if_needed()
+    expect(select).to_be_enabled()
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
     page.screenshot(path=str(out / 'empty-mobile.png'))
     assert not errors, errors

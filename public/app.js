@@ -734,12 +734,12 @@ function updateSettingsAvailability() {
     ? (changing ? "正在保存或切换配置…" : "连接断开，暂时无法修改配置")
     : defaultsMode === "session" ? "更改自动保存，仅当前会话下次请求生效" : "更改自动保存为默认值，仅新会话生效";
   for (const fieldset of [...$("create-agents").children, ...$("create-subagent-settings").children]) fieldset.disabled = unavailable;
-  for (const fieldset of $("create-capabilities").children) fieldset.disabled = unavailable || (defaultsMode === "session" && config.canReconfigure !== true);
+  for (const fieldset of $("create-capabilities").children) fieldset.disabled = unavailable || (defaultsMode === "session" && config.canConfigureCapabilities !== true);
   for (const node of $("create-compaction").querySelectorAll("input, select, button")) node.disabled = unavailable;
   for (const node of $("create-retry").querySelectorAll("input, textarea, select, button")) node.disabled = unavailable || (defaultsMode === "session" && config.canReconfigure !== true);
   $("defaults-delete").disabled = unavailable;
   $("assembly-actions").hidden = defaultsMode !== "session" || !creation?.assemblyDirty;
-  $("apply-assembly").disabled = unavailable || config?.canReconfigure !== true;
+  $("apply-assembly").disabled = unavailable || config?.canConfigureCapabilities !== true;
   const remoteLocked = remoteView.local === false;
   for (const id of ["remote-enabled", "remote-email", "remote-save"])
     $(id).disabled = unavailable || remoteLocked;
@@ -2747,6 +2747,10 @@ function applyEvent(message) {
   }
   if (type === "session.queue" && agentId === "main") renderQueue(data);
   if (type === "session.config") { applyConfig(data); updateAvailability(); }
+  if (type === 'session.capabilities' && config) {
+    config.canConfigureCapabilities = data.canConfigureCapabilities === true;
+    region('能力配置', () => { renderDefaultsScope(); updateSettingsAvailability(); });
+  }
   if (type === "session.title") {
     $("session-title").textContent = data.title || "新会话";
     updatePageTitle();
@@ -5141,10 +5145,10 @@ function renderDefaultsScope() {
   $("defaults-scope-label").textContent = defaultsMode === "session" ? "仅当前会话" : defaultsScope ? `工作空间 · ${defaultsScope}` : "全局默认";
   $("defaults-title").textContent = defaultsMode === "session" ? "当前会话配置" : defaultsScope ? "当前工作空间配置" : "默认配置";
   $("defaults-delete").hidden = defaultsMode !== "workspace";
-  $("config-new-session-title").textContent = defaultsMode === "session" && config.canReconfigure === true ? "首次发送前可修改" : "需要启动新会话区";
-  $("config-assembly-help").textContent = defaultsMode === "session" && config.canReconfigure === true
-    ? "当前会话尚未发送消息。能力与重试可连续修改，点击「应用能力与重试配置」后统一装配；仅作用于本会话。"
-    : "Skills、MCP、Extensions 能力选择及自动重试在创建会话时装配；已开始的会话不能修改这些配置。";
+  $("config-new-session-title").textContent = defaultsMode === 'session' ? '能力配置 · 空闲时应用' : '能力与重试默认值';
+  $("config-assembly-help").textContent = defaultsMode === 'session'
+    ? 'Skills、MCP、Extensions 可在会话空闲且无在途任务时修改；运行中请先停止。应用不会恢复已暂停的任务。重试策略仅在首次发送前可改。'
+    : '这些默认值用于之后创建的新会话，不修改已有会话。';
   $("config-subagent-title").textContent = defaultsMode === "session" ? "子代理设置 · 模型与思考" : "子代理默认值 · 新会话采用";
   $("config-subagent-help").textContent = defaultsMode === "session"
     ? "子代理思考偏好在后续创建的子执行器中生效（含重试），不修改运行中的子任务；子代理模型沿用运行时切换行为，新建子执行器采用当前会话的压缩设置。"
@@ -5245,7 +5249,7 @@ function createAgentPicker(role, title, catalog, initial) {
   capabilityLegend.textContent = `${title}能力`;
   capabilityFieldset.append(capabilityLegend, mode.parentElement, pickers);
   // 当前会话不能重新装配主代理能力；展示只读值，不假装保存成功。
-  capabilityFieldset.disabled = defaultsMode === "session" && config.canReconfigure !== true;
+  capabilityFieldset.disabled = defaultsMode === "session" && config.canConfigureCapabilities !== true;
   $("create-capabilities").append(capabilityFieldset);
   $(role === "subagent" ? "create-subagent-settings" : "create-agents").append(fieldset);
   return () => ({
@@ -5316,7 +5320,7 @@ async function loadCreation() {
     current.catalog = catalog;
     updateSettingsAvailability();
     updateDefaultsPreview();
-    $("create-feedback").textContent = [mode === "session" && config.canReconfigure !== true ? "会话已经开始，能力装配和重试策略不可修改；请配置默认值后新建会话。" : "", ...catalog.warnings].filter(Boolean).join("\n");
+    $("create-feedback").textContent = [mode === "session" && config.canConfigureCapabilities !== true ? "当前会话暂不可重装能力，请先停止并等待在途任务、问题和队列结束。" : "", ...catalog.warnings].filter(Boolean).join("\n");
   } catch (e) {
     if (active() && creation === current && load === creationLoad) $("create-feedback").textContent = `加载失败：${e.message}`;
   }
@@ -5426,13 +5430,14 @@ async function saveCreation(e) {
     return;
   }
   const applying = mode === "session" && e.submitter?.id === "apply-assembly";
-  if (applying && config.canReconfigure !== true) return;
+  if (applying && config.canConfigureCapabilities !== true) return;
   const editor = creation;
   const selection = defaultsSelection();
   const data = mode === "session"
-    ? { sessionId: target, model: selection.model || config.model, thinking: selection.thinking || config.thinking,
-        subagentModel: selection.subagentModel, subagentThinking: selection.subagentThinking, compaction: selection.compaction,
-        ...(applying ? { capabilities: selection.capabilities, subagentCapabilities: selection.subagentCapabilities, retry: selection.retry } : {}) }
+    ? applying ? { sessionId: target, capabilities: selection.capabilities, subagentCapabilities: selection.subagentCapabilities,
+        ...(config.canReconfigure === true ? { retry: selection.retry } : {}) }
+      : { sessionId: target, model: selection.model || config.model, thinking: selection.thinking || config.thinking,
+        subagentModel: selection.subagentModel, subagentThinking: selection.subagentThinking, compaction: selection.compaction }
     : { ...selection, ...(scope ? { cwd: scope } : {}) };
   defaultsSaving = true;
   changing = true;

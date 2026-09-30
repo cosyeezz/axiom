@@ -1072,6 +1072,23 @@ export class Sessions {
     }
   }
 
+  createMainAgent(item, selection, previousAgent) {
+    return this.createAgent([item.questions.tool], {
+      profile: { role: 'main', purpose: 'general' },
+      instructions: createBusinessInstructions(item.tasks, item.todo),
+      audit: { sessionId: item.id, agentId: 'main', source: 'main' },
+      ...(selection.model ? { model: selection.model } : {}),
+      ...(selection.thinking ? { thinking: selection.thinking } : {}),
+      capabilities: selection.capabilities, compaction: selection.compaction, retry: selection.retry,
+      trustProject: item.trustProject, cwd: item.cwd, sessionDir: item.storageDir,
+      observationsDir: item.storageDir ? join(item.storageDir, `${item.id}-observations`) : undefined,
+      sessionFile: selection.sessionFile,
+      memory: memoryHooks(item, change => this.saveChange(item, change)),
+      requiresPlan: () => item.todo.requiresPlan,
+      todoContext: reason => item.todo.header ? item.todo.contextPacket(reason) : null,
+    }, previousAgent);
+  }
+
   async create(workspace, selection = {}, saved, deferStart = false) {
     const inherited = ["capabilities", "subagentCapabilities"].filter((key) =>
       saved || (selection.useDefaults !== false && selection[key] === undefined));
@@ -1254,6 +1271,9 @@ export class Sessions {
       // 持久化专用字段不进入 WebSocket 广播。
       delete envelope.saved;
       const envelopes = [envelope];
+      if (item.agent && ['session.state', 'task.state', 'session.queue', 'question.asked', 'question.answered', 'agent.compaction.status'].includes(event.type))
+        envelopes.push({ type: 'session.capabilities', sessionId: id, seq: ++item.seq,
+          data: { canConfigureCapabilities: this.canConfigureCapabilities(item) } });
       if (event.type === "agent.runtime" && (!event.agentId || event.agentId === "main")) item.billingMain = event.data?.billing;
       if (event.type === "agent.runtime" || event.type === "task.state") {
         const main = item.billingMain ?? item.agent?.runtime?.()?.billing;
@@ -1328,24 +1348,8 @@ export class Sessions {
         lines[0] = JSON.stringify({ ...JSON.parse(lines[0]), id, cwd });
         await writeFile(importedFile, lines.join("\n"), { mode: 0o600 });
       }
-      item.agent = await this.createAgent([item.questions.tool], {
-        profile: { role: 'main', purpose: 'general' },
-        instructions: createBusinessInstructions(item.tasks, item.todo),
-        audit: { sessionId: id, agentId: "main", source: "main" },
-        ...(selection.model ? { model: selection.model } : {}),
-        ...(selection.thinking ? { thinking: selection.thinking } : {}),
-        capabilities: item.capabilities,
-        compaction: selection.compaction,
-        retry: item.retry,
-        trustProject: item.trustProject,
-        cwd,
-        sessionDir: storageDir,
-        observationsDir: storageDir ? join(storageDir, `${id}-observations`) : undefined,
-        sessionFile: saved?.sessionFile ?? importedFile,
-        memory: memoryHooks(item, saveMemory),
-        requiresPlan: () => item.todo.requiresPlan,
-        todoContext: reason => item.todo.header ? item.todo.contextPacket(reason) : null,
-      });
+      item.agent = await this.createMainAgent(item, { ...selection, capabilities: item.capabilities,
+        retry: item.retry, sessionFile: saved?.sessionFile ?? importedFile });
     // 导入与库恢复的会话都没有完整消息快照（模型消息不再入库）：主代理历史从 Pi JSONL
     // 当前分支重建（撤回/压缩后的分支即真实历史），entryId 保留用于压缩折叠与撤回定位；
     // 子代理使用独立 JSONL，按 task ID 恢复到各自详情，不混入主上下文。
@@ -1772,7 +1776,7 @@ export class Sessions {
   configData(item, runtime) {
     if (arguments.length < 2) runtime = item.agent.runtime?.();
     return {
-      canReconfigure: this.canReconfigure(item), queueType: item.queueType,
+      canReconfigure: this.canReconfigure(item), canConfigureCapabilities: this.canConfigureCapabilities(item), queueType: item.queueType,
       ...item.agent.config?.(), subagentModel: item.subagentModel,
       subagentThinking: item.subagentThinking,
       subagentResolvedCapabilities: item.subagentResolvedCapabilities,
@@ -1829,6 +1833,7 @@ export class Sessions {
         navigation: navigationState(branch), safePoints: listSafePoints(branch),
         status: "idle", safeStop: false, runtime: restoredRuntime, billing: combinedBilling(restoredRuntime.billing, tasks), config: { ...saved.selection, capabilitySelection: selection.capabilities ?? null,
           subagentCapabilities: selection.subagentCapabilities ?? null, queueType: selection.queueType || "steer",
+          canConfigureCapabilities: !tasks.some(task => ACTIVE_TASK_STATES.includes(task.status) || task.cleanupStatus === 'unconfirmed'),
           canReconfigure: !saved.sessionFile && !messages.length && !tasks.length
           && !compactions.length && !saved.retries?.length && saved.selection?.executionStarted !== true && !todo.active },
         messages: fold.records.map(toWireRecord),
@@ -1957,11 +1962,78 @@ export class Sessions {
       && !item.tasks.jobs.size && !item.todo?.active && !landedSessionFile(item);
   }
 
+  canConfigureCapabilities(item, afterConfigure = false) {
+    const queue = item.agent?.queue?.();
+    return item.loaded && item.status === 'idle' && !item.capabilityError && !item.closing && !item.cancelling && !item.compacting
+      && (afterConfigure || (!item.configuring && !item.releasing)) && !item.notifying
+      && !['summarizing', 'ready'].includes(item.agent.compactionStatus?.()?.status)
+      && ![...item.tasks.jobs.values()].some(task => ACTIVE_TASK_STATES.includes(task.status) || task.cleanupStatus === 'unconfirmed')
+      && !item.questions.snapshot().length && !queue?.steering?.length && !queue?.followUp?.length;
+  }
+
+  async configureCapabilities(item, changes) {
+    if (!this.canConfigureCapabilities(item)) throw new Error('修改能力前请先停止会话并等待在途任务、问题和队列结束');
+    item.configuring = true;
+    const epoch = item.capabilityEpoch ?? 0;
+    const rebuild = (async () => {
+      let candidate, committed = false;
+      try {
+        const saved = this.sessionData(item);
+        const selection = { ...saved.selection, ...changes, sessionFile: saved.sessionFile };
+        const inherited = ['capabilities', 'subagentCapabilities'].filter(key => !Object.hasOwn(changes, key));
+        const { catalog } = await this.validateSelection(item.cwd, selection, inherited);
+        // Finish previous writes first; a failed candidate must never enqueue a new
+        // selection in the live item's retry queue.
+        if (item.pendingWrites?.length) await this.persist(item, {});
+        candidate = await this.createMainAgent(item, selection, item.agent);
+        if (epoch !== (item.capabilityEpoch ?? 0) || !this.canConfigureCapabilities(item, true)) throw new Error('能力重装已被停止或会话状态变化打断');
+        const replacement = { ...item, agent: candidate, pendingWrites: [],
+          capabilities: selection.capabilities ?? null, subagentCapabilities: selection.subagentCapabilities ?? null,
+          subagentResolvedCapabilities: catalog ? resolveCapabilities(selection.subagentCapabilities === 'inherit' ? selection.capabilities : selection.subagentCapabilities, catalog) : null };
+        await this.persist(replacement);
+        if (epoch !== (item.capabilityEpoch ?? 0) || !this.canConfigureCapabilities(item, true)) {
+          await this.persist(item); // Restore the live selection, including any concurrent stop state.
+          throw new Error('能力重装已被停止或会话状态变化打断');
+        }
+        const previous = item.agent, unsubscribe = item.unsubscribe;
+        // Irreversible lifecycle boundary: startup runs only after old shutdown.
+        // Prepare/persist failures above leave the old agent running and untouched.
+        committed = true;
+        await previous.dispose();
+        unsubscribe?.();
+        item.agent = candidate;
+        item.capabilities = replacement.capabilities;
+        item.subagentCapabilities = replacement.subagentCapabilities;
+        item.subagentResolvedCapabilities = replacement.subagentResolvedCapabilities;
+        item.unsubscribe = candidate.subscribe(event => item.emit({ ...event, agentId: 'main', runId: item.runId }));
+        candidate = null;
+        await item.agent.activate?.();
+        return { ...this.configData(item), canConfigureCapabilities: this.canConfigureCapabilities(item, true), canReconfigure: this.canReconfigure(item, true) };
+      } catch (error) {
+        if (candidate) await candidate.dispose().catch(() => {});
+        if (committed) {
+          item.capabilityError = '能力生命周期交接失败，请关闭并重新打开会话：' + error.message;
+          item.notificationsPaused = true;
+          item.memoryPaused = true;
+          item.todo?.pause(item.capabilityError);
+          item.status = 'error';
+          item.emit({ type: 'error', data: { message: item.capabilityError } });
+        }
+        throw error;
+      }
+    })();
+    item.releasing = rebuild;
+    try { return await rebuild; }
+    finally { item.configuring = false; item.releasing = null; }
+  }
+
   async configure(id, selection) {
     const item = await this.ensureLoaded(id);
     if (!["idle", "running"].includes(item.status) || item.configuring || item.compacting) throw new Error("Session is busy");
-    if (["capabilities", "subagentCapabilities", "retry"].some((key) => Object.hasOwn(selection, key))) {
-      if (!this.canReconfigure(item)) throw new Error("能力与重试配置仅可在首次发送消息前修改");
+    const capabilityChange = ['capabilities', 'subagentCapabilities'].some(key => Object.hasOwn(selection, key));
+    if (capabilityChange && !Object.hasOwn(selection, 'retry')) return this.configureCapabilities(item, selection);
+    if (capabilityChange || Object.hasOwn(selection, 'retry')) {
+      if (!this.canReconfigure(item)) throw new Error("重试配置仅可在首次发送消息前修改");
       item.configuring = true;
       const rebuild = (async () => {
         const saved = this.sessionData(item);
@@ -2003,7 +2075,7 @@ export class Sessions {
       item.queueType = selection.queueType || item.queueType;
       await this.persist(item);
       return {
-        canReconfigure: this.canReconfigure(item, true),
+        canReconfigure: this.canReconfigure(item, true), canConfigureCapabilities: this.canConfigureCapabilities(item, true),
         queueType: item.queueType,
         ...item.agent.config?.(), ...config, subagentModel,
         runtime: item.agent.runtime?.(),
@@ -2020,6 +2092,7 @@ export class Sessions {
 
   // 运行骨架（prompt 与手动重试共用）：runId/status 广播 → result() 取错 → 收尾持久化与 idle 复位。
   startRun(item, run) {
+    if (item.capabilityError) throw new Error(item.capabilityError);
     item.executionStarted = true;
     // 通知在下一次运行开始时恢复：goal 被暂停/退出时仍要冻结，安全停止期间也暂停，防止通知把刚停下的会话又拉起来。
     item.notificationsPaused = false;
@@ -2086,6 +2159,7 @@ export class Sessions {
   async prompt(id, text, queueType, images) {
     if (!text.trim() && !images?.length) throw new Error("请求内容不能为空：请输入文本或附加图片");
     const item = this.get(id).loaded ? this.get(id) : await this.ensureLoaded(id);
+    if (item.capabilityError) throw new Error(item.capabilityError);
     if (item.compacting || item.configuring || item.closing || item.releasing) throw new Error("Session is busy");
     if (images?.length) {
       // 必须在回执前拒绝：一旦入队或启动，SDK 会静默丢弃不支持模型的图片。
@@ -2196,6 +2270,7 @@ export class Sessions {
       await item.loading.catch(() => {});
       return this.safeStop(id);
     }
+    item.capabilityEpoch = (item.capabilityEpoch ?? 0) + 1;
     item.notificationsPaused = true;
     item.memoryPaused = true;
     const errors = [];
@@ -2258,6 +2333,7 @@ export class Sessions {
       return this.cancel(id);
     }
     if (!item.loaded) return;
+    item.capabilityEpoch = (item.capabilityEpoch ?? 0) + 1;
     if (item.cancelling) return item.cancelling;
     item.notificationsPaused = true;
     item.memoryPaused = true;

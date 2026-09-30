@@ -9,7 +9,7 @@ const definition = (handler = ({ n }) => n + 1) => ({ name: "test.increment", de
 test("register/execute: exact names, duplicate rejection, isolated registries, sync and async handlers", async () => {
   const registry = createInstructions();
   registry.register(definition());
-  assert.deepEqual(Object.keys(registry).sort(), ["execute", "register"]);
+  assert.deepEqual(Object.keys(registry).sort(), ["execute", "register", "registerSource"]);
   assert.equal(await registry.execute("test.increment", { n: 1 }), 2);
   assert.throws(() => registry.register(definition()), /already registered/);
   for (const name of ["test", "TEST.increment", " test.increment", "test.increment ", "*"]) {

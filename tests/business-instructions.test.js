@@ -96,7 +96,9 @@ test('Todo through let preserves confirmation, abort, structured output and erro
     assert.equal(JSON.parse(accepted.content[0].text).applied, true);
     assert.equal(accepted.details.axiomInstruction, 'todo.update');
     const state = todo.snapshot();
-    await assert.rejects(run.execute('self-proof', { name: 'todo.update', arguments: { listId: state.listId, baseVersion: state.version, ops: [{ op: 'status', id: 'goal', status: 'done', summary: 'claimed', verification: [{ criterionId: 'a', result: 'self proof', refs: [{ toolCallId: 'confirm' }] }] }] } }), /TODO_INVALID_REFERENCE/);
+    const rejected = await run.execute('self-proof', { name: 'todo.update', arguments: { listId: state.listId, baseVersion: state.version, ops: [{ op: 'status', id: 'goal', status: 'done', summary: 'claimed', verification: [{ criterionId: 'a', result: 'self proof', refs: [{ toolCallId: 'confirm' }] }] }] } });
+    assert.equal(rejected.isError, true);
+    assert.match(rejected.content[0].text, /TODO_INVALID_REFERENCE/);
     await assert.rejects(run.execute('invalid', { name: 'todo.read', arguments: { unexpected: true } }), /Invalid/);
   } finally { questions.cancel(); store.database.close(); }
 });

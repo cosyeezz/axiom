@@ -9,6 +9,7 @@ import { command } from '../src/protocol.js';
 test('configure protocol accepts empty-session assembly selections', () => {
   const request = { id: 'request', type: 'session.configure', sessionId: 'session', model: 'test/one', capabilities: null, subagentCapabilities: 'inherit', retry: null };
   assert.equal(command.safeParse(request).success, true);
+  assert.equal(command.safeParse({ id: 'request', type: 'session.configure', sessionId: 'session', capabilities: empty }).success, true);
   assert.equal(command.safeParse({ ...request, subagentCapabilities: null }).success, true);
   assert.equal(command.safeParse({ ...request, retry: { retryable: [123] } }).success, false);
 });
@@ -81,7 +82,76 @@ test('assembly failure preserves old agent and permits retry', async t => {
   f.state.fail = false;
   await f.sessions.configure(f.id, { capabilities: chosen });
 });
-test('assembly blocks first prompt and first prompt permanently locks assembly across restart', async t => {
+test('idle reassembly preserves task objects, Todo pause and frozen notifications', async t => {
+  const f = await fixture(t), item = f.sessions.get(f.id);
+  item.executionStarted = true;
+  item.notificationsPaused = true;
+  item.memoryPaused = true;
+  item.todo.prepare('confirmed goal');
+  item.todo.pause('user paused');
+  const before = item.todo.snapshot(), tasks = item.tasks, todo = item.todo;
+  await f.sessions.configure(f.id, { capabilities: chosen });
+  assert.equal(f.sessions.get(f.id), item);
+  assert.equal(item.tasks, tasks);
+  assert.equal(item.todo, todo);
+  assert.deepEqual(item.todo.snapshot(), before);
+  assert.equal(item.notificationsPaused, true);
+  assert.equal(item.memoryPaused, true);
+  assert.equal(item.executionStarted, true);
+});
+
+test('stop during candidate assembly invalidates it without replacing the old agent', async t => {
+  const f = await fixture(t), item = f.sessions.get(f.id), previous = item.agent;
+  let release;
+  f.state.gate = new Promise(resolve => { release = resolve; });
+  const saving = f.sessions.configure(f.id, { capabilities: chosen });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  await f.sessions.safeStop(f.id);
+  release();
+  await assert.rejects(saving, /停止|状态变化/);
+  assert.equal(item.agent, previous);
+  assert.equal(item.notificationsPaused, true);
+  assert.equal(f.state.disposed, 1);
+});
+
+test('capability configuration rejects every active boundary but accepts terminal task history', async t => {
+  const f = await fixture(t), item = f.sessions.get(f.id);
+  const check = () => f.sessions.canConfigureCapabilities(item);
+  assert.equal(check(), true);
+  for (const flag of ['closing', 'cancelling', 'compacting', 'configuring', 'releasing', 'notifying']) {
+    item[flag] = true; assert.equal(check(), false, flag); item[flag] = false;
+  }
+  for (const status of ['starting', 'running', 'wrapping', 'stopping', 'summarizing']) {
+    item.tasks.jobs.set('active', { status }); assert.equal(check(), false, status);
+  }
+  item.tasks.jobs.set('active', { status: 'completed', cleanupStatus: 'unconfirmed' }); assert.equal(check(), false);
+  item.tasks.jobs.set('active', { status: 'completed' }); assert.equal(check(), true);
+  const queue = item.agent.queue;
+  item.agent.queue = () => ({ steering: ['pending'], followUp: [] }); assert.equal(check(), false);
+  item.agent.queue = () => ({ steering: [], followUp: ['pending'] }); assert.equal(check(), false);
+  item.agent.queue = queue;
+  item.agent.compactionStatus = () => ({ status: 'summarizing' }); assert.equal(check(), false);
+  item.agent.compactionStatus = () => ({ status: 'ready' }); assert.equal(check(), false);
+  item.agent.compactionStatus = () => ({ status: 'idle' });
+  const questions = item.questions.snapshot;
+  item.questions.snapshot = () => [{}]; assert.equal(check(), false); item.questions.snapshot = questions;
+  item.tasks.jobs.clear();
+});
+
+test('activation failure locks the session instead of pretending the old lifecycle rolled back', async t => {
+  const f = await fixture(t), item = f.sessions.get(f.id), create = f.sessions.createMainAgent;
+  f.sessions.createMainAgent = async (...args) => {
+    const candidate = await create.apply(f.sessions, args);
+    candidate.activate = async () => { throw new Error('startup failed'); }; return candidate;
+  };
+  await assert.rejects(f.sessions.configure(f.id, { capabilities: chosen }), /startup failed/);
+  assert.match(item.capabilityError, /重新打开/);
+  assert.equal(item.memoryPaused, true); assert.equal(item.notificationsPaused, true);
+  assert.equal(f.sessions.canConfigureCapabilities(item), false);
+  await assert.rejects(f.sessions.prompt(f.id, 'not a resume'), /重新打开/);
+});
+
+test('assembly blocks first prompt; started idle sessions can change capabilities but not retry', async t => {
   const f = await fixture(t);
   let release;
   f.state.gate = new Promise(resolve => { release = resolve; });
@@ -90,8 +160,10 @@ test('assembly blocks first prompt and first prompt permanently locks assembly a
   await assert.rejects(f.sessions.prompt(f.id, 'first'), /busy/);
   release(); await save; f.state.gate = null;
   const prompt = f.sessions.prompt(f.id, 'first');
-  await assert.rejects(f.sessions.configure(f.id, { capabilities: empty }), /首次发送/);
+  await assert.rejects(f.sessions.configure(f.id, { capabilities: empty }), /停止/);
   await prompt; await f.sessions.get(f.id).work;
+  assert.equal(f.sessions.snapshot(f.id).config.canConfigureCapabilities, true);
+  await f.sessions.configure(f.id, { capabilities: empty });
   await f.reopen();
   assert.equal(f.sessions.snapshot(f.id).config.canReconfigure, false);
   await assert.rejects(f.sessions.configure(f.id, { retry: null }), /首次发送/);

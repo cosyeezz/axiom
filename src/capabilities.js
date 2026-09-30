@@ -20,7 +20,10 @@ for (const subpath of ["compat", "oauth", "providers/all"])
 for (const name of ["pi-coding-agent", "pi-agent-core", "pi-tui", "pi-ai"])
   for (const scope of ["@earendil-works", "@mariozechner"])
     alias[`${scope}/${name}`] = fileURLToPath(resolver.esmResolve(`@earendil-works/${name}${name === "pi-ai" ? "/compat" : ""}`));
-const jiti = createJiti(import.meta.url, { alias });
+for (const subpath of ['', '/compile', '/value'])
+  for (const name of ['typebox', '@sinclair/typebox'])
+    alias[`${name}${subpath}`] = fileURLToPath(resolver.esmResolve(`typebox${subpath}`));
+const jiti = createJiti(import.meta.url, { alias, moduleCache: false });
 
 // 主代理不装配的导航类技能：探索/导航一律交给子代理（MAIN_AGENT_PROMPT 的 Delegation 段）。
 // 主代理的 loader 不装载它们，系统提示里就没有可用技能入口，模型无法借技能亲自调研；
@@ -116,7 +119,7 @@ export function refreshProjectSkills(loader, selected, catalog, all = false, exc
   return loader.getSkills().skills.map(({ name, description }) => ({ name, description }));
 }
 
-export function capabilityLoader(resources, selection, customTools, extraFactories = [], budgetPrompt = null, profile = { role: 'main' }) {
+export function capabilityLoader(resources, selection, customTools, extraFactories = [], budgetPrompt = null, profile = { role: 'main' }, dynamicTools, eventBus) {
   const { catalog, settingsManager, paths, adapter, mcpConfig, createMcpAdapter, cwd, agentDir } = resources;
   const isolated = isMemoryProfile(profile);
   const selected = isolated ? { skills: [], plugins: [], mcp: [] } : resolveCapabilities(selection, catalog);
@@ -128,21 +131,31 @@ export function capabilityLoader(resources, selection, customTools, extraFactori
     ? selected.skills.filter((id) => !excludedSkillIds.has(id))
     : selected.skills);
   const factories = [...extraFactories, ...(!isolated ? [{ name: "axiom-inline-images", factory: inlineImagesExtension }] : [])];
+  if (dynamicTools) for (const path of selected.plugins) factories.push({ name: path, factory: async pi => {
+    // Use the same host-SDK aliases as external packages. Wrapping the factory
+    // captures both startup and later registerTool calls without private SDK hooks.
+    const module = await jiti.import(path);
+    if (typeof module.default !== 'function') throw new Error(`Invalid extension factory: ${path}`);
+    await module.default(dynamicTools.facade(pi, path));
+  } });
   if (!isolated && adapter && (selection == null || selected.mcp.length)) {
-    factories.push({ name: "axiom-mcp", factory: createMcpAdapter({ config: {
+    const factory = createMcpAdapter({ config: {
       ...mcpConfig,
+      // Operations are discovered through proxy metadata, not direct schemas.
+      settings: { ...mcpConfig.settings, disableProxyTool: false, scriptMode: false, directTools: false, freezeDirectTools: false },
       mcpServers: Object.fromEntries(selected.mcp.map((id) => {
         const server = mcpConfig.mcpServers[id];
         return [id, server.command && !server.cwd ? { ...server, cwd } : server];
       })),
-    } }) });
+    } });
+    factories.push({ name: 'axiom-mcp', factory: pi => factory(dynamicTools ? dynamicTools.facade(pi, 'axiom-mcp', { adapter: true }) : pi) });
   }
   return {
     selected,
     loader: new DefaultResourceLoader({
-      cwd, agentDir, settingsManager,
+      cwd, agentDir, settingsManager, ...(eventBus ? { eventBus } : {}),
       noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true,
-      additionalExtensionPaths: selected.plugins,
+      additionalExtensionPaths: dynamicTools ? [] : selected.plugins,
       additionalSkillPaths: loaderSkills(),
       additionalPromptTemplatePaths: isolated ? [] : paths.prompts.filter((r) => r.enabled).map((r) => r.path),
       additionalThemePaths: isolated ? [] : paths.themes.filter((r) => r.enabled).map((r) => r.path),
