@@ -6,6 +6,8 @@ cutout=""
 cleanup() {
   rc=$?
   trap - EXIT
+  adb pull /sdcard/Download/axiom-immersive dist/immersive/failures || true
+  adb logcat -d -s ImmersiveEvidence:I > dist/immersive/geometry.txt || true
   adb shell dumpsys input_method > dist/immersive/input-method.txt || true
   adb shell dumpsys window > dist/immersive/window.txt || true
   adb shell dumpsys webviewupdate > dist/immersive/webview.txt || true
@@ -15,6 +17,8 @@ cleanup() {
 }
 trap cleanup EXIT
 adb shell settings put secure show_ime_with_hard_keyboard 1
+adb shell settings put secure immersive_mode_confirmations confirmed
+adb shell settings get secure immersive_mode_confirmations > dist/immersive/immersive-confirmation.txt
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 0
 adb install artifact/android/app/build/outputs/apk/debug/app-debug.apk

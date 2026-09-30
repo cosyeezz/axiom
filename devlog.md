@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-30 Android沉浸式首轮CI诊断
+
+- CI36772170166对应b8e3be4，Go race、AAR、APK/lint/持久签名通过；API30仪器21项18通过3失败，API26/29/35被门禁跳过。失败为原生IME下真实按钮点击、IME Back后视口恢复、边缘瞬态栏自动消失，不以已有APK冒充验收或发布。
+- 真实Gradle runtime解析20项，许可附件与APK assets逐字节一致（2,909,809字节），包含全部坐标、Apache全文及Go notices。候选APK 17,972,595字节、SHA-256 35b2c402ef6e4bb7d46861f1b4488595a21cbff82d38c8b98e220e250197adaf，仅诊断产物，未公开发布。
+- 旧测试收尾截图只剩launcher，不能区分失败现场；新增超时断言前截图/窗口/IME/几何收集并在CI拉取。测试在初始/IME布局连续稳定后采样，原生滚动准备使用scrollTo而非尚在动画的fullScroll，单次真实触摸前要求完整可见且可用；WebView使用视觉状态回调及纯色多帧屏障，保留精确高度恢复与瞬态栏自动消失阈值。
+- 一次性模拟器预确认OS沉浸教学，不使用强制隐藏系统栏的policy_control；保存baseline/revealed/失败帧。跨API作业即使smoke失败也尝试读取产物，避免诊断串行，但release仍依赖build和全部compatibility成功。
+- 修改ImmersiveUiTest.java、emulator-smoke.sh、emulator-immersive.sh、android.yml及README/本记录；不盲改生产Insets，产品根因待增强证据确认。本地脚本语法、diff检查和许可fixture2项通过，Java/Android结果仍须CI，不降低验收标准。
+
 ## 2026-09-30 手机截图返修与沉浸式候选
 
 - 时间：2026-09-30 13:12（本机 -07:00）。沿先行方案9a4bc32实施手机单层更多、SVG关闭/用量与紧凑底栏、向上阅读才显示最新、applied提示消退、长提示词折行、Todo辅助区滚动与固定标题。正文14px和触控热区不变；公开版本仍为0.1.1，新候选0.1.2/code3尚未验收发布。

@@ -126,6 +126,9 @@ jobs:
         run: rm -f "$RUNNER_TEMP/axiom-release.p12"
   compatibility:
     needs: build
+    # Preserve cross-API diagnostics if smoke tests fail after APK assembly.
+    # Release still requires BOTH build and compatibility to succeed.
+    if: ${{ !cancelled() && needs.build.result != 'cancelled' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 25
     strategy:
