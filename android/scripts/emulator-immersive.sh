@@ -47,7 +47,12 @@ adb install artifact/android/app/build/outputs/apk/androidTest/debug/app-debug-a
 run_tests() {
   local name="$1" required="$2"
   adb shell rm -rf /sdcard/Download/axiom-immersive
-  adb logcat -c
+  # Some API26 images refuse to clear main. Log hygiene is diagnostic only;
+  # retain the error and mark the boundary, never skip functional assertions.
+  if ! adb logcat -c > "dist/immersive/$name-log-clear.txt" 2>&1; then
+    printf 'Log clear unavailable; retaining earlier records (%s)\n' "$name" >&2
+  fi
+  adb shell log -t ImmersiveEvidence "BEGIN-$name"
   adb shell am instrument -w -r -e class com.axiom.android.ImmersiveUiTest -e requireCutout "$required" \
     com.axiom.android.test/androidx.test.runner.AndroidJUnitRunner | tee "dist/immersive/$name.txt"
   adb pull /sdcard/Download/axiom-immersive "dist/immersive/$name-screens" || true

@@ -52,7 +52,7 @@ jobs:
           go mod tidy
           go mod download all
           gofmt -w .
-          go test -race -timeout 180s ./...
+          go test -race -count=1 -timeout 180s ./...
       - name: Build Android network AAR
         run: bash android/scripts/build-bridge.sh
       - name: Collect third-party notices

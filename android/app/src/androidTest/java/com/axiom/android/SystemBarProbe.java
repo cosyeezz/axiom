@@ -50,5 +50,19 @@ final class SystemBarProbe {
         }
         assertTrue("edge difference samples",samples>100);return changes/(double)samples;
     }
+    void assertBackgroundStable(Bitmap shot){
+        // Exclude both system-bar edges and dialog/shadow. A changed scrim or
+        // removed dialog is not evidence that a system bar has been revealed.
+        assertSize(shot);int samples=0,changes=0;
+        for(int y=top.bottom+4;y<height-4;y+=2)for(int x=4;x<width-4;x+=2){
+            if(masked(x,y)||navigation.contains(x,y)||top.contains(x,y))continue;
+            // Keep four pixels away from a side/bottom navigation region too.
+            if(x>=navigation.left-4&&x<navigation.right+4&&y>=navigation.top-4&&y<navigation.bottom+4)continue;
+            samples++;
+            if(distance(shot.getPixel(x,y),web.contains(x,y)?purple:canvas)>30)changes++;
+        }
+        assertTrue("unmasked background samples",samples>100);
+        assertEquals("stable background/scrim outside system bars",0,changes);
+    }
     private void assertSize(Bitmap b){assertNotNull("screen screenshot",b);assertEquals(width,b.getWidth());assertEquals(height,b.getHeight());}
 }

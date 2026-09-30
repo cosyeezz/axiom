@@ -135,6 +135,9 @@ public final class MainActivity extends Activity {
         // A floating dialog owns its own Window; Activity bar flags are not inherited.
         // Keep normal floating-window safe layout instead of drawing dialog controls
         // edge-to-edge. Only system bars are hidden, never the keyboard.
+        // Edge gestures must not cancel a settings/confirmation dialog as an
+        // outside touch. Back and the explicit cancel/return buttons remain active.
+        dialog.setCanceledOnTouchOutside(false);
         dialog.setOnShowListener(d->{
             android.view.Window window=dialog.getWindow();
             if(window==null)return;
@@ -389,6 +392,15 @@ public final class MainActivity extends Activity {
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==10&&fileCallback!=null){Uri[] files=null;if(result==RESULT_OK&&data!=null){if(data.getClipData()!=null){int n=Math.min(data.getClipData().getItemCount(),4);files=new Uri[n];for(int i=0;i<n;i++)files[i]=data.getClipData().getItemAt(i).getUri();}else if(data.getData()!=null)files=new Uri[]{data.getData()};}fileCallback.onReceiveValue(files);fileCallback=null;}}
     @Override protected void onResume(){super.onResume();uiResumed=true;applyImmersiveBars();foreground=true;if(web!=null)web.onResume();wakeRecovery();handler.removeCallbacks(poll);handler.post(poll);}
     @Override protected void onPause(){uiResumed=false;foreground=false;handler.removeCallbacks(poll);if(web!=null)web.onPause();super.onPause();}
-    @Override public void onBackPressed(){if(web!=null){if(web.canGoBack())web.goBack();else showConnectionPanel();}else super.onBackPressed();}
+    @Override public void onBackPressed(){
+        // Some legacy WebView/IME combinations dispatch Back to the Activity
+        // while the editor is still visible. Consume it before history/settings.
+        WindowInsetsCompat insets=ViewCompat.getRootWindowInsets(getWindow().getDecorView());
+        if(insets!=null&&insets.isVisible(WindowInsetsCompat.Type.ime())){
+            WindowCompat.getInsetsController(getWindow(),root).hide(WindowInsetsCompat.Type.ime());
+            return;
+        }
+        if(web!=null){if(web.canGoBack())web.goBack();else showConnectionPanel();}else super.onBackPressed();
+    }
     @Override protected void onDestroy(){try{if(connectivity!=null)connectivity.unregisterNetworkCallback(networkCallback);}catch(RuntimeException ignored){}destroyed=true;foreground=false;++generation;handler.removeCallbacksAndMessages(null);destroyWeb();NETWORK.execute(()->Bridge.disconnect());super.onDestroy();}
 }

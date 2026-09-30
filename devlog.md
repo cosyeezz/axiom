@@ -1,5 +1,17 @@
 # 开发记录
 
+## 2026-09-30 Android第五轮CI结果与修正
+
+- CI36781996538 / 8e10e77失败：debug及测试APK构建完成，lint因辅助类RequiresApi触发UseSdkSuppress两项错误，release APK/签名及API30未执行。Api28/29是非测试适配类，保留API要求并仅局部抑制该误报，不能用SdkSuppress跳过外层API26测试。
+- API26因logcat -c拒绝清理main提前退出，改保存错误并写BEGIN边界继续真实测试；清日志不是功能门禁。Go race改-count=1保证下一轮不复用测试缓存。
+- API28/29/35竖屏各5项中4项通过；失败分别为Dialog滑动注入返回false、IME Back后Activity无焦点、Dialog系统栏自动隐藏超时。已下载本轮现场分工只读诊断，不原样重跑/忽略断言。三版本capture-protocol及过程PNG现已真实导出并可解码：API29包含完整9帧，但该job仍因IME失败未验收；API28/35未完成Dialog周期。
+- API29现场图片与window/IME三方确认：Back后连接面板夺焦点，IME仍可见，accessibility枚举null不是隐藏。MainActivity在Back导航/设置前优先消费IME隐藏；测试同时要求accessibility和compat Insets均隐藏，并立即断言未开面板，保留原高度/草稿/实例检查。
+- API35 hidden帧上下边缘为dim紫(38,42,84)，revealed与失败帧全图为原紫(94,106,210)，Dialog已消失/Activity重新持焦点，旧reveal判据误把scrim撤销当呼出。产品明确原生弹窗不被边缘/外側触摸取消，Back/取消/返回按钮不变；测试逐帧断言显示/附着/焦点与非bar背景稳定，判定帧暂存内存到完整周期后再归档，不改阈值/ROI或靠重新hide通过。
+- SystemBarProbeTest新增两项合成像素oracle测试，分别防scrim消失误通过、验证cutout/Dialog mask与侧导航区域；不能代替真实SystemUI。每次输入注入记录action/坐标/时间/返回值，失败立即抓现场而非退出后桌面；不忽略返回false、不重放手势。Dialog测试补Back取消保留验证。
+- 独立API28诊断确认失败在MOVE（DOWN成功、UP尚未注入），坐标均在屏内但起点在Dialog外；当刻窗口变化没有旧证据，不能认定为正常系统接管。保留注入断言，新增注入前参数/耗时及失败时dumpsys input、窗口、输入分发日志与panel边界；不重试手势。独立审查未发现确定产品阻塞，但补exact失败帧保留、基线取得后立即进入清理范围和原异常保留，避免失败取证错帧/资源泄漏。
+- 主机对旧PNG复算背景门禁：API28/29正常过程帧背景差异为零，API35错误revealed/失败帧7956个背景样本全部变化；这是旧帧算法检查，不是Android新测试执行。Python11项、两份shell语法及diff通过。
+- 本轮cutout横竖屏均未执行，release跳过，0.1.2保持候选；涉及workflow、MainActivity、ImmersiveUiTest、SystemBarProbe/Test、emulator-immersive.sh及README/Android文档。本地无Java/Gradle/Android SDK，编译与新仪器测试均待CI，不把静态检查当通过。
+
 ## 2026-09-30 Android第四轮CI结果
 
 - dd9e7a9的CI36778606942已结束失败。API30构建/lint/签名/仪器21项全部通过，XML明确包含新的Activity顶部/导航边缘与Dialog测试；导出的截图目录却为空，证据持久化仍须核实，不能视为跨API验收通过。
