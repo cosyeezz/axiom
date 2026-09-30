@@ -23,6 +23,7 @@ const PREAMBLE = `
       const NL = String.fromCharCode(10);
       const requests = [];
       const schemas = [];
+      const requestIds = [];
       let n = 0;
       let script = [];
       const usage = { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 };
@@ -32,6 +33,7 @@ const PREAMBLE = `
         req.on('end', () => {
           const payload = JSON.parse(body);
           requests.push(payload.messages);
+          requestIds.push(req.headers['x-session-affinity']);
           schemas.push((payload.tools ?? []).map((tool) => tool.function?.name ?? tool.name));
           const step = script[n] ?? { text: '默认回答' };
           n += 1;
@@ -58,6 +60,7 @@ const PREAMBLE = `
         fake: { baseUrl: 'http://127.0.0.1:' + server.address().port + '/v1', api: 'openai-completions',
           apiKey: 'test-only-not-a-real-key',
           models: [{ id: 'goal', name: 'Goal', reasoning: false, input: ['text'], contextWindow: 8192, maxTokens: 1024,
+            compat: { sendSessionAffinityHeaders: true },
             cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] },
       } }));
       const factory = await createPiFactory({ cwd, model: 'fake/goal' });
@@ -106,6 +109,140 @@ test("universal tools are registered and ask/let execute the same description th
           assert.deepEqual(results[0].content, results[1].content);
           assert.match(JSON.stringify(results[0].content), /parameters/);
         } finally { await agent.dispose(); }
+  `);
+});
+
+test('selected plugin operations only appear through Ask/Let, preserve hooks and dynamically revoke', async () => {
+  await run(`
+        const { mkdir, readFile } = await import('node:fs/promises');
+        const plugin = join(cwd, 'fixture-plugin.ts');
+        await writeFile(plugin, \`export default function(pi) {
+          const tool = { name: 'plugin_probe', label: 'Probe', description: 'plugin probe', parameters: { type: 'object', properties: { n: { type: 'integer' } }, required: ['n'], additionalProperties: false },
+            execute: async (id, args, signal, update, ctx) => ({ content: [{type: 'text', text: 'PLUGIN-' + args.n}], details: { cwd: ctx.cwd } }) };
+          pi.on('session_start', () => pi.registerTool(tool));
+          pi.on('tool_call', event => { if (event.toolName === 'plugin_probe' && event.input.n === 9) return { block: true, reason: 'fixture approval denied' }; });
+          pi.on('tool_result', event => { if (event.toolName === 'plugin_probe') return { content: [{type:'text', text: 'FILTERED-' + event.input.n}] }; });
+          pi.registerCommand('probe-off', { handler: async () => pi.setActiveTools(pi.getActiveTools().filter(n => n !== 'plugin_probe')) });
+          pi.registerCommand('probe-on', { handler: async () => pi.setActiveTools([...pi.getActiveTools(), 'plugin_probe']) });
+        }\`);
+        await writeFile(join(cwd, 'settings.json'), JSON.stringify({ extensions: [plugin] }));
+        const selected = { skills: [], plugins: [plugin], mcp: [] };
+        const agent = await factory([], { capabilities: selected, sessionDir: cwd });
+        try {
+          script = [
+            { tool: 'let_axiom', args: { name: 'axiom.tools', arguments: {} } },
+            { tool: 'ask_axiom', args: { name: 'tool.plugin_probe' } },
+            { tool: 'let_axiom', args: { name: 'tool.plugin_probe', arguments: { n: 2 } } },
+            { tool: 'let_axiom', args: { name: 'tool.plugin_probe', arguments: { n: 9 } } },
+            { text: 'done' },
+          ];
+          await agent.prompt('test plugin');
+          for (const schema of schemas) {
+            assert.ok(!schema.includes('plugin_probe'));
+            for (const base of ['read','bash','edit','write','ask_axiom','let_axiom']) assert.ok(schema.includes(base));
+          }
+          assert.match(flat(requests.at(-1)), /tool.plugin_probe/);
+          assert.match(flat(requests.at(-1)), /FILTERED-2/);
+          assert.match(flat(requests.at(-1)), /fixture approval denied/);
+          await agent.prompt('/probe-off');
+          n = 0; requests.length = 0;
+          script = [{ tool: 'let_axiom', args: { name: 'tool.plugin_probe', arguments: { n: 2 } } }, { text: 'done' }];
+          await agent.prompt('old name');
+          assert.match(flat(requests.at(-1)), /Unknown instruction: tool.plugin_probe/);
+          await agent.prompt('/probe-on');
+          assert.ok(agent.config().activeTools.includes('plugin_probe'));
+          const file = agent.sessionFile(), history = agent.historyEntries().map(e => e.id);
+          const reopened = await factory([], { capabilities: selected, sessionDir: cwd, sessionFile: file }, agent);
+          try {
+            assert.deepEqual(reopened.historyEntries().map(e => e.id), history);
+            assert.ok(!reopened.config().activeTools.includes('plugin_probe'), 'candidate startup is deferred');
+            await agent.dispose();
+            await reopened.activate();
+            assert.ok(reopened.config().activeTools.includes('plugin_probe'));
+            n = 0; requests.length = 0;
+            script = [{ text: 'after handoff' }];
+            await reopened.prompt('continue same journal');
+            assert.ok(reopened.historyEntries().length > history.length);
+            assert.deepEqual(reopened.historyEntries().slice(0, history.length).map(e => e.id), history);
+          } finally { await reopened.dispose(); }
+        } finally { await agent.dispose(); }
+  `);
+});
+
+test('real Sessions capability handoff preserves journal, lifecycle order and paused state', async () => {
+  await run(`
+        const { Sessions } = await import('./src/sessions.js');
+        const plugin = join(cwd, 'lifecycle.ts');
+        await writeFile(plugin, \`export default function(pi) {
+          pi.on('session_start', () => pi.sendMessage({ customType: 'lifecycle', content: 'LIFE-START', display: true }));
+          pi.on('session_shutdown', () => pi.sendMessage({ customType: 'lifecycle', content: 'LIFE-STOP', display: true }));
+          pi.registerTool({ name: 'life_probe', description: 'life', parameters: { type: 'object', properties: {} }, execute: async () => ({ content: [{ type: 'text', text: 'life' }] }) });
+        }\`);
+        await writeFile(join(cwd, 'settings.json'), JSON.stringify({ extensions: [plugin] }));
+        const none = { skills: [], plugins: [], mcp: [] }, selected = { ...none, plugins: [plugin] };
+        const sessions = new Sessions(factory, undefined, join(cwd, 'sessions'));
+        try {
+          const id = await sessions.create(cwd, { model: 'fake/goal', capabilities: selected });
+          const item = sessions.get(id);
+          await sessions.prompt(id, 'initial'); await item.work;
+          const original = item.agent, file = original.sessionFile(), ids = original.historyEntries().map(e => e.id);
+          item.todo.prepare('paused goal'); item.todo.pause('user stop');
+          item.memoryPaused = true; item.notificationsPaused = true;
+          const todo = item.todo.snapshot(), tasks = item.tasks;
+          // A failed prepared candidate never runs startup/shutdown on shared history.
+          const store = sessions.store;
+          sessions.store = { hasSession: () => true, change() { throw new Error('fixture db locked'); } };
+          try { await assert.rejects(sessions.configure(id, { capabilities: selected }), /db locked/); }
+          finally { sessions.store = store; }
+          assert.equal(item.agent, original);
+          assert.deepEqual(original.historyEntries().map(e => e.id), ids);
+          await sessions.configure(id, { capabilities: selected });
+          assert.equal(item.agent.sessionFile(), file);
+          assert.deepEqual(item.agent.historyEntries().slice(0, ids.length).map(e => e.id), ids);
+          assert.deepEqual(item.agent.historyEntries().filter(e => e.message.role === 'custom').map(e => e.message.content), ['LIFE-START', 'LIFE-STOP', 'LIFE-START']);
+          assert.deepEqual(item.todo.snapshot(), todo); assert.equal(item.tasks, tasks);
+          assert.equal(item.memoryPaused, true); assert.equal(item.notificationsPaused, true);
+          await sessions.configure(id, { capabilities: none });
+          assert.ok(!item.agent.config().activeTools.includes('life_probe'));
+          item.todo.cancelPrepare(); // This probe tests revocation, not the separate Goal preparation gate.
+          n = 0; requests.length = 0;
+          script = [{ tool: 'let_axiom', args: { name: 'tool.life_probe', arguments: {} } }, { text: 'done' }];
+          await item.agent.prompt('old capability');
+          assert.match(flat(requests.at(-1)), /Unknown instruction: tool.life_probe/);
+        } finally { await sessions.close(); }
+  `);
+});
+
+test('discarded SDK candidates isolate provider cleanup and constructor journal writes', async () => {
+  await run(`
+        const { readFile } = await import('node:fs/promises');
+        const { createJiti } = await import('jiti');
+        const { registerSessionResourceCleanup } = await createJiti(import.meta.resolve('@earendil-works/pi-coding-agent')).import('@earendil-works/pi-ai');
+        const cleanups = [], off = registerSessionResourceCleanup(id => cleanups.push(id));
+        const selected = { skills: [], plugins: [], mcp: [] };
+        const original = await factory([], { capabilities: selected, sessionDir: cwd });
+        let successor;
+        try {
+          const file = original.sessionFile();
+          await assert.rejects(readFile(file), { code: 'ENOENT' });
+          const candidate = await factory([], { capabilities: selected, sessionDir: cwd }, original);
+          await assert.rejects(readFile(file), { code: 'ENOENT' }, 'empty-history preparation must not persist initialization entries');
+          await candidate.dispose(); await candidate.dispose();
+          assert.equal(cleanups.length, 1); assert.match(cleanups[0], /^candidate:/);
+          await assert.rejects(readFile(file), { code: 'ENOENT' });
+          await original.prompt('still alive');
+          const actualId = JSON.parse((await readFile(file, 'utf8')).split(NL)[0]).id;
+          assert.equal(requestIds.at(-1), actualId);
+          successor = await factory([], { capabilities: selected }, original);
+          await original.dispose();
+          assert.equal(cleanups.at(-1), actualId);
+          await successor.activate();
+          await successor.prompt('new instance same request identity');
+          assert.equal(requestIds.at(-1), actualId);
+          const entries = (await readFile(file, 'utf8')).trim().split(NL).map(line => JSON.parse(line));
+          assert.equal(entries.filter(e => e.type === 'model_change').length, 1);
+          assert.equal(entries.filter(e => e.type === 'thinking_level_change').length, 1);
+        } finally { await successor?.dispose(); await original.dispose(); off(); }
   `);
 });
 

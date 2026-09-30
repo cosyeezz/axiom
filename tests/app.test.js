@@ -1203,6 +1203,10 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("settings").querySelector(".settings-nav").hidden, true);
     assert.match($("defaults-workspace-help").textContent, /不修改工作空间配置或全局默认/);
     assert.equal($("create-capabilities").querySelector("fieldset").disabled, true);
+    sockets[1].receive({ type: 'session.capabilities', sessionId: 'a', data: { canConfigureCapabilities: true } });
+    assert.equal($("create-capabilities").querySelector("fieldset").disabled, false);
+    sockets[1].receive({ type: 'session.capabilities', sessionId: 'a', data: { canConfigureCapabilities: false } });
+    assert.equal($("create-capabilities").querySelector("fieldset").disabled, true);
     $("create-main-thinking").value = "off";
     $("create-main-thinking").dispatchEvent(new window.Event("change", { bubbles: true }));
     await settle();

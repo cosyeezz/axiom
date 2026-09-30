@@ -1,6 +1,9 @@
 import { readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from 'node:crypto';
 import { createTodoContextBridge } from './todo-context.js';
 import { instructionTools } from "./instruction-tools.js";
+import { createDynamicTools } from './dynamic-tools.js';
+import { createMcpInstructions } from './mcp-instructions.js';
 import { isMemoryProfile } from './agent-profile.js';
 import { safePoints, requireSafePoint, navigationState } from "./safe-points.js";
 import { wrapUsageStream } from "./usage-stream.js";
@@ -13,6 +16,7 @@ import { createHistoryReader } from "./history-tools.js";
 import { createJournalArchive, installDurableJournal } from "./history-journal.js";
 import {
   createAgentSession,
+  createEventBus,
   estimateTokens,
   ModelRuntime,
   SessionManager,
@@ -26,7 +30,7 @@ import { resolveThinking } from "../public/thinking.js";
 import { WRAP_UP_PROMPT, budgetSystemPrompt } from "./task-budget.js";
 import { canResume, createAutoRetry, dropFailedAssistant } from "./retry.js";
 import { createJiti } from "jiti";
-const { AssistantMessageEventStream, getSupportedThinkingLevels } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai");
+const { AssistantMessageEventStream, getSupportedThinkingLevels, validateToolArguments } = await createJiti(import.meta.resolve("@earendil-works/pi-coding-agent")).import("@earendil-works/pi-ai");
 
 if (Object.hasOwn(process.env, "AXIOM_OBSERVATION_PACK")) process.emitWarning("AXIOM_OBSERVATION_PACK 已弃用并被忽略，旧归档仅只读取回", { code: "AXIOM_OP_DEPRECATED" });
 
@@ -195,7 +199,12 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
   let available = await modelRuntime.getAvailable();
   const startup = await discoverCapabilities(cwd, { loadAdapter: false });
   const defaultKey = requested || `${startup.settingsManager.getDefaultProvider()}/${startup.settingsManager.getDefaultModel()}`;
-  const factory = async (customTools = [], selection = {}) => {
+  // Trusted in-process handoff only; never accept journal handles from selection/WS.
+  const journals = new WeakMap();
+  const factory = async (customTools = [], selection = {}, previousAgent) => {
+    const shared = previousAgent ? journals.get(previousAgent) : null;
+    if (previousAgent && !shared) throw new Error('会话实例不支持安全能力交接');
+    let activated = false, disposed = false;
     const workspace = selection.cwd || cwd;
     const profile = selection.profile ?? { role: selection.memory?.role ?? (selection.audit?.source === 'task' ? 'subagent' : 'main'), purpose: 'general' };
     const isolated = isMemoryProfile(profile);
@@ -239,7 +248,12 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
     let history;
     const historyReader = createHistoryReader({ records: () => history?.records() ?? [], readArtifact: (record, part) => history.readArtifact(record, part) });
     const extraFactories = [];
-    const universalTools = instructionTools(selection.instructions);
+    const eventBus = createEventBus();
+    let session;
+    const dynamicTools = createDynamicTools({ inactiveTools: selection.inactiveTools, enabled: !isolated, getSession: () => session, validate: validateToolArguments });
+    if (!isolated && resources.adapter) dynamicTools.attachMcp(createMcpInstructions({ tools: dynamicTools,
+      servers: selection.capabilities?.mcp ?? resources.catalog.mcp.map(server => server.id), eventBus }));
+    const universalTools = instructionTools(selection.instructions, dynamicTools);
     extraFactories.push({ name: "axiom-instructions", factory: pi => {
       for (const tool of universalTools) pi.registerTool(tool);
     } });
@@ -248,14 +262,28 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       extraFactories.push(memoryExtension(memoryState, memory, policy, executionContext));
     const { loader, selected: capabilities } = capabilityLoader(resources, selection.capabilities, customTools,
       extraFactories,
-      policy ? budgetSystemPrompt(policy) : null, profile);
+      policy ? budgetSystemPrompt(policy) : null, profile, dynamicTools, eventBus);
     await loader.reload();
     const diagnostics = loader.getExtensions().errors;
     if (diagnostics.length) {
       loader.getExtensions().runtime.invalidate();
       throw new Error(`插件加载失败：${diagnostics.map((d) => `${d.path}: ${d.error}`).join("; ")}`);
     }
-    const { session } = await createAgentSession({
+    // SDK 0.85.1 caches the manager ID on Agent and writes initialization entries
+    // in createAgentSession. Isolate only a candidate's identity/constructor writes,
+    // keeping one real manager (and its branch) for this logical session.
+    let constructing = true, ownsIdentity = !shared;
+    const candidateId = `candidate:${randomUUID()}`;
+    const manager = shared?.manager ?? (selection.sessionFile
+      ? SessionManager.open(selection.sessionFile, selection.sessionDir, workspace)
+      : selection.sessionDir ? SessionManager.create(workspace, selection.sessionDir) : SessionManager.inMemory(workspace));
+    const candidateManager = shared ? new Proxy(manager, { get(target, key) {
+      if (key === 'getSessionId') return () => ownsIdentity ? target.getSessionId() : candidateId;
+      if (constructing && ['appendModelChange', 'appendThinkingLevelChange'].includes(key)) return () => randomUUID();
+      const value = Reflect.get(target, key, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    } }) : manager;
+    try { ({ session } = await createAgentSession({
       cwd: workspace,
       modelRuntime: await ModelRuntime.create(modelRuntimeOptions),
       model: selected,
@@ -265,37 +293,60 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       // SDK tools is an allowlist for ALL tools, including extensions, not just built-ins.
       ...(isolated ? { tools: ['ask_axiom', 'let_axiom'] } : { excludeTools: ['history_read', 'history.read', 'obs_recall'] }),
       customTools: isolated ? [] : customTools,
-      sessionManager: selection.sessionFile
-        ? SessionManager.open(selection.sessionFile, selection.sessionDir, workspace)
-        : selection.sessionDir ? SessionManager.create(workspace, selection.sessionDir) : SessionManager.inMemory(workspace),
-    });
-    const assertJournalHealthy = installDurableJournal(session.sessionManager);
+      sessionManager: candidateManager,
+    })); } catch (error) {
+      dynamicTools.dispose(); loader.getExtensions().runtime.invalidate(); throw error;
+    } finally { constructing = false; }
+    universalTools.bindResultHook(session.agent);
+    const journal = shared ?? { manager: session.sessionManager, healthy: installDurableJournal(session.sessionManager), history: null, refs: 0 };
+    journal.refs++;
+    const releaseJournal = async () => { if (--journal.refs === 0) await journal.history?.close(); };
+    const assertJournalHealthy = journal.healthy;
     const prepareJournal = session.agent.prepareNextTurnWithContext?.bind(session.agent);
     session.agent.prepareNextTurnWithContext = async (...args) => { assertJournalHealthy(); return prepareJournal?.(...args); };
     try {
       const file = session.sessionManager.getSessionFile();
-      if (file) { history = await createJournalArchive({ file, agentId: selection.audit?.agentId ?? null }); await history.reconcile(); }
-    } catch (error) { try { await history?.close(); } finally { session.dispose(); } throw error; }
+      assertJournalHealthy();
+      if (file && !journal.history) journal.history = await createJournalArchive({ file, agentId: selection.audit?.agentId ?? null });
+      history = journal.history;
+      await history?.reconcile();
+    } catch (error) { try { await releaseJournal(); } finally { dynamicTools.dispose(); session.dispose(); } throw error; }
     if (usage) session.agent.streamFunction = wrapUsageStream(session.agent.streamFunction, {
       service: usage, identity: selection.audit ?? { source: "unattributed" },
       onRequestUsage: (record) => observations?.recordUsage?.(record),
       createStream: () => new AssistantMessageEventStream(),
     });
     const warnings = [...resources.catalog.warnings];
+    let lifecycleError;
+    const onExtensionError = event => {
+      warnings.push(`${event.extensionPath}: ${event.error}`);
+      if (['session_start', 'session_shutdown'].includes(event.event)) lifecycleError = new Error(warnings.at(-1));
+    };
     if (resources.catalog.needsTrust)
       warnings.push("此目录的 Pi/MCP 配置尚未信任，仅加载全局能力；通过自定义新会话确认信任后可加载目录配置。");
-    try {
-      await session.bindExtensions({
-        mode: "print",
-        onError: (event) => warnings.push(`${event.extensionPath}: ${event.error}`),
-      });
-    } catch (error) {
-      try { await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }); }
-      finally { try { await history?.close(); } finally { session.dispose(); } }
-      throw error;
-    }
-    // 工具注册与激活分离：插件/自定义工具全部注册进 SDK（enableTools/disableTools 随时增减激活集），
-    // 建会话时只按 inactiveTools 决定初始激活集；系统提示词与请求 schema 只含激活工具。
+    // Candidate preparation does not run startup/shutdown hooks. Activation follows
+    // old shutdown, on the same manager, so lifecycle messages cannot fork history.
+    const activate = async () => {
+      if (disposed) throw new Error('会话实例已销毁');
+      if (activated) return;
+      assertJournalHealthy();
+      if (shared) {
+        // Public Agent field must switch with the manager getter before any hook
+        // or request. Discard before here cleans only the temporary identity.
+        session.agent.sessionId = manager.getSessionId();
+        ownsIdentity = true;
+        const current = manager.buildSessionContext();
+        if (current.model?.provider !== session.model.provider || current.model?.modelId !== session.model.id)
+          manager.appendModelChange(session.model.provider, session.model.id);
+        if (!manager.getBranch().some(entry => entry.type === 'thinking_level_change') || current.thinkingLevel !== session.thinkingLevel)
+          manager.appendThinkingLevelChange(session.thinkingLevel);
+      }
+      session.agent.state.messages = manager.buildSessionContext().messages;
+      activated = true;
+      await session.bindExtensions({ mode: 'print', onError: onExtensionError });
+      if (lifecycleError) throw lifecycleError;
+    };
+    // SDK contains host tools only; plugin tools live in the session directory.
     const inactiveTools = new Set(selection.inactiveTools ?? []);
     if (inactiveTools.size)
       session.setActiveToolsByName(session.getActiveToolNames().filter((name) => !inactiveTools.has(name)));
@@ -393,6 +444,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
     // 钩子已在上面的安全收工处一并安装；这里只做标记，标志复位统一走 beginRun/abort。
     // 每次运行开始都清一次：被 abort 的运行不会走到轮次边界，残留标志会误停下一次运行的第一轮。
     const beginRun = () => {
+      if (!activated || disposed) throw new Error('会话实例尚未激活或已销毁');
       assertJournalHealthy();
       compactionCtrl.assertHealthy();
       safeStopPending = false;
@@ -433,7 +485,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       if (["message_start", "message_end", "turn_end", "agent_end", "compaction_end"].includes(event.type))
         emitAxiom({ type: "agent.runtime", data: agentRuntime(session, observations) });
     });
-    return {
+    const api = {
       runtime: () => ({ ...agentRuntime(session, observations), activeTools: toolExecution.active() }),
       async summarize(instruction) {
         summaryMode = true;
@@ -558,12 +610,14 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
       // 激活已注册工具（如进入 Goal 模式启用 goal_*）：与当前激活集合并，未知名称由 SDK 忽略。
       enableTools: (names) => {
         compactionCtrl.cancel();
+        dynamicTools.enable(names);
         session.setActiveToolsByName([...new Set([...session.getActiveToolNames(), ...names])]);
         emitAxiom({ type: "agent.runtime", data: agentRuntime(session, observations) });
       },
       // 停用已激活工具（如退出 Goal 模式禁用 goal_*）：与当前激活集求差，未知名称无副作用。
       disableTools: (names) => {
         compactionCtrl.cancel();
+        dynamicTools.disable(names);
         session.setActiveToolsByName(session.getActiveToolNames().filter((name) => !names.includes(name)));
         emitAxiom({ type: "agent.runtime", data: agentRuntime(session, observations) });
       },
@@ -575,7 +629,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         skills: loader.getSkills().skills.map(({ name, description }) => ({ name, description })),
         capabilityMode: selection.capabilities == null ? "all" : "custom",
         warnings: [...warnings],
-        activeTools: session.getActiveToolNames(),
+        activeTools: [...session.getActiveToolNames(), ...dynamicTools.activeNames()],
         compaction: compactionCtrl.getConfig(),
       }),
       // 安全停止请求：幂等，只在运行中有意义（未运行时的残留标志由下一次 beginRun 清掉）。
@@ -660,15 +714,23 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         await Promise.all([compactionCtrl.cancel?.(), session.abort()]);
       },
       async dispose() {
+        if (disposed) return;
+        disposed = true;
+        dynamicTools.dispose();
         reaskController?.abort();
         retry.cancel();
         await compactionCtrl.dispose();
         try {
-          await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+          if (activated) {
+            lifecycleError = undefined;
+            await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+            if (lifecycleError) throw lifecycleError;
+          }
         } finally {
-          try { await history?.reconcile(); } finally { try { await history?.close(); } finally { session.dispose(); } }
+          try { await history?.reconcile(); } finally { try { await releaseJournal(); } finally { session.dispose(); } }
         }
       },
+      activate,
       result() {
         const last = lastResult;
         if (!last) return "指令已处理，未产生模型回答。";
@@ -691,6 +753,9 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         return () => listeners.delete(listener);
       },
     };
+    journals.set(api, journal);
+    if (!shared) { try { await activate(); } catch (error) { await api.dispose(); throw error; } }
+    return api;
   };
   factory.cwd = cwd;
   factory.capabilities = async (workspace = cwd, trustProject = false) =>

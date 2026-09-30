@@ -317,7 +317,7 @@ export const command = z.discriminatedUnion("type", [
       id,
       type: z.literal("session.configure"),
       sessionId: id,
-      model: id,
+      model: id.optional(),
       subagentModel: id.nullable().optional(),
       subagentThinking: thinking.unwrap().nullable().optional(),
       thinking,

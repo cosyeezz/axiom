@@ -60,6 +60,17 @@
 - 最终复验：定向 27 项及隔离全量 1027 项（1025 通过、0 失败、2 平台跳过，71.4 秒）通过；七套 Chromium 回归通过（紧凑输入、模型级联、图标、按需详情/焦点、会话搜索、侧栏、问题/子任务/压缩）。新增帮助/详情测试保留键盘、触控尺寸和焦点断言，未知数据保持 —；人工复核最终 320/1440px 截图。搜索首轮误用了默认预览地址，等待 fixture 列表超时；改为管理生命周期的独立空闲端口预览后搜索与侧栏通过，未修改断言或用户服务。语法、打包和 diff 检查通过，截图/日志在仓库外 compact-*-artifacts、compact-browser-integrated 与 compact-composer-focus-full.log；仍未进行真机软键盘/读屏验收。
 - 文件：public/index.html、app.js、composer-controls.js/css、tooltip.js；tests/app.test.js、composer-controls.test.js、tooltip.test.js、conversation-preview.mjs、composer-icons-ui.py、session-search-ui.py、新增 compact-composer-ui.py、同步上游 focus-ui.test.js/focus-ui-browser.py；README.md、devlog.md。
 
+## 2026-09-29 会话授权动态 Ask/Let 能力
+
+- 时间：2026-09-29 18:00（本机 -07:00）。原因：插件/MCP 工具需要随会话能力选择动态发现和撤销，已开始会话不应只能重建。按用户澄清，统一的是模型的调用入口；人工 MCP 交互页面沿用原审批与生命周期，不因存在页面而禁用工具。
+- 实施：新增会话级动态目录，插件工具封装为 `tool.*`，MCP 元数据映射为 `mcp.<server>.<operation>`；模型经 `axiom.tools` 分页发现、Ask 读契约、Let 执行。基础直接工具和原业务指令保留；原生 MCP 直调/scripting 不向模型开放，记忆代理不加载插件/MCP。插件参数准备、SDK 调用/结果钩子和错误/终止标记保留，异步审批后再次检查授权，插件不能覆盖基础工具或激活其他 owner 的能力。
+- 撤销：停用、替换、logout、运行状态变化使旧目录失效并取消待执行操作；显式连接只有成功且状态为 connected 才恢复 logout 授权。缓存不代表连接。真实 adapter 初始化会因描述变化重注册 mcp，已将可信 adapter 描述更新与普通替换区分：保留已进入执行器的管理连接，仍撤销操作和审批前旧记录；disable/unregister/dispose 不豁免。
+- 生命周期：空会话及已开始空闲会话可应用能力，运行/在途任务/问题/队列/压缩拒绝重装。保留 Tasks、Todo、历史和暂停/通知冻结状态；共享唯一 SessionManager/归档，候选使用临时资源身份并抑制构造写入，旧 shutdown 后再激活。准备/保存失败保留旧代理；不可逆生命周期失败锁止并要求重新打开，不虚假声称回滚插件副作用。协议允许能力配置省略 model。
+- 边界：可信插件仍在宿主进程，不是恶意代码沙箱；取消为协作式，已经交给 transport 的请求可能继续发送/执行，尤其旧版 HTTP 发送前等待窗口；不承诺远端回滚。模型目录遵循 MCP model/app visibility，人工页面不是模型绕过入口。
+- 验证进展：真实 SDK 回归验证候选清理身份、原会话请求身份、单一历史链及 START/STOP 顺序；独立只读复审无确认阻塞。空会话连续配置、首次发送后配置及深浅主题/移动宽度 Chromium 通过。隔离 HOME/USERPROFILE/临时目录/Pi 配置后的全量 1038 项：1036 通过、2 平台跳过、0 失败；日志打印 GBK 错误已单独核实，不误记为测试失败。新增可选真实 adapter 2.25.0 + 本地 stdio 集成，不加载个人配置或外部服务器；最终集成复验结果随后记录。
+- 集成复验：已快进集成远端 master f3ae616，仅开发记录头部冲突并保留双方内容；真实 adapter 回归发现并修正描述重注册误取消 connect、公开代理名称与 originalName 混用两处问题。新增可信刷新/普通替换/审批中撤销定向回归；本地 stdio 计数确认拒绝和撤销不发 RPC、允许仅发一次。最终隔离全量 1065 项：1063 通过、2 平台跳过、0 失败（110.6 秒，包含真实 adapter 测试）；日志 F:/worktrees/dynamic-capabilities-integrated-full.log。Chromium 空会话连续应用、首次发送后再应用及深浅主题/390px 复验通过；语法、npm pack --dry-run（337 文件）和 diff 检查通过，无真实模型或外网 MCP 调用。取消边界仍如上，不以 stdio 测试冒充远端 HTTP 回滚保证。
+- 文件：src/dynamic-tools.js、mcp-instructions.js、capabilities.js、instruction-tools.js、instructions.js、pi.js、prompts.js、protocol.js、sessions.js；public/app.js、index.html；相关 tests（含 mcp-adapter.test.js 与 fixtures/mcp-adapter.mjs）、README、本记录及代码索引。
+
 ## 2026-09-29 主界面信息精简与按需详情
 
 - 原因与范围：常驻低频工具、快捷键说明和运行指标分散注意力；保留已有能力，不重做已折叠的输入配置，不隐藏问题确认、任务受阻、队列及安全停止状态。

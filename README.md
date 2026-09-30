@@ -22,11 +22,13 @@ Windows Pake/WebView2、iOS 浏览器共用上述网页传输；仓库没有 iOS
 
 `src/instructions.js` 提供 `createInstructions()`、`register({name,description,parameters,handler,toolResult?,guidance?})` 与 `execute(name, arguments, context?)`。名称精确匹配，可信 JSON Schema 注册时保存快照，TypeBox 严格校验且不转换类型。宿主传递 `toolCallId/signal/onUpdate/ctx`，保留取消、错误及原有结构化工具结果；成功结果通过 `details.axiomInstruction` 保存真实指令身份。
 
-主代理基础直接工具为 `read/bash/edit/write/question/ask_axiom/let_axiom`，选中的插件/MCP 另按能力配置装配。先 `ask_axiom({name})` 读取已知契约，再 `let_axiom({name,arguments})` 调用，无参数传 `{}`。主会话登记 `task.start/read/append/cancel`、`todo.read/update`、`memory.query` 和 `guide.task/todo/git`；不提供名称搜索或列表。详细规程按需读取，常驻提示词仅保留能力入口、关键授权/暂停/验收边界与输出协议。正式规程由版本库维护，后台记忆整理不能覆盖。
+主代理基础直接工具为 `read/bash/edit/write/question/ask_axiom/let_axiom`。选中的插件/MCP 操作不再增加直接工具入口：先 Ask `axiom.tools`，再 Let 分页发现当前会话精确名称（插件 `tool.<编码名称>`，MCP `mcp.<编码服务器>.<编码操作>`），随后 `ask_axiom({name})` 读契约、`let_axiom({name,arguments})` 执行，无参数传 `{}`。目录仅包含当前可用操作；撤销、替换与停用后旧名称拒绝执行，异步审批后再次复核。保留插件的参数准备、调用/结果钩子、错误和终止标记，Let 串行执行；插件不能通过注册或激活列表覆盖基础工具和其他插件。主会话原有 `task.start/read/append/cancel`、`todo.read/update`、`memory.query` 和 `guide.task/todo/git` 不变；记忆专用代理仍只装配其受限指令，不加载插件/MCP。详细规程按需读取，正式规程由版本库维护，后台记忆整理不能覆盖。
+
+MCP 的 `tool.mcp` 仅用于选中服务器的连接、认证与 UI 消息；操作发现统一使用 `axiom.tools`，不开放原代理直调和 MCP scripting。缓存元数据不等于连接或授权：先连接，再重新发现契约。logout 后旧缓存不能重新授权，只有成功显式连接可恢复。运行状态通知会保守取消等待中的操作，即使工具数量没变；断线重连可能因此要求重新发现并重试。取消是协作式的：已交给底层 transport 的请求可能继续发送或执行（包括旧版 HTTP 的发送前等待窗口），不保证远端回滚，重试前必须核对实际结果。统一的是模型调用入口；用户在 MCP 自带交互页面中的手动操作仍沿用适配器自己的审批与生命周期，不因存在页面而禁用工具。仅供 app、未向 model 开放的工具不进入模型目录。插件在宿主 Node 进程执行，不是恶意代码沙箱；目录与执行器不替代既有审批。
 
 会话中的 `ask_axiom`／`let_axiom` 工具标题会在工具名后显示调用参数 `name`（例如 `ask_axiom guide.git`、`let_axiom task.start`），无需展开参数即可识别咨询或执行的指令。实时调用与历史回放使用相同展示逻辑；缺失、空白或非字符串 `name` 时只显示原工具名，不改变执行状态与折叠行为。
 
-指令执行器不自行管理任务生命周期；业务指令复用 Tasks、Todo 与既有确认流程。Goal 准备阶段只放行 question 及 Todo 契约/规程；工具验收仍拒绝 ask/let 自证。原 `delegate/read_result/append/cancel_task/todo_read/todo_update/history_read/obs_recall` 不再由 Axiom 注册为模型工具，不新增 `history.read`。旧历史展示和内部归档模块保留。验证：`node --test tests/instructions.test.js tests/business-instructions.test.js tests/goal-pi.test.js`，使用本地假供应商，无付费模型调用。
+指令执行器不自行管理任务生命周期；业务指令复用 Tasks、Todo 与既有确认流程。Goal 准备阶段只放行 question 及 Todo 契约/规程；工具验收仍拒绝 ask/let 自证。原 `delegate/read_result/append/cancel_task/todo_read/todo_update/history_read/obs_recall` 不再由 Axiom 注册为模型工具，不新增 `history.read`。旧历史展示和内部归档模块保留。验证：`node --test tests/instructions.test.js tests/business-instructions.test.js tests/dynamic-tools.test.js tests/goal-pi.test.js tests/empty-session-config.test.js`，使用本地假供应商，无付费模型调用。可选真实 MCP 适配器回归：设置 `AXIOM_TEST_MCP_ADAPTER` 为已安装 `pi-mcp-adapter/index.ts` 的绝对路径，再运行 `node --test tests/mcp-adapter.test.js`（本次验证 2.25.0）。仅连接测试启动的本地 stdio 服务，隔离配置及缓存，不加载个人 MCP 配置；未设置路径时明确跳过。
 
 ### 长期记忆与通用子代理
 
@@ -137,7 +139,7 @@ Todo 工具返回可直接复用：持有同版本且包含相关事项的 `todo
 
 - 全局「默认配置」不再列举工作空间，未独立配置的工作空间使用全局默认。
 - 侧栏每个工作空间标题右侧（新建按钮旁）的配置按钮编辑该工作空间的新会话默认值，不切换当前会话，可恢复全局默认；侧栏会话已有的下拉菜单包含「配置」，点击非当前会话时先切换到目标会话，再编辑其配置。配置入口统一使用标准齿轮图标；工作空间齿轮与同排「＋」按钮共用尺寸、悬停显现与高亮样式，触屏常显。页头不再保留重复入口。工作空间和会话配置使用独立标题的作用域弹窗，隐藏全局设置导航及浏览器复制、配置预览、全局任务预算等无关区块；表单置于首位，并明确说明仅修改当前会话或该工作空间之后的新会话，不修改全局默认。
-- 编辑器区分热更新、新会话与重启服务：当前会话的模型、思考、压缩设置用于下次请求；子代理模型选择保存在当前会话，并从已有子代理的下一次模型请求生效，不中断已发出的请求；新建或续接子代理使用该选择，选「跟随主代理模型」时随主模型更新。子代理思考等级与压缩设置仍仅在新建/续接时采用，无需重启当前会话。能力装配与重试词表在空会话首次发送前可连续修改，点击「应用能力与重试配置」统一提交；关闭或切换配置会放弃未应用选择。模型等热字段仍自动保存，不夹带能力草稿。已开始的会话保持只读，应修改默认值后新建会话。
+- 编辑器区分热更新、新会话与重启服务：当前会话的模型、思考、压缩设置用于下次请求；子代理模型选择保存在当前会话，并从已有子代理的下一次模型请求生效，不中断已发出的请求；新建或续接子代理使用该选择，选「跟随主代理模型」时随主模型更新。子代理思考等级与压缩设置仍仅在新建/续接时采用，无需重启当前会话。能力装配在空会话及已开始但空闲的会话均可连续修改；必须先停止运行，并结束在途子任务、问题、队列和压缩。重试词表仍仅在首次发送前可改。点击应用按钮统一提交能力草稿，关闭或切换配置会放弃未应用选择。模型等热字段仍自动保存，不夹带能力草稿。能力交接保留原会话、Tasks、Todo、历史与暂停/通知冻结状态；候选装配及保存失败保留旧代理。历史交接复用唯一 SessionManager/归档，旧退出钩子完成后才激活新插件；生命周期钩子的外部副作用不能事务回滚，交接阶段失败会锁止并要求重新打开会话，不宣称恢复旧插件状态。
 - 修改全局或工作空间默认值不推送到已存在的会话，包括压缩设置。服务监听参数与启动环境变量需重启服务，不属于会话覆盖。
 
 点击「新会话」先返回内存会话和 UI 快照，创建回执到达即插入侧栏新行，权威列表在后台校正、不阻塞交互；请求在途时按钮不置灰，重复点击由在途守卫拦截。打开已有会话先读取历史；回执发出后后台静默准备进程，不等待进程就绪才显示会话。发送消息立即在 UI 展示等待状态，后台在初始化完成后继续处理。没有用户消息的新会话不写入会话库，改名和配置不会保存空壳；第一条用户消息进入会话后开始持久化。单次创建复用能力目录用于默认过滤和选择校验，不跨请求缓存。后台准备前的存在性检查对 Sessions 替身宽容：只有确知会话已被移除才跳过，浏览器预览与测试桩没有内部 `items` 表也不会把进程弄崩。连续修改的浏览器回归使用 `tests/empty-session-config-preview.mjs`（默认端口 4393，真实 Sessions 与慢装配模拟代理），再运行 `python tests/empty-session-config-ui.py`。
