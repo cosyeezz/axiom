@@ -11,6 +11,13 @@ import android.net.Uri;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.os.Bundle;
+import android.os.Build;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
+import android.view.WindowManager;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -67,6 +74,7 @@ public final class MainActivity extends Activity {
     };
     private String retryMessage="";
     private volatile boolean foreground=false, destroyed=false;
+    private boolean uiResumed=false;
     private volatile int generation=0;
     private ValueCallback<Uri[]> fileCallback;
     private SharedPreferences preferences;
@@ -80,8 +88,14 @@ public final class MainActivity extends Activity {
         super.onCreate(state);
         preferences=getSharedPreferences("connection",MODE_PRIVATE);
         root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(CANVAS);
-        root.setOnApplyWindowInsetsListener((v,insets)->{
-            v.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());return insets;
+        configureImmersiveWindow();
+        ViewCompat.setOnApplyWindowInsetsListener(root,(v,insets)->{
+            // Transient bars overlay the page. Compat uses root stable/visible insets
+            // on API26-29, not a fixed height threshold that discards short IMEs.
+            Insets safe=insets.getInsets(WindowInsetsCompat.Type.displayCutout()
+                |WindowInsetsCompat.Type.ime()|WindowInsetsCompat.Type.captionBar());
+            v.setPadding(safe.left,safe.top,safe.right,safe.bottom);
+            return WindowInsetsCompat.CONSUMED;
         });
         setContentView(root);
         connectivity=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);
@@ -90,6 +104,36 @@ public final class MainActivity extends Activity {
         String saved=preferences.getString("target","");
         address.setText(saved);
         if(!saved.isEmpty())startConnection();
+    }
+    private void configureImmersiveWindow(){
+        WindowCompat.setDecorFitsSystemWindows(getWindow(),false);
+        if(Build.VERSION.SDK_INT>=28){
+            WindowManager.LayoutParams params=getWindow().getAttributes();
+            params.layoutInDisplayCutoutMode=Build.VERSION.SDK_INT>=30
+                ?WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                :WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            getWindow().setAttributes(params);
+        }
+    }
+    private void applyImmersiveBars(){
+        if(!uiResumed||destroyed||!hasWindowFocus())return;
+        WindowInsetsControllerCompat controller=WindowCompat.getInsetsController(getWindow(),root);
+        controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+        controller.hide(WindowInsetsCompat.Type.systemBars());
+    }
+    @Override public void onWindowFocusChanged(boolean hasFocus){super.onWindowFocusChanged(hasFocus);if(hasFocus)applyImmersiveBars();}
+    private void showImmersiveDialog(AlertDialog dialog){
+        // A floating dialog owns its own Window; Activity bar flags are not inherited.
+        // Keep normal floating-window safe layout instead of drawing dialog controls
+        // edge-to-edge. Only system bars are hidden, never the keyboard.
+        dialog.setOnShowListener(d->{
+            android.view.Window window=dialog.getWindow();
+            if(window==null)return;
+            WindowInsetsControllerCompat controller=WindowCompat.getInsetsController(window,window.getDecorView());
+            controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            controller.hide(WindowInsetsCompat.Type.systemBars());
+        });
+        dialog.show();
     }
     private int dp(int value){return Math.round(value*getResources().getDisplayMetrics().density);}
     private GradientDrawable shape(int color){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(8));d.setStroke(dp(1),BORDER);return d;}
@@ -111,7 +155,7 @@ public final class MainActivity extends Activity {
         status=text("首次使用需要登录 Tailscale，之后打开应用自动恢复。",14,INK);connection.addView(status);
         connect=button("连接工作台",true,this::startConnection);connection.addView(connect);
         login=button("登录 Tailscale",false,this::openLogin);login.setVisibility(View.GONE);connection.addView(login);
-        connection.addView(button("更多",false,()->new AlertDialog.Builder(this).setTitle("Axiom Android "+BuildConfig.VERSION_NAME).setItems(new String[]{"关于连接与隐私","清除本机登录状态"},(d,w)->{if(w==1)confirmReset();else new AlertDialog.Builder(this).setTitle("关于连接").setMessage("应用内 Tailscale，不占用系统 VPN。手机不运行 Agent；关闭应用不会停止电脑上的任务。节点身份保存在本应用私有目录。预览版本。").setPositiveButton("知道了",null).show();}).show()));
+        connection.addView(button("更多",false,()->showImmersiveDialog(new AlertDialog.Builder(this).setTitle("Axiom Android "+BuildConfig.VERSION_NAME).setItems(new String[]{"关于连接与隐私","清除本机登录状态"},(d,w)->{if(w==1)confirmReset();else showImmersiveDialog(new AlertDialog.Builder(this).setTitle("关于连接").setMessage("应用内 Tailscale，不占用系统 VPN。手机不运行 Agent；关闭应用不会停止电脑上的任务。节点身份保存在本应用私有目录。预览版本。").setPositiveButton("知道了",null).create());}).create())));
         scroll.addView(connection);root.addView(scroll,new LinearLayout.LayoutParams(-1,-1));
     }
     private void setBusy(boolean value){
@@ -120,8 +164,8 @@ public final class MainActivity extends Activity {
     }
     private void confirmReset(){
         if(busy)return;
-        new AlertDialog.Builder(this).setTitle("清除本机登录？").setMessage("会关闭当前页面并删除本应用保存的节点身份，未发送的草稿会丢失。需要时请到 Tailscale 管理后台撤销该设备；不会修改电脑设置。")
-            .setNegativeButton("取消",null).setPositiveButton("清除",(d,w)->{if(!busy)resetIdentity();}).show();
+        showImmersiveDialog(new AlertDialog.Builder(this).setTitle("清除本机登录？").setMessage("会关闭当前页面并删除本应用保存的节点身份，未发送的草稿会丢失。需要时请到 Tailscale 管理后台撤销该设备；不会修改电脑设置。")
+            .setNegativeButton("取消",null).setPositiveButton("清除",(d,w)->{if(!busy)resetIdentity();}).create());
     }
     private void showConnectionPanel(){
         if(web==null||destroyed||connectionPanel!=null)return;
@@ -130,16 +174,16 @@ public final class MainActivity extends Activity {
         panelStatus=text(lastStatus.optString("message","查看连接或恢复页面"),14,MUTED);content.addView(panelStatus);
         panelLogin=button("登录 Tailscale",true,this::openLogin);content.addView(panelLogin);
         panelLogin.setVisibility(lastStatus.optBoolean("needsLogin")?View.VISIBLE:View.GONE);
-        panelReload=button("刷新页面…",false,()->new AlertDialog.Builder(this).setTitle("刷新页面？").setMessage("将重新加载工作台，未发送的草稿和阅读位置可能丢失。普通断线会自动重连，无需刷新。")
-            .setNegativeButton("取消",null).setPositiveButton("刷新",(d,w)->{if(busy)return;closeConnectionPanel();reloadWorkspace();}).show());content.addView(panelReload);
-        panelSwitch=button("切换电脑…",false,()->new AlertDialog.Builder(this).setTitle("切换电脑？").setMessage("会关闭当前页面并返回地址输入页，未发送的草稿会丢失。")
-            .setNegativeButton("取消",null).setPositiveButton("继续",(d,w)->{if(!busy)leaveWorkspace();}).show());content.addView(panelSwitch);
+        panelReload=button("刷新页面…",false,()->showImmersiveDialog(new AlertDialog.Builder(this).setTitle("刷新页面？").setMessage("将重新加载工作台，未发送的草稿和阅读位置可能丢失。普通断线会自动重连，无需刷新。")
+            .setNegativeButton("取消",null).setPositiveButton("刷新",(d,w)->{if(busy)return;closeConnectionPanel();reloadWorkspace();}).create()));content.addView(panelReload);
+        panelSwitch=button("切换电脑…",false,()->showImmersiveDialog(new AlertDialog.Builder(this).setTitle("切换电脑？").setMessage("会关闭当前页面并返回地址输入页，未发送的草稿会丢失。")
+            .setNegativeButton("取消",null).setPositiveButton("继续",(d,w)->{if(!busy)leaveWorkspace();}).create()));content.addView(panelSwitch);
         panelClear=button("清除本机登录…",false,this::confirmReset);content.addView(panelClear);
         content.addView(text("Android "+BuildConfig.VERSION_NAME+" · 查看设置不会断开连接",12,MUTED));
         ScrollView scroll=new ScrollView(this);scroll.addView(content);
         connectionPanel=new AlertDialog.Builder(this).setTitle("连接设置").setView(scroll).setNegativeButton("返回工作台",null).create();
         connectionPanel.setOnDismissListener(d->{connectionPanel=null;panelStatus=null;panelLogin=null;panelReload=null;panelSwitch=null;panelClear=null;});
-        connectionPanel.show();setBusy(busy);
+        showImmersiveDialog(connectionPanel);setBusy(busy);
     }
     private void reloadWorkspace(){
         if(web==null)return;
@@ -334,8 +378,8 @@ public final class MainActivity extends Activity {
         NETWORK.execute(()->{try{Bridge.reset(getNoBackupFilesDir().getAbsolutePath()+"/tailscale");handler.post(()->{if(destroyed)return;setBusy(false);authUrl="";login.setVisibility(View.GONE);status.setText("已清除本机登录。点击连接后重新授权。");});}catch(Exception e){handler.post(()->{if(destroyed)return;setBusy(false);status.setText(safeMessage(e));});}});
     }
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==10&&fileCallback!=null){Uri[] files=null;if(result==RESULT_OK&&data!=null){if(data.getClipData()!=null){int n=Math.min(data.getClipData().getItemCount(),4);files=new Uri[n];for(int i=0;i<n;i++)files[i]=data.getClipData().getItemAt(i).getUri();}else if(data.getData()!=null)files=new Uri[]{data.getData()};}fileCallback.onReceiveValue(files);fileCallback=null;}}
-    @Override protected void onResume(){super.onResume();foreground=true;if(web!=null)web.onResume();wakeRecovery();handler.removeCallbacks(poll);handler.post(poll);}
-    @Override protected void onPause(){foreground=false;handler.removeCallbacks(poll);if(web!=null)web.onPause();super.onPause();}
+    @Override protected void onResume(){super.onResume();uiResumed=true;applyImmersiveBars();foreground=true;if(web!=null)web.onResume();wakeRecovery();handler.removeCallbacks(poll);handler.post(poll);}
+    @Override protected void onPause(){uiResumed=false;foreground=false;handler.removeCallbacks(poll);if(web!=null)web.onPause();super.onPause();}
     @Override public void onBackPressed(){if(web!=null){if(web.canGoBack())web.goBack();else showConnectionPanel();}else super.onBackPressed();}
     @Override protected void onDestroy(){try{if(connectivity!=null)connectivity.unregisterNetworkCallback(networkCallback);}catch(RuntimeException ignored){}destroyed=true;foreground=false;++generation;handler.removeCallbacksAndMessages(null);destroyWeb();NETWORK.execute(()->Bridge.disconnect());super.onDestroy();}
 }

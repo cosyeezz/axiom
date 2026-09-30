@@ -55,11 +55,9 @@ with sync_playwright() as p:
     assert page.locator('#mobile-more').evaluate('el => el === document.activeElement')
     assert prompt.input_value() == '不丢失的草稿'
     page.locator('#mobile-more').click()
-    page.locator('#view-options-trigger').click()
-    page.keyboard.press('Escape')
-    assert page.locator('#mobile-menu').is_visible()
+    assert page.locator('#view-options-trigger').is_hidden()
     assert page.locator('#view-options').is_hidden()
-    page.locator('#view-options-trigger').click()
+    assert page.locator('#mobile-view-slot #open-raw-io').is_visible()
     page.locator('#open-raw-io').click()
     page.wait_for_timeout(100)  # dialog close is asynchronous in a real browser
     assert page.locator('#raw-io').is_visible()

@@ -76,6 +76,7 @@
             <a id="github-link" class="icon-button" href="https://github.com/cosyeezz/axiom" target="_blank" rel="noopener noreferrer" title="在 GitHub 查看源码" aria-label="在 GitHub 查看源码（新标签页打开）"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-2.92-.88-2.92-2.9 0-.58.21-1.05.55-1.42-.05-.14-.24-.68.05-1.42 0 0 .56-.18 1.83.68a6.9 6.9 0 0 1 1.71-.23c.58 0 1.17.08 1.71.23 1.27-.87 1.83-.68 1.83-.68.29.74.1 1.28.05 1.42.34.37.55.84.55 1.42 0 2.03-1.15 2.7-2.93 2.9.3.26.56.76.56 1.54 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg></a>
             <span id="service-dev" hidden title="开发环境">DEV</span>
             <span id="service-version" hidden title="当前安装版本"></span>
+            <button type="button" id="open-compaction-history" aria-haspopup="dialog" aria-controls="compaction-run" hidden>压缩过程</button>
             <button type="button" id="open-raw-io" class="icon-button" aria-pressed="false" aria-controls="raw-io" title="对照原文" aria-label="切换原文对照"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5-6 7 6 7M16 5l6 7-6 7M14 3l-4 18"/></svg></button>
             <button type="button" id="toggle-theme" class="icon-button" aria-pressed="false"><svg class="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.2v2.4M12 19.4v2.4M4.2 12H1.8M22.2 12h-2.4M6.5 6.5 4.8 4.8M19.2 19.2l-1.7-1.7M17.5 6.5l1.7-1.7M4.8 19.2l1.7-1.7"/></svg><svg class="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.6A8.6 8.6 0 0 1 9.4 3.5a8.6 8.6 0 1 0 11.1 11.1Z"/></svg></button>
             </div>
@@ -101,6 +102,7 @@
             </section>
           </div>
           <div class="composer-wrap">
+            <div class="composer-activity">
             <section id="question-dock" class="question-dock" aria-label="待回答的问题" hidden></section>
             <button id="latest" class="secondary" type="button" aria-controls="transcript" hidden>回到最新消息 ↓</button>
             <div id="message-queue" aria-label="待发送队列" aria-live="polite" hidden></div>
@@ -130,6 +132,7 @@
               </section>
             </div>
             <div id="image-attachments" class="image-attachments" aria-label="待发送图片" hidden></div>
+            </div>
             <form id="composer">
               <label for="prompt" class="sr-only">任务内容</label
               ><textarea
@@ -172,8 +175,8 @@
             </form>
             <div class="composer-footer" id="composer-status" aria-label="会话上下文与用量">
               <button type="button" id="session-runtime" class="runtime-summary" aria-haspopup="dialog" aria-controls="session-detail" title="查看上下文与缓存用量"></button>
-              <span id="task-timer" role="timer" aria-label="当前任务累计运行时间" hidden><span class="task-timer-dot" aria-hidden="true"></span><span id="task-timer-value">0s</span></span>
-              <button type="button" id="session-billing-trigger" class="composer-billing" aria-haspopup="dialog" aria-label="查看会话累计估算账单"><span id="session-bill-total">账单</span></button>
+              <span id="task-timer" role="timer" aria-label="当前任务累计运行时间" hidden><span class="task-timer-dot" aria-hidden="true"></span><span id="task-timer-value">0s</span><span id="task-timer-compact" aria-hidden="true">0s</span></span>
+              <button type="button" id="session-billing-trigger" class="composer-billing" aria-haspopup="dialog" aria-label="查看会话累计估算账单"><span id="session-bill-total">账单</span><span id="session-bill-compact" aria-hidden="true">≈$—</span></button>
             </div>
             <div id="composer-help" class="utility-popover" popover role="dialog" aria-label="输入快捷键">
               <h2>输入快捷键</h2>
@@ -195,10 +198,12 @@
       </main>
     </div>
     <dialog id="mobile-menu" aria-labelledby="mobile-menu-title">
-      <div class="mobile-menu-heading"><h2 id="mobile-menu-title">连接与界面</h2><button id="mobile-menu-close" type="button" class="secondary" aria-label="关闭更多">关闭</button></div>
+      <div class="mobile-menu-heading"><h2 id="mobile-menu-title">连接与界面</h2><button id="mobile-menu-close" type="button" class="icon-button" aria-label="关闭更多"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
       <a id="mobile-connection" href="/_axiom/native/connection">连接设置</a>
       <div id="mobile-workspace-slot"></div>
       <div id="mobile-service-slot"></div>
+      <div id="mobile-view-slot"></div>
+      <button type="button" id="mobile-earliest" aria-controls="transcript">回到最早消息 ↑</button>
     </dialog>
     <dialog id="session-action" aria-labelledby="session-action-title">
       <form id="session-action-form" class="settings-body">

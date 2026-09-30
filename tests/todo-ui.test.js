@@ -219,7 +219,7 @@ test('Todo both levels keep pagination usable without opening details', async ()
   } finally { dom.window.close(); }
 });
 
-test('Todo bounded broadcasts remove stale loaded tail pages and recover focus on deleted children', async () => {
+test('Todo bounded broadcasts revalidate loaded tail pages and recover focus on deleted children', async () => {
   let version = 1;
   const extra = { ...parent, id: 'extra', title: '尾页目标' };
   const { dom, root, ui } = setup({ handler: (type, args, fallback) => ({ ...fallback(type, args), version,
@@ -231,10 +231,86 @@ test('Todo bounded broadcasts remove stale loaded tail pages and recover focus o
     root.querySelector('.todo-child .todo-item-title').focus();
     version++;
     ui.show('a', { ...snapshot(version), hasMore: true, nextOffset: 1 }); await tick();
-    assert.equal(root.querySelector('[data-id="extra"]'), null, 'new bounded snapshot cannot vouch for old tail pages');
+    assert.ok(root.querySelector('[data-id="extra"]'), 'previous tail is revalidated, not thrown away on every update');
     assert.equal(root.querySelector('.todo-child'), null);
     assert.equal(dom.window.document.activeElement, root.querySelector('.todo-item-title'));
-    assert.equal(root.lastElementChild.hidden, false);
+    assert.equal(root.lastElementChild.hidden, true);
+  } finally { dom.window.close(); }
+});
+
+test('Todo serializes target revalidation and pagination, invalidating older reads', async () => {
+  let version = 1, release;
+  const b = { ...parent, id: 'b' }, c = { ...parent, id: 'tail-c' };
+  const { dom, root, ui, calls } = setup({ handler: (_type, args) => {
+    if (args.itemId) return { ...snapshot(version), items: [] };
+    if (version === 2 && args.offset === 1) return new Promise(r => { release = r; });
+    return { ...snapshot(version), items: [args.offset === 2 ? c : b], hasMore: args.offset !== 2, nextOffset: args.offset === 2 ? null : 2 };
+  } });
+  try {
+    ui.show('a', { ...snapshot(), hasMore: true, nextOffset: 1 }); await tick();
+    const more = root.lastElementChild;
+    more.click(); await tick();
+    version = 2;
+    ui.show('a', { ...snapshot(version), hasMore: true, nextOffset: 1 });
+    assert.equal(more.disabled, true, 'cannot extend the range while it is being revalidated');
+    const count = calls.length;
+    more.click(); await tick();
+    assert.equal(calls.length, count);
+    release({ ...snapshot(version), items: [b], hasMore: true, nextOffset: 2 }); await tick();
+    assert.equal(more.disabled, false);
+    more.click(); await tick();
+    assert.deepEqual([...root.querySelectorAll('.todo-list > .todo-row')].map(n => n.dataset.id), ['p', 'b', 'tail-c']);
+    // A newer full snapshot cancels even same-generation target reads.
+    ui.show('a', { ...snapshot(3), items: [parent] }); await tick();
+    assert.equal(root.querySelector('[data-id="tail-c"]'), null);
+    assert.equal(more.hidden, true);
+  } finally { dom.window.close(); }
+});
+
+test('Todo failed step revalidation discards unverified tail and retries the failed offset', async () => {
+  let version = 1, fail = false;
+  const deleted = { ...child, id: 'deleted' }, replacement = { ...child, id: 'replacement' };
+  const { dom, root, ui, calls } = setup({ handler: (_type, args) => {
+    if (args.offset === 1 && fail) throw new Error('tail failed');
+    return { ...snapshot(version), items: [args.offset ? version === 1 ? deleted : replacement : child],
+      hasMore: !args.offset, nextOffset: args.offset ? null : 1 };
+  } });
+  try {
+    ui.show('a', snapshot()); await tick();
+    const more = root.querySelector('.todo-list > .todo-row > .todo-action');
+    more.click(); await tick();
+    root.querySelector('[data-id="deleted"] button').focus();
+    version = 2; fail = true;
+    ui.show('a', snapshot(version)); await tick();
+    assert.equal(root.querySelector('[data-id="deleted"]'), null);
+    assert.equal(dom.window.document.activeElement, root.querySelector('.todo-item-title'));
+    assert.equal(root.querySelectorAll('.todo-child').length, 1);
+    assert.equal(more.textContent, '重试读取步骤');
+    assert.equal(more.disabled, false);
+    fail = false; more.click(); await tick();
+    assert.equal(calls.at(-1).offset, 1);
+    assert.deepEqual([...root.querySelectorAll('.todo-child')].map(n => n.dataset.id), ['c', 'replacement']);
+    assert.equal(more.hidden, true);
+  } finally { dom.window.close(); }
+});
+
+test('Todo open details survive successive broadcasts without accepting late detail content', async () => {
+  let version = 1, release;
+  const { dom, root, ui } = setup({ handler: (type, args, fallback) => {
+    if (version === 2 && args.detail) return new Promise(r => { release = r; });
+    return { ...fallback(type, args), version, ...(args.detail ? { item: { ...parent, summary: `result ${version}` } } : {}) };
+  } });
+  try {
+    ui.show('a', snapshot()); await tick();
+    const title = root.querySelector('.todo-item-title'); title.click(); await tick();
+    const detail = root.querySelector('.todo-detail');
+    version = 2; ui.show('a', snapshot(version)); await tick();
+    version = 3; ui.show('a', snapshot(version)); await tick();
+    release({ ...snapshot(2), item: { ...parent, summary: 'stale result' } }); await tick();
+    assert.equal(root.querySelector('.todo-detail'), detail);
+    assert.equal(title.getAttribute('aria-expanded'), 'true');
+    assert.match(detail.textContent, /result 3/);
+    assert.doesNotMatch(detail.textContent, /stale result/);
   } finally { dom.window.close(); }
 });
 

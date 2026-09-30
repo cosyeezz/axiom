@@ -43,8 +43,15 @@ try:
                 assert box['width'] >= 120, (width, 'input too narrow', box)
                 assert page.locator('#composer-status').is_visible()
                 assert page.locator('#session-runtime').is_visible()
-                assert '上下文 5,000 / 128,000' in page.locator('#session-runtime').inner_text()
-                assert '≈ $0.023' in page.locator('#session-bill-total').inner_text()
+                if width <= 700:
+                    assert '上下文' not in page.locator('#session-runtime').inner_text()
+                    assert '3.9%' in page.locator('#session-runtime').inner_text()
+                    assert page.locator('#session-runtime svg').count() == 2
+                    assert page.locator('#composer-status').bounding_box()['height'] <= 45
+                else:
+                    assert '上下文 5,000 / 128,000' in page.locator('#session-runtime').inner_text()
+                assert '上下文 5,000 / 128,000' in page.locator('#session-runtime').get_attribute('aria-label')
+                assert '≈ $0.023' in page.locator('#session-bill-total').text_content()
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), width
                 expect(page.locator('#composer-action-help')).not_to_be_visible()
                 expect(page.locator('#composer-help')).not_to_be_visible()

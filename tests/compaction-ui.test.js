@@ -128,6 +128,24 @@ test("压缩状态隔离、两层子代理归档、快照与迟到任务更新",
   } finally { dom.window.close(); }
 });
 
+test("applied snapshot hides stale banner while ready without runId remains actionable", async () => {
+  const { dom, w, restore, emit } = await page();
+  try {
+    const progress = w.document.getElementById("compaction-progress");
+    for (const status of ["summarizing", "ready", "failed", "cancelled"]) {
+      restore({ compactionStatus: { status, runId: null } });
+      assert.equal(progress.hidden, false, status);
+    }
+    restore({ compactionStatus: { status: "applied", runId: null, runs: [{ id: "past", status: "applied", steps: [] }] } });
+    assert.equal(progress.hidden, true);
+    assert.equal(w.document.getElementById("open-compaction-history").hidden, false);
+    emit("agent.compaction.status", { status: "ready", runId: null });
+    assert.equal(progress.hidden, false);
+    emit("agent.compaction.status", { status: "applied", runId: null });
+    assert.equal(progress.hidden, true);
+  } finally { dom.window.close(); }
+});
+
 test("压缩卡片序号与 progress 标题描述，旧数据回退现文案", async () => {
   const { dom, restore, output } = await page();
   try {
@@ -372,6 +390,10 @@ test("压缩条幅点击进详情：步骤流、流式尾部、取消按钮与�
     assert.equal($("compaction-run-cancel").hidden, true, "终态没有取消按钮");
     assert.match($("compaction-run-trigger").textContent, /120,000 → 40,000 tokens/);
     assert.match($("compaction-run-title").textContent, /已应用/);
+    assert.equal(progress.hidden, true, "applied hides the banner, not the open history");
+    assert.equal($("open-compaction-history").hidden, false);
+    $("open-compaction-history").click();
+    assert.equal(dialog.open, true);
 
     // 失败的 run：错误可见；多条记录可切换回看
     w.event({ sessionId: "activity", type: "agent.compaction.status", agentId: "main", data: {

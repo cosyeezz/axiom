@@ -1,6 +1,6 @@
 """Isolated layout checks. python tests/focus-ui-browser.py [artifacts] [baseline-root]. No model/user data."""
 from pathlib import Path
-import json, os, shutil, socket, subprocess, sys, time, urllib.request
+import json, os, re, shutil, socket, subprocess, sys, time, urllib.request
 from playwright.sync_api import sync_playwright, expect
 
 ROOT = Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else Path(__file__).resolve().parents[1]
@@ -42,6 +42,8 @@ try:
             page.wait_for_selector('#workspace:not([hidden])')
             page.wait_for_function("document.querySelector('#status').dataset.connected === 'true'")
             def show_tools():
+                # Escape-returned keyboard focus may show its accessible tooltip.
+                if page.locator('#ax-tooltip.ax-show').is_visible(): page.keyboard.press('Escape')
                 if width <= 1000 and not page.locator('#composer-tools').is_visible():
                     page.locator('.composer-tools-trigger').click()
                     expect(page.locator('#composer-tools')).to_be_visible()
@@ -67,26 +69,30 @@ try:
                     expect(page.locator('#status')).not_to_be_visible()
                     page.locator('#mobile-more').click()
                 expect(page.locator('#status')).to_be_visible()
-                expect(page.locator('.composer-model-effort')).to_be_visible()
-                for selector in ['#view-options-trigger', '#session-runtime', '.composer-split', '.composer-model-trigger']:
+                if phone: expect(page.locator('.composer-model-effort')).not_to_be_visible()
+                else: expect(page.locator('.composer-model-effort')).to_be_visible()
+                for selector in ['#mobile-menu-close' if phone else '#view-options-trigger', '#session-runtime', '.composer-split', '.composer-model-trigger']:
                     bounds = page.locator(selector).bounding_box()
                     assert bounds and bounds['x'] >= 0 and bounds['x'] + bounds['width'] <= width + 1, (selector, bounds)
-                # Native disclosure keyboard, light-dismiss and focus return.
-                more = page.locator('#view-options-trigger')
-                more.focus(); page.keyboard.press('Enter')
-                panel = page.locator('#view-options')
+                # One modal on phones, native popover on desktop. No nested mobile menu.
+                more = page.locator('#mobile-more' if phone else '#view-options-trigger')
+                panel = page.locator('#mobile-menu' if phone else '#view-options')
+                if not phone:
+                    more.focus(); page.keyboard.press('Enter')
+                    expect(more).to_have_attribute('aria-expanded', 'true')
+                    page.keyboard.press('Tab')
+                    expect(page.locator('#conversation-font-scale')).to_be_focused()
+                    page.keyboard.press('Shift+Tab')
+                    expect(more).to_be_focused()
+                    page.locator('#conversation-font-scale').select_option('125')
+                    assert page.evaluate('localStorage.getItem("axiom.conversationFontScale")') == '125'
+                    page.locator('#conversation-font-scale').select_option('100')
+                else:
+                    expect(page.locator('#view-options-trigger')).not_to_be_visible()
                 expect(panel).to_be_visible()
-                expect(more).to_have_attribute('aria-expanded', 'true')
                 assert panel.evaluate('(e) => e.scrollWidth <= e.clientWidth + 1')
-                page.keyboard.press('Tab')
-                expect(page.locator('#conversation-font-scale')).to_be_focused()
-                page.keyboard.press('Shift+Tab')
-                expect(more).to_be_focused()
                 expect(panel.locator('#github-link')).to_be_visible()
                 page.screenshot(path=str(OUT / f'options-{width}-{theme}.png'))
-                page.locator('#conversation-font-scale').select_option('125')
-                assert page.evaluate('localStorage.getItem("axiom.conversationFontScale")') == '125'
-                page.locator('#conversation-font-scale').select_option('100')
                 page.locator('#toggle-theme').click()
                 assert page.evaluate('document.documentElement.dataset.theme') != theme
                 page.locator('#toggle-theme').click()
@@ -94,7 +100,8 @@ try:
                 expect(panel).not_to_be_visible()
                 expect(more).to_be_focused()
                 more.click()
-                page.locator('#mobile-menu-title' if phone else '#prompt').click()
+                if phone: page.mouse.click(2, 2)
+                else: page.locator('#prompt').click()
                 expect(panel).not_to_be_visible()
                 more.click(); page.locator('#open-raw-io').click()
                 expect(panel).not_to_be_visible()
@@ -133,7 +140,9 @@ try:
                 original = model_name.inner_text()
                 model_name.evaluate('(e) => e.textContent = "long-model-name-that-must-truncate-without-hiding-effort"')
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-                expect(page.locator('.composer-model-effort')).to_be_visible()
+                if phone:
+                    expect(page.locator('.composer-model-trigger')).to_have_attribute('aria-label', re.compile('high'))
+                else: expect(page.locator('.composer-model-effort')).to_be_visible()
                 bounds = page.locator('.composer-split').bounding_box()
                 assert bounds['x'] + bounds['width'] <= width + 1
                 model_name.evaluate('(e, text) => e.textContent = text', original)
@@ -141,7 +150,7 @@ try:
                     for selector in ['#mobile-more', '.composer-model-trigger', '#session-runtime']:
                         assert page.locator(selector).bounding_box()['height'] >= 44, selector
                     page.locator('#mobile-more').click()
-                    for selector in ['#status', '#view-options-trigger']:
+                    for selector in ['#status', '#mobile-menu-close']:
                         assert page.locator(selector).bounding_box()['height'] >= 44, selector
                     page.keyboard.press('Escape')
             if not BASELINE:
@@ -151,8 +160,7 @@ try:
                 expect(page.locator('#composer-action-help')).to_contain_text('Enter 介入')
                 expect(page.locator('#composer-action-help')).to_contain_text('按钮执行 stop')
                 page.evaluate('previewCommands.length = 0')
-                if phone: page.locator('#mobile-more').click()
-                for selector in ['#view-options-trigger', '.composer-help-trigger']:
+                for selector in ['#mobile-more' if phone else '#view-options-trigger', '.composer-help-trigger']:
                     if selector == '.composer-help-trigger': show_tools()
                     page.locator(selector).focus(); page.keyboard.press('Enter')
                     if selector == '.composer-help-trigger':
@@ -160,9 +168,6 @@ try:
                         expect(page.locator('#composer-action-help')).to_contain_text('按钮执行 stop')
                     page.keyboard.press('Escape')
                     expect(page.locator(selector)).to_be_focused()
-                    if phone and selector == '#view-options-trigger':
-                        expect(page.locator('#mobile-menu')).to_be_visible()
-                        page.keyboard.press('Escape')
                     close_tools()
                 page.wait_for_timeout(400)
                 assert not page.evaluate('previewCommands.some(type => /stop|withdraw|recall/i.test(type))')

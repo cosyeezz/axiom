@@ -58,6 +58,8 @@ export const actionIconPaths = Object.freeze({
   collapse: 'M5 4h14M12 20V9m-5 5 5-5 5 5',
   check: 'm5 12 4.5 4.5L19 6.5',
   // Todo: checklist identity is separate from the disclosure chevron and item state.
+  cache: 'M20 6c0 2-3.6 3-8 3S4 8 4 6s3.6-3 8-3 8 1 8 3ZM4 6v12c0 2 3.6 3 8 3s8-1 8-3V6M4 12c0 2 3.6 3 8 3s8-1 8-3',
+  contextUsage: 'M12 3a9 9 0 1 0 9 9h-9V3Zm4 0v5h5a9 9 0 0 0-5-5Z',
   checklist: 'm3 6 2 2 3-4M11 6h10M3 12h4m4 0h10M3 18h4m4 0h10',
   pending: 'M7 4h10a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3Z',
   clock: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM12 7v5l3 2',
@@ -117,7 +119,7 @@ export function initActionIcons(root) {
   ]) replace(selector, name);
   for (const [selector, name, glyph] of [
     ['#new', 'plus', '＋'], ['#toggle-sidebar', 'menu', '☰'],
-    ['#earliest, [data-scroll="top"]', 'up', '↑'], ['#latest, [data-scroll="bottom"]', 'down', '↓'],
+    ['#earliest, #mobile-earliest, [data-scroll="top"]', 'up', '↑'], ['#latest, [data-scroll="bottom"]', 'down', '↓'],
     ['#close-raw-io, #image-preview-close, button[aria-label^="关闭"]', 'close', '✕'],
     ['#context-close', 'close', '×'], ['#context-back', 'back', '‹'],
     ['.context-chevron', 'chevron', '›'], ['.task-open', 'external', '↗'],

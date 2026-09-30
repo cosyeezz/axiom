@@ -14,14 +14,17 @@ test("reconnect preserves edits and reading position made while attach is in fli
   const page = bootSessionPage({ records: makeRecords(2), hold: req => hold && req.type === "session.attach" });
   t.after(page.close); page.open(); await until(() => page.app.connected(), "initial connect"); page.paint();
   page.$("prompt").value = "before disconnect";
+  const transcript = page.$("transcript");
+  Object.defineProperties(transcript, { scrollHeight: { value: 1000 }, clientHeight: { value: 300 } });
+  transcript.scrollTop = 700;
+  transcript.dispatchEvent(new page.window.Event("scroll"));
   hold = true; await reconnect(page);
   page.$("prompt").value = "typed while restoring";
   page.$("prompt").dispatchEvent(new page.window.Event("input"));
-  page.$("transcript").scrollTop = 123;
-  // Use the real scroll handler to stop following the bottom (JSDOM has no geometry).
-  Object.defineProperty(page.$("transcript"), "scrollHeight", { value: 1000 });
-  page.$("transcript").dispatchEvent(new page.window.Event("wheel"));
-  page.$("transcript").dispatchEvent(new page.window.Event("scroll"));
+  // Real upward movement from the latest position; JSDOM has no native geometry.
+  transcript.dispatchEvent(new page.window.WheelEvent("wheel", { deltaY: -577 }));
+  transcript.scrollTop = 123;
+  transcript.dispatchEvent(new page.window.Event("scroll"));
   hold = false; page.releaseAll();
   await until(() => page.app.connected(), "restored"); page.paint();
   assert.equal(page.$("prompt").value, "typed while restoring");

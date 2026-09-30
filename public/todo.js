@@ -18,7 +18,7 @@ export function createTodoUI({ root, request }) {
     return slot;
   };
   let todo = null, sessionId = null, connected = true, expanded = true;
-  let generation = 0, nextOffset = null, loading = false, detailId = 0;
+  let generation = 0, nextOffset = null, loading = false, detailId = 0, targetRead = 0;
   const rows = new Map();
   // Child summaries load independently of details, with bounded page size/concurrency.
   const childQueue = [];
@@ -72,21 +72,37 @@ export function createTodoUI({ root, request }) {
     row.button.removeAttribute('aria-busy');
   }
 
-  async function details(row) {
-    if (row.detail) { closeDetail(row); return; }
-    const detail = el('div', 'todo-detail', '正在读取详情…');
+  function readingAnchor() {
+    const scroller = window.matchMedia?.('(max-width:700px)').matches
+      ? root.closest('.composer-activity') ?? list : list;
+    const top = scroller.getBoundingClientRect().top;
+    const visible = [...list.querySelectorAll('.todo-item-title')].filter(n => n.getBoundingClientRect().bottom > top);
+    return { scroller, top: scroller.scrollTop, nodes: visible.slice(0, 2).map(node => ({ node, offset: node.getBoundingClientRect().top - top })) };
+  }
+  function restoreReading(anchor) {
+    const { scroller, nodes, top } = anchor;
+    const kept = nodes.find(({ node }) => node.isConnected);
+    scroller.scrollTop = kept ? scroller.scrollTop + kept.node.getBoundingClientRect().top - scroller.getBoundingClientRect().top - kept.offset : top;
+  }
+
+  async function details(row, refresh = false) {
+    if (row.detail && !refresh) { closeDetail(row); return; }
+    const detail = row.detail ?? el('div', 'todo-detail', '正在读取详情…');
+    const read = row.detailRead = (row.detailRead ?? 0) + 1;
+    row.detailVersion = todo.version;
     detail.id = row.button.getAttribute('aria-controls');
     row.detail = detail;
     row.node.insertBefore(detail, row.children ?? null);
     row.button.setAttribute('aria-expanded', 'true');
     row.button.setAttribute('aria-busy', 'true');
-    const current = () => row.detail === detail && row.node.isConnected;
+    const current = () => row.detail === detail && row.detailRead === read && row.node.isConnected;
     try {
       const view = await query({ id: row.item.id, detail: true, limit: 1 });
       if (!view || !current()) return;
       const verification = await query({ id: row.item.id, section: 'verification', limit: 10 });
       if (!verification || !current()) return;
       if (view.version < todo.version || verification.version < todo.version) { closeDetail(row); return; }
+      const anchor = readingAnchor();
       detail.replaceChildren();
       const section = (label, text) => {
         if (text) detail.append(el('strong', 'todo-detail-label', label), el('p', '', text));
@@ -108,6 +124,7 @@ export function createTodoUI({ root, request }) {
         }
       }
       if (!detail.childNodes.length) detail.append(el('p', '', '暂无任务详情'));
+      restoreReading(anchor);
     } catch (e) {
       if (current()) { closeDetail(row); error(e); }
     } finally {
@@ -122,7 +139,7 @@ export function createTodoUI({ root, request }) {
     row.button.setAttribute('aria-label', `${item.title}，${names[item.status] ?? names.pending}`);
     row.button.title = `查看任务详情 · ${names[item.status] ?? names.pending}`;
     row.button.disabled = !connected;
-    closeDetail(row);
+    if (row.detail && row.detailVersion < todo.version) void details(row, true);
   }
 
   function put(item, container = list) {
@@ -192,10 +209,9 @@ export function createTodoUI({ root, request }) {
   async function loadChildren(row, offset) {
     row.childLoading = true;
     const version = todo.version;
-    try {
-      const view = await query({ id: row.item.id, offset, limit: 20 });
-      if (!view || !row.node.isConnected || !expanded) return;
-      if (view.version < todo.version) return;
+    let view;
+    const commit = () => {
+      const anchor = readingAnchor();
       if (offset === 0) {
         const ids = new Set(view.items.map(i => i.id));
         for (const child of row.children.querySelectorAll('.todo-child')) {
@@ -218,10 +234,31 @@ export function createTodoUI({ root, request }) {
       if (children.length && !view.hasMore && children.every(c => c.dataset.status === 'done') && row.item.status !== 'done') {
         row.children.append(el('p', 'todo-reason', '步骤已完成，待目标验收'));
       }
+      restoreReading(anchor);
+    };
+    try {
+      view = await query({ id: row.item.id, offset, limit: 20 });
+      if (!view || !row.node.isConnected || !expanded) return;
+      if (view.version < todo.version) return;
+      // Revalidate already-read pages before replacing them; a bounded broadcast
+      // cannot prove that the tail was deleted. Each request remains 20 rows.
+      const wanted = offset === 0 ? row.children.querySelectorAll('.todo-child').length : 0;
+      while (view.hasMore && view.items.length < wanted) {
+        const next = await query({ id: row.item.id, offset: view.nextOffset, limit: 20 });
+        if (!next || !row.node.isConnected || !expanded || next.version !== view.version || next.version < todo.version) return;
+        const items = [...view.items, ...next.items];
+        if (next.hasMore && next.nextOffset <= view.nextOffset) throw new Error('步骤分页未前进，请重试');
+        view = { ...next, items };
+      }
+      commit();
     } catch (e) {
-      if (row.node.isConnected) {
+      if (row.node.isConnected && version === todo?.version) {
+        // Retain only the successfully revalidated prefix, not unverified old
+        // tail rows. Retry starts at the first page that failed.
+        if (!view && offset === 0) view = { items: [], version, hasMore: true, nextOffset: 0 };
+        if (view?.version === todo.version) commit();
         error(e);
-        row.childOffset = offset;
+        row.childOffset = view?.nextOffset ?? offset;
         row.childMore.textContent = '重试读取步骤';
         row.childMore.hidden = false;
       }
@@ -237,10 +274,10 @@ export function createTodoUI({ root, request }) {
     if (loading || !connected || !expanded || !todo?.listId) return;
     loading = true;
     more.disabled = true;
-    const token = generation, version = todo.version;
+    const token = generation, version = todo.version, read = ++targetRead;
     try {
       const view = await query({ offset, limit: 20 });
-      if (!view || !expanded || view.version < todo.version) return;
+      if (!view || read !== targetRead || !expanded || view.version < todo.version) return;
       todo = { ...todo, ...view };
       for (const item of view.items) {
         const row = put(item);
@@ -248,9 +285,9 @@ export function createTodoUI({ root, request }) {
       }
       nextOffset = view.nextOffset;
       renderHeader();
-    } catch (e) { error(e); }
+    } catch (e) { if (read === targetRead) error(e); }
     finally {
-      if (token === generation) {
+      if (token === generation && read === targetRead) {
         loading = false;
         more.disabled = !connected;
         if (version < todo?.version && !rows.size) void load();
@@ -290,6 +327,7 @@ export function createTodoUI({ root, request }) {
 
   function collapse() {
     generation++;
+    targetRead++;
     loading = false;
     childQueue.length = 0;
     rows.clear();
@@ -320,7 +358,33 @@ export function createTodoUI({ root, request }) {
     finally { renderHeader(); }
   };
 
-  function show(id, value) {
+  async function refreshTargets(id, value, wanted) {
+    const read = ++targetRead;
+    loading = true;
+    renderHeader();
+    let merged = value;
+    try {
+      while (merged.hasMore && merged.items.length < wanted) {
+        const next = await query({ offset: merged.nextOffset, limit: 20 });
+        if (!next || read !== targetRead || next.version !== value.version || next.version < todo.version) return;
+        if (next.hasMore && next.nextOffset <= merged.nextOffset) throw new Error('目标分页未前进，请重试');
+        merged = { ...next, items: [...merged.items, ...next.items] };
+      }
+      show(id, { ...value, ...merged }, true);
+    } catch (e) {
+      if (read === targetRead && sessionId === id && todo?.listId === value.listId && todo.version === value.version) {
+        // Failed revalidation must not leave stale rows presented as current.
+        show(id, merged, true); error(e);
+      }
+    } finally {
+      if (read === targetRead) {
+        loading = false;
+        more.disabled = !connected;
+      }
+    }
+  }
+
+  function show(id, value, validated = false) {
     if (id !== sessionId || value?.listId !== todo?.listId) {
       collapse();
       sessionId = id;
@@ -328,10 +392,15 @@ export function createTodoUI({ root, request }) {
     }
     if (todo && value && value.version < todo.version) return;
     const changedVersion = value?.version !== todo?.version;
+    if (changedVersion) { targetRead++; loading = false; }
+    const loaded = [...rows.values()].filter(row => row.item.level === 1).length;
     todo = value;
     renderHeader();
     if (!expanded || !todo?.listId) { collapse(); return; }
-    if (changedVersion) for (const row of rows.values()) closeDetail(row);
+    if (!validated && changedVersion && value.items && value.hasMore && loaded > value.items.length) {
+      void refreshTargets(id, value, loaded); return;
+    }
+    const anchor = readingAnchor();
     for (const item of value?.changed ?? value?.items ?? []) {
       if (item.level === 1) put(item);
       else {
@@ -341,9 +410,8 @@ export function createTodoUI({ root, request }) {
     }
     for (const removed of [...(value?.removedIds ?? []), ...(value?.removedTargetIds ?? [])]) removeRow(removed);
     if (value?.items) {
-      // Broadcasts contain only the bounded first page, not deleted IDs. On a
-      // new version discard previously loaded tail pages rather than keep ghosts.
-      if (changedVersion || !value.hasMore) {
+      // Remove only after any previously loaded range has been revalidated.
+      if (changedVersion || validated || !value.hasMore) {
         const ids = new Set(value.items.filter(i => i.level === 1).map(i => i.id));
         for (const [id, row] of rows) if (row.item.level === 1 && !ids.has(id)) removeRow(id);
       }
@@ -359,6 +427,8 @@ export function createTodoUI({ root, request }) {
     for (const row of rows.values()) if (row.children && row.childVersion < todo.version) queueChildren(row);
     renderHeader();
     if (!value.items && !rows.size) void load();
+    for (const row of rows.values()) if (row.detail && row.detailVersion < todo.version) void details(row, true);
+    restoreReading(anchor);
   }
 
   window.addEventListener('storage', event => {

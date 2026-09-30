@@ -25,6 +25,9 @@
 
 ## 生命周期与限制
 
+- 0.1.2 候选默认隐藏上下系统栏，边缘手势可临时呼出；cutout、IME与桌面caption逐边取最大安全区域，不累加、不隐藏软键盘。Core兼容层在API26–29仍依赖稳定/可见Insets推断，不承诺所有厂商浮动/极矮输入法。原生设置弹窗可能临时显示系统栏，返回工作台重新隐藏。
+- 普通前后台与系统栏变化不重建WebView；旋转、配置变化和进程回收仍可能重建，不保证未发送草稿跨重建保存。沉浸式支持范围以现有API26+为准。
+
 - 正常聊天移除原生常驻工具栏；网页「更多 → 连接设置」和系统返回可打开原生连接面板。查看/取消保留页面，刷新、切换电脑或清登录均需确认。首屏故障保留原生恢复入口。
 - 不启动常驻前台服务、不承诺锁屏永久在线。回前台/默认网络可用事件触发受控恢复，30 秒去重；Stopped 节点仅对显式活动连接尝试恢复，不重建本地 origin/token、不自动登录。状态查询完成后才安排轮询，避免积压。
 - 首次健康检查与尚未成功提交的根文档 GET 出现瞬时故障时保留目标，按 2/4/8/16/30 秒封顶退避，累计 8 次失败暂停，等待网络/前台事件或手动连接；401/403 等拒绝不自动解除。成功提交页面后不做原生自动重载，业务 WebSocket 由共享网页心跳与有界重试恢复，草稿和阅读状态保持。
@@ -36,7 +39,7 @@
 
 ## 构建
 
-工具链固定于 `../.github/workflows/android.yml`：Java 17、AGP 8.7.3、Gradle 8.9、SDK 35、Build Tools 34.0.0、NDK 27.0.12077973。Go/tsnet/gomobile 固定版本与命令见 workflow 和 `go/go.mod`。直接执行 CI 或使用相同工具链本机构建；生产壳不依赖 AndroidX/Kotlin；模拟器测试使用 AndroidX Test 1.6.x 与 JUnit 4.13.2。
+工具链固定于 `../.github/workflows/android.yml`：Java 17、AGP 8.7.3、Gradle 8.9、SDK 35、Build Tools 34.0.0、NDK 27.0.12077973。Go/tsnet/gomobile 固定版本与命令见 workflow 和 `go/go.mod`。直接执行 CI 或使用相同工具链本机构建；生产仍为 platform Activity，依赖固定 AndroidX Core 1.15.0 的兼容 Insets（含其 Kotlin/协程传递运行库）；无 AppCompat UI。模拟器测试使用 AndroidX Test 1.6.x 与 JUnit 4.13.2。
 
 ```sh
 cd android/go
@@ -46,7 +49,9 @@ cd ..
 gradle --no-daemon :app:assembleDebug :app:lint
 ```
 
-CI 使用 `scripts/emulator-smoke.sh` 执行仪表测试并安装实际 release APK；失败时在模拟器关闭前采集脱敏 logcat 到 Actions artifact 的 `dist/diagnostics/`，保留原测试退出码。签名检查启用 pipefail 并核对下列持久证书指纹。
+Gradle `:app:generateThirdPartyNotices` 是所有merge assets的前置任务（本地构建也需要Node24、Go和Python3）：先导出实际release运行制品，再用 `scripts/notices.mjs` 收集Go许可和 `scripts/runtime-notices.py` 合并制品内嵌许可/NOTICE与POM（含父许可），写入APK assets。每次构建重新生成，失败不得使用遗留文件；Gradle未知许可或缺全文会失败，不依赖手写传递依赖清单。Go收集器仍保留既有顶层文件扫描与缺失提示边界。
+
+CI 使用 `scripts/emulator-smoke.sh` 在API30执行仪表测试并安装实际 release APK；`scripts/emulator-immersive.sh` 复用同一debug APK，在API26/29/35检查实际软键盘、生命周期与边缘手势，API29/35额外启用模拟cutout并分开启动横竖屏测试；这些仅为固定模拟器门禁，不代表真机。失败时在模拟器关闭前采集脱敏 logcat 到 Actions artifact 的 `dist/diagnostics/`，保留原测试退出码。签名检查启用 pipefail 并核对下列持久证书指纹。
 
 发布签名需要 `ANDROID_KEYSTORE_PATH`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`。没有签名不能把 unsigned release 当作可安装交付。
 
@@ -62,4 +67,4 @@ B9:3D:54:20:3F:14:F8:BE:FC:5B:75:22:F8:C4:30:16:3B:3B:99:DE:26:59:89:64:76:B2:F0
 
 ## 许可证
 
-Axiom 源码沿用仓库 MIT 许可。Tailscale/tsnet 与各 Go 依赖保留其各自许可证；发布 workflow 收集第三方许可到 APK assets 和 Release 的 notices 附件。内嵌客户端并非 Tailscale 官方 Android 应用。
+Axiom 源码沿用仓库 MIT 许可。Tailscale/tsnet、各 Go 与 Gradle运行依赖保留其各自许可证；发布 workflow 收集第三方许可到 APK assets 和 Release 的 notices 附件。内嵌客户端并非 Tailscale 官方 Android 应用。

@@ -55,7 +55,7 @@ function bindUtilityPopover(trigger, panel, above = false) {
   });
   window.addEventListener("resize", () => { if (panel.matches(":popover-open")) position(); });
 }
-$("view-options-trigger").innerHTML = actionIcon("more");
+for (const [id, icon] of [["view-options-trigger", "more"], ["mobile-more", "more"], ["mobile-menu-close", "close"]]) $(id).innerHTML = actionIcon(icon);
 for (const [id, text] of [["github-link", "GitHub 源码"], ["open-raw-io", "原文对照"], ["toggle-theme", "切换主题"]]) {
   $(id).append(document.createTextNode(text));
 }
@@ -288,7 +288,13 @@ const FOLLOW_GAP = 80;
 const scrollIntent = new WeakMap();
 const lastScrollTops = new WeakMap();
 // 只有用户自己的滚动（滚轮、触摸、键盘、按住滚动条/正文拖动）才允许暂停吸底。
-const noteScrollIntent = (el) => scrollIntent.set(el, performance.now());
+const noteScrollIntent = (el, event) => {
+  if (event?.type === "keydown" && !["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) return;
+  scrollIntent.set(el, performance.now());
+  // Passive wheel/touch handlers may run after compositor scrolling. Do not
+  // overwrite the last observed position with the already-moved position.
+  if (!lastScrollTops.has(el)) lastScrollTops.set(el, el.scrollTop);
+};
 // 吸底与“贴底”共用同一把尺子：距底部不足 FOLLOW_GAP 就算在底部。
 const atLatest = (el) => el.scrollHeight - el.scrollTop - el.clientHeight < FOLLOW_GAP;
 // 跟随状态只由贴底和用户意图决定：内容增高、布局重排、程序跳转产生的 scroll 事件
@@ -298,11 +304,11 @@ function readFollow(el, current) {
   const previous = lastScrollTops.get(el);
   lastScrollTops.set(el, top);
   if (atLatest(el)) return true;
-  if (performance.now() - (scrollIntent.get(el) || 0) < 200) return false;
-  // 没有意图事件的向上移动（拖动滚动条）也要暂停，只是为顶部按钮等回落留 4px 余量。
-  return previous !== undefined && top < previous - 4 ? false : current;
+  // A tap or a delayed scroll after content growth is not an upward scroll.
+  const movedUp = previous !== undefined && top < previous - 4;
+  return movedUp && performance.now() - (scrollIntent.get(el) ?? -Infinity) < 1200 ? false : current;
 }
-const scrollToLatest = (el) => { el.scrollTop = el.scrollHeight; };
+const scrollToLatest = (el) => { el.scrollTop = el.scrollHeight; lastScrollTops.set(el, el.scrollTop); };
 function scrollLatest() {
   scheduleCallGroups();
   if (changing || transport.getSnapshotQueue() || scrollFrame !== undefined || (!follow && !activeTask?.follow)) return;
@@ -310,6 +316,7 @@ function scrollLatest() {
     scrollFrame = undefined;
     if (changing) return;
     if (follow) scrollToLatest($("transcript"));
+    updateScrollButtons();
     if (activeTask?.node.open && activeTask.follow) scrollToLatest(activeTask.output);
   });
 }
@@ -322,7 +329,7 @@ const growthObserver = typeof ResizeObserver === "function"
 function watchGrowth(el, apply) { growthWatch.set(el, apply); growthObserver?.observe(el); }
 function forgetGrowth(el) { growthWatch.delete(el); growthObserver?.unobserve(el); }
 for (const event of ["wheel", "touchstart", "touchmove", "keydown", "pointerdown"])
-  transcript.addEventListener(event, () => noteScrollIntent(transcript), { capture: true, passive: true });
+  transcript.addEventListener(event, (e) => noteScrollIntent(transcript, e), { capture: true, passive: true });
 const renderer = createStreamRenderer(renderMarkdown, scrollLatest);
 // 渲染缓存（Phase D2）：跨会话共用一份，切走切回直接把已渲染节点 move 回来（旧页销毁后节点
 // detach，正好满足复用条件）。原来按会话号重建，等于切回必然全量 miss，与“切回命中”的意图相反。
@@ -343,13 +350,17 @@ window.addEventListener("pagehide", (event) => { if (!event.persisted) renderer.
 for (const event of ["wheel", "touchstart", "touchmove", "pointerdown", "keydown", "input"])
   document.addEventListener(event, () => renderer.interact(), { capture: true, passive: true });
 watchGrowth($("output"), () => { if (follow) scrollLatest(); });
-transcript.onscroll = () => {
+function updateScrollButtons() {
   $("earliest").hidden = transcript.scrollTop < FOLLOW_GAP;
-  // 程序跳转（子代理摘要、回到最早）也触发 scroll，不能当作“用户离开了底部”。
-  if (transcript.scrollTop === locatedScroll) return;
-  locatedScroll = undefined;
-  follow = readFollow(transcript, follow);
-  $("latest").hidden = follow;
+  $("latest").hidden = follow || atLatest(transcript);
+}
+transcript.onscroll = () => {
+  // Explicit history locations preserve paused following, even near the bottom.
+  if (transcript.scrollTop !== locatedScroll) {
+    locatedScroll = undefined;
+    follow = readFollow(transcript, follow);
+  }
+  updateScrollButtons();
 };
 // 历史一次全量挂载：两个滚动按钮都只是本地跳转，不再触发取数。
 $("earliest").onclick = () => {
@@ -357,8 +368,7 @@ $("earliest").onclick = () => {
   transcript.scrollTop = 0;
   locatedScroll = transcript.scrollTop;
   lastScrollTops.set(transcript, transcript.scrollTop);
-  $("earliest").hidden = true;
-  $("latest").hidden = false;
+  updateScrollButtons();
   transcript.focus({ preventScroll: true });
 };
 $("latest").onclick = () => {
@@ -501,6 +511,8 @@ $("mobile-expand").onclick = () => {
 const nativeConnection = /(?:^|\s)AxiomAndroid\/\S+ NativeConnection\/1(?:\s|$)/.test(navigator.userAgent);
 const mobileMenu = $("mobile-menu"), serviceControls = document.querySelector(".service-controls");
 const workspaceLocation = document.querySelector(".workspace-location");
+// Move children, not the native popover itself: phones have just one dialog layer.
+const viewControls = [...$("view-options").children];
 const serviceHome = document.createComment("service controls"), workspaceHome = document.createComment("workspace location");
 serviceControls.before(serviceHome); workspaceLocation.before(workspaceHome);
 function placeMobileControls() {
@@ -508,14 +520,22 @@ function placeMobileControls() {
   if (mobile.matches) {
     $("mobile-service-slot").append(serviceControls);
     $("mobile-workspace-slot").append(workspaceLocation);
+    $("mobile-view-slot").append(...viewControls);
   } else {
     if (mobileMenu.open) mobileMenu.close();
     serviceHome.after(serviceControls); workspaceHome.after(workspaceLocation);
+    $("view-options").append(...viewControls);
   }
 }
 placeMobileControls();
 $("mobile-more").onclick = () => { mobileMenu.returnValue = ""; mobileMenu.showModal(); };
 $("mobile-menu-close").onclick = () => mobileMenu.close();
+$("mobile-earliest").onclick = () => { mobileMenu.close("transfer"); $("earliest").click(); };
+$("open-compaction-history").onclick = () => {
+  $("view-options").hidePopover?.();
+  if (mobileMenu.open) mobileMenu.close("transfer");
+  openCompactionRun();
+};
 mobileMenu.addEventListener("keydown", e => {
   if (e.key === "Escape" && !document.querySelector(".utility-popover:popover-open")) { e.preventDefault(); e.stopPropagation(); mobileMenu.close(); }
 });
@@ -905,7 +925,10 @@ function renderRuntime(node, value) {
     renderBill($("session-bill-body"), sessionBill ?? value?.billing);
     const bill = sessionBill ?? value?.billing;
     const partial = bill?.incomplete || bill?.unpriced > 0 || !sessionBill;
-    $("session-bill-total").textContent = bill?.records ? `≈ ${money(bill.cost.total)}${partial ? " · 不完整" : ""}` : "账单 —";
+    const billText = bill?.records ? `≈ ${money(bill.cost.total)}${partial ? " · 不完整" : ""}` : "账单 —";
+    $("session-bill-total").textContent = billText;
+    $("session-bill-compact").textContent = bill?.records ? `≈${money(bill.cost.total)}${partial ? "*" : ""}` : "≈$—";
+    $("session-billing-trigger").setAttribute("aria-label", `${billText}，查看会话累计估算账单`);
     $("session-billing-trigger").title = bill?.records
       ? `会话累计估算费用${sessionBill ? "，含主代理与子代理" : "，仅有主代理数据"}${partial ? "；部分用量或价格缺失" : ""}，非供应商实际扣款。点击查看明细。`
       : "尚无已报告的账单记录；不代表没有费用。点击查看明细。";
@@ -940,7 +963,16 @@ function renderRuntime(node, value) {
   const lines = runtimeSummary(value);
   node.replaceChildren(...(node.id === "session-runtime" ? lines.slice(0, 2) : lines).map((text, index) => {
     const span = document.createElement("span");
-    span.textContent = text; span.title = titles[index];
+    span.title = titles[index];
+    if (node.id === "session-runtime") {
+      const full = document.createElement("span"); full.className = "runtime-full"; full.textContent = text;
+      const compact = document.createElement("span"); compact.className = "runtime-compact";
+      compact.setAttribute("aria-hidden", "true");
+      compact.innerHTML = actionIcon(index === 0 ? "cache" : "contextUsage");
+      const hasPercent = Number.isFinite(context?.tokens) && context.tokens >= 0 && Number.isFinite(context?.contextWindow) && context.contextWindow > 0 && Number.isFinite(context?.percent) && context.percent >= 0;
+      compact.append(document.createTextNode(index === 0 ? text.replace(/^缓存 /, "") : `${context?.estimated ? "≈" : ""}${hasPercent ? context.percent.toFixed(1) + "%" : "—"}`));
+      span.append(full, compact);
+    } else span.textContent = text;
     return span;
   }));
   node.title = "缓存：最近报告用量；上下文：当前占用；费用：会话累计估算。";
@@ -1024,7 +1056,7 @@ $("settings").addEventListener("close", () => {
   if ($("settings").open) return;
   settingsGeneration++;
   creationLoad++;
-
+  if (mobile.matches && !mobileMenu.open) $("mobile-more").focus();
 });
 async function loadTaskBudget() {
   const current = settingsTicket(), ticket = ++budgetRequest;
@@ -1999,7 +2031,8 @@ function renderCompactionStatus(data) {
   compactionStatus = data && compactionLabels[data.status] ? data : null;
   const node = $("compaction-progress");
   node.replaceChildren();
-  node.hidden = !compactionStatus;
+  node.hidden = !compactionStatus || compactionStatus.status === "applied";
+  $("open-compaction-history").hidden = !compactionRuns().length;
   node.dataset.status = compactionStatus?.status || "";
   if (!compactionStatus) {
     compactionRunPick = null;
@@ -2532,11 +2565,11 @@ function renderTaskRuns() {
     row.onclick = () => {
       if (!task.trigger.isConnected) return;
       follow = false;
-      $("latest").hidden = false;
       for (let parent = task.trigger.parentElement; parent; parent = parent.parentElement)
         if (parent.tagName === "DETAILS") parent.open = true;
       task.trigger.scrollIntoView({ block: "center" });
       locatedScroll = $("transcript").scrollTop;
+      updateScrollButtons();
       task.trigger.focus({ preventScroll: true });
     };
     const icon = document.createElement("span");
@@ -2987,7 +3020,7 @@ function applyEvent(message) {
         lastScrollTops.set(task.output, task.output.scrollTop);
       };
       for (const event of ["wheel", "touchstart", "touchmove", "keydown", "pointerdown"])
-        task.output.addEventListener(event, () => noteScrollIntent(task.output), { capture: true, passive: true });
+        task.output.addEventListener(event, (e) => noteScrollIntent(task.output, e), { capture: true, passive: true });
       task.output.onscroll = () => { task.follow = readFollow(task.output, task.follow); };
       watchGrowth(task.output, () => { if (node.open && task.follow) scrollLatest(); });
       node.onclose = () => { if (!node.open && activeTask === task) activeTask = undefined; };
@@ -3375,6 +3408,8 @@ function finishSnapshot(job, ctx) {
     const anchor = !follow && view?.anchor && rawEntries.find(entry => entry.messageId === view.anchor)?.item?.node;
     if (anchor) transcript.scrollTop += anchor.getBoundingClientRect().top - transcript.getBoundingClientRect().top - (view.anchorOffset || 0);
     lastScrollTops.set(transcript, transcript.scrollTop);
+    locatedScroll = follow ? undefined : transcript.scrollTop;
+    updateScrollButtons();
   });
   renderSafePoints(state.safePoints);
   if (state.navigation) {
@@ -4187,6 +4222,8 @@ function renderTaskTimer(sessions = allSessions) {
   const text = timerText(elapsed);
   const label = `${running ? "任务进行中" : "任务已停止"}，累计运行 ${text}`;
   $("task-timer-value").textContent = text;
+  const seconds = Math.max(0, Math.floor(elapsed / 1000));
+  $("task-timer-compact").textContent = seconds >= 3600 ? `${Math.floor(seconds / 3600)}h${Math.floor(seconds % 3600 / 60)}m` : text.replaceAll(" ", "");
   node.title = label;
   node.setAttribute("aria-label", label);
 }

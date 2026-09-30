@@ -60,7 +60,7 @@ try:
         page.close()
         page = browser.new_page()
         page.on('pageerror', lambda e: errors.append(str(e)))
-        page.set_content('<main class="composer-wrap" style="position:fixed;bottom:16px;left:16px;right:16px;width:auto;padding:0;"><section class="question-dock" id="dock"></section></main>')
+        page.set_content('<main class="composer-wrap" style="position:fixed;bottom:16px;left:16px;right:16px;width:auto;padding:0;"><div class="composer-activity"><section class="question-dock" id="dock"></section></div></main>')
         for name in ['style.css', 'question.css']:
             page.add_style_tag(content=(ROOT / 'public' / name).read_text(encoding='utf-8'))
         page.add_script_tag(content=source('icons') + '\n' + source('question') + '''
@@ -108,7 +108,7 @@ try:
                 page.screenshot(path=str(OUT / f'confirmation-{width}-{height}-{theme}.png'))
                 page.evaluate('showProposal(true)')
                 assert page.locator('.question-proposal').evaluate('(e)=>getComputedStyle(e).overflowY === "visible"')
-                page.locator('.composer-wrap').evaluate('(e)=>e.scrollTop=e.scrollHeight')
+                page.locator('.composer-activity' if width <= 700 else '.composer-wrap').evaluate('(e)=>e.scrollTop=e.scrollHeight')
                 page.locator('.question-choice').first.click()
                 assert not page.locator('.question-submit').is_disabled()
                 assert page.locator('.question-submit').bounding_box()['y'] + page.locator('.question-submit').bounding_box()['height'] <= height

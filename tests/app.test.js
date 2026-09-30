@@ -1464,7 +1464,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal(run.tagName, "BUTTON", "run summary supports keyboard activation");
     run.click();
     $("transcript").dispatchEvent(new window.Event("scroll"));
-    assert.equal($("latest").hidden, false, "programmatic scroll does not resume follow near the bottom");
+    assert.equal($("latest").hidden, true, "near-bottom programmatic location needs no latest button (following stays paused)");
     assert.equal(scrolled.block, "center");
     assert.equal(window.document.activeElement, targetCard);
     assert.equal($("task-child").open, false, "summary locates the original card without opening the dialog");
@@ -1643,6 +1643,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     window.scrollLatest();
     paint();
     assert.equal(body.scrollTop, 1200, "jumping to the bottom resumes automatic following");
+    body.dispatchEvent(new window.Event("wheel"));
     body.scrollTop = 100;
     body.dispatchEvent(new window.Event("scroll"));
     emit("task.state", { task: "Inspect code", status: "failed", error: "Provider failed", runtime }, { taskId: "child" });

@@ -41,11 +41,12 @@
 .composer-model-panel :focus-visible, .composer-operation-menu :focus-visible, #composer .actions button:focus-visible, #composer-status button:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
 .composer-control-icon { width:14px; height:14px; flex:0 0 14px; fill:none; stroke:currentColor; stroke-width:1.65; stroke-linecap:round; stroke-linejoin:round; }
 #composer-status { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-start; gap:4px 12px; margin-top:4px; padding:0 4px; min-width:0; font-size:12px; line-height:1.4; }
-#composer-status #session-runtime { display:flex; flex-wrap:wrap; flex:0 1 auto; gap:4px 12px; padding:4px 0; min-width:0; min-height:28px; border:0; border-radius:8px; background:transparent; color:var(--muted); font-size:12px; line-height:1.4; text-align:left; }
+#composer-status #session-runtime { display:flex; align-items:center; flex-wrap:wrap; flex:0 1 auto; gap:4px 12px; padding:4px 0; min-width:0; min-height:28px; border:0; border-radius:8px; background:transparent; color:var(--muted); font-size:12px; line-height:1.4; text-align:left; }
 #composer-status #session-runtime:hover { background:var(--raised); color:var(--ink); }
 #composer-status #session-runtime[data-warning="true"] > span:last-child { color:var(--danger); }
 #composer-status #session-runtime > span { white-space:normal; overflow-wrap:anywhere; overflow:visible; }
 #composer-status #task-timer { margin-left:0; padding-left:0; }
+.runtime-compact, #task-timer-compact, #session-bill-compact { display:none; }
 #composer-status .composer-billing { flex-shrink:0; min-height:28px; padding:4px; border:0; border-radius:8px; background:transparent; color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
 #composer-status .composer-billing:hover { color:var(--ink); background:var(--raised); }
 #composer-action-help:not([hidden]) { display:block; margin:8px 0; font-size:12px; line-height:1.5; }
@@ -66,6 +67,20 @@
   #composer .composer-split button:last-child { flex-basis:44px; width:44px; }
   #composer .composer-split svg.composer-icon { width:20px; height:20px; }
   #composer-status .composer-model-trigger, #composer-status .composer-billing, #composer-status #session-runtime { min-height:44px; }
+}
+@media (max-width:700px) {
+  #composer-status { gap:0 4px; padding:0; }
+  #composer-status #session-runtime { flex:none; flex-wrap:nowrap; gap:4px; }
+  #composer-status .runtime-full, #task-timer-value, #session-bill-total { display:none; }
+  #composer-status .runtime-compact { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; overflow:visible; }
+  .runtime-compact svg { width:12px; height:12px; flex:none; }
+  #task-timer-compact, #session-bill-compact { display:inline; white-space:nowrap; }
+  #composer-status #task-timer { font-size:12px; gap:4px; flex:none; }
+  #composer-status .task-timer-dot { width:4px; height:4px; }
+  #composer-status .composer-model-trigger { flex:1 1 44px; min-width:44px; margin-left:0; padding:4px 0; }
+  #composer-status .composer-model-effort { display:none; }
+  #composer-status .composer-billing { padding:4px 0; max-width:100%; overflow-wrap:anywhere; }
+  #session-bill-compact { white-space:normal; }
 }
 @media (max-width:720px) {
   .composer-model-panel:popover-open { display:block; width:min(300px, calc(100vw - 16px)); }

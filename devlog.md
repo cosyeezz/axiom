@@ -1,5 +1,15 @@
 # 开发记录
 
+## 2026-09-30 手机截图返修与沉浸式候选
+
+- 时间：2026-09-30 13:12（本机 -07:00）。沿先行方案9a4bc32实施手机单层更多、SVG关闭/用量与紧凑底栏、向上阅读才显示最新、applied提示消退、长提示词折行、Todo辅助区滚动与固定标题。正文14px和触控热区不变；公开版本仍为0.1.1，新候选0.1.2/code3尚未验收发布。
+- 独立审查发现Todo目标补读与翻页竞态、步骤补读失败幽灵项；统一目标读取序号并串行化分页，失败只保留重验前缀，详情迟到响应不覆盖新内容。Chromium真实滚轮发现被动事件到达时已滚动，改为保留上次实际位置；新增SVG绘制检查补足仅有热区但图形不可见的漏测。
+- Android保留platform Activity，引入固定AndroidX Core1.15.0以去掉旧API100dp键盘猜测阈值，使用兼容cutout/IME并集；只隐藏systemBars、不隐藏IME、不设FLAG_FULLSCREEN、不reload。API26最低版本经todo.update确认纠正；API26–29依然是兼容推断，旋转/进程回收与厂商键盘尚不保证。
+- 新增实际IME出现时的按键注入/点击/Back、pause/stop/resume同实例、边缘瞬态栏显示期间几何与截图、cutout及原生Dialog取消门禁；不冒充软键盘组合输入。独立AlertDialog Window同样隐藏systemBars但保留浮窗安全布局。CI复用实际候选APK运行API26/29/35，未跑前不写通过。Gradle导出实际runtime制品，新增POM父许可/制品NOTICE收集，并与原Go许可合并，所有merge assets前重建，未知Gradle许可拒绝继续；Go原扫描边界不变。
+- 已通过：app+Todo定向19项、重连5项，mobile-feedback四视口双主题及滚轮/键盘/CDP触摸。未隔离HOME的全量1053项1035过/16失败/2跳过：15项符合宿主技能污染，1项滚动夹具未模拟真实向上移动，已修正。完整隔离后1053项1051过/2跳；合入最新origin/master b29b419后1069项1066过/3跳/0失败。mobile-reading/compact/focus/ui-polish/mobile-feedback五套Chromium通过，许可fixture2项通过、shell语法/diff通过。Android仍需CI，浏览器短屏不是真机IME证据。
+- 集成后更新focus夹具为单层手机菜单、模型强度保留可访问名称；ui-polish合成长确认采用生产composer-activity结构，防止旧夹具在手机无滚动层。自动生成codebase索引与浏览器截图不纳入本功能提交，证据移出仓库。
+- 涉及public/{app,index,style,icons,composer-controls,question,todo}、Node/Chromium回归、Android MainActivity/build.gradle/ImmersiveUiTest、CI及scripts、README/Android文档/方案/本记录。主checkout原有文件未修改；测试日志/截图留仓库外mobile-menu-polish-evidence。
+
 ## 2026-09-29 手机截图返修方案
 
 - 时间：2026-09-29 17:56（本机 -07:00）。在最新origin/master f3ae616建立独立feat/mobile-menu-polish工作树；基线Chromium通过但截图暴露原测试遗漏：关闭48px按钮只剩18px文字区、手机仍嵌套popover、应用后的终态压缩条幅未隐藏；长用量文本导致两行44px热区，不是Grid空行。

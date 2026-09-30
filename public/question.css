@@ -61,7 +61,8 @@
 .composer-wrap:has(.question-dock:not([hidden])) { max-height: 75dvh; overflow-y: auto; scrollbar-width: none; }
 .composer-wrap:has(.question-dock:not([hidden]))::-webkit-scrollbar { display: none; }
 @media (max-width: 700px) {
-  .shell:not(.mobile-expanded) .composer-wrap > #question-dock:not([hidden]) { display: block; }
+  .composer-wrap:has(.question-dock:not([hidden])) { max-height: 75dvh; overflow: visible; }
+  .shell:not(.mobile-expanded) .composer-wrap #question-dock:not([hidden]) { display: block; }
   .question-dock { padding: 8px; }
   .question-help { display: none; }
   .question-todo .question-footer { bottom: -8px; }

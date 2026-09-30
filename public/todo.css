@@ -44,6 +44,12 @@
 .todo-detail li + li { margin-top: 4px; }
 .todo-detail-label { display: block; margin-top: 8px; color: var(--ink); font-weight: 500; }
 .todo-evidence { display: block; overflow-wrap: anywhere; }
+/* On phones only the auxiliary area scrolls; the composer remains outside it. */
+@media (max-width: 700px) {
+  #todo-dock .todo-header { position: sticky; top: 0; z-index: 1; background: var(--surface); border-radius: 8px; }
+  #todo-dock .todo-list { max-height: none; overflow: visible; }
+  #todo-dock .todo-metrics { gap: 4px 8px; }
+}
 @media (max-width: 480px), (pointer: coarse) {
   .todo-action, .todo-toggle { min-height: 44px; }
   .todo-row { --todo-title-padding: 12px; }
