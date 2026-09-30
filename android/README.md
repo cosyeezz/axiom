@@ -25,7 +25,7 @@
 
 ## 生命周期与限制
 
-- 0.1.2 候选默认隐藏上下系统栏，边缘手势可临时呼出；cutout、IME与桌面caption逐边取最大安全区域，不累加、不隐藏软键盘。Core兼容层在API26–29仍依赖稳定/可见Insets推断，不承诺所有厂商浮动/极矮输入法。原生设置弹窗可能临时显示系统栏，返回工作台重新隐藏。
+- 0.1.2 候选默认隐藏上下系统栏，边缘手势可临时呼出；cutout、IME与桌面caption逐边取最大安全区域，不累加、不隐藏软键盘。Core兼容层在API26–29仍依赖稳定/可见Insets推断，不承诺所有厂商浮动/极矮输入法。原生设置/确认弹窗独立请求沉浸式；当前仅API30旧版测试通过，持焦点/导航栏/确认框安全区域补测尚待CI，不宣称所有厂商弹窗或IME行为通过。
 - 普通前后台与系统栏变化不重建WebView；旋转、配置变化和进程回收仍可能重建，不保证未发送草稿跨重建保存。沉浸式支持范围以现有API26+为准。
 
 - 正常聊天移除原生常驻工具栏；网页「更多 → 连接设置」和系统返回可打开原生连接面板。查看/取消保留页面，刷新、切换电脑或清登录均需确认。首屏故障保留原生恢复入口。
@@ -51,7 +51,7 @@ gradle --no-daemon :app:assembleDebug :app:lint
 
 Gradle `:app:generateThirdPartyNotices` 是所有merge assets的前置任务（本地构建也需要Node24、Go和Python3）：先导出实际release运行制品，再用 `scripts/notices.mjs` 收集Go许可和 `scripts/runtime-notices.py` 合并制品内嵌许可/NOTICE与POM（含父许可），写入APK assets。每次构建重新生成，失败不得使用遗留文件；Gradle未知许可或缺全文会失败，不依赖手写传递依赖清单。Go收集器仍保留既有顶层文件扫描与缺失提示边界。
 
-CI 使用 `scripts/emulator-smoke.sh` 在API30执行仪表测试并安装实际 release APK；`scripts/emulator-immersive.sh` 复用同一debug APK，在API26/29/35检查实际软键盘、生命周期与边缘手势，API29/35额外启用模拟cutout并分开启动横竖屏测试；这些仅为固定模拟器门禁，不代表真机。失败时在模拟器关闭前采集脱敏 logcat 到 Actions artifact 的 `dist/diagnostics/`，保留原测试退出码。签名检查启用 pipefail 并核对下列持久证书指纹。
+CI 使用 `scripts/emulator-smoke.sh` 在API30执行仪表测试并安装实际 release APK；`scripts/emulator-immersive.sh` 复用同一debug APK，在API26/29/35的官方google_apis镜像检查实际软键盘、生命周期与边缘手势；两脚本先用`verify-webview.py`校验当前provider有效且安装/启用，否则失败，不安装外部APK。兼容任务保留实际镜像revision、emulator和WebView版本，API29/35额外启用模拟cutout并分开启动横竖屏测试；这些仅为固定模拟器门禁，不代表真机。失败时在模拟器关闭前采集脱敏 logcat 到 Actions artifact 的 `dist/diagnostics/`，保留原测试退出码。签名检查启用 pipefail 并核对下列持久证书指纹。
 
 发布签名需要 `ANDROID_KEYSTORE_PATH`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`。没有签名不能把 unsigned release 当作可安装交付。
 

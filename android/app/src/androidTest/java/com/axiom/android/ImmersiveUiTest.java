@@ -48,7 +48,7 @@ public final class ImmersiveUiTest {
     @Before public void before() throws Exception {
         server=new ConnectionRecoveryTest.Server(HTML);
         AccessibilityServiceInfo info=inst.getUiAutomation().getServiceInfo();
-        accessibilityFlags=info.flags;info.flags|=AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+        accessibilityFlags=info.flags;info.flags|=AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS|AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
         inst.getUiAutomation().setServiceInfo(info);
     }
     @After public void after() throws Exception {
@@ -65,13 +65,7 @@ public final class ImmersiveUiTest {
         if(workspace)waitFor(()->"true".equals(js(s,"!!document.getElementById('draft')")),"fixture DOM ready");
         waitFor(()->imeBounds()==null,"initial IME hidden");
         waitGeometryStable(s,false);
-        if(workspace){
-            CountDownLatch drawn=new CountDownLatch(1);
-            s.onActivity(a->((WebView)get(a,"web")).postVisualStateCallback(1,new WebView.VisualStateCallback(){
-                @Override public void onComplete(long id){drawn.countDown();}
-            }));
-            assertTrue("fixture drawn",drawn.await(10,TimeUnit.SECONDS));
-        }
+        if(workspace)waitVisualState(s);
         return s;
     }
     @Test public void realImeControlsAndBackPreserveDocument() throws Exception {
@@ -97,7 +91,15 @@ public final class ImmersiveUiTest {
             });
             assertAboveIme(s,"draft");assertAboveIme(s,"action");
             tap(element(s,"action"));waitFor(()->"1".equals(js(s,"taps")),"visible action receives actual touch");
-            tap(element(s,"draft"));waitFor(()->imeBounds()!=null,"IME before Back");
+            // Some WebViews blur the editor and close IME on button activation,
+            // others retain it. Wait for either state to settle before taking new
+            // coordinates; taps==1 alone is not an IME/layout completion barrier.
+            waitComposerStable(s);waitVisualState(s);
+            Rect draftTap=element(s,"draft");
+            android.util.Log.i("ImmersiveEvidence","draft retap="+draftTap+" DOM="+composerGeometry(s));
+            logGeometry("before draft retap");tap(draftTap);
+            waitFor(()->"\"draft\"".equals(js(s,"document.activeElement.id")),"retap focuses draft");
+            waitFor(()->imeBounds()!=null,"IME before Back");
             waitGeometryStable(s,true);
             String draft=js(s,"draft.value");
             logGeometry("before IME Back");
@@ -156,21 +158,14 @@ public final class ImmersiveUiTest {
         try(ActivityScenario<MainActivity> s=launch(true)){
             waitBarsHidden(s);assertSafeArea(s);
             Rect before=read(s,a->bounds((View)get(a,"web")));String content=js(s,"draft.value+'|'+sentinel");
-            // Static solid fixture + top strip avoids caret and bottom composer noise.
-            int band=read(s,a->Math.round(28*a.getResources().getDisplayMetrics().density));
-            Bitmap baseline=stableScreenshot(s,band);
-            saveScreenshot(baseline,"transient-baseline");
-            try{
-                swipe(baseline.getWidth()/4f,1,baseline.getWidth()/4f,band*2.5f);
-                waitFor(()->stripDifference(baseline,band)>0.008,"top edge actually reveals transient system UI");
-                Bitmap revealed=inst.getUiAutomation().takeScreenshot();assertNotNull(revealed);
-                try{saveScreenshot(revealed,"transient-revealed");}finally{revealed.recycle();}
-                assertEquals("visible transient bar must not move content",before,read(s,a->bounds((View)get(a,"web"))));
-                // No controller.hide(), taps or lifecycle calls here: require automatic disappearance.
-                waitFor(()->stripDifference(baseline,band)<0.004,"transient bar automatically disappears",20000);
-                assertEquals(before,read(s,a->bounds((View)get(a,"web"))));
-                assertEquals(content,js(s,"draft.value+'|'+sentinel"));waitBarsHidden(s);
-            }finally{baseline.recycle();}
+            // Remove fixture controls only, leaving a predictable optical background
+            // at BOTH edges, including landscape navigation on the side.
+            js(s,"composer.style.visibility='hidden'");
+            SystemBarProbe probe=barProbe(s,null);
+            assertTransientCycle(s,probe,probe.top,"activity-top",null);
+            assertTransientCycle(s,probe,probe.navigation,"activity-navigation",null);
+            assertEquals(before,read(s,a->bounds((View)get(a,"web"))));
+            assertEquals(content,js(s,"draft.value+'|'+sentinel"));waitBarsHidden(s);
         }
     }
     @Test public void nativeDialogCancelRestoresImmersiveWorkspace() throws Exception {
@@ -179,13 +174,147 @@ public final class ImmersiveUiTest {
             WebView web=read(s,a->(WebView)get(a,"web"));waitBarsHidden(s);
             inst.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
             waitFor(()->read(s,a->get(a,"connectionPanel")!=null),"Back opens native settings");
-            Rect close=read(s,a->bounds(((android.app.AlertDialog)get(a,"connectionPanel")).getButton(android.app.AlertDialog.BUTTON_NEGATIVE)));
-            assertTrue("dialog close reachable",close.top>=0&&close.width()>0&&close.height()>0);
-            tap(close);
+            android.app.AlertDialog panel=read(s,a->(android.app.AlertDialog)get(a,"connectionPanel"));
+            waitFor(()->read(s,a->panel.isShowing()&&panel.getWindow().getDecorView().hasWindowFocus()&&!a.hasWindowFocus()),"settings owns focus");
+            js(s,"composer.style.visibility='hidden'");
+            SystemBarProbe probe=barProbe(s,panel);
+            assertTransientCycle(s,probe,probe.navigation,"dialog-navigation",panel);
+            String[] actions={"panelReload","panelSwitch","panelClear"};
+            String[] titles={"刷新页面？","切换电脑？","清除本机登录？"};
+            for(int i=0;i<actions.length;i++){
+                final String action=actions[i],title=titles[i];
+                // Keep preparation deterministic; still inject one real touch.
+                s.onActivity(a->{View button=(View)get(a,action);button.requestRectangleOnScreen(new Rect(0,0,button.getWidth(),button.getHeight()),true);});
+                Rect actionBounds=read(s,a->visibleBounds((View)get(a,action)));
+                tap(actionBounds);
+                waitFor(()->focusedDialogHasTitle(title),"confirmation focus "+action);
+                for(String id:new String[]{"android:id/button1","android:id/button2"})assertControlSafe(s,focusedControl(id));
+                tap(focusedControl("android:id/button2"));
+                waitFor(()->read(s,a->panel.isShowing()&&panel.getWindow().getDecorView().hasWindowFocus()),"cancel returns to settings");
+                assertSame(web,read(s,a->(WebView)get(a,"web")));
+                assertEquals(before,js(s,"draft.value+'|'+sentinel"));
+            }
+            Rect close=read(s,a->visibleBounds(panel.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)));
+            assertControlSafe(s,close);tap(close);
             waitFor(()->read(s,a->get(a,"connectionPanel")==null&&a.hasWindowFocus()),"dialog closed");
             s.onActivity(a->assertSame(web,get(a,"web")));
             assertEquals(before,js(s,"draft.value+'|'+sentinel"));waitBarsHidden(s);assertSafeArea(s);
         }
+    }
+    private static Rect visibleBounds(View view){
+        Rect visible=new Rect();assertTrue("control enabled",view.isEnabled());
+        assertTrue("control visible",view.getLocalVisibleRect(visible));
+        assertEquals("control wholly visible",new Rect(0,0,view.getWidth(),view.getHeight()),visible);return bounds(view);
+    }
+    private android.view.accessibility.AccessibilityNodeInfo focusedDialogRoot(){
+        for(AccessibilityWindowInfo w:inst.getUiAutomation().getWindows())try{
+            if(w.getType()==AccessibilityWindowInfo.TYPE_APPLICATION&&w.isFocused()){
+                android.view.accessibility.AccessibilityNodeInfo root=w.getRoot();
+                if(root!=null){if("com.axiom.android".equals(String.valueOf(root.getPackageName())))return root;root.recycle();}
+            }
+        }finally{w.recycle();}
+        return null;
+    }
+    private boolean focusedDialogHasTitle(String title){
+        android.view.accessibility.AccessibilityNodeInfo root=focusedDialogRoot();if(root==null)return false;
+        try{
+            java.util.List<android.view.accessibility.AccessibilityNodeInfo> nodes=root.findAccessibilityNodeInfosByText(title);
+            boolean found=false;for(android.view.accessibility.AccessibilityNodeInfo node:nodes){found|=title.contentEquals(node.getText()==null?"":node.getText());node.recycle();}return found;
+        }finally{root.recycle();}
+    }
+    private Rect focusedControl(String id){
+        android.view.accessibility.AccessibilityNodeInfo root=focusedDialogRoot();assertNotNull(root);
+        try{
+            java.util.List<android.view.accessibility.AccessibilityNodeInfo> nodes=root.findAccessibilityNodeInfosByViewId(id);
+            assertEquals("one focused dialog control "+id,1,nodes.size());
+            android.view.accessibility.AccessibilityNodeInfo node=nodes.get(0);
+            try{assertTrue(node.isVisibleToUser());assertTrue(node.isEnabled());Rect r=new Rect();node.getBoundsInScreen(r);assertFalse(r.isEmpty());return r;}finally{node.recycle();}
+        }finally{root.recycle();}
+    }
+    private void assertControlSafe(ActivityScenario<MainActivity> s,Rect control){
+        Bitmap shot=inst.getUiAutomation().takeScreenshot();assertNotNull(shot);
+        try{s.onActivity(a->{
+            Rect safe=new Rect(0,0,shot.getWidth(),shot.getHeight());
+            if(Build.VERSION.SDK_INT>=28){
+                android.view.DisplayCutout cutout=displayCutout(a);
+                if("true".equals(InstrumentationRegistry.getArguments().getString("requireCutout")))assertNotNull("display cutout",cutout);
+                if(cutout!=null){
+                    // API28 exposes Activity-window coordinates; API29+ exposes
+                    // display coordinates. Never use floating Dialog insets here.
+                    Rect frame=Build.VERSION.SDK_INT>=29?new Rect(safe):bounds(a.getWindow().getDecorView());
+                    safe.set(frame.left+cutout.getSafeInsetLeft(),frame.top+cutout.getSafeInsetTop(),frame.right-cutout.getSafeInsetRight(),frame.bottom-cutout.getSafeInsetBottom());
+                    for(Rect r:screenCutoutRects(a))assertFalse("control avoids cutout",Rect.intersects(r,control));
+                }
+            }
+            assertTrue("control "+control+" inside display safe area "+safe,safe.contains(control));
+        });}finally{shot.recycle();}
+    }
+    private android.view.DisplayCutout displayCutout(MainActivity a){
+        if(Build.VERSION.SDK_INT>=29)return a.getWindowManager().getDefaultDisplay().getCutout();
+        if(Build.VERSION.SDK_INT>=28){WindowInsets i=a.getWindow().getDecorView().getRootWindowInsets();return i==null?null:i.getDisplayCutout();}
+        return null;
+    }
+    private java.util.List<Rect> screenCutoutRects(MainActivity a){
+        java.util.List<Rect> result=new java.util.ArrayList<>();
+        if(Build.VERSION.SDK_INT>=28){
+            android.view.DisplayCutout cutout=displayCutout(a);
+            if(cutout!=null){
+                Rect frame=bounds(a.getWindow().getDecorView());
+                for(Rect rect:cutout.getBoundingRects()){
+                    Rect r=new Rect(rect);if(Build.VERSION.SDK_INT==28)r.offset(frame.left,frame.top);result.add(r);
+                }
+            }
+        }
+        return result;
+    }
+    private SystemBarProbe barProbe(ActivityScenario<MainActivity> s,android.app.AlertDialog dialog){
+        Bitmap shot=inst.getUiAutomation().takeScreenshot();assertNotNull(shot);
+        try{return read(s,a->{
+            WindowInsetsCompat i=ViewCompat.getRootWindowInsets(a.getWindow().getDecorView());assertNotNull(i);
+            androidx.core.graphics.Insets nav=i.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.navigationBars());
+            int status=Math.max(Math.round(24*a.getResources().getDisplayMetrics().density),i.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.statusBars()).top);
+            java.util.List<Rect> cuts=screenCutoutRects(a);
+            Rect d=dialog==null?null:bounds(dialog.getWindow().getDecorView());
+            if(d!=null)d.inset(-16,-16);
+            float dim=dialog==null?0:dialog.getWindow().getAttributes().dimAmount;
+            android.util.Log.i("ImmersiveEvidence","bar regions status="+status+" navigation="+nav+" dialog="+d+" dim="+dim+" cutouts="+cuts);
+            return new SystemBarProbe(shot.getWidth(),shot.getHeight(),bounds((View)get(a,"web")),d,cuts,status,nav,dim);
+        });}finally{shot.recycle();}
+    }
+    private void assertTransientCycle(ActivityScenario<MainActivity> s,SystemBarProbe probe,Rect edge,String name,android.app.AlertDialog dialog)throws Exception{
+        int[] stable={0};
+        waitFor(()->{
+            Bitmap shot=inst.getUiAutomation().takeScreenshot();assertNotNull(shot);
+            try{stable[0]=probe.hidden(shot)?stable[0]+1:0;return stable[0]>=4;}finally{shot.recycle();}
+        },name+" optical hidden baseline");
+        Bitmap baseline=inst.getUiAutomation().takeScreenshot();assertNotNull(baseline);saveScreenshot(baseline,name+"-hidden");
+        View decor=read(s,a->dialog==null?a.getWindow().getDecorView():dialog.getWindow().getDecorView());
+        java.util.concurrent.atomic.AtomicBoolean lostFocus=new java.util.concurrent.atomic.AtomicBoolean(false);
+        android.view.ViewTreeObserver.OnWindowFocusChangeListener listener=focused->{if(!focused)lostFocus.set(true);};
+        s.onActivity(a->decor.getViewTreeObserver().addOnWindowFocusChangeListener(listener));
+        Rect before=read(s,a->bounds((View)get(a,"web")));
+        try{
+            if(edge==probe.top)swipe(probe.width/4f,1,probe.width/4f,edge.bottom*2.5f);
+            else if(edge.right==probe.width-2)swipe(probe.width-1,probe.height/2f,probe.width-edge.width()*2.5f,probe.height/2f);
+            else if(edge.left==2)swipe(1,probe.height/2f,edge.width()*2.5f,probe.height/2f);
+            else swipe(probe.width/2f,probe.height-1,probe.width/2f,probe.height-edge.height()*2.5f);
+            waitFor(()->{
+                assertFalse("no focus-mediated re-hide",lostFocus.get());
+                assertEquals("transient layout unchanged",before,read(s,a->bounds((View)get(a,"web"))));
+                Bitmap shot=inst.getUiAutomation().takeScreenshot();assertNotNull(shot);
+                try{return probe.difference(baseline,shot,edge)>0.008;}finally{shot.recycle();}
+            },name+" visibly revealed");
+            Bitmap revealed=inst.getUiAutomation().takeScreenshot();try{saveScreenshot(revealed,name+"-revealed");}finally{revealed.recycle();}
+            stable[0]=0;
+            // No hide/tap/Back/lifecycle operation during the measured interval.
+            waitFor(()->{
+                assertFalse("no focus-mediated re-hide",lostFocus.get());
+                assertEquals("transient layout unchanged",before,read(s,a->bounds((View)get(a,"web"))));
+                Bitmap shot=inst.getUiAutomation().takeScreenshot();assertNotNull(shot);
+                try{stable[0]=probe.difference(baseline,shot,edge)<0.004&&probe.hidden(shot)?stable[0]+1:0;return stable[0]>=4;}finally{shot.recycle();}
+            },name+" automatically hidden",20000);
+            Bitmap restored=inst.getUiAutomation().takeScreenshot();try{saveScreenshot(restored,name+"-restored");}finally{restored.recycle();}
+        }finally{s.onActivity(a->decor.getViewTreeObserver().removeOnWindowFocusChangeListener(listener));baseline.recycle();}
     }
     private void assertSafeArea(ActivityScenario<MainActivity> s){
         s.onActivity(a->{
@@ -234,23 +363,6 @@ public final class ImmersiveUiTest {
         inject(t,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,endX,endY);
     }
     private void inject(long down,long time,int action,float x,float y){MotionEvent e=MotionEvent.obtain(down,time,action,x,y,0);e.setSource(InputDevice.SOURCE_TOUCHSCREEN);try{assertTrue(inst.getUiAutomation().injectInputEvent(e,true));}finally{e.recycle();}}
-    private Bitmap stableScreenshot(ActivityScenario<MainActivity> s,int band)throws Exception{
-        // DOM ready is not a draw barrier; require fixture color in the workspace
-        // and multiple stable frames before measuring a real edge gesture.
-        Rect web=read(s,a->bounds((View)get(a,"web")));
-        Bitmap previous=null;int stable=0;
-        long end=SystemClock.uptimeMillis()+10000;
-        while(SystemClock.uptimeMillis()<end){
-            Bitmap shot=inst.getUiAutomation().takeScreenshot();assertNotNull("screenshot available",shot);
-            boolean color=(shot.getPixel(web.centerX(),web.centerY())&0xffffff)==0x5e6ad2;
-            stable=color&&previous!=null&&stripDifference(previous,shot,band)<0.004?stable+1:0;
-            if(previous!=null)previous.recycle();previous=shot;
-            if(stable>=4)return shot;
-            Thread.sleep(150);
-        }
-        if(previous!=null){saveScreenshot(previous,"unstable-baseline");previous.recycle();}
-        throw new AssertionError("fixture pixels did not settle before baseline");
-    }
     private void saveScreenshot(Bitmap bitmap,String name)throws Exception{
         java.io.File directory=new java.io.File(inst.getTargetContext().getExternalFilesDir(null),"immersive");
         assertTrue(directory.isDirectory()||directory.mkdirs());
@@ -266,19 +378,35 @@ public final class ImmersiveUiTest {
             byte[] buffer=new byte[4096];while(stream.read(buffer)!=-1){}
         }
     }
-    private double stripDifference(Bitmap baseline,int band){
-        Bitmap shot=inst.getUiAutomation().takeScreenshot();assertNotNull("screenshot available",shot);
-        try{return stripDifference(baseline,shot,band);}finally{shot.recycle();}
+    private void waitVisualState(ActivityScenario<MainActivity> s)throws Exception{
+        CountDownLatch drawn=new CountDownLatch(1);
+        s.onActivity(a->((WebView)get(a,"web")).postVisualStateCallback(1,new WebView.VisualStateCallback(){
+            @Override public void onComplete(long id){drawn.countDown();}
+        }));
+        assertTrue("fixture drawn",drawn.await(10,TimeUnit.SECONDS));
     }
-    private double stripDifference(Bitmap baseline,Bitmap shot,int band){
-            assertEquals("screenshot width",baseline.getWidth(),shot.getWidth());
-            assertEquals("screenshot height",baseline.getHeight(),shot.getHeight());
-            int changed=0,total=0;
-            for(int y=2;y<Math.min(band,shot.getHeight());y+=2)for(int x=4;x<shot.getWidth()-4;x+=2){
-                int a=baseline.getPixel(x,y),b=shot.getPixel(x,y);total++;
-                if(Math.abs(android.graphics.Color.red(a)-android.graphics.Color.red(b))+Math.abs(android.graphics.Color.green(a)-android.graphics.Color.green(b))+Math.abs(android.graphics.Color.blue(a)-android.graphics.Color.blue(b))>60)changed++;
-            }
-            return changed/(double)Math.max(total,1);
+    private String composerGeometry(ActivityScenario<MainActivity> s){
+        return js(s,"(()=>{const r=draft.getBoundingClientRect();return [r.left,r.top,r.right,r.bottom,innerWidth,innerHeight,window.visualViewport?window.visualViewport.height:innerHeight,document.activeElement.id]})()");
+    }
+    private void waitComposerStable(ActivityScenario<MainActivity> s)throws Exception{
+        String[] previous={""};int[] stable={0};
+        waitFor(()->{
+            String dom=composerGeometry(s);
+            String nativeGeometry=read(s,a->{
+                WindowInsetsCompat i=ViewCompat.getRootWindowInsets(a.getWindow().getDecorView());
+                if(!a.hasWindowFocus()||i==null||i.isVisible(WindowInsetsCompat.Type.ime())!=(imeBounds()!=null))return "";
+                View root=(View)get(a,"root");
+                return bounds((View)get(a,"web"))+"|"+root.getPaddingBottom()+"|"+i.getInsets(WindowInsetsCompat.Type.ime());
+            });
+            boolean fits=false;
+            try{
+                JSONArray d=new JSONArray(dom);Rect web=read(s,a->bounds((View)get(a,"web")));
+                fits=Math.abs(d.getDouble(5)*web.width()/d.getDouble(4)-web.height())<=1;
+            }catch(Exception e){throw new AssertionError(e);}
+            String current=dom+"|"+nativeGeometry;
+            stable[0]=fits&&!nativeGeometry.isEmpty()&&current.equals(previous[0])?stable[0]+1:0;previous[0]=current;
+            return stable[0]>=8;
+        },"composer DOM and native geometry stable");
     }
     private void waitGeometryStable(ActivityScenario<MainActivity> s,boolean ime)throws Exception{
         String[] previous={""};int[] stable={0};
@@ -304,7 +432,9 @@ public final class ImmersiveUiTest {
     private void waitFor(BooleanSupplier check,String message)throws Exception{waitFor(check,message,10000);}
     private void waitFor(BooleanSupplier check,String message,int timeout)throws Exception{
         long end=SystemClock.uptimeMillis()+timeout;
-        while(SystemClock.uptimeMillis()<end){if(check.getAsBoolean())return;Thread.sleep(100);}
+        AssertionError assertion=null;
+        try{while(SystemClock.uptimeMillis()<end){if(check.getAsBoolean())return;Thread.sleep(100);}}
+        catch(AssertionError error){assertion=error;}
         logGeometry(message);
         // Capture before try-with-resources closes the Activity. The shell trap's
         // final screenshot otherwise contains only the launcher, losing the failure.
@@ -315,6 +445,7 @@ public final class ImmersiveUiTest {
             captureText("dumpsys window",path+"-window.txt");
             captureText("dumpsys input_method",path+"-ime.txt");
         }catch(Exception e){android.util.Log.w("ImmersiveEvidence","capture failed",e);}
+        if(assertion!=null)throw assertion;
         fail(message);
     }
     private void captureText(String command,String destination)throws Exception{

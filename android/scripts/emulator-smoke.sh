@@ -29,7 +29,10 @@ adb shell settings put secure show_ime_with_hard_keyboard 1
 adb shell settings put secure immersive_mode_confirmations confirmed
 adb shell settings get secure immersive_mode_confirmations > dist/diagnostics/immersive-confirmation.txt
 adb shell ime list -s > dist/diagnostics/ime-list.txt
+adb shell settings get secure navigation_mode > dist/diagnostics/navigation-mode.txt
+adb shell wm size > dist/diagnostics/display-size.txt
 adb shell dumpsys webviewupdate > dist/diagnostics/webview.txt
+python3 android/scripts/verify-webview.py < dist/diagnostics/webview.txt
 gradle -p android --no-daemon :app:connectedDebugAndroidTest
 if [ -f dist/Axiom-Android.apk ]; then
   # AGP can remove the debug app during instrumentation cleanup.

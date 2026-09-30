@@ -1,5 +1,18 @@
 # 开发记录
 
+## 2026-09-30 Android第二轮CI结果
+
+- c173fca的CI36774073781已完成：build包含APK/lint/签名/许可/Go和API30仪器21/21通过，三项旧API30失败在补同步后不再复现，不能据此推断其余平台通过。
+- API26 default镜像报No WebView installed；API29模拟器下载报Archive is not a ZIP archive且无法连adb，均为环境失败；API35实际测试在IME before Back失败。只读诊断确认失败发生在发送Back之前、按钮点击后IME已关闭且没有第二次show，尚不能证实点击坐标是否过时；测试补DOM/原生几何连续稳定与视觉提交等待、重新取坐标的一次真实点击及DOM焦点日志，不改生产逻辑、不用JS强制聚焦/唤起键盘。
+- 官方SDK索引提供API26/29/35的google_apis/x86_64镜像，兼容矩阵切换该类型；不假定provider固定包名，用verify-webview.py在测试前校验当前provider有效且安装/启用，禁用/缺失/歧义/未知格式全部失败；加入解析fixture测试，保留镜像/emulator/provider版本。该调整不宣称解决API29下载故障或API35输入问题。
+- 更新README、android/README及RELEASE-NOTES保持候选/未发布状态；光学导航/Dialog补测及输入重排同步将一并送第三轮CI。推送前diff/shell语法、Python许可/provider共4项通过，API35真实dump通过provider预检，API26缺失dump按预期拒绝；本地无Java/Android SDK，编译和设备结果以新CI为准。已fetch origin/master，仍为包含在工作分支的b29b419。
+
+## 2026-09-30 Android沉浸式验收补充候选
+
+- 只读审查发现原门禁只有顶部呼出、API26/29只看flags、Dialog关闭后才验；补SystemBarProbe纯色合成页的屏幕边缘光学基准，排除物理cutout但不屏蔽系统栏区域。Insets仅用于选区域，截图初始/自动恢复必须为预期应用背景。
+- ImmersiveUiTest新增顶部与真实导航边缘完整周期，持续检查WebView矩形及焦点没有丢失后重隐藏；设置Dialog持焦点执行导航周期，真实点开刷新/切换/清除确认框，只取消，按display cutout屏幕坐标检查按钮安全区并保留草稿/实例。
+- 模拟器脚本保留每方向的屏幕帧、几何及实际导航模式；不宣称所有导航模式/OEM通过。只读审查补正API28 cutout从Activity Insets读取并转换屏幕坐标（Display.getCutout为API29+），不将API28误当无cutout。修改Android测试、脚本、README和本记录，当前仍是未运行补测候选；本地脚本语法、diff检查及许可fixture2项通过。
+
 ## 2026-09-30 Android沉浸式首轮CI诊断
 
 - CI36772170166对应b8e3be4，Go race、AAR、APK/lint/持久签名通过；API30仪器21项18通过3失败，API26/29/35被门禁跳过。失败为原生IME下真实按钮点击、IME Back后视口恢复、边缘瞬态栏自动消失，不以已有APK冒充验收或发布。
