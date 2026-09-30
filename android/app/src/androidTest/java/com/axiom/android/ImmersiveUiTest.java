@@ -38,6 +38,7 @@ public final class ImmersiveUiTest {
     private final Instrumentation inst=InstrumentationRegistry.getInstrumentation();
     private ConnectionRecoveryTest.Server server;
     private int accessibilityFlags;
+    private static boolean evidenceTransportVerified;
     private ActivityScenario<MainActivity> activeScenario;
     private static final String HTML="<meta name='viewport' content='width=device-width,initial-scale=1,user-scalable=no'>"
         +"<style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#5e6ad2}*{box-sizing:border-box}"
@@ -50,6 +51,7 @@ public final class ImmersiveUiTest {
         AccessibilityServiceInfo info=inst.getUiAutomation().getServiceInfo();
         accessibilityFlags=info.flags;info.flags|=AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS|AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
         inst.getUiAutomation().setServiceInfo(info);
+        verifyEvidenceTransport();
     }
     @After public void after() throws Exception {
         AccessibilityServiceInfo info=inst.getUiAutomation().getServiceInfo();info.flags=accessibilityFlags;
@@ -235,37 +237,44 @@ public final class ImmersiveUiTest {
         Bitmap shot=inst.getUiAutomation().takeScreenshot();assertNotNull(shot);
         try{s.onActivity(a->{
             Rect safe=new Rect(0,0,shot.getWidth(),shot.getHeight());
-            if(Build.VERSION.SDK_INT>=28){
-                android.view.DisplayCutout cutout=displayCutout(a);
-                if("true".equals(InstrumentationRegistry.getArguments().getString("requireCutout")))assertNotNull("display cutout",cutout);
-                if(cutout!=null){
-                    // API28 exposes Activity-window coordinates; API29+ exposes
-                    // display coordinates. Never use floating Dialog insets here.
-                    Rect frame=Build.VERSION.SDK_INT>=29?new Rect(safe):bounds(a.getWindow().getDecorView());
-                    safe.set(frame.left+cutout.getSafeInsetLeft(),frame.top+cutout.getSafeInsetTop(),frame.right-cutout.getSafeInsetRight(),frame.bottom-cutout.getSafeInsetBottom());
-                    for(Rect r:screenCutoutRects(a))assertFalse("control avoids cutout",Rect.intersects(r,control));
-                }
+            CutoutSnapshot cutout=cutoutSnapshot(a,safe);
+            if("true".equals(InstrumentationRegistry.getArguments().getString("requireCutout")))assertNotNull("display cutout",cutout);
+            if(cutout!=null){
+                safe.set(cutout.safeFrame);
+                for(Rect r:cutout.rects)assertFalse("control avoids cutout",Rect.intersects(r,control));
             }
             assertTrue("control "+control+" inside display safe area "+safe,safe.contains(control));
         });}finally{shot.recycle();}
     }
-    private android.view.DisplayCutout displayCutout(MainActivity a){
-        if(Build.VERSION.SDK_INT>=29)return a.getWindowManager().getDefaultDisplay().getCutout();
-        if(Build.VERSION.SDK_INT>=28){WindowInsets i=a.getWindow().getDecorView().getRootWindowInsets();return i==null?null:i.getDisplayCutout();}
-        return null;
+    // JUnit scans every outer method signature before running SDK guards. Do not
+    // expose DisplayCutout there: the class does not exist on API26/27.
+    private static final class CutoutSnapshot {
+        final Rect safeFrame;
+        final java.util.List<Rect> rects=new java.util.ArrayList<>();
+        CutoutSnapshot(Rect frame){safeFrame=new Rect(frame);}
     }
-    private java.util.List<Rect> screenCutoutRects(MainActivity a){
-        java.util.List<Rect> result=new java.util.ArrayList<>();
-        if(Build.VERSION.SDK_INT>=28){
-            android.view.DisplayCutout cutout=displayCutout(a);
-            if(cutout!=null){
-                Rect frame=bounds(a.getWindow().getDecorView());
-                for(Rect rect:cutout.getBoundingRects()){
-                    Rect r=new Rect(rect);if(Build.VERSION.SDK_INT==28)r.offset(frame.left,frame.top);result.add(r);
-                }
+    private CutoutSnapshot cutoutSnapshot(MainActivity a,Rect display){
+        return Build.VERSION.SDK_INT>=28?Api28Cutout.snapshot(a,display):null;
+    }
+    @androidx.annotation.RequiresApi(28)
+    private static final class Api28Cutout {
+        static CutoutSnapshot snapshot(MainActivity a,Rect display){
+            WindowInsets insets=a.getWindow().getDecorView().getRootWindowInsets();
+            android.view.DisplayCutout cutout=Build.VERSION.SDK_INT>=29?Api29Cutout.get(a):(insets==null?null:insets.getDisplayCutout());
+            if(cutout==null)return null;
+            // API28 uses Activity-window coordinates, API29+ display coordinates.
+            Rect frame=Build.VERSION.SDK_INT>=29?new Rect(display):bounds(a.getWindow().getDecorView());
+            CutoutSnapshot result=new CutoutSnapshot(frame);
+            result.safeFrame.set(frame.left+cutout.getSafeInsetLeft(),frame.top+cutout.getSafeInsetTop(),frame.right-cutout.getSafeInsetRight(),frame.bottom-cutout.getSafeInsetBottom());
+            for(Rect rect:cutout.getBoundingRects()){
+                Rect r=new Rect(rect);if(Build.VERSION.SDK_INT==28)r.offset(frame.left,frame.top);result.rects.add(r);
             }
+            return result;
         }
-        return result;
+    }
+    @androidx.annotation.RequiresApi(29)
+    private static final class Api29Cutout {
+        static android.view.DisplayCutout get(MainActivity a){return a.getWindowManager().getDefaultDisplay().getCutout();}
     }
     private SystemBarProbe barProbe(ActivityScenario<MainActivity> s,android.app.AlertDialog dialog){
         Bitmap shot=inst.getUiAutomation().takeScreenshot();assertNotNull(shot);
@@ -273,7 +282,8 @@ public final class ImmersiveUiTest {
             WindowInsetsCompat i=ViewCompat.getRootWindowInsets(a.getWindow().getDecorView());assertNotNull(i);
             androidx.core.graphics.Insets nav=i.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.navigationBars());
             int status=Math.max(Math.round(24*a.getResources().getDisplayMetrics().density),i.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.statusBars()).top);
-            java.util.List<Rect> cuts=screenCutoutRects(a);
+            CutoutSnapshot cutout=cutoutSnapshot(a,new Rect(0,0,shot.getWidth(),shot.getHeight()));
+            java.util.List<Rect> cuts=cutout==null?new java.util.ArrayList<>():cutout.rects;
             Rect d=dialog==null?null:bounds(dialog.getWindow().getDecorView());
             if(d!=null)d.inset(-16,-16);
             float dim=dialog==null?0:dialog.getWindow().getAttributes().dimAmount;
@@ -363,19 +373,56 @@ public final class ImmersiveUiTest {
         inject(t,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,endX,endY);
     }
     private void inject(long down,long time,int action,float x,float y){MotionEvent e=MotionEvent.obtain(down,time,action,x,y,0);e.setSource(InputDevice.SOURCE_TOUCHSCREEN);try{assertTrue(inst.getUiAutomation().injectInputEvent(e,true));}finally{e.recycle();}}
-    private void saveScreenshot(Bitmap bitmap,String name)throws Exception{
-        java.io.File directory=new java.io.File(inst.getTargetContext().getExternalFilesDir(null),"immersive");
-        assertTrue(directory.isDirectory()||directory.mkdirs());
-        try(java.io.OutputStream out=new java.io.FileOutputStream(new java.io.File(directory,name+".png"))){
-            assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG,100,out));
+    private void verifyEvidenceTransport()throws Exception{
+        if(evidenceTransportVerified)return;
+        assertEquals("a b",shell("printf '%s' 'a b'"));
+        boolean rejected=false;
+        try{shell("exit 7");}catch(AssertionError expected){
+            assertTrue(expected.getMessage().contains("AXIOM_SHELL_EXIT=7"));rejected=true;
         }
-        // AGP may uninstall the debug package; move evidence outside app storage.
-        shell("mkdir -p /sdcard/Download/axiom-immersive");
-        shell("cp "+new java.io.File(directory,name+".png").getAbsolutePath()+" /sdcard/Download/axiom-immersive/");
+        assertTrue("nonzero shell status rejected",rejected);
+        // Deterministic incompressible fixture exercises more than one transfer
+        // chunk on EVERY API, not just large screenshots on some devices.
+        Bitmap bitmap=Bitmap.createBitmap(64,64,Bitmap.Config.ARGB_8888);
+        java.util.Random random=new java.util.Random(26);
+        for(int y=0;y<64;y++)for(int x=0;x<64;x++)bitmap.setPixel(x,y,0xff000000|random.nextInt(0x1000000));
+        try{
+            java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream();
+            assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG,100,bytes));
+            assertTrue("multi-chunk fixture",bytes.size()>8192);
+            saveScreenshot(bitmap,"capture-protocol");
+        }finally{bitmap.recycle();}
+        evidenceTransportVerified=true;
     }
-    private void shell(String command)throws Exception{
-        try(java.io.InputStream stream=new android.os.ParcelFileDescriptor.AutoCloseInputStream(inst.getUiAutomation().executeShellCommand(command))){
-            byte[] buffer=new byte[4096];while(stream.read(buffer)!=-1){}
+    private void saveScreenshot(Bitmap bitmap,String name)throws Exception{
+        assertTrue("safe evidence name",name.matches("[a-z0-9-]+"));
+        java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream();
+        assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG,100,bytes));
+        String encoded=android.util.Base64.encodeToString(bytes.toByteArray(),android.util.Base64.NO_WRAP);
+        String path="/sdcard/Download/axiom-immersive/"+name+".png";
+        // Shell cannot reliably read app external-files under scoped storage.
+        // Transfer the exact measured bitmap, with bounded command sizes, rather
+        // than silently cp-ing or taking a different frame after the assertion.
+        shell("mkdir -p /sdcard/Download/axiom-immersive && : > "+path+".b64");
+        for(int start=0;start<encoded.length();start+=8192){
+            shell("printf '%s' '"+encoded.substring(start,Math.min(start+8192,encoded.length()))+"' >> "+path+".b64");
+        }
+        shell("base64 -d "+path+".b64 > "+path+" && rm "+path+".b64 && test -s "+path);
+        assertArrayEquals("persisted screenshot bytes",bytes.toByteArray(),android.util.Base64.decode(shell("base64 "+path),android.util.Base64.DEFAULT));
+    }
+    private String shell(String command)throws Exception{
+        String wrapped="("+command+") 2>&1; rc=$?; printf '\\nAXIOM_SHELL_EXIT=%s\\n' \"$rc\"";
+        // UiAutomationConnection uses Runtime.exec(String), which splits on
+        // whitespace without interpreting quotes (including API26 and API30).
+        // Keep the bootstrap a single token; only the inner shell expands IFS.
+        String script64=android.util.Base64.encodeToString(wrapped.getBytes(java.nio.charset.StandardCharsets.UTF_8),android.util.Base64.NO_WRAP);
+        String bootstrap="printf${IFS}%s${IFS}"+script64+"|/system/bin/base64${IFS}-d|/system/bin/sh";
+        try(java.io.InputStream stream=new android.os.ParcelFileDescriptor.AutoCloseInputStream(inst.getUiAutomation().executeShellCommand("/system/bin/sh -c "+bootstrap))){
+            java.io.ByteArrayOutputStream output=new java.io.ByteArrayOutputStream();
+            byte[] buffer=new byte[4096];int count;while((count=stream.read(buffer))!=-1)output.write(buffer,0,count);
+            String text=output.toString("UTF-8"),marker="\nAXIOM_SHELL_EXIT=0\n";
+            assertTrue("shell evidence command failed: "+text,text.endsWith(marker));
+            return text.substring(0,text.length()-marker.length());
         }
     }
     private void waitVisualState(ActivityScenario<MainActivity> s)throws Exception{
@@ -444,17 +491,12 @@ public final class ImmersiveUiTest {
             shell("screencap -p "+path+".png");
             captureText("dumpsys window",path+"-window.txt");
             captureText("dumpsys input_method",path+"-ime.txt");
-        }catch(Exception e){android.util.Log.w("ImmersiveEvidence","capture failed",e);}
+        }catch(Exception|AssertionError e){android.util.Log.w("ImmersiveEvidence","capture failed",e);}
         if(assertion!=null)throw assertion;
         fail(message);
     }
     private void captureText(String command,String destination)throws Exception{
-        java.io.File file=new java.io.File(inst.getTargetContext().getExternalFilesDir(null),"window-evidence.txt");
-        try(java.io.InputStream in=new android.os.ParcelFileDescriptor.AutoCloseInputStream(inst.getUiAutomation().executeShellCommand(command));
-                java.io.OutputStream out=new java.io.FileOutputStream(file)){
-            byte[] buffer=new byte[4096];int count;while((count=in.read(buffer))!=-1)out.write(buffer,0,count);
-        }
-        shell("cp "+file.getAbsolutePath()+" "+destination);
+        shell(command+" > "+destination+" && test -s "+destination);
     }
     private void logGeometry(String label){
         if(activeScenario==null)return;

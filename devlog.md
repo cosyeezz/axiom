@@ -1,5 +1,18 @@
 # 开发记录
 
+## 2026-09-30 Android第四轮CI结果
+
+- dd9e7a9的CI36778606942已结束失败。API30构建/lint/签名/仪器21项全部通过，XML明确包含新的Activity顶部/导航边缘与Dialog测试；导出的截图目录却为空，证据持久化仍须核实，不能视为跨API验收通过。
+- API26测试类初始化因DisplayCutout缺类失败；API29无cutout竖屏5项中4项通过，Dialog光学隐藏基线失败；API35在仪器测试前exit1，cleanup缺截图目录不是已确定首因。已下载新现场并分工只读诊断，不沿用旧结果判断。
+- API35首个必失败命令为grep mainkeys=0，artifact仅空换行但Window dump明确真实navigationBars底部24px；AVD三版本均hw.mainKeys=yes。新增configure-emulator.py通过官方pre-launch hook明确hw.mainKeys=no（保留其它配置、去重、缺AVD失败）；属性仅留诊断，不再拿缺失的旧属性代替真实能力。配置校验+现有非零Insets/光学/IME/cutout门禁全部保留；两shell补ERR行号/命令/退出码。
+- 只读诊断并定向复核API26完整异常：JUnit getDeclaredMethods解析外层DisplayCutout返回类型即失败，SDK guard未执行；ImmersiveUiTest改Api28/Api29嵌套辅助类，外层仅Rect/自定义快照，保留API28 window到screen坐标变换及requireCutout断言。
+- API29失败帧顶部/底部均为dim后的canvas(0,0,1)，中段准确为dim紫色(38,42,84)；WM证实SystemUI surface隐藏而底层Activity带栏背景。MainActivity设置透明栏色并关闭API29+contrast scrim，root仍使用Linear canvas，不改光学阈值/ROI、不增加hide轮询；需新CI证实修正效果。
+- API30 XML/logcat明确21/21，但归档仅Launcher前后截图。移除app external-files到Download的静默cp；精确bitmap分块base64写入shell可写目录并逐字节回读，shell失败显示退出码；dumpsys直接shell重定向。新增verify-immersive-evidence.py要求每组9张PNG完整解码、同尺寸且非缩略图，脚本测试前清空专用证据目录防旧帧通过，workflow固定Pillow11.3.0；不将截图归档检查代替功能光学断言。
+- 补丁审查核实AOSP API26/30的UiAutomationConnection使用Runtime.exec(String)按空白分词，原sh -c引号包装不可用；改无空白base64 bootstrap交由内部sh解析完整脚本。每个API的instrumentation增加空格参数、exit7拒绝、多分块随机PNG回读自检；主机Git Bash只验证协议形态（Python直接spawn曾选到WSL/改变引号，改明确Git Bash脚本），不算Android通过。API28纳入矩阵，实际覆盖独立window-cutout坐标分支。
+- 官方runner v2源码核对createAvd→await pre-launch→launchEmulator顺序，ANDROID_AVD_HOME由setup导出；hook失败会标记Action失败但仍可能启动，所以测试前继续强制核对实际AVD配置。Google官方SDK索引存在API28 google_apis x86_64 revision11；不将镜像存在当安装/启动通过。第五轮将覆盖API26/28/29/30/35。
+- 涉及MainActivity、ImmersiveUiTest、workflow、四份新增脚本及两份emulator脚本，README/android README/RELEASE-NOTES同步；本地diff/shell语法及Python11项通过，fetch的origin/master包含于分支；无本地Android SDK，编译/真模拟器结果待新CI。
+- release跳过，0.1.2保持候选，README/RELEASE-NOTES同步真实门禁状态。
+
 ## 2026-09-30 Android第三轮CI结果
 
 - eb5acb0的CI36776528831已结束失败。API30构建/lint/签名成功、仪器21项19通过，两个新增光学测试在选择导航区域时因navigation Insets为零而提前失败，尚未执行真实边缘手势验收；不能复用旧轮21/21替代。

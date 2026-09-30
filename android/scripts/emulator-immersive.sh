@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Disposable emulator only. Reuses the exact candidate APKs, no rebuild or tailnet.
-set -euo pipefail
+set -Eeuo pipefail
+trap 'rc=$?; printf "Failure at line %s (exit %s): %s\n" "$LINENO" "$rc" "$BASH_COMMAND" >&2' ERR
 mkdir -p dist/immersive
 cutout=""
 cleanup() {
@@ -28,7 +29,10 @@ cp "$ANDROID_HOME/emulator/source.properties" dist/immersive/emulator-source.pro
 grep '^Pkg.Revision[[:space:]]*=' dist/immersive/emulator-source.properties > dist/immersive/emulator-version.txt
 cp "${ANDROID_AVD_HOME:-$HOME/.android/avd}/test.avd/config.ini" dist/immersive/avd-config.ini
 adb shell getprop qemu.hw.mainkeys | tr -d '\r' > dist/immersive/mainkeys.txt
-grep -qx '0' dist/immersive/mainkeys.txt
+# API35 may omit the legacy property despite having real navigation bars.
+# Require the AVD configuration; functional acceptance uses actual Insets and
+# screen pixels in SystemBarProbe, never the property value or a fake size.
+grep -Eq '^hw\.mainKeys[[:space:]]*=[[:space:]]*no[[:space:]]*$' dist/immersive/avd-config.ini
 adb shell dumpsys window > dist/immersive/window-before.txt
 adb exec-out screencap -p > dist/immersive/screen-before.png
 # The instrumentation probe still requires nonzero navigation geometry and
@@ -42,12 +46,15 @@ adb install artifact/android/app/build/outputs/apk/debug/app-debug.apk
 adb install artifact/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 run_tests() {
   local name="$1" required="$2"
+  adb shell rm -rf /sdcard/Download/axiom-immersive
+  adb logcat -c
   adb shell am instrument -w -r -e class com.axiom.android.ImmersiveUiTest -e requireCutout "$required" \
     com.axiom.android.test/androidx.test.runner.AndroidJUnitRunner | tee "dist/immersive/$name.txt"
   adb pull /sdcard/Download/axiom-immersive "dist/immersive/$name-screens" || true
   adb logcat -d -s ImmersiveEvidence:I > "dist/immersive/$name-geometry.txt" || true
   grep -Eq '^OK \(5 tests\)' "dist/immersive/$name.txt"
   ! grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|shortMsg=' "dist/immersive/$name.txt"
+  python3 android/scripts/verify-immersive-evidence.py "dist/immersive/$name-screens"
 }
 run_tests portrait false
 if [ "$api" -ge 28 ]; then

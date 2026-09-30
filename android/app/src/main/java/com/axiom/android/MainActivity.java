@@ -107,6 +107,15 @@ public final class MainActivity extends Activity {
     }
     private void configureImmersiveWindow(){
         WindowCompat.setDecorFitsSystemWindows(getWindow(),false);
+        // A focused floating Dialog can clear the Activity's legacy hide flags.
+        // Keep its Decor color views transparent so they cannot cover the page
+        // with empty bars while SystemUI itself is hidden. Root stays CANVAS.
+        getWindow().setStatusBarColor(Color.TRANSPARENT);
+        getWindow().setNavigationBarColor(Color.TRANSPARENT);
+        if(Build.VERSION.SDK_INT>=29){
+            getWindow().setStatusBarContrastEnforced(false);
+            getWindow().setNavigationBarContrastEnforced(false);
+        }
         if(Build.VERSION.SDK_INT>=28){
             WindowManager.LayoutParams params=getWindow().getAttributes();
             params.layoutInDisplayCutoutMode=Build.VERSION.SDK_INT>=30

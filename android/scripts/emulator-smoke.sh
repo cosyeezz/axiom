@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+trap 'rc=$?; printf "Failure at line %s (exit %s): %s\n" "$LINENO" "$rc" "$BASH_COMMAND" >&2' ERR
 mkdir -p dist/diagnostics
 capture_logs() {
   rc=$?
@@ -26,7 +27,7 @@ adb logcat -b all -c
 cp "${ANDROID_AVD_HOME:-$HOME/.android/avd}/test.avd/config.ini" dist/diagnostics/avd-config.ini
 cp "$ANDROID_HOME/emulator/source.properties" dist/diagnostics/emulator-source.properties
 adb shell getprop qemu.hw.mainkeys | tr -d '\r' > dist/diagnostics/mainkeys.txt
-grep -qx '0' dist/diagnostics/mainkeys.txt
+grep -Eq '^hw\.mainKeys[[:space:]]*=[[:space:]]*no[[:space:]]*$' dist/diagnostics/avd-config.ini
 adb shell dumpsys window > dist/diagnostics/window-before.txt
 adb exec-out screencap -p > dist/diagnostics/screen-before.png
 # API30 must expose a real software navigation window before opening the app.
@@ -41,7 +42,11 @@ adb shell settings get secure navigation_mode > dist/diagnostics/navigation-mode
 adb shell wm size > dist/diagnostics/display-size.txt
 adb shell dumpsys webviewupdate > dist/diagnostics/webview.txt
 python3 android/scripts/verify-webview.py < dist/diagnostics/webview.txt
+# Clean only this disposable test-evidence directory; stale frames cannot pass.
+adb shell rm -rf /sdcard/Download/axiom-immersive
 gradle -p android --no-daemon :app:connectedDebugAndroidTest
+adb pull /sdcard/Download/axiom-immersive dist/diagnostics/optical-screens
+python3 android/scripts/verify-immersive-evidence.py dist/diagnostics/optical-screens
 if [ -f dist/Axiom-Android.apk ]; then
   # AGP can remove the debug app during instrumentation cleanup.
   installed=$(adb shell pm list packages com.axiom.android | tr -d '\r')
