@@ -23,7 +23,16 @@ python3 android/scripts/verify-webview.py < dist/immersive/webview-before.txt
 # SDK package names do not pin revisions; retain actual image/emulator identity.
 api=$(adb shell getprop ro.build.version.sdk | tr -d '\r')
 cp "$ANDROID_HOME/system-images/android-$api/google_apis/x86_64/source.properties" dist/immersive/image-source.properties
-"$ANDROID_HOME/emulator/emulator" -version > dist/immersive/emulator-version.txt
+# Read SDK package metadata instead of launching a second emulator binary.
+cp "$ANDROID_HOME/emulator/source.properties" dist/immersive/emulator-source.properties
+grep '^Pkg.Revision[[:space:]]*=' dist/immersive/emulator-source.properties > dist/immersive/emulator-version.txt
+cp "${ANDROID_AVD_HOME:-$HOME/.android/avd}/test.avd/config.ini" dist/immersive/avd-config.ini
+adb shell getprop qemu.hw.mainkeys | tr -d '\r' > dist/immersive/mainkeys.txt
+grep -qx '0' dist/immersive/mainkeys.txt
+adb shell dumpsys window > dist/immersive/window-before.txt
+adb exec-out screencap -p > dist/immersive/screen-before.png
+# The instrumentation probe still requires nonzero navigation geometry and
+# actual optical hide/reveal; a requested emulator property alone cannot pass.
 adb shell settings put secure show_ime_with_hard_keyboard 1
 adb shell settings put secure immersive_mode_confirmations confirmed
 adb shell settings get secure immersive_mode_confirmations > dist/immersive/immersive-confirmation.txt

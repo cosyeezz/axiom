@@ -1,5 +1,13 @@
 # 开发记录
 
+## 2026-09-30 Android第三轮CI结果
+
+- eb5acb0的CI36776528831已结束失败。API30构建/lint/签名成功、仪器21项19通过，两个新增光学测试在选择导航区域时因navigation Insets为零而提前失败，尚未执行真实边缘手势验收；不能复用旧轮21/21替代。
+- API26/29/35的google_apis镜像及provider前置检查成功，实际provider依次为Chrome69、Google WebView74、Google WebView124；随后用于采集版本的emulator -version触发qemu缺libpulse.so.0退出127，实际仪器测试未执行。需修证据采集方式而非跳过兼容测试。
+- 只读核对API35启动日志：原模拟器37.1.11.0已boot/provider成功，失败为额外版本查询进程，不归因于镜像未启动。版本证据改读取emulator/source.properties的Pkg.Revision（SDK包版本，精确运行build ID仍看启动日志），同时保留实际AVD config；不安装PulseAudio或尝试新启动参数。
+- API30两次navigation为零，退出后Launcher的Window dump也无导航source、stable bottom等于屏幕底部，确认为系统未创建软件导航栏，尚不确定具体AVD默认字段。AOSP Android11 DisplayPolicy明确qemu.hw.mainkeys=0启用软件导航栏；workflow保留默认headless参数并追加该property，两脚本验证值并采集启动前window/截图/AVD，API30额外要求导航source存在。probe继续要求非零真实Insets及光学隐藏/呼出/自动消失，不补固定尺寸、不改生产MainActivity。
+- release被跳过，0.1.2保持未发布候选；环境修正提交前diff/shell语法及Python4项通过，fetch后的origin/master仍包含在工作分支。以上环境修正尚须第四轮实测，不能以配置请求成功代替验收。
+
 ## 2026-09-30 Android第二轮CI结果
 
 - c173fca的CI36774073781已完成：build包含APK/lint/签名/许可/Go和API30仪器21/21通过，三项旧API30失败在补同步后不再复现，不能据此推断其余平台通过。

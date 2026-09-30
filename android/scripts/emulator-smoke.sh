@@ -23,6 +23,14 @@ for i,line in enumerate(lines):
 }
 trap capture_logs EXIT
 adb logcat -b all -c
+cp "${ANDROID_AVD_HOME:-$HOME/.android/avd}/test.avd/config.ini" dist/diagnostics/avd-config.ini
+cp "$ANDROID_HOME/emulator/source.properties" dist/diagnostics/emulator-source.properties
+adb shell getprop qemu.hw.mainkeys | tr -d '\r' > dist/diagnostics/mainkeys.txt
+grep -qx '0' dist/diagnostics/mainkeys.txt
+adb shell dumpsys window > dist/diagnostics/window-before.txt
+adb exec-out screencap -p > dist/diagnostics/screen-before.png
+# API30 must expose a real software navigation window before opening the app.
+grep -q 'ITYPE_NAVIGATION_BAR frame=' dist/diagnostics/window-before.txt
 # Disposable CI emulator: real software IME even with the host hardware keyboard.
 adb shell settings put secure show_ime_with_hard_keyboard 1
 # Pre-confirm OS education only; never force hide bars with policy_control.
