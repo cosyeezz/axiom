@@ -269,6 +269,23 @@ test("定位复用外部 tooltip.css stylesheet 的 CSSOM，不新建 <style> �
   assert.ok(tip(plain).classList.contains("ax-show"), "找不到 stylesheet 时仍显示，只是不定位");
 });
 
+test("底部统计提示向上避开输入框操作栏，普通提示仍贴近目标", () => {
+  const window = boot('<form id="composer"></form><div id="composer-status"><button id="footer" title="用量">统计</button></div><button id="other" title="普通">其他</button>', { sheets: true });
+  try {
+    const { document } = window;
+    Object.defineProperty(document.documentElement, 'clientWidth', { value: 800 });
+    Object.defineProperty(document.documentElement, 'clientHeight', { value: 600 });
+    document.getElementById('composer').getBoundingClientRect = () => ({ top: 430 });
+    tip(window).getBoundingClientRect = () => ({ width: 240, height: 60 });
+    for (const [id, top] of [['footer', '362px'], ['other', '492px']]) {
+      const button = document.getElementById(id);
+      button.getBoundingClientRect = () => ({ left: 20, top: 560, bottom: 588, width: 100 });
+      button.focus();
+      assert.equal(window.tooltipSheet.cssRules[0].style.top, top);
+    }
+  } finally { window.close(); }
+});
+
 test("reveal 前 hide 摘除节点后再次显示：重新挂载，showPopover 不断链", () => {
   const window = boot(`<button id="b" title="T">x</button>`, { popover: true });
   const b = window.document.getElementById("b");

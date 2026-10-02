@@ -57,11 +57,9 @@
 .question-evidence { border-left: 2px solid var(--line-strong); padding-left: 12px; margin-top: 12px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .question-evidence small { display: block; color: var(--muted); }
 .question-todo .question-footer { position: sticky; bottom: -12px; z-index: 1; background: var(--surface); padding: 12px 0; border-top: 1px solid var(--line); }
-/* 长题只使用输入区这一层滚动，不在答题卡中再套滚动条。 */
-.composer-wrap:has(.question-dock:not([hidden])) { max-height: 75dvh; overflow-y: auto; scrollbar-width: none; }
-.composer-wrap:has(.question-dock:not([hidden]))::-webkit-scrollbar { display: none; }
+/* 长题随附加信息区滚动，输入与底部操作栏始终留在可视区。 */
 @media (max-width: 700px) {
-  .shell:not(.mobile-expanded) .composer-wrap > #question-dock:not([hidden]) { display: block; }
+  .shell:not(.mobile-expanded) .composer-context > #question-dock:not([hidden]) { display: block; }
   .question-dock { padding: 8px; }
   .question-help { display: none; }
   .question-todo .question-footer { bottom: -8px; }

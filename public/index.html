@@ -98,8 +98,9 @@
             </section>
           </div>
           <div class="composer-wrap">
-            <section id="question-dock" class="question-dock" aria-label="待回答的问题" hidden></section>
             <button id="latest" class="secondary" type="button" aria-controls="transcript" hidden>回到最新消息 ↓</button>
+            <div class="composer-context">
+            <section id="question-dock" class="question-dock" aria-label="待回答的问题" hidden></section>
             <div id="message-queue" aria-label="待发送队列" aria-live="polite" hidden></div>
             <div id="task-runs" role="status" aria-label="运行中的子代理任务" hidden></div>
             <div id="compaction-progress" role="status" aria-live="polite" aria-atomic="true" aria-label="后台上下文压缩进度" hidden></div>
@@ -127,6 +128,7 @@
               </section>
             </div>
             <div id="image-attachments" class="image-attachments" aria-label="待发送图片" hidden></div>
+            </div>
             <form id="composer">
               <label for="prompt" class="sr-only">任务内容</label
               ><textarea
@@ -173,19 +175,7 @@
               <span id="task-timer" role="timer" aria-label="当前任务累计运行时间" hidden><span class="task-timer-dot" aria-hidden="true"></span><span id="task-timer-value">0s</span></span>
               <button type="button" id="session-billing-trigger" class="composer-billing" aria-haspopup="dialog" aria-label="查看会话累计估算账单"><span id="session-bill-total">账单</span></button>
             </div>
-            <div id="composer-help" class="utility-popover" popover role="dialog" aria-label="输入快捷键">
-              <h2>输入快捷键</h2>
-              <p id="composer-action-help" hidden>Enter 发送</p>
-              <dl class="shortcut-list">
-                <dt>/ · @</dt><dd>选择 Skill、文件或文件夹</dd>
-                <dt>Enter</dt><dd>空闲时发送；运行时介入或排队</dd>
-                <dt>Shift / Ctrl / ⌘ + Enter</dt><dd>换行</dd>
-                <dt>Ctrl+Z</dt><dd>撤销</dd>
-                <dt>Ctrl+C</dt><dd>清空文字</dd>
-                <dt>双按 Esc</dt><dd>安全停止，等待当前一步结束</dd>
-              </dl>
-              <p>运行操作菜单点击即执行；强制停止仍需确认。</p>
-            </div>
+            <span class="sr-only" id="composer-action-help" hidden>Enter 发送</span>
             <span class="sr-only" id="composer-shortcuts">/ 选择 Skill，@ 引用文件或文件夹；Enter 发送；Shift、Ctrl 或 Command + Enter 换行；Ctrl+Z 撤销；Ctrl+C 清空文字；双按 Esc 安全停止。</span>
           </div>
         </section>

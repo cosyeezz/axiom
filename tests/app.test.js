@@ -1000,9 +1000,9 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.match(window.runtimeSummary({ context: { tokens: 12000, contextWindow: 10000, percent: 120 } })[1], /120\.0%/, "超窗口不钳制为100%");
     assert.equal(window.runtimeSummary({ observationPack: { folded: 3 } }).length, 3, 'OP 不再占用信息栏');
     assert.equal($("session-runtime").parentElement.id, "composer-status");
-    assert.equal(window.document.querySelector('.composer-model-trigger').parentElement.id, "composer-status");
-    assert.equal($("composer-action-help").parentElement.id, "composer-help");
-    assert.equal($("composer-help").hasAttribute("popover"), true);
+    assert.equal(window.document.querySelector('.composer-model-trigger').parentElement.className, "actions");
+    assert.equal($("composer-action-help").className, "sr-only");
+    assert.equal($("composer-help"), null);
     assert.equal($("composer-shortcuts").className, "sr-only");
     assert.equal(window.document.querySelector('.composer-split').parentElement.className, "actions");
     assert.equal($("subagent-model").value, "");

@@ -110,9 +110,15 @@ with sync_playwright() as p:
         }''')
         checks = page.evaluate('''() => {
             const $=id=>document.getElementById(id), t=$('transcript').getBoundingClientRect(), c=document.querySelector('.composer-wrap').getBoundingClientRect();
+            const context=document.querySelector('.composer-context'), action=document.querySelector('.composer-split'), a=action.getBoundingClientRect(), form=$('composer').getBoundingClientRect();
+            // The new bottom toolbar takes priority over the old 50% whole-composer cap.
+            // Preserve transcript space and scroll auxiliary content, never the actions.
             return [document.documentElement.scrollWidth<=innerWidth,
-                c.height<=$('workspace').clientHeight/2+1, t.height>=$('workspace').clientHeight*.3,
+                c.height<=$('workspace').clientHeight-48+1, t.height>=48-1,
                 t.bottom<=c.top+1, c.bottom<=innerHeight+1,
+                a.bottom<=form.bottom-1 && a.top>=$('prompt').getBoundingClientRect().bottom,
+                action.contains(document.elementFromPoint(a.x+a.width/2, a.bottom-2)),
+                getComputedStyle(context).overflowY==='auto' && getComputedStyle(document.querySelector('.composer-wrap')).overflowY==='visible',
                 [...document.querySelectorAll('#output details[open] > summary')].every(el=>getComputedStyle(el).position!=='sticky'),
                 $('prompt').scrollHeight>$('prompt').clientHeight];
         }''')

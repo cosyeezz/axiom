@@ -62,7 +62,7 @@ try:
                 if BASELINE: continue
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), (width, theme)
                 expect(page.locator('#github-link')).not_to_be_visible()
-                expect(page.locator('#composer-help')).not_to_be_visible()
+                assert page.locator('#composer-help, .composer-help-trigger').count() == 0
                 expect(page.locator('#composer-action-help')).not_to_be_visible()
                 phone = width <= 700
                 # Navigation owns the controls, including a usable rail after folding.
@@ -153,22 +153,16 @@ try:
                 expect(page.locator('#session-billing')).to_have_attribute('open', '')
                 page.keyboard.press('Escape')
                 show_tools()
-                help_button = page.locator('.composer-help-trigger')
-                for selector in ['.composer-help-trigger', '.composer-session-info']:
+                for selector in ['.composer-session-info']:
                     bounds = page.locator(selector).bounding_box()
                     assert bounds and bounds['x'] >= 0 and bounds['x'] + bounds['width'] <= width + 1, (selector, bounds)
                     if width < 720: assert bounds['height'] >= 44, selector
-                help_button.focus(); page.keyboard.press('Space')
-                expect(page.locator('#composer-help')).to_be_visible()
-                expect(page.locator('#composer-help')).to_contain_text('双按 Esc')
-                page.keyboard.press('Escape')
-                expect(help_button).to_be_focused()
                 close_tools()
                 assert page.locator('#session-runtime').evaluate('(e) => e.parentElement.id') == 'composer-status'
                 prompt_bounds = page.locator('#prompt').bounding_box()
                 action_bounds = page.locator('.composer-split').bounding_box()
-                assert abs(prompt_bounds['y'] - action_bounds['y']) <= 4
-                assert prompt_bounds['x'] + prompt_bounds['width'] <= action_bounds['x']
+                assert prompt_bounds['y'] + prompt_bounds['height'] <= action_bounds['y']
+                assert action_bounds['y'] + action_bounds['height'] <= height
                 model_name = page.locator('.composer-model-name')
                 original = model_name.inner_text()
                 model_name.evaluate('(e) => e.textContent = "long-model-name-that-must-truncate-without-hiding-effort"')
@@ -187,17 +181,14 @@ try:
             if not BASELINE:
                 page.goto(url + '/#session=ui-waiting')
                 page.reload()  # Hash-only navigation does not bootstrap another session.
-                expect(page.locator('#composer-action-help')).not_to_be_visible()
+                expect(page.locator('#composer-action-help')).to_have_class('sr-only')
+                assert page.locator('#composer-action-help').evaluate("el => getComputedStyle(el).clip === 'rect(0px, 0px, 0px, 0px)'")
                 expect(page.locator('#composer-action-help')).to_contain_text('Enter 介入')
                 expect(page.locator('#composer-action-help')).to_contain_text('按钮执行 stop')
                 page.evaluate('previewCommands.length = 0')
                 if phone: page.locator('#mobile-more').click()
-                for selector in ['#view-options-trigger', '.composer-help-trigger']:
-                    if selector == '.composer-help-trigger': show_tools()
+                for selector in ['#view-options-trigger']:
                     page.locator(selector).focus(); page.keyboard.press('Enter')
-                    if selector == '.composer-help-trigger':
-                        expect(page.locator('#composer-action-help')).to_be_visible()
-                        expect(page.locator('#composer-action-help')).to_contain_text('按钮执行 stop')
                     page.keyboard.press('Escape')
                     expect(page.locator(selector)).to_be_focused()
                     if phone and selector == '#view-options-trigger':

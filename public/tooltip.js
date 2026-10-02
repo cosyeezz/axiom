@@ -104,7 +104,13 @@ function position(el) {
   const vh = document.documentElement.clientHeight;
   const x = Math.max(EDGE, Math.min(r.left + (r.width - t.width) / 2, vw - t.width - EDGE));
   let y = r.bottom + GAP; // 默认目标下方
-  if (y + t.height > vh - EDGE) y = r.top - GAP - t.height >= EDGE ? r.top - GAP - t.height : vh - t.height - EDGE;
+  if (y + t.height > vh - EDGE) {
+    // Footer hints must not sit over the composer's persistent action buttons.
+    const composer = el.closest('#composer-status') && document.getElementById('composer');
+    const top = composer ? composer.getBoundingClientRect().top : r.top;
+    y = composer ? Math.max(EDGE, top - GAP - t.height)
+      : top - GAP - t.height >= EDGE ? top - GAP - t.height : vh - t.height - EDGE;
+  }
   p.left = `${Math.round(x)}px`;
   p.top = `${Math.round(y)}px`;
 }

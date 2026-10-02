@@ -44,7 +44,10 @@ test('focused runtime keeps details reachable, distinguishes unknown and estimat
     for (const id of ['github-link', 'toggle-theme', 'open-raw-io', 'service-version', 'conversation-font-scale']) {
       assert.equal($(id).closest('[popover]').id, 'view-options');
     }
-    for (const selector of ['#open-workspace', '#import-session', '#view-options-trigger', '.composer-help-trigger']) {
+    assert.equal(window.document.querySelector('.composer-help-trigger'), null);
+    assert.equal($('composer-help'), null);
+    assert.equal($('composer-action-help').className, 'sr-only');
+    for (const selector of ['#open-workspace', '#import-session', '#view-options-trigger', '.composer-session-info']) {
       const node = window.document.querySelector(selector);
       assert.ok(node.title);
       assert.ok(node.getAttribute('aria-label'));

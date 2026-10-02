@@ -1,5 +1,16 @@
 # 开发记录
 
+## 2026-10-02 输入区底部操作栏与信息分区
+
+- 时间：2026-10-02 01:10（本机 -07:00）。原因：移除用户指定的操作指引键盘入口，并参考 Codex 将操作留在输入框底部。独立 `feat/composer-bottom-toolbar` 工作树基于 `origin/master b29b419`；先后同步侧栏改动 `a8b3501` 与模型配置／鉴权改动 `ae7a216`，保留全部上游功能和主 checkout 未跟踪资料。
+- 实施：正文占满上方宽度，辅助工具、模型／思考等级、发送／停止分区放入独立底部操作栏；移除帮助弹层和键盘按钮，保留快捷键与动态读屏说明。问题、队列、任务、附件使用独立可滚动区域，编辑区增长向上展开；不再滚动整块输入区。框外仅展示会话状态与用量／计时／估算账单，窄屏工具仍进菜单、触控入口至少 44px。
+- 审查补修：补全显现时为编辑行、补全盒及工具栏保留最小高度，避免长问题与附件在短视口挤压、裁切发送按钮；浏览器新增按钮上／中／下三点命中及完整边界断言。状态提示气泡向上避开底部操作栏，辅助按钮禁止收缩；保留菜单层级、Escape、焦点返回及原发送／停止事件。
+- 设计：复用 Linear 的 surface／raised／line／muted／accent 主题 token、4／8／12／16px 间距；输入容器 16px、控件 8px 圆角，无新增依赖或装饰阴影。手机阅读回归从旧“整个输入区不得超过 50%”改为可用高度限高、保留至少 48px 对话区及完整操作栏、附加区独立滚动；正常与展开样式均验证，未放宽横向溢出或按钮可达断言。
+- 验证过程：首次全量 14 项失败来自临时目录仍位于真实用户目录下，SDK 沿祖先发现九个 `.agents/skills`，污染技能与压缩预算；迁到 `F:/worktrees` 并隔离 HOME／USERPROFILE／TEMP／TMP／TMPDIR／Pi 后全部恢复。另一次并行负载出现已有 remote 计时夹具失败（`ttlMs:0` 跨 await 比较精确次数）；独立 remote 通过，全量串行 1068 项、1065 通过、3 跳过、0 失败（306 秒）。未修改远程代码／断言或用户配置。紧凑输入、焦点、图标、模型级联、UI polish、手机阅读六套 Chromium 回归通过；集成最新模型配置后的复验结果随后补记。
+- 交付检查：原生 ES 模块无独立 build 脚本；JS 语法、`npm pack --dry-run`、`git diff --check` 通过。截图／日志在仓库外 `F:/worktrees/composer-*-integrated`、`composer-full-verified.log`；测试生成 INDEX 漂移不纳入提交。未进行移动真机软键盘、屏幕阅读器或桌面壳原生验收，不调用真实模型。
+- 最终集成复验：`ae7a216` 上的隔离串行全量 1083 项、1080 通过、3 跳过、0 失败（318 秒，`F:/worktrees/composer-final-full.log`）；六套 Chromium 重新全部通过，包含 8 宽度／双主题、4 短视口长问题＋附件＋补全、展开状态及上游侧栏入口。语法、打包与差异检查再次通过；截图位于 `F:/worktrees/composer-final-*`。
+- 文件：`public/{index.html,composer-controls.js,composer-controls.css,question.css,tooltip.js}`；对应 app／composer／focus／tooltip Node 测试及 compact-composer／focus-ui／mobile-reading 浏览器回归；`README.md`、本记录。
+
 ## 2026-10-02 模型配置与 Codex 认证重构
 
 - 时间：2026-10-02（本机 -07:00）。在 feat/model-config-rebuild 独立工作树实施，合入最新 origin/master a8b3501 后验证；不修改真实账号/凭据，不发真实模型请求。

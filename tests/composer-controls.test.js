@@ -4,7 +4,7 @@ import { JSDOM } from 'jsdom';
 import { publicSource } from './helpers/public-source.js';
 const source = await publicSource('composer-controls');
 function fixture() {
-  const dom = new JSDOM(`<body><div class="context-bar"><div class="icon-group"><button type="button" id="add-context" popovertarget="context-menu"></button></div></div><button id="session-inspector-trigger"></button><div id="composer-help" popover><p id="composer-action-help" hidden></p></div><form id="composer"><textarea id="prompt"></textarea><div class="actions"></div><button id="send"></button><button id="send-steer"></button><button id="send-followup"></button></form><div id="composer-status"><div id="session-runtime"></div><button id="session-billing-trigger"></button></div><button id="stop"></button><button id="force-stop"></button></body>`, { runScripts: 'outside-only' });
+  const dom = new JSDOM(`<body><div class="context-bar"><div class="icon-group"><button type="button" id="add-context" popovertarget="context-menu"></button></div></div><button id="session-inspector-trigger"></button><span id="composer-action-help" class="sr-only" hidden></span><form id="composer"><textarea id="prompt"></textarea><div class="actions"></div><button id="send"></button><button id="send-steer"></button><button id="send-followup"></button></form><div id="composer-status"><div id="session-runtime"></div><button id="session-billing-trigger"></button></div><button id="stop"></button><button id="force-stop"></button></body>`, { runScripts: 'outside-only' });
   const w = dom.window;
   w.matchMedia = () => ({ matches: w.innerWidth <= 1000 });
   const original = w.Element.prototype.matches;
@@ -94,14 +94,15 @@ test('open model menus close when unavailable and stale choices cannot commit', 
   } finally { dom.window.close(); }
 });
 
-test('tools move into the input row; footer owns statistics and model without duplicate hints', () => {
+test('tools and model share the bottom action bar; footer owns statistics without a help entry', () => {
   const { dom, w, api, state } = fixture();
   try {
     const tools = w.document.getElementById('composer-tools');
     const more = w.document.querySelector('.composer-tools-trigger');
     assert.equal(tools.parentElement.className, 'actions');
     assert.equal(w.document.querySelector('.composer-split').parentElement.lastElementChild.className, 'composer-split');
-    assert.equal(w.document.querySelector('.composer-model-trigger').parentElement.id, 'composer-status');
+    assert.equal(w.document.querySelector('.composer-model-trigger').parentElement.className, 'actions');
+    assert.equal(w.document.querySelector('.composer-help-trigger'), null);
     assert.equal(w.document.getElementById('session-runtime').parentElement.id, 'composer-status');
     w.innerWidth = 390; w.dispatchEvent(new w.Event('resize'));
     assert.equal(tools.getAttribute('popover'), 'auto');

@@ -38,20 +38,25 @@ try:
                 box = prompt.bounding_box()
                 action = primary.bounding_box()
                 assert box['height'] <= 45, (width, box)
-                assert abs(box['y'] - action['y']) <= 4, (width, box, action)
-                assert box['x'] + box['width'] <= action['x'], (width, 'overlap')
-                assert box['width'] >= 120, (width, 'input too narrow', box)
+                assert box['y'] + box['height'] <= action['y'], (width, box, action)
+                assert box['width'] >= page.locator('#composer').bounding_box()['width'] - 2, (width, 'full-width input', box)
+                toolbar_bottom = page.locator('#composer .actions').bounding_box()
+                assert abs(toolbar_bottom['y'] + toolbar_bottom['height'] - page.locator('#composer').bounding_box()['y'] - page.locator('#composer').bounding_box()['height']) <= 2
+                assert action['y'] + action['height'] <= 900
                 assert page.locator('#composer-status').is_visible()
                 assert page.locator('#session-runtime').is_visible()
                 assert '上下文 5,000 / 128,000' in page.locator('#session-runtime').inner_text()
                 assert '≈ $0.023' in page.locator('#session-bill-total').inner_text()
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), width
                 expect(page.locator('#composer-action-help')).not_to_be_visible()
-                expect(page.locator('#composer-help')).not_to_be_visible()
+                assert page.locator('#composer-help, .composer-help-trigger').count() == 0
                 prompt.fill('长文本与换行\n' + '保留完整编辑能力，不遮挡按钮。' * 100)
                 page.wait_for_timeout(60)
                 assert 44 < prompt.bounding_box()['height'] <= 240
-                assert abs(prompt.bounding_box()['y'] - primary.bounding_box()['y']) <= 4
+                assert prompt.bounding_box()['y'] + prompt.bounding_box()['height'] <= primary.bounding_box()['y']
+                assert abs(primary.bounding_box()['y'] - action['y']) <= 1, (width, 'toolbar moved with text')
+                prompt.evaluate('el => el.scrollTop = el.scrollHeight')
+                assert abs(primary.bounding_box()['y'] - action['y']) <= 1
                 prompt.fill('')
                 if width <= 1000:
                     page.locator('.composer-tools-trigger').click()
@@ -78,6 +83,47 @@ try:
                 assert page.locator('#session-billing').get_attribute('open') is not None
                 page.locator('#session-detail-close').click()
                 page.screenshot(path=str(out / f'{theme}-{width}.png'))
+        # Large auxiliary content scrolls independently: no viewport-fixed overlays or hidden actions.
+        for width, height in [(1440, 600), (768, 560), (390, 480), (320, 360)]:
+            page.set_viewport_size({'width': width, 'height': height})
+            prompt.fill('多行草稿\n' * 40)
+            page.evaluate('''() => {
+                const dock = document.querySelector('#question-dock');
+                dock.hidden = false;
+                dock.innerHTML = '<p>' + '待回答问题与说明<br>'.repeat(80) + '</p><button type="button">确认</button>';
+                const attachments = document.querySelector('#image-attachments');
+                attachments.hidden = false;
+                attachments.innerHTML = '<div><img alt="待发送图片" src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2288%22 height=%2272%22/%3E"></div>'.repeat(12);
+                const completion = document.querySelector('#prompt-completion');
+                completion.hidden = false;
+                completion.innerHTML = '<div role="option">补全候选</div>'.repeat(20);
+            }''')
+            page.wait_for_timeout(80)
+            for expanded in [False, True]:
+                page.evaluate('(value) => document.querySelector(".shell").classList.toggle("mobile-expanded", value)', expanded)
+                before = primary.bounding_box()
+                prompt_box = prompt.bounding_box()
+                assert prompt_box['y'] >= 0 and prompt_box['height'] >= 44, (width, height, prompt_box)
+                assert before['y'] >= prompt_box['y'] + prompt_box['height'], (width, height, before)
+                composer_box = page.locator('#composer').bounding_box()
+                assert before['y'] + before['height'] <= min(height, composer_box['y'] + composer_box['height'] - 1), (width, height, before, composer_box)
+                assert page.locator('#prompt-completion').bounding_box()['height'] >= 44
+                assert page.locator('.composer-context').evaluate('el => el.scrollHeight > el.clientHeight')
+                for scroll in [0, 100000]:
+                    page.locator('.composer-context').evaluate('(el, value) => el.scrollTop = value', scroll)
+                    prompt.evaluate('(el, value) => el.scrollTop = value', scroll)
+                    after = primary.bounding_box()
+                    assert abs(after['y'] - before['y']) < 1
+                    assert primary.evaluate('el => { const r = el.getBoundingClientRect(); return [2, r.height / 2, r.height - 2].every(y => el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + y))); }')
+                assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), (width, height)
+            page.screenshot(path=str(out / f'stress-{width}-{height}.png'))
+            page.evaluate('''() => {
+                for (const id of ['question-dock', 'image-attachments', 'prompt-completion']) {
+                    const el = document.getElementById(id); el.hidden = true; el.replaceChildren();
+                }
+                document.querySelector('.shell').classList.remove('mobile-expanded');
+            }''')
+        page.set_viewport_size({'width': 320, 'height': 900})
         # Enter after explicit newline remains the existing send path; test Shift+Enter editing.
         prompt.fill('第一行')
         prompt.press('Shift+Enter')
@@ -97,7 +143,7 @@ try:
         page.screenshot(path=str(out / 'running-320.png'))
         assert not errors, errors
         browser.close()
-    print('Compact composer Chromium checks passed (8 widths, 2 themes, menus, long text, billing, running)')
+    print('Compact composer Chromium checks passed (8 widths, 2 themes, menus, long text, billing, running, 4 short viewports with attachments/questions/completion)')
 finally:
     server.terminate()
     server.wait(timeout=15)

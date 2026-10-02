@@ -1,4 +1,4 @@
-import { composerIconNode, actionIconNode } from './icons.js';
+import { composerIconNode } from './icons.js';
 import { createChoiceColumn } from './choice-column.js';
 import { createThinkingPicker } from './thinking-picker.js';
 
@@ -23,24 +23,6 @@ export function mountComposerControls({ state, providers, models, levels, select
   const more = document.createElement('button'); more.type = 'button'; more.className = 'icon-button composer-tools-trigger';
   more.title = '输入操作'; more.setAttribute('aria-label', '更多输入操作'); more.setAttribute('aria-expanded', 'false'); more.setAttribute('aria-controls', tools.id);
   more.append(document.createTextNode('…'));
-  const helpPanel = $('composer-help');
-  if (helpPanel) {
-    const help = document.createElement('button'); help.type = 'button'; help.className = 'icon-button composer-help-trigger';
-    help.title = '输入快捷键'; help.setAttribute('aria-label', help.title);
-    help.setAttribute('popovertarget', 'composer-help'); help.setAttribute('aria-controls', 'composer-help');
-    help.setAttribute('aria-expanded', 'false'); help.setAttribute('aria-haspopup', 'dialog');
-    help.append(actionIconNode('keyboard')); tools.append(help);
-    const placeHelp = () => {
-      const rect = help.getBoundingClientRect();
-      helpPanel.style.left = `${Math.max(8, Math.min(rect.right - helpPanel.offsetWidth, innerWidth - helpPanel.offsetWidth - 8))}px`;
-      helpPanel.style.top = `${Math.max(8, rect.top - helpPanel.offsetHeight - 8)}px`;
-    };
-    helpPanel.addEventListener('toggle', (event) => {
-      help.setAttribute('aria-expanded', String(event.newState === 'open'));
-      if (event.newState === 'open') placeHelp();
-    });
-    window.addEventListener('resize', () => { if (helpPanel.matches(':popover-open')) placeHelp(); });
-  }
   const trigger = document.createElement('button');
   trigger.type = 'button'; trigger.className = 'composer-model-trigger';
   trigger.setAttribute('aria-label', '选择供应商、模型和思考等级');
@@ -50,9 +32,7 @@ export function mountComposerControls({ state, providers, models, levels, select
   const arrow = document.createElement('button'); arrow.type = 'button'; arrow.append(icon('chevron'));
   arrow.setAttribute('aria-label', '选择运行操作'); arrow.setAttribute('aria-haspopup', 'menu');
   split.append(primary, arrow);
-  actions.append(tools, more, split);
-  const footer = $('composer-status') || actions;
-  footer.insertBefore(trigger, $('session-billing-trigger') || null);
+  actions.append(tools, more, trigger, split);
   const modelPanel = document.createElement('div');
   modelPanel.className = 'composer-model-panel'; modelPanel.popover = 'auto';
   modelPanel.setAttribute('role', 'dialog'); modelPanel.setAttribute('aria-label', '模型配置');
@@ -83,7 +63,7 @@ export function mountComposerControls({ state, providers, models, levels, select
     if (button && !button.hasAttribute('popovertarget') && tools.hasAttribute('popover')) close(tools, false);
   });
   tools.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape' || helpPanel?.matches(':popover-open')) return;
+    if (event.key !== 'Escape') return;
     event.preventDefault(); event.stopPropagation(); close(tools, false); more.focus();
   });
   syncToolsLayout();
