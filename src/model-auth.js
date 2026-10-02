@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { CredentialSynchronizationError } from "@earendil-works/pi-coding-agent";
 
 const safeUrl = (value) => {
   try {
@@ -14,13 +15,16 @@ function eventView(event) {
 }
 
 // 一个连接一个登录流程。SDK 负责授权/落库/刷新 token；桥接层不保存或回传凭据。
-export function createModelAuthService({ auth, onChanged = () => {}, flowTimeoutMs = 600_000 }) {
+export function createModelAuthService({ auth, onChanged = () => {}, flowTimeoutMs = 1_200_000 }) {
   const flows = new Map();
   const view = (flow) => ({ flowId: flow.id, providerId: flow.providerId, status: flow.status,
-    events: flow.events, prompt: flow.prompt, ...(flow.error ? { error: flow.error } : {}) });
+    events: flow.events, prompt: flow.prompt, credentialsSaved: Boolean(flow.credentialsSaved),
+    ...(flow.applied !== undefined ? { applied: flow.applied } : {}), ...(flow.error ? { error: flow.error } : {}) });
   function cancel(flow) {
     if (flow.status === "running") {
-      flow.status = "cancelled"; flow.controller.abort(); flow.reject?.(new Error("Cancelled"));
+      // 已保存后无法回滚凭据；目录收尾仍返回真实结果，不把超时伪装成未登录。
+      if (!flow.credentialsSaved) flow.status = "cancelled";
+      flow.controller.abort(); flow.reject?.(new Error("Cancelled"));
     }
     clearTimeout(flow.timer); flow.prompt = null;
   }
@@ -65,12 +69,26 @@ export function createModelAuthService({ auth, onChanged = () => {}, flowTimeout
           });
         },
       };
-      void Promise.resolve().then(() => auth.login(request.providerId, request.authType, interaction)).then(async () => {
-        await auth.refreshModels(); await onChanged();
-        if (!signal.aborted) flow.status = "success";
+      void Promise.resolve().then(() => auth.login(request.providerId, request.authType, interaction)).catch((error) => {
+        // SDK 已落库但内部快照同步失败：不要求用户重走授权，继续重建目录。
+        if (!(error instanceof CredentialSynchronizationError) || error.operation !== "login" || error.providerId !== request.providerId) throw error;
+      }).then(async () => {
+        flow.credentialsSaved = true;
+        try { await auth.refreshModels(); flow.applied = true; }
+        catch { flow.applied = false; throw new Error("refresh failed"); }
+        flow.status = "success";
       }).catch(() => {
-        if (!signal.aborted) { flow.status = "error"; flow.error = "登录或目录刷新失败，请检查网络与凭据后重试"; }
-      }).finally(() => { clearTimeout(flow.timer); flow.prompt = null; });
+        if (flow.credentialsSaved || !signal.aborted) {
+          flow.status = "error";
+          flow.error = flow.credentialsSaved
+            ? "凭据已保存，但模型目录应用失败。请关闭此窗口，检查供应商配置后刷新；无需重复授权。"
+            : "登录失败，请检查网络与凭据后重试";
+        }
+      }).finally(async () => {
+        clearTimeout(flow.timer); flow.prompt = null;
+        // 通知失败不改变真实的保存/应用结果，也不泄漏 SDK 的凭据错误原文。
+        if (flow.credentialsSaved) await Promise.resolve().then(onChanged).catch(() => {});
+      });
       return view(flow);
     }
     const flow = get(owner, request.flowId);

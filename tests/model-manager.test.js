@@ -69,6 +69,55 @@ function harness() {
     selectProvider, root, tab, openModels, openConnection };
 }
 
+test("认证先行：未配置供应商可见，Codex 与 API 分离，草稿不拦截认证入口", async () => {
+  const h = harness();
+  try {
+    const loaded = h.manager.load();
+    h.flushGet({ authProviders: [
+      { id: "openai", name: "OpenAI", configured: false, methods: [{ type: "api_key" }] },
+      { id: "openai-codex", name: "Codex", configured: false, methods: [{ type: "oauth" }] },
+      { id: "env-only", name: "Environment", configured: false, methods: [] },
+    ] });
+    await loaded;
+    assert.ok(h.navItem("openai-codex"), "即使没有目录模型也能找到认证入口");
+    assert.equal(h.navItem("openai-codex").getAttribute("aria-current"), "true");
+    assert.match(h.detail().textContent, /ChatGPT 账号授权/);
+    assert.match(h.detail().textContent, /连接未验证/);
+    assert.ok(h.button("使用 ChatGPT 登录"));
+    assert.equal(h.detail().querySelector("input[type=password]"), null);
+    assert.equal(h.button("配置自定义连接"), undefined);
+    h.button("连接 OpenAI API").click();
+    assert.match(h.detail().textContent, /按 API 用量计费/);
+    h.button("配置 API Key").click();
+    assert.equal(h.lastPending("models.auth.start").args.authType, "api_key");
+    h.lastPending("models.auth.start").resolve({ status: "cancelled" }); await h.settle();
+    h.window.document.querySelector(".mm-auth-dialog .dialog-actions button").click();
+    h.button("配置自定义连接").click();
+    const id = h.detail().querySelector(".mm-form input"); h.setInput(id, "pending-proxy");
+    h.button("连接 Codex 订阅").click();
+    assert.ok(h.button("使用 ChatGPT 登录"));
+    assert.ok(h.navItem("pending-proxy"), "草稿依旧保留");
+    await h.selectProvider("env-only");
+    assert.match(h.detail().textContent, /没有网页登录入口/);
+  } finally { h.window.close(); }
+});
+
+test("已有 Codex/未知协议不被下拉框悄悄变更；未应用不展示成已应用", async () => {
+  const h = harness();
+  try {
+    const loaded = h.manager.load();
+    h.flushGet({ providers: [{ id: "openai-codex", api: "openai-codex-responses" }, { id: "legacy", api: "extension-api" }],
+      applied: false, applyError: "test error" });
+    await loaded;
+    assert.equal(h.detail().querySelector('select[aria-label="API 协议"]').value, "openai-codex-responses");
+    assert.match(h.detail().textContent, /配置未应用/);
+    await h.selectProvider("legacy");
+    assert.equal(h.detail().querySelector('select[aria-label="API 协议"]').value, "extension-api");
+    h.button("保存供应商").click();
+    assert.equal(h.lastPending("models.provider.save").args.provider.api, "extension-api");
+  } finally { h.window.close(); }
+});
+
 test("模板常量覆盖常见供应商与本地服务", () => {
   const h = harness();
   const byId = Object.fromEntries(h.window.templates.map((template) => [template.id, template]));
@@ -334,6 +383,43 @@ test("密钥保存语义：空=keep、新值=字符串、清除=null、禁止新
   assert.equal(h.calls.length, before, "非法密钥不发请求");
   assert.match(h.root().textContent, /不能新增命令执行型/);
   h.window.close();
+});
+
+test("局部删除请求头发送null，掩码改名须重填，大小写变更删除旧键", async () => {
+  for (const rename of [false, true]) {
+    const h = harness();
+    try {
+      const load = h.manager.load();
+      h.flushGet({ providers: [{ id: "p1", headers: { "x-a": masked("literal"), "x-b": masked("literal") } }] });
+      await load;
+      if (!rename) h.detail().querySelector('[aria-label="删除请求头 x-a"]').click();
+      else {
+        h.setInput(h.detail().querySelector('[aria-label="请求头名称"]'), "X-A");
+        h.button("保存供应商").click();
+        assert.equal(h.lastPending("models.provider.save"), undefined);
+        assert.match(h.root().textContent, /改名的请求头需要重新填写/);
+        h.setInput(h.detail().querySelector('[aria-label="请求头值"]'), "new-header");
+      }
+      h.button("保存供应商").click();
+      assert.deepEqual(j(h.lastPending("models.provider.save").args.provider.headers),
+        { ...(rename ? { "X-A": "new-header" } : {}), "x-b": { keep: true }, "x-a": null });
+    } finally { h.window.close(); }
+  }
+});
+
+test("显示登录凭据优先级，并阻止表单密钥被已存凭据静默覆盖", async () => {
+  const h = harness();
+  try {
+    const load = h.manager.load();
+    h.flushGet({ providers: [{ id: "p1", apiKey: masked("literal") }],
+      authProviders: [{ id: "p1", configured: true, authSource: "stored", methods: [{ type: "api_key" }] }] });
+    await load;
+    assert.match(h.detail().textContent, /优先于表单 API Key/);
+    h.setInput(h.detail().querySelector('.mm-key input'), "new-key");
+    h.button("保存供应商").click();
+    assert.equal(h.lastPending("models.provider.save"), undefined);
+    assert.match(h.root().textContent, /先明确清除登录凭据/);
+  } finally { h.window.close(); }
 });
 
 test("删除改为导航/行内图标 + 原生弹窗确认：取消不发请求，确认才发", async () => {

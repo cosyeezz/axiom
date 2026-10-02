@@ -57,7 +57,7 @@
   "applyError": "…",           // 可选：挂起应用状态的失败原因（GET 读取路径会顺带重试）
   "parseError": "…",           // 可选：旧配置导入告警（仅权威为空时）或库内结构无效
   "authProviders": [           // 支持网页登录的供应商及登录方式
-    { "id": "anthropic", "name": "Anthropic", "configured": true,
+    { "id": "anthropic", "name": "Anthropic", "configured": true, "usingOAuth": false, "authSource": "stored",
       "methods": [ { "type": "oauth", "name": "…" }, { "type": "api_key", "name": "…" } ] }
   ],
   "hidden": [ "openai", "anthropic/claude-…" ],  // 内置目录隐藏清单（见 models.hidden.set）
@@ -91,6 +91,8 @@
   - 配置里已有的 `models`、`modelOverrides` **不受本命令影响**；provider 对象上的未知顶层字段**原样保留**（无论是否回传）
   - `provider` 中出现 `models` / `modelOverrides` 键 → 报错（模型请走 models.model.save/delete）
 - `baseUrl` 若提供必须为 http/https 绝对 URL（`new URL` 可解析），否则报错
+- 登录凭据优先于表单密钥；已有存储凭据/运行时覆盖时，变更表单 `apiKey` 字符串被拒绝，提示通过账号授权区更新或先显式清除登录凭据。`keep`/缺省/删除仍允许，不自动迁移或删除 OAuth。
+- Header 为按键合并：前端部分删除必须发送该键 `null`；掩码 Header 改名须重填值，防止 `keep` 指向不存在的新键。
 - 返回新 `fingerprint`；成功后触发 `models.config.changed` 广播
 
 ### models.provider.delete `{ providerId, baseFingerprint }` → `{ fingerprint }`
@@ -136,15 +138,15 @@
 
 从供应商在线拉取模型列表，供 UI 勾选后逐条调用 `models.model.save` 加入配置。**本命令不写盘、不启用模型、不触发 `refreshModels` / `models.config.changed`**，也无 baseFingerprint（不修改文件）。
 
-- 读取已保存供应商的 `baseUrl` / `api` / `apiKey` / `headers`；**任何响应都不回传密钥明文**
+- 读取已保存供应商配置，缺省协议/端点继承运行时内置目录；服务端复用 SDK `getAuth(providerId)` 解析有效认证（存储凭据优先于表单密钥）、认证端点覆盖及供应商请求头，避免发现和推理用不同密钥。发现是供应商级操作，不套用单模型 Header 覆盖；**任何响应都不回传密钥明文**
 - 凭据解析：`!command` 命令型值**直接拒绝**（不执行）；`$VAR`/`${VAR}`/`$$`/`$!` 沿用 SDK 真实插值语义；解析不出（如环境变量缺失）→ 安全报错
 - 按 `api` 类型请求（官方接口已核实）：
 
 | api | 请求 |
 |---|---|
 | `openai-completions` / `openai-responses` | `GET {baseUrl}/models`，`Authorization: Bearer`（无 apiKey 时省略，兼容本地服务器） |
-| `anthropic-messages` | `GET {baseUrl\|https://api.anthropic.com}/v1/models?limit=1000`，`x-api-key` + `anthropic-version: 2023-06-01`（无 apiKey 报错） |
-| `google-generative-ai` | `GET {baseUrl\|…/v1beta}/models?pageSize=1000`，`x-goog-api-key`（无 apiKey 报错） |
+| `anthropic-messages` | `GET {baseUrl\|https://api.anthropic.com}/v1/models?limit=1000`，`x-api-key` + `anthropic-version: 2023-06-01`（有 apiKey 时添加） |
+| `google-generative-ai` | `GET {baseUrl\|…/v1beta}/models?pageSize=1000`，`x-goog-api-key`（有 apiKey 时添加） |
 
 - `authHeader: true` 时额外附 `Authorization: Bearer`（无法解析 apiKey 时报错）；`oauth` 供应商不支持
 - 超时 15 秒；响应体上限 5 MiB；`redirect: "error"`（重定向可能带走凭据，直接拒绝）；允许用户显式配置的本地 http 地址（如 Ollama）
@@ -172,27 +174,34 @@
 （auth/<providerId>）；桥接层不保存、不回传任何凭据。一个 WS 连接同一时刻一个流程，
 同供应商全局互斥（运行中不接受第二个登录，也不允许另一窗口登出）。
 
-- `models.auth.list {}` → `{ providers }`（同 config.get 的 authProviders：id/name/methods/configured）
+- `models.auth.list {}` → `{ providers }`（同 config.get 的 authProviders：id/name/methods/configured/usingOAuth/authSource）。SDK `ProviderAuth.apiKey` 映射为协议 `api_key`，只展示具有 login 实现的 `apiKey` / `oauth`。`configured` 与 `usingOAuth` 为本地凭据快照，不代表远端连接、订阅额度或模型权限已验证。
 - `models.auth.start { providerId, authType }` → `{ flowId, providerId, status, events, prompt? }`；
-  `authType` ∈ `api_key | oauth`，须是该供应商声明的方式；流程 10 分钟超时自动取消
+  `authType` ∈ `api_key | oauth`，须是该供应商声明的方式；流程总上限20分钟（不截短 SDK Codex 15分钟设备码期限）；未提交凭据时超时取消，保存后仅中止授权信号、等待目录收尾，不回滚凭据
 - `models.auth.status { flowId }` → 同上视图（前端 800ms 轮询）
 - `models.auth.respond { flowId, promptId, value }` → 同上；回答当前交互提问（select 选项校验，
   文本 ≤8192）；prompt 已更新或流程非 running → 报错
-- `models.auth.cancel { flowId }` → 同上（中止流程）
+- `models.auth.cancel { flowId }` → 同上（中止授权；凭据已保存则等待目录收尾并返回真实 success/error，不误报未保存）
 - `models.auth.logout { providerId }` → `{ ok: true }`（删除凭据并刷新目录；该供应商登录进行中 → 拒绝）
 - 事件视图：`auth_url` / `device_code` / `info`；URL 只回传 https 或本机地址，文本截断到 2000 字
-- 登录成功或登出后服务端 `refreshModels` 并广播 `models.config.changed`
+- 登录视图增加 `credentialsSaved: boolean` 与可选 `applied: boolean`；凭据保存后目录重建失败返回 `status: error, credentialsSaved: true, applied: false`，提示无需重复授权。SDK `CredentialSynchronizationError`（login 已提交）同样进入目录重建；异常携带的 credential/cause 不下发。广播失败不反转保存和应用结果。
+- `authSource` 为 SDK 的本地来源类别：stored/runtime/environment/models_json_key/models_json_command/fallback（可缺省），不下发 label 或秘密；清除登录凭据不清除表单/环境配置，也不保证供应商变为不可用。
+- 登录成功或凭据已保存后服务端尝试 `refreshModels` 并广播 `models.config.changed`；登出后也刷新目录。
+- `openai-codex` 使用 SDK 原生 OAuth（浏览器或设备码），API 为 `openai-codex-responses`，内置端点 `https://chatgpt.com/backend-api`。普通 `openai` API Key 是独立入口；Codex 不要求用户手填 token 或自建通用 OpenAI 兼容连接。远程部署优先设备码，账号权限按 OpenAI 提示由本人确认。
 
 ### 写命令副作用（成功后依次）
 
 1. 用 SDK 真实 schema 校验候选配置；校验器不可用或校验失败时拒绝写入，错误不包含凭据。
 2. 保存 SQLite 权威配置，同步 models.compat.json 派生镜像（不改旧 Pi 文件）。
 3. `refreshModels`：重建 `ModelRuntime`（**不联网**），`models.list` / `models.config.get`
-   立即反映新目录；**新建会话与模型切换即刻生效**
+   立即反映新目录；检查 SDK `getError()`，组合错误时保留上次已应用目录并返回未应用状态。
+   启动/认证后的应用错误也进入 GET 重试路径。**新建会话与模型切换即刻生效**
 4. 广播 `models.config.changed`
 
 > SDK 行为边界：运行中会话持有的已绑定模型对象不会热更新；要在旧会话使用新目录，
-> 需切换模型（configure）或新建会话。目录刷新后 configure 校验使用新目录。
+> 需重新选择模型（configure，包括重选同一模型）或新建会话。目录成功刷新后推进版本，
+> configure 使用新目录校验，并无网络刷新该会话独立 runtime，再设置模型；只换模型对象
+> 不足以更新供应商端点/凭据，也无法接入会话创建后新增的供应商。不会打断在途请求。
+> 应用目录不是网络连通性测试；页面始终分开展示配置、认证、目录与“连接未验证”。
 
 ## 收藏（favorites）
 

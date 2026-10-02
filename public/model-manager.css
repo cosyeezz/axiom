@@ -5,7 +5,7 @@
 .mm {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
   min-width: 0;
 }
 .mm h5 {
@@ -49,7 +49,28 @@
   gap: 8px;
   flex-wrap: wrap;
 }
-.mm-head-actions button { min-height: 34px; padding: 4px 12px; font-size: 12px; }
+.mm-head-actions button { min-height: 40px; padding: 8px 12px; font-size: 12px; }
+
+/* 认证先行：克制的引导横栏 + 三项事实状态，不把本地配置渲染成绿色实连成功。 */
+.mm-connect-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.mm-connect-intro h4 { margin: 0 0 4px; font: 500 16px/1.5 var(--display); color: var(--ink); }
+.mm-connect-intro p { margin: 0; font-size: 12px; color: var(--muted); }
+.mm-connection-status { margin-bottom: 16px; border-bottom: 1px solid var(--line); }
+.mm-connection-status dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.mm-connection-status dt { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+.mm-connection-status dd { margin: 0; font-size: 12px; color: var(--body-ink); overflow-wrap: anywhere; }
+.mm-connection-status p { margin: 12px 0; color: var(--muted); font-size: 12px; }
+.mm-provider-help { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(--body-ink); overflow-wrap: anywhere; }
 
 /* 键盘焦点：面板内所有可聚焦元素统一可见焦点环 */
 .mm :is(button, input, select, textarea, summary):focus-visible {
@@ -61,7 +82,7 @@
 .mm-split {
   display: grid;
   grid-template-columns: minmax(190px, 240px) minmax(0, 1fr);
-  gap: 14px;
+  gap: 16px;
   align-items: start;
 }
 .mm-nav {
@@ -183,9 +204,9 @@ button.mm-icon-delete:focus-visible { color: var(--danger); }
 }
 .mm-detail {
   min-width: 0;
-  padding: 14px;
+  padding: 16px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--surface);
 }
 
@@ -451,6 +472,10 @@ button.mm-icon-delete:focus-visible { color: var(--danger); }
   .mm-split { grid-template-columns: minmax(0, 1fr); }
   .mm-nav { position: static; }
   .mm-nav-list { max-height: 220px; }
+  .mm-connection-status dl { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .mm-connection-status dl > div { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 8px; }
+  .mm-connect-intro .mm-head-actions { width: 100%; }
+  .mm-connect-intro button { flex: 1 1 160px; }
   .mm-form,
   .mm-model-grid { grid-template-columns: minmax(0, 1fr); }
   .mm-model-checks { padding-top: 0; }
@@ -546,5 +571,9 @@ button.mm-icon-delete:focus-visible { color: var(--danger); }
   .mm-auth-dialog select,
   .mm-auth-dialog input,
   .mm-auth-dialog form button,
+  .mm-head-actions button,
   .mm-thinking-levels label { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mm-caret { transition: none; }
 }

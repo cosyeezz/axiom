@@ -197,6 +197,9 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
   // 旧会话的 configure/压缩模型校验才能看到新目录；已绑定的模型对象本身不热更新（SDK 行为）。
   let modelRuntime = await ModelRuntime.create(modelRuntimeOptions);
   let available = await modelRuntime.getAvailable();
+  const applyFailure = "模型目录应用失败，请检查供应商协议、模型与凭据配置";
+  let modelApplicationError = modelRuntime.getError() ? applyFailure : "";
+  let modelRevision = 0;
   const startup = await discoverCapabilities(cwd, { loadAdapter: false });
   const defaultKey = requested || `${startup.settingsManager.getDefaultProvider()}/${startup.settingsManager.getDefaultModel()}`;
   // Trusted in-process handoff only; never accept journal handles from selection/WS.
@@ -250,6 +253,7 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
     const extraFactories = [];
     const eventBus = createEventBus();
     let session;
+    let sessionModelRevision = modelRevision;
     const dynamicTools = createDynamicTools({ inactiveTools: selection.inactiveTools, enabled: !isolated, getSession: () => session, validate: validateToolArguments });
     if (!isolated && resources.adapter) dynamicTools.attachMcp(createMcpInstructions({ tools: dynamicTools,
       servers: selection.capabilities?.mcp ?? resources.catalog.mcp.map(server => server.id), eventBus }));
@@ -590,6 +594,15 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
         const previous = session.model;
         const previousThinking = session.thinkingLevel;
         compactionCtrl.cancel();
+        // 会话持有独立 runtime；只换 model 对象会继续使用旧供应商的 key/baseUrl，
+        // 新增供应商更会 Unknown provider。仅在用户明确重新选模型时同步，不打断在途请求。
+        if (sessionModelRevision !== modelRevision) {
+          if (modelApplicationError) throw new Error(applyFailure);
+          const revision = modelRevision;
+          const result = await session.modelRuntime.refresh({ allowNetwork: false });
+          if (session.modelRuntime.getError() || result.errors.size) throw new Error(applyFailure);
+          sessionModelRevision = revision;
+        }
         if (selected !== session.model) await session.setModel(selected);
         const levels = session.getAvailableThinkingLevels();
         if (thinking && !levels.includes(thinking)) {
@@ -760,19 +773,42 @@ export async function createPiFactory({ cwd, model: requested, modelRuntimeOptio
   factory.cwd = cwd;
   factory.capabilities = async (workspace = cwd, trustProject = false) =>
     (await discoverCapabilities(workspace, { trustProject, loadAdapter: false })).catalog;
+  factory.modelApplicationError = () => modelApplicationError;
   factory.refreshModels = async () => {
-    const nextRuntime = await ModelRuntime.create(modelRuntimeOptions);
-    const nextAvailable = await nextRuntime.getAvailable();
-    modelRuntime = nextRuntime;
-    available = nextAvailable;
-    return factory.catalog();
+    try {
+      const nextRuntime = await ModelRuntime.create(modelRuntimeOptions);
+      const nextAvailable = await nextRuntime.getAvailable();
+      // SDK 对配置组合错误采用 getError 而非抛异常；不能把空/旧目录误报为应用成功。
+      if (nextRuntime.getError()) throw new Error(applyFailure);
+      modelRuntime = nextRuntime;
+      available = nextAvailable;
+      modelRevision++;
+      modelApplicationError = "";
+      return factory.catalog();
+    } catch {
+      modelApplicationError = applyFailure;
+      throw new Error(applyFailure);
+    }
   };
   factory.authProviders = () => modelRuntime.getProviders().map((provider) => ({
     id: provider.id, name: provider.name || provider.id,
-    methods: Object.entries(provider.auth || {}).filter(([, auth]) => typeof auth.login === "function")
-      .map(([type, auth]) => ({ type, name: auth.name || type })),
+    // ProviderAuth 的属性叫 apiKey，login() / WS AuthType 则是 api_key。
+    methods: Object.entries(provider.auth || {}).filter(([key, auth]) => ["apiKey", "oauth"].includes(key) && typeof auth.login === "function")
+      .map(([key, auth]) => ({ type: key === "apiKey" ? "api_key" : key, name: auth.name || key })),
+    usingOAuth: modelRuntime.isUsingOAuth(provider.id),
     configured: modelRuntime.hasConfiguredAuth(provider.id),
+    authSource: modelRuntime.getProviderAuthStatus(provider.id).source,
   }));
+  // 只供服务端发现使用，不经 WS 返回；调用方先检查命令型配置与协议能力。
+  factory.discoveryConnection = async (providerId) => {
+    if (modelApplicationError) throw new Error(applyFailure);
+    if (modelRuntime.isUsingOAuth(providerId) || providerId === "openai-codex")
+      throw new Error("订阅授权请使用内置模型目录，不支持通用模型发现");
+    const model = modelRuntime.getModels().find((m) => m.provider === providerId);
+    const result = await modelRuntime.getAuth(providerId);
+    return { baseUrl: result?.auth.baseUrl, defaultBaseUrl: model?.baseUrl,
+      apiKey: result?.auth.apiKey, headers: result?.auth.headers };
+  };
   factory.login = (providerId, type, interaction) => modelRuntime.login(providerId, type, interaction);
   factory.logout = (providerId, options) => modelRuntime.logout(providerId, options);
   // 配置页需要未登录模型的定义；只投影可编辑的非凭据字段，绝不返回 headers/apiKey。

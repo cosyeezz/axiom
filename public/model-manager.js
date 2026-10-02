@@ -27,6 +27,7 @@ import { createModelAuth } from "./model-auth.js";
 const API_TYPES = [
   ["openai-completions", "OpenAI Chat Completions"],
   ["openai-responses", "OpenAI Responses"],
+  ["openai-codex-responses", "Codex Responses（ChatGPT 订阅）"],
   ["anthropic-messages", "Anthropic Messages"],
   ["google-generative-ai", "Google Generative AI"],
 ];
@@ -199,7 +200,7 @@ function openDialog({ title, description, body, confirmLabel, danger = false, on
 export function initModelManager({ root, request, onSaved }) {
   if (!root || !(root instanceof Node)) throw new Error("initModelManager 需要一个根容器节点");
   const state = {
-    loaded: false, loading: false, path: "", fingerprint: "", parseError: "",
+    loaded: false, loading: false, path: "", fingerprint: "", parseError: "", applied: true,
     providers: [], catalog: [], authProviders: [], hidden: [], selected: "", query: "", draft: null,
     // 草稿仓库：editForms=供应商连接表单；newRows=待保存的新模型行；modelRows=既有模型行（键 providerId\0modelId）。
     editForms: new Map(), newRows: new Map(), modelRows: new Map(),
@@ -230,6 +231,12 @@ export function initModelManager({ root, request, onSaved }) {
         el("div", { class: "mm-head-actions" },
           el("button", { type: "button", class: "secondary", onclick: () => void load() }, "刷新"),
           el("button", { type: "button", onclick: () => addProvider() }, "添加供应商"))),
+      el("section", { class: "mm-connect-intro", "aria-label": "连接模型服务" },
+        el("div", {}, el("h4", {}, "先连接账号，再选择模型"),
+          el("p", {}, "ChatGPT 订阅与 OpenAI API 分开配置。保存配置不代表请求已验证。")),
+        el("div", { class: "mm-head-actions" },
+          ...[["openai-codex", "连接 Codex 订阅"], ["openai", "连接 OpenAI API"]].map(([id, label]) =>
+            el("button", { type: "button", class: "secondary", onclick: () => selectConnection(id) }, label)))),
       el("div", { class: "mm-alert", role: "alert" }),
       el("div", { class: "mm-split" },
         el("nav", { class: "mm-nav", "aria-label": "供应商导航" },
@@ -262,6 +269,7 @@ export function initModelManager({ root, request, onSaved }) {
       state.path = data.path || "Axiom SQLite";
       state.fingerprint = data.fingerprint || "";
       state.parseError = data.parseError || "";
+      state.applied = data.applied !== false;
       state.providers = Array.isArray(data.providers) ? data.providers : [];
       state.catalog = Array.isArray(data.catalog) ? data.catalog : [];
       state.authProviders = Array.isArray(data.authProviders) ? data.authProviders : [];
@@ -271,7 +279,8 @@ export function initModelManager({ root, request, onSaved }) {
         [{ label: "重新加载", onclick: () => void load() }]);
       if (data.applied === false) showAlert("warn", `配置已保存，但尚未应用：${data.applyError || "请重试应用"}`,
         [{ label: "重试应用", onclick: () => void load({ notify: true }) }]);
-      pathLine().textContent = state.path;
+      pathLine().textContent = "配置保存在 Axiom · 高级选项按需展开";
+      pathLine().title = `派生模型目录：${state.path}`;
       renderProviders();
       if (notify && data.applied !== false) await Promise.resolve(onSaved?.()).catch(() => {});
       return data;
@@ -313,8 +322,9 @@ export function initModelManager({ root, request, onSaved }) {
   }
 
   // ── 左侧导航 ────────────────────────────────────────────────────────────
+  const providerName = (id) => id === "openai-codex" ? "OpenAI Codex" : id === "openai" ? "OpenAI API" : (state.authProviders.find((p) => p.id === id)?.name || id);
   const catalogByProvider = () => {
-    const map = new Map();
+    const map = new Map(state.authProviders.map((p) => [p.id, []]));
     for (const model of state.catalog) {
       if (!map.has(model.provider)) map.set(model.provider, []);
       map.get(model.provider).push(model);
@@ -335,10 +345,13 @@ export function initModelManager({ root, request, onSaved }) {
     // 隐藏只影响 Axiom 的选取入口（本页目录 + 模型选择器）：已隐藏项不再作为可选项出现。
     const hidden = hiddenKeys();
     const builtin = [...catalogMap.entries()]
-      .filter(([id]) => !customIds.has(id) && !hidden.has(id) &&
-        (!state.authProviders.length || state.authProviders.some((p) => p.id === id && p.configured) || state.selected === id))
-      .map(([id, models]) => ({ id, models: models.filter((model) => !hidden.has(model.key)) }))
-      .filter(({ id, models }) => models.length > 0 && (hit(id) || models.some(modelHit)));
+      .filter(([id]) => !customIds.has(id) && !hidden.has(id))
+      .map(([id, models]) => ({ id, models: models.filter((model) => !hidden.has(model.key)),
+        configured: state.authProviders.find((p) => p.id === id)?.configured }))
+      .filter(({ id, models }) => (models.length || state.authProviders.some((p) => p.id === id)) &&
+        (hit(id) || hit(providerName(id)) || models.some(modelHit)))
+      .sort((a, b) => Number(Boolean(b.configured)) - Number(Boolean(a.configured)) ||
+        (a.id === "openai-codex" ? -1 : b.id === "openai-codex" ? 1 : 0));
     return { custom, builtin, hidden: hiddenEntries(catalogMap, hidden) };
   }
 
@@ -517,11 +530,17 @@ export function initModelManager({ root, request, onSaved }) {
     }
     if (builtin.length) {
       if (!custom.length) items.push(el("div", { class: "mm-nav-group" }, "供应商"));
-      for (const entry of builtin)
-        items.push(navItem(entry.id, entry.id, `${entry.models.length} 个模型`, {
+      let availableGroup = false;
+      for (const entry of builtin) {
+        if (state.authProviders.length && !entry.configured && !availableGroup) {
+          items.push(el("div", { class: "mm-nav-group" }, "待连接")); availableGroup = true;
+        }
+        items.push(navItem(entry.id, providerName(entry.id),
+          `${entry.id} · ${entry.configured ? "凭据已配置" : "未配置凭据"} · ${entry.models.length} 个模型`, {
           actions: [iconButton("delete", `隐藏内置供应商「${entry.id}」`, () =>
             void confirmHide({ key: entry.id, kind: "provider", id: entry.id, models: entry.models }))],
         }));
+      }
     }
     // 已隐藏清单常驻在最后：没有它就没有恢复入口（隐藏 = 从上面的分组消失）。
     if (hidden.length) {
@@ -551,7 +570,7 @@ export function initModelManager({ root, request, onSaved }) {
       if (entries.length) { detailBox().replaceChildren(hiddenDetail(entries)); return; }
     }
     const hidden = hiddenKeys();
-    if (!state.draft && (catalogMap.has(state.selected) || state.authProviders.some((p) => p.id === state.selected)) && !hidden.has(state.selected)) {
+    if ((catalogMap.has(state.selected) || state.authProviders.some((p) => p.id === state.selected)) && !hidden.has(state.selected)) {
       detailBox().replaceChildren(catalogDetail(state.selected,
         (catalogMap.get(state.selected) ?? []).filter((model) => !hidden.has(model.key))));
       return;
@@ -568,8 +587,8 @@ export function initModelManager({ root, request, onSaved }) {
   }
 
   function renderProviders() {
-    renderNavList();
     renderDetail();
+    renderNavList();
   }
 
   // ── 详情外壳：两级流程（供应商连接 → 模型列表） ────────────────────
@@ -641,17 +660,37 @@ export function initModelManager({ root, request, onSaved }) {
     return modelRow(model.provider, model, { override: true });
   }
 
+  function connectionStatus(id) {
+    const provider = state.authProviders.find((p) => p.id === id);
+    const configured = provider?.configured;
+    const count = state.catalog.filter((m) => m.provider === id).length;
+    const custom = state.providers.find((p) => p.id === id);
+    const authState = configured ? (provider.usingOAuth ? "账号授权已配置" : "凭据已配置")
+      : custom?.apiKey || custom?.headers ? "已保存配置引用 · 待解析" : "尚未配置可用凭据";
+    return el("section", { class: "mm-connection-status", "aria-label": "配置状态" },
+      el("dl", {},
+        ...[["配置", state.providers.some((p) => p.id === id) ? "已保存自定义配置" : "使用内置配置"],
+          ["认证", authState],
+          ["模型目录", state.applied ? `${count} 个模型定义` : "配置未应用 · 保留上次目录"]].map(([label, value]) => el("div", {}, el("dt", {}, label), el("dd", {}, value)))),
+      el("p", {}, "连接未验证 · 目录与凭据状态只做本地检查，实际可用性以会话请求为准。"));
+  }
+
   function catalogDetail(id, models) {
+    const codex = id === "openai-codex";
     return detailShell({
       viewId: id,
-      title: el("strong", { class: "mm-mono" }, id),
+      title: el("strong", {}, providerName(id)),
       meta: badge(`${models.length} 个模型`),
       modelsCount: models.length,
       connection: () => el("div", {},
-        el("p", { class: "mm-hint" }, "内置供应商：连接信息由 Pi 内置目录提供。登录或填入 API Key 即可使用；如需自定义 Base URL / 请求头，用下面的按钮建立同名自定义连接。"),
+        connectionStatus(id),
+        el("p", { class: "mm-provider-help" }, codex
+          ? "使用 ChatGPT 账号授权 Codex，由 SDK 管理令牌刷新。无需填写 API Key、Base URL 或手动复制 token；普通 OpenAI API Key 不适用于此入口。"
+          : id === "openai" ? "使用 OpenAI 开发者平台的 API Key，按 API 用量计费。ChatGPT 订阅请使用左侧 OpenAI Codex。"
+          : "内置供应商的连接信息由目录提供。选择下方认证方式，再到「模型」分区管理模型；只有代理或私有部署需要自定义连接。"),
         authSection(id),
         el("div", { class: "mm-form-actions" },
-          el("button", { type: "button", class: "secondary", onclick: () => openDraft(id) }, "配置自定义连接"),
+          !codex ? el("button", { type: "button", class: "secondary", onclick: () => openDraft(id) }, "配置自定义连接") : null,
           el("button", { type: "button", class: "secondary", onclick: () =>
             void confirmHide({ key: id, kind: "provider", id, models }) }, "隐藏此供应商"))),
       models: () => modelsView({ providerId: id, savedRows: [], catalogRows: models, discoverable: false,
@@ -691,7 +730,7 @@ export function initModelManager({ root, request, onSaved }) {
       apiKeyKind: isMask(snap.apiKey) ? snap.apiKey.kind : "",
       apiKeyClear: false,
       headerRows: Object.entries(headers).map(([name, value]) => ({
-        name, value: isMask(value) ? "" : String(value), masked: isMask(value), kind: isMask(value) ? value.kind : "",
+        name, originalName: name, value: isMask(value) ? "" : String(value), masked: isMask(value), kind: isMask(value) ? value.kind : "",
       })),
       extrasText: jsonExtras(snap, MANAGED_PROVIDER_KEYS, template?.compat ? { compat: clone(template.compat) } : undefined),
     };
@@ -731,6 +770,8 @@ export function initModelManager({ root, request, onSaved }) {
       payload.headers = {};
       for (const row of rows)
         payload.headers[row.name.trim()] = row.masked && !row.value ? { keep: true } : row.value;
+      for (const name of Object.keys(snap.headers ?? {}))
+        if (!hasOwn(payload.headers, name)) payload.headers[name] = null;
     } else if (hasOwn(snap, "headers")) payload.headers = null;
     delete payload.models;
     delete payload.modelOverrides;
@@ -744,9 +785,13 @@ export function initModelManager({ root, request, onSaved }) {
       errors.push(`供应商 id「${id}」已存在（保存会合并进它；如需覆盖请直接编辑该条目）`);
     if (payload.baseUrl && !/^https?:\/\//i.test(payload.baseUrl)) errors.push("baseUrl 必须是 http/https 绝对地址");
     // 复制出来的请求头只带名称，值必须重填；宁可报错也不能默默写个空字符串上去。
-    for (const row of form.headerRows ?? [])
-      if (row.name.trim() && !row.masked && !String(row.value ?? "").trim())
-        errors.push(`请求头「${row.name.trim()}」缺少值（复制或新增的请求头需要重新填写，不需要就删掉这一行）`);
+    for (const row of form.headerRows ?? []) {
+      if (row.name.trim() && (!row.masked || row.name.trim() !== row.originalName) && !String(row.value ?? "").trim())
+        errors.push(`请求头「${row.name.trim()}」缺少值（复制、新增或改名的请求头需要重新填写，不需要就删掉这一行）`);
+    }
+    const authSource = state.authProviders.find((p) => p.id === id)?.authSource;
+    if (typeof payload.apiKey === "string" && ["stored", "runtime"].includes(authSource))
+      errors.push("登录凭据优先于表单 API Key，请在「账号与授权」更新，或先明确清除登录凭据");
     if (typeof payload.apiKey === "string" && payload.apiKey.startsWith("!"))
       errors.push("出于安全考虑，不能新增命令执行型（! 开头）密钥；已有命令型密钥留空即可保留");
     for (const [name, value] of Object.entries(payload.headers ?? {}))
@@ -944,14 +989,26 @@ export function initModelManager({ root, request, onSaved }) {
     return provider ? auth.section(provider) : null;
   }
 
+  function selectConnection(id) {
+    if (!state.loaded) return showAlert("warn", "配置尚未加载，请先刷新后重试。");
+    if (hiddenKeys().has(id)) {
+      state.selected = HIDDEN_VIEW; renderProviders();
+      showAlert("warn", "该供应商已隐藏，请先恢复显示。"); return;
+    }
+    state.selected = id; state.tabs.set(id, TAB_CONNECTION);
+    // 草稿保留但不阻止进入认证页。
+    renderProviders();
+  }
+
   function addProvider() {
     if (!state.authProviders.length) return openDraft();
     const select = el("select", { "aria-label": "选择供应商" },
       new Option("自定义 API 连接", ""),
-      ...state.authProviders.map((p) => new Option(p.name || p.id, p.id)));
+      ...[...state.authProviders].sort((a, b) => a.id === "openai-codex" ? -1 : b.id === "openai-codex" ? 1 : 0)
+        .map((p) => new Option(`${providerName(p.id)} · ${p.id === "openai-codex" ? "ChatGPT 订阅" : p.methods.map((m) => m.type === "oauth" ? "账号授权" : "API Key").join(" / ") || "环境配置"}`, p.id)));
     openDialog({ title: "添加供应商", description: "选择服务后登录或填写 API Key；也可以使用自定义地址。",
       body: selectControl(select), confirmLabel: "继续", onConfirm: () => {
-        if (select.value) { state.selected = select.value; renderProviders(); }
+        if (select.value) selectConnection(select.value);
         else openDraft();
       } });
   }
@@ -1063,6 +1120,9 @@ export function initModelManager({ root, request, onSaved }) {
         `${freshRows.length} 个模型${overrides ? ` · 覆盖 ${overrides} 项内置模型` : ""}`),
       modelsCount: freshRows.length + pending.length + catalogRows.length,
       connection: () => el("div", {},
+        connectionStatus(provider.id),
+        provider.id === "openai-codex" ? el("p", { class: "mm-provider-help" },
+          "Codex 使用 ChatGPT 订阅授权。已有自定义覆盖请确认协议为 openai-codex-responses，地址为 https://chatgpt.com/backend-api；普通 OpenAI API Key 不能替代授权。") : null,
         authSection(provider.id),
         el("div", { class: "mm-form" }, ...connectionFields(form, provider.id)),
         advancedConnection(form),
@@ -1120,12 +1180,13 @@ export function initModelManager({ root, request, onSaved }) {
       field("API 协议", selectControl(el("select", { "aria-label": "API 协议",
         onchange: (event) => { form.api = event.target.value; } },
         new Option("（不设置）", "", false, form.api === ""),
-        ...API_TYPES.map(([value, label]) => new Option(label, value, false, form.api === value)))),
-        "Chat Completions 兼容性最好；改完记得保存", true),
+        ...[...API_TYPES, ...(form.api && !API_TYPES.some(([value]) => value === form.api) ? [[form.api, `${form.api}（已有协议）`]] : [])]
+          .map(([value, label]) => new Option(label, value, false, form.api === value)))),
+        "按服务端支持的协议选择；ChatGPT 订阅需 Codex Responses 与账号授权", true),
       field("API Key", el("span", { class: "mm-key" },
         el("span", { class: "mm-key-input" }, apiKeyInput, reveal),
         form.apiKeyMasked ? el("label", { class: "mm-check mm-check-danger" }, clearKey, "清除已存") : null),
-        "密钥不回显（只能看到「已配置」）。留空 = 保留，输入 = 替换，勾「清除已存」= 删除；小眼睛只看本次输入"),
+        "此处仅修改表单密钥；登录凭据优先，请在「账号与授权」更新。留空保留、输入替换、勾选清除；密钥不回显"),
     ];
   }
 
@@ -1215,8 +1276,8 @@ export function initModelManager({ root, request, onSaved }) {
         request("models.provider.save", { providerId: id, provider: built.value, baseFingerprint: state.fingerprint }),
       {
         successMessage: draft
-          ? `已保存供应商「${id}」，现在可以配置它的模型。`
-          : `已保存供应商「${id}」。`,
+          ? `已保存供应商「${id}」，现在可以配置它的模型。连接尚未验证。`
+          : `已保存供应商「${id}」。连接尚未验证。`,
         // onSuccess 在回读渲染前执行：只有真正成功才落定保存后状态。
         onSuccess: () => {
           if (draft) {
@@ -1317,14 +1378,16 @@ export function initModelManager({ root, request, onSaved }) {
       }
     }
     entry.saving = false;
-    if (savedCount > 0) await load({ silent: true });
+    const current = savedCount > 0 ? await load({ silent: true }) : null;
     if (conflict)
       showAlert("warn", `模型配置已被外部修改：已写入 ${savedCount} 个模型，其余保持勾选未写入。请重新加载后重试。`,
         [{ label: "重新加载", onclick: () => void load() }]);
     else if (failures.length)
       showAlert("error", `已添加 ${savedCount} 个模型，${failures.length} 个失败（保留勾选，可直接重试）：${failures.join("；")}`);
-    else if (savedCount > 0)
-      showAlert("ok", `已添加 ${savedCount} 个模型。`);
+    else if (current?.applied === false)
+      showAlert("warn", `已保存 ${savedCount} 个模型，但尚未应用：${current.applyError || "请刷新后重试"}`);
+    else if (current)
+      showAlert("ok", `已添加 ${savedCount} 个模型。连接尚未验证。`);
     renderProviders();
     if (savedCount > 0) await Promise.resolve(onSaved?.()).catch(() => {});
   }
@@ -1469,7 +1532,8 @@ export function initModelManager({ root, request, onSaved }) {
         disabled: override, title: override ? "API 协议由供应商定义" : undefined,
         onchange: (event) => { form.api = event.target.value; sync(); } },
         new Option("跟随供应商", "", false, form.api === ""),
-        ...API_TYPES.map(([value, label]) => new Option(label, value, false, form.api === value))))),
+        ...[...API_TYPES, ...(form.api && !API_TYPES.some(([value]) => value === form.api) ? [[form.api, `${form.api}（已有协议）`]] : [])]
+          .map(([value, label]) => new Option(label, value, false, form.api === value))))),
       el("div", { class: "mm-model-checks" },
         el("label", { class: "mm-check" }, el("input", { type: "checkbox", checked: form.reasoning,
           onchange: (event) => { form.reasoning = event.target.checked; renderThinking(); sync(); } }), "支持推理"),

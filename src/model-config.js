@@ -283,6 +283,9 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
   let pendingApply = null;
 
   async function get() {
+    // 启动配置错误或授权后的目录刷新失败也进入同一重试路径；不能只跟踪本服务的写命令。
+    if (!pendingApply && factory.modelApplicationError?.())
+      pendingApply = { applyError: factory.modelApplicationError() };
     if (pendingApply)
       await enqueue(async () => {
         if (!pendingApply) return;
@@ -426,19 +429,30 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
   async function discover(providerId) {
     const config = storage.readConfig();
     const providers = config?.providers;
-    if (providers === null || typeof providers !== "object" || Array.isArray(providers))
+    if (providers !== undefined && (providers === null || typeof providers !== "object" || Array.isArray(providers)))
       throw new Error("models.json 结构无效（providers 必须是对象），无法读取该供应商配置");
-    const provider = providers[providerId];
+    const metadata = factory.authProviders?.().find((p) => p.id === providerId);
+    const provider = providers?.[providerId] ?? (metadata ? {} : undefined);
     if (!provider || typeof provider !== "object" || Array.isArray(provider)) throw new Error(`Unknown provider：${providerId}`);
 
-    if (provider.oauth) throw new Error("该供应商使用 OAuth 登录，暂不支持在线拉取模型列表");
-    const api = typeof provider.api === "string" ? provider.api : "";
+    if (provider.oauth || metadata?.usingOAuth || providerId === "openai-codex")
+      throw new Error("该供应商使用订阅/OAuth，请使用内置模型目录，不支持通用模型发现");
+    const catalogModel = factory.modelCatalog?.().find((m) => m.provider === providerId);
+    const api = typeof provider.api === "string" ? provider.api : catalogModel?.api ?? "";
     const spec = DISCOVER_APIS[api];
     if (!spec)
       throw new Error(
         api ? `不支持的 api 类型：${api}（支持：${Object.keys(DISCOVER_APIS).join("、")}）` : "该供应商未配置 api 类型，无法拉取模型列表",
       );
-    let base = typeof provider.baseUrl === "string" ? provider.baseUrl.replace(/\/+$/, "") : "";
+    // 发现不得执行保留的 !command；先拦截，再复用 SDK 的有效凭据和请求头解析。
+    for (const value of [provider.apiKey, ...Object.values(provider.headers ?? {})])
+      if (typeof value === "string" && value.startsWith("!")) throw new Error("在线发现不支持命令执行型凭据（!command）");
+    let connection;
+    if (factory.discoveryConnection) {
+      try { connection = await factory.discoveryConnection(providerId); }
+      catch { throw new Error("无法解析已应用的供应商认证，请检查配置和目录应用状态"); }
+    }
+    let base = String(connection?.baseUrl ?? provider.baseUrl ?? connection?.defaultBaseUrl ?? "").replace(/\/+$/, "");
     if (!base && spec.defaultBase) base = spec.defaultBase;
     if (!base) throw new Error("该供应商未配置 baseUrl，无法拉取模型列表");
     try {
@@ -448,23 +462,28 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
       throw new Error("该供应商 baseUrl 不是有效的 http/https 地址");
     }
 
-    const headers = {};
-    let apiKey;
-    if (provider.apiKey !== undefined && provider.apiKey !== null) apiKey = resolveDiscoverSecret(provider.apiKey, "apiKey");
-    if (provider.headers && typeof provider.headers === "object" && !Array.isArray(provider.headers)) {
+    const headers = { ...connection?.headers };
+    let apiKey = connection?.apiKey;
+    if (!connection) {
+      if (provider.apiKey !== undefined && provider.apiKey !== null) apiKey = resolveDiscoverSecret(provider.apiKey, "apiKey");
+    }
+    if (!connection?.headers && provider.headers && typeof provider.headers === "object" && !Array.isArray(provider.headers)) {
       for (const [name, value] of Object.entries(provider.headers))
         headers[name] = resolveDiscoverSecret(value, `headers.${name}`);
     }
+    const defaultHeader = (name, value) => {
+      if (!Object.keys(headers).some((key) => key.toLowerCase() === name.toLowerCase())) headers[name] = value;
+    };
     if (provider.authHeader === true && !apiKey) throw new Error("authHeader 已启用但无法解析 apiKey");
     if (apiKey && api === "anthropic-messages") {
-      headers["x-api-key"] = apiKey;
-      headers["anthropic-version"] = "2023-06-01";
+      defaultHeader("x-api-key", apiKey);
+      defaultHeader("anthropic-version", "2023-06-01");
     } else if (apiKey && api === "google-generative-ai") {
-      headers["x-goog-api-key"] = apiKey;
+      defaultHeader("x-goog-api-key", apiKey);
     } else if (apiKey) {
-      headers.Authorization = `Bearer ${apiKey}`;
+      defaultHeader("Authorization", `Bearer ${apiKey}`);
     }
-    if (apiKey && provider.authHeader === true && !("Authorization" in headers)) headers.Authorization = `Bearer ${apiKey}`;
+    if (apiKey && provider.authHeader === true) defaultHeader("Authorization", `Bearer ${apiKey}`);
 
     let response;
     try {
@@ -499,16 +518,19 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
     get,
     saveProvider({ providerId, provider, baseFingerprint }) {
       const input = providerConfigIn.parse(provider);
-      return enqueue(() =>
-        mutate(baseFingerprint, (providers) => {
+      return enqueue(async () => {
+        if (typeof input.apiKey === "string" && input.apiKey !== storage.readConfig()?.providers?.[providerId]?.apiKey
+            && (await storage.credentials.read(providerId) || factory.authProviders?.().some((p) => p.id === providerId && p.authSource === "runtime")))
+          throw new Error("已保存的登录凭据优先于表单 API Key；请在「账号与授权」更新密钥，或明确清除登录凭据后再保存表单密钥");
+        return mutate(baseFingerprint, (providers) => {
           const entry = mergeProvider(asProvider(providers[providerId]), input);
           // 内联 id 必须与配置键一致（与 renameProvider 同口径）：前端把整条 provider 原样回传
           // 很常见，id 当普通未知字段写进去就会形成「库内键 ≠ 内联 id」，而 GET 回显用键覆盖 id，
           // 用户看不到差异。原本无内联 id 的条目不凭空加上（合并语义：不造字段）。
           if ("id" in entry) entry.id = providerId;
           providers[providerId] = entry;
-        }),
-      );
+        });
+      });
     },
     deleteProvider({ providerId, baseFingerprint }) {
       return enqueue(() =>
