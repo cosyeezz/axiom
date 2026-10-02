@@ -49,6 +49,7 @@ export const actionIconPaths = Object.freeze({
   plus: 'M12 5v14M5 12h14',
   close: 'm6 6 12 12M18 6 6 18',
   menu: 'M4 6h16M4 12h16M4 18h16',
+  sidebar: 'M6 4h12a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3ZM9 4v16',
   more: 'M5 12h.01M12 12h.01M19 12h.01',
   chevron: 'm9 5 7 7-7 7',
   back: 'm15 5-7 7 7 7',
@@ -116,7 +117,7 @@ export function initActionIcons(root) {
     ['[data-context="file"]', 'file'], ['[data-context="folder"]', 'folder'],
   ]) replace(selector, name);
   for (const [selector, name, glyph] of [
-    ['#new', 'plus', '＋'], ['#toggle-sidebar', 'menu', '☰'],
+    ['#new', 'plus', '＋'], ['#toggle-sidebar', 'sidebar', '☰'],
     ['#earliest, [data-scroll="top"]', 'up', '↑'], ['#latest, [data-scroll="bottom"]', 'down', '↓'],
     ['#close-raw-io, #image-preview-close, button[aria-label^="关闭"]', 'close', '✕'],
     ['#context-close', 'close', '×'], ['#context-back', 'back', '‹'],

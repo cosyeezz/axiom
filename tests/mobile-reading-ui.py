@@ -88,7 +88,9 @@ with sync_playwright() as p:
     baseline = baseline_page.evaluate(measure)
     assert current['font'] == baseline['font'] == '14px', (current, baseline)
     assert current['line'] == '22.4px' and baseline['line'] == '25.2px', (current, baseline)
-    assert current['height'] < baseline['height'], (current, baseline)
+    # The permanent 56px sidebar rail deliberately narrows phone reading width.
+    assert current['header'] == 56, current
+    assert page.locator('#sidebar').bounding_box()['width'] == 56
     print('METRICS', json.dumps({'before': baseline, 'after': current}))
     for width, height in [(390, 844), (320, 568), (390, 420), (667, 375)]:
         page.set_viewport_size({'width': width, 'height': height})
@@ -135,20 +137,21 @@ with sync_playwright() as p:
     page.set_viewport_size({'width':1440,'height':1000}); page.wait_for_timeout(100)
     assert page.locator('#mobile-more').is_hidden()
     assert page.evaluate('document.querySelector(".service-controls")===window.originalService && document.querySelector(".workspace-location")===window.originalLocation')
-    assert page.locator('main > header .service-controls').count() == 1
+    assert page.locator('#sidebar .service-controls').count() == 1
+    assert page.locator('main > header .service-controls').count() == 0
     assert page.locator('main > header .workspace-location').count() == 1
-    # Compare desktop geometry/text styling against baseline, ignoring only new hidden menu.
+    # Compare desktop reading typography; sidebar/header geometry intentionally changed.
     page.reload(); page.wait_for_selector('#workspace:not([hidden])'); page.wait_for_timeout(300)
     page.emulate_media(reduced_motion='reduce'); page.mouse.move(0,0)
-    snapshot='''() => [...document.querySelectorAll('main > header, main > header *, #output, #output *, #composer, #prompt')].map(el=>{
-        const r=el.getBoundingClientRect(), s=getComputedStyle(el);
-        return [el.tagName,el.id,r.x,r.y,r.width,r.height,s.fontSize,s.lineHeight,s.margin,s.padding,s.display];
-    }).filter(row=>row[1]!=='mobile-more')'''
+    snapshot='''() => [...document.querySelectorAll('#output, #output *, #composer, #prompt')].map(el=>{
+        const s=getComputedStyle(el);
+        return [el.tagName,el.id,s.fontSize,s.lineHeight,s.margin,s.padding,s.display];
+    })'''
     before=page.evaluate(snapshot)
     baseline_page.set_viewport_size({'width':1440,'height':1000})
     baseline_page.reload();baseline_page.wait_for_selector('#workspace:not([hidden])');baseline_page.wait_for_timeout(300)
     after=baseline_page.evaluate(snapshot)
     assert before == after, [(a,b) for a,b in zip(before,after) if a!=b][:4]
     assert not errors, errors
-    print('PASS desktop geometry/text styles unchanged; Escape, focus, spacing and no page errors')
+    print('PASS desktop reading text styles unchanged; sidebar migration, Escape, focus, spacing and no page errors')
     browser.close()

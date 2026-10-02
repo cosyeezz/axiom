@@ -43,7 +43,9 @@ try:
             page.wait_for_function("document.querySelector('#status').dataset.connected === 'true'")
             def show_tools():
                 if width <= 1000 and not page.locator('#composer-tools').is_visible():
-                    page.locator('.composer-tools-trigger').click()
+                    # Usage dialog restores keyboard focus (and its tooltip); move focus normally.
+                    page.locator('.composer-tools-trigger').focus()
+                    page.keyboard.press('Enter')
                     expect(page.locator('#composer-tools')).to_be_visible()
             def close_tools():
                 if width <= 1000 and page.locator('#composer-tools').is_visible():
@@ -55,7 +57,7 @@ try:
                 page.wait_for_timeout(120)
                 metrics.append({'width': width, 'height': height, 'theme': theme,
                     'composerHeight': page.locator('.composer-wrap').bounding_box()['height'],
-                    'headerControlsWidth': (page.locator('.service-controls').bounding_box() or page.locator('#mobile-more').bounding_box())['width']})
+                    'sidebarWidth': page.locator('#sidebar').bounding_box()['width']})
                 page.screenshot(path=str(OUT / f'workspace-{width}-{theme}.png'))
                 if BASELINE: continue
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), (width, theme)
@@ -63,6 +65,39 @@ try:
                 expect(page.locator('#composer-help')).not_to_be_visible()
                 expect(page.locator('#composer-action-help')).not_to_be_visible()
                 phone = width <= 700
+                # Navigation owns the controls, including a usable rail after folding.
+                assert page.locator('main > header #toggle-sidebar, main > header .service-controls, main > header #mobile-more').count() == 0
+                toggle = page.locator('#toggle-sidebar')
+                if toggle.get_attribute('aria-expanded') == 'true': toggle.click()
+                expect(toggle).to_have_attribute('aria-label', '展开侧栏')
+                expect(page.locator('#search')).not_to_be_visible()
+                assert page.locator('#sidebar').bounding_box()['width'] == 56
+                assert page.locator('main').evaluate('(e) => !e.inert')
+                for selector in ['#toggle-sidebar', '#mobile-more' if phone else '#view-options-trigger']:
+                    control = page.locator(selector)
+                    expect(control.locator('svg')).to_be_visible()
+                    bounds = control.bounding_box()
+                    assert 0 <= bounds['x'] and bounds['x'] + bounds['width'] <= 57
+                    assert bounds['y'] >= 0 and bounds['y'] + bounds['height'] <= height
+                expect(page.locator('#session-state')).to_have_text('空闲')
+                page.screenshot(path=str(OUT / f'collapsed-{width}-{theme}.png'))
+                if not phone:
+                    page.locator('#view-options-trigger').click()
+                    expect(page.locator('#github-link')).to_be_visible()
+                    page.keyboard.press('Escape')
+                    page.locator('#status').click()
+                    expect(page.locator('#connection-current')).to_be_visible()
+                    page.keyboard.press('Escape')
+                toggle.focus(); page.keyboard.press('Enter')
+                expect(page.locator('#search')).to_be_visible()
+                if phone:
+                    expect(page.locator('#search')).to_be_focused()
+                    assert page.locator('main').evaluate('(e) => e.inert')
+                    # Opening more from the expanded drawer must release the main region.
+                    page.locator('#mobile-more').click()
+                    assert page.locator('main').evaluate('(e) => !e.inert')
+                    page.keyboard.press('Escape')
+                    expect(page.locator('#mobile-more')).to_be_focused()
                 if phone:
                     expect(page.locator('#status')).not_to_be_visible()
                     page.locator('#mobile-more').click()
@@ -94,7 +129,12 @@ try:
                 expect(panel).not_to_be_visible()
                 expect(more).to_be_focused()
                 more.click()
-                page.locator('#mobile-menu-title' if phone else '#prompt').click()
+                # Light-dismiss from the dialog's bottom-right padding, outside the upward panel.
+                if phone:
+                    bounds = page.locator('#mobile-menu').bounding_box()
+                    page.locator('#mobile-menu').click(position={'x': bounds['width'] - 8, 'y': bounds['height'] - 8})
+                else:
+                    page.locator('#prompt').click()
                 expect(panel).not_to_be_visible()
                 more.click(); page.locator('#open-raw-io').click()
                 expect(panel).not_to_be_visible()

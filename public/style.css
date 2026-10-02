@@ -110,7 +110,7 @@ body {
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   height: 100dvh;
 }
-body:has(.shell.collapsed) { --sidebar-width: 0px; }
+body:has(.shell.collapsed) { --sidebar-width: 56px; }
 aside {
   display: flex;
   flex-direction: column;
@@ -123,10 +123,18 @@ aside {
   min-height: 0;
   overflow: hidden;
 }
-.collapsed aside {
-  visibility: hidden;
-  padding: 0;
-}
+.sidebar-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; }
+#toggle-sidebar { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; padding: 8px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; }
+#toggle-sidebar svg { width: 24px; height: 24px; }
+#toggle-sidebar:hover { color: var(--ink); background: var(--hover); }
+#toggle-sidebar:focus-visible, .sidebar-footer:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sidebar-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+.collapsed #sidebar { padding: 12px 8px 8px; gap: 8px; }
+.collapsed #sidebar > :not(.sidebar-heading, .sidebar-bottom), .collapsed .sidebar-heading .brand, .collapsed .sidebar-label { display: none; }
+.collapsed .sidebar-heading { justify-content: center; }
+.collapsed #sidebar .sidebar-footer { justify-content: center; width: 40px; padding: 8px; }
+.shell.collapsed #sidebar #status { width: 40px; min-height: 40px; padding: 8px; justify-content: center; }
+.shell.collapsed #sidebar #status span { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* 品牌行：强调色方块托住 A，正文字重压回 XIOM（Linear 规范：薰衣草蓝只给品牌、主 CTA、焦点）。 */
 .brand {
   display: flex;
@@ -542,7 +550,11 @@ h1 {
   white-space: nowrap;
 }
 .service-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-/* Low-frequency controls share one labeled popover rather than permanent header chrome. */
+#sidebar .service-controls { flex-direction: column; align-items: stretch; gap: 4px; }
+#sidebar #status, #sidebar #status[data-connected="true"] { width: auto; max-width: none; min-height: 40px; justify-content: flex-start; padding: 8px; border-radius: 8px; }
+#sidebar #status[data-connected="true"] span { position: static; width: auto; height: auto; margin: 0; overflow: visible; clip: auto; clip-path: none; }
+#sidebar .sidebar-footer { min-height: 40px; border-radius: 8px; }
+/* Low-frequency controls live in the sidebar; the bottom popover opens upward. */
 .utility-popover { position: fixed; inset: auto; margin: 0; width: 280px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow: auto; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font-size: 12px; box-shadow: none; }
 .utility-popover h2 { margin: 0 0 12px; font: 500 14px/1.5 var(--display); }
 .utility-popover label { display: block; color: var(--muted); margin-bottom: 4px; }
@@ -553,13 +565,13 @@ h1 {
 #view-options button[aria-pressed="true"] { color: var(--accent-ink); }
 #view-options #service-version { display: inline-block; padding: 8px; }
 #view-options :is(button, a, select):focus-visible, #view-options-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-#view-options-trigger { display: grid; place-items: center; min-height: 32px; border-radius: 8px; }
+#view-options-trigger { display: flex; align-items: center; min-height: 40px; border-radius: 8px; }
 .shortcut-list { margin: 0; display: grid; gap: 8px; }
 .shortcut-list dt { font-family: var(--mono); color: var(--ink); }
 .shortcut-list dd { margin: -4px 0 4px; color: var(--muted); }
 @media (pointer: coarse) {
   #view-options :is(button, a, select), #view-options-trigger { min-height: 44px; }
-  #view-options-trigger, .sidebar-tool { width: 44px; flex-basis: 44px; }
+  .sidebar-tool { width: 44px; flex-basis: 44px; }
   .sidebar-tool, #new { min-height: 44px; }
 }
 #mobile-more { display: none; }
@@ -574,7 +586,8 @@ h1 {
 #mobile-menu #workspace-label { flex-basis: 100%; white-space: normal; overflow-wrap: anywhere; }
 #mobile-menu .service-controls { flex-wrap: wrap; gap: 12px; }
 #mobile-menu :is(#status, #service-version) { display: inline-flex; }
-#mobile-menu :is(#mobile-menu-close, #view-options-trigger) { width: 48px; min-width: 48px; height: 48px; }
+#mobile-menu-close { min-width: 64px; flex-shrink: 0; padding: 8px; }
+#mobile-menu #view-options-trigger { width: auto; min-width: 96px; min-height: 48px; padding: 8px; }
 #mobile-menu #view-options :is(button, a, select) { min-height: 48px; }
 /* 主题切换：显示「点一下会变成的那个主题」的图标，深色下是太阳、浅色下是月亮。 */
 #toggle-theme { display: grid; place-items: center; }
@@ -602,7 +615,7 @@ h1 {
 @media (pointer: coarse) {
   #status, #status[data-connected="true"] { min-width: 44px; min-height: 44px; }
 }
-#status:hover:not(:disabled) { background: var(--surface); }
+#status:hover:not(:disabled) { background: var(--hover); }
 #service-dev {
   color: var(--accent-ink);
   background: var(--surface);
@@ -1728,7 +1741,7 @@ textarea {
 @media (prefers-reduced-motion: reduce) { #session-inspector > summary::before, #session-billing > summary::before { transition: none; } }
 .mobile-controls { display: none; }
 @media (max-width: 700px) {
-  body { --sidebar-width: 0px; }
+  body, body:has(.shell.collapsed) { --sidebar-width: 56px; }
   /* The compact composer no longer exposes the legacy expand toggle.
      Keep status banners and actions reachable on small screens. */
   .shell.mobile-expanded #session-runtime { display: flex; }
@@ -1737,15 +1750,20 @@ textarea {
   #mobile-expand { flex-shrink: 0; min-height: 40px; padding: 4px 8px; border: 0; background: transparent; color: var(--muted); font-size: 12px; }
   .shell,
   .shell.collapsed {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: 56px minmax(0, 1fr);
   }
+  .shell > main { grid-column: 2; }
   aside {
     position: fixed;
     inset: 0 auto 0 0;
     width: min(280px, 82vw);
     z-index: 5;
-    box-shadow: 12px 0 40px var(--shadow-mid);
+    box-shadow: none;
   }
+  .collapsed #sidebar { width: 56px; padding: 8px 4px; }
+  #sidebar #toggle-sidebar, .collapsed #sidebar .sidebar-footer { width: 48px; min-width: 48px; height: 48px; min-height: 48px; }
+  .collapsed #sidebar #open-settings { display: none; }
+  #sidebar-service-slot { display: none; }
   #sidebar-backdrop {
     position: fixed;
     inset: 0;
@@ -1936,7 +1954,7 @@ summary:hover > .disclosure-action { color: var(--ink); }
 @media (max-width: 700px) {
   /* Same 14px text; reclaim repeated chrome and spacing, not touch targets. */
   main > header { height: 56px; gap: 8px; padding: 0 12px; }
-  #mobile-more { display: grid; place-items: center; min-width: 48px; width: 48px; height: 48px; }
+  #mobile-more { display: flex; align-items: center; min-width: 48px; min-height: 48px; }
   #toggle-sidebar { min-width: 48px; min-height: 48px; }
   #output { padding-block: 16px; }
   .message { margin-bottom: 16px; }

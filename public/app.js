@@ -55,11 +55,12 @@ function bindUtilityPopover(trigger, panel, above = false) {
   });
   window.addEventListener("resize", () => { if (panel.matches(":popover-open")) position(); });
 }
-$("view-options-trigger").innerHTML = actionIcon("more");
+$("view-options-trigger").insertAdjacentHTML("afterbegin", actionIcon("more"));
+$("mobile-more").querySelector("svg").outerHTML = actionIcon("more");
 for (const [id, text] of [["github-link", "GitHub 源码"], ["open-raw-io", "原文对照"], ["toggle-theme", "切换主题"]]) {
   $(id).append(document.createTextNode(text));
 }
-bindUtilityPopover($("view-options-trigger"), $("view-options"));
+bindUtilityPopover($("view-options-trigger"), $("view-options"), true);
 let sessionId,
   models = [],
   config,
@@ -67,6 +68,7 @@ let sessionId,
   sessionBill,
   activeTask,
   busy = false,
+  cancelling = false,
   // safeStopping: 已请求安全停止、还在等轮次边界；stopAlert: 停住了但用户还没回来看。
   safeStopping = false,
   stopAlert = false,
@@ -374,7 +376,10 @@ function sidebar(open) {
   const collapsed = !open;
   const widthChanged = shell.classList.contains("collapsed") !== collapsed;
   shell.classList.toggle("collapsed", collapsed);
+  $("view-options").hidePopover?.();
   $("toggle-sidebar").setAttribute("aria-expanded", String(open));
+  $("toggle-sidebar").title = open ? "收起侧栏" : "展开侧栏";
+  $("toggle-sidebar").setAttribute("aria-label", $("toggle-sidebar").title);
   $("sidebar-backdrop").hidden = !open || !mobile.matches;
   document.querySelector("main").inert = open && mobile.matches;
   if (open && mobile.matches) $("search").focus();
@@ -502,7 +507,8 @@ const nativeConnection = /(?:^|\s)AxiomAndroid\/\S+ NativeConnection\/1(?:\s|$)/
 const mobileMenu = $("mobile-menu"), serviceControls = document.querySelector(".service-controls");
 const workspaceLocation = document.querySelector(".workspace-location");
 const serviceHome = document.createComment("service controls"), workspaceHome = document.createComment("workspace location");
-serviceControls.before(serviceHome); workspaceLocation.before(workspaceHome);
+$("sidebar-service-slot").append(serviceHome);
+workspaceLocation.before(workspaceHome);
 function placeMobileControls() {
   $("view-options").hidePopover?.();
   if (mobile.matches) {
@@ -514,7 +520,7 @@ function placeMobileControls() {
   }
 }
 placeMobileControls();
-$("mobile-more").onclick = () => { mobileMenu.returnValue = ""; mobileMenu.showModal(); };
+$("mobile-more").onclick = () => { sidebar(false); mobileMenu.returnValue = ""; mobileMenu.showModal(); };
 $("mobile-menu-close").onclick = () => mobileMenu.close();
 mobileMenu.addEventListener("keydown", e => {
   if (e.key === "Escape" && !document.querySelector(".utility-popover:popover-open")) { e.preventDefault(); e.stopPropagation(); mobileMenu.close(); }
@@ -788,6 +794,13 @@ function updateComposer() {
   $("force-stop").hidden = !busy;
   $("safe-stop-progress").hidden = !busy || !safeStopping;
   $("session-alert").hidden = !stopAlert;
+  const state = !connected ? ["offline", "连接断开"]
+    : sessionMissing ? ["missing", "会话不可用"]
+    : changing ? ["loading", "切换中"]
+    : busy ? (cancelling ? ["stopping", "正在停止"] : safeStopping ? ["stopping", "安全停止中"] : ["running", "运行中"])
+    : stopAlert ? ["stopped", "已停下"] : ["idle", "空闲"];
+  $("session-state").dataset.state = state[0];
+  $("session-state").textContent = state[1];
   $("send").hidden = busy;
   syncRetryPrompt();
   compactComposer?.refresh();
@@ -2790,6 +2803,7 @@ function applyEvent(message) {
     applyElapsed(data);
     void refreshSessions().catch(error);
     busy = data.status !== "idle";
+    cancelling = data.status === "cancelling";
     canReask = !!data.canReask;
     // 安全停止只在本次运行内有效：下一次 running 不带 safeStop 时就该恢复正常按钮。
     safeStopping = busy && !!data.safeStop;
@@ -3133,6 +3147,7 @@ function beginSnapshot(state, target) {
   $("workspace-label").textContent = state.cwd;
   updatePageTitle();
   busy = state.status !== "idle";
+  cancelling = state.status === "cancelling";
   safeStopping = busy && !!state.safeStop;
   stopAlert = false;
   lastMainMessage = state.messages.findLast((entry) => entry.agentId === "main")?.message || null;

@@ -1,5 +1,14 @@
 # 开发记录
 
+## 2026-10-02 侧栏图标轨道与输入区运行状态
+
+- 时间：2026-10-02 00:25（本机 -07:00）。原因：折叠按钮、更多选项及连接信息占据会话顶栏，折叠后失去侧栏入口。独立 `feat/sidebar-controls` 工作区基于最新 `origin/master b29b419`；不改后端、不触碰主 checkout 的未跟踪资料。
+- 实施：分栏轮廓 SVG 折叠按钮归入侧栏品牌行，折叠保留 56px 图标栏；底部集中连接状态、更多和设置。手机保留左侧折叠/更多入口，打开更多前收栏并解除 main inert；仍移动真实控件至手机 dialog，保留 Android 原生连接、主题/字号/原文/GitHub/DEV/版本和焦点返回。
+- 状态：输入底栏显示空闲、运行中、安全停止中、正在停止、已停下及断线/切换/不可用提示；与服务连接状态分离，不重复计时圆点。独立审查指出 cancelling 被 busy 吞并，已补当前取消状态及 snapshot/session.state 回归。复用 Linear surface/ink/accent/line、成功色与 4/8/12px 间距、8px 圆角，无新增依赖。
+- 验证：隔离 HOME/USERPROFILE/TEMP/TMP/Pi 目录后 Node 全量 1067 项，1064 通过、3 平台跳过、0 失败。首次非隔离运行 15 项失败，确认同既往宿主 `.agents/skills` 污染技能断言与 4096-token 压缩夹具；未改用户配置。Chromium 五视口双主题（含 320px、折叠轨道、菜单/连接可达、键盘/点外关闭、inert 释放）通过，手机四视口与桌面断点往返、草稿/字体/触控检查通过；侧栏工作空间分组、日期/状态点、大量会话滚动、桌面/手机菜单及复制会话回归通过。原生前端无构建命令；JS 语法检查及 `npm pack --dry-run` 通过。
+- 测试适配：手机增加固定轨道会收窄正文，旧“正文总高度必须比无轨道历史版本小”的断言改为实际轨道/顶栏几何；桌面对照继续验证阅读字体而不要求刻意变化的顶栏结构相同。popover 上移后，点外关闭点击真实未遮挡的 dialog 内边距；用键盘切换输入工具焦点避免用量提示截获点击。
+- 文件：`public/{app.js,index.html,style.css,icons.js,composer-controls.css}`、`tests/{sidebar-controls.test.js,focus-ui-browser.py,mobile-reading-ui.py}`、`README.md`、本记录。测试生成的代码索引恢复，不混入交付。日志/截图位于仓库外 `F:/worktrees/sidebar-controls-evidence`；未做移动真机、读屏或桌面壳原生验收；安装依赖报告既有 4 项漏洞，本次不扩展依赖升级范围。
+
 ## 2026-09-29 Android 0.1.1发布与下载核验
 
 - 时间：2026-09-29 12:20（本机 -07:00）。最新master10c21d1已集成验证，工作分支58d302b快进合并并推送master；同提交标签android-v0.1.1触发CI36617388755，build/release均success。候选与发布源代码相同，仅补验收文档。

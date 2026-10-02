@@ -22,7 +22,10 @@
   <body>
     <div class="shell">
       <aside id="sidebar">
-        <div class="brand"><span class="brand-mark" aria-hidden="true">A</span><span class="brand-name">XIOM</span></div>
+        <div class="sidebar-heading">
+          <div class="brand"><span class="brand-mark" aria-hidden="true">A</span><span class="brand-name">XIOM</span></div>
+          <button type="button" id="toggle-sidebar" class="icon-button" title="收起侧栏" aria-label="收起侧栏" aria-expanded="true" aria-controls="sidebar">☰</button>
+        </div>
         <div class="sidebar-tools">
           <button id="new" title="在当前工作空间新建会话，使用默认新会话配置">＋ 新会话</button>
           <button id="open-workspace" class="sidebar-tool" title="打开工作空间" aria-label="打开工作空间"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l3 3h9v4M3 7v13h16l3-9H7l-4 9"/></svg></button>
@@ -37,7 +40,11 @@
         <p id="session-search-help" class="session-search-help">所有工作空间 · Ctrl / ⌘ K 搜索</p>
         <p id="session-search-status" class="session-search-status" role="status" aria-live="polite" aria-atomic="true" hidden></p>
         <nav id="sessions" aria-label="所有工作空间的会话历史"></nav>
-        <button id="open-settings" class="sidebar-footer" aria-haspopup="dialog" aria-controls="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.08a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.08a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.08a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg> 设置</button>
+        <div class="sidebar-bottom">
+          <div id="sidebar-service-slot"></div>
+          <button type="button" id="mobile-more" class="sidebar-footer" aria-label="更多：连接与界面设置" title="连接与界面设置" aria-haspopup="dialog" aria-controls="mobile-menu"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span class="sidebar-label">更多</span></button>
+          <button id="open-settings" class="sidebar-footer" title="设置" aria-label="设置" aria-haspopup="dialog" aria-controls="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.08a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.08a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.08a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg><span class="sidebar-label">设置</span></button>
+        </div>
       </aside>
       <button
         id="sidebar-backdrop"
@@ -47,22 +54,13 @@
       ></button>
       <main>
         <header>
-          <button
-            id="toggle-sidebar"
-            class="secondary"
-            aria-label="切换侧栏"
-            aria-expanded="true"
-            aria-controls="sidebar"
-          >
-            ☰
-          </button>
           <div class="header-title">
             <div class="title-row"><button type="button" id="session-alert" class="session-attention-dot" title="任务已停下，点击知道了" aria-label="任务已停下，点击标记为已查看" hidden></button><h1 id="session-title">新会话</h1></div>
             <div class="workspace-location"><span id="workspace-label"></span><button id="copy-workspace" class="icon-button" title="复制工作空间路径" aria-label="复制工作空间路径"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h11v12H9ZM15 9V3H4v12h5"/></svg></button><button id="reveal-workspace" class="icon-button" title="在资源管理器中打开" aria-label="在资源管理器中打开工作空间"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l3 3h9v4M3 7v13h16l3-9H7l-4 9"/></svg></button><span id="workspace-feedback" class="sr-only" role="status"></span></div>
           </div>
           <div class="service-controls">
             <button type="button" id="status" aria-live="polite" aria-haspopup="dialog" aria-controls="settings" title="查看连接设置">连接中</button>
-            <button type="button" id="view-options-trigger" class="icon-button" popovertarget="view-options" aria-label="更多视图选项" title="更多视图选项" aria-expanded="false" aria-controls="view-options" aria-haspopup="dialog"></button>
+            <button type="button" id="view-options-trigger" class="sidebar-footer" popovertarget="view-options" aria-label="更多视图选项" title="更多视图选项" aria-expanded="false" aria-controls="view-options" aria-haspopup="dialog"><span class="sidebar-label">更多</span></button>
             <div id="view-options" class="utility-popover" popover aria-label="视图选项" role="dialog">
             <h2>视图选项</h2>
             <label for="conversation-font-scale">会话字号（桌面）</label>
@@ -80,7 +78,6 @@
             <button type="button" id="toggle-theme" class="icon-button" aria-pressed="false"><svg class="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.2v2.4M12 19.4v2.4M4.2 12H1.8M22.2 12h-2.4M6.5 6.5 4.8 4.8M19.2 19.2l-1.7-1.7M17.5 6.5l1.7-1.7M4.8 19.2l1.7-1.7"/></svg><svg class="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.6A8.6 8.6 0 0 1 9.4 3.5a8.6 8.6 0 1 0 11.1 11.1Z"/></svg></button>
             </div>
           </div>
-          <button type="button" id="mobile-more" class="icon-button" aria-label="更多：连接与界面设置" aria-haspopup="dialog" aria-controls="mobile-menu"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
         </header>
         <form id="login" hidden>
           <span>连接已断开，正在自动重连；消息和草稿仍保留在此页面。</span>
@@ -170,7 +167,8 @@
                 <button type="button" id="mobile-expand" class="secondary" aria-expanded="false" aria-controls="composer earliest session-title">展开</button>
               </div>
             </form>
-            <div class="composer-footer" id="composer-status" aria-label="会话上下文与用量">
+            <div class="composer-footer" id="composer-status" aria-label="会话状态、上下文与用量">
+              <span id="session-state" role="status" aria-live="polite" aria-atomic="true"></span>
               <button type="button" id="session-runtime" class="runtime-summary" aria-haspopup="dialog" aria-controls="session-detail" title="查看上下文与缓存用量"></button>
               <span id="task-timer" role="timer" aria-label="当前任务累计运行时间" hidden><span class="task-timer-dot" aria-hidden="true"></span><span id="task-timer-value">0s</span></span>
               <button type="button" id="session-billing-trigger" class="composer-billing" aria-haspopup="dialog" aria-label="查看会话累计估算账单"><span id="session-bill-total">账单</span></button>

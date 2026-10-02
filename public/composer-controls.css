@@ -45,7 +45,12 @@
 #composer-status #session-runtime:hover { background:var(--raised); color:var(--ink); }
 #composer-status #session-runtime[data-warning="true"] > span:last-child { color:var(--danger); }
 #composer-status #session-runtime > span { white-space:normal; overflow-wrap:anywhere; overflow:visible; }
+#composer-status #session-state { display:inline-flex; align-items:center; gap:4px; flex-shrink:0; color:var(--muted); font-size:12px; }
+#session-state::before { content:""; width:6px; height:6px; border:1px solid currentColor; border-radius:50%; }
+#session-state[data-state="running"]::before { background:var(--success); border-color:var(--success); }
+#session-state:is([data-state="stopping"], [data-state="offline"], [data-state="missing"]) { color:var(--danger); }
 #composer-status #task-timer { margin-left:0; padding-left:0; }
+#composer-status #task-timer .task-timer-dot { display:none; }
 #composer-status .composer-billing { flex-shrink:0; min-height:28px; padding:4px; border:0; border-radius:8px; background:transparent; color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
 #composer-status .composer-billing:hover { color:var(--ink); background:var(--raised); }
 #composer-action-help:not([hidden]) { display:block; margin:8px 0; font-size:12px; line-height:1.5; }
