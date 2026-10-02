@@ -1,5 +1,17 @@
 # 开发记录
 
+## 2026-10-02 模型配置与 Codex 认证重构
+
+- 时间：2026-10-02（本机 -07:00）。在 feat/model-config-rebuild 独立工作树实施，合入最新 origin/master a8b3501 后验证；不修改真实账号/凭据，不发真实模型请求。
+- 根因与修复：Pi 0.85.1 ProviderAuth.apiKey 与 WS/login 的 api_key 名称不同，导致 API Key 登录方法被拒；未配置供应商原先不可见，Codex 订阅路径不明确；目录 getError 未检查会假报应用成功；旧会话独立 runtime 未刷新，重选只换模型对象仍用旧端点/凭据或拒绝新增供应商。分别补枚举桥接、待连接与独立 Codex/API 入口、应用错误保留与 GET 重试、配置版本驱动的会话 runtime 刷新。
+- 认证状态：区分凭据保存、目录应用和实连；SDK CredentialSynchronizationError(login 已提交) 进入目录重建而非要求重复授权，目录失败保留部分成功提示，广播异常不伪装为登录失败；未知协议选项与草稿保留。Codex 使用 SDK 原生浏览器/设备码 OAuth、openai-codex-responses 与内置 ChatGPT 端点，不用普通 API Key 冒充订阅。
+- UI：沿用 Linear surface/line/ink/muted/accent、14/12px 字阶、8/12px 圆角与4px间距基数；三项本地状态不使用实连成功样式。截图复核后将手机设置分类改为单行横向滚动，给授权区域留足空间，触控按钮44px。
+- 审查补修：登录凭据优先于表单 API Key，新增认证来源提示并拒绝会被静默覆盖的新表单密钥；模型发现改用 SDK 有效认证与端点/请求头，保留命令型值不执行、OAuth不走通用发现；Header部分删除发送null，掩码改名要求重填；授权上限改20分钟避免截短设备码期限，已保存后的取消/超时等目录收尾，分别报告保存与应用。共享SQLite凭据可被旧runtime读取，旧会话问题主要涉及捕获的供应商配置，不能笼统归因于全部凭据陈旧。
+- 调研：五项只读调查完成并核对代码及官方引文；docs/model-config-research.md记录OpenCode、Cline、Continue、Open WebUI的认证/配置/发现差异及采用或不采用的理由。明确API Key与订阅OAuth分离、配置与实连分层；不扩展多账号连接别名和自动付费探测。
+- 验证：合入 a8b3501、审查补修后隔离 Node 全量1082项，1079通过/3跳过/0失败（F:/worktrees/model-config-verified.log）；首次非隔离测试受个人技能与临时目录污染，隔离默认高并发还触发现有 remote 计时断言，定向通过后以 concurrency=4 完整重跑通过，不修改无关生产代码。真实SDK回环HTTP断言模型/端点/凭据及同模型重选、新增供应商切换；真实SDK认证与模拟发现验证密钥优先级、Header删除与内置默认端点；合成Codex OAuth验证SQLite落库和重建解析，不等于本人授权成功。
+- Chromium：最新模型认证8组双主题/320、390、768、1440px及OAuth选择/设备码/API Key/Escape/状态通过（model-auth-browser-review.log、model-auth-artifacts-review/）；手机导航高度回归、mobile-reading、focus-ui-browser通过。Node语法和npm pack --dry-run通过，341个文件且无测试凭据/数据库/截图/日志混入（项目无独立build脚本）。证据位于F:/worktrees/仓库外路径。真实Codex登录/首条请求、真机与读屏未测。
+- 文件：src/{pi.js,model-auth.js,model-config.js}，public/{model-manager.js,model-manager.css,model-auth.js,style.css}，tests/model-{auth,auth-ui,config-runtime,manager,runtime-catalog}.test.js、model-auth-browser.py、model-selection-preview.mjs；README.md、docs/model-config-{protocol,research}.md、本记录。Git交付按项目授权执行；提交前再次fetch确认origin/master仍为a8b3501，生成索引已还原，主checkout未跟踪资料保持原样。
+
 ## 2026-10-02 侧栏图标轨道与输入区运行状态
 
 - 时间：2026-10-02 00:25（本机 -07:00）。原因：折叠按钮、更多选项及连接信息占据会话顶栏，折叠后失去侧栏入口。独立 `feat/sidebar-controls` 工作区基于最新 `origin/master b29b419`；不改后端、不触碰主 checkout 的未跟踪资料。

@@ -29,6 +29,27 @@ const factory = async (_tools, selection = {}) => {
 };
 factory.cwd = home;
 factory.catalog = () => catalog;
+// Opt-in auth fixture exercises the real WS bridge, never a provider login or network model call.
+if (process.env.PREVIEW_MODEL_AUTH === "1") {
+  const configured = new Set();
+  factory.authProviders = () => [
+    { id: "openai-codex", name: "OpenAI Codex", methods: [{ type: "oauth", name: "ChatGPT" }] },
+    { id: "openai", name: "OpenAI", methods: [{ type: "api_key", name: "API Key" }] },
+    { id: "environment-only", name: "Environment only", methods: [] },
+  ].map((p) => ({ ...p, configured: configured.has(p.id) }));
+  factory.login = async (id, type, interaction) => {
+    if (type === "oauth") {
+      await interaction.prompt({ type: "select", message: "登录方式", options: [
+        { id: "browser", label: "Browser" }, { id: "device", label: "Device code" },
+      ] });
+      interaction.notify({ type: "device_code", verificationUri: "https://example.invalid/device", userCode: "TEST-CODE" });
+      await interaction.prompt({ type: "text", message: "测试夹具：输入 ok 完成（不联网）" });
+    } else await interaction.prompt({ type: "secret", message: "API Key（仅测试夹具）" });
+    configured.add(id);
+  };
+  factory.logout = async (id) => { configured.delete(id); };
+  factory.refreshModels = async () => catalog;
+}
 factory.capabilities = async () => ({ skills: [], plugins: [], mcp: [], warnings: [], needsTrust: false });
 const sessions = new Sessions(factory, join(home, "defaults.json"), join(home, "sessions"));
 await sessions.create(home);

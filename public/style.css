@@ -1387,7 +1387,7 @@ textarea {
 .capability-agent .selectors label { display: grid; gap: 6px; min-width: 0; flex: 1 1 180px; font-size: 12px; }
 .capability-agent select { width: 100%; min-width: 0; }
 @media (max-width: 700px) {
-  /* 窄屏回到整块滚动，但分类列钉在顶部（给个高度上限，避免占满屏），滚下去也能切分类。 */
+  /* 窄屏分类改为单行横向滚动，避免六个分类占据半屏、挤走模型认证内容。 */
   .settings-layout { grid-template-columns: minmax(0, 1fr); overflow: auto; }
   #settings .settings-body { overflow: visible; }
   .settings-nav {
@@ -1395,10 +1395,13 @@ textarea {
     top: 0;
     z-index: 2;
     background: var(--surface);
-    max-height: 45dvh;
+    flex-direction: row;
+    align-self: start;
+    padding: 8px 12px;
     border-right: 0;
     border-bottom: 1px solid var(--line);
   }
+  .settings-nav button { flex: 0 0 auto; width: auto; min-height: 44px; margin: 0; white-space: nowrap; }
 }
 #mobile-menu::backdrop,
 #settings::backdrop,
