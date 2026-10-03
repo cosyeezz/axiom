@@ -445,6 +445,21 @@ test("instruction tools show their top-level name during streaming and execution
   } finally { dom.window.close(); }
 });
 
+test("tool timing keeps failure and elapsed visible while separating optional timeout detail", async () => {
+  const { dom, emit, output } = await page();
+  try {
+    emit("tool.state", { phase: "end", toolCallId: "timed", toolName: "bash", args: { command: "npm test" },
+      startedAt: 1000, endedAt: 17000, elapsedMs: 16000, timeoutSeconds: 600, timeoutSource: "explicit", isError: true });
+    const status = output.querySelector(".tool-status");
+    assert.equal(status.firstChild.textContent, "FAILED · 16s");
+    assert.match(status.querySelector(".tool-timeout").textContent, /时限 10m 00s（显式）/);
+    assert.equal(status.title, status.textContent);
+    emit("tool.state", { phase: "end", toolCallId: "plain", toolName: "let_axiom", args: { name: "todo.read" },
+      startedAt: 1000, endedAt: 2000, elapsedMs: 1000 });
+    assert.equal(output.querySelectorAll(".tool-status")[1].querySelector(".tool-timeout"), null);
+  } finally { dom.window.close(); }
+});
+
 test("instruction tool summaries safely handle invalid names without changing other tools", async () => {
   const { dom, emit, restore, output } = await page();
   try {

@@ -62,6 +62,9 @@ export const actionIconPaths = Object.freeze({
   checklist: 'm3 6 2 2 3-4M11 6h10M3 12h4m4 0h10M3 18h4m4 0h10',
   pending: 'M7 4h10a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3Z',
   clock: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM12 7v5l3 2',
+  // Cache storage and context occupancy: distinct familiar silhouettes at status-bar size.
+  cache: 'M20 6c0 1.66-3.58 3-8 3S4 7.66 4 6s3.58-3 8-3 8 1.34 8 3ZM4 6v12c0 1.66 3.58 3 8 3s8-1.34 8-3V6M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3',
+  gauge: 'M5.64 18.36a9 9 0 1 1 12.72 0H5.64ZM12 6v2M6 12h2m8 0h2M12 15l4-6',
   blocked: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM12 7v6m0 4h.01',
   copy: 'M8 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v2M11 9h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z',
   duplicate: 'M8 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v2M11 9h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2ZM14.5 12v5M12 14.5h5',

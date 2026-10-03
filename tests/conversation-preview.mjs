@@ -78,6 +78,45 @@ const states = [state,
     live: { agentId: "main", phase: "start", toolCallId: "long", toolName: "read", args: { path: `${state.cwd}/a-very-long-directory-name/another-directory/一个很长的目录名称/这是为了验证省略和窄屏布局的文件名称.test.js` } },
   } },
 ];
+// Compact tool/status regression: independent data, never calls a model or real tool.
+const densityState = structuredClone(state);
+densityState.sessionId = "ui-density";
+densityState.title = "工具与状态栏 · 紧凑布局验收";
+densityState.messages = [];
+densityState.tasks = [];
+densityState.tools = {};
+for (const [index, [name, instruction, failed, elapsedMs, timeoutSeconds]] of [
+  ["ask_axiom", "guide.git", false, 0],
+  ["let_axiom", "todo.read", false, 16000],
+  ["let_axiom", "mcp.server.an-extremely-long-instruction-name-with-extra-segments", false, 16000],
+  ["let_axiom", "todo.update", true, 16000],
+  ["bash", "npm test", false, 754000, 600],
+  ["ask_axiom", "", false, 0],
+].entries()) {
+  const id = `density-${index}`;
+  const args = name === "bash" ? { command: instruction } : { name: instruction };
+  densityState.messages.push(
+    { agentId: "main", entryId: `${id}-a`, message: assistant([{ type: "toolCall", id, name, arguments: args }]) },
+    { agentId: "main", entryId: `${id}-r`, message: { role: "toolResult", toolCallId: id, toolName: name, isError: failed, content: [{ type: "text", text: "隔离预览结果" }] } },
+  );
+  densityState.tools[id] = { agentId: "main", phase: "end", toolCallId: id, toolName: name, args, isError: failed,
+    startedAt: Date.now() - elapsedMs - 1000, endedAt: Date.now() - 1000, elapsedMs, timeoutSeconds, timeoutSource: "explicit" };
+}
+densityState.tasks.push({ id: "density-child", task: "子代理共享摘要布局", status: "completed", runtime: state.runtime });
+densityState.messages.push(...densityState.messages.map(entry => ({ ...structuredClone(entry), agentId: "density-child" })));
+states.push(densityState, { ...densityState, sessionId: "ui-density-running", status: "running", messages: [], tasks: [], tools: {
+  live: { agentId: "main", phase: "start", toolCallId: "density-live", toolName: "let_axiom", args: { name: "todo.read" }, startedAt: Date.now() - 16000 },
+} });
+for (const [suffix, context] of [
+  ["estimated", { tokens: 1234, contextWindow: 10000, percent: 12.34, estimated: true }],
+  ["unknown-window", { tokens: 1234, contextWindow: null, percent: null, estimated: true }],
+]) {
+  const variant = structuredClone(densityState);
+  variant.sessionId = `ui-density-${suffix}`;
+  variant.runtime.context = context;
+  variant.tasks[0].runtime.context = context;
+  states.push(variant);
+}
 const longState = structuredClone(state);
 longState.sessionId = "ui-long";
 longState.title = "阅读验收 · 长内容与随手收起";

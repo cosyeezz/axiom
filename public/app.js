@@ -911,6 +911,24 @@ function runtimeSummary(value = {}) {
   const identity = split >= 0 ? `${model.slice(0, split)} · ${model.slice(split + 1)}` : model || "模型待加载";
   return [`缓存 ${cache}`, `上下文${context?.estimated ? "（估算）" : ""} ${contextText}`, `${identity} · ${thinking || '—'}`];
 }
+function renderRuntimeUsage(node, value) {
+  const { usage, context } = value || {};
+  const valid = (n) => Number.isFinite(n) && n >= 0;
+  const count = (n) => valid(n) ? n.toLocaleString("en-US") : "—";
+  const input = (usage?.input ?? 0) + (usage?.cacheRead ?? 0) + (usage?.cacheWrite ?? 0);
+  const cache = runtimeSummary(value)[0].replace(/^缓存 /, "");
+  const known = valid(context?.tokens);
+  const hasPercent = known && context?.contextWindow > 0 && valid(context.contextWindow) && valid(context.percent);
+  const detail = [
+    `当前上下文${context?.estimated ? "（估算）" : ""}：${known ? count(context.tokens) + " tokens" : "待报告"}`,
+    `上下文窗口：${context?.contextWindow > 0 && valid(context.contextWindow) ? count(context.contextWindow) + " tokens" : "未配置"}${hasPercent ? ` · ${context.percent.toFixed(1)}%` : ""}`,
+    `最近请求缓存命中率：${cache}${cache !== "—" ? `（${count(usage.cacheRead)} / ${count(input)} tokens）` : "（暂无完整可用数据）"}`,
+    "上下文是当前占用，不是累计消耗；缓存命中率是最近一次已报告用量的缓存读取占输入总量比例。",
+  ];
+  node.replaceChildren(...detail.map(text => {
+    const p = document.createElement("p"); p.textContent = text; return p;
+  }));
+}
 function renderRuntime(node, value) {
   if (node.id === "session-runtime") {
     $("session-system-prompt").textContent = value?.systemPrompt ?? "系统提示词尚未加载；会话启动后可查看。";
@@ -923,25 +941,12 @@ function renderRuntime(node, value) {
       ? `会话累计估算费用${sessionBill ? "，含主代理与子代理" : "，仅有主代理数据"}${partial ? "；部分用量或价格缺失" : ""}，非供应商实际扣款。点击查看明细。`
       : "尚无已报告的账单记录；不代表没有费用。点击查看明细。";
     $("mobile-runtime").textContent = runtimeSummary(value).join(" · ");
-    const { usage, context } = value || {};
+    const { context } = value || {};
     const valid = (n) => Number.isFinite(n) && n >= 0;
-    const count = (n) => valid(n) ? n.toLocaleString("en-US") : "—";
-    const input = (usage?.input ?? 0) + (usage?.cacheRead ?? 0) + (usage?.cacheWrite ?? 0);
-    const cache = runtimeSummary(value)[0].replace(/^缓存 /, "");
-    const known = valid(context?.tokens);
-    const hasPercent = known && context?.contextWindow > 0 && valid(context.contextWindow) && valid(context.percent);
-    const percent = hasPercent ? `${context.percent.toFixed(1)}%` : "—";
+    const hasPercent = valid(context?.tokens) && context?.contextWindow > 0 && valid(context.contextWindow) && valid(context.percent);
     node.setAttribute("aria-label", `${runtimeSummary(value).slice(0, 2).join("，")}，查看上下文与缓存用量`);
     node.dataset.warning = String(hasPercent && context.percent >= 80);
-    const detail = [
-      `当前上下文${context?.estimated ? "（估算）" : ""}：${known ? count(context.tokens) + " tokens" : "待报告"}`,
-      `上下文窗口：${context?.contextWindow > 0 && valid(context.contextWindow) ? count(context.contextWindow) + " tokens" : "未配置"}${hasPercent ? ` · ${percent}` : ""}`,
-      `最近请求缓存命中率：${cache}${cache !== "—" ? `（${count(usage.cacheRead)} / ${count(input)} tokens）` : "（暂无完整可用数据）"}`,
-      "上下文是当前占用，不是累计消耗；缓存命中率是最近一次已报告用量的缓存读取占输入总量比例。",
-    ];
-    $("session-usage-body").replaceChildren(...detail.map(text => {
-      const p = document.createElement("p"); p.textContent = text; return p;
-    }));
+    renderRuntimeUsage($("session-usage-body"), value);
   }
   const { usage, context } = value || {};
   const count = (n) => Number.isFinite(n) && n >= 0 ? n.toLocaleString("en-US") : "未报告";
@@ -953,7 +958,28 @@ function renderRuntime(node, value) {
   const lines = runtimeSummary(value);
   node.replaceChildren(...(node.id === "session-runtime" ? lines.slice(0, 2) : lines).map((text, index) => {
     const span = document.createElement("span");
-    span.textContent = text; span.title = titles[index];
+    span.title = `${text}。${titles[index]}`;
+    if (index > 1) { span.textContent = text; return span; }
+    span.className = `runtime-metric runtime-${index === 0 ? "cache" : "context"}`;
+    // Fixed SVG geometry only; all reported values remain text nodes.
+    span.innerHTML = actionIcon(index === 0 ? "cache" : "gauge");
+    const label = document.createElement("span");
+    label.className = "sr-only";
+    const separator = text.indexOf(" ");
+    label.textContent = text.slice(0, separator + 1);
+    const valueNode = document.createElement("span");
+    valueNode.className = index === 1 ? "runtime-context-detail" : "runtime-value";
+    valueNode.textContent = `${index === 1 && context?.estimated ? "≈ " : ""}${text.slice(separator + 1)}`;
+    span.append(label, valueNode);
+    if (index === 1) {
+      const compact = document.createElement("span");
+      compact.className = "runtime-context-percent";
+      const known = Number.isFinite(context?.tokens) && context.tokens >= 0
+        && Number.isFinite(context.contextWindow) && context.contextWindow > 0
+        && Number.isFinite(context.percent) && context.percent >= 0;
+      compact.textContent = known ? `${context.estimated ? "≈ " : ""}${context.percent.toFixed(1)}%` : "—";
+      span.append(compact);
+    }
     return span;
   }));
   node.title = "缓存：最近报告用量；上下文：当前占用；费用：会话累计估算。";
@@ -961,6 +987,7 @@ function renderRuntime(node, value) {
 function updateTaskRuntime(task, value) {
   if (!task) return;
   renderRuntime(task.runtime, value);
+  renderRuntimeUsage(task.node.querySelector(".task-usage-body"), value);
   task.trigger.querySelector(".task-cost").textContent = value?.billing?.records ? money(value.billing.cost.total) : "用量待报告";
   renderBill(task.node.querySelector(".task-bill-body"), value?.billing, { compact: true });
   task.systemPrompt.textContent = value?.systemPrompt ?? "系统提示词尚未加载";
@@ -1787,7 +1814,13 @@ function renderToolTiming(tool) {
   if (!status || !tool.startedAt) return;
   const elapsed = tool.endedAt ? tool.elapsedMs ?? tool.endedAt - tool.startedAt : Date.now() - tool.startedAt;
   const limit = tool.timeoutSource === "unlimited" ? " · 不限时" : tool.timeoutSeconds != null ? ` · 时限 ${timerText(tool.timeoutSeconds * 1000)}（${tool.timeoutSource === "default" ? "默认" : "显式"}）` : "";
-  status.textContent = `${tool.node.dataset.state === "failed" ? "FAILED · " : ""}${timerText(elapsed)}${limit}`;
+  status.replaceChildren(`${tool.node.dataset.state === "failed" ? "FAILED · " : ""}${timerText(elapsed)}`);
+  if (limit) {
+    const timeout = document.createElement("span");
+    timeout.className = "tool-timeout";
+    timeout.textContent = limit;
+    status.append(timeout);
+  }
   status.title = status.textContent;
 }
 function renderSubtaskTiming(task) {

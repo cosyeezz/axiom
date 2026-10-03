@@ -45,7 +45,25 @@ try:
                 assert action['y'] + action['height'] <= 900
                 assert page.locator('#composer-status').is_visible()
                 assert page.locator('#session-runtime').is_visible()
-                assert '上下文 5,000 / 128,000' in page.locator('#session-runtime').inner_text()
+                runtime = page.locator('#session-runtime')
+                visible = runtime.inner_text()
+                assert runtime.locator('.sr-only').count() == 2
+                assert runtime.locator('.sr-only').first.evaluate("el => getComputedStyle(el).clip === 'rect(0px, 0px, 0px, 0px)'")
+                assert runtime.locator('svg').count() == 2
+                if width <= 700:
+                    assert '5,000' not in visible and '128,000' not in visible
+                    assert '3.9%' in visible
+                    cache = runtime.locator('.runtime-cache').bounding_box()
+                    context = runtime.locator('.runtime-context').bounding_box()
+                    assert abs(cache['y'] - context['y']) < 1, (width, cache, context)
+                    assert runtime.bounding_box()['height'] == 44
+                else:
+                    assert '5,000 / 128,000 · 3.9%' in visible
+                footer = page.locator('#composer-status').bounding_box()
+                composer = page.locator('#composer').bounding_box()
+                assert 0 <= footer['y'] - composer['y'] - composer['height'] <= 4
+                assert footer['height'] <= (88 if width <= 700 else 56), (width, footer)
+                assert '上下文 5,000 / 128,000' in runtime.get_attribute('aria-label')
                 assert '≈ $0.023' in page.locator('#session-bill-total').inner_text()
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), width
                 expect(page.locator('#composer-action-help')).not_to_be_visible()

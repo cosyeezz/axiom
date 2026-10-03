@@ -1,5 +1,14 @@
 # 开发记录
 
+## 2026-10-02 工具摘要与底栏统计紧凑化
+
+- 时间：2026-10-02 20:30（本机 -07:00）。独立 `feat/compact-tool-status` 工作树基于最新 `origin/master 74a707d`，保留已合入的输入区底部操作栏与主 checkout 未跟踪资料。用户旧截图模型在框外，当前模型已移入框内，不回退上游布局。
+- 根因：≤700px 的工具 grid 强制指令占第二行、上下 padding 8px；手机 runtime 强制每项100%宽并扩张余量，完整 token 文本进一步换行。修复为单行工具摘要、4px间距并保留44px点击，长指令省略，失败／耗时优先；额外时限手机在提示查看，桌面不隐藏。
+- 状态指标：共享数据库／仪表盘 SVG，移除可见缓存／上下文中文标签但保留读屏文字、完整提示与用量详情；手机≤700px仅显示百分比，估算≈和未知—保持真实语义，桌面（包括宽屏粗指针）保留详情。指标同排、不强制扩张；极窄屏费用可整项自然换行。复用 Linear surface／muted／line／accent 与4／8／12px间距、12px状态文字，无新主题色或依赖。
+- 验证：首轮定向33项Node通过；Chromium输入区8宽度双主题、长输入／短视口／菜单通过；新增工具与指标回归6视口/输入组合双主题通过，覆盖主／子代理、短／长／空指令、FAILED、运行中、时限、键盘展开、详情可达与无溢出。同步最新 `origin/master 74a707d` 后，隔离 HOME／TEMP／PI_CODING_AGENT_DIR 串行全量最终1085项：1082通过、3跳过、0失败（313s）；`node --check` 与 `git diff --check` 通过，原生模块无独立 build 脚本。索引测试自动重建的无关 INDEX.md 已恢复，不纳入提交。
+- 审查修正：独立只读审查指出桌面估算标记被隐藏、手机子代理缺少完整数值的触摸入口。桌面数值补可见≈；复用完整用量渲染，为子代理增加原生「上下文与缓存」折叠详情，保持44px入口。补已知百分比／窗口未知的主子代理浏览器断言及动态数据清空测试；Chromium两套最终复验通过。
+- 文件：`public/{app.js,index.html,style.css,composer-controls.css,icons.js}`；`tests/{conversation-preview.mjs,compact-tool-status-ui.py,compact-composer-ui.py,focus-ui.test.js,message-activity.test.js}`；`README.md`、本记录。截图／日志留在仓库外 `F:/worktrees/compact-tool-*`；未做手机真机、屏幕阅读器或桌面壳原生验证，不调用真实模型。依赖安装报告既有4项漏洞，本次不扩展依赖升级。
+
 ## 2026-10-02 输入区底部操作栏与信息分区
 
 - 时间：2026-10-02 01:10（本机 -07:00）。原因：移除用户指定的操作指引键盘入口，并参考 Codex 将操作留在输入框底部。独立 `feat/composer-bottom-toolbar` 工作树基于 `origin/master b29b419`；先后同步侧栏改动 `a8b3501` 与模型配置／鉴权改动 `ae7a216`，保留全部上游功能和主 checkout 未跟踪资料。
