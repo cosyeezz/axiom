@@ -67,6 +67,41 @@ test("reattach rendering failure leaves one disconnected recovery, never a phant
   assert.equal(page.app.connected(), false);
 });
 
+test("late reattach failure cannot tear down a replacement connection to the same session", async t => {
+  const page = bootSessionPage({ records: makeRecords(1) }); t.after(page.close);
+  page.open(); await until(() => page.app.connected(), "initial connect");
+  const original = page.app.request; let rejectOld;
+  page.app.setRequest((type, data) => type === "session.attach" ? new Promise((_, reject) => { rejectOld = reject; }) : original(type, data));
+  const stale = page.app.reattach();
+  page.app.setRequest(original);
+  await reconnect(page); await until(() => page.app.connected(), "replacement ready");
+  rejectOld(new Error("obsolete attach failure")); await stale;
+  assert.equal(page.app.transportState(), "open");
+  assert.doesNotMatch(page.$("error").textContent, /obsolete/);
+});
+
+test("late reattach success or error after switching cannot replace the active conversation", async t => {
+  const page = bootSessionPage({ records: makeRecords(1) }); t.after(page.close);
+  page.open(); await until(() => page.app.connected(), "initial connect");
+  const original = page.app.request; let finish;
+  page.app.setRequest((type, data) => type === "session.attach" ? new Promise(resolve => { finish = resolve; }) : original(type, data));
+  const old = page.app.reattach();
+  await page.app.switchSession(async () => page.fullState({ sessionId: "b" }));
+  finish(page.fullState()); await old;
+  assert.equal(page.app.session(), "b"); assert.equal(page.app.transportState(), "open");
+  page.app.setRequest(original);
+});
+
+test("switch response already resolved before disconnect must not mount on the new connection", async t => {
+  const page = bootSessionPage({ records: makeRecords(1) }); t.after(page.close);
+  page.open(); await until(() => page.app.connected(), "initial connect");
+  const switching = page.app.switchSession(() => Promise.resolve(page.fullState({ sessionId: "stale" })));
+  page.sockets[0].close(1000); await switching;
+  assert.equal(page.app.session(), "long");
+  page.$("login").requestSubmit(); page.open(); await until(() => page.app.connected(), "restored");
+  assert.equal(page.app.session(), "long");
+});
+
 test("a reconnect business error on an existing session never creates a replacement", async t => {
   let fail = false;
   const page = bootSessionPage({ records: makeRecords(1), respond(req, fallback) {

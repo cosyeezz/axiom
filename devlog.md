@@ -1,5 +1,14 @@
 # 开发记录
 
+## 2026-10-03 大消息传输与连接恢复修复
+
+- 时间：2026-10-03 21:05（本机 -07:00）。独立 `feat/connection-resilience` 工作树基于最新 `origin/master 0a4d86a`；不改主 checkout 未跟踪文件，不重启现有4319/4320服务、不刷新用户页面。
+- 原因：现场29条34–66MB message_limit/5条send_failed；1009停止恢复、保护计数跨稳定连接累加、service.status心跳受维护IO拖慢且忽略入站活性。多端口没有踢旧连接机制，端口实际脚本版本不一致需另行升级核验。
+- 实施：协商 `axiom.chunk.v1`，服务端UTF-8安全64KiB分块/512KiB帧、128MiB逻辑消息、每连接256MiB/4096条FIFO与背压；浏览器严格有界组装、30秒空闲/120秒总期限，输入仍32MiB，不重放副作用请求。60秒稳定期加活性证据重置两类预算；轻量ping保留鉴权/维护锁例外，旧服务兼容status。连接ID/时间/关闭码诊断不记录正文凭证；标准80/443、完整URL默认端口及4319/4320隔离解析修复，过期attach/switch不误伤新连接。
+- 复核：只读独立审查发现新ESM静态路由遗漏及分块中10秒心跳提前判死，均修正并新增回归。真实ws单消息34/66MiB、转义/中文/emoji、FIFO事件与末尾ping已通过；新旧协议维持兼容，容量/请求/慢链路仍有有限边界，不宣称整个应用内存有界。
+- 验证：独立npm ci成功；首次非隔离全量受宿主skills污染，改用F:/worktrees内隔离HOME/USERPROFILE/TEMP/TMP/TMPDIR/PI_CODING_AGENT_DIR/AXIOM_HOME串行，基线1085项（1082通过、3跳过、0失败）。定向44项通过；首轮全量发现召回旧attach主动failSnapshot误伤新切换，增加视图/连接代次并移除过期成功的主动断线，保留召回草稿后17项切换/恢复通过。修正后全量1104项（1101通过、3跳过、0失败，338秒）；JS语法、git diff --check与npm pack --dry-run通过，345文件含新模块。远端随后新增cdb4092迁移修复，集成后结果另记。
+- 文件：`src/{transport,server,protocol}.js`、`public/{transport,transport-framing,app}.js`、`desktop/connector/index.html`，传输/地址/恢复/服务及测试拼接helper；README、本记录、codebase-map职责/知识/生成索引。未调用模型、未在实际WebView验证休眠/切网/内存峰值，运行服务的生效需维护窗口更新重启并手动刷新保存过草稿的页面。
+
 ## 2026-10-02 工具摘要与底栏统计紧凑化
 
 - 时间：2026-10-02 20:30（本机 -07:00）。独立 `feat/compact-tool-status` 工作树基于最新 `origin/master 74a707d`，保留已合入的输入区底部操作栏与主 checkout 未跟踪资料。用户旧截图模型在框外，当前模型已移入框内，不回退上游布局。

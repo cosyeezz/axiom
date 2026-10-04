@@ -128,15 +128,17 @@
     const text = String(raw || "").trim();
     if (!text) return null;
     let url;
-    try { url = new URL(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(text) ? text : `http://${text}`); }
+    const full = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(text);
+    const authority = (full ? text.slice(text.indexOf("://") + 3) : text).split(/[/?#]/)[0];
+    if (/[\\\s]/.test(authority) || authority.endsWith(":")) return null;
+    try { url = new URL(full ? text : `http://${text}`); }
     catch { return null; }
     if ((url.protocol !== "http:" && url.protocol !== "https:")
       || !url.hostname || url.username || url.password) return null;
-    const port = url.port ? Number(url.port) : 4319;
-    if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
-    // url.host 已含 IPv6 方括号与显式端口；无端口时补默认 4319。
-    const hostPart = url.port ? url.host : `${url.host}:${port}`;
-    return `${url.protocol}//${hostPart}`;
+    // URL removes explicit :80/:443. Detect omission before normalization, including IPv6.
+    if (!full && !/:\d+$/.test(authority)) url.port = "4319";
+    if (url.port && (Number(url.port) < 1 || Number(url.port) > 65535)) return null;
+    return url.origin;
   }
 
   // no-cors 探测：只要网络层可达且服务返回任意 HTTP 响应即视为在线（opaque 响应不可读属预期）。

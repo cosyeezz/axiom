@@ -5,6 +5,45 @@ import { WebSocket } from "ws";
 import { Sessions } from "../src/sessions.js";
 import { createServerApp } from "../src/server.js";
 import { command } from "../src/protocol.js";
+import { CHUNK_PROTOCOL } from "../public/transport-framing.js";
+
+test("negotiated ping skips maintenance IO, stays authorized while stopping and ports remain independent", async () => {
+  let allowed = true, lookups = 0;
+  const sessions = () => ({ list: () => [], close: async () => {} });
+  const app = createServerApp(sessions(), { getOperation: async () => { lookups++; throw new Error("slow/private maintenance"); } });
+  const other = createServerApp(sessions());
+  const remote = app.createRemoteServer(async () => allowed);
+  const servers = [app.server, other.server, remote];
+  const sockets = [];
+  try {
+    for (const server of servers) { server.listen(0, "127.0.0.1"); await once(server, "listening"); }
+    for (const server of servers) {
+      const ws = new WebSocket(`ws://127.0.0.1:${server.address().port}/ws`, [CHUNK_PROTOCOL, "axiom"]);
+      sockets.push(ws); await once(ws, "open"); assert.equal(ws.protocol, CHUNK_PROTOCOL);
+    }
+    const request = async (ws, type) => {
+      const response = once(ws, "message"); ws.send(JSON.stringify({ id: "test", type }));
+      return JSON.parse((await response)[0]);
+    };
+    app.prepareStop();
+    for (const ws of sockets) {
+      const result = await request(ws, "connection.ping");
+      assert.equal(result.ok, true); assert.equal(result.data.alive, true);
+      assert.match(result.data.connectionId, /^[a-f0-9-]{36}$/);
+    }
+    assert.equal(lookups, 0);
+    const ids = await Promise.all(sockets.map(ws => request(ws, "connection.ping")));
+    assert.equal(new Set(ids.map(x => x.data.connectionId)).size, 3);
+    const closed = once(sockets[2], "close"); allowed = false;
+    sockets[2].send(JSON.stringify({ id: "revoked", type: "connection.ping" })); await closed;
+    assert.equal((await request(sockets[0], "connection.ping")).ok, true);
+    assert.equal((await request(sockets[1], "connection.ping")).ok, true);
+    assert.throws(() => command.parse({ id: "x", type: "connection.ping", extra: true }));
+  } finally {
+    for (const ws of sockets) ws.terminate();
+    await app.close(); await other.close();
+  }
+});
 
 test("local connection without token, foreign origin rejection, recovery and shutdown", async () => {
   let finish,
@@ -58,7 +97,7 @@ test("local connection without token, foreign origin rejection, recovery and shu
   let ws;
   try {
     const http = `http://127.0.0.1:${app.server.address().port}`;
-    for (const path of ["/", "/app.js", "/todo.js", "/todo.css", "/style.css", "/file-picker.js", "/file-picker.css", "/memory-tags.js", "/answer-tags.js", "/markdown-scan.js", "/vendor/marked.js"]) {
+    for (const path of ["/", "/app.js", "/transport-framing.js", "/todo.js", "/todo.css", "/style.css", "/file-picker.js", "/file-picker.css", "/memory-tags.js", "/answer-tags.js", "/markdown-scan.js", "/vendor/marked.js"]) {
       const first = await fetch(http + path);
       assert.equal(first.status, 200, `静态资源不可用：${path}`);
       if (path.endsWith(".js")) assert.match(first.headers.get("content-type"), /javascript/, path);
