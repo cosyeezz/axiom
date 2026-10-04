@@ -1,5 +1,5 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/10/3 21:17:23）
+# Axiom 多级代码索引（生成于 2026/10/3 21:33:59）
 
 ## L1 模块总览（文件 → 职责）
 
@@ -97,7 +97,7 @@
 | src/session-history.js | 45 | 稳定消息身份、线缆记录投影与只读 JSONL 历史读取 | messageIdOf, toWireRecord, readSessionManager, messageEntries |
 | src/session-memory.js | 38 | 标题提取登记、轮次预算挂钩与委派背景 | textOf, memoryHooks |
 | src/session-store.js | 489 | 会话三表、实体增量更新、逐会话事务与旧数据迁移 | EVENT_TYPES, SESSION_FIELDS, TABLES, INDEXES |
-| src/sessions.js | 2480 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | cleanupSessionFiles, hasRunningTasks, referencedToolKeys, relevantTools |
+| src/sessions.js | 2482 | Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复 | cleanupSessionFiles, hasRunningTasks, referencedToolKeys, relevantTools |
 | src/shared-gate.js | 130 | 用户级共享闸门端点与远程服务适配 | gateLayout, reconnectingGate, remoteService, shareGate |
 | src/task-budget.js | 36 | 主子代理轮次预算规则、收尾提示词与配置页参数校验 | TASK_BUDGET_LIMITS, taskBudgetDefaults, within, taskBudgetPolicy |
 | src/task-execution.js | 23 | 子任务活动阶段、独立时间预算、停止事实与总结提示 | EXECUTION_DEFAULTS, ACTIVE_TASK_STATES, stopReport, stopSummaryPrompt |
@@ -282,7 +282,7 @@
 | tests/session-flow.test.js | 596 | node --test 测试（npm test） | flowFactory, jsonlFactory |
 | tests/session-history.test.js | 293 | node --test 测试（npm test） | build, fakeSource, append |
 | tests/session-memory.test.js | 174 | node --test 测试（npm test） | reply |
-| tests/session-migration.test.js | 282 | node --test 测试（npm test） | factory, workspaceHash |
+| tests/session-migration.test.js | 339 | node --test 测试（npm test） | factory, workspaceHash |
 | tests/session-model-restore.test.js | 61 | node --test 测试（npm test） | stubFactory, cleanup |
 | tests/session-persistence.test.js | 517 | node --test 测试（npm test） | Sessions, factory |
 | tests/session-search-ui.py | 141 | node --test 测试（npm test） | - |
@@ -1863,7 +1863,7 @@
 | saveTask | method | 456 |
 | listTasks | method | 483 |
 
-### src/sessions.js（2480 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
+### src/sessions.js（2482 行） — Sessions：会话生命周期、增量保存、元数据启动与SDK按需恢复
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1931,60 +1931,60 @@
 | load | method | 726 |
 | ensureLoaded | method | 749 |
 | migrateLegacySessions | method | 776 |
-| sessionData | method | 800 |
-| persist | method | 820 |
-| writeChange | method | 854 |
-| saveChange | method | 870 |
-| list | method | 875 |
-| rename | method | 892 |
-| importSession | method | 907 |
-| safePoints | method | 937 |
-| navigationItem | method | 943 |
-| revert | method | 952 |
-| fork | method | 979 |
-| continueFromPoint | method | 998 |
-| duplicate | method | 1005 |
-| createMainAgent | method | 1075 |
-| create | method | 1092 |
-| scheduleTodo | method | 1499 |
-| holdTodoNotifications | method | 1511 |
-| todoAction | method | 1519 |
-| advanceTodo | method | 1547 |
-| scheduleMemory | method | 1565 |
-| scheduleTaskNotifications | method | 1586 |
-| deliverTaskNotifications | method | 1599 |
-| confirmTaskNotification | method | 1651 |
-| settleTaskNotifications | method | 1664 |
-| get | method | 1683 |
-| revealWorkspace | method | 1688 |
-| browse | method | 1702 |
-| listFiles | method | 1708 |
-| refreshSkills | method | 1770 |
-| configData | method | 1776 |
-| snapshot | method | 1791 |
-| compactionAttempt | method | 1888 |
-| compactionMessages | method | 1902 |
-| subscribe | method | 1951 |
-| canReconfigure | method | 1959 |
-| canConfigureCapabilities | method | 1965 |
-| configureCapabilities | method | 1974 |
-| configure | method | 2030 |
-| startRun | method | 2094 |
-| retry | method | 2144 |
-| prompt | method | 2159 |
-| withdraw | method | 2196 |
-| replyQuestion | method | 2258 |
-| safeStop | method | 2267 |
-| startCompaction | method | 2303 |
-| cancelCompaction | method | 2321 |
-| cancel | method | 2329 |
-| cancelTask | method | 2368 |
-| appendTask | method | 2376 |
-| retryTask | method | 2383 |
-| deleteRecords | method | 2394 |
-| releaseIdle | method | 2405 |
-| remove | method | 2428 |
-| close | method | 2470 |
+| sessionData | method | 802 |
+| persist | method | 822 |
+| writeChange | method | 856 |
+| saveChange | method | 872 |
+| list | method | 877 |
+| rename | method | 894 |
+| importSession | method | 909 |
+| safePoints | method | 939 |
+| navigationItem | method | 945 |
+| revert | method | 954 |
+| fork | method | 981 |
+| continueFromPoint | method | 1000 |
+| duplicate | method | 1007 |
+| createMainAgent | method | 1077 |
+| create | method | 1094 |
+| scheduleTodo | method | 1501 |
+| holdTodoNotifications | method | 1513 |
+| todoAction | method | 1521 |
+| advanceTodo | method | 1549 |
+| scheduleMemory | method | 1567 |
+| scheduleTaskNotifications | method | 1588 |
+| deliverTaskNotifications | method | 1601 |
+| confirmTaskNotification | method | 1653 |
+| settleTaskNotifications | method | 1666 |
+| get | method | 1685 |
+| revealWorkspace | method | 1690 |
+| browse | method | 1704 |
+| listFiles | method | 1710 |
+| refreshSkills | method | 1772 |
+| configData | method | 1778 |
+| snapshot | method | 1793 |
+| compactionAttempt | method | 1890 |
+| compactionMessages | method | 1904 |
+| subscribe | method | 1953 |
+| canReconfigure | method | 1961 |
+| canConfigureCapabilities | method | 1967 |
+| configureCapabilities | method | 1976 |
+| configure | method | 2032 |
+| startRun | method | 2096 |
+| retry | method | 2146 |
+| prompt | method | 2161 |
+| withdraw | method | 2198 |
+| replyQuestion | method | 2260 |
+| safeStop | method | 2269 |
+| startCompaction | method | 2305 |
+| cancelCompaction | method | 2323 |
+| cancel | method | 2331 |
+| cancelTask | method | 2370 |
+| appendTask | method | 2378 |
+| retryTask | method | 2385 |
+| deleteRecords | method | 2396 |
+| releaseIdle | method | 2407 |
+| remove | method | 2430 |
+| close | method | 2472 |
 
 ### src/shared-gate.js（130 行） — 用户级共享闸门端点与远程服务适配
 
@@ -3350,7 +3350,7 @@
 | reply | const | 9 |
 | memoryHooks | method | 51 |
 
-### tests/session-migration.test.js（282 行） — node --test 测试（npm test）
+### tests/session-migration.test.js（339 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|

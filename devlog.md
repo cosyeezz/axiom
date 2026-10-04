@@ -7,7 +7,8 @@
 - 实施：协商 `axiom.chunk.v1`，服务端UTF-8安全64KiB分块/512KiB帧、128MiB逻辑消息、每连接256MiB/4096条FIFO与背压；浏览器严格有界组装、30秒空闲/120秒总期限，输入仍32MiB，不重放副作用请求。60秒稳定期加活性证据重置两类预算；轻量ping保留鉴权/维护锁例外，旧服务兼容status。连接ID/时间/关闭码诊断不记录正文凭证；标准80/443、完整URL默认端口及4319/4320隔离解析修复，过期attach/switch不误伤新连接。
 - 复核：只读独立审查发现新ESM静态路由遗漏及分块中10秒心跳提前判死，均修正并新增回归。真实ws单消息34/66MiB、转义/中文/emoji、FIFO事件与末尾ping已通过；新旧协议维持兼容，容量/请求/慢链路仍有有限边界，不宣称整个应用内存有界。
 - 验证：独立npm ci成功；首次非隔离全量受宿主skills污染，改用F:/worktrees内隔离HOME/USERPROFILE/TEMP/TMP/TMPDIR/PI_CODING_AGENT_DIR/AXIOM_HOME串行，基线1085项（1082通过、3跳过、0失败）。定向44项通过；首轮全量发现召回旧attach主动failSnapshot误伤新切换，增加视图/连接代次并移除过期成功的主动断线，保留召回草稿后17项切换/恢复通过。修正后全量1104项（1101通过、3跳过、0失败，338秒）；JS语法、git diff --check与npm pack --dry-run通过，345文件含新模块。远端随后新增cdb4092迁移修复，集成后结果另记。
-- 文件：`src/{transport,server,protocol}.js`、`public/{transport,transport-framing,app}.js`、`desktop/connector/index.html`，传输/地址/恢复/服务及测试拼接helper；README、本记录、codebase-map职责/知识/生成索引。未调用模型、未在实际WebView验证休眠/切网/内存峰值，运行服务的生效需维护窗口更新重启并手动刷新保存过草稿的页面。
+- 集成验证：合入最新`origin/master cdb4092`，devlog冲突保留双方完整记录；隔离串行全量1105项（1102通过、3跳过、0失败，348秒）。跳过项为POSIX权限、可选真实MCP适配器、不支持平台reveal；真实ws新旧协议与会话迁移联合回归15/15通过。按README发布约定升为0.1.11，依赖不变；package/lock版本一致。
+- 文件：`src/{transport,server,protocol}.js`、`public/{transport,transport-framing,app}.js`、`desktop/connector/index.html`，传输/地址/恢复/服务及测试拼接helper；README、本记录、package/lock、codebase-map职责/知识/生成索引。未调用模型、未在实际WebView验证休眠/切网/内存峰值，运行服务的生效需维护窗口更新重启并手动刷新保存过草稿的页面。
 
 ## 2026-10-03 启动迁移排除压缩附属 JSON
 
