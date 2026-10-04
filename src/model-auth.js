@@ -96,7 +96,7 @@ export function createModelAuthService({ auth, onChanged = () => {}, flowTimeout
     if (request.type === "models.auth.cancel") { cancel(flow); return view(flow); }
     if (request.type === "models.auth.respond") {
       if (flow.status !== "running" || flow.prompt?.id !== request.promptId || !flow.resolve) throw new Error("登录步骤已更新，请按当前提示操作");
-      if (typeof request.value !== "string" || !request.value.trim() || request.value.length > 8192) throw new Error("请输入有效的登录信息");
+      if (typeof request.value !== "string" || request.value.length > 8192) throw new Error("请输入有效的登录信息");
       if (flow.prompt.type === "select" && !flow.prompt.options.some((o) => o.id === request.value)) throw new Error("无效的登录选项");
       flow.resolve(request.value); return view(flow);
     }

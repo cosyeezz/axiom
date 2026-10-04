@@ -178,6 +178,17 @@ export const modelConfigIn = z
   })
   .passthrough();
 export const modelOverrideIn = modelConfigIn.omit({ id: true, api: true, baseUrl: true }).strict();
+// 原生 Pi provider 对象：一次保存连接、models 与 modelOverrides，由 SDK 最终校验。
+const nativeModelIn = z.object({
+  id: modelKey,
+  baseUrl: z.string().max(2048).optional().nullable(),
+  headers: secretHeadersIn.optional().nullable(),
+}).passthrough();
+export const nativeProviderConfigIn = providerConfigIn.innerType().extend({
+  // 仅检查秘密和 URL 的桥接边界；能力字段由 SDK 校验，不剥离合法扩展字段。
+  models: z.array(nativeModelIn).optional(),
+  modelOverrides: z.record(nativeModelIn.omit({ id: true })).optional(),
+});
 const fingerprintIn = z.string().min(1).max(128);
 export const command = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal('todo.action'), sessionId: id, action: z.enum(['prepare', 'cancel_prepare', 'pause', 'resume']), text: z.string().max(30000).optional() }).strict(),
@@ -227,6 +238,7 @@ export const command = z.discriminatedUnion("type", [
     .strict(),
   z.object({ id, type: z.literal("models.list") }).strict(),
   z.object({ id, type: z.literal("models.config.get") }).strict(),
+  z.object({ id, type: z.literal("models.provider.configure"), providerId: providerKey, provider: nativeProviderConfigIn, baseFingerprint: fingerprintIn }).strict(),
   z
     .object({
       id,
@@ -278,18 +290,10 @@ export const command = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("models.auth.list") }).strict(),
   z.object({ id, type: z.literal("models.auth.start"), providerId: providerKey, authType: z.enum(["api_key", "oauth"]) }).strict(),
   z.object({ id, type: z.literal("models.auth.status"), flowId: id }).strict(),
-  z.object({ id, type: z.literal("models.auth.respond"), flowId: id, promptId: id, value: z.string().min(1).max(8192) }).strict(),
+  z.object({ id, type: z.literal("models.auth.respond"), flowId: id, promptId: id, value: z.string().max(8192) }).strict(),
   z.object({ id, type: z.literal("models.auth.cancel"), flowId: id }).strict(),
   z.object({ id, type: z.literal("models.auth.logout"), providerId: providerKey }).strict(),
-  // 内置目录可见性（Axiom 侧隐藏/恢复，不改 Pi 运行时目录）：key = 供应商 id 或 `provider/id`。
-  z
-    .object({
-      id,
-      type: z.literal("models.hidden.set"),
-      key: z.string().trim().min(1).max(300),
-      hidden: z.boolean(),
-    })
-    .strict(),
+
   z
     .object({
       id,

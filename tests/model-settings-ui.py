@@ -1,9 +1,10 @@
 """Run model-selection-preview.mjs first; isolated credentials and mock upstream."""
 import os
 from pathlib import Path
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, expect
+import re
 URL = os.environ.get('AXIOM_PREVIEW_URL', 'http://127.0.0.1:4337')
-OUT = Path('artifacts/model-settings')
+OUT = Path(os.environ.get('AXIOM_ARTIFACTS', 'artifacts/model-settings'))
 OUT.mkdir(parents=True, exist_ok=True)
 with sync_playwright() as p:
     browser = p.chromium.launch()
@@ -11,27 +12,40 @@ with sync_playwright() as p:
     errors = []
     page.on('pageerror', lambda e: errors.append(str(e)))
     page.goto(URL)
-    page.wait_for_selector('#thinking:enabled')
-    original = page.locator('#thinking').input_value()
-    page.locator('#thinking').click()
-    star = page.locator('.ax-mp-menu:visible .ax-mp-star[data-value="high"]')
-    expected = str(star.get_attribute('aria-checked') != 'true').lower()
+    page.wait_for_selector('.composer-model-trigger:enabled')
+    original = page.locator('.composer-model-trigger').inner_text()
+    def open_thinking():
+        page.locator('.composer-model-trigger').click()
+        page.get_by_role('dialog', name='模型配置', exact=True).get_by_role('button', name='minimax-cn', exact=True).click()
+        page.get_by_role('dialog', name='模型', exact=True).get_by_role('button', name='MiniMax M2.5', exact=True).click()
+    open_thinking()
+    star = page.locator('.composer-favorite[data-favorite-key="minimax-cn/MiniMax-M2.5:high"]')
+    expected = str(star.get_attribute('aria-pressed') != 'true').lower()
     star.click()
-    page.wait_for_timeout(250)
-    assert page.locator('#thinking').input_value() == original
+    expect(star).to_have_attribute('aria-pressed', expected)
+    assert page.locator('.composer-model-trigger').inner_text() == original
     page.reload()
-    page.wait_for_selector('#thinking:enabled')
-    page.locator('#thinking').click()
-    assert star.get_attribute('aria-checked') == expected
+    page.wait_for_selector('.composer-model-trigger:enabled')
+    open_thinking()
+    expect(star).to_have_attribute('aria-pressed', expected)
     page.keyboard.press('Escape')
     page.locator('#open-settings').click()
     page.locator('#settings-models-tab').click()
-    page.get_by_role('button', name='拉取模型列表…', exact=True).click()
-    page.get_by_role('checkbox', name='选择模型 chosen-model', exact=True).check()
-    page.get_by_role('button', name='添加选中的模型（1）', exact=True).click()
-    page.get_by_role('checkbox', name='已添加 chosen-model', exact=True).wait_for()
-    assert page.get_by_role('checkbox', name='已添加 chosen-model', exact=True).is_disabled()
-    assert not page.get_by_role('checkbox', name='选择模型 untouched-model', exact=True).is_checked()
+    page.locator('.mm-nav-item').filter(has_text='preview').click()
+    page.locator('.mm-advanced summary').click()
+    editor = page.locator('.mm-config-form textarea')
+    expect(editor).to_have_value(re.compile('"keep": true'))
+    import json
+    value = json.loads(editor.input_value())
+    value['models'] = [{'id': 'chosen-model'}]
+    editor.fill(json.dumps(value))
+    page.get_by_role('button', name='保存配置', exact=True).click()
+    expect(page.locator('.mm-alert')).to_contain_text('配置已保存')
+    page.locator('.mm-advanced summary').click()
+    expect(editor).to_have_value(re.compile('chosen-model'))
+    assert 'untouched-model' not in editor.input_value()
+    assert '"keep": true' in editor.input_value()
+    assert '隐藏' not in page.locator('#models-panel').inner_text()
     page.screenshot(path=str(OUT / 'desktop.png'))
     for width in [390, 320]:
         page.set_viewport_size({'width': width, 'height': 844})
@@ -40,4 +54,4 @@ with sync_playwright() as p:
         page.screenshot(path=str(OUT / f'mobile-{width}.png'))
     assert not errors, errors
     browser.close()
-print('Model settings: discovery, selected-only save, thinking persistence and mobile checks passed')
+print('Model settings: native JSON round trip, masked secret, thinking persistence and mobile checks passed')

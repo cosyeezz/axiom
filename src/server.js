@@ -361,7 +361,7 @@ export function createServerApp(sessions, service = {}) {
             case "models.model.delete":
             case "models.favorites.get":
             case "models.favorites.set":
-            case "models.hidden.set": {
+            case "models.provider.configure": {
               if (!service.models) throw new Error("模型配置服务未启用");
               data = await service.models.handle(request);
               if (!["models.config.get", "models.favorites.get", "models.provider.discover"].includes(request.type)) {

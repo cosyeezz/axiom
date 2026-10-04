@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createModelAuthService } from "../src/model-auth.js";
+import { command } from "../src/protocol.js";
 import { CredentialSynchronizationError } from "@earendil-works/pi-coding-agent";
 
 const SECRET = "sk-super-secret-do-not-leak-42";
@@ -29,6 +30,49 @@ async function waitFor(fn, ms = 2000) {
 
 const noLeak = (value) => assert.ok(!JSON.stringify(value ?? null).includes(SECRET), "响应中泄露了 secret");
 const status = (svc, flowId, owner) => svc.handle({ type: "models.auth.status", flowId }, owner);
+
+test("原生空回答交给 SDK 决定：Copilot 默认域名可继续，空 secret 由供应商拒绝", async () => {
+  for (const type of ["text", "secret"]) {
+    let received;
+    const auth = fakeAuth(async (interaction) => {
+      received = await interaction.prompt({ type, message: "GitHub Enterprise URL/domain (blank for github.com)" });
+      if (type === "secret") throw new Error("provider rejects empty key");
+      interaction.notify({ type: "device_code", verificationUri: "https://github.com/login/device", userCode: "TEST" });
+    });
+    const svc = createModelAuthService({ auth });
+    const start = await svc.handle({ type: "models.auth.start", providerId: "fake", authType: "oauth" }, "A");
+    const promptId = await waitFor(() => status(svc, start.flowId, "A").then((v) => v.prompt?.id));
+    await svc.handle(command.parse({ id: "answer", type: "models.auth.respond", flowId: start.flowId, promptId, value: "" }), "A");
+    const result = await waitFor(() => status(svc, start.flowId, "A").then((v) => v.status !== "running" && v));
+    assert.equal(received, "");
+    assert.equal(result.status, type === "text" ? "success" : "error");
+    if (type === "text") assert.equal(result.events[0].type, "device_code");
+    svc.close("A");
+  }
+});
+
+test("原生 browser callback 与 manual_code 竞速：单步 abort 不取消全流程", async () => {
+  for (const callbackWins of [true, false]) {
+    let callback, interactionSignal;
+    const auth = fakeAuth(async (interaction) => {
+      interactionSignal = interaction.signal;
+      const manualAbort = new AbortController();
+      const manual = interaction.prompt({ type: "manual_code", message: "Redirect URL", signal: manualAbort.signal });
+      callback = () => manualAbort.abort();
+      if (callbackWins) await assert.rejects(manual, /Cancelled/);
+      else assert.equal(await manual, "http://localhost:1455/auth/callback?code=test&state=test");
+      assert.equal(interaction.signal.aborted, false);
+    });
+    const svc = createModelAuthService({ auth });
+    const start = await svc.handle({ type: "models.auth.start", providerId: "fake", authType: "oauth" }, "A");
+    const promptId = await waitFor(() => status(svc, start.flowId, "A").then((v) => v.prompt?.id));
+    if (callbackWins) callback();
+    else await svc.handle({ type: "models.auth.respond", flowId: start.flowId, promptId, value: "http://localhost:1455/auth/callback?code=test&state=test" }, "A");
+    const result = await waitFor(() => status(svc, start.flowId, "A").then((v) => v.status === "success" && v));
+    assert.equal(result.prompt, null); assert.equal(interactionSignal.aborted, false);
+    svc.close("A");
+  }
+});
 
 test("start → prompt/respond → success：全程响应不含 token，refreshModels/onChanged 被调用", async () => {
   let loginDone;

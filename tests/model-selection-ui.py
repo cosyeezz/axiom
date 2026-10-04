@@ -1,7 +1,7 @@
 """Optional real Chromium acceptance; run model-selection-preview.mjs first."""
 import os
 from pathlib import Path
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, expect
 
 URL = os.environ.get("AXIOM_PREVIEW_URL", "http://127.0.0.1:4337")
 ARTIFACTS = Path(os.environ.get("AXIOM_UI_ARTIFACTS", "artifacts/model-selection"))
@@ -15,23 +15,22 @@ with sync_playwright() as p:
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.goto(URL)
     page.wait_for_selector("#workspace:not([hidden])")
-    page.wait_for_selector("#provider:enabled")
-    current = page.locator("#provider").input_value()
-    page.locator("#provider").click()
-    menu = page.locator(".ax-mp-menu:visible")
-    star = menu.locator('.ax-mp-star[data-value="openai"]')
-    was_favorite = star.get_attribute("aria-checked") == "true"
+    page.wait_for_selector(".composer-model-trigger:enabled")
+    current = page.locator(".composer-model-trigger").inner_text()
+    page.locator(".composer-model-trigger").click()
+    menu = page.get_by_role('dialog', name='模型配置', exact=True)
+    star = menu.locator('.composer-favorite[data-favorite-key="openai"]')
+    was_favorite = star.get_attribute("aria-pressed") == "true"
     star.click()
-    page.wait_for_timeout(250)
-    assert page.locator("#provider").input_value() == current
+    expect(star).to_have_attribute('aria-pressed', str(not was_favorite).lower())
+    assert page.locator(".composer-model-trigger").inner_text() == current
     assert menu.is_visible()
-    assert menu.locator('.ax-mp-star[data-value="openai"]').get_attribute("aria-checked") == str(not was_favorite).lower()
     page.screenshot(path=str(ARTIFACTS / "favorites.png"))
     other = context.new_page()
     other.goto(URL)
-    other.wait_for_selector("#provider:enabled")
-    other.locator("#provider").click()
-    assert other.locator('.ax-mp-menu:visible .ax-mp-star[data-value="openai"]').get_attribute("aria-checked") == str(not was_favorite).lower()
+    other.wait_for_selector(".composer-model-trigger:enabled")
+    other.locator(".composer-model-trigger").click()
+    expect(other.locator('.composer-favorite[data-favorite-key="openai"]')).to_have_attribute('aria-pressed', str(not was_favorite).lower())
     other.close()
     page.keyboard.press("Escape")
     assert page.locator("#provider").get_attribute("data-model-kind") == "provider"
