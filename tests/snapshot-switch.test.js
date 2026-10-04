@@ -158,6 +158,31 @@ test("后台标签页对消息区零 DOM 绘制，回前台重取一份完整历
   assert.equal(page.count("后台事件"), 1, "后台期间的新消息恰好一条，不重不丢");
 });
 
+for (const pendingB of [false, true]) test(`召回旧 attach 失败不覆盖切换后的错误区或断开新会话（B${pendingB ? "仍等待" : "已完成"}）`, async t => {
+  const page = await login(bootSessionPage()); t.after(page.close);
+  const { app, $ } = page;
+  let rejectAttach, started = false;
+  const attached = new Promise((resolve, reject) => { rejectAttach = reject; });
+  app.setRequest(async type => {
+    if (type === "queue.withdraw") return { steering: [], followUp: [], recalled: { text: "召回文本" } };
+    if (type === "session.attach") { started = true; return attached; }
+    if (type === "sessions.list") return ["a", "b"].map(id => ({ id, title: id, cwd: "C:/work", status: "idle" }));
+    return {};
+  });
+  app.setConnected(true); app.snapshot(sessionState("a"));
+  const withdraw = app.withdrawQueue(true); await until(() => started, "召回attach等待");
+  let releaseB;
+  const next = new Promise(resolve => { releaseB = resolve; });
+  const switching = app.switchSession(() => pendingB ? next : Promise.resolve(sessionState("b")));
+  if (!pendingB) await switching;
+  $("error").textContent = "B 的当前提示";
+  rejectAttach(new Error("A 的过期失败")); await withdraw;
+  assert.equal(app.connected(), true);
+  assert.equal($("error").textContent, "B 的当前提示");
+  if (pendingB) { releaseB(sessionState("b")); await switching; }
+  assert.equal(app.session(), "b");
+});
+
 // withdrawQueue(recall) 在 await request("session.attach") 之后直接 snapshot，没有对 attach 返回时的身份复核：
 // 召回 attach 挂起期间用户切走（真实 switchSession 此刻 changing=true 但 sessionId 未变），
 // 覆盖 B 已完成和 B 仍等待回包两种顺序，不能只检查 sessionId。

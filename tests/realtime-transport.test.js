@@ -346,6 +346,42 @@ test("stale attach error/response cannot release or recreate the current snapsho
   assert.equal(r.transport.getSnapshotQueue(), null); r.transport.dispose();
 });
 
+for (const type of ["session.attach", "session.create", "session.import", "session.duplicate"]) {
+  test(`${type} owns the snapshot gate; late previous attach cannot hold new events`, async t => {
+    const seen = [], r = rig({ reduce: event => seen.push(event.seq) });
+    t.after(() => r.transport.dispose()); const ws = await r.open();
+    const old = r.transport.request({ type: "session.attach", sessionId: "a" });
+    await flush(); const a = ws.sent.at(-1).id;
+    const next = r.transport.request({ type, sessionId: "b" });
+    await flush(); const b = ws.sent.at(-1).id;
+    ws.message({ type: "response", id: b, ok: true, data: { sessionId: "b", seq: 1 } });
+    ws.message({ type: "agent.delta", sessionId: "b", seq: 2 });
+    assert.deepEqual(seen, []);
+    r.transport.commitSnapshot(await next);
+    ws.message({ type: "response", id: a, ok: true, data: { sessionId: "a", seq: 0 } }); await old;
+    ws.message({ type: "agent.end", sessionId: "b", seq: 3 });
+    assert.equal(r.transport.getSnapshotQueue(), null);
+    assert.deepEqual(seen, [2, 3]);
+  });
+}
+
+test("committing a snapshot retires its pending owner; duplicate failure releases buffered events", async t => {
+  const seen = [], r = rig({ reduce: event => seen.push(event.seq) });
+  t.after(() => r.transport.dispose()); const ws = await r.open();
+  const old = r.transport.request({ type: "session.attach", sessionId: "a" }); await flush();
+  const a = ws.sent.at(-1).id;
+  r.transport.commitSnapshot({ sessionId: "b", seq: 1 });
+  ws.message({ type: "response", id: a, ok: true, data: { sessionId: "a" } }); await old;
+  assert.equal(r.transport.getSnapshotQueue(), null);
+  const copy = r.transport.request({ type: "session.duplicate", sessionId: "b" });
+  const failed = assert.rejects(copy, { code: "response_error" }); await flush();
+  ws.message({ type: "agent.delta", sessionId: "b", seq: 2 });
+  assert.deepEqual(seen, []);
+  ws.message({ type: "response", id: ws.sent.at(-1).id, ok: false, error: "cannot copy" }); await failed;
+  assert.equal(r.transport.getSnapshotQueue(), null); assert.deepEqual(seen, [2]);
+  assert.equal(r.transport.getConnectionState(), "open");
+});
+
 test("diagnostics correlate timestamps, generation and opaque connection ID without secrets", async () => {
   const r = rig({ now: () => 1234 }); const ws = await r.open();
   const request = r.transport.request({ type: "service.status" }); await flush();

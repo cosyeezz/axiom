@@ -1,6 +1,59 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import vm from "node:vm";
+
+const connector = (await readFile(new URL("../desktop/connector/index.html", import.meta.url), "utf8")).match(/<script>([\s\S]*?)<\/script>/)[1];
+const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
+function bootConnector() {
+  const elements = Object.fromEntries(["address", "connect", "status"].map(id => [id, {
+    value: "", textContent: "", disabled: false, dataset: {}, listeners: {},
+    addEventListener(name, fn) { this.listeners[name] = fn; }, focus() {}, select() {},
+  }]));
+  const probes = [], navigations = [], writes = [];
+  vm.runInNewContext(connector, {
+    URL, AbortSignal: { timeout() { return {}; } },
+    document: { getElementById: id => elements[id] },
+    localStorage: { getItem: () => "http://127.0.0.1:4319", setItem: (...args) => writes.push(args) },
+    location: { set href(value) { navigations.push(value); } },
+    fetch: url => new Promise((resolve, reject) => probes.push({ url, resolve, reject })),
+  });
+  return { elements, probes, navigations, writes };
+}
+for (const savedSuccess of [true, false]) test(`connector ignores stale saved probe (${savedSuccess ? "success" : "failure"}) after manual port selection`, async () => {
+  const r = bootConnector(), { address, connect, status } = r.elements;
+  address.value = "127.0.0.1:4320"; connect.onclick();
+  const message = status.textContent;
+  r.probes[0][savedSuccess ? "resolve" : "reject"](); await flush();
+  assert.deepEqual(r.navigations, []); assert.equal(status.textContent, message);
+  r.probes[1].resolve(); await flush();
+  assert.deepEqual(r.navigations, ["http://127.0.0.1:4320"]);
+  assert.equal(r.writes[0][1], "http://127.0.0.1:4320");
+});
+test("connector editing cancels old navigation; current failure allows a fresh attempt", async () => {
+  const r = bootConnector(), { address, connect, status } = r.elements;
+  address.value = "127.0.0.1:4320"; address.listeners.input?.();
+  r.probes[0].resolve(); await flush(); assert.deepEqual(r.navigations, []);
+  connect.onclick(); r.probes[1].reject(); await flush();
+  assert.equal(connect.disabled, false); assert.equal(status.dataset.kind, "error");
+  connect.onclick();
+  address.value = "127.0.0.1:4319"; address.listeners.input?.();
+  r.probes[2].resolve(); await flush(); assert.deepEqual(r.navigations, []);
+  connect.onclick(); r.probes[3].resolve(); await flush();
+  assert.deepEqual(r.navigations, ["http://127.0.0.1:4319"]);
+});
+
+test("connector ignores an old manual failure while a newer port probe is pending", async () => {
+  const r = bootConnector(), { address, connect, status } = r.elements;
+  connect.onclick();
+  address.value = "127.0.0.1:4320"; address.listeners.input(); connect.onclick();
+  const message = status.textContent;
+  r.probes[1].reject(); await flush();
+  assert.equal(connect.disabled, true); assert.equal(status.textContent, message);
+  assert.deepEqual(r.navigations, []);
+  r.probes[2].resolve(); await flush();
+  assert.deepEqual(r.navigations, ["http://127.0.0.1:4320"]);
+});
 
 // Execute both shipped implementations, not a copy of the algorithm.
 for (const [file, name] of [["public/app.js", "normalizeBackendAddress"], ["desktop/connector/index.html", "normalize"]]) {

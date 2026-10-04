@@ -1,5 +1,14 @@
 # 开发记录
 
+## 2026-10-03 连接修复最终竞态复核与集成交付
+
+- 时间：2026-10-03 22:05（本机 -07:00）。继续在 `feat/connection-resilience` 独立工作树完成一级修复目标；合入模型设置 `591e7d0`（含 `70a21b3`），devlog 保留双方记录。远端已使用0.1.12，本次发布升为0.1.13，package/lock同步、依赖不变。
+- 复核修正：`public/transport.js` 四种快照命令统一所有权（补duplicate），提交/清闸注销旧owner；`public/app.js` 忽略旧召回attach失败；`desktop/connector/index.html` 编辑/提交地址作废旧probe，防止旧端口自动导航或覆盖新提示。仅行为修复，沿用现有Linear样式/token。
+- 回归：新增测试先复现旧实现失败，再修复；三文件定向42/42通过（随后补B仍等待失败和旧手动probe失败两项）。JSDOM夹具修正为完成登录且返回有效会话列表，避免列表空集触发无关自动新建。独立只读复核无阻断项，剩余限制为transport提交仍依赖app身份守卫、未做真实WebView休眠/切网与部署端口实测。
+- 依赖：独立 `npm ci --include=dev` 成功；npm audit报告4项既有依赖告警（2高/1中/1低），锁定依赖未在本任务升级，未执行audit fix或跨主版本SDK更新。证据在 `F:/worktrees/connection-resilience-evidence/audit-final.json`。
+- 最终验证：合入`591e7d0`后0.1.13隔离串行全量1087项，1084通过/3跳过/0失败，320.8秒（`full-0.1.13-serial.log`）；此前一次并行全量同样通过。测试总数变化来自上游原生模型设置简化，非跳过测试。专项59/59含真实ws 34/66MiB、兼容/边界/FIFO、恢复/心跳/地址/竞态；三项跳过为POSIX权限、可选真实MCP adapter、不支持平台reveal。Chromium模型设置认证8组双主题/视口和等待确认3视口双主题回归通过。语法、差异、版本/锁文件一致性、npm pack dry-run（347文件，包含分块模块）通过；原生ESM无独立build。索引重建341文件、0未登记。完整证据保存在`F:/worktrees/connection-resilience-evidence/`。
+- 文件：上述三份实现、`tests/{realtime-transport,snapshot-switch,connection-address}.test.js`、README、devlog、package/lock、codebase-map知识及重建索引。交付前再次fetch确认远端仍`591e7d0`；按项目授权推送工作分支、同步并合并master，再推送成功后清理本任务worktree，保留主checkout原有未跟踪资料。不重启4319/4320、不刷新真实页面；生效仍需维护窗口更新重启各端口并保存草稿后手动刷新。
+
 ## 2026-10-03 大消息传输与连接恢复修复
 
 - 时间：2026-10-03 21:05（本机 -07:00）。独立 `feat/connection-resilience` 工作树基于最新 `origin/master 0a4d86a`；不改主 checkout 未跟踪文件，不重启现有4319/4320服务、不刷新用户页面。

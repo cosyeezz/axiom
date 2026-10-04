@@ -118,7 +118,7 @@
   const input = document.getElementById("address");
   const button = document.getElementById("connect");
   const status = document.getElementById("status");
-  let busy = false;
+  let busy = false, revision = 0;
 
   const say = (text, kind = "") => { status.textContent = text; status.dataset.kind = kind; };
 
@@ -148,6 +148,7 @@
 
   async function connect() {
     if (busy) return;
+    const current = ++revision;
     const origin = normalize(input.value);
     if (!origin) { say("地址无效：请输入 host:port 或 http(s)://host:port", "error"); return; }
     busy = true;
@@ -155,10 +156,12 @@
     say(`正在连接 ${origin} …`);
     try {
       await probe(origin);
+      if (current !== revision) return;
       try { localStorage.setItem(KEY, origin); } catch {}
       say(`已连接 ${origin}，正在打开…`, "ok");
       location.href = origin;
     } catch {
+      if (current !== revision) return;
       busy = false;
       button.disabled = false;
       say(`无法连接 ${origin}：请确认服务已启动、地址与端口正确（远程需 AXIOM_HOST 与防火墙放行）`, "error");
@@ -167,6 +170,8 @@
     }
   }
 
+  // Editing or submitting a new target retires all earlier probes, including startup auto-connect.
+  input.addEventListener("input", () => { ++revision; busy = false; button.disabled = false; say(""); });
   button.onclick = () => void connect();
   input.addEventListener("keydown", (event) => { if (event.key === "Enter") void connect(); });
 
@@ -175,9 +180,10 @@
   try { saved = localStorage.getItem(KEY); } catch {}
   input.value = saved || DEFAULT;
   if (saved && saved !== DEFAULT) {
+    const current = revision;
     probe(saved, 3000)
-      .then(() => { location.href = saved; })
-      .catch(() => { say(`上次地址 ${saved} 未响应，请确认或修改后连接。`, "error"); });
+      .then(() => { if (current === revision) location.href = saved; })
+      .catch(() => { if (current === revision) say(`上次地址 ${saved} 未响应，请确认或修改后连接。`, "error"); });
   }
 })();
 </script>

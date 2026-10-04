@@ -732,3 +732,9 @@
 - 症状：health 正常，页面一直连接中。根因：todo.js 静态导入 404 阻止 app.js 执行，文字只是 HTML 初始状态。
 - 修复：src/server.js 注册 todo.js/todo.css；tests/server.test.js 覆盖真实 HTTP 资源。
 - 防再犯：验收必须检查浏览器已连接，不能以 health 200 或 HTML 可见代替应用启动。
+
+### 2026-10-03 旧快照和地址探测的所有权必须随切换作废
+- 症状：复制新会话后旧 attach 回执重新挂起事件；召回旧失败污染当前错误区；桌面连接页旧自动探测抢回 4319。
+- 根因：快照命令集合遗漏 duplicate、提交未注销 owner；召回 catch 和异步地址探测缺少代次检查。
+- 修复：public/transport.js 统一快照命令及 clearGate 注销；app.js 同时检查连接/切换代次；desktop/connector 输入或提交递增 revision。
+- 防再犯：realtime-transport、snapshot-switch、connection-address 覆盖迟到成功/失败、B仍等待与已完成、编辑地址和失败重试；app仍负责拒绝过期快照提交，不能把共享传输测试等同真实WebView验收。

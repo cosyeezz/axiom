@@ -4083,7 +4083,7 @@ async function withdrawQueue(recall = false) {
       view.images = [...(view.images || []), ...restored];
       views.set(target, view);
     }
-  } catch (e) { error(e); }
+  } catch (e) { if (current() && sessionId === target) error(e); }
   finally { withdrawing = false; }
 }
 document.addEventListener("click", (e) => {

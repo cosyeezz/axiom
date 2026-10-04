@@ -4,6 +4,7 @@ import { CHUNK_PROTOCOL, FRAME_BYTES, createChunkReceiver } from "./transport-fr
 // 大命令序列化（D4）：估算超阈值的 stringify 移入后台 Worker，主线程只付结构化克隆成本；
 // 无 Worker 环境（旧浏览器/测试）自动退化同步路径。发送顺序由 queueTail 链保证，与同步路径一致。
 const SERIALIZE_THRESHOLD = 1 << 20;
+const SNAPSHOT_COMMANDS = new Set(["session.attach", "session.create", "session.import", "session.duplicate"]);
 const WORKER_SOURCE = 'self.onmessage = ({ data }) => {' +
   'const raw = JSON.stringify(data.command);' +
   "self.postMessage({ key: data.key, raw, bytes: new TextEncoder().encode(raw).length });" +
@@ -110,7 +111,7 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
   };
   const status = (value) => { state = value; notify(onState, value); };
   const failure = (code, message, unknown = false) => Object.assign(new Error(message), { code, unknown });
-  const clearGate = () => { gate = null; queuedBytes = 0; oldest = 0; };
+  const clearGate = () => { gate = null; queuedBytes = 0; oldest = 0; snapshotRequest = undefined; };
   const settle = (key, error, data) => {
     const entry = pending.get(key);
     if (!entry) return;
@@ -119,7 +120,7 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
     entry.cancelSerialize?.();
     entry.signal?.removeEventListener("abort", entry.abort);
     error ? entry.reject(error) : entry.resolve(data);
-    if (error && gate && key === snapshotRequest && ["session.attach", "session.create", "session.import"].includes(entry.command)) {
+    if (error && gate && key === snapshotRequest && SNAPSHOT_COMMANDS.has(entry.command)) {
       if (error.code === "response_error") {
         const queued = gate;
         clearGate();
@@ -193,7 +194,7 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
     if (pending.size >= maxPending) return Promise.reject(failure("pending_limit", "等待中的请求过多"));
     const key = String(++id);
     // Buffer before sending attach; do not lose events emitted while the snapshot loads.
-    if (["session.attach", "session.create", "session.import"].includes(command.type)) {
+    if (SNAPSHOT_COMMANDS.has(command.type)) {
       snapshotRequest = key; beginSnapshot();
     }
     return new Promise((resolve, reject) => {
@@ -336,7 +337,7 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
                   typeof message.data?.connectionId === "string" && /^[a-f0-9-]{36}$/.test(message.data.connectionId)) {
                 connectionId = message.data.connectionId; diagnostic("connection_identified");
               }
-              if (message.ok && message.id === snapshotRequest && ["session.attach", "session.create", "session.import"].includes(entry.command)) beginSnapshot();
+              if (message.ok && message.id === snapshotRequest && SNAPSHOT_COMMANDS.has(entry.command)) beginSnapshot();
               settle(message.id, message.ok ? null : failure("response_error", message.error), message.data);
             } else receive(message);
           } catch { recover("invalid_message"); }

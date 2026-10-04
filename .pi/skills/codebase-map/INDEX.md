@@ -1,11 +1,11 @@
 <!-- 自动生成，勿手改。重建：node .pi/skills/codebase-map/scripts/reindex.mjs -->
-# Axiom 多级代码索引（生成于 2026/10/3 21:37:34）
+# Axiom 多级代码索引（生成于 2026/10/3 22:10:37）
 
 ## L1 模块总览（文件 → 职责）
 
 | 文件 | 行数 | 职责 | 关键符号 |
 |---|---|---|---|
-| desktop/connector/index.html | 186 | 壳内置连接入口页：地址可配置、可达探测与整页跳转 | - |
+| desktop/connector/index.html | 192 | 壳内置连接入口页：地址可配置、可达探测与整页跳转 | - |
 | desktop/pake.json | 14 | Pake 桌面壳配置：本地连接入口页、内导航与窗口参数 | - |
 | public/answer-tags.js | 63 | 主代理回答标签解析、代码保护与流式容错 | OPEN, CLOSE, MARKS, isMark |
 | public/app.js | 5560 | 前端唯一入口：视图栈、会话/设置 UI、权威归并与渲染调度 | todoUI, questionUI, filePicker, $ |
@@ -21,10 +21,10 @@
 | public/markdown-scan.js | 140 | 共享代码区扫描：围栏/缩进/行内代码掩码与区间切割 | FILL, FENCE, INLINE, fill |
 | public/markdown.js | 484 | marked + DOMPurify 渲染（XSS 边界） | cache, PAGE_CACHE_ENTRY_LIMIT, PAGE_CACHE_BYTE_LIMIT, createMarkdownPageCache |
 | public/memory-tags.js | 107 | 主子代理共享简单标签提取与流式显示过滤 | LIVE, DEAD, TAGS, NAMES |
-| public/model-auth.js | 115 | 网页登录：授权提示、设备码、凭据输入与取消 | createModelAuth |
+| public/model-auth.js | 126 | 网页登录：授权提示、设备码、凭据输入与取消 | createModelAuth |
 | public/model-limits.js | 49 | 模型页供应商总并发、RPM 与模型并发限额配置 | createModelLimits |
-| public/model-manager.css | 580 | 模型配置页：供应商列表、编辑表单与响应式布局 | - |
-| public/model-manager.js | 1587 | 统一模型管理：供应商、字段覆盖与思考等级编辑 | API_TYPES, PROVIDER_TEMPLATES, PROVIDER_ID, MASK_KINDS |
+| public/model-manager.css | 59 | 模型配置页：供应商列表、编辑表单与响应式布局 | - |
+| public/model-manager.js | 173 | 统一模型管理：供应商、字段覆盖与思考等级编辑 | node, button, editable, initModelManager |
 | public/model-picker.css | 88 | 共享收藏下拉：浮层、星标、触屏与焦点样式 | - |
 | public/model-picker.js | 382 | 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互 | GAP, EDGE, TYPEAHEAD_MS, instanceSeq |
 | public/question.css | 70 | 提问面板样式、焦点与窄屏布局 | - |
@@ -43,7 +43,7 @@
 | public/tooltip.css | 50 | 共享悬停说明样式（浅色主题下反色） | - |
 | public/tooltip.js | 235 | 共享悬停说明：动态 title、键盘、定位与无障碍 | SHOW_DELAY, HIDE_DELAY, GAP, EDGE |
 | public/transport-framing.js | 48 | 协商分块常量与严格有界组装（服务端输出，UTF-8计量） | CHUNK_PROTOCOL, CHUNK_TYPE, CHUNK_BYTES, FRAME_BYTES |
-| public/transport.js | 417 | 业务 WS 唯一所有者：请求回执、逻辑订阅、快照事件闸门与有界恢复 | SERIALIZE_THRESHOLD, WORKER_SOURCE, estimateBytes, createTransport |
+| public/transport.js | 418 | 业务 WS 唯一所有者：请求回执、逻辑订阅、快照事件闸门与有界恢复 | SERIALIZE_THRESHOLD, SNAPSHOT_COMMANDS, WORKER_SOURCE, estimateBytes |
 | public/usage-audit.js | 61 | 用量与限流面板：全局汇总、会话分账、请求明细与限额配置 | createUsageAudit |
 | scripts/autostart.mjs | 138 | Windows/macOS/Linux 当前用户登录自动启动安装/卸载 | run, projectDir, serviceEntry, label |
 | scripts/benchmark-todo.mjs | 17 | 大规模任务清单性能基准 | dir, report |
@@ -78,13 +78,13 @@
 | src/main.js | 147 | 入口：端口/工作区校验，组装 factory+Sessions+server，信号处理 | port, host, cwd, home |
 | src/mcp-instructions.js | 125 | MCP operation 契约发现、管理入口与撤销失效 | STATUS, empty, createMcpInstructions |
 | src/model-auth.js | 107 | SDK 登录桥：连接隔离、超时取消与安全事件投影 | safeUrl, text, eventView, createModelAuthService |
-| src/model-config.js | 641 | Pi models.json 无损配置读写与共享收藏持久化 | sdkModelConfig, sdkResolveConfigValue, digest, FAVORITE_GROUPS |
+| src/model-config.js | 628 | Pi models.json 无损配置读写与共享收藏持久化 | sdkModelConfig, sdkResolveConfigValue, digest, FAVORITE_GROUPS |
 | src/native-summary.js | 61 | 原生摘要请求、split-turn附加证据提示与只读流观察 | observeSummaryStream, summarizeNative |
 | src/operating-guides.js | 9 | 按需加载的任务、Todo、Git 正式操作规程 | TASK_GUIDE, GIT_GUIDE, registerOperatingGuides |
 | src/pi-model-storage.js | 409 | 模型与凭据 SQLite 权威存储、Pi 派生兼容文件 | sdkResolveConfigValue, sdkIsCommandConfigValue, NAMESPACE, AUTH_NAMESPACE |
 | src/pi.js | 832 | createPiFactory：封装 pi-coding-agent，按 selection 组装会话（模型/能力/思考档） | forkSafePoint, agentRuntime, queueStateOf, hasModelOutput |
 | src/prompts.js | 33 | Axiom 自有提示词按 main/subagent/compaction 角色集中维护 | MAIN_AGENT_PROMPT, TITLE_INSTRUCTION, SUBAGENT_PROMPT, WRAP_UP_PROMPT |
-| src/protocol.js | 386 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
+| src/protocol.js | 390 | zod 协议：selection / command 判别联合（消息类型见 L3） | id, capabilities, workspace, thinking |
 | src/questions.js | 108 | 主代理 question 工具、参数校验与可取消的回答等待 | text, option, input, questionAnswers |
 | src/raw-history.js | 121 | 完整原文耐久归档、身份幂等与恢复校验 | historyError, canonical, contentHash, isOriginal |
 | src/remote.js | 614 | Tailscale 登录身份、远程监听、同账号授权与本机配置持久化 | configSchema, execOptions, cliEnv, defaultRun |
@@ -144,7 +144,7 @@
 | tests/composer-icons-ui.py | 140 | node --test 测试（npm test） | - |
 | tests/config-scope-ui.py | 59 | node --test 测试（npm test） | - |
 | tests/config.test.js | 309 | node --test 测试（npm test） | - |
-| tests/connection-address.test.js | 27 | node --test 测试（npm test） | - |
+| tests/connection-address.test.js | 80 | node --test 测试（npm test） | connector, flush, bootConnector |
 | tests/connection-recovery.test.js | 121 | node --test 测试（npm test） | reconnect |
 | tests/context-menu-ui.py | 67 | node --test 测试（npm test） | - |
 | tests/continuous-history.test.js | 53 | node --test 测试（npm test） | send |
@@ -212,20 +212,20 @@
 | tests/memory-ui.test.js | 157 | node --test 测试（npm test） | page |
 | tests/message-activity.test.js | 638 | node --test 测试（npm test） | page, assistant, thought, call |
 | tests/mobile-reading-ui.py | 164 | node --test 测试（npm test） | - |
-| tests/model-auth-browser.py | 84 | node --test 测试（npm test） | - |
-| tests/model-auth-ui.test.js | 73 | node --test 测试（npm test） | source, tick, harness |
-| tests/model-auth.test.js | 193 | node --test 测试（npm test） | SECRET, fakeAuth, waitFor, noLeak |
+| tests/model-auth-browser.py | 119 | node --test 测试（npm test） | - |
+| tests/model-auth-ui.test.js | 93 | node --test 测试（npm test） | source, tick, harness |
+| tests/model-auth.test.js | 237 | node --test 测试（npm test） | SECRET, fakeAuth, waitFor, noLeak |
 | tests/model-concurrency.test.js | 80 | node --test 测试（npm test） | - |
-| tests/model-config-runtime.test.js | 163 | node --test 测试（npm test） | fixture |
-| tests/model-config.test.js | 1159 | node --test 测试（npm test） | sha, EMPTY, tempDir, openDatabases |
-| tests/model-manager.test.js | 1653 | node --test 测试（npm test） | authSource, limitsSource, source, tick |
+| tests/model-config-runtime.test.js | 161 | node --test 测试（npm test） | fixture |
+| tests/model-config.test.js | 1146 | node --test 测试（npm test） | sha, EMPTY, tempDir, openDatabases |
+| tests/model-manager.test.js | 103 | node --test 测试（npm test） | source, tick, harness |
 | tests/model-onboarding-ui.test.js | 185 | node --test 测试（npm test） | stripImports, modelSources, pickerSource, memoryTagsSource |
 | tests/model-onboarding.test.js | 89 | node --test 测试（npm test） | - |
 | tests/model-picker.test.js | 423 | node --test 测试（npm test） | source, tick, nap, OPTS |
 | tests/model-runtime-catalog.test.js | 84 | node --test 测试（npm test） | - |
-| tests/model-selection-preview.mjs | 73 | node --test 测试（npm test） | home, catalog, factory, sessions |
-| tests/model-selection-ui.py | 60 | node --test 测试（npm test） | - |
-| tests/model-settings-ui.py | 44 | node --test 测试（npm test） | - |
+| tests/model-selection-preview.mjs | 80 | node --test 测试（npm test） | home, catalog, factory, sessions |
+| tests/model-selection-ui.py | 59 | node --test 测试（npm test） | - |
+| tests/model-settings-ui.py | 58 | node --test 测试（npm test） | - |
 | tests/model-thinking-favorites.test.js | 123 | node --test 测试（npm test） | appSource, pickerSource, modelSources, html |
 | tests/native-summary.test.js | 153 | node --test 测试（npm test） | model, final, nativePreparation, waitFor |
 | tests/new-session-feedback.test.js | 133 | node --test 测试（npm test） | appSource, inline, pickerSource, modelPickerSource |
@@ -247,7 +247,7 @@
 | tests/question-ui.test.js | 132 | node --test 测试（npm test） | source, goal, proposalFixture |
 | tests/questions.test.js | 131 | node --test 测试（npm test） | params |
 | tests/raw-history.test.js | 126 | node --test 测试（npm test） | - |
-| tests/realtime-transport.test.js | 367 | node --test 测试（npm test） | rig, flush |
+| tests/realtime-transport.test.js | 403 | node --test 测试（npm test） | rig, flush |
 | tests/recall.test.js | 208 | node --test 测试（npm test） | user, assistant, thinking, fixture |
 | tests/recent-model.test.js | 47 | node --test 测试（npm test） | - |
 | tests/remote-ui.py | 51 | node --test 测试（npm test） | - |
@@ -299,7 +299,7 @@
 | tests/snapshot-chunk.test.js | 104 | node --test 测试（npm test） | messageEvent, login |
 | tests/snapshot-first-screen.test.js | 88 | node --test 测试（npm test） | TOTAL, login |
 | tests/snapshot-runtime.test.js | 21 | node --test 测试（npm test） | - |
-| tests/snapshot-switch.test.js | 221 | node --test 测试（npm test） | messageEvent, login, holdReattach |
+| tests/snapshot-switch.test.js | 246 | node --test 测试（npm test） | messageEvent, login, holdReattach |
 | tests/sqlite-benchmark.mjs | 914 | node --test 测试（npm test） | parseArgs, args, scriptPath, repoDir |
 | tests/stop-storage-failure.test.js | 80 | node --test 测试（npm test） | - |
 | tests/stream-playback.test.js | 321 | node --test 测试（npm test） | segmenter, boundaries, assertBoundary |
@@ -955,7 +955,7 @@
 | extractMemoryTags | function | 52 |
 | stripMemoryTags | function | 72 |
 
-### public/model-auth.js（115 行） — 网页登录：授权提示、设备码、凭据输入与取消
+### public/model-auth.js（126 行） — 网页登录：授权提示、设备码、凭据输入与取消
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -967,40 +967,15 @@
 |---|---|---|
 | createModelLimits | function | 2 |
 
-### public/model-manager.js（1587 行） — 统一模型管理：供应商、字段覆盖与思考等级编辑
+### public/model-manager.js（173 行） — 统一模型管理：供应商、字段覆盖与思考等级编辑
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| API_TYPES | const | 27 |
-| PROVIDER_TEMPLATES | const | 36 |
-| PROVIDER_ID | const | 67 |
-| MASK_KINDS | const | 68 |
-| DRAFT | const | 70 |
-| HIDDEN_VIEW | const | 72 |
-| MANAGED_PROVIDER_KEYS | const | 75 |
-| MANAGED_MODEL_KEYS | const | 76 |
-| DERIVED_MODEL_KEYS | const | 79 |
-| MODEL_EXTRA_EXCLUDE | const | 81 |
-| TAB_CONNECTION | const | 83 |
-| TAB_MODELS | const | 84 |
-| isMask | const | 86 |
-| hasOwn | const | 87 |
-| clone | const | 88 |
-| keepMasked | function | 90 |
-| stable | function | 98 |
-| el | function | 106 |
-| fieldSeq | const | 122 |
-| field | function | 124 |
-| badge | function | 133 |
-| parseJsonText | function | 137 |
-| ICONS | const | 150 |
-| icon | function | 157 |
-| openModal | function | 164 |
-| closeModal | function | 168 |
-| openDialog | function | 177 |
-| openModal | method | 195 |
-| initModelManager | function | 200 |
-| renderProviders | method | 1584 |
+| node | class | 5 |
+| button | const | 11 |
+| editable | const | 14 |
+| initModelManager | function | 28 |
+| render | method | 170 |
 
 ### public/model-picker.js（382 行） — 共享模型选择器：供应商/模型/思考收藏、排序与键盘交互
 
@@ -1143,14 +1118,15 @@
 | MESSAGE_BYTES | const | 6 |
 | createChunkReceiver | function | 8 |
 
-### public/transport.js（417 行） — 业务 WS 唯一所有者：请求回执、逻辑订阅、快照事件闸门与有界恢复
+### public/transport.js（418 行） — 业务 WS 唯一所有者：请求回执、逻辑订阅、快照事件闸门与有界恢复
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | SERIALIZE_THRESHOLD | const | 6 |
-| WORKER_SOURCE | const | 7 |
-| estimateBytes | function | 11 |
-| createTransport | function | 21 |
+| SNAPSHOT_COMMANDS | const | 7 |
+| WORKER_SOURCE | const | 8 |
+| estimateBytes | function | 12 |
+| createTransport | function | 22 |
 
 ### public/usage-audit.js（61 行） — 用量与限流面板：全局汇总、会话分账、请求明细与限额配置
 
@@ -1579,7 +1555,7 @@
 | eventView | function | 11 |
 | createModelAuthService | function | 18 |
 
-### src/model-config.js（641 行） — Pi models.json 无损配置读写与共享收藏持久化
+### src/model-config.js（628 行） — Pi models.json 无损配置读写与共享收藏持久化
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1602,14 +1578,12 @@
 | mergeHeaders | function | 97 |
 | mergeProvider | function | 108 |
 | applyModel | function | 132 |
-| validFavoriteKey | function | 149 |
-| resolveDiscoverSecret | function | 168 |
-| readBodyCapped | function | 179 |
-| parseDiscoverBody | function | 205 |
-| normalizeFavorites | function | 250 |
-| HIDDEN_CAP | const | 260 |
-| normalizeHidden | function | 261 |
-| createModelsService | function | 266 |
+| validFavoriteKey | function | 151 |
+| resolveDiscoverSecret | function | 170 |
+| readBodyCapped | function | 181 |
+| parseDiscoverBody | function | 207 |
+| normalizeFavorites | function | 252 |
+| createModelsService | function | 262 |
 
 ### src/native-summary.js（61 行） — 原生摘要请求、split-turn附加证据提示与只读流观察
 
@@ -1669,7 +1643,7 @@
 | WRAP_UP_PROMPT | const | 30 |
 | budgetSystemPrompt | const | 31 |
 
-### src/protocol.js（386 行） — zod 协议：selection / command 判别联合（消息类型见 L3）
+### src/protocol.js（390 行） — zod 协议：selection / command 判别联合（消息类型见 L3）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -1699,8 +1673,10 @@
 | providerConfigIn | const | 145 |
 | modelConfigIn | const | 163 |
 | modelOverrideIn | const | 180 |
-| fingerprintIn | const | 181 |
-| command | const | 182 |
+| nativeModelIn | const | 182 |
+| nativeProviderConfigIn | const | 187 |
+| fingerprintIn | const | 192 |
+| command | const | 193 |
 
 ### src/questions.js（108 行） — 主代理 question 工具、参数校验与可取消的回答等待
 
@@ -2338,11 +2314,14 @@
 | source | const | 5 |
 | fixture | function | 6 |
 
-### tests/connection-address.test.js（27 行） — node --test 测试（npm test）
+### tests/connection-address.test.js（80 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| test | method | 7 |
+| connector | const | 6 |
+| flush | const | 7 |
+| bootConnector | function | 8 |
+| test | method | 60 |
 
 ### tests/connection-recovery.test.js（121 行） — node --test 测试（npm test）
 
@@ -2812,7 +2791,7 @@
 | call | const | 54 |
 | entry | const | 55 |
 
-### tests/model-auth-ui.test.js（73 行） — node --test 测试（npm test）
+### tests/model-auth-ui.test.js（93 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -2820,29 +2799,29 @@
 | tick | const | 7 |
 | harness | function | 8 |
 
-### tests/model-auth.test.js（193 行） — node --test 测试（npm test）
+### tests/model-auth.test.js（237 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| SECRET | const | 6 |
-| fakeAuth | function | 9 |
-| waitFor | function | 20 |
-| noLeak | const | 30 |
-| status | const | 31 |
-| noLeak | method | 50 |
-| noLeak | method | 56 |
-| noLeak | method | 64 |
-| noLeak | method | 77 |
-| noLeak | method | 89 |
-| noLeak | method | 191 |
+| SECRET | const | 7 |
+| fakeAuth | function | 10 |
+| waitFor | function | 21 |
+| noLeak | const | 31 |
+| status | const | 32 |
+| noLeak | method | 94 |
+| noLeak | method | 100 |
+| noLeak | method | 108 |
+| noLeak | method | 121 |
+| noLeak | method | 133 |
+| noLeak | method | 235 |
 
-### tests/model-config-runtime.test.js（163 行） — node --test 测试（npm test）
+### tests/model-config-runtime.test.js（161 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | fixture | function | 14 |
 
-### tests/model-config.test.js（1159 行） — node --test 测试（npm test）
+### tests/model-config.test.js（1146 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -2857,68 +2836,15 @@
 | discoverKey | const | 662 |
 | mockFetch | const | 663 |
 | jsonResponse | const | 672 |
-| test | method | 951 |
+| test | method | 920 |
 
-### tests/model-manager.test.js（1653 行） — node --test 测试（npm test）
+### tests/model-manager.test.js（103 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
-| authSource | const | 11 |
-| limitsSource | const | 12 |
-| source | const | 13 |
-| tick | const | 14 |
-| j | const | 16 |
-| masked | const | 18 |
-| harness | function | 20 |
-| apiSelect | method | 138 |
-| apiSelect | method | 139 |
-| setInput_on | method | 306 |
-| setInput_on | function | 339 |
-| modelDelete | method | 439 |
-| dialogButton | method | 443 |
-| modelDelete | method | 449 |
-| dialogButton | method | 451 |
-| dialogButton | method | 469 |
-| confirm | method | 502 |
-| confirm | method | 509 |
-| row | method | 664 |
-| row | method | 675 |
-| discoverPanelEl | const | 983 |
-| discoverRows | const | 984 |
-| rowBox | const | 985 |
-| addSelectedButton | const | 986 |
-| fetchButton | const | 987 |
-| checkRow | const | 988 |
-| rowBox | method | 989 |
-| rowBox | method | 990 |
-| fetchButton | method | 1000 |
-| checkRow | method | 1021 |
-| fetchButton | method | 1033 |
-| checkRow | method | 1045 |
-| checkRow | method | 1046 |
-| addSelectedButton | method | 1047 |
-| fetchButton | method | 1081 |
-| addSelectedButton | method | 1088 |
-| addSelectedButton | method | 1107 |
-| fetchButton | method | 1129 |
-| fetchButton | method | 1137 |
-| fetchButton | method | 1162 |
-| fetchButton | method | 1181 |
-| fetchButton | method | 1184 |
-| fetchButton | method | 1201 |
-| fetchButton | method | 1207 |
-| sonnetCatalog | const | 1225 |
-| openSonnet | const | 1230 |
-| checkLevel | const | 1238 |
-| checkLevel | method | 1257 |
-| checkLevel | method | 1286 |
-| confirmDialog | method | 1350 |
-| confirmDialog | method | 1382 |
-| toggle | method | 1595 |
-| toggle | method | 1599 |
-| toggle | method | 1603 |
-| toggle | method | 1647 |
-| toggle | method | 1649 |
+| source | const | 6 |
+| tick | const | 7 |
+| harness | function | 8 |
 
 ### tests/model-onboarding-ui.test.js（185 行） — node --test 测试（npm test）
 
@@ -2949,20 +2875,22 @@
 | opts | const | 57 |
 | stars | const | 58 |
 
-### tests/model-selection-preview.mjs（73 行） — node --test 测试（npm test）
+### tests/model-selection-preview.mjs（80 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | home | const | 11 |
 | catalog | const | 12 |
 | factory | const | 18 |
-| sessions | const | 54 |
-| database | const | 56 |
-| storage | const | 57 |
-| models | const | 59 |
-| app | const | 62 |
-| port | const | 63 |
-| close | function | 65 |
+| sessions | const | 58 |
+| database | const | 60 |
+| storage | const | 61 |
+| models | const | 63 |
+| limits | const | 67 |
+| usage | const | 68 |
+| app | const | 69 |
+| port | const | 70 |
+| close | function | 72 |
 
 ### tests/model-thinking-favorites.test.js（123 行） — node --test 测试（npm test）
 
@@ -3126,7 +3054,7 @@
 |---|---|---|
 | params | const | 28 |
 
-### tests/realtime-transport.test.js（367 行） — node --test 测试（npm test）
+### tests/realtime-transport.test.js（403 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
@@ -3140,6 +3068,7 @@
 | retry | method | 284 |
 | assert | method | 298 |
 | assert | method | 313 |
+| test | method | 350 |
 
 ### tests/recall.test.js（208 行） — node --test 测试（npm test）
 
@@ -3499,14 +3428,15 @@
 | login | function | 9 |
 | restore | method | 77 |
 
-### tests/snapshot-switch.test.js（221 行） — node --test 测试（npm test）
+### tests/snapshot-switch.test.js（246 行） — node --test 测试（npm test）
 
 | 符号 | 类型 | 行 |
 |---|---|---|
 | messageEvent | const | 7 |
 | login | function | 13 |
 | holdReattach | const | 20 |
-| releaseAttachA | method | 207 |
+| rejectAttach | method | 179 |
+| releaseAttachA | method | 232 |
 
 ### tests/sqlite-benchmark.mjs（914 行） — node --test 测试（npm test）
 
@@ -3899,7 +3829,7 @@
 
 ## L3 横切常量（跨模块定位入口）
 
-- 协议 command.type：image、inherit、session.points、session.revert、session.fork、session.continue、connection.ping、service.status、service.update.check、service.restart、remote.get、remote.login、remote.configure、session.rename、workspace.reveal、workspace.browse、files.browse、models.list、models.config.get、models.provider.save、models.provider.delete、models.provider.rename、models.model.save、models.model.delete、models.provider.discover、models.favorites.get、models.model.override、models.auth.list、models.auth.start、models.auth.status、models.auth.respond、models.auth.cancel、models.auth.logout、models.hidden.set、models.favorites.set、capabilities.list、session.defaults.get、session.defaults.configure、session.defaults.list、session.defaults.delete、usage.backfill、usage.get、usage.configure、task.budget.get、task.budget.configure、session.configure、inherit、sessions.list、session.create、session.import、session.duplicate、session.attach、session.compaction.messages、session.compaction.cancel、session.compaction.attempt、session.compaction.start、session.skills.refresh、session.close、prompt、cancel、question.reply、session.retry、task.retry、task.append、task.cancel、queue.withdraw、tasks.read（src/protocol.js）
+- 协议 command.type：image、inherit、session.points、session.revert、session.fork、session.continue、connection.ping、service.status、service.update.check、service.restart、remote.get、remote.login、remote.configure、session.rename、workspace.reveal、workspace.browse、files.browse、models.list、models.config.get、models.provider.configure、models.provider.save、models.provider.delete、models.provider.rename、models.model.save、models.model.delete、models.provider.discover、models.favorites.get、models.model.override、models.auth.list、models.auth.start、models.auth.status、models.auth.respond、models.auth.cancel、models.auth.logout、models.favorites.set、capabilities.list、session.defaults.get、session.defaults.configure、session.defaults.list、session.defaults.delete、usage.backfill、usage.get、usage.configure、task.budget.get、task.budget.configure、session.configure、inherit、sessions.list、session.create、session.import、session.duplicate、session.attach、session.compaction.messages、session.compaction.cancel、session.compaction.attempt、session.compaction.start、session.skills.refresh、session.close、prompt、cancel、question.reply、session.retry、task.retry、task.append、task.cancel、queue.withdraw、tasks.read（src/protocol.js）
 - HTML id：sidebar、toggle-sidebar、new、open-workspace、import-session、search、clear-session-search、session-search-help、session-search-status、sessions、sidebar-service-slot、mobile-more、open-settings、sidebar-backdrop、session-alert、session-title、workspace-label、copy-workspace、reveal-workspace、workspace-feedback、status、view-options-trigger、view-options、conversation-font-scale、github-link、service-dev、service-version、open-raw-io、toggle-theme、login、maintenance-state、connect、workspace、earliest、transcript、output、raw-io、raw-io-title、close-raw-io、raw-io-empty、raw-io-list、latest、question-dock、message-queue、task-runs、compaction-progress、safe-stop-progress、todo-dock、add-context、add-image、compact-session、goal-enter、image-files、context-chips、context-menu、context-picker、context-back、context-title、context-close、context-search、context-results、context-error、image-attachments、composer、prompt、prompt-completion、composer-skill、agent-role、provider、model、thinking、stop、force-stop、send-steer、send-followup、send、session-inspector-trigger、mobile-runtime、mobile-expand、composer-status、session-state、session-runtime、task-timer、task-timer-value、session-billing-trigger、session-bill-total、composer-action-help、composer-shortcuts、error、mobile-menu、mobile-menu-title、mobile-menu-close、mobile-connection、mobile-workspace-slot、mobile-service-slot、session-action、session-action-form、session-action-title、session-action-description、session-name-label、session-name、session-action-error、session-action-cancel、session-action-submit、image-preview、image-preview-close、image-preview-image、restart-dialog、restart-form、restart-title、restart-description、restart-warning、restart-cancel、restart-submit、force-stop-dialog、force-stop-form、force-stop-title、force-stop-description、force-stop-warning、force-stop-cancel、force-stop-submit、session-detail、session-detail-title、session-detail-close、session-usage、session-usage-body、session-inspector、inspector-prompt-tab、inspector-tools-tab、inspector-prompt-panel、session-system-prompt、inspector-tools-panel、session-active-tools、session-billing、session-bill-body、manual-compaction、manual-compaction-form、manual-compaction-title、manual-compaction-mode、manual-compaction-hint、manual-compaction-error、manual-compaction-cancel、manual-compaction-confirm、task-overlays、compaction-run、compaction-run-title、compaction-run-meta、compaction-run-pick-label、compaction-run-pick、compaction-run-cancel、compaction-run-error、compaction-run-trigger、compaction-run-steps、compaction-run-stream-wrap、compaction-run-stream、task-template、settings、settings-title、settings-connection-tab、settings-defaults-tab、settings-remote-tab、settings-models-tab、settings-usage-tab、settings-service-tab、usage-panel、connection-panel、connection-current-title、connection-current、native-connection-help、connection-form、connection-address、connection-help、connection-feedback、connection-connect、defaults-panel、selection-copy-title、selection-copy、selection-copy-help、selection-copy-feedback、queue-type、steer-help、followup-help、defaults-preview、task-budget-title、task-max-turns、task-wrap-up-window、task-work-seconds、task-wrap-up-seconds、task-summary-seconds、task-budget-help、subagent-title、subagent-help、subagent-provider、subagent-model、settings-feedback、defaults-title、defaults-scope-label、defaults-delete、defaults-workspace-help、defaults-editor、create-form、create-defaults-help、config-hot-title、config-timing-help、create-agents、create-compaction、config-subagent-title、config-subagent-help、create-subagent-settings、config-new-session-title、config-assembly-help、create-capabilities、create-retry、assembly-actions、assembly-feedback、apply-assembly、create-feedback、remote-panel、remote-status-title、remote-status、remote-login、remote-auth、remote-url、remote-form、remote-note、remote-enabled、remote-email、remote-email-help、remote-feedback、remote-refresh、remote-save、models-panel、service-panel、service-state-title、service-feedback、service-restart-title、restart-quick、restart-rebuild、repair-provider、repair-model、repair-thinking、service-recover、service-update-section、service-update-title、update-check、update-result、update-install、service-history-title、service-history（public/index.html）
 - HTTP 静态路由：/、/favicon.svg、/style.css、/theme.js、/app.js、/composer-controls.js、/thinking.js、/choice-column.js、/thinking-picker.js、/composer-controls.css、/icons.js、/session-cache.js、/session-details.js、/compaction-view.js、/transport.js、/transport-framing.js、/todo.js、/todo.css、/question.js、/question.css、/service-settings.js、/usage-audit.js、/file-picker.js、/tooltip.js、/tooltip.css、/file-picker.css、/markdown.js、/stream-renderer.js、/stream-playback.js、/markdown-scan.js、/memory-tags.js、/clipboard.js、/answer-tags.js、/vendor/marked.js、/vendor/purify.js、/model-manager.js、/model-limits.js、/model-auth.js、/model-manager.css、/model-picker.js、/model-picker.css、/health（src/server.js）
 
