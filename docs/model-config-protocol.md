@@ -8,11 +8,11 @@
 
 权威存储：Axiom SQLite 的 models/config（凭据 auth/<providerId>、收藏 models/favorites；旧 models/hidden 只留存、不再消费）。**不双写**：SQLite 是唯一权威，models.compat.json 只是每次写库后全量重写的派生镜像（可随时删除重建，重启自动恢复）；旧 Pi models.json / auth.json 只读导入、绝不回写。
 
-**一次导入门闩**：仅当模型权威为空时才尝试导入 models.json / auth.json；无论文件存在与否，成功导入或确认无文件后都打迁移标记（`markMissing`），关闭迁移窗口——此后旧文件不再被读取，权威清空也不会复活导入；权威已存在时启动直接补打标记并清除陈旧导入告警。坏文件/坏结构只记录去重告警、不打标记，用户修复原文件后下次启动自动重试。收藏导入不走此门闩（仍按「权威为空才导入」幂等执行）。
+**一次导入门闩**：models.json / auth.json 按来源独立，只检查各自迁移标记。成功导入或确认无文件后关闭该来源窗口，权威清空也不会复活导入；权威已存在且无遗留告警时补打标记，不回读旧文件。坏文件/坏结构记录去重告警、不打完成标记，修复后重试只补缺失条目，不覆盖已存在权威配置或凭据。收藏仍按权威为空才导入，非法来源显示告警。
 
 ### 思考等级（全协议统一口径）
 
-七级：`off | minimal | low | medium | high | xhigh | max`（selection.thinking、thinkingLevelMap 键、收藏 thinking 组 key 后缀同用此表，前端勾选框同序）。模型上的 `thinkingLevelMap` 把等级映射为 API 取值（string）；值为 `null` 表示对该模型禁用该等级。
+七级：`off | minimal | low | medium | high | xhigh | max`（selection.thinking、thinkingLevelMap 键、收藏 thinking 组 key 后缀同用此表，选择器同序）。模型上的 `thinkingLevelMap` 把等级映射为 API 取值（string）；值为 `null` 表示对该模型禁用该等级。
 
 ### 密钥脱敏（GET 永不回传明文）
 
@@ -56,7 +56,7 @@
   "applied": true,             // false = 已保存但派生/刷新未完成，见 applyError
   "applyError": "…",           // 可选：挂起应用状态的失败原因（GET 读取路径会顺带重试）
   "parseError": "…",           // 可选：旧配置导入告警（仅权威为空时）或库内结构无效
-  "authProviders": [           // 支持网页登录的供应商及登录方式
+  "authProviders": [           // Pi 供应商及原生登录方式，环境认证供应商的 methods 可为空
     { "id": "anthropic", "name": "Anthropic", "configured": true, "usingOAuth": false, "authSource": "stored",
       "methods": [ { "type": "oauth", "name": "…" }, { "type": "api_key", "name": "…" } ] }
   ],

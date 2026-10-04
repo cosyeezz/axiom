@@ -779,6 +779,8 @@ export class Sessions {
       const directory = join(this.storagePath, workspace.name);
       for (const file of await readdir(directory)) {
         if (!file.endsWith(".json")) continue;
+        // 压缩过程/诊断是历史旁的附属文件，不是旧会话；读取前排除，保留原文且不打迁移标记。
+        if (file.endsWith(".compaction-attempts.json") || file.endsWith(".compaction-diagnostics.json")) continue;
         const path = join(directory, file);
         const marker = `sessions/${path}`;
         if (this.database?.get("migrated", marker)) continue;
@@ -880,6 +882,8 @@ export class Sessions {
         cwd: item.cwd,
         // 列表展示整场执行状态；主代理的输入/队列状态仍由 item.status 控制。
         status: pointStatus(item),
+        // 仅派生展示信号，不把确认阻塞改写成执行状态；停止中的提示优先。
+        awaitingConfirmation: !item.safeStopping && item.status !== "cancelling" && !!item.questions?.snapshot().length,
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
         elapsedMs: item.elapsedMs,

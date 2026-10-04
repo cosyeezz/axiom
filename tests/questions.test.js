@@ -86,7 +86,13 @@ test("sessions expose question only to main, isolate replies, snapshot pending c
     const unsubscribe = sessions.subscribe(id, (event) => events.push(event));
     const tool = registrations[0].find((t) => t.name === "question");
     assert.ok(tool);
+    const waiting = () => sessions.list().find((s) => s.id === id).awaitingConfirmation;
+    assert.equal(waiting(), false);
     const pending = tool.execute("call", params);
+    assert.equal(waiting(), true);
+    assert.equal(sessions.list().find((s) => s.id === other).awaitingConfirmation, false);
+    assert.throws(() => sessions.replyQuestion(id, "call", [["邮箱"]]), /全部/);
+    assert.equal(waiting(), true, "invalid answer must not consume waiting state");
     unsubscribe(); // disconnect is not cancellation
     assert.equal(sessions.snapshot(id).questions.length, 1);
     assert.equal(events[0].sessionId, id);
@@ -94,6 +100,20 @@ test("sessions expose question only to main, isolate replies, snapshot pending c
     sessions.replyQuestion(id, "call", [["邮箱"], ["记录"]]);
     await pending;
     assert.equal(sessions.snapshot(id).questions.length, 0);
+    assert.equal(waiting(), false);
+    const item = sessions.get(id);
+    const approval = item.questions.confirmTodo({ kind: 'create', reason: 'test', proposal: { changes: [] } });
+    assert.equal(waiting(), true, 'Todo approval uses the same pending signal');
+    item.safeStopping = true;
+    assert.equal(waiting(), false, 'safe stop takes precedence');
+    item.safeStopping = false;
+    item.status = 'cancelling';
+    assert.equal(waiting(), false, 'cancelling takes precedence');
+    item.status = 'idle';
+    assert.equal(waiting(), true, 'pending is independent of execution status');
+    item.questions.cancel();
+    await approval;
+    assert.equal(waiting(), false);
     sessions.get(id).tasks.start(["子任务"], "背景");
     await new Promise((resolve) => setImmediate(resolve));
     assert.deepEqual(registrations[2], [], "child gets no question or delegation tools");
@@ -101,6 +121,7 @@ test("sessions expose question only to main, isolate replies, snapshot pending c
     const rejected = assert.rejects(cancelled, /取消/);
     await sessions.cancel(id);
     await rejected;
+    assert.equal(waiting(), false);
     const shutdown = tool.execute("shutdown", params);
     const stopped = assert.rejects(shutdown, /取消/);
     await sessions.close();

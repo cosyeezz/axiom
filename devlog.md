@@ -7,8 +7,26 @@
 - 配置：新增 `models.provider.configure` 整供应商替换，复用 SDK 校验、指纹与 CAS；只在已约定的 apiKey/headers 位置将掩码转 keep，不误转换未知字段。供应商/模型/override 的 Header 均可删除；未知能力/cost 扩展字段往返保留。失败不覆盖权威数据，草稿保留旧指纹；旧细粒度命令仅保留兼容。
 - 登录：独立审查复现 Copilot 的“空域名使用 github.com”被前端 required、协议 min(1)、后端判空三层拦截；均改为交给 SDK/provider 校验。短暂状态查询失败有界重试三次；保留单步 callback/manual 取消与整体取消的区别。断线/刷新取消流程仍是明确限制，不伪称跨连接恢复或外部授权已成功。
 - 验证：首轮隔离 HOME/USERPROFILE/TEMP/TMP/Pi 串行全量1052项，1049通过、3跳过、0失败；收尾定向58项通过，真实SDK API Key与原生JSON→SQLite→回环请求覆盖，OAuth仅模拟交互/合成凭据。Chromium 8组双主题320–1440px、OAuth select/device/Copilot空答、API Key/Escape、JSON保存与限额读写及高级区布局通过；旧模型设置/收藏浏览器脚本迁移到当前可见级联入口，两套通过。截图在 `F:/worktrees/native-model-artifacts-final` 等仓库外目录。
-- `node --check`、`npm pack --dry-run`、`git diff --check` 已通过；项目无独立类型检查/生产构建脚本，不能冒称执行了不存在的步骤。真实第三方登录与首条模型请求、移动真机与读屏未测。最新远端已到 `2007f41`，交付前合入并重新全量验证；测试重建的无关代码索引已恢复。
-- 文件：`public/{model-manager.js,model-manager.css,model-auth.js}`、`src/{model-config.js,model-auth.js,protocol.js,server.js}`、`tests/model-{config,config-runtime,manager,auth,auth-ui}.test.js`、`tests/model-{auth-browser,selection-ui,settings-ui}.py`、`tests/model-selection-preview.mjs`、`README.md`、`docs/model-config-protocol.md`、本记录。
+- `node --check`、`npm pack --dry-run`、`git diff --check` 已通过；项目无独立类型检查/生产构建脚本，不能冒称执行了不存在的步骤。真实第三方登录与首条模型请求、移动真机与读屏未测。已合入最新远端 `2007f41`，devlog 冲突保留双方记录；按 README 发布规则将版本和锁文件升为 `0.1.12`（依赖不变）。最终隔离串行全量1057项：1054通过、3跳过、0失败（334.5秒，`F:/worktrees/native-integrated-full.log`）；跳过项为POSIX权限、可选真实MCP适配器与不支持平台reveal。Chromium认证、模型设置、模型选择及上游等待确认四套重新通过；语法、版本一致性、差异和打包检查（344文件）通过。测试重建的无关代码索引已恢复。
+- 文件：`public/{model-manager.js,model-manager.css,model-auth.js}`、`src/{model-config.js,model-auth.js,protocol.js,server.js}`、`tests/model-{config,config-runtime,manager,auth,auth-ui}.test.js`、`tests/model-{auth-browser,selection-ui,settings-ui}.py`、`tests/model-selection-preview.mjs`、`README.md`、`docs/model-config-protocol.md`、`package.json`／`package-lock.json`、本记录。
+
+## 2026-10-03 启动迁移排除压缩附属 JSON
+
+- 时间：2026-10-03（本机 -07:00）。独立 `feat/session-migration-sidecars` 工作树基于最新 `origin/master 0a4d86a`；用户截图在更新启动后出现大量 compaction 文件的“旧会话迁移失败”。
+- 根因：`migrateLegacySessions()` 将工作空间内所有 `.json` 都作为旧会话读取；压缩过程／诊断写入的是数组，缺少会话 `id`，在入库之前触发泛化格式／权限告警。失败未标记，导致每次启动重复读取和误报。SQLite ExperimentalWarning 与此校验失败无因果关系；截图末尾已有 listening，不将其当作服务启动失败，也不推断之前 worker 退出的原因。
+- 修复：读取前仅排除两个已知附属后缀 `.compaction-attempts.json`／`.compaction-diagnostics.json`，不改写、删除或标记附属文件；不按内容静默跳过任意 JSON，不收紧旧会话文件名或字段兼容性，保留真实坏会话告警、逐文件重试及存储事务／备份行为。
+- 验证：新增回归在旧实现上复现 7 条告警而非预期 1 条；还发现带会话字段的合成附属内容会被误导入（正常生成内容仍为数组，不声称用户数据已被误导入）。修复后定向 44/44 通过，覆盖两种后缀、空／非空数组、截断 JSON、会话形状内容、孤立附属文件、混合正常／坏旧会话、三次启动、坏会话修复重试、无附属迁移标记、文件逐字节保留及不创建缺失 JSONL。
+- 全量：同步 `origin/master 0a4d86a` 后隔离 HOME／USERPROFILE／TEMP／TMP／TMPDIR／Pi 串行执行 1086 项，1083 通过、3 跳过、0 失败（347 秒）。跳过项为 POSIX 权限、可选真实 MCP 适配器与不支持平台 reveal；语法和差异检查通过。测试自动重建的无关代码索引已恢复，项目为原生 JS，无独立编译脚本。
+- 文件：`src/sessions.js`、`tests/session-migration.test.js`、`README.md`、`package.json`／`package-lock.json`、本记录。按 README 发布规则将版本升为 `0.1.10`，依赖不变。测试仅使用隔离临时目录与假代理，未访问用户历史、修改真实数据库或重启在用服务；证据位于仓库外 `F:/worktrees/session-migration-evidence/`。独立只读审查无阻断问题；版本调整后迁移／存储／更新定向 46/46 再次通过，版本与锁文件一致性、`npm pack --dry-run`（342 文件）及 `git diff --check` 通过。三次重启回归为同进程重开 Sessions／数据库，非截图机器完整服务升级实测；附属文件识别采用保留后缀，不按内容猜测。交付前再次同步远端，主 checkout 原有未跟踪文件清单保持不变。
+
+## 2026-10-03 会话等待确认状态色
+
+- 时间：2026-10-03 21:20（本机 -07:00）。用户需要分辨正在执行与等待确认阻塞；独立 `feat/session-waiting-confirmation` 工作树基于最新 `origin/master 0a4d86a`，主 checkout 未跟踪资料保持不动。
+- 实施：普通 question 和 Todo 目标确认复用同一 pending 队列，问答 UI 提供只读状态及变更通知；快照、asked/closed 和已接受的 reply 均更新底栏与侧栏，多个请求最后一个关闭才消失，失败不提前清除。当前列表行使用实时队列，避免在途旧列表覆盖；非当前会话以 `sessions.list.awaitingConfirmation` 派生字段呈现，加入列表比较键，沿用约5秒刷新。不改执行枚举、排序、未读规则、暂停或计时；断线／切换／停止提示优先。
+- 设计：运行绿点保留 `--success`，待确认复用现有 Linear 产品语义 `--highlight`（浅色 #83580a／深色 #e2b978），底栏显示金色“等待确认”，侧栏提供“等待用户确认”名称与提示；不新增颜色或闪烁，沿用6px圆点、12px文字与4px间距。
+- 验证：定向43项通过；隔离 HOME／USERPROFILE／TEMP／TMP／TMPDIR／PI_CODING_AGENT_DIR 的串行全量1089项，1086通过、3跳过、0失败（335.7秒）。Chromium 待确认专项3视口×双主题×普通/目标确认与实时关闭／空闲／断线通过；focus-ui 5视口双主题通过。JS语法、`git diff --check`、`npm pack --dry-run`（344文件）通过；原生 ES 模块无独立 build 脚本。测试自动重建的无关 INDEX 已恢复。首轮新增测试误用 Todo kind=plan，改为真实 create 契约后复验通过，不改业务契约。
+- 审查与最终集成：独立只读审查发现确认结束后当前侧栏可能沿用旧 idle 列表而漏绿点；新增精确断言先复现2项失败，再将当前行运行指示改读实时 busy，保留列表排序与计时语义。补迟到旧列表、进入 idle 后隐藏圆点、暂停不误标待确认回归。合入最新 `origin/master cdb4092`，devlog 冲突保留双方记录；按 README 发布规则版本升为 `0.1.11`（锁文件同步、依赖不变）。最终隔离串行全量1090项：1087通过、3跳过、0失败（347.3秒，`session-waiting-final-full.log`）；待确认专项及 focus-ui Chromium 重新通过，语法／差异检查和打包检查通过。
+- 文件：`src/sessions.js`、`public/{app.js,question.js,style.css,composer-controls.css}`、`tests/{questions.test.js,session-waiting.test.js,session-waiting-ui.py,conversation-preview.mjs}`、`package.json`／`package-lock.json`、`README.md`、本记录。证据在仓库外 `F:/worktrees/session-waiting-*`；未做移动真机、屏幕阅读器或桌面壳原生验收，未调用真实模型。
 
 ## 2026-10-02 工具摘要与底栏统计紧凑化
 
