@@ -779,6 +779,8 @@ export class Sessions {
       const directory = join(this.storagePath, workspace.name);
       for (const file of await readdir(directory)) {
         if (!file.endsWith(".json")) continue;
+        // 压缩过程/诊断是历史旁的附属文件，不是旧会话；读取前排除，保留原文且不打迁移标记。
+        if (file.endsWith(".compaction-attempts.json") || file.endsWith(".compaction-diagnostics.json")) continue;
         const path = join(directory, file);
         const marker = `sessions/${path}`;
         if (this.database?.get("migrated", marker)) continue;

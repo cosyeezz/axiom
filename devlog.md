@@ -9,6 +9,15 @@
 - 验证：独立npm ci成功；首次非隔离全量受宿主skills污染，改用F:/worktrees内隔离HOME/USERPROFILE/TEMP/TMP/TMPDIR/PI_CODING_AGENT_DIR/AXIOM_HOME串行，基线1085项（1082通过、3跳过、0失败）。定向44项通过；首轮全量发现召回旧attach主动failSnapshot误伤新切换，增加视图/连接代次并移除过期成功的主动断线，保留召回草稿后17项切换/恢复通过。修正后全量1104项（1101通过、3跳过、0失败，338秒）；JS语法、git diff --check与npm pack --dry-run通过，345文件含新模块。远端随后新增cdb4092迁移修复，集成后结果另记。
 - 文件：`src/{transport,server,protocol}.js`、`public/{transport,transport-framing,app}.js`、`desktop/connector/index.html`，传输/地址/恢复/服务及测试拼接helper；README、本记录、codebase-map职责/知识/生成索引。未调用模型、未在实际WebView验证休眠/切网/内存峰值，运行服务的生效需维护窗口更新重启并手动刷新保存过草稿的页面。
 
+## 2026-10-03 启动迁移排除压缩附属 JSON
+
+- 时间：2026-10-03（本机 -07:00）。独立 `feat/session-migration-sidecars` 工作树基于最新 `origin/master 0a4d86a`；用户截图在更新启动后出现大量 compaction 文件的“旧会话迁移失败”。
+- 根因：`migrateLegacySessions()` 将工作空间内所有 `.json` 都作为旧会话读取；压缩过程／诊断写入的是数组，缺少会话 `id`，在入库之前触发泛化格式／权限告警。失败未标记，导致每次启动重复读取和误报。SQLite ExperimentalWarning 与此校验失败无因果关系；截图末尾已有 listening，不将其当作服务启动失败，也不推断之前 worker 退出的原因。
+- 修复：读取前仅排除两个已知附属后缀 `.compaction-attempts.json`／`.compaction-diagnostics.json`，不改写、删除或标记附属文件；不按内容静默跳过任意 JSON，不收紧旧会话文件名或字段兼容性，保留真实坏会话告警、逐文件重试及存储事务／备份行为。
+- 验证：新增回归在旧实现上复现 7 条告警而非预期 1 条；还发现带会话字段的合成附属内容会被误导入（正常生成内容仍为数组，不声称用户数据已被误导入）。修复后定向 44/44 通过，覆盖两种后缀、空／非空数组、截断 JSON、会话形状内容、孤立附属文件、混合正常／坏旧会话、三次启动、坏会话修复重试、无附属迁移标记、文件逐字节保留及不创建缺失 JSONL。
+- 全量：同步 `origin/master 0a4d86a` 后隔离 HOME／USERPROFILE／TEMP／TMP／TMPDIR／Pi 串行执行 1086 项，1083 通过、3 跳过、0 失败（347 秒）。跳过项为 POSIX 权限、可选真实 MCP 适配器与不支持平台 reveal；语法和差异检查通过。测试自动重建的无关代码索引已恢复，项目为原生 JS，无独立编译脚本。
+- 文件：`src/sessions.js`、`tests/session-migration.test.js`、`README.md`、`package.json`／`package-lock.json`、本记录。按 README 发布规则将版本升为 `0.1.10`，依赖不变。测试仅使用隔离临时目录与假代理，未访问用户历史、修改真实数据库或重启在用服务；证据位于仓库外 `F:/worktrees/session-migration-evidence/`。独立只读审查无阻断问题；版本调整后迁移／存储／更新定向 46/46 再次通过，版本与锁文件一致性、`npm pack --dry-run`（342 文件）及 `git diff --check` 通过。三次重启回归为同进程重开 Sessions／数据库，非截图机器完整服务升级实测；附属文件识别采用保留后缀，不按内容猜测。交付前再次同步远端，主 checkout 原有未跟踪文件清单保持不变。
+
 ## 2026-10-02 工具摘要与底栏统计紧凑化
 
 - 时间：2026-10-02 20:30（本机 -07:00）。独立 `feat/compact-tool-status` 工作树基于最新 `origin/master 74a707d`，保留已合入的输入区底部操作栏与主 checkout 未跟踪资料。用户旧截图模型在框外，当前模型已移入框内，不回退上游布局。

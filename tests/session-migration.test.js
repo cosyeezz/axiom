@@ -181,6 +181,63 @@ test("旧磁盘会话一次性迁入并恢复；坏文件不标记可重试；�
   }
 });
 
+test("旧会话迁移跳过压缩附属文件：不解析、不入库、不标记，重启保留原文且坏会话仍可重试", async () => {
+  const root = await mkdtemp(join(tmpdir(), "axiom-migrate-sidecars-"));
+  const storage = join(root, "storage");
+  const workspace = join(storage, workspaceHash(root));
+  const files = new Map();
+  const warnings = [];
+  const original = console.warn;
+  let sessions;
+  try {
+    await mkdir(workspace, { recursive: true });
+    const good = join(workspace, "legacy.json");
+    const broken = join(workspace, "broken.json");
+    const history = join(workspace, "session-0.jsonl");
+    files.set(good, JSON.stringify({ id: "legacy", cwd: root, title: "旧会话", sessionFile: history }));
+    files.set(broken, "{broken");
+    files.set(history, JSON.stringify({ type: "session", id: "history", cwd: root }) + "\n");
+    files.set(`${history}.compaction-attempts.json.tmp`, "{unfinished");
+    const sidecars = [];
+    // 非空/空数组、截断 JSON、看似合法的旧会话均按附属文件身份跳过；孤立文件也一样。
+    const contents = [JSON.stringify([{ id: "run", status: "applied" }]), "[]", "{truncated",
+      JSON.stringify({ id: "not-a-session", cwd: root, title: "不得迁入" })];
+    for (const [index, content] of contents.entries()) {
+      for (const suffix of ["compaction-attempts", "compaction-diagnostics"]) {
+        const path = join(workspace, `session-${index}.jsonl.${suffix}.json`);
+        sidecars.push(path);
+        files.set(path, content);
+      }
+    }
+    for (const [path, content] of files) await writeFile(path, content);
+    console.warn = message => warnings.push(message);
+    for (let restart = 0; restart < 3; restart++) {
+      warnings.length = 0;
+      if (restart === 2) {
+        files.set(broken, JSON.stringify({ id: "repaired", cwd: root, title: "修复的会话" }));
+        await writeFile(broken, files.get(broken));
+      }
+      sessions = new Sessions(factory, undefined, storage);
+      await sessions.load();
+      assert.equal(warnings.length, restart === 2 ? 0 : 1, "只有真实坏会话产生告警");
+      assert.deepEqual(sessions.list().map(s => s.id).sort(), restart === 2 ? ["legacy", "repaired"] : ["legacy"]);
+      if (restart < 2) assert.ok(warnings[0].includes(broken));
+      assert.equal(sessions.database.get("migrated", `sessions/${good}`), true);
+      assert.equal(sessions.database.get("migrated", `sessions/${broken}`), restart === 2 ? true : undefined);
+      for (const path of sidecars) assert.equal(sessions.database.get("migrated", `sessions/${path}`), undefined);
+      for (const [path, content] of files) assert.deepEqual(await readFile(path), Buffer.from(content));
+      // 识别附属文件不要求其关联历史仍然存在，也不应创建历史占位文件。
+      for (let index = 1; index < contents.length; index++) assert.equal(existsSync(join(workspace, `session-${index}.jsonl`)), false);
+      await sessions.close();
+      sessions = null;
+    }
+  } finally {
+    console.warn = original;
+    await sessions?.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("缺失历史仍列出会话，但打开失败且不让 SDK 用空历史覆盖", async () => {
   const root = await mkdtemp(join(tmpdir(), "axiom-migrate-missing-"));
   let sessions;
