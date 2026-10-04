@@ -22,7 +22,16 @@ import { createUsageAudit } from "./usage-audit.js";
 import { createQuestionUI } from "./question.js";
 import { createTodoUI } from "./todo.js";
 const todoUI = createTodoUI({ root: document.getElementById("todo-dock"), request });
-const questionUI = createQuestionUI({ root: document.getElementById("question-dock"), reply: (data) => request("question.reply", data), focusPrompt: () => document.getElementById("prompt").focus() });
+const questionUI = createQuestionUI({
+  root: document.getElementById("question-dock"), reply: (data) => request("question.reply", data),
+  focusPrompt: () => document.getElementById("prompt").focus(),
+  onChange: () => {
+    const current = allSessions.find((s) => s.id === sessionId);
+    if (current) current.awaitingConfirmation = questionUI.hasPending();
+    region("输入操作", updateComposer);
+    region("会话列表", renderSessions);
+  },
+});
 
 const filePicker = createFilePicker(request);
 const $ = (id) => document.getElementById(id);
@@ -797,7 +806,10 @@ function updateComposer() {
   const state = !connected ? ["offline", "连接断开"]
     : sessionMissing ? ["missing", "会话不可用"]
     : changing ? ["loading", "切换中"]
-    : busy ? (cancelling ? ["stopping", "正在停止"] : safeStopping ? ["stopping", "安全停止中"] : ["running", "运行中"])
+    : busy && cancelling ? ["stopping", "正在停止"]
+    : busy && safeStopping ? ["stopping", "安全停止中"]
+    : questionUI.hasPending() ? ["waiting", "等待确认"]
+    : busy ? ["running", "运行中"]
     : stopAlert ? ["stopped", "已停下"] : ["idle", "空闲"];
   $("session-state").dataset.state = state[0];
   $("session-state").textContent = state[1];
@@ -2855,6 +2867,7 @@ function applyEvent(message) {
       region("设置与详情", () => { renderDefaultsScope(); updateSettingsAvailability(); });
     }
     region("输入操作", updateComposer);
+    region("会话列表", renderSessions);
   }
   if (type === "agent.message.start" && data.message.role === "assistant") {
     clearWaiting(agentId);
@@ -3168,7 +3181,6 @@ function beginSnapshot(state, target) {
   scrollFrame = undefined;
   sessionMissing = false;
   sessionId = target;
-  questionUI.show(sessionId, state.questions);
   try {
     sessionStorage.setItem("axiom.session", sessionId);
   } catch {}
@@ -3183,6 +3195,7 @@ function beginSnapshot(state, target) {
   cancelling = state.status === "cancelling";
   safeStopping = busy && !!state.safeStop;
   stopAlert = false;
+  questionUI.show(sessionId, state.questions);
   lastMainMessage = state.messages.findLast((entry) => entry.agentId === "main")?.message || null;
   canReask = !!state.canReask;
   interrupted = !busy && (canReask || canResumeMessage(lastMainMessage));
@@ -4260,6 +4273,7 @@ function insertSessionRow(state) {
     title: state.title || "新会话",
     cwd: state.cwd ?? currentCwd,
     status: state.status ?? "idle",
+    awaitingConfirmation: !!state.questions?.length,
     sessionFile: state.sessionFile ?? null,
     createdAt: state.createdAt ?? now,
     updatedAt: state.updatedAt ?? now,
@@ -4275,8 +4289,10 @@ async function updateSessions() {
   if (sessionId !== target) return;
   renderTaskTimer(sessions);
   // updatedAt 决定排序与未读判定，必须进比较键，否则「跑完」这类只动 updatedAt 的变化不会重渲染列表。
-  const listState = (items) => JSON.stringify(items.map(({ id, title, cwd, status, sessionFile, createdAt, updatedAt, elapsedMs, runningSince }) => ({ id, title, cwd, status, sessionFile, createdAt, updatedAt, elapsedMs, runningSince })));
+  const listState = (items) => JSON.stringify(items.map(({ id, title, cwd, status, awaitingConfirmation, sessionFile, createdAt, updatedAt, elapsedMs, runningSince }) => ({ id, title, cwd, status, awaitingConfirmation, sessionFile, createdAt, updatedAt, elapsedMs, runningSince })));
   const active = sessions.find((s) => s.id === sessionId);
+  // 当前页的问答事件/快照比在途列表更及时，不能被旧列表回执覆盖。
+  if (active) active.awaitingConfirmation = questionUI.hasPending();
   if (!active && sessionId && connected && !changing) {
     allSessions = sessions;
     await recoverMissingSession();
@@ -4486,9 +4502,15 @@ function renderSessions() {
     button.title = s.title;
     const attention = unread(s);
     const status = document.createElement("small");
-    status.className = running(s) ? "session-running-dot" : "session-attention-dot";
-    status.hidden = !running(s) && !attention;
-    status.setAttribute("aria-label", running(s) ? "执行中" : "有待查看的结果");
+    // 当前页直接读确认队列，非当前会话使用列表投影；不改变执行排序、未读或计时。
+    const awaiting = s.id === sessionId ? questionUI.hasPending() && !cancelling && !safeStopping
+      : s.awaitingConfirmation && s.status !== "cancelling";
+    const executing = s.id === sessionId ? busy : running(s);
+    status.className = awaiting ? "session-waiting-dot" : executing ? "session-running-dot" : "session-attention-dot";
+    status.hidden = !awaiting && !executing && !attention;
+    const label = awaiting ? "等待用户确认" : executing ? "执行中" : "有待查看的结果";
+    status.setAttribute("aria-label", label);
+    status.title = label;
     button.append(status, title);
     if (pinned(s)) {
       const pin = document.createElement("small");
