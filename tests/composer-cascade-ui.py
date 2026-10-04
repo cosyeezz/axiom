@@ -50,8 +50,25 @@ try:
         assert panels.count() == 0
         for width in [390, 320]:
             page.set_viewport_size({'width': width, 'height': 844})
-            page.wait_for_timeout(150)
+            trigger.click()
+            root.locator(':scope > section .composer-choice-row > button:first-child').first.click()
+            panels.nth(1).locator(':scope > section .composer-choice-row > button:first-child').first.click()
+            search = panels.nth(2).locator('input')
+            search.fill('high')
+            page.evaluate('window.savedSearch = document.activeElement')
+            page.set_viewport_size({'width': width, 'height': 420})
+            page.wait_for_timeout(5500)  # includes the normal sessions.list refresh
+            assert panels.count() == 3
+            assert search.input_value() == 'high'
+            assert page.evaluate('document.activeElement === window.savedSearch && savedSearch.isConnected')
+            for panel in panels.all():
+                box = panel.bounding_box()
+                assert box['x'] >= 0 and box['x'] + box['width'] <= width
+                assert box['y'] >= 0 and box['y'] + box['height'] <= 420
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+            page.screenshot(path=f'artifacts/composer/cascade-{width}-keyboard.png')
+            search.press('Escape')
+            assert panels.count() == 0
         assert not errors, errors
         browser.close()
     print('Composer browser checks passed')

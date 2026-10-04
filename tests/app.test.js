@@ -543,7 +543,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     $("close-raw-io").click();
     assert.equal($("raw-io").hidden, true);
     assert.equal($("open-raw-io").getAttribute("aria-pressed"), "false");
-    assert.equal(window.document.activeElement, $("mobile-more"), "手机关闭后焦点回到可见的更多入口");
+    assert.equal(window.document.activeElement, $("toggle-sidebar"), "手机关闭后焦点回到可见的侧栏入口");
     sockets[1].receive({ type: "agent.delta", sessionId: rawSession, agentId: "child", data: { type: "text_delta", delta: "关闭后仍记录子代理" } });
     paint();
     $("open-raw-io").click();
@@ -1522,14 +1522,15 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     emit("agent.runtime", { ...runtime, model: "test/model" });
     assert.match($("session-runtime").textContent, /缓存 80\.0%/);
     assert.match($("session-runtime").firstElementChild.title, /缓存读取 800；缓存写入 100/);
-    assert.equal($("session-runtime").children.length, 2, "主状态不重复模型");
+    assert.equal($("session-runtime").querySelectorAll('.runtime-metric').length, 2, "主状态不重复模型");
     const bill = { records: 1, unpriced: 0, incomplete: false, groups: [], agents: [], cost: { total: .023 } };
     emit("session.billing", bill);
     assert.equal($("session-bill-total").textContent, "≈ $0.023");
     emit("session.billing", { ...bill, unpriced: 1 });
-    assert.match($("session-bill-total").textContent, /不完整/);
+    assert.match($("session-bill-total").textContent, /\*/);
+    assert.match($("session-billing-trigger").title, /部分用量或价格缺失/);
     emit("session.billing", { ...bill, incomplete: true });
-    assert.match($("session-bill-total").textContent, /不完整/);
+    assert.match($("session-bill-total").textContent, /\*/);
     emit("session.billing", { ...bill, records: 0 });
     assert.equal($("session-bill-total").textContent, "账单 —");
     assert.match($("session-billing-trigger").title, /不代表没有费用/);
@@ -2292,24 +2293,24 @@ test("compaction settings edit per scope and fold transcripts in place", async (
     $("settings").close();
 
     // 任务计时：与「+」同行最右端，运行中累计、停止后定格、再次运行继续累加。
-    assert.equal($("task-timer").hidden, true, "没有运行记录时不占位");
+    assert.equal($("task-timer").hidden, false, "没有运行记录时仍明确显示耗时");
     state.elapsedMs = 63_000;
     state.runningSince = Date.now() - 2_000;
     emit("session.state", { status: "running", elapsedMs: state.elapsedMs, runningSince: state.runningSince });
     await settle();
     assert.equal($("task-timer").hidden, false);
     assert.equal($("task-timer").dataset.running, "true");
-    assert.equal($("task-timer-value").textContent, "1m 05s", "运行中把当前这段计入显示");
+    assert.equal($("task-timer-value").textContent, "耗时 0:01:05", "运行中把当前这段计入显示");
     state.elapsedMs = 67_000;
     state.runningSince = null;
     emit("session.state", { status: "idle", elapsedMs: 67_000, runningSince: null });
     await settle();
     assert.equal($("task-timer").dataset.running, "false");
-    assert.equal($("task-timer-value").textContent, "1m 07s", "停止后定格服务端结算的累计值");
+    assert.equal($("task-timer-value").textContent, "耗时 0:01:07", "停止后定格服务端结算的累计值");
     state.runningSince = Date.now();
     emit("session.state", { status: "running", elapsedMs: 67_000, runningSince: state.runningSince });
     await settle();
-    assert.equal($("task-timer-value").textContent, "1m 07s", "再次执行继续累加而不是清零");
+    assert.equal($("task-timer-value").textContent, "耗时 0:01:07", "再次执行继续累加而不是清零");
     assert.match($("task-timer").title, /累计运行 1m 07s/);
   } finally {
     dom.window.close();

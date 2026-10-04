@@ -110,7 +110,14 @@ body {
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   height: 100dvh;
 }
-body:has(.shell.collapsed) { --sidebar-width: 56px; }
+body:has(.shell.collapsed) { --sidebar-width: 0px; }
+.shell.collapsed { grid-template-columns: minmax(0, 1fr); }
+#sidebar-reopen:empty { display: none; }
+#sidebar-reopen { padding: 8px; }
+#sidebar-reopen #toggle-sidebar { width: 44px; height: 44px; }
+.shell.collapsed > main > header { display: none; }
+.shell.collapsed #sidebar { display: none; }
+#sidebar .header-title { flex: 0 0 auto; padding: 4px 8px 8px; }
 aside {
   display: flex;
   flex-direction: column;
@@ -129,12 +136,6 @@ aside {
 #toggle-sidebar:hover { color: var(--ink); background: var(--hover); }
 #toggle-sidebar:focus-visible, .sidebar-footer:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .sidebar-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
-.collapsed #sidebar { padding: 12px 8px 8px; gap: 8px; }
-.collapsed #sidebar > :not(.sidebar-heading, .sidebar-bottom), .collapsed .sidebar-heading .brand, .collapsed .sidebar-label { display: none; }
-.collapsed .sidebar-heading { justify-content: center; }
-.collapsed #sidebar .sidebar-footer { justify-content: center; width: 40px; padding: 8px; }
-.shell.collapsed #sidebar #status { width: 40px; min-height: 40px; padding: 8px; justify-content: center; }
-.shell.collapsed #sidebar #status span { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* 品牌行：强调色方块托住 A，正文字重压回 XIOM（Linear 规范：薰衣草蓝只给品牌、主 CTA、焦点）。 */
 .brand {
   display: flex;
@@ -591,8 +592,12 @@ h1 {
 #mobile-menu .service-controls { flex-wrap: wrap; gap: 12px; }
 #mobile-menu :is(#status, #service-version) { display: inline-flex; }
 #mobile-menu-close { min-width: 64px; flex-shrink: 0; padding: 8px; }
-#mobile-menu #view-options-trigger { width: auto; min-width: 96px; min-height: 48px; padding: 8px; }
-#mobile-menu #view-options :is(button, a, select) { min-height: 48px; }
+#mobile-menu #view-options-trigger, #mobile-menu #view-options h2 { display: none; }
+#mobile-menu #view-options { position: static; display: block; width: 100%; max-width: none; max-height: none; padding: 0; border: 0; overflow: visible; }
+#mobile-menu .service-controls { display: flex; flex-direction: column; align-items: stretch; }
+#mobile-menu #view-options :is(button, a, select) { min-height: 44px; }
+#mobile-menu #status, #mobile-menu #status[data-connected="true"] { width: auto; max-width: none; justify-content: flex-start; padding: 8px; white-space: nowrap; }
+#mobile-menu #status[data-connected="true"] span { position: static; width: auto; height: auto; margin: 0; overflow: visible; clip: auto; clip-path: none; }
 /* 主题切换：显示「点一下会变成的那个主题」的图标，深色下是太阳、浅色下是月亮。 */
 #toggle-theme { display: grid; place-items: center; }
 #toggle-theme svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
@@ -1755,7 +1760,7 @@ textarea {
 @media (prefers-reduced-motion: reduce) { #session-inspector > summary::before, #session-billing > summary::before { transition: none; } }
 .mobile-controls { display: none; }
 @media (max-width: 700px) {
-  body, body:has(.shell.collapsed) { --sidebar-width: 56px; }
+  body, body:has(.shell.collapsed) { --sidebar-width: 0px; }
   /* The compact composer no longer exposes the legacy expand toggle.
      Keep status banners and actions reachable on small screens. */
   .shell.mobile-expanded #session-runtime { display: flex; }
@@ -1764,9 +1769,10 @@ textarea {
   #mobile-expand { flex-shrink: 0; min-height: 40px; padding: 4px 8px; border: 0; background: transparent; color: var(--muted); font-size: 12px; }
   .shell,
   .shell.collapsed {
-    grid-template-columns: 56px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
-  .shell > main { grid-column: 2; }
+  .shell > main { grid-column: 1; }
+  .shell > main > header { display: none; }
   aside {
     position: fixed;
     inset: 0 auto 0 0;
@@ -1774,9 +1780,7 @@ textarea {
     z-index: 5;
     box-shadow: none;
   }
-  .collapsed #sidebar { width: 56px; padding: 8px 4px; }
-  #sidebar #toggle-sidebar, .collapsed #sidebar .sidebar-footer { width: 48px; min-width: 48px; height: 48px; min-height: 48px; }
-  .collapsed #sidebar #open-settings { display: none; }
+  #sidebar #toggle-sidebar { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
   #sidebar-service-slot { display: none; }
   #sidebar-backdrop {
     position: fixed;

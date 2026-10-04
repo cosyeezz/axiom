@@ -60,12 +60,12 @@ try:
                 assert 0 <= footer['y'] - composer['y'] - composer['height'] <= 4
                 runtime = page.locator('#session-runtime')
                 assert runtime.locator('svg').count() == 2
-                assert runtime.locator('.runtime-context-percent').is_visible() == (width <= 700)
+                assert not runtime.locator('.runtime-context-percent').is_visible()
                 assert runtime.locator('.runtime-context-detail').is_visible() == (width > 700)
                 if width <= 700:
                     assert runtime.bounding_box()['height'] == 44
-                    cache, occupancy = [runtime.locator('.runtime-' + name).bounding_box() for name in ['cache', 'context']]
-                    assert abs(cache['y'] - occupancy['y']) < 1
+                    assert runtime.inner_text().strip() == '用量'
+                    assert footer['height'] == 44
                 if touch: assert runtime.bounding_box()['height'] >= 44
                 runtime.click()
                 expect(page.locator('#session-usage-body')).to_contain_text('5,000 tokens')
@@ -104,8 +104,13 @@ try:
                                              ('unknown-window', '—', '≈ 1,234 tokens · 窗口未知')]:
                 page.goto(url + '/#session=ui-density-' + suffix); page.reload()
                 metric = page.locator('#session-runtime .runtime-context-percent' if width <= 700 else '#session-runtime .runtime-context-detail')
-                expect(metric).to_be_visible()
                 expect(metric).to_have_text(percent if width <= 700 else detail)
+                if width <= 700:
+                    expect(page.locator('#session-runtime .runtime-mobile-label')).to_be_visible()
+                    page.locator('#session-runtime').click()
+                    expect(page.locator('#session-usage-body')).to_contain_text('当前上下文（估算）：1,234 tokens')
+                    page.keyboard.press('Escape')
+                else: expect(metric).to_be_visible()
                 page.locator('.task-card').click()
                 dialog = page.locator('.task-dialog[open]')
                 child_metric = dialog.locator('.runtime-context-percent' if width <= 700 else '.runtime-context-detail')

@@ -20,6 +20,7 @@ test('sidebar owns navigation and view controls; collapsed mode keeps named SVG 
     assert.equal($('toggle-sidebar').getAttribute('aria-expanded'), 'false');
     assert.equal($('toggle-sidebar').getAttribute('aria-label'), '展开侧栏');
     assert.equal(window.document.activeElement, $('toggle-sidebar'));
+    assert.equal($('toggle-sidebar').closest('form').id, 'composer');
     assert.equal(window.document.querySelector('main').inert, false);
     $('toggle-sidebar').click();
     assert.equal($('toggle-sidebar').getAttribute('aria-label'), '收起侧栏');
@@ -37,7 +38,10 @@ test('sidebar owns navigation and view controls; collapsed mode keeps named SVG 
     assert.equal(window.document.querySelector('main').inert, false);
     assert.equal($('sidebar-backdrop').hidden, true);
     $('mobile-menu-close').click();
-    assert.equal(window.document.activeElement, $('mobile-more'));
+    assert.equal(window.document.activeElement, $('toggle-sidebar'));
+    assert.equal($('toggle-sidebar').closest('form').id, 'composer');
+    assert.equal($('view-options').hasAttribute('popover'), false);
+    assert.equal($('session-title').closest('aside').id, 'sidebar');
     assert.equal($('mobile-connection').getAttribute('href'), '/_axiom/native/connection');
     media.matches = false; media.onchange();
     assert.equal($('view-options-trigger').closest('aside').id, 'sidebar');

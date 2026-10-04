@@ -52,6 +52,11 @@ try:
                     assert bounds and bounds['y'] + bounds['height'] <= height
                     metrics.append({'session': session, 'width': width, 'theme': theme, 'color': expected})
                     page.screenshot(path=str(OUT / f'{session}-{width}-{theme}.png'))
+                if width <= 700:
+                    page.locator('#toggle-sidebar').click()
+                    expect(row).to_be_visible()
+                    page.screenshot(path=str(OUT / f'{session}-{width}-sidebar.png'))
+                    page.locator('#toggle-sidebar').click()
                 # Feed server-shaped events through the real transport listener, not DOM edits.
                 def emit(kind, data):
                     page.evaluate('''(event) => previewSockets.at(-1).dispatchEvent(new MessageEvent('message', {

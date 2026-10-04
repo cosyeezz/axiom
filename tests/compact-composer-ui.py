@@ -52,22 +52,32 @@ try:
                 assert runtime.locator('svg').count() == 2
                 if width <= 700:
                     assert '5,000' not in visible and '128,000' not in visible
-                    assert '3.9%' in visible
-                    cache = runtime.locator('.runtime-cache').bounding_box()
-                    context = runtime.locator('.runtime-context').bounding_box()
-                    assert abs(cache['y'] - context['y']) < 1, (width, cache, context)
+                    assert visible.strip() == '用量'
+                    assert not runtime.locator('.runtime-cache').is_visible()
+                    assert not runtime.locator('.runtime-context').is_visible()
                     assert runtime.bounding_box()['height'] == 44
                 else:
                     assert '5,000 / 128,000 · 3.9%' in visible
                 footer = page.locator('#composer-status').bounding_box()
                 composer = page.locator('#composer').bounding_box()
                 assert 0 <= footer['y'] - composer['y'] - composer['height'] <= 4
-                assert footer['height'] <= (88 if width <= 700 else 56), (width, footer)
+                assert footer['height'] <= (44 if width <= 700 else 56), (width, footer)
                 assert '上下文 5,000 / 128,000' in runtime.get_attribute('aria-label')
                 assert '≈ $0.023' in page.locator('#session-bill-total').inner_text()
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), width
                 expect(page.locator('#composer-action-help')).not_to_be_visible()
                 assert page.locator('#composer-help, .composer-help-trigger').count() == 0
+                prompt.fill('检查发送按钮悬停')
+                expect(primary).to_be_enabled()
+                primary.hover()
+                assert primary.evaluate('''el => {
+                    const probe = document.createElement('span');
+                    probe.style.backgroundColor = 'var(--accent-hover)'; el.append(probe);
+                    const expected = getComputedStyle(probe).backgroundColor;
+                    probe.remove();
+                    return getComputedStyle(el).backgroundColor === expected;
+                }'''), (theme, width, 'send hover must retain the primary accent, not a white-on-surface icon')
+                page.mouse.move(0, 0)
                 prompt.fill('长文本与换行\n' + '保留完整编辑能力，不遮挡按钮。' * 100)
                 page.wait_for_timeout(60)
                 assert 44 < prompt.bounding_box()['height'] <= 240
@@ -78,10 +88,10 @@ try:
                 prompt.fill('')
                 if width <= 1000:
                     page.locator('.composer-tools-trigger').click()
-                    assert page.locator('#composer-tools').is_visible()
-                    for selector in ['#add-context', '#add-image', '#compact-session', '#goal-enter', '.composer-session-info']:
+                    assert page.locator('#context-menu').is_visible()
+                    for selector in ['[data-context="skill"]', '[data-context="file"]', '[data-context="folder"]', '#add-image', '#compact-session', '#goal-enter', '.composer-session-info']:
                         assert page.locator(selector).is_visible(), selector
-                    page.locator('#add-context').click()
+                        assert page.locator(selector).inner_text().strip(), selector
                     context_box = page.locator('#context-menu').bounding_box()
                     assert context_box and 0 <= context_box['y'] < 900, (width, 'context menu offscreen', context_box)
                     assert context_box['x'] >= 0 and context_box['x'] + context_box['width'] <= width
@@ -89,8 +99,6 @@ try:
                     expect(page.locator('#context-search')).to_be_focused()
                     page.keyboard.press('Escape')
                     expect(page.locator('[data-context="skill"]')).to_be_focused()
-                    page.keyboard.press('Escape')
-                    expect(page.locator('#add-context')).to_be_focused()
                     page.keyboard.press('Escape')
                     expect(page.locator('.composer-tools-trigger')).to_be_focused()
                     page.locator('.composer-tools-trigger').click()
@@ -127,6 +135,7 @@ try:
                 assert before['y'] + before['height'] <= min(height, composer_box['y'] + composer_box['height'] - 1), (width, height, before, composer_box)
                 assert page.locator('#prompt-completion').bounding_box()['height'] >= 44
                 assert page.locator('.composer-context').evaluate('el => el.scrollHeight > el.clientHeight')
+                assert page.locator('#transcript').bounding_box()['height'] >= 48
                 for scroll in [0, 100000]:
                     page.locator('.composer-context').evaluate('(el, value) => el.scrollTop = value', scroll)
                     prompt.evaluate('(el, value) => el.scrollTop = value', scroll)

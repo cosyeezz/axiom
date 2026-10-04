@@ -27,20 +27,8 @@ try:
                 except Exception:
                     time.sleep(.2)
             page.wait_for_selector('#workspace:not([hidden])')
-            if width <= 700:
-                page.locator('#mobile-expand').click()
-            else:
-                # 桌面输入区默认折叠，动作区与详情入口都收着；量对齐前先按真实路径点输入框展开。
-                page.locator('#prompt').click()
-                page.wait_for_function("() => document.getElementById('composer').dataset.collapsed === 'false'")
-                page.wait_for_timeout(120)
-            rows = page.locator('.session-detail-rows').bounding_box()
-            stats = page.locator('#session-runtime').bounding_box()
-            assert abs(rows['x'] - (stats['x'] + 12)) <= .5, 'left alignment'
-            assert abs(rows['x'] + rows['width'] - (stats['x'] + stats['width'] - 12)) <= .5, 'right alignment'
-            for row in page.locator('.session-detail-row').all():
-                assert abs(row.bounding_box()['height'] - (44 if touch else 36)) <= .5, 'compact / touch row height'
-            page.locator('#session-inspector-trigger').click()
+            if width <= 1000: page.locator('.composer-tools-trigger').click()
+            page.locator('.composer-session-info').click()
             page.locator('#inspector-tools-tab').click()
             page.locator('.inspector-tool > summary').click()
             assert page.locator('.json-string').count() > 0
@@ -53,7 +41,7 @@ try:
                 assert text in bill, text
             page.screenshot(path=str(Path(tempfile.gettempdir()) / f'axiom-billing-detail-{width}.png'))
             page.locator('#session-detail-close').click()
-            assert '80.0%' in page.locator('#session-runtime').inner_text()
+            assert ('用量' if width <= 700 else '80.0%') in page.locator('#session-runtime').inner_text()
             assert page.locator('#session-runtime').is_visible()
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), f'page overflow {width}'
             assert page.locator('#composer .selectors').evaluate('(el) => el.scrollWidth <= el.clientWidth + 1'), f'selector overflow {width}'
@@ -67,7 +55,7 @@ try:
             page.keyboard.press('Escape')
             assert not errors, errors
             page.close()
-            print(f'PASS {width}px touch={touch}: alignment / compact rows / responsive selectors / runtime / tabs / JSON / bill')
+            print(f'PASS {width}px touch={touch}: flat detail entry / runtime / tabs / JSON / bill')
         browser.close()
 finally:
     server.terminate()

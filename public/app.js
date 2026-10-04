@@ -380,20 +380,31 @@ $("latest").onclick = () => {
   scrollLatest();
 };
 const mobile = matchMedia("(max-width: 700px)");
+const sidebarToggleHome = document.createComment("sidebar toggle");
+$("toggle-sidebar").before(sidebarToggleHome);
+const sidebarReopen = document.createElement("div");
+sidebarReopen.id = "sidebar-reopen";
+$("workspace").before(sidebarReopen);
+function placeSidebarToggle() {
+  if (!document.querySelector(".shell").classList.contains("collapsed")) sidebarToggleHome.after($("toggle-sidebar"));
+  else ($("workspace").hidden ? sidebarReopen : document.querySelector("#composer .actions")).prepend($("toggle-sidebar"));
+}
+new MutationObserver(placeSidebarToggle).observe($("workspace"), { attributes: true, attributeFilter: ["hidden"] });
 function sidebar(open) {
   const shell = document.querySelector(".shell");
   const collapsed = !open;
   const widthChanged = shell.classList.contains("collapsed") !== collapsed;
+  const restoreFocus = $("sidebar").contains(document.activeElement) || document.activeElement === $("toggle-sidebar");
   shell.classList.toggle("collapsed", collapsed);
-  $("view-options").hidePopover?.();
+  if ($("view-options").hasAttribute("popover")) $("view-options").hidePopover?.();
+  placeSidebarToggle();
   $("toggle-sidebar").setAttribute("aria-expanded", String(open));
   $("toggle-sidebar").title = open ? "收起侧栏" : "展开侧栏";
   $("toggle-sidebar").setAttribute("aria-label", $("toggle-sidebar").title);
   $("sidebar-backdrop").hidden = !open || !mobile.matches;
   document.querySelector("main").inert = open && mobile.matches;
   if (open && mobile.matches) $("search").focus();
-  else if ($("sidebar").contains(document.activeElement))
-    $("toggle-sidebar").focus();
+  else if (!open && restoreFocus) $("toggle-sidebar").focus({ preventScroll: true });
   // 桌面折叠会改主区宽度 → 换行数变化，输入框高度得重算。
   if (widthChanged) invalidatePrompt();
 }
@@ -518,14 +529,22 @@ const workspaceLocation = document.querySelector(".workspace-location");
 const serviceHome = document.createComment("service controls"), workspaceHome = document.createComment("workspace location");
 $("sidebar-service-slot").append(serviceHome);
 workspaceLocation.before(workspaceHome);
+const titleHome = document.createComment("session title");
+const headerTitle = document.querySelector(".header-title");
+headerTitle.before(titleHome);
 function placeMobileControls() {
-  $("view-options").hidePopover?.();
+  const options = $("view-options");
+  if (options.hasAttribute("popover")) options.hidePopover?.();
   if (mobile.matches) {
+    options.removeAttribute("popover");
     $("mobile-service-slot").append(serviceControls);
     $("mobile-workspace-slot").append(workspaceLocation);
+    document.querySelector(".sidebar-heading").after(headerTitle);
   } else {
+    options.setAttribute("popover", "auto");
     if (mobileMenu.open) mobileMenu.close();
     serviceHome.after(serviceControls); workspaceHome.after(workspaceLocation);
+    titleHome.after(headerTitle);
   }
 }
 placeMobileControls();
@@ -535,7 +554,7 @@ mobileMenu.addEventListener("keydown", e => {
   if (e.key === "Escape" && !document.querySelector(".utility-popover:popover-open")) { e.preventDefault(); e.stopPropagation(); mobileMenu.close(); }
 });
 mobileMenu.addEventListener("close", () => {
-  if (mobile.matches && !mobileMenu.open && mobileMenu.returnValue !== "transfer") $("mobile-more").focus();
+  if (mobile.matches && !mobileMenu.open && mobileMenu.returnValue !== "transfer") $("toggle-sidebar").focus();
 });
 mobileMenu.onclick = e => {
   if (e.target !== mobileMenu) return;
@@ -559,7 +578,7 @@ function rawMode(open) {
   if (open) paintRaw();
 }
 $("open-raw-io").onclick = () => {
-  $("view-options").hidePopover?.();
+  if ($("view-options").hasAttribute("popover")) $("view-options").hidePopover?.();
   if (mobileMenu.open) mobileMenu.close("transfer");
   const opening = $("raw-io").hidden;
   rawMode(opening);
@@ -573,7 +592,10 @@ $("open-raw-io").onclick = () => {
     $("close-raw-io").focus();
   }
 };
-$("close-raw-io").onclick = () => { rawMode(false); $(mobile.matches ? "mobile-more" : "view-options-trigger").focus(); };
+$("close-raw-io").onclick = () => {
+  rawMode(false);
+  $(document.querySelector(".shell").classList.contains("collapsed") ? "toggle-sidebar" : mobile.matches ? "mobile-more" : "view-options-trigger").focus();
+};
 function rawChanged() {
   if (!$("raw-io").hidden && rawFrame === undefined) rawFrame = requestAnimationFrame(() => {
     rawFrame = undefined;
@@ -948,7 +970,7 @@ function renderRuntime(node, value) {
     renderBill($("session-bill-body"), sessionBill ?? value?.billing);
     const bill = sessionBill ?? value?.billing;
     const partial = bill?.incomplete || bill?.unpriced > 0 || !sessionBill;
-    $("session-bill-total").textContent = bill?.records ? `≈ ${money(bill.cost.total)}${partial ? " · 不完整" : ""}` : "账单 —";
+    $("session-bill-total").textContent = bill?.records ? `≈ ${money(bill.cost.total)}${partial ? "*" : ""}` : "账单 —";
     $("session-billing-trigger").title = bill?.records
       ? `会话累计估算费用${sessionBill ? "，含主代理与子代理" : "，仅有主代理数据"}${partial ? "；部分用量或价格缺失" : ""}，非供应商实际扣款。点击查看明细。`
       : "尚无已报告的账单记录；不代表没有费用。点击查看明细。";
@@ -994,6 +1016,10 @@ function renderRuntime(node, value) {
     }
     return span;
   }));
+  if (node.id === "session-runtime") {
+    const label = document.createElement("span"); label.className = "runtime-mobile-label";
+    label.textContent = "用量"; node.append(label);
+  }
   node.title = "缓存：最近报告用量；上下文：当前占用；费用：会话累计估算。";
 }
 function updateTaskRuntime(task, value) {
@@ -4243,11 +4269,13 @@ function renderTaskTimer(sessions = allSessions) {
   const session = sessions.find((s) => s.id === sessionId);
   const running = Boolean(session?.runningSince);
   const elapsed = (session?.elapsedMs || 0) + (running ? Date.now() - session.runningSince : 0);
-  node.hidden = !running && !elapsed;
+  node.hidden = false;
   node.dataset.running = String(running);
   const text = timerText(elapsed);
   const label = `${running ? "任务进行中" : "任务已停止"}，累计运行 ${text}`;
-  $("task-timer-value").textContent = text;
+  const seconds = Math.max(0, Math.floor(elapsed / 1000));
+  const pad = value => String(value).padStart(2, "0");
+  $("task-timer-value").textContent = `耗时 ${session ? `${Math.floor(seconds / 3600)}:${pad(Math.floor(seconds % 3600 / 60))}:${pad(seconds % 60)}` : "—"}`;
   node.title = label;
   node.setAttribute("aria-label", label);
 }
@@ -4967,8 +4995,10 @@ function positionContextSkills() {
 $("context-menu").addEventListener("beforetoggle", (event) => {
   if (event.newState !== "open") return;
   showContextSkills(false);
-  const rect = $("add-context").getBoundingClientRect();
-  $("context-menu").style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 192))}px`;
+  const compact = matchMedia("(max-width: 1000px)").matches;
+  const anchor = compact ? document.querySelector(".composer-tools-trigger") : $("add-context");
+  const rect = anchor.getBoundingClientRect();
+  $("context-menu").style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - (compact ? 216 : 184) - 8))}px`;
   $("context-menu").style.bottom = `${window.innerHeight - rect.top + 8}px`;
   $("context-menu").style.maxHeight = `${Math.max(80, rect.top - 16)}px`;
 });
@@ -4976,7 +5006,7 @@ $("context-menu").addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   event.preventDefault(); event.stopPropagation();
   $("context-menu").hidePopover();
-  $("add-context").focus(); // Do not let menu dismissal withdraw queued input or stop a running turn.
+  (matchMedia("(max-width: 1000px)").matches ? document.querySelector(".composer-tools-trigger") : $("add-context")).focus(); // Menu dismissal never stops a running turn.
 });
 for (const button of document.querySelectorAll("[data-context]")) button.onclick = async (event) => {
   const mode = button.dataset.context;
@@ -5030,7 +5060,7 @@ $("context-back").onclick = () => {
 };
 $("context-close").onclick = () => {
   $("context-menu").hidePopover?.();
-  $("add-context").focus();
+  (matchMedia("(max-width: 1000px)").matches ? document.querySelector(".composer-tools-trigger") : $("add-context")).focus();
 };
 $("composer-skill").onchange = () => {
   selectedSkill = $("composer-skill").value;

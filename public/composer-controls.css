@@ -1,5 +1,6 @@
 /* Compact composer: stable geometry, Linear surface ladder, no decorative shadows. */
-.composer-wrap { display:flex; flex-direction:column; min-height:0; max-height:calc(100% - 48px); overflow:visible; }
+.conversation-reading { min-height:48px; }
+.composer-wrap { display:flex; flex-direction:column; flex-shrink:1; min-height:0; max-height:calc(100% - 48px); overflow:visible; }
 .composer-context { flex:0 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; }
 #composer { display:flex; flex-direction:column; flex:0 1 auto; min-height:94px; border-radius:16px; }
 #composer #prompt { flex:0 1 auto; min-width:0; width:100%; min-height:44px; padding:12px 16px; line-height:20px; white-space:pre-wrap; overflow-wrap:anywhere; overflow-y:auto; max-height:240px; }
@@ -12,9 +13,11 @@
 #composer .composer-tools > .icon-button { width:40px; height:40px; min-height:40px; padding:0; margin:0; border:0; border-radius:8px; }
 #composer .composer-tools > .icon-button:hover:not(:disabled), #composer .composer-tools > .icon-button:focus-visible { background:color-mix(in srgb, var(--accent) 12%, transparent); }
 #composer .composer-tools > .icon-button:active:not(:disabled) { background:color-mix(in srgb, var(--accent) 20%, transparent); }
-#composer .composer-tools-trigger { display:none; flex:0 0 auto; }
+#composer .composer-tools-trigger { display:none; flex:0 0 40px; }
+#composer #toggle-sidebar { flex:0 0 40px; width:40px; height:40px; padding:8px; }
+#composer .composer-tool-label { display:none; }
 #composer .actions > .selectors, #composer .actions > #stop, #composer .actions > #force-stop, #composer .actions > #send, #composer .actions > #send-steer, #composer .actions > #send-followup { display:none !important; }
-#composer .composer-model-trigger { min-height:40px; min-width:0; max-width:360px; padding:4px 8px; margin-left:auto; flex:0 1 auto; display:flex; align-items:center; gap:4px; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--muted); font:inherit; font-size:12px; }
+#composer .composer-model-trigger { min-height:40px; min-width:0; max-width:360px; padding:4px 8px; margin-left:auto; flex:1 1 0; display:flex; align-items:center; gap:4px; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--muted); font:inherit; font-size:12px; }
 .composer-model-name { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; min-width:0; }
 .composer-model-effort { flex-shrink:0; color:var(--ink); }
 #composer .composer-model-trigger:hover { background:var(--raised); color:var(--ink); border-color:var(--line); }
@@ -22,7 +25,12 @@
 #composer .composer-split button { border:0; border-radius:0; height:38px; min-height:38px; padding:0 8px; background:transparent; color:var(--ink); font-size:12px; display:flex; align-items:center; justify-content:center; gap:8px; }
 #composer .composer-split button:first-child { flex:1; min-width:0; }
 #composer .composer-split button:last-child { flex:0 0 40px; width:40px; border-left:1px solid var(--line); }
+#composer .composer-split button[hidden] { display:none; }
+#composer .composer-split[data-busy="false"] { flex-basis:72px; width:72px; }
+#composer .composer-split[data-busy="false"] button { background:var(--accent); color:var(--on-accent); }
+#composer .composer-split[data-busy="false"] svg { color:inherit; }
 #composer .composer-split button:hover:not(:disabled) { background:var(--surface); }
+#composer .composer-split[data-busy="false"] button:hover:not(:disabled) { background:var(--accent-hover); }
 .composer-model-panel, .composer-operation-menu { position:fixed; margin:0; padding:6px; border:1px solid var(--line); border-radius:8px; background:var(--raised); color:var(--ink); box-shadow:none; max-width:calc(100vw - 16px); max-height: min(440px, 70vh); overflow:auto; }
 .composer-model-panel { box-sizing:border-box; height:min(360px, 70vh); width:234px; }
 .composer-model-panel:popover-open { display:flex; gap:6px; }
@@ -47,7 +55,8 @@
 #composer-status { display:flex; flex:0 0 auto; flex-wrap:wrap; align-items:center; justify-content:flex-start; gap:4px 12px; margin-top:4px; padding:0 4px; min-width:0; font-size:12px; line-height:1.4; }
 #composer-status #session-runtime { display:flex; flex-wrap:wrap; align-items:center; flex:0 1 auto; gap:4px 12px; padding:4px 0; min-width:0; min-height:28px; border:0; border-radius:8px; background:transparent; color:var(--muted); font-size:12px; line-height:1.4; text-align:left; }
 #composer-status #session-runtime:hover { background:var(--raised); color:var(--ink); }
-#composer-status #session-runtime[data-warning="true"] > span:last-child { color:var(--danger); }
+#composer-status #session-runtime[data-warning="true"] { color:var(--danger); }
+.runtime-mobile-label { display:none; }
 #composer-status #session-runtime > span { white-space:normal; overflow-wrap:anywhere; overflow:visible; }
 #composer-status #session-state { display:inline-flex; align-items:center; gap:4px; flex-shrink:0; color:var(--muted); font-size:12px; }
 #session-state::before { content:""; width:6px; height:6px; border:1px solid currentColor; border-radius:50%; }
@@ -62,15 +71,21 @@
 #composer .session-detail-rows { display:none; }
 @media (max-width:1000px) {
   #composer .composer-tools-trigger { display:grid; place-items:center; width:40px; height:40px; min-height:40px; padding:0; border:0; border-radius:8px; background:transparent; }
-  #composer .composer-tools[popover] { position:fixed; inset:auto; margin:0; padding:4px; border:1px solid var(--line); border-radius:8px; background:var(--raised); color:var(--ink); max-width:calc(100vw - 16px); max-height:calc(100dvh - 16px); flex-wrap:wrap; overflow:auto; }
-  #composer .composer-tools[popover]:not(:popover-open) { display:none; }
-  #composer .composer-tools:popover-open { display:flex; }
+  #composer .composer-tools { display:none; }
+  #context-menu { width:216px; box-shadow:none; border-radius:8px; }
+  #context-menu > button { min-height:44px; height:auto; font-size:14px; }
+  #context-menu > .icon-button { justify-content:flex-start; }
+  #context-menu > .icon-button > span { flex:1; }
+  #context-menu > #add-image { border-top:1px solid var(--line); border-radius:0; }
+  #context-menu > button svg { flex:0 0 20px; width:20px; height:20px; }
 }
 @media (max-width:700px), (pointer:coarse) {
   #composer .actions { padding:0 4px 4px; gap:4px; }
-  #composer .composer-tools-trigger, #composer .composer-tools > .icon-button { width:44px; height:44px; min-height:44px; }
+  #composer .composer-tools-trigger, #composer #toggle-sidebar, #composer .composer-tools > .icon-button { flex:0 0 44px; width:44px; height:44px; min-height:44px; }
+  #composer #toggle-sidebar svg, #composer .composer-tools-trigger svg { width:20px; height:20px; }
   #composer .composer-split { flex-basis:88px; width:88px; height:44px; border:0; background:transparent; }
   #composer .composer-split button { height:44px; min-height:44px; padding:0; font-size:0; gap:0; }
+  #composer .composer-split[data-busy="false"] { flex-basis:44px; width:44px; }
   #composer .composer-split button:last-child { flex-basis:44px; width:44px; }
   #composer .composer-split svg.composer-icon { width:20px; height:20px; }
   #composer .composer-model-trigger, #composer-status .composer-billing, #composer-status #session-runtime { min-height:44px; }
@@ -78,9 +93,15 @@
   #composer-status #session-runtime { flex:0 1 auto; gap:4px 8px; padding:4px 0; }
 }
 @media (max-width:700px) {
-  #composer-status #session-runtime { flex-wrap:nowrap; }
-  #composer-status #session-runtime > .runtime-metric { white-space:nowrap; }
-  #composer-status .composer-billing { margin-left:0; }
+  #composer-status { flex-wrap:nowrap; gap:4px; padding:0; margin-top:0; min-height:44px; }
+  #composer-status #session-state { max-width:7em; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  #composer-status #session-state::before { display:none; }
+  #composer-status #task-timer { order:1; flex:0 0 auto; gap:0; font-size:12px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  #composer-status #session-runtime { order:2; flex:0 0 auto; padding:0 4px; margin-left:auto; }
+  #composer-status #session-runtime > .runtime-metric { display:none; }
+  #composer-status .runtime-mobile-label { display:inline; }
+  #composer-status .composer-billing { order:3; margin-left:0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:0 4px; }
+  #composer .composer-model-trigger { padding:4px; }
 }
 @media (max-width:720px) {
   .composer-model-panel:popover-open { display:block; width:min(300px, calc(100vw - 16px)); }

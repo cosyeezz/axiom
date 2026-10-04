@@ -42,31 +42,32 @@ with sync_playwright() as p:
     page.wait_for_timeout(300)
     prompt = page.locator('#prompt')
     assert prompt.is_visible() and page.locator('.mobile-controls').is_hidden()
-    assert page.locator('#mobile-more').is_visible()
+    assert page.locator('#toggle-sidebar').is_visible()
+    assert page.locator('#mobile-more').is_hidden()
+    def menu():
+        page.locator('#toggle-sidebar').click()
+        page.locator('#mobile-more').click()
     page.evaluate('window.originalService = document.querySelector(".service-controls"); window.originalLocation = document.querySelector(".workspace-location")')
     prompt.fill('不丢失的草稿')
-    page.locator('#mobile-more').click()
+    menu()
     assert page.locator('#mobile-menu').is_visible()
     assert page.locator('#mobile-menu #status').is_visible()
     assert page.locator('#mobile-menu #workspace-label').is_visible()
     assert page.locator('#mobile-menu').evaluate('el => getComputedStyle(el).backgroundColor') == 'rgb(15, 16, 17)'
     page.keyboard.press('Escape')
     assert page.locator('#mobile-menu').is_hidden()
-    assert page.locator('#mobile-more').evaluate('el => el === document.activeElement')
+    assert page.locator('#toggle-sidebar').evaluate('el => el === document.activeElement')
     assert prompt.input_value() == '不丢失的草稿'
-    page.locator('#mobile-more').click()
-    page.locator('#view-options-trigger').click()
-    page.keyboard.press('Escape')
-    assert page.locator('#mobile-menu').is_visible()
-    assert page.locator('#view-options').is_hidden()
-    page.locator('#view-options-trigger').click()
+    menu()
+    assert page.locator('#view-options').is_visible()
+    assert page.locator('#view-options-trigger').is_hidden()
     page.locator('#open-raw-io').click()
     page.wait_for_timeout(100)  # dialog close is asynchronous in a real browser
     assert page.locator('#raw-io').is_visible()
     assert page.locator('#close-raw-io').evaluate('el => el === document.activeElement')
     page.locator('#close-raw-io').click()
-    assert page.locator('#mobile-more').evaluate('el => el === document.activeElement')
-    page.locator('#mobile-more').click()
+    assert page.locator('#toggle-sidebar').evaluate('el => el === document.activeElement')
+    menu()
     page.locator('#mobile-connection').click()
     assert page.locator('#settings').is_visible()
     page.keyboard.press('Escape')
@@ -88,9 +89,11 @@ with sync_playwright() as p:
     baseline = baseline_page.evaluate(measure)
     assert current['font'] == baseline['font'] == '14px', (current, baseline)
     assert current['line'] == '22.4px' and baseline['line'] == '25.2px', (current, baseline)
-    # The permanent 56px sidebar rail deliberately narrows phone reading width.
-    assert current['header'] == 56, current
-    assert page.locator('#sidebar').bounding_box()['width'] == 56
+    # Collapsed navigation and title no longer reserve any phone reading space.
+    assert current['header'] == 0, current
+    assert page.locator('#sidebar').is_hidden()
+    assert page.locator('main').bounding_box()['x'] == 0
+    assert current['height'] <= baseline['height']
     print('METRICS', json.dumps({'before': baseline, 'after': current}))
     for width, height in [(390, 844), (320, 568), (390, 420), (667, 375)]:
         page.set_viewport_size({'width': width, 'height': height})
@@ -123,10 +126,10 @@ with sync_playwright() as p:
                 $('prompt').scrollHeight>$('prompt').clientHeight];
         }''')
         assert all(checks), (width, height, checks)
-        for selector in ['#mobile-more', '#toggle-sidebar']:
-            box=page.locator(selector).bounding_box(); assert box['width'] >= 48 and box['height'] >= 48
+        for selector in ['.composer-tools-trigger', '#toggle-sidebar']:
+            box=page.locator(selector).bounding_box(); assert box['width'] >= 44 and box['height'] >= 44
         page.screenshot(path=str(out / f'mobile-{width}-{height}.png'))
-        page.locator('#mobile-more').click()
+        menu()
         assert page.locator('#mobile-menu-close').is_visible()
         page.screenshot(path=str(out / f'menu-{width}-{height}.png'))
         page.keyboard.press('Escape')
@@ -135,7 +138,7 @@ with sync_playwright() as p:
     page.set_viewport_size({'width':320,'height':568})
     # CSSOM simulates a user override without weakening the fixture's CSP.
     page.evaluate('''() => { const sheet=[...document.styleSheets].find(s=>s.href.endsWith('/style.css')); window.spacingSheet=sheet; window.spacingIndex=sheet.cssRules.length; sheet.insertRule('* {line-height:1.5!important;letter-spacing:.12em!important;word-spacing:.16em!important}',sheet.cssRules.length); sheet.insertRule('p {margin-bottom:2em!important}',sheet.cssRules.length); }''')
-    page.locator('#mobile-more').click()
+    menu()
     page.locator('#mobile-menu-close').click()
     assert page.locator('#mobile-menu').is_hidden()
     assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
