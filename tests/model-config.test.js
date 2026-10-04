@@ -902,48 +902,17 @@ test("discover 边界：损坏结构拒绝、Unknown provider、501 条截断、
   }
 });
 
-test("models.hidden.set：隐藏只影响可选入口（listCatalog），运行时目录与会话校验不动", async () => {
+test("取消模型显隐：旧偏好不再过滤 Pi 目录且写命令不再接受", async () => {
   const dir = await tempDir();
   try {
-    const catalog = [
-      { provider: "openai-codex", id: "gpt-5.4", name: "GPT-5.4", key: "openai-codex/gpt-5.4", levels: ["medium"], input: ["text"] },
-      { provider: "openai-codex", id: "gpt-5.4-mini", name: "Mini", key: "openai-codex/gpt-5.4-mini", levels: [], input: ["text"] },
-      { provider: "anthropic", id: "claude", name: "Claude", key: "anthropic/claude", levels: [], input: ["text"] },
-    ];
+    const catalog = [{ provider: "a", id: "one", key: "a/one" }];
     const svc = makeService(dir, catalog);
-    const keys = () => svc.models.listCatalog().map((model) => model.key);
-
-    assert.deepEqual((await svc.models.get()).hidden, []);
-    assert.deepEqual(keys(), ["openai-codex/gpt-5.4", "openai-codex/gpt-5.4-mini", "anthropic/claude"]);
-
-    // 单个模型隐藏：从可选入口消失，但 catalog（会话校验/既有会话）保持不变。
-    await svc.models.handle({ type: "models.hidden.set", key: "openai-codex/gpt-5.4", hidden: true });
-    assert.deepEqual((await svc.models.get()).hidden, ["openai-codex/gpt-5.4"]);
-    assert.deepEqual(keys(), ["openai-codex/gpt-5.4-mini", "anthropic/claude"]);
-    assert.deepEqual((await svc.models.get()).catalog.map((model) => model.key), catalog.map((model) => model.key));
-    // 已隐藏项写入权威库独立键，绝不进 models.json（SDK schema 只认 provider 定义）。
-    assert.equal("hidden" in (svc.database.get("models", "config") ?? {}), false);
-
-    // 供应商级隐藏：整条消失；一旦存在同名自定义覆盖，则让位给覆盖条目（用户已在接管该 id）。
-    await svc.models.handle({ type: "models.hidden.set", key: "openai-codex", hidden: true });
-    assert.deepEqual(keys(), ["anthropic/claude"]);
-    await seed(svc, { providers: { "openai-codex": { baseUrl: "https://p.example.com", api: "openai-completions" } } });
-    assert.deepEqual(keys(), ["openai-codex/gpt-5.4-mini", "anthropic/claude"]);
-
-    // 恢复幂等；未知 key 与非法载荷一律拒绝。
-    await svc.models.handle({ type: "models.hidden.set", key: "openai-codex", hidden: false });
-    await svc.models.handle({ type: "models.hidden.set", key: "openai-codex/gpt-5.4", hidden: false });
-    await svc.models.handle({ type: "models.hidden.set", key: "openai-codex/gpt-5.4", hidden: false });
-    assert.deepEqual((await svc.models.get()).hidden, []);
-    assert.deepEqual(keys(), catalog.map((model) => model.key));
-    await assert.rejects(() => svc.models.handle({ type: "models.hidden.set", key: "nope/gpt", hidden: true }),
-      /未知的内置供应商或模型/);
-    assert.throws(() => command.parse({ id: "h1", type: "models.hidden.set", key: "", hidden: true }));
-    assert.throws(() => command.parse({ id: "h2", type: "models.hidden.set", key: "a/b", hidden: "yes" }));
-  } finally {
-    closeOpenDatabases();
-    await rm(dir, { recursive: true, force: true });
-  }
+    svc.database.set("models", "hidden", { version: 1, keys: ["a", "a/one"] });
+    assert.deepEqual(svc.models.listCatalog(), catalog);
+    assert.equal("hidden" in await svc.models.get(), false);
+    assert.throws(() => command.parse({ id: "h1", type: "models.hidden.set", key: "a", hidden: true }));
+    assert.deepEqual(svc.database.get("models", "hidden").keys, ["a", "a/one"], "不为移除功能破坏旧数据");
+  } finally { closeOpenDatabases(); await rm(dir, { recursive: true, force: true }); }
 });
 
 // 子进程已读旧权威、停在CAS前；父进程先写成功再放行，确定性检查过期写拒绝。
@@ -1130,29 +1099,47 @@ test("单行坏 JSON 不阻断启动：init/配置页/收藏都能用，坏行�
   }
 });
 
-test("hidden 跨进程 CAS：读-改-写之间被抢写时拒绝，不丢先写者的更新", async () => {
+test("原生 JSON 保留 SDK 扩展字段，按整对象语义删除三层 Header", async () => {
   const dir = await tempDir();
   try {
-    const catalog = [{ key: "a/one", provider: "a" }, { key: "a/two", provider: "a" }];
-    const { models, storage } = makeService(dir, catalog);
-    const other = new Database(join(dir, "axiom.db"));
-    openDatabases.push(other);
-    // 精确复刻跨进程交错：本进程读完之后、写入之前，另一进程抢先写入。
-    const inject = (name) => {
-      if (typeof storage[name] !== "function") return;
-      const original = storage[name].bind(storage);
-      storage[name] = (...args) => {
-        const value = original(...args);
-        other.set("models", "hidden", { version: 1, keys: ["a/two"] });
-        return value;
-      };
-    };
-    inject("hiddenState");
-    if (typeof storage.hiddenState !== "function") inject("getHidden");
-    await assert.rejects(() => models.handle({ type: "models.hidden.set", key: "a/one", hidden: true }), /修改|重试/);
-    assert.deepEqual(other.get("models", "hidden").keys, ["a/two"], "先写者的隐藏项不得被覆盖丢失");
-  } finally {
-    closeOpenDatabases();
-    await rm(dir, { recursive: true, force: true });
-  }
+    const svc = makeService(dir);
+    const headers = { Authorization: "remove-secret", Retain: "keep-secret" };
+    const cost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, legacyCostField: 123 };
+    await seed(svc, { providers: { native: { api: "openai-completions", baseUrl: "https://example.invalid", headers,
+      models: [{ id: "one", headers, cost }], modelOverrides: { one: { headers, customLegacyFlag: true, cost } } } } });
+    const view = await svc.models.get();
+    const provider = JSON.parse(JSON.stringify(view.providers[0]).replaceAll('"masked":true,"kind":"literal"', '"keep":true'));
+    delete provider.id;
+    for (const item of [provider, provider.models[0], provider.modelOverrides.one]) delete item.headers.Authorization;
+    const result = await svc.models.handle(command.parse({ id: "native", type: "models.provider.configure", providerId: "native", provider, baseFingerprint: view.fingerprint }));
+    let stored = svc.storage.readConfig().providers.native;
+    for (const item of [stored, stored.models[0], stored.modelOverrides.one]) assert.deepEqual(item.headers, { Retain: "keep-secret" });
+    assert.deepEqual(stored.models[0].cost, cost); assert.deepEqual(stored.modelOverrides.one.cost, cost);
+    assert.equal(stored.modelOverrides.one.customLegacyFlag, true);
+    for (const item of [provider, provider.models[0], provider.modelOverrides.one]) item.headers = {};
+    await svc.models.handle({ type: "models.provider.configure", providerId: "native", provider, baseFingerprint: result.fingerprint });
+    stored = svc.storage.readConfig().providers.native;
+    for (const item of [stored, stored.models[0], stored.modelOverrides.one]) assert.equal(item.headers, undefined);
+  } finally { closeOpenDatabases(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("原生 provider JSON：一次配置模型与连接，keep 不泄密、失败不改权威、旧指纹拒绝", async () => {
+  const dir = await tempDir();
+  try {
+    const svc = makeService(dir);
+    await seed(svc, { providers: { native: { api: "openai-completions", baseUrl: "https://example.invalid/v1", apiKey: "old-secret", headers: { Authorization: "old-header" }, models: [{ id: "one", headers: { Test: "model-secret" } }] } } });
+    const fp = (await svc.models.get()).fingerprint;
+    const provider = { api: "openai-completions", baseUrl: "https://example.invalid/v1", apiKey: { keep: true }, headers: { Authorization: { keep: true } }, models: [{ id: "one", headers: { Test: { keep: true } } }, { id: "two" }] };
+    const req = command.parse({ id: "native", type: "models.provider.configure", providerId: "native", provider, baseFingerprint: fp });
+    const result = await svc.models.handle(req);
+    assert.equal(result.applied, true);
+    const stored = svc.storage.readConfig().providers.native;
+    assert.equal(stored.apiKey, "old-secret"); assert.equal(stored.headers.Authorization, "old-header");
+    assert.equal(stored.models[0].headers.Test, "model-secret"); assert.equal(stored.models.length, 2);
+    assert.equal(JSON.stringify(await svc.models.get()).includes("old-secret"), false);
+    await assert.rejects(() => svc.models.handle(req), /外部修改/);
+    await assert.rejects(() => svc.models.handle({ ...req, baseFingerprint: result.fingerprint, provider: { ...provider, apiKey: "" } }), /校验/);
+    assert.deepEqual(svc.storage.readConfig().providers.native, stored);
+    await assert.rejects(() => svc.models.handle({ ...req, baseFingerprint: result.fingerprint, provider: { ...provider, apiKey: "!danger" } }), /命令/);
+  } finally { closeOpenDatabases(); await rm(dir, { recursive: true, force: true }); }
 });

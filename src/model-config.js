@@ -3,7 +3,7 @@ import { rm, writeFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { canonicalModelsJson } from "./pi-model-storage.js";
-import { modelConfigIn, modelOverrideIn, providerConfigIn } from "./protocol.js";
+import { modelConfigIn, modelOverrideIn, nativeProviderConfigIn, providerConfigIn } from "./protocol.js";
 import { THINKING_LEVELS as LEVELS } from "../public/thinking.js";
 
 // SDK 0.85.1 未公开导出 ModelConfig（models.json schema 校验器），从实际安装位置
@@ -129,12 +129,14 @@ function mergeProvider(current, input) {
 }
 
 // model.save 为整条替换：仅 headers 的 {keep:true} 参照同 id 现有条目。
-function applyModel(existing, input) {
+function applyModel(existing, input, replaceHeaders = false) {
   const next = {};
   for (const [key, value] of Object.entries(input)) {
     if (value === null || value === undefined) continue;
     if (key === "headers") {
-      const merged = mergeHeaders(existing?.headers, value);
+      const merged = mergeHeaders(existing?.headers, replaceHeaders
+        ? { ...Object.fromEntries(Object.keys(existing?.headers ?? {}).map((key) => [key, null])), ...value }
+        : value);
       if (merged) next.headers = merged;
     } else if (key === "baseUrl") {
       checkBaseUrl(value, "baseUrl");
@@ -257,12 +259,6 @@ function normalizeFavorites(parsed) {
 }
 
 // 内置目录的隐藏清单：provider id（整条）或 `provider/id`（单个模型）。
-const HIDDEN_CAP = 500;
-function normalizeHidden(raw) {
-  const list = raw && typeof raw === "object" && Array.isArray(raw.keys) ? raw.keys : [];
-  return [...new Set(list.filter((key) => typeof key === "string"))].slice(0, HIDDEN_CAP);
-}
-
 export function createModelsService({ factory, storage, discoverTimeoutMs = 15_000, discoverFetch }) {
   // 单进程内串行化：配置写与收藏写共用一条 promise 链，避免读-改-写交错。
   let chain = Promise.resolve();
@@ -305,7 +301,6 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
       providers: [],
       catalog: factory.modelCatalog?.() ?? factory.catalog(),
       authProviders: factory.authProviders?.() ?? [],
-      hidden: normalizeHidden(storage.getHidden()),
     };
     if (pendingApply) result.applyError = pendingApply.applyError;
     // 行存在但读不出可用配置（坏 JSON 或顶层非对象）：必须报错，绝不按空配置展示——
@@ -372,20 +367,6 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
     return { fingerprint, applied: true };
   }
 
-  // 隐藏只作用于 Axiom 的「可选择处」（模型选择器、本页目录）：Pi 运行时目录不动，
-  // 已用该模型的会话不会忽然报 Unknown model，只是再也选不到。同名自定义条目存在时
-  // 供应商级隐藏不生效（用户已经用覆盖接管了该 id）。
-  const hiddenSet = () => new Set(normalizeHidden(storage.getHidden()));
-  const customProviderIds = () => {
-    const providers = storage.readConfig()?.providers;
-    return new Set(providers && typeof providers === "object" && !Array.isArray(providers) ? Object.keys(providers) : []);
-  };
-  const visibleCatalog = () => {
-    const hidden = hiddenSet();
-    const custom = customProviderIds();
-    return factory.catalog().filter((m) => !hidden.has(m.key) && !(hidden.has(m.provider) && !custom.has(m.provider)));
-  };
-
   const sameId = (id) => (entry) => entry && typeof entry === "object" && entry.id === id;
   const asProvider = (value) =>
     value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -406,23 +387,6 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
     if (!favorite && index >= 0) list.splice(index, 1);
     if (!storage.casFavorites(raw, store)) throw new Error("收藏已被其他窗口修改，请刷新后重试");
     return store;
-  }
-
-  // 隐藏/恢复：key 必须存在于当前目录（供应商 id 或 `provider/id`），不写会永久失效的垃圾条目。
-  // 与 config/favorites/凭据同口径走 CAS：同 HOME 多进程盲写会让先写者的隐藏项复活。
-  function writeHidden({ key, hidden }) {
-    const known = new Set();
-    for (const model of factory.modelCatalog?.() ?? factory.catalog()) {
-      known.add(model.provider);
-      known.add(model.key);
-    }
-    if (!known.has(key)) throw new Error(`未知的内置供应商或模型：${key}`);
-    const { raw, value } = storage.hiddenState();
-    const list = normalizeHidden(value);
-    const next = hidden ? [...new Set([...list, key])] : list.filter((entry) => entry !== key);
-    if (next.length > HIDDEN_CAP) throw new Error(`隐藏清单最多 ${HIDDEN_CAP} 条`);
-    if (!storage.casHidden(raw, next)) throw new Error("隐藏清单已被其他窗口修改，请刷新后重试");
-    return { hidden: next };
   }
 
   // 在线拉取供应商模型列表（只读）：读已保存凭据/地址 → 单次 GET → 解析；不写盘、不触发 refreshModels/广播。
@@ -516,6 +480,30 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
 
   return {
     get,
+    configureProvider({ providerId, provider, baseFingerprint }) {
+      const input = nativeProviderConfigIn.parse(provider);
+      return enqueue(async () => {
+        if (typeof input.apiKey === "string" && input.apiKey !== storage.readConfig()?.providers?.[providerId]?.apiKey
+            && (await storage.credentials.read(providerId) || factory.authProviders?.().some((p) => p.id === providerId && p.authSource === "runtime")))
+          throw new Error("登录凭据优先于自定义 API Key，请先在账号与授权中更新或清除凭据");
+        return mutate(baseFingerprint, (providers) => {
+          const current = asProvider(providers[providerId]);
+          const { models, modelOverrides, ...connection } = input;
+          // 替换原生配置，但 keep 占位只在同供应商/模型位置解析，不复制密钥。
+          const { apiKey: keyInput, headers: headerInput, ...fields } = connection;
+          const next = mergeProvider({}, fields);
+          if ("apiKey" in connection) next.apiKey = resolveSecret(connection.apiKey, current.apiKey, "apiKey");
+          if (connection.headers) next.headers = mergeHeaders(current.headers, {
+            ...Object.fromEntries(Object.keys(current.headers ?? {}).map((key) => [key, null])), ...connection.headers,
+          });
+          if (models) next.models = models.map((m) => applyModel(asModels(current).find(sameId(m.id)), m, true));
+          if (modelOverrides) next.modelOverrides = Object.fromEntries(Object.entries(modelOverrides)
+            .map(([id, override]) => [id, applyModel(current.modelOverrides?.[id], override, true)]));
+          if ("id" in next) next.id = providerId;
+          providers[providerId] = next;
+        });
+      });
+    },
     saveProvider({ providerId, provider, baseFingerprint }) {
       const input = providerConfigIn.parse(provider);
       return enqueue(async () => {
@@ -605,13 +593,14 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
     favorites: () => normalizeFavorites(storage.getFavorites()),
     // 单项 mutation：读-改-写单条，返回全量三组对象；不做整表替换，避免并发丢失。
     setFavorite: (request) => enqueue(() => writeFavorites(request)),
-    listCatalog: visibleCatalog,
-    // 单项 mutation（与收藏同语义，无指纹锁：隐藏清单独立于 models.json）。
-    setHidden: (request) => enqueue(() => writeHidden(request)),
+    // 不再维护显隐目录；旧偏好留存但不参与模型选择。
+    listCatalog: () => factory.catalog(),
     handle(request) {
       switch (request.type) {
         case "models.config.get":
           return get();
+        case "models.provider.configure":
+          return this.configureProvider(request);
         case "models.provider.save":
           return this.saveProvider(request);
         case "models.provider.delete":
@@ -628,8 +617,6 @@ export function createModelsService({ factory, storage, discoverTimeoutMs = 15_0
           return this.favorites();
         case "models.favorites.set":
           return this.setFavorite(request);
-        case "models.hidden.set":
-          return this.setHidden(request);
         case "models.provider.discover":
           return discover(request.providerId);
         default:

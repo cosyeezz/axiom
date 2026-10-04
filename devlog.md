@@ -2,13 +2,24 @@
 
 ## 2026-10-03 会话全宽布局与模型选择稳定性
 
-- 时间：2026-10-03（本机 -07:00）。独立 `feat/mobile-chat-controls` 工作树从 `origin/master 0a4d86a` 创建，验证期间先同步 `cdb4092` 启动迁移修复，再同步 `2007f41` 等待确认状态色；README冲突保留新布局与上游待确认语义，手机保留金色文字。主 checkout 原有未跟踪资料不改动；按发布约定升版本为 `0.1.12`，依赖不变。
+- 时间：2026-10-03（本机 -07:00）。独立 `feat/mobile-chat-controls` 工作树从 `origin/master 0a4d86a` 创建，验证期间先同步 `cdb4092` 启动迁移修复，再同步 `2007f41` 等待确认状态色；README冲突保留新布局与上游待确认语义，手机保留金色文字。提交前再次合入 `591e7d0` Pi原生模型配置，devlog冲突保留双方记录。主 checkout 原有未跟踪资料不改动；按发布约定升版本为 `0.1.13`，依赖不变。
 - 布局：收起侧栏不保留 56px 轨道，导航按钮移至输入区；workspace 尚未显示时留独立入口，避免首次连接失败时无法进设置。手机标题归侧栏；连接／界面与输入区操作均去掉多余嵌套。空闲隐藏运行箭头，保留图标提示、44px触控、Esc和焦点归还。短视口保留至少48px阅读区，允许输入外容器缩小，附加区自行滚动；修复“回到最早消息”额外占高挤掉阅读区的情况。
 - 模型：确认原 `window.resize` 与目录失效无条件关闭菜单；现在只按窗口／visualViewport重定位，不重建搜索DOM或改焦点。目录刷新保留浏览快照，提交时实时核对会话身份、模型和思考级别；当前分支被删除时关闭，脱离面板的旧选择不能在重开同模型后提交。没有停止会话轮询，也没有改另一套model-picker。
 - 底栏：手机显示状态、累计耗时h:mm:ss、用量入口和估算费用；无空行、无常驻模糊指标图标。用量与账单详情不丢失，费用未知为—、不完整为*并保留解释，非供应商实扣。桌面统计与子代理详情保留；复用Linear surface／raised／line／muted／accent，4／8／12px间距、8px弹层、16px输入容器，无新配色或依赖。
 - 审查与验证：只读调查／审查核对导航隐藏与旧回调风险并补回归；隔离HOME／USERPROFILE／TEMP／TMP／TMPDIR／Pi后首轮全量1086项、1083通过、3跳过、0失败（335s），非隔离初轮受本机九个全局技能污染而失败，未修改用户配置或压缩保护。同步cdb4092后全量1087项、1084通过、3跳过、0失败（334s）；再同步2007f41后隔离全量1091项、1088通过、3跳过、0失败（340.7s，node-release.log），七类Chromium回归通过。终检新增发送悬停断言先复现中性底覆盖主色的问题，再用现有accent-hover修复；修复后20项定向Node、8宽度双主题紧凑输入及3视口双主题待确认浏览器再次通过。连接面板状态标签补单行断言，避免旧窄宽规则造成竖排。版本/锁文件一致，打包344文件且无截图日志，语法与差异检查通过。原生JS无独立build脚本，以语法、打包和浏览器验收覆盖交付检查。
+- 最终集成：合入591e7d0后隔离全量1058项、1055通过、3跳过、0失败（327.7s，node-native-integrated.log；测试数减少来自上游原生模型配置重构）。七类会话布局回归及上游模型认证、选择收藏、原生设置三套Chromium再次通过；保留上游全部实现，版本与锁文件为0.1.13。
 - 浏览器：Chromium模型级联、紧凑输入、工具／用量、会话账单、导航焦点、手机阅读回归通过；包括双主题320–1440px、首次连接失败、断线设置、同会话刷新、模拟键盘缩放、长草稿／附件／补全、四种短视口和字体间距。截图／日志在仓库外 `F:/worktrees/mobile-chat-controls-evidence`；未调用真实模型，未做真机软键盘、读屏或桌面壳原生验收。
 - 文件：`public/{app.js,style.css,composer-controls.js,composer-controls.css}`；对应app/sidebar/composer Node测试及compact-composer/compact-tool-status/composer-cascade/focus-ui/mobile-reading/session-billing/session-waiting浏览器脚本；README、本记录、package.json和lock。测试自动生成的代码索引不纳入本次改动。
+
+## 2026-10-03 Pi 原生模型配置薄包装
+
+- 时间：2026-10-03 21:40（本机 -07:00）。独立 `feat/native-model-config` 工作树基于 `origin/master 0a4d86a`；用户要求统一供应商流程，去除 Codex 专属入口与模型显隐，不另造认证或模型体系。沿用 Pi 0.85.1 `ModelRuntime` 的目录、API Key/OAuth 和 SQLite 权威凭据；原始 Pi 文件只作导入，不迁移或删除已有配置。
+- 界面：移除厂商模板、复制/改名、逐模型能力编辑与发现向导，改为统一供应商搜索、原生认证方式、只读模型目录和折叠的 Pi provider JSON 编辑器。并发与限流独立折叠保留；使用 Linear surface/raised/line/muted/accent、4px间距基数、8/12px圆角，无新增依赖。旧 hidden 数据留存但不参与目录过滤，显隐写协议移除。
+- 配置：新增 `models.provider.configure` 整供应商替换，复用 SDK 校验、指纹与 CAS；只在已约定的 apiKey/headers 位置将掩码转 keep，不误转换未知字段。供应商/模型/override 的 Header 均可删除；未知能力/cost 扩展字段往返保留。失败不覆盖权威数据，草稿保留旧指纹；旧细粒度命令仅保留兼容。
+- 登录：独立审查复现 Copilot 的“空域名使用 github.com”被前端 required、协议 min(1)、后端判空三层拦截；均改为交给 SDK/provider 校验。短暂状态查询失败有界重试三次；保留单步 callback/manual 取消与整体取消的区别。断线/刷新取消流程仍是明确限制，不伪称跨连接恢复或外部授权已成功。
+- 验证：首轮隔离 HOME/USERPROFILE/TEMP/TMP/Pi 串行全量1052项，1049通过、3跳过、0失败；收尾定向58项通过，真实SDK API Key与原生JSON→SQLite→回环请求覆盖，OAuth仅模拟交互/合成凭据。Chromium 8组双主题320–1440px、OAuth select/device/Copilot空答、API Key/Escape、JSON保存与限额读写及高级区布局通过；旧模型设置/收藏浏览器脚本迁移到当前可见级联入口，两套通过。截图在 `F:/worktrees/native-model-artifacts-final` 等仓库外目录。
+- `node --check`、`npm pack --dry-run`、`git diff --check` 已通过；项目无独立类型检查/生产构建脚本，不能冒称执行了不存在的步骤。真实第三方登录与首条模型请求、移动真机与读屏未测。已合入最新远端 `2007f41`，devlog 冲突保留双方记录；按 README 发布规则将版本和锁文件升为 `0.1.12`（依赖不变）。最终隔离串行全量1057项：1054通过、3跳过、0失败（334.5秒，`F:/worktrees/native-integrated-full.log`）；跳过项为POSIX权限、可选真实MCP适配器与不支持平台reveal。Chromium认证、模型设置、模型选择及上游等待确认四套重新通过；语法、版本一致性、差异和打包检查（344文件）通过。测试重建的无关代码索引已恢复。
+- 文件：`public/{model-manager.js,model-manager.css,model-auth.js}`、`src/{model-config.js,model-auth.js,protocol.js,server.js}`、`tests/model-{config,config-runtime,manager,auth,auth-ui}.test.js`、`tests/model-{auth-browser,selection-ui,settings-ui}.py`、`tests/model-selection-preview.mjs`、`README.md`、`docs/model-config-protocol.md`、`package.json`／`package-lock.json`、本记录。
 
 ## 2026-10-03 启动迁移排除压缩附属 JSON
 
