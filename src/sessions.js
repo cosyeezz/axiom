@@ -882,6 +882,8 @@ export class Sessions {
         cwd: item.cwd,
         // 列表展示整场执行状态；主代理的输入/队列状态仍由 item.status 控制。
         status: pointStatus(item),
+        // 仅派生展示信号，不把确认阻塞改写成执行状态；停止中的提示优先。
+        awaitingConfirmation: !item.safeStopping && item.status !== "cancelling" && !!item.questions?.snapshot().length,
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
         elapsedMs: item.elapsedMs,

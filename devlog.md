@@ -19,6 +19,15 @@
 - 全量：同步 `origin/master 0a4d86a` 后隔离 HOME／USERPROFILE／TEMP／TMP／TMPDIR／Pi 串行执行 1086 项，1083 通过、3 跳过、0 失败（347 秒）。跳过项为 POSIX 权限、可选真实 MCP 适配器与不支持平台 reveal；语法和差异检查通过。测试自动重建的无关代码索引已恢复，项目为原生 JS，无独立编译脚本。
 - 文件：`src/sessions.js`、`tests/session-migration.test.js`、`README.md`、`package.json`／`package-lock.json`、本记录。按 README 发布规则将版本升为 `0.1.10`，依赖不变。测试仅使用隔离临时目录与假代理，未访问用户历史、修改真实数据库或重启在用服务；证据位于仓库外 `F:/worktrees/session-migration-evidence/`。独立只读审查无阻断问题；版本调整后迁移／存储／更新定向 46/46 再次通过，版本与锁文件一致性、`npm pack --dry-run`（342 文件）及 `git diff --check` 通过。三次重启回归为同进程重开 Sessions／数据库，非截图机器完整服务升级实测；附属文件识别采用保留后缀，不按内容猜测。交付前再次同步远端，主 checkout 原有未跟踪文件清单保持不变。
 
+## 2026-10-03 会话等待确认状态色
+
+- 时间：2026-10-03 21:20（本机 -07:00）。用户需要分辨正在执行与等待确认阻塞；独立 `feat/session-waiting-confirmation` 工作树基于最新 `origin/master 0a4d86a`，主 checkout 未跟踪资料保持不动。
+- 实施：普通 question 和 Todo 目标确认复用同一 pending 队列，问答 UI 提供只读状态及变更通知；快照、asked/closed 和已接受的 reply 均更新底栏与侧栏，多个请求最后一个关闭才消失，失败不提前清除。当前列表行使用实时队列，避免在途旧列表覆盖；非当前会话以 `sessions.list.awaitingConfirmation` 派生字段呈现，加入列表比较键，沿用约5秒刷新。不改执行枚举、排序、未读规则、暂停或计时；断线／切换／停止提示优先。
+- 设计：运行绿点保留 `--success`，待确认复用现有 Linear 产品语义 `--highlight`（浅色 #83580a／深色 #e2b978），底栏显示金色“等待确认”，侧栏提供“等待用户确认”名称与提示；不新增颜色或闪烁，沿用6px圆点、12px文字与4px间距。
+- 验证：定向43项通过；隔离 HOME／USERPROFILE／TEMP／TMP／TMPDIR／PI_CODING_AGENT_DIR 的串行全量1089项，1086通过、3跳过、0失败（335.7秒）。Chromium 待确认专项3视口×双主题×普通/目标确认与实时关闭／空闲／断线通过；focus-ui 5视口双主题通过。JS语法、`git diff --check`、`npm pack --dry-run`（344文件）通过；原生 ES 模块无独立 build 脚本。测试自动重建的无关 INDEX 已恢复。首轮新增测试误用 Todo kind=plan，改为真实 create 契约后复验通过，不改业务契约。
+- 审查与最终集成：独立只读审查发现确认结束后当前侧栏可能沿用旧 idle 列表而漏绿点；新增精确断言先复现2项失败，再将当前行运行指示改读实时 busy，保留列表排序与计时语义。补迟到旧列表、进入 idle 后隐藏圆点、暂停不误标待确认回归。合入最新 `origin/master cdb4092`，devlog 冲突保留双方记录；按 README 发布规则版本升为 `0.1.11`（锁文件同步、依赖不变）。最终隔离串行全量1090项：1087通过、3跳过、0失败（347.3秒，`session-waiting-final-full.log`）；待确认专项及 focus-ui Chromium 重新通过，语法／差异检查和打包检查通过。
+- 文件：`src/sessions.js`、`public/{app.js,question.js,style.css,composer-controls.css}`、`tests/{questions.test.js,session-waiting.test.js,session-waiting-ui.py,conversation-preview.mjs}`、`package.json`／`package-lock.json`、`README.md`、本记录。证据在仓库外 `F:/worktrees/session-waiting-*`；未做移动真机、屏幕阅读器或桌面壳原生验收，未调用真实模型。
+
 ## 2026-10-02 工具摘要与底栏统计紧凑化
 
 - 时间：2026-10-02 20:30（本机 -07:00）。独立 `feat/compact-tool-status` 工作树基于最新 `origin/master 74a707d`，保留已合入的输入区底部操作栏与主 checkout 未跟踪资料。用户旧截图模型在框外，当前模型已移入框内，不回退上游布局。

@@ -52,6 +52,8 @@
 #composer-status #session-state { display:inline-flex; align-items:center; gap:4px; flex-shrink:0; color:var(--muted); font-size:12px; }
 #session-state::before { content:""; width:6px; height:6px; border:1px solid currentColor; border-radius:50%; }
 #session-state[data-state="running"]::before { background:var(--success); border-color:var(--success); }
+#composer-status #session-state[data-state="waiting"] { color:var(--highlight); }
+#session-state[data-state="waiting"]::before { background:var(--highlight); border-color:var(--highlight); }
 #session-state:is([data-state="stopping"], [data-state="offline"], [data-state="missing"]) { color:var(--danger); }
 #composer-status #task-timer { margin-left:0; padding-left:0; }
 #composer-status #task-timer .task-timer-dot { display:none; }

@@ -1,5 +1,5 @@
 import { actionIconNode } from "./icons.js";
-export function createQuestionUI({ root, reply, focusPrompt }) {
+export function createQuestionUI({ root, reply, focusPrompt, onChange }) {
   const drafts = new Map();
   let sessionId, requests = [], connected = true, activeKey;
   const keyOf = (id) => `${sessionId}:${id}`;
@@ -227,6 +227,7 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
       drafts.delete(key);
       if (sessionId === target) {
         requests = requests.filter((r) => r.toolCallId !== request.toolCallId);
+        onChange?.();
         draw(!!current()); if (!current()) focusPrompt?.();
       }
     } catch (error) {
@@ -264,9 +265,11 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
     }
   });
   return {
+    hasPending: () => requests.length > 0,
     show(id, pending) {
       const changed = id !== sessionId;
-      sessionId = id; requests = pending || [];
+      sessionId = id; requests = [...(pending || [])];
+      onChange?.();
       const keys = new Set(requests.map((r) => keyOf(r.toolCallId)));
       for (const key of drafts.keys()) if (key.startsWith(`${id}:`) && !keys.has(key)) drafts.delete(key);
       draw(!changed && current() && activeKey !== keyOf(current().toolCallId));
@@ -274,6 +277,7 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
     asked(id, request) {
       if (id !== sessionId) return;
       if (!requests.some((r) => r.toolCallId === request.toolCallId)) requests.push(request);
+      onChange?.();
       if (current()?.toolCallId === request.toolCallId) draw(activeKey !== keyOf(request.toolCallId));
     },
     closed(id, toolCallId) {
@@ -281,9 +285,10 @@ export function createQuestionUI({ root, reply, focusPrompt }) {
       if (id !== sessionId) return;
       const hadFocus = root.contains(document.activeElement), first = current()?.toolCallId === toolCallId;
       requests = requests.filter((r) => r.toolCallId !== toolCallId);
+      onChange?.();
       if (first) { draw(hadFocus && !!current()); if (hadFocus && !current()) focusPrompt?.(); }
     },
     setConnected(value) { if (connected === value) return; connected = value; if (current()) draw(); },
-    hide() { sessionId = undefined; requests = []; draw(); },
+    hide() { sessionId = undefined; requests = []; onChange?.(); draw(); },
   };
 }

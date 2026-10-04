@@ -78,6 +78,12 @@ const states = [state,
     live: { agentId: "main", phase: "start", toolCallId: "long", toolName: "read", args: { path: `${state.cwd}/a-very-long-directory-name/another-directory/一个很长的目录名称/这是为了验证省略和窄屏布局的文件名称.test.js` } },
   } },
 ];
+// Confirmation status fixtures: no model, real question UI and list projection.
+const confirmation = { toolCallId: "preview-confirmation", questions: [{ header: "继续", question: "是否继续执行？", description: "等待你确认后再继续。", options: [{ label: "继续" }, { label: "取消" }] }] };
+states.push(
+  { ...state, sessionId: "ui-confirmation", title: "状态验收 · 等待确认", status: "running", tasks: [], questions: [confirmation] },
+  { ...state, sessionId: "ui-todo-confirmation", title: "状态验收 · 目标待确认", status: "running", tasks: [], questions: [{ ...confirmation, proposal: { changes: [] } }] },
+);
 // Compact tool/status regression: independent data, never calls a model or real tool.
 const densityState = structuredClone(state);
 densityState.sessionId = "ui-density";
@@ -214,7 +220,7 @@ const sessions = {
   workspaceDefaults: async () => sessions.getDefaults(),
   getDefaults: () => ({ model: null, subagentModel: null, thinking: null, subagentThinking: null, compaction: null, retry: null, capabilities: null, subagentCapabilities: "inherit" }),
   getTaskBudget: () => ({ maxTurns: 20, wrapUpWindow: 2 }),
-  list: () => states.map((s) => ({ id: s.sessionId, cwd: s.cwd, title: s.title, status: s.status, updatedAt: Date.now(), sessionFile: `preview-${s.sessionId}.jsonl` })),
+  list: () => states.map((s) => ({ id: s.sessionId, cwd: s.cwd, title: s.title, status: s.status, awaitingConfirmation: !!s.questions?.length, updatedAt: Date.now(), sessionFile: `preview-${s.sessionId}.jsonl` })),
   get: (id) => states.find((s) => s.sessionId === id) || state,
   ensureLoaded: async (id) => sessions.get(id),
   withdraw: async () => ({ steering: [], followUp: [] }),

@@ -475,6 +475,7 @@ summary {
 .session-pin-icon { flex-shrink: 0; display: grid; place-items: center; width: 16px; height: 16px; color: var(--muted); }
 .session-pin-icon svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .session-running-dot,
+.session-waiting-dot,
 .session-attention-dot {
   flex-shrink: 0;
   width: 6px;
@@ -483,6 +484,9 @@ summary {
 }
 .session-running-dot {
   background: var(--success);
+}
+.session-waiting-dot {
+  background: var(--highlight);
 }
 /* 跑完待查看：用 --accent-ink 而不是 --accent，8px 小点在近黑底上才够显眼。 */
 .session-attention-dot {
