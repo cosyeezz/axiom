@@ -1,5 +1,15 @@
 # 开发记录
 
+## 2026-10-03 研究驱动的侧栏布局优化
+
+- 时间：2026-10-03 22:00（本机 -07:00）。独立 `feat/sidebar-layout` 工作树基于 `origin/master 0a4d86a`，依次同步迁移／等待确认及模型配置更新，当前集成基线 `591e7d0`；主 checkout 的既存未跟踪资料保持不动。
+- 研究：并行现状、成熟产品和规范研究；定向复核 Linear／Notion／Slack／VS Code／Cursor／Claude 六产品官方文档，ChatGPT 子任务无可见来源不计入证据。`docs/sidebar-layout-research.md` 记录原文短摘录、来源、适用范围、取舍和未采用方案；区分 WCAG 2.2 规范、APG 实施指导与 NN/g／Fluent 建议，不将其他产品尺寸／付费能力当通用要求。
+- 布局：稳定新建／搜索→工作空间历史→横排辅助底栏；56px 折叠轨道保留新建和搜索。普通工作空间隐藏重复路径，同名目录继续显示并在筛选后维持消歧；工作空间用 raised 底，让选中会话保留主强调。分组“进行中”改“未完成”，增加展开箭头，搜索不显示日期分隔；不改 localStorage key、执行／待确认／完成状态及排序。移除已完成45vh嵌套滚动；≤500px高改为整体滚动、搜索sticky，粗指针工作空间动作44×44。新增键盘跳到对话，手机释放背景inert；无依赖／新颜色，复用Linear surface/raised/line/muted/accent与4/8/12px节奏。
+- 审查修复：独立只读审查指出工作空间“＋”禁用状态更新遗漏、短屏搜索位置恢复、搜索后同名路径丢失；均补修并加回归。短屏复测用原生事件日志确认 beforeinput→input 间浏览器为sticky光标自动滚动（600→562），改为编辑前捕获与preventScroll，未采用无效的overflow-anchor修补。布局合成数据隔离5秒后台刷新，避免mock被服务端列表替换的偶发失败；不屏蔽生产轮询。
+- 初轮验证：定向38项全过；同步等待确认版本后隔离串行全量1091项，1088通过、3跳过、0失败（331.4秒）。Node已结束，外层Python打印末尾Unicode符号触发GBK编码错误，直接核对完整日志确认测试结果，后续打印改UTF-8。Chromium六视口双主题、0/1/50/500当前工作空间会话、重复目录、折叠轨道、键盘/搜索滚动、触控和320×256边界通过；focus-ui五视口双主题、等待确认三视口双主题与实时转换通过。未测读屏／实体触屏IME／Firefox/WebKit／桌面壳，不宣称整站WCAG合规或性能SLA。
+- 集成：同步最新 `591e7d0` 后依README规则升级 `package.json`／锁文件至 `0.1.13`（依赖不变），最终隔离串行全量1058项：1055通过、3跳过、0失败（334.8秒，`integrated-full-test.log`，Node退出码0）；总数减少来自上游模型配置测试精简，非跳过侧栏用例。六视口双主题整合侧栏、五视口focus-ui、三视口等待确认回归全部重新通过。跳过项仍为POSIX权限、可选真实MCP适配器和不支持平台reveal。测试仅隔离数据与mock预览，未调用模型、访问用户历史或重启在用服务；证据 `F:/worktrees/sidebar-layout-evidence/`。语法／版本一致性／差异检查与 `npm pack --dry-run`（345文件）通过；测试重建的无关INDEX已恢复，主checkout未跟踪清单前后比对一致。原生JS项目无独立生产构建脚本，不冒称执行了不存在的构建。
+- 文件：`public/{app.js,index.html,style.css}`、`tests/{app.test.js,sidebar-controls.test.js,session-sidebar-ui.py,sidebar-layout-ui.py}`、`README.md`、`docs/sidebar-layout-research.md`、`package.json`／`package-lock.json`、本记录。
+
 ## 2026-10-03 Pi 原生模型配置薄包装
 
 - 时间：2026-10-03 21:40（本机 -07:00）。独立 `feat/native-model-config` 工作树基于 `origin/master 0a4d86a`；用户要求统一供应商流程，去除 Codex 专属入口与模型显隐，不另造认证或模型体系。沿用 Pi 0.85.1 `ModelRuntime` 的目录、API Key/OAuth 和 SQLite 权威凭据；原始 Pi 文件只作导入，不迁移或删除已有配置。

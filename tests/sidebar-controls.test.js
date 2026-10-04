@@ -8,7 +8,7 @@ test('sidebar owns navigation and view controls; collapsed mode keeps named SVG 
     page.open();
     await until(() => page.app.session(), 'session attached');
     const { $, window } = page;
-    for (const id of ['toggle-sidebar', 'view-options-trigger', 'mobile-more', 'status', 'open-settings']) {
+    for (const id of ['toggle-sidebar', 'new', 'sidebar-search', 'view-options-trigger', 'mobile-more', 'status', 'open-settings']) {
       assert.equal($(id).closest('aside')?.id, 'sidebar', id);
       assert.ok($(id).getAttribute('aria-label'), id);
       if (id !== 'status') assert.ok($(id).querySelector('svg'), id);
@@ -21,8 +21,11 @@ test('sidebar owns navigation and view controls; collapsed mode keeps named SVG 
     assert.equal($('toggle-sidebar').getAttribute('aria-label'), '展开侧栏');
     assert.equal(window.document.activeElement, $('toggle-sidebar'));
     assert.equal(window.document.querySelector('main').inert, false);
-    $('toggle-sidebar').click();
+    $('sidebar-search').click();
     assert.equal($('toggle-sidebar').getAttribute('aria-label'), '收起侧栏');
+    assert.equal(window.document.activeElement, $('search'));
+    $('skip-sidebar').click();
+    assert.equal(window.document.activeElement, window.document.querySelector('main'));
     for (const id of ['github-link', 'toggle-theme', 'open-raw-io', 'service-version', 'conversation-font-scale']) {
       assert.equal($(id).closest('[popover]').id, 'view-options');
     }
@@ -32,6 +35,12 @@ test('sidebar owns navigation and view controls; collapsed mode keeps named SVG 
     assert.equal($('view-options-trigger').closest('dialog').id, 'mobile-menu');
     $('toggle-sidebar').click();
     assert.equal(window.document.querySelector('main').inert, true);
+    $('skip-sidebar').click();
+    assert.equal(window.document.querySelector('main').inert, false);
+    assert.equal(window.document.activeElement, window.document.querySelector('main'));
+    $('sidebar-search').click();
+    assert.equal(window.document.querySelector('main').inert, true);
+    assert.equal(window.document.activeElement, $('search'));
     $('mobile-more').click();
     assert.equal($('mobile-menu').open, true);
     assert.equal(window.document.querySelector('main').inert, false);
@@ -41,6 +50,27 @@ test('sidebar owns navigation and view controls; collapsed mode keeps named SVG 
     assert.equal($('mobile-connection').getAttribute('href'), '/_axiom/native/connection');
     media.matches = false; media.onchange();
     assert.equal($('view-options-trigger').closest('aside').id, 'sidebar');
+  } finally { await page.close(); }
+});
+
+test('workspace actions unlock after initial connect and switching, and disable on disconnect', async () => {
+  const page = bootSessionPage({ records: [] });
+  try {
+    page.open();
+    await until(() => page.app.connected(), 'initial connected state');
+    const actions = () => [...page.$('sessions').querySelectorAll('.workspace-new-btn, .workspace-config-btn')];
+    assert.equal(actions().length, 2);
+    assert.ok(actions().every(button => !button.disabled));
+    let finish;
+    const switching = page.app.switchSession(() => new Promise(resolve => { finish = resolve; }));
+    assert.ok(actions().every(button => button.disabled), 'switch in flight');
+    finish(page.fullState());
+    await switching;
+    assert.ok(actions().every(button => !button.disabled), 'switch finally unlocks freshly rendered controls');
+    page.app.setConnected(false);
+    assert.ok(actions().every(button => button.disabled));
+    page.app.setConnected(true);
+    assert.ok(actions().every(button => !button.disabled));
   } finally { await page.close(); }
 });
 

@@ -11,7 +11,10 @@ with sync_playwright() as p:
     page = browser.new_page(viewport={"width": 1440, "height": 960})
     def expose(route):
         response = route.fetch()
-        route.fulfill(response=response, body=response.text() + '\nwindow.sidebarFixture = (fn) => { allSessions = fn(allSessions); hiddenSessions = new Set(["done", "run", ...Array.from({length: 40}, (_, i) => `done-${i}`)]); seenSessions = { attention: 1, old: new Date(2027, 1, 1).getTime(), new: new Date(2027, 1, 1).getTime(), done: new Date(2027, 1, 1).getTime() }; renderSessions(); };')
+        # Synthetic layout fixtures must not be replaced by the live 5s session poll.
+        source = response.text().replace('if (connected && !sessionMissing && !changing &&',
+            'if (!window.sidebarFixtureActive && connected && !sessionMissing && !changing &&')
+        route.fulfill(response=response, body=source + '\nwindow.sidebarFixture = (fn) => { window.sidebarFixtureActive = true; allSessions = fn(allSessions); hiddenSessions = new Set(["done", "run", ...Array.from({length: 40}, (_, i) => `done-${i}`)]); seenSessions = { attention: 1, old: new Date(2027, 1, 1).getTime(), new: new Date(2027, 1, 1).getTime(), done: new Date(2027, 1, 1).getTime() }; renderSessions(); };')
     page.route('**/app.js', expose)
     page.goto(os.environ.get("AXIOM_PREVIEW_URL", "http://127.0.0.1:4321"))
     page.wait_for_selector(".session-row")
@@ -44,7 +47,7 @@ with sync_playwright() as p:
     assert any('◉' in b and '1' in b for b in badges)
     # ── 当前工作空间内部列表 ──
     cur = page.locator('.workspace-group').first
-    assert cur.locator('.session-group').all_text_contents() == ['进行中', '已完成']
+    assert cur.locator('.session-group').all_text_contents() == ['未完成', '已完成']
     assert cur.locator('.session-item span').all_text_contents() == ['运行会话', '待查看会话', '旧会话', '新会话', '已完成会话']
     assert cur.locator('.session-day').all_text_contents() == ['昨天', '前天', '3 天前', '4 天前', '5 天前']
     assert not cur.locator('.session-completed').evaluate('(el) => el.open')
@@ -78,7 +81,7 @@ with sync_playwright() as p:
     assert page.locator('[data-session-id="foreign"]').is_visible()
     assert page.locator('[data-session-id="foreign"] .session-running-dot').is_visible()
     other = page.locator('.workspace-group').nth(1)
-    assert other.locator('.session-group').all_text_contents() == ['进行中']
+    assert other.locator('.session-group').all_text_contents() == ['未完成']
     assert other.locator('.session-item span').all_text_contents() == ['其他工作空间']
     # ── 操作菜单（桌面 / 移动端） ──
     for width in [1440, 320]:
@@ -133,31 +136,30 @@ with sync_playwright() as p:
       ...Array.from({length: 40}, (_, i) => ({...sessions[0], id: `done-${i}`, status: 'idle'}))
     ])''')
     cur = page.locator('.workspace-group').first
-    # 分组折叠：进行中可折叠并带计数徽章，重绘后状态保留
+    # 分组折叠：未完成可折叠并带计数徽章，重绘后状态保留
     assert cur.locator('[data-group="active"] > .session-group-toggle .session-group-count').inner_text() == '44'
     assert cur.locator('[data-group="completed"] > .session-group-toggle .session-group-count').inner_text() == '41'
     cur.locator('[data-group="active"] > .session-group-toggle').click()
     assert not cur.locator('[data-group="active"]').evaluate('(el) => el.open')
     assert not cur.locator('[data-session-id="run"]').is_visible()
     cur.locator('.session-completed > summary').click()
-    # 已完成内容限高 45vh 并内部滚动；列表总高度交给 #sessions 整体滚动
+    # 所有分组共用会话列表滚动，不再把已完成限高形成内层滚动。
     completed = cur.locator('.session-completed')
-    assert completed.evaluate('(el) => el.getBoundingClientRect().height <= 0.45 * innerHeight + 48')
-    assert completed.evaluate("(el) => { const cs = getComputedStyle(el, '::details-content'); return parseFloat(cs.maxHeight) <= 0.45 * innerHeight + 1 && cs.overflowY === 'auto'; }")
-    # 折叠进行中后内容可能恰好放得下；验证滚动策略和已完成末行可达，不强求溢出。
+    assert completed.evaluate("(el) => { const cs = getComputedStyle(el, '::details-content'); return cs.maxHeight === 'none' && cs.overflowY === 'visible'; }")
+    # 折叠未完成后内容可能恰好放得下；验证滚动策略和已完成末行可达，不强求溢出。
     assert page.locator('#sessions').evaluate('(el) => getComputedStyle(el).overflowY === "auto"')
     last_completed = cur.locator('[data-session-id="done-39"]')
     last_completed.scroll_into_view_if_needed()
     box = last_completed.bounding_box()
-    group_box = completed.bounding_box()
-    assert box['y'] >= group_box['y'] and box['y'] + box['height'] <= group_box['y'] + group_box['height'] + 1
+    list_box = page.locator('#sessions').bounding_box()
+    assert box['y'] >= list_box['y'] and box['y'] + box['height'] <= list_box['y'] + list_box['height'] + 1
     # 折叠状态跨重绘保留
     page.evaluate('window.sidebarFixture((sessions) => sessions)')
     assert not cur.locator('[data-group="active"]').evaluate('(el) => el.open')
     assert cur.locator('.session-completed').evaluate('(el) => el.open')
     cur.locator('[data-group="active"] > .session-group-toggle').click()
     assert cur.locator('[data-session-id="run"]').is_visible()
-    # 展开大量进行中会话后必须实际可滚动，且末行落在列表可视区。
+    # 展开大量未完成会话后必须实际可滚动，且末行落在列表可视区。
     sessions = page.locator('#sessions')
     assert sessions.evaluate('(el) => el.scrollHeight > el.clientHeight')
     last_active = cur.locator('[data-session-id="active-39"]')

@@ -591,7 +591,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("send").textContent, "发送");
     assert.equal(window.document.querySelector("header .menu"), null);
     const firstActions = $("sessions").querySelector(".session-actions");
-    assert.deepEqual([...$("sessions").querySelectorAll(".session-group")].map((n) => n.textContent), ["进行中"], "没有已完成会话时空组不渲染");
+    assert.deepEqual([...$("sessions").querySelectorAll(".session-group")].map((n) => n.textContent), ["未完成"], "没有已完成会话时空组不渲染");
     assert.equal(firstActions.children[0].className, "session-pin");
     assert.equal(firstActions.children[0].title, "置顶");
     assert.equal(firstActions.children[1].className, "session-hide");
@@ -606,7 +606,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     assert.equal($("sessions").querySelector(".session-completed"), null, "空已完成组不渲染");
     // 分组可折叠：summary 扛计数徽章，重绘保留手动状态并按工作区写入 localStorage。
     const activeGroup = $("sessions").querySelector('[data-group="active"]');
-    assert.equal(activeGroup.querySelector(".session-group").textContent, "进行中");
+    assert.equal(activeGroup.querySelector(".session-group").textContent, "未完成");
     assert.equal(activeGroup.querySelector(".session-group-count").textContent, "3");
     assert.equal(activeGroup.open, true, "active group defaults to expanded");
     activeGroup.open = false;
@@ -650,7 +650,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     await settle();
     assert.deepEqual(JSON.parse(window.localStorage.getItem("axiom.pinnedSessions")), ["b"]);
     assert.deepEqual(rowTitles(), ["b", "c", "a"], "pinned session sorts above a running one");
-    assert.deepEqual([...$("sessions").querySelectorAll(".session-group")].map((n) => n.textContent), ["置顶", "进行中"], "空置顶/已完成组都不渲染");
+    assert.deepEqual([...$("sessions").querySelectorAll(".session-group")].map((n) => n.textContent), ["置顶", "未完成"], "空置顶/已完成组都不渲染");
     assert.ok(row("b").classList.contains("pinned"), "pinned row gets the highlighted class");
     assert.equal(row("b").querySelector(".session-pin-icon").getAttribute("aria-label"), "已置顶");
     assert.equal(row("b").querySelector(".session-more").title, "会话操作");
@@ -660,7 +660,7 @@ test("page preserves drafts, recovers failed connections and paints tasks on dem
     row("b").querySelector(".session-pin").click();
     await settle();
     assert.deepEqual(JSON.parse(window.localStorage.getItem("axiom.pinnedSessions")), []);
-    assert.deepEqual([...$("sessions").querySelectorAll(".session-group")].map((n) => n.textContent), ["进行中"], "empty pinned group disappears");
+    assert.deepEqual([...$("sessions").querySelectorAll(".session-group")].map((n) => n.textContent), ["未完成"], "empty pinned group disappears");
     assert.deepEqual(rowTitles(), ["c", "a", "b"], "unpinning restores the normal order");
     // 跑完待查看：seen 记在打开之前 → 标主题色点；打开会话即写回时间戳并落盘。
     window.setSeenSessions({ a: 1, b: 1 });
