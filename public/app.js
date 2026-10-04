@@ -188,7 +188,7 @@ try {
   if (Array.isArray(saved)) openCwds = new Set(saved);
 } catch {}
 // 侧栏分组折叠状态：normalized cwd → { pinned/active/completed: boolean }。
-// 置顶与进行中默认展开，已完成默认折叠；和 workspace-group 一样按工作区各自记住。
+// 置顶与未完成默认展开，已完成默认折叠；和 workspace-group 一样按工作区各自记住。
 let sessionGroupPrefs = (() => {
   try {
     const saved = JSON.parse(localStorage.getItem("axiom.sessionGroups") || "{}");
@@ -404,7 +404,7 @@ function sidebar(open) {
   $("toggle-sidebar").setAttribute("aria-label", $("toggle-sidebar").title);
   $("sidebar-backdrop").hidden = !open || !mobile.matches;
   document.querySelector("main").inert = open && mobile.matches;
-  if (open && mobile.matches) $("search").focus();
+  if (open && mobile.matches) $("search").focus({ preventScroll: true });
   else if (!open && restoreFocus) $("toggle-sidebar").focus({ preventScroll: true });
   // 桌面折叠会改主区宽度 → 换行数变化，输入框高度得重算。
   if (widthChanged) invalidatePrompt();
@@ -412,6 +412,12 @@ function sidebar(open) {
 $("toggle-sidebar").onclick = () =>
   sidebar($("toggle-sidebar").getAttribute("aria-expanded") !== "true");
 $("sidebar-backdrop").onclick = () => sidebar(false);
+$("sidebar-search").innerHTML = actionIcon("search");
+$("sidebar-search").onclick = () => { sidebar(true); $("search").focus({ preventScroll: true }); $("search").select(); };
+$("skip-sidebar").onclick = () => {
+  if (mobile.matches) sidebar(false);
+  document.querySelector("main").focus();
+};
 mobile.onchange = () => {
   placeMobileControls();
   sidebar(!mobile.matches);
@@ -788,7 +794,7 @@ function updateNavigation() {
   const unavailable = !connected || changing;
   $("open-workspace").disabled = unavailable || pickingWorkspace;
   $("reveal-workspace").disabled = unavailable;
-  for (const button of $("sessions").querySelectorAll(".workspace-config-btn")) button.disabled = unavailable;
+  for (const button of $("sessions").querySelectorAll(".workspace-config-btn, .workspace-new-btn")) button.disabled = unavailable;
   $("copy-workspace").disabled = !$("workspace-label").textContent;
   // 新建会话按钮只看「能不能新建」：连接在、有模型就可点。不与 changing 绑定，
   // 否则每次新建/切换都会把按钮刷成灰色，观感像卡住；重复点击由 switchSession 自己挡。
@@ -4435,20 +4441,25 @@ function sessionDayLabel(ts) {
 // 搜索只是临时视图：不能把自动展开写回日常浏览偏好。
 let sessionSearchView = false;
 let sessionBrowseScroll = 0;
+let sessionBrowseSidebarScroll = 0;
 let sessionBrowseWorkspaceState = new Map();
-function renderSessions() {
+function renderSessions(searchInputScroll = null) {
   const list = $("sessions");
   const focused = document.activeElement;
   const focusedRow = list.contains(focused) ? focused.closest(".session-row") : null;
   const focusId = focusedRow?.dataset.sessionId;
   const focusPart = focused?.matches(".session-item") ? ".session-item" : focused?.matches(".session-more") ? ".session-more" : null;
   const previousScroll = list.scrollTop;
+  const previousSidebarScroll = $("sidebar").scrollTop;
   const fragment = document.createDocumentFragment();
   const query = $("search").value.trim().toLowerCase();
   const searching = !!query;
   const enteringSearch = searching && !sessionSearchView;
   const leavingSearch = !searching && sessionSearchView;
-  if (enteringSearch) sessionBrowseScroll = previousScroll;
+  if (enteringSearch) {
+    sessionBrowseScroll = searchInputScroll?.list ?? previousScroll;
+    sessionBrowseSidebarScroll = searchInputScroll?.sidebar ?? previousSidebarScroll;
+  }
   const running = (s) => s.status !== "idle";
   // 未读 = 打开过它之后又跑完了一轮（updatedAt 是这一轮的开始时刻）。
   const unread = (s) => !hiddenSessions.has(s.id) && s.status === "idle" && s.id !== sessionId && seenSessions[s.id] != null && s.updatedAt > seenSessions[s.id];
@@ -4493,6 +4504,12 @@ function renderSessions() {
     wsMap.get(key).push(s);
   }
 
+  // 名称歧义按全量工作空间判断，不能因搜索过滤掉同名目录就隐藏路径。
+  const workspaceNames = new Map();
+  for (const cwd of new Set([currentNcwd, ...allSessions.map((s) => normalizeCwd(s.cwd))].filter(Boolean))) {
+    const name = cwd.split("/").filter(Boolean).pop() || cwd;
+    workspaceNames.set(name, (workspaceNames.get(name) || 0) + 1);
+  }
   // 工作区排序：当前第一，其余按最新会话时间倒序
   const sortedCwds = [...wsMap.keys()].sort((a, b) => {
     if (a === currentNcwd) return -1;
@@ -4587,7 +4604,7 @@ function renderSessions() {
     actions.setAttribute("aria-label", `会话操作：${s.title}`);
     for (const [kind, label, iconName] of [
       ["pin", pinned(s) ? "取消置顶" : "置顶", "pin"],
-      ["hide", hidden ? "移回进行中" : "标记已完成", hidden ? "up" : "check"],
+      ["hide", hidden ? "移回未完成" : "标记已完成", hidden ? "up" : "check"],
       ["duplicate", "复制会话", "duplicate"],
       ["copy", "复制文件", "copy"],
       ["configure", "配置", "settings"],
@@ -4667,11 +4684,13 @@ function renderSessions() {
     // 默认：当前展开，其他折叠（除非有保存的状态）
     wsDetail.open = searching || (sessionBrowseWorkspaceState.get(ncwd) ?? (openCwds.has(ncwd) || (isCurrent && openCwds.size === 0)));
 
-    // 工作区头 — 两行：名称 + 路径
+    // 常态只显示名称；同名目录保留路径，完整路径始终可读/可悬停。
     const displayName = ncwd.split("/").filter(Boolean).pop() || ncwd;
     const origCwd = wsOriginalCwd.get(ncwd) || (isCurrent ? currentCwd : ncwd);
     const wsHeader = document.createElement("summary");
     wsHeader.className = "workspace-header";
+    wsHeader.title = origCwd;
+    wsHeader.setAttribute("aria-label", `${isCurrent ? "当前工作空间：" : "工作空间："}${origCwd}`);
     const headerTop = document.createElement("span");
     headerTop.className = "workspace-header-top";
     const chevron = document.createElement("span");
@@ -4689,6 +4708,7 @@ function renderSessions() {
       const badge = document.createElement("span");
       badge.className = "workspace-badge ws-badge-running";
       badge.textContent = `◉ ${runningCount}`;
+      badge.setAttribute("aria-label", `${runningCount} 个运行中会话`);
       headerTop.append(badge);
     }
     // 待查看计数
@@ -4697,6 +4717,7 @@ function renderSessions() {
       const badge = document.createElement("span");
       badge.className = "workspace-badge ws-badge-attention";
       badge.textContent = `• ${unreadCount}`;
+      badge.setAttribute("aria-label", `${unreadCount} 个待查看结果`);
       headerTop.append(badge);
     }
     // + 按钮：在该工作区新建会话
@@ -4706,8 +4727,9 @@ function renderSessions() {
     newBtn.title = `在「${displayName}」新建会话`;
     newBtn.setAttribute("aria-label", newBtn.title);
     newBtn.innerHTML = actionIcon("plus");
+    newBtn.disabled = !connected || changing;
     newBtn.onclick = (e) => {
-      e.stopPropagation();
+      e.preventDefault(); e.stopPropagation();
       if (!connected || changing) return;
       switchSession(() => request("session.create", { cwd: ncwd }));
     };
@@ -4727,7 +4749,8 @@ function renderSessions() {
     wsHeader.append(headerTop);
     // 第二行：完整路径
     const pathSpan = document.createElement("span");
-    pathSpan.className = "workspace-path";
+    const ambiguousName = workspaceNames.get(displayName) > 1;
+    pathSpan.className = `workspace-path${ambiguousName ? "" : " sr-only"}`;
     pathSpan.textContent = origCwd;
     pathSpan.title = origCwd;
     wsHeader.append(pathSpan);
@@ -4751,18 +4774,18 @@ function renderSessions() {
       const hasPinned = sorted.some(pinned);
       const groups = [
         ...(hasPinned ? [["置顶", sorted.filter(pinned)]] : []),
-        ["进行中", sorted.filter((s) => !pinned(s) && (running(s) || !hiddenSessions.has(s.id)))],
+        ["未完成", sorted.filter((s) => !pinned(s) && (running(s) || !hiddenSessions.has(s.id)))],
         ["已完成", sorted.filter((s) => !pinned(s) && !running(s) && hiddenSessions.has(s.id))],
       ];
       for (const [name, groupSessions] of groups) {
-        const key = name === "置顶" ? "pinned" : name === "进行中" ? "active" : "completed";
-        // 置顶/已完成空组不渲染：没有内容时组头只是噪音；进行中组保留承载空态提示。
+        const key = name === "置顶" ? "pinned" : name === "未完成" ? "active" : "completed";
+        // 置顶/已完成空组不渲染：没有内容时组头只是噪音；未完成组保留承载空态提示。
         if (!groupSessions.length && (searching || key !== "active")) continue;
         const section = document.createElement("details");
         section.className = `session-section session-${key}`;
         section.dataset.group = key;
         section.setAttribute("aria-label", name);
-        // 折叠状态：先看重绘前的 DOM，再看按工作区记住的偏好；置顶/进行中默认展开，已完成默认折叠。
+        // 折叠状态：先看重绘前的 DOM，再看按工作区记住的偏好；置顶/未完成默认展开，已完成默认折叠。
         section.open = searching || (groupsOpenByCwd.get(ncwd)?.[key] ?? sessionGroupPrefs[ncwd]?.[key] ?? key !== "completed");
         // 搜索自动展开不得污染偏好，包括程序赋值触发的异步 toggle。
         if (!searching) {
@@ -4771,6 +4794,8 @@ function renderSessions() {
         }
         const heading = document.createElement("summary");
         heading.className = "session-group-toggle";
+        heading.insertAdjacentHTML("beforeend", actionIcon("chevron"));
+        if (key === "active") heading.setAttribute("aria-description", "尚未手动标记完成的会话，包含空闲会话");
         const label = document.createElement("span");
         label.className = "session-group";
         label.textContent = name;
@@ -4794,7 +4819,7 @@ function renderSessions() {
         let day;
         for (const s of groupSessions) {
           const label = sessionDayLabel(s.updatedAt);
-          if (day !== label) {
+          if (!searching && day !== label) {
             day = label;
             const divider = document.createElement("p");
             divider.className = "session-day";
@@ -4844,6 +4869,7 @@ function renderSessions() {
   if ($("session-search-status").textContent !== feedback) $("session-search-status").textContent = feedback;
   list.replaceChildren(fragment);
   list.scrollTop = enteringSearch ? 0 : leavingSearch ? sessionBrowseScroll : previousScroll;
+  $("sidebar").scrollTop = enteringSearch ? 0 : leavingSearch ? sessionBrowseSidebarScroll : previousSidebarScroll;
   // 后台状态刷新重绘列表时不把正在操作的键盘焦点丢到 body。
   if (focusId && focusPart) {
     const row = [...list.querySelectorAll(".session-row")].find((row) => row.dataset.sessionId === focusId);
@@ -4855,9 +4881,20 @@ function renderSessions() {
 function clearSessionSearch() {
   $("search").value = "";
   renderSessions();
-  $("search").focus();
+  $("search").focus({ preventScroll: true });
 }
-$("search").oninput = () => { renderSessions(); if (sessionSearchView) $("sessions").scrollTop = 0; };
+// 原生编辑可能在 beforeinput 与 input 之间滚动 sticky 输入框的光标；
+// 保存编辑前的位置，而非浏览器已调整过的位置。程序触发 input 仍用当前滚动兜底。
+let sessionSearchInputScroll = null;
+$("search").onbeforeinput = () => {
+  sessionSearchInputScroll = { list: $("sessions").scrollTop, sidebar: $("sidebar").scrollTop };
+};
+$("search").oninput = () => {
+  const scroll = sessionSearchInputScroll;
+  sessionSearchInputScroll = null;
+  renderSessions(scroll);
+  if (sessionSearchView) { $("sessions").scrollTop = 0; $("sidebar").scrollTop = 0; }
+};
 $("clear-session-search").onclick = clearSessionSearch;
 // 原生按钮保留 Tab / Enter / Space；方向键只移动焦点，不擅自切换会话。
 $("sidebar").addEventListener("keydown", (event) => {
@@ -4867,7 +4904,7 @@ $("sidebar").addEventListener("keydown", (event) => {
   const fromRow = event.target.matches(".session-item");
   if (event.key === "Escape" && (fromSearch || $("sessions").contains(event.target))) {
     if ($("search").value) { event.preventDefault(); clearSessionSearch(); }
-    else if (fromRow) { event.preventDefault(); $("search").focus(); }
+    else if (fromRow) { event.preventDefault(); $("search").focus({ preventScroll: true }); }
     else if (fromSearch && !mobile.matches) event.preventDefault();
     return;
   }
@@ -4892,7 +4929,7 @@ document.addEventListener("keydown", (event) => {
   if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "k") return;
   event.preventDefault();
   sidebar(true);
-  $("search").focus();
+  $("search").focus({ preventScroll: true });
   $("search").select();
 });
 let sessionAction;

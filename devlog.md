@@ -10,8 +10,21 @@
 - 最终集成：合入591e7d0后隔离全量1058项、1055通过、3跳过、0失败（327.7s，node-native-integrated.log；测试数减少来自上游原生模型配置重构）。七类会话布局回归及上游模型认证、选择收藏、原生设置三套Chromium再次通过；保留上游全部实现，版本与锁文件为0.1.13。
 - 收尾复核（2026-10-03 22:33 -07:00）：新增320×360等四种短视口回归先复现扁平菜单无法滚动，补纵向滚动；实际点击复现窄屏Skill悬停覆盖自身按钮，改紧凑布局点击展开，保留桌面悬停。context-menu隔离夹具同步真实按钮迁移；focus-ui在关闭原生dialog后等待焦点归还，避免异步close事件抢走测试下一步Enter。待确认回归新增主文字可见与伪元素断点断言。README末尾旧同排/帮助弹层描述同步；相关文件另含`tests/context-menu-ui.py`。
 - 连接修复集成复验：合入cc5df4e后0.1.14隔离串行全量1088项，1085通过/3跳过/0失败，330.7秒（node-connection-integrated.log）；跳过为POSIX权限、可选真实MCP adapter及不支持平台reveal。全量进程退出0，外层打印尾部曾遇Windows GBK编码错误，直接读取UTF-8原日志确认上述结果。11套Chromium（上下文、紧凑输入、导航焦点、手机阅读、模型级联、工具状态、账单、等待确认、认证、模型收藏、模型设置）通过；版本/锁一致、语法、差异和打包检查347文件通过。截图日志均在仓库外，自动生成索引恢复到合入上游的版本。交付前fetch又发现507739c侧栏优化，继续集成和复验，不把先前通过视为最终主分支结果。
+- 侧栏最终集成（2026-10-03 22:48 -07:00）：合入507739c（含93a3340）；保留上游工作空间历史、未完成分组、路径消歧、短屏搜索滚动与跳过导航，按本目标零宽收起覆盖56px轨道方案；保留提前捕获的焦点归还并吸收preventScroll。上游整合浏览器改验收主区全宽和可见重开入口，Node不再直接点击隐藏的轨道搜索按钮，改用Ctrl+K／导航按钮。README与`docs/sidebar-layout-research.md`明确方案演进；版本/锁顺延0.1.15，依赖不变。独立只读集成核对结果7207150f已逐项核实。
+- 侧栏集成复验：隔离串行全量1089项、1086通过、3跳过、0失败，323.6秒（`node-sidebar-integrated.log`）；三项仍为平台权限／可选真实MCP adapter／不支持平台reveal。`sidebar-layout-ui.py`含会话与搜索回归、六视口双主题、0/1/50/500会话及320×256通过；另11套Chromium全部通过（`browser-sidebar-integrated/`），已查阅手机、桌面及短屏截图。语法、差异、版本一致性与打包检查348文件通过；生成索引不纳入本次提交，截图日志均归仓库外证据目录。再次fetch确认上游仍为507739c。
 - 浏览器：Chromium模型级联、紧凑输入、工具／用量、会话账单、导航焦点、手机阅读回归通过；包括双主题320–1440px、首次连接失败、断线设置、同会话刷新、模拟键盘缩放、长草稿／附件／补全、四种短视口和字体间距。截图／日志在仓库外 `F:/worktrees/mobile-chat-controls-evidence`；未调用真实模型，未做真机软键盘、读屏或桌面壳原生验收。
-- 文件：`public/{app.js,style.css,composer-controls.js,composer-controls.css}`；对应app/sidebar/composer Node测试及compact-composer/compact-tool-status/composer-cascade/focus-ui/mobile-reading/session-billing/session-waiting浏览器脚本；README、本记录、package.json和lock。测试自动生成的代码索引不纳入本次改动。
+- 文件：`public/{app.js,style.css,composer-controls.js,composer-controls.css}`；对应app/sidebar/composer Node测试及compact-composer/compact-tool-status/composer-cascade/focus-ui/mobile-reading/session-billing/session-waiting浏览器脚本；README、`docs/sidebar-layout-research.md`、本记录、package.json和lock；另适配上游`tests/sidebar-layout-ui.py`。测试自动生成的代码索引不纳入本次改动。
+
+## 2026-10-03 研究驱动的侧栏布局优化
+
+- 时间：2026-10-03 22:00（本机 -07:00）。独立 `feat/sidebar-layout` 工作树基于 `origin/master 0a4d86a`，依次同步迁移／等待确认及模型配置更新，当前集成基线 `591e7d0`；主 checkout 的既存未跟踪资料保持不动。
+- 研究：并行现状、成熟产品和规范研究；定向复核 Linear／Notion／Slack／VS Code／Cursor／Claude 六产品官方文档，ChatGPT 子任务无可见来源不计入证据。`docs/sidebar-layout-research.md` 记录原文短摘录、来源、适用范围、取舍和未采用方案；区分 WCAG 2.2 规范、APG 实施指导与 NN/g／Fluent 建议，不将其他产品尺寸／付费能力当通用要求。
+- 布局：稳定新建／搜索→工作空间历史→横排辅助底栏；56px 折叠轨道保留新建和搜索。普通工作空间隐藏重复路径，同名目录继续显示并在筛选后维持消歧；工作空间用 raised 底，让选中会话保留主强调。分组“进行中”改“未完成”，增加展开箭头，搜索不显示日期分隔；不改 localStorage key、执行／待确认／完成状态及排序。移除已完成45vh嵌套滚动；≤500px高改为整体滚动、搜索sticky，粗指针工作空间动作44×44。新增键盘跳到对话，手机释放背景inert；无依赖／新颜色，复用Linear surface/raised/line/muted/accent与4/8/12px节奏。
+- 审查修复：独立只读审查指出工作空间“＋”禁用状态更新遗漏、短屏搜索位置恢复、搜索后同名路径丢失；均补修并加回归。短屏复测用原生事件日志确认 beforeinput→input 间浏览器为sticky光标自动滚动（600→562），改为编辑前捕获与preventScroll，未采用无效的overflow-anchor修补。布局合成数据隔离5秒后台刷新，避免mock被服务端列表替换的偶发失败；不屏蔽生产轮询。
+- 初轮验证：定向38项全过；同步等待确认版本后隔离串行全量1091项，1088通过、3跳过、0失败（331.4秒）。Node已结束，外层Python打印末尾Unicode符号触发GBK编码错误，直接核对完整日志确认测试结果，后续打印改UTF-8。Chromium六视口双主题、0/1/50/500当前工作空间会话、重复目录、折叠轨道、键盘/搜索滚动、触控和320×256边界通过；focus-ui五视口双主题、等待确认三视口双主题与实时转换通过。未测读屏／实体触屏IME／Firefox/WebKit／桌面壳，不宣称整站WCAG合规或性能SLA。
+- 集成：同步最新 `591e7d0` 后依README规则升级 `package.json`／锁文件至 `0.1.13`（依赖不变），最终隔离串行全量1058项：1055通过、3跳过、0失败（334.8秒，`integrated-full-test.log`，Node退出码0）；总数减少来自上游模型配置测试精简，非跳过侧栏用例。六视口双主题整合侧栏、五视口focus-ui、三视口等待确认回归全部重新通过。跳过项仍为POSIX权限、可选真实MCP适配器和不支持平台reveal。测试仅隔离数据与mock预览，未调用模型、访问用户历史或重启在用服务；证据 `F:/worktrees/sidebar-layout-evidence/`。语法／版本一致性／差异检查与 `npm pack --dry-run`（345文件）通过；测试重建的无关INDEX已恢复，主checkout未跟踪清单前后比对一致。原生JS项目无独立生产构建脚本，不冒称执行了不存在的构建。
+- 最终交叉集成：侧栏提交 `93a3340` 推送后，上游新增 `cc5df4e` 连接恢复修复并使用0.1.13；在工作分支合入并保留双方devlog，版本顺延0.1.14（依赖不变）。重新隔离串行全量1088项：1085通过、3跳过、0失败，330.1秒（`merge-cc5-full-test.log`，退出码0）；六视口双主题侧栏、五视口focus-ui、三视口等待确认与实时转换均重新通过（`merge-cc5-*`证据）。定向独立只读审查核对操作可用性、切换/重连代次、搜索滚动保存，无阻断项；真实transport断线与搜索/按钮的组合、IME取消输入未新增专门回归，不扩大测试结论。语法、版本与锁定依赖一致性、打包预检通过；测试生成的INDEX漂移恢复为合入的上游版本，保留上游索引改进。不重启在用服务、不刷新用户页面。
+- 文件：`public/{app.js,index.html,style.css}`、`tests/{app.test.js,sidebar-controls.test.js,session-sidebar-ui.py,sidebar-layout-ui.py}`、`README.md`、`docs/sidebar-layout-research.md`、`package.json`／`package-lock.json`、本记录。
 
 ## 2026-10-03 连接修复最终竞态复核与集成交付
 
