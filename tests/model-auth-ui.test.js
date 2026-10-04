@@ -61,6 +61,26 @@ test("登录错误/取消/部分应用的终态文案和关闭清理", async () 
   }
 });
 
+test("原生空 text 可提交，短暂状态失败恢复且不重启授权", async () => {
+  let polls = 0, answered = false;
+  const h = harness((type, args) => {
+    if (type === "models.auth.respond") { assert.equal(args.value, ""); answered = true; return {}; }
+    if (type === "models.auth.status" && ++polls === 1) throw new Error("temporary timeout");
+    if (answered) return { status: "success", credentialsSaved: true, applied: true };
+    return { flowId: "flow", status: "running", prompt: { id: "domain", type: "text", message: "blank for github.com" } };
+  });
+  try {
+    h.doc.querySelector("button").click(); await tick();
+    assert.equal(h.doc.querySelector("dialog input").required, false);
+    h.doc.querySelector("dialog form").requestSubmit(); await tick();
+    assert.equal(answered, true);
+    await new Promise((resolve) => setTimeout(resolve, 850));
+    assert.match(h.doc.querySelector("dialog [role=status]").textContent, /目录已更新/);
+    assert.equal(h.doc.querySelector("dialog [role=alert]").textContent, "");
+    assert.equal(h.calls.filter((c) => c.type === "models.auth.start").length, 1);
+  } finally { h.window.close(); }
+});
+
 test("授权未结束关闭弹窗取消流程，不保存或触发刷新", async () => {
   const h = harness(() => ({ flowId: "flow", status: "running", events: [] }));
   try {

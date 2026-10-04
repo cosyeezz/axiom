@@ -55,7 +55,8 @@ export function createModelAuth({ request, onChanged }) {
             input = node("select");
             for (const option of p.options || []) { const o = node("option", option.label); o.value = option.id; input.append(o); }
           } else { input = node("input"); input.type = p.type === "secret" ? "password" : "text"; input.placeholder = p.placeholder || ""; input.autocomplete = "off"; }
-          input.required = true; label.append(input);
+          // 原生 text prompt 可用空值选择默认项（如 Copilot github.com），由 SDK 校验。
+          input.required = p.type === "select"; label.append(input);
           const submit = node("button", "继续"); submit.type = "submit"; prompt.append(label, submit);
           prompt.onsubmit = async (event) => {
             event.preventDefault(); submit.disabled = true; error.textContent = "";
@@ -77,12 +78,23 @@ export function createModelAuth({ request, onChanged }) {
       }
       return true;
     }
+    let pollFailures = 0;
     async function poll() {
       if (flow.closed || !flow.id) return;
       try {
         const data = await request("models.auth.status", { flowId: flow.id });
+        if (pollFailures) error.textContent = "";
+        pollFailures = 0;
         if (!flow.closed && render(data)) flow.timer = setTimeout(poll, 800);
-      } catch (e) { if (!flow.closed) error.textContent = e.message || "登录连接已断开，请关闭后重试"; }
+      } catch {
+        if (flow.closed) return;
+        if (++pollFailures <= 3) {
+          error.textContent = "暂时无法获取登录状态，正在重试…";
+          flow.timer = setTimeout(poll, 800);
+        } else {
+          error.textContent = "登录连接已断开或流程已失效，请关闭后重新登录。";
+        }
+      }
     }
     try {
       const data = await request("models.auth.start", { providerId: provider.id, authType: method.type });
@@ -94,16 +106,15 @@ export function createModelAuth({ request, onChanged }) {
   function section(provider) {
     const box = node("section"); box.className = "mm-auth-section";
     box.append(node("h4", "账号与授权"), node("p", provider.configured
-      ? "检测到凭据配置 · 不代表连接验证通过。网页登录凭据保存在 Axiom；也可能来自环境变量或配置引用。"
-      : "选择认证方式。网页提交的凭据保存在 Axiom，不回显密钥。"));
-    if (provider.id === "openai-codex") box.append(node("p", "登录后可选择浏览器授权或设备码；远程部署优先使用设备码，并按 OpenAI 提示确认账号权限。"));
-    const sourceNames = { stored: "已保存的登录凭据（优先于表单 API Key）", runtime: "运行时覆盖", environment: "环境配置", models_json_key: "供应商表单", models_json_command: "已有命令引用", fallback: "供应商配置" };
-    if (sourceNames[provider.authSource]) box.append(node("p", `认证来源：${sourceNames[provider.authSource]}。清除登录凭据不会删除表单或环境凭据。`));
+      ? "凭据已配置 · 连接尚未验证。"
+      : "选择 Pi 提供的认证方式。密钥与令牌不会回显。"));
+    const sourceNames = { stored: "已保存的登录凭据", runtime: "运行时覆盖", environment: "环境配置", models_json_key: "自定义配置", models_json_command: "已有命令引用", fallback: "供应商配置" };
+    if (sourceNames[provider.authSource]) box.append(node("p", `认证来源：${sourceNames[provider.authSource]}。登录凭据优先于自定义配置；清除登录凭据不会删除配置或环境变量。`));
     if (!provider.methods?.length) box.append(node("p", "此供应商没有网页登录入口，请按供应商要求配置环境凭据或自定义连接。"));
     const actions = node("div"); actions.className = "mm-head-actions";
     for (const method of provider.methods || []) actions.append(button(method.type === "oauth"
-      ? (provider.id === "openai-codex" ? "使用 ChatGPT 登录" : "登录 / 重新授权") : "配置 API Key", () => void login(provider, method)));
-    if (provider.configured) actions.append(button("清除登录凭据", async () => {
+      ? "OAuth 登录" : "配置 API Key", () => void login(provider, method)));
+    if (provider.authSource === "stored") actions.append(button("清除登录凭据", async () => {
       const b = actions.lastElementChild; b.disabled = true;
       try { await request("models.auth.logout", { providerId: provider.id }); await onChanged?.(); }
       catch (e) { box.append(node("p", e.message || "登出失败")); b.disabled = false; }

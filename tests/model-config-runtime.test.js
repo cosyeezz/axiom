@@ -41,11 +41,9 @@ test("网页保存的自定义连接经 SQLite/派生文件/真实 SDK 发往回
   let agent;
   try {
     const initial = await f.models.get();
-    const saved = await f.models.saveProvider({ providerId: "local-test", baseFingerprint: initial.fingerprint,
-      provider: { api: "openai-completions", baseUrl: `http://127.0.0.1:${server.address().port}/v1`, apiKey: "test-only-key" } });
-    assert.equal(saved.applied, true);
-    const added = await f.models.saveModel({ providerId: "local-test", baseFingerprint: saved.fingerprint,
-      model: { id: "local-model", name: "Local model", reasoning: false, input: ["text"], contextWindow: 8192, maxTokens: 256 } });
+    const added = await f.models.configureProvider({ providerId: "local-test", baseFingerprint: initial.fingerprint,
+      provider: { api: "openai-completions", baseUrl: `http://127.0.0.1:${server.address().port}/v1`, apiKey: "test-only-key",
+        models: [{ id: "local-model", name: "Local model", reasoning: false, input: ["text"], contextWindow: 8192, maxTokens: 256 }] } });
     assert.equal(added.applied, true);
     assert.ok(f.factory.catalog().some((m) => m.key === "local-test/local-model"));
     const runtime = await ModelRuntime.create(f.options);

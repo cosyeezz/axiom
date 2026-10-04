@@ -1,5 +1,15 @@
 # 开发记录
 
+## 2026-10-03 Pi 原生模型配置薄包装
+
+- 时间：2026-10-03 21:40（本机 -07:00）。独立 `feat/native-model-config` 工作树基于 `origin/master 0a4d86a`；用户要求统一供应商流程，去除 Codex 专属入口与模型显隐，不另造认证或模型体系。沿用 Pi 0.85.1 `ModelRuntime` 的目录、API Key/OAuth 和 SQLite 权威凭据；原始 Pi 文件只作导入，不迁移或删除已有配置。
+- 界面：移除厂商模板、复制/改名、逐模型能力编辑与发现向导，改为统一供应商搜索、原生认证方式、只读模型目录和折叠的 Pi provider JSON 编辑器。并发与限流独立折叠保留；使用 Linear surface/raised/line/muted/accent、4px间距基数、8/12px圆角，无新增依赖。旧 hidden 数据留存但不参与目录过滤，显隐写协议移除。
+- 配置：新增 `models.provider.configure` 整供应商替换，复用 SDK 校验、指纹与 CAS；只在已约定的 apiKey/headers 位置将掩码转 keep，不误转换未知字段。供应商/模型/override 的 Header 均可删除；未知能力/cost 扩展字段往返保留。失败不覆盖权威数据，草稿保留旧指纹；旧细粒度命令仅保留兼容。
+- 登录：独立审查复现 Copilot 的“空域名使用 github.com”被前端 required、协议 min(1)、后端判空三层拦截；均改为交给 SDK/provider 校验。短暂状态查询失败有界重试三次；保留单步 callback/manual 取消与整体取消的区别。断线/刷新取消流程仍是明确限制，不伪称跨连接恢复或外部授权已成功。
+- 验证：首轮隔离 HOME/USERPROFILE/TEMP/TMP/Pi 串行全量1052项，1049通过、3跳过、0失败；收尾定向58项通过，真实SDK API Key与原生JSON→SQLite→回环请求覆盖，OAuth仅模拟交互/合成凭据。Chromium 8组双主题320–1440px、OAuth select/device/Copilot空答、API Key/Escape、JSON保存与限额读写及高级区布局通过；旧模型设置/收藏浏览器脚本迁移到当前可见级联入口，两套通过。截图在 `F:/worktrees/native-model-artifacts-final` 等仓库外目录。
+- `node --check`、`npm pack --dry-run`、`git diff --check` 已通过；项目无独立类型检查/生产构建脚本，不能冒称执行了不存在的步骤。真实第三方登录与首条模型请求、移动真机与读屏未测。最新远端已到 `2007f41`，交付前合入并重新全量验证；测试重建的无关代码索引已恢复。
+- 文件：`public/{model-manager.js,model-manager.css,model-auth.js}`、`src/{model-config.js,model-auth.js,protocol.js,server.js}`、`tests/model-{config,config-runtime,manager,auth,auth-ui}.test.js`、`tests/model-{auth-browser,selection-ui,settings-ui}.py`、`tests/model-selection-preview.mjs`、`README.md`、`docs/model-config-protocol.md`、本记录。
+
 ## 2026-10-02 工具摘要与底栏统计紧凑化
 
 - 时间：2026-10-02 20:30（本机 -07:00）。独立 `feat/compact-tool-status` 工作树基于最新 `origin/master 74a707d`，保留已合入的输入区底部操作栏与主 checkout 未跟踪资料。用户旧截图模型在框外，当前模型已移入框内，不回退上游布局。

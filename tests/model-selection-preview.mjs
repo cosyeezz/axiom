@@ -36,10 +36,14 @@ if (process.env.PREVIEW_MODEL_AUTH === "1") {
     { id: "openai-codex", name: "OpenAI Codex", methods: [{ type: "oauth", name: "ChatGPT" }] },
     { id: "openai", name: "OpenAI", methods: [{ type: "api_key", name: "API Key" }] },
     { id: "environment-only", name: "Environment only", methods: [] },
-  ].map((p) => ({ ...p, configured: configured.has(p.id) }));
+    { id: "github-copilot", name: "GitHub Copilot", methods: [{ type: "oauth" }] },
+  ].map((p) => ({ ...p, configured: configured.has(p.id), authSource: configured.has(p.id) ? "stored" : undefined }));
   factory.login = async (id, type, interaction) => {
     if (type === "oauth") {
-      await interaction.prompt({ type: "select", message: "登录方式", options: [
+      if (id === "github-copilot") {
+        const domain = await interaction.prompt({ type: "text", message: "GitHub Enterprise URL/domain (blank for github.com)" });
+        if (domain !== "") throw new Error("fixture expects native default domain");
+      } else await interaction.prompt({ type: "select", message: "登录方式", options: [
         { id: "browser", label: "Browser" }, { id: "device", label: "Device code" },
       ] });
       interaction.notify({ type: "device_code", verificationUri: "https://example.invalid/device", userCode: "TEST-CODE" });
@@ -59,7 +63,10 @@ storage.writeConfig({ providers: { preview: { api: "openai-completions", baseUrl
 const models = createModelsService({ factory, storage,
   discoverFetch: async () => new Response(JSON.stringify({ data: [{ id: "chosen-model", name: "Chosen model" }, { id: "untouched-model" }] })),
 });
-const app = createServerApp(sessions, { models });
+// Isolated limits fixture; auth browser covers the controls without touching the live gate.
+let limits = {};
+const usage = { view: async () => ({ limits }), configure: async (value) => { limits = value; return { limits }; } };
+const app = createServerApp(sessions, { models, usage });
 const port = Number(process.env.PREVIEW_PORT || 4337);
 app.server.listen(port, "127.0.0.1", () => console.log(`Model UI preview: http://127.0.0.1:${port}`));
 async function close() {

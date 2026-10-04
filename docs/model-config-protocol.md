@@ -2,11 +2,11 @@
 
 后端：worktree `src/`。WS 命令沿用现有封装：请求 `{ id, type, ... }`，响应
 `{ type: "response", id, ok: true, data }` 或 `{ ok: false, error }`（中文错误消息）。
-本文档是前后端唯一契约；前端模板（Ollama/OpenAI 兼容等常见预设）由前端自行处理。
+网页以 Pi 原生供应商、认证与目录为准，不维护厂商模板或显隐管理。旧细粒度写入/发现命令保留供兼容；当前网页使用 `models.provider.configure` 编辑 Pi 原生对象。
 
 ## 数据模型
 
-权威存储：Axiom SQLite 的 models/config（凭据 auth/<providerId>、收藏 models/favorites、隐藏清单 models/hidden）。**不双写**：SQLite 是唯一权威，models.compat.json 只是每次写库后全量重写的派生镜像（可随时删除重建，重启自动恢复）；旧 Pi models.json / auth.json 只读导入、绝不回写。
+权威存储：Axiom SQLite 的 models/config（凭据 auth/<providerId>、收藏 models/favorites；旧 models/hidden 只留存、不再消费）。**不双写**：SQLite 是唯一权威，models.compat.json 只是每次写库后全量重写的派生镜像（可随时删除重建，重启自动恢复）；旧 Pi models.json / auth.json 只读导入、绝不回写。
 
 **一次导入门闩**：仅当模型权威为空时才尝试导入 models.json / auth.json；无论文件存在与否，成功导入或确认无文件后都打迁移标记（`markMissing`），关闭迁移窗口——此后旧文件不再被读取，权威清空也不会复活导入；权威已存在时启动直接补打标记并清除陈旧导入告警。坏文件/坏结构只记录去重告警、不打标记，用户修复原文件后下次启动自动重试。收藏导入不走此门闩（仍按「权威为空才导入」幂等执行）。
 
@@ -60,7 +60,6 @@
     { "id": "anthropic", "name": "Anthropic", "configured": true, "usingOAuth": false, "authSource": "stored",
       "methods": [ { "type": "oauth", "name": "…" }, { "type": "api_key", "name": "…" } ] }
   ],
-  "hidden": [ "openai", "anthropic/claude-…" ],  // 内置目录隐藏清单（见 models.hidden.set）
   "providers": [               // SQLite 中的自定义/覆盖供应商，保持配置顺序；未知字段原样返回
     {
       "id": "my-provider",
@@ -74,13 +73,22 @@
       "…未知字段原样"
     }
   ],
-  "catalog": [ /* 全部模型定义（含未登录、已隐藏条目）：provider/id/name/key/levels/input/
+  "catalog": [ /* Pi 全部模型定义（含未登录条目）：provider/id/name/key/levels/input/
                    api/reasoning/contextWindow/maxTokens/thinkingLevelMap/cost；绝不返回 headers/apiKey */ ]
 }
 ```
 
-配置页可编辑范围 = `providers`（SQLite）+ 内置模型的逐字段覆盖（models.model.override）。
-`catalog` 供本页展示与编辑内置定义；`models.list` 才是按登录状态与隐藏清单过滤后的可选目录。
+配置页只读展示 `catalog`；`models.list` 为 SDK 提供的可用目录，不再按历史隐藏清单过滤。
+高级编辑器直接编辑 `providers` 中一个供应商对象（包括 Pi 原生 `models/modelOverrides`）。
+
+### models.provider.configure `{ providerId, provider, baseFingerprint }` → `{ fingerprint, applied, applyError? }`
+
+- 当前网页写入口：整供应商**替换**，不是合并；未发送字段被删除。Pi 内置定义继续由 SDK 解析，不改内置目录。
+- `provider` 使用 Pi 原生 provider JSON。模型能力和未知扩展字段不经另一套表单转换/剥离；最终由已安装 SDK schema 校验，校验不可用或失败不落库。
+- provider `apiKey`、provider/model/modelOverride `headers.*` 支持同位置 `{keep:true}`；缺省、null 或空 headers 按替换语义移除旧字段，不能用 keep 跨模型复制秘密。新增 `!command` 与非 http(s) baseUrl 拒绝。
+- 已有存储登录凭据/运行时覆盖时，拒绝会被覆盖的新自定义 API Key；保留/删除不隐式登出。
+- 沿用指纹检查和原文 CAS；草稿绑定开始编辑时的指纹，刷新不静默升级该指纹。成功后派生文件、目录刷新和广播沿用下述写入流程。
+- 旧 `provider.save/model.save/model.override` 等仍保持原合并语义，供兼容，不是当前页面入口。
 
 ### models.provider.save `{ providerId, provider, baseFingerprint }` → `{ fingerprint }`
 
@@ -158,28 +166,23 @@
   **未知 reasoning/上下文一律省略，不从名称猜测**
 - 错误脱敏：固定中文文案 + HTTP 状态码；**绝不包含请求头、密钥、上游响应体**（网络错误/超时/重定向/非 JSON/结构无法识别/响应体过大各有独立文案）
 
-### models.hidden.set `{ key, hidden }` → `{ hidden: [ … ] }`
+### 已移除：models.hidden.set
 
-内置目录可见性（Axiom 侧隐藏/恢复）：`key` 为供应商 id（整条）或 `provider/id`（单个模型），
-必须存在于当前目录（不写永久失效的垃圾条目）；清单存 SQLite `models/hidden`，上限 500。
-
-- 无 `baseFingerprint`（隐藏清单独立于 models.json，不做乐观锁）
-- 只影响 Axiom 的选取入口：`models.list`（模型选择器）与本页目录；Pi 运行时目录不动，
-  既有会话不受影响。存在同名自定义条目时供应商级隐藏不生效（用户已用覆盖接管该 id）
-- 返回全量清单；触发 `models.config.changed`
+协议拒绝此命令，配置 GET 不再返回 hidden，目录不再消费旧 models/hidden；旧数据不删除。
 
 ### 模型登录（models.auth.*，网页内完成订阅/凭据登录）
 
 登录流程由 SDK 驱动（授权 URL / 设备码 / 交互提问），凭据由 SDK 直接落 SQLite
 （auth/<providerId>）；桥接层不保存、不回传任何凭据。一个 WS 连接同一时刻一个流程，
 同供应商全局互斥（运行中不接受第二个登录，也不允许另一窗口登出）。
+支持原生 text/secret/select/manual_code；单步 prompt.signal 取消只结束该输入，整体 signal 才终止登录。WS 断开取消并移除所属流程，不支持跨连接恢复；网页刷新需重登。
 
 - `models.auth.list {}` → `{ providers }`（同 config.get 的 authProviders：id/name/methods/configured/usingOAuth/authSource）。SDK `ProviderAuth.apiKey` 映射为协议 `api_key`，只展示具有 login 实现的 `apiKey` / `oauth`。`configured` 与 `usingOAuth` 为本地凭据快照，不代表远端连接、订阅额度或模型权限已验证。
 - `models.auth.start { providerId, authType }` → `{ flowId, providerId, status, events, prompt? }`；
   `authType` ∈ `api_key | oauth`，须是该供应商声明的方式；流程总上限20分钟（不截短 SDK Codex 15分钟设备码期限）；未提交凭据时超时取消，保存后仅中止授权信号、等待目录收尾，不回滚凭据
-- `models.auth.status { flowId }` → 同上视图（前端 800ms 轮询）
+- `models.auth.status { flowId }` → 同上视图（前端 800ms 轮询，短暂失败最多重试三次，不重启登录）
 - `models.auth.respond { flowId, promptId, value }` → 同上；回答当前交互提问（select 选项校验，
-  文本 ≤8192）；prompt 已更新或流程非 running → 报错
+  文本 ≤8192，允许空字符串并交由 SDK/provider 校验，如 Copilot 默认域名）；prompt 已更新或流程非 running → 报错
 - `models.auth.cancel { flowId }` → 同上（中止授权；凭据已保存则等待目录收尾并返回真实 success/error，不误报未保存）
 - `models.auth.logout { providerId }` → `{ ok: true }`（删除凭据并刷新目录；该供应商登录进行中 → 拒绝）
 - 事件视图：`auth_url` / `device_code` / `info`；URL 只回传 https 或本机地址，文本截断到 2000 字
