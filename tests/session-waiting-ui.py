@@ -40,7 +40,10 @@ try:
                 expect(row).to_have_attribute('aria-label', '等待用户确认')
                 for theme, expected in [('dark', 'rgb(226, 185, 120)'), ('light', 'rgb(131, 88, 10)')]:
                     page.evaluate('(theme) => document.documentElement.dataset.theme = theme', theme)
+                    expect(state).to_be_visible()
                     expect(state).to_have_css('color', expected)
+                    point_display = state.evaluate('(e) => getComputedStyle(e, "::before").display')
+                    assert (point_display == 'none') == (width <= 700), (width, point_display)
                     expect(row).to_have_css('background-color', expected)
                     point = state.evaluate('(e) => getComputedStyle(e, "::before").backgroundColor')
                     assert point == expected, point

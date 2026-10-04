@@ -18,16 +18,28 @@ with sync_playwright() as p:
         page = browser.new_page(viewport={"width": width, "height": 780})
         page.set_content((root / "public/index.html").read_text(encoding="utf-8"))
         page.add_style_tag(content=(root / "public/style.css").read_text(encoding="utf-8"))
+        page.add_style_tag(content=(root / "public/composer-controls.css").read_text(encoding="utf-8"))
         page.evaluate('''() => {
             document.querySelector('.shell').classList.add('mobile-expanded');
             document.querySelector('#workspace').hidden = false;
             document.querySelector('#sidebar').remove();
-            document.querySelector('#add-context').style.cssText = 'position:fixed;left:24px;top:600px;z-index:100';
+            const add = document.querySelector('#add-context');
+            document.body.append(add); // Production moves this out of the hidden legacy context bar.
+            add.style.cssText = 'position:fixed;left:24px;top:600px;z-index:100';
+            if (innerWidth <= 1000) {
+                const compact = add.cloneNode(true);
+                compact.id = ''; compact.classList.add('composer-tools-trigger');
+                document.body.append(compact); add.hidden = true;
+            }
         }''')
         page.add_script_tag(content=handlers)
-        page.locator('#add-context').click()
+        trigger = page.locator('.composer-tools-trigger' if width <= 1000 else '#add-context')
+        trigger.click()
         original = page.locator('#context-menu').bounding_box()
         page.locator('[data-context="skill"]').hover()
+        if width <= 1000:
+            assert not page.locator('#context-picker').is_visible()
+            page.locator('[data-context="skill"]').click()
         page.wait_for_timeout(150)
         assert page.locator('#context-menu').bounding_box() == original
         assert page.locator('#context-menu').evaluate('(e)=>e.matches(":popover-open")')
@@ -56,10 +68,10 @@ with sync_playwright() as p:
         assert not page.locator('#context-picker').is_visible()
         page.keyboard.press('Escape')
         assert not page.locator('#context-menu').is_visible()
-        page.locator('#add-context').click()
+        trigger.click()
         assert not page.locator('#context-picker').is_visible()
         page.locator('[data-context="skill"]').click()
-        page.locator('#add-context').click()
+        trigger.click()
         assert not page.locator('#context-menu').is_visible()
         page.close()
     browser.close()

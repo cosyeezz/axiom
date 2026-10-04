@@ -109,6 +109,34 @@ try:
                 assert page.locator('#session-billing').get_attribute('open') is not None
                 page.locator('#session-detail-close').click()
                 page.screenshot(path=str(out / f'{theme}-{width}.png'))
+        # Flat menu remains scrollable in keyboard-height/landscape viewports; fixed Skill picker stays clickable.
+        for width, height in [(320, 360), (390, 420), (667, 375), (768, 420)]:
+            page.set_viewport_size({'width': width, 'height': height})
+            prompt.fill('多行草稿\n' * 30)
+            page.locator('.composer-tools-trigger').click()
+            menu = page.locator('#context-menu')
+            assert menu.evaluate('el => el.scrollHeight > el.clientHeight && ["auto", "scroll"].includes(getComputedStyle(el).overflowY)'), (width, height, 'short menu must scroll')
+            detail = page.locator('.composer-session-info')
+            detail.scroll_into_view_if_needed()
+            expect(detail).to_be_in_viewport()
+            detail.click()
+            expect(page.locator('#session-detail')).to_be_visible()
+            page.locator('#session-detail-close').click()
+            page.locator('.composer-tools-trigger').click()
+            page.locator('[data-context="skill"]').hover()
+            expect(page.locator('#context-picker')).not_to_be_visible()
+            page.locator('[data-context="skill"]').click()
+            search = page.locator('#context-search')
+            expect(search).to_be_focused()
+            search.fill('不存在的技能')
+            search.click()  # Native hit-testing must not be clipped by the scrolling menu.
+            picker = page.locator('#context-picker').bounding_box()
+            assert picker and picker['y'] >= 0 and picker['y'] + picker['height'] <= height, (width, height, picker)
+            page.screenshot(path=str(out / f'short-menu-skill-{width}-{height}.png'))
+            search.press('Escape')
+            expect(page.locator('[data-context="skill"]')).to_be_focused()
+            page.keyboard.press('Escape')
+            expect(page.locator('.composer-tools-trigger')).to_be_focused()
         # Large auxiliary content scrolls independently: no viewport-fixed overlays or hidden actions.
         for width, height in [(1440, 600), (768, 560), (390, 480), (320, 360)]:
             page.set_viewport_size({'width': width, 'height': height})
@@ -170,7 +198,7 @@ try:
         page.screenshot(path=str(out / 'running-320.png'))
         assert not errors, errors
         browser.close()
-    print('Compact composer Chromium checks passed (8 widths, 2 themes, menus, long text, billing, running, 4 short viewports with attachments/questions/completion)')
+    print('Compact composer Chromium checks passed (8 widths, 2 themes, menus, long text, billing, running, 4 short viewports with scrollable menu/Skill and attachments/questions/completion)')
 finally:
     server.terminate()
     server.wait(timeout=15)

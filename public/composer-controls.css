@@ -72,7 +72,7 @@
 @media (max-width:1000px) {
   #composer .composer-tools-trigger { display:grid; place-items:center; width:40px; height:40px; min-height:40px; padding:0; border:0; border-radius:8px; background:transparent; }
   #composer .composer-tools { display:none; }
-  #context-menu { width:216px; box-shadow:none; border-radius:8px; }
+  #context-menu { width:216px; box-shadow:none; border-radius:8px; overflow-y:auto; overscroll-behavior:contain; }
   #context-menu > button { min-height:44px; height:auto; font-size:14px; }
   #context-menu > .icon-button { justify-content:flex-start; }
   #context-menu > .icon-button > span { flex:1; }

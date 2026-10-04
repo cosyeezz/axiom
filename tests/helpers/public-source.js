@@ -5,8 +5,9 @@ import { readFile } from "node:fs/promises";
 export const publicSource = async (...names) =>
   (await Promise.all([...new Set(names.filter(name => name !== "goal-markers").flatMap(name => {
     const thinking = ["thinking", "choice-column", "thinking-picker"];
-    if (name === "app") return [...thinking, "transport", "session-cache", "session-details", "clipboard", "icons", "usage-audit", "composer-controls", "todo", "app"];
+    if (name === "app") return [...thinking, "transport-framing", "transport", "session-cache", "session-details", "clipboard", "icons", "usage-audit", "composer-controls", "todo", "app"];
     if (["thinking-picker", "service-settings"].includes(name)) return [...thinking, name];
+    if (name === "transport") return ["transport-framing", "transport"];
     if (name === "composer-controls") return [...thinking, "icons", name];
     if (name === "model-manager") return ["thinking", "icons", name];
     return ["file-picker", "model-picker", "question", "todo"].includes(name) ? ["icons", name] : [name];
