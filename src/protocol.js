@@ -198,6 +198,7 @@ export const command = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("session.fork"), sessionId: id, entryId: z.string().min(1).max(128) }).strict(),
   z.object({ id, type: z.literal("session.continue"), sessionId: id }).strict(),
 
+  z.object({ id, type: z.literal("connection.ping") }).strict(),
   z.object({ id, type: z.literal("service.status") }).strict(),
   z.object({ id, type: z.literal("service.update.check") }).strict(),
   z.object({ id, type: z.literal("service.restart"), mode: z.enum(["quick", "rebuild", "update"]), sha: z.string().regex(/^[0-9a-f]{40}$/i).optional(), repair: z.object({ provider: z.string().regex(/^[\w.-]{1,100}$/), model: z.string().regex(/^[\w./:@+-]{1,200}$/), thinking: thinking.unwrap() }).strict().optional() }).strict(),

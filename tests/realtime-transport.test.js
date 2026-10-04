@@ -2,13 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createTransport } from "../public/transport.js";
 import { createSender } from "../src/transport.js";
+import { CHUNK_PROTOCOL, CHUNK_BYTES, CHUNK_TYPE } from "../public/transport-framing.js";
 
 function rig(options = {}) {
   const sockets = [], timers = new Map(), logs = [];
   let tick = 0;
   class Socket {
     readyState = 0; bufferedAmount = 0; sent = [];
-    constructor() { sockets.push(this); }
+    constructor(url, protocols) { this.protocols = protocols; sockets.push(this); }
     open() { this.readyState = 1; this.onopen(); }
     send(raw) { this.sent.push(JSON.parse(raw)); }
     message(message) { this.onmessage({ data: JSON.stringify(message) }); }
@@ -263,6 +264,133 @@ test("duplicate snapshot failure counts once per connection and cannot revive it
   r.transport.failSnapshot(new Error("next mount"));
   assert.equal(r.transport.getConnectionState(), "limited"); assert.equal(r.timers.size, 0);
   await r.transport.resume(); assert.equal(r.sockets.length, 2); r.transport.dispose();
+});
+
+test("stable live period resets both recovery budgets; quick open/close loops remain bounded", async () => {
+  let now = 0;
+  const r = rig({ now: () => now, stableInterval: 60, maxRetries: 1, maxNetworkRetries: 2 });
+  await r.open(); r.transport.failSnapshot();
+  const retry = () => { const timer = [...r.timers.values()][0]; r.timers.clear(); timer.fn(); };
+  retry(); await flush(); r.sockets.at(-1).open(); await flush();
+  assert.equal(r.transport.getDiagnostics().protectionFailures, 1);
+  now = 61; // Time alone does not reset; valid input in this generation is required.
+  assert.equal(r.transport.getDiagnostics().failures, 1);
+  r.sockets.at(-1).message({ type: "event" });
+  assert.equal(r.transport.getDiagnostics().protectionFailures, 0);
+  assert.equal(r.transport.getDiagnostics().failures, 0);
+  r.transport.failSnapshot(); assert.equal(r.transport.getConnectionState(), "disconnected");
+  retry(); await flush(); r.sockets.at(-1).open(); await flush();
+  r.sockets.at(-1).onclose({ code: 1006 });
+  retry(); await flush(); r.sockets.at(-1).open(); await flush();
+  r.sockets.at(-1).onclose({ code: 1006 });
+  assert.equal(r.transport.getConnectionState(), "waiting"); assert.equal(r.timers.size, 0);
+  r.transport.dispose();
+});
+
+test("negotiated lightweight heartbeat tolerates active inbound traffic but not a silent peer", async () => {
+  const r = rig({ heartbeatTimeout: 77 }); const ws = await r.open(); ws.protocol = CHUNK_PROTOCOL;
+  assert.deepEqual(ws.protocols, [CHUNK_PROTOCOL, "axiom"]);
+  let probe = r.transport.resume(); await flush();
+  assert.equal(ws.sent.at(-1).type, "connection.ping");
+  ws.message({ type: "agent.delta", sessionId: "s" });
+  [...r.timers.values()].find(t => t.delay === 77).fn(); await probe;
+  assert.equal(r.transport.getConnectionState(), "open");
+  assert(r.logs.some(e => e.code === "heartbeat_delayed_active"));
+  probe = r.transport.resume(); await flush();
+  [...r.timers.values()].find(t => t.delay === 77).fn(); await probe;
+  assert.equal(r.transport.getConnectionState(), "disconnected"); r.transport.dispose();
+});
+
+test("heartbeat after a partial frame defers to the bounded chunk idle deadline", async () => {
+  const r = rig({ heartbeatTimeout: 77, chunkIdleTimeout: 90 }); const ws = await r.open(); ws.protocol = CHUNK_PROTOCOL;
+  ws.message({ type: CHUNK_TYPE, v: 1, id: "1", index: 0, totalBytes: CHUNK_BYTES + 1,
+    final: false, data: "x".repeat(CHUNK_BYTES) });
+  const probe = r.transport.resume(); await flush();
+  [...r.timers.values()].find(t => t.delay === 77).fn(); await probe;
+  assert.equal(r.transport.getConnectionState(), "open");
+  [...r.timers.values()].find(t => t.delay === 90).fn();
+  assert.equal(r.transport.getConnectionState(), "disconnected");
+  assert(r.logs.some(e => e.cause === "chunk_timeout")); r.transport.dispose();
+});
+
+test("partial frames keep restore alive but have independent idle/total deadlines and generation isolation", async () => {
+  let now = 0;
+  const r = rig({ now: () => now, chunkIdleTimeout: 90, chunkTotalTimeout: 150, initialize: () => new Promise(() => {}) });
+  const attempt = r.transport.connect(); const failed = assert.rejects(attempt, { code: "chunk_timeout" });
+  const ws = r.sockets[0]; ws.protocol = CHUNK_PROTOCOL; ws.open(); await flush();
+  const frame = { type: CHUNK_TYPE, v: 1, id: "1", index: 0, totalBytes: CHUNK_BYTES * 3 + 1,
+    final: false, data: "x".repeat(CHUNK_BYTES) };
+  ws.message(frame); assert([...r.timers.values()].some(t => t.delay === 90));
+  now = 80; ws.message({ ...frame, index: 1 });
+  const deadline = [...r.timers.values()].find(t => t.delay === 70); assert(deadline);
+  now = 150; deadline.fn(); await failed;
+  assert.equal(r.transport.getConnectionState(), "disconnected");
+  ws.message({ ...frame, index: 2 }); assert.equal(r.transport.getConnectionState(), "disconnected");
+  r.transport.dispose(); assert.equal(r.timers.size, 0);
+});
+
+test("stale attach error/response cannot release or recreate the current snapshot gate", async () => {
+  const r = rig(); const ws = await r.open();
+  const first = r.transport.request({ type: "session.attach", sessionId: "a" });
+  const failed = assert.rejects(first, { code: "response_error" }); await flush(); const a = ws.sent.at(-1).id;
+  const second = r.transport.request({ type: "session.attach", sessionId: "b" }); await flush(); const b = ws.sent.at(-1).id;
+  ws.message({ type: "response", id: a, ok: false, error: "old" }); await failed;
+  assert.notEqual(r.transport.getSnapshotQueue(), null);
+  ws.message({ type: "response", id: b, ok: true, data: { sessionId: "b", seq: 1 } });
+  r.transport.commitSnapshot(await second); assert.equal(r.transport.getSnapshotQueue(), null);
+  const old = r.transport.request({ type: "session.attach", sessionId: "a" }); await flush(); const oldId = ws.sent.at(-1).id;
+  const next = r.transport.request({ type: "session.attach", sessionId: "b" }); await flush();
+  ws.message({ type: "response", id: ws.sent.at(-1).id, ok: true, data: { sessionId: "b", seq: 2 } });
+  r.transport.commitSnapshot(await next);
+  ws.message({ type: "response", id: oldId, ok: true, data: { sessionId: "a" } }); await old;
+  assert.equal(r.transport.getSnapshotQueue(), null); r.transport.dispose();
+});
+
+for (const type of ["session.attach", "session.create", "session.import", "session.duplicate"]) {
+  test(`${type} owns the snapshot gate; late previous attach cannot hold new events`, async t => {
+    const seen = [], r = rig({ reduce: event => seen.push(event.seq) });
+    t.after(() => r.transport.dispose()); const ws = await r.open();
+    const old = r.transport.request({ type: "session.attach", sessionId: "a" });
+    await flush(); const a = ws.sent.at(-1).id;
+    const next = r.transport.request({ type, sessionId: "b" });
+    await flush(); const b = ws.sent.at(-1).id;
+    ws.message({ type: "response", id: b, ok: true, data: { sessionId: "b", seq: 1 } });
+    ws.message({ type: "agent.delta", sessionId: "b", seq: 2 });
+    assert.deepEqual(seen, []);
+    r.transport.commitSnapshot(await next);
+    ws.message({ type: "response", id: a, ok: true, data: { sessionId: "a", seq: 0 } }); await old;
+    ws.message({ type: "agent.end", sessionId: "b", seq: 3 });
+    assert.equal(r.transport.getSnapshotQueue(), null);
+    assert.deepEqual(seen, [2, 3]);
+  });
+}
+
+test("committing a snapshot retires its pending owner; duplicate failure releases buffered events", async t => {
+  const seen = [], r = rig({ reduce: event => seen.push(event.seq) });
+  t.after(() => r.transport.dispose()); const ws = await r.open();
+  const old = r.transport.request({ type: "session.attach", sessionId: "a" }); await flush();
+  const a = ws.sent.at(-1).id;
+  r.transport.commitSnapshot({ sessionId: "b", seq: 1 });
+  ws.message({ type: "response", id: a, ok: true, data: { sessionId: "a" } }); await old;
+  assert.equal(r.transport.getSnapshotQueue(), null);
+  const copy = r.transport.request({ type: "session.duplicate", sessionId: "b" });
+  const failed = assert.rejects(copy, { code: "response_error" }); await flush();
+  ws.message({ type: "agent.delta", sessionId: "b", seq: 2 });
+  assert.deepEqual(seen, []);
+  ws.message({ type: "response", id: ws.sent.at(-1).id, ok: false, error: "cannot copy" }); await failed;
+  assert.equal(r.transport.getSnapshotQueue(), null); assert.deepEqual(seen, [2]);
+  assert.equal(r.transport.getConnectionState(), "open");
+});
+
+test("diagnostics correlate timestamps, generation and opaque connection ID without secrets", async () => {
+  const r = rig({ now: () => 1234 }); const ws = await r.open();
+  const request = r.transport.request({ type: "service.status" }); await flush();
+  const connectionId = "12345678-1234-1234-1234-123456789abc";
+  ws.message({ type: "response", id: ws.sent.at(-1).id, ok: true, data: { connectionId, secret: "private-token" } }); await request;
+  ws.onclose({ code: 1006, wasClean: false, reason: "private-reason" });
+  const log = r.logs.find(e => e.code === "socket_closed");
+  assert.equal(log.connectionId, connectionId); assert.equal(log.at, 1234); assert.equal(log.closeCode, 1006);
+  assert.doesNotMatch(JSON.stringify(r.logs), /private-token|private-reason/); r.transport.dispose();
 });
 
 test("oversize close stops automatic snapshot download loop", async () => {

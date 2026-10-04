@@ -92,6 +92,7 @@ const views = createSessionCache();
 // 会话历史一次全量挂载：attach 即完整历史（被压缩折叠的那段由摘要卡按需取）。
 // attachToken 让在飞的 attach 回包失效（切会话/重复请求），hiddenDirty 记「后台期间有新消息」。
 let attachToken = 0, attaching = false, hiddenDirty = false;
+let connectionRevision = 0, switchRevision = 0;
 $('goal-enter').onclick = async () => {
   if (!connected || !sessionId) return;
   const targetSession = sessionId;
@@ -1146,14 +1147,17 @@ function normalizeBackendAddress(raw) {
   const text = String(raw || "").trim();
   if (!text) return null;
   let url;
-  try { url = new URL(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(text) ? text : `http://${text}`); }
+  const full = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(text);
+  const authority = (full ? text.slice(text.indexOf("://") + 3) : text).split(/[/?#]/)[0];
+  if (/[\\\s]/.test(authority) || authority.endsWith(":")) return null;
+  try { url = new URL(full ? text : `http://${text}`); }
   catch { return null; }
   if ((url.protocol !== "http:" && url.protocol !== "https:")
     || !url.hostname || url.username || url.password) return null;
-  const port = url.port ? Number(url.port) : 4319;
-  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
-  const hostPart = url.port ? url.host : `${url.host}:${port}`;
-  return `${url.protocol}//${hostPart}`;
+  // URL removes explicit :80/:443. Detect omission before normalization, including IPv6.
+  if (!full && !/:\d+$/.test(authority)) url.port = "4319";
+  if (url.port && (Number(url.port) < 1 || Number(url.port) > 65535)) return null;
+  return url.origin;
 }
 function openConnectionPanel() {
   $("connection-form").hidden = nativeConnection;
@@ -3134,7 +3138,7 @@ async function reattach({ keepView = false } = {}) {
     const view = views.get(target);
     if (view && !keepView) { view.follow = true; view.anchor = undefined; }
     await snapshot(state);
-  } catch (e) { if (target === sessionId) { transport.failSnapshot(e); error(e); } }
+  } catch (e) { if (token === attachToken && target === sessionId) { transport.failSnapshot(e); error(e); } }
   finally {
     if (token === attachToken) attaching = false;
     if (connected && hiddenDirty && !document.hidden) queueMicrotask(() => reattach({ keepView: !follow }));
@@ -3480,6 +3484,8 @@ const transport = createTransport({
       connected = false;
     } else if (["disconnected", "closed", "recovering", "limited", "waiting"].includes(state)) {
       configureSeq++;
+      ++connectionRevision; ++switchRevision; ++attachToken;
+      attaching = changing = false;
       connected = false;
       for (const id of new Set(["main", ...tasks.keys(), ...waitingItems.keys()])) stopActivity(id, "连接断开，等待恢复");
       if (!$("workspace").hidden) saveView();
@@ -4047,7 +4053,8 @@ $("prompt").onkeydown = (e) => {
 let escapeTimer, withdrawing, recallArmedUntil = 0;
 async function withdrawQueue(recall = false) {
   if (withdrawing || imageLoading() || !connected || changing) return;
-  const target = sessionId;
+  const target = sessionId, connection = connectionRevision, revision = switchRevision;
+  const current = () => connection === connectionRevision && revision === switchRevision;
   withdrawing = true;
   try {
     const queue = await request("queue.withdraw", { sessionId: target, ...(recall ? { recall: true } : {}) });
@@ -4066,11 +4073,11 @@ async function withdrawQueue(recall = false) {
     const restored = queuedImages.flat().filter(Boolean);
     if (!text && !restored.length) return;
     // 上下文里的输入被撤回后，叶子已回退：重新取快照重绘消息区（saveView 先保住当前草稿与附件）。
-    if (recalled.length && sessionId === target && !changing) {
+    if (recalled.length && current() && sessionId === target && !changing) {
       saveView();
       const state = await request("session.attach", { sessionId: target });
-      if (sessionId === target && !changing && connected) await snapshot(state);
-      else queueMicrotask(() => transport.failSnapshot());
+      if (current() && sessionId === target && !changing && connected) snapshot(state);
+      // A later switch/reconnect owns its own gate. Obsolete success must not tear it down.
     }
     if (sessionId === target && !changing) {
       $("prompt").value = [$("prompt").value, text].filter(Boolean).join("\n\n");
@@ -4082,7 +4089,7 @@ async function withdrawQueue(recall = false) {
       view.images = [...(view.images || []), ...restored];
       views.set(target, view);
     }
-  } catch (e) { error(e); }
+  } catch (e) { if (current() && sessionId === target) error(e); }
   finally { withdrawing = false; }
 }
 document.addEventListener("click", (e) => {
@@ -4342,13 +4349,17 @@ async function recoverMissingSession() {
 async function switchSession(action) {
   if (changing || !connected) return;
   saveView();
+  const revision = ++switchRevision, connection = connectionRevision;
+  const current = () => revision === switchRevision && connection === connectionRevision;
+  ++attachToken; attaching = false;
   changing = true;
   $("error").textContent = "";
   updateAvailability();
   try {
     const state = await action();
+    if (!current()) return;
     if (sessionMissing) views.set(state.sessionId, { draft: $("prompt").value, contextFiles: [...contextFiles], images: [...images], selectedSkill, follow: true, scroll: 0 });
-    await snapshot(state);
+    snapshot(state);
     // 乐观插入：新建的会话立刻出现在侧栏，不等 sessions.list 回执（下一次刷新会用服务端数据校正）。
     insertSessionRow(state);
     renderSessions();
@@ -4357,10 +4368,9 @@ async function switchSession(action) {
     // 放后台跑；UI 在快照渲染完就恢复可交互，不再多等一个往返。
     void refreshSessions({ force: true }).catch(error);
   } catch (e) {
-    error(e);
+    if (current()) error(e);
   } finally {
-    changing = false;
-    updateAvailability();
+    if (current()) { changing = false; updateAvailability(); }
   }
 }
 // 保留源路径的分隔符，兼容 Windows、UNC 和 POSIX 文件路径。

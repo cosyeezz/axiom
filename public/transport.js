@@ -1,7 +1,10 @@
+import { CHUNK_PROTOCOL, FRAME_BYTES, createChunkReceiver } from "./transport-framing.js";
+
 // One owner for the native business socket. No command replay, no event reordering.
 // 大命令序列化（D4）：估算超阈值的 stringify 移入后台 Worker，主线程只付结构化克隆成本；
 // 无 Worker 环境（旧浏览器/测试）自动退化同步路径。发送顺序由 queueTail 链保证，与同步路径一致。
 const SERIALIZE_THRESHOLD = 1 << 20;
+const SNAPSHOT_COMMANDS = new Set(["session.attach", "session.create", "session.import", "session.duplicate"]);
 const WORKER_SOURCE = 'self.onmessage = ({ data }) => {' +
   'const raw = JSON.stringify(data.command);' +
   "self.postMessage({ key: data.key, raw, bytes: new TextEncoder().encode(raw).length });" +
@@ -24,11 +27,14 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
   maxEvents = 10000, maxRetries = 5, Serializer = globalThis.Worker,
   serializeTimeout = 10000, connectTimeout = 15000, restoreTimeout = 120000,
   heartbeatInterval = 25000, heartbeatTimeout = 10000,
-  maxNetworkRetries = 8, resumeCooldown = 30000 } = {}) {
+  maxNetworkRetries = 8, resumeCooldown = 30000, stableInterval = 60000,
+  chunkIdleTimeout = 30000, chunkTotalTimeout = 120000, maxQueuedBytes = 128 * 1024 * 1024 } = {}) {
   let socket, opening, disposed = false, state = "closed", timer, failures = 0, id = 0;
-  let generation = 0, epoch, gate = null, queuedBytes = 0, oldest = 0;
+  let generation = 0, epoch, gate = null, queuedBytes = 0, oldest = 0, snapshotRequest;
   let endConnection, handshakeTimer, heartbeatTimer, restoreTimer, healthCheck, protectionFailures = 0;
-  let lastResume = -Infinity;
+  let lastResume = -Infinity, openedAt = null, lastReceive = null, lastSend = null, lastResponse = null;
+  let receiveSerial = 0, stable = false, frameTimer, frameStarted = null, connectionId = null;
+  const receiver = createChunkReceiver();
   // 发送序链（D4）：入队后统一序列化/发送，与同步路径保同等顺序。
   let queueTail = Promise.resolve();
   let serializer, serializerUrl, serialKey = 0, serializerDisabled = false;
@@ -89,10 +95,14 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
     catch { throw failure("serialize_failed", "消息序列化失败，尚未发送；请检查输入后重试"); }
   }
   const pending = new Map(), listeners = new Set(), watermarks = new Map();
-  const diagnostic = (code) => {
-    // Never include payloads, exception messages, request bodies or credentials.
-    try { report({ code, state, pending: pending.size, queued: gate?.length || 0,
-      queuedBytes, oldestMs: oldest ? now() - oldest : 0, bufferedAmount: socket?.bufferedAmount || 0 }); }
+  const diagnostic = (code, fields = {}) => {
+    // Only locally constructed whitelist fields; never payloads, reason text, IDs or credentials.
+    const age = value => value == null ? null : Math.max(0, now() - value);
+    try { report({ code, at: now(), generation, connectionId, state, failures, protectionFailures,
+      pending: pending.size, queued: gate?.length || 0, queuedBytes,
+      oldestMs: oldest ? now() - oldest : 0, bufferedAmount: socket?.bufferedAmount || 0,
+      receiveAgeMs: age(lastReceive), sendAgeMs: age(lastSend), responseAgeMs: age(lastResponse),
+      openMs: age(openedAt), protocol: socket?.protocol === CHUNK_PROTOCOL ? CHUNK_PROTOCOL : "axiom", ...fields }); }
     catch { console.warn("[transport] diagnostic callback failed"); }
   };
   const notify = (listener, message, context) => {
@@ -101,7 +111,7 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
   };
   const status = (value) => { state = value; notify(onState, value); };
   const failure = (code, message, unknown = false) => Object.assign(new Error(message), { code, unknown });
-  const clearGate = () => { gate = null; queuedBytes = 0; oldest = 0; };
+  const clearGate = () => { gate = null; queuedBytes = 0; oldest = 0; snapshotRequest = undefined; };
   const settle = (key, error, data) => {
     const entry = pending.get(key);
     if (!entry) return;
@@ -110,7 +120,7 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
     entry.cancelSerialize?.();
     entry.signal?.removeEventListener("abort", entry.abort);
     error ? entry.reject(error) : entry.resolve(data);
-    if (error && gate && ["session.attach", "session.create", "session.import"].includes(entry.command)) {
+    if (error && gate && key === snapshotRequest && SNAPSHOT_COMMANDS.has(entry.command)) {
       if (error.code === "response_error") {
         const queued = gate;
         clearGate();
@@ -153,7 +163,7 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
     try {
       if (gate && message.sessionId) {
         const bytes = new Blob([JSON.stringify(message)]).size;
-        if (gate.length >= maxEvents || queuedBytes + bytes > maxBytes) return recover("receive_limit");
+        if (gate.length >= maxEvents || queuedBytes + bytes > maxQueuedBytes) return recover("receive_limit");
         if (!gate.length) oldest = now();
         queuedBytes += bytes;
         gate.push(message);
@@ -184,7 +194,9 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
     if (pending.size >= maxPending) return Promise.reject(failure("pending_limit", "等待中的请求过多"));
     const key = String(++id);
     // Buffer before sending attach; do not lose events emitted while the snapshot loads.
-    if (["session.attach", "session.create", "session.import"].includes(command.type)) beginSnapshot();
+    if (SNAPSHOT_COMMANDS.has(command.type)) {
+      snapshotRequest = key; beginSnapshot();
+    }
     return new Promise((resolve, reject) => {
       const abort = () => settle(key, failure("aborted", entry.sent
         ? "已取消本地等待，服务端操作可能仍在执行" : "已取消，消息尚未发送", entry.sent));
@@ -205,7 +217,7 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
           if ((socket.bufferedAmount || 0) + size > maxBytes)
             throw failure("send_limit", "发送缓冲超限，请稍后重试");
           entry.sent = true;
-          try { socket.send(serialized.raw); }
+          try { socket.send(serialized.raw); lastSend = now(); }
           catch { throw failure("send_failed", "发送失败，请求结果未知", true); }
         });
       queueTail = sent.catch(() => {});
@@ -213,8 +225,9 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
     });
   }
   function clearConnectionTimers() {
-    clearTimer(handshakeTimer); clearTimer(heartbeatTimer); clearTimer(restoreTimer);
-    handshakeTimer = heartbeatTimer = restoreTimer = undefined;
+    clearTimer(handshakeTimer); clearTimer(heartbeatTimer); clearTimer(restoreTimer); clearTimer(frameTimer);
+    handshakeTimer = heartbeatTimer = restoreTimer = frameTimer = undefined;
+    frameStarted = null; receiver.clear();
     healthCheck = undefined;
   }
   function restoreProgress() {
@@ -230,14 +243,22 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
     if (disposed || state !== "open") return Promise.resolve();
     if (healthCheck) return healthCheck;
     clearTimer(heartbeatTimer); heartbeatTimer = undefined;
-    const current = generation;
-    // Existing read-only command: compatible with older servers, never replay business requests.
-    const probe = request({ type: "service.status" }, { timeoutMs: heartbeatTimeout })
+    const current = generation, received = receiveSerial;
+    // The negotiated protocol also guarantees the lightweight, authenticated ping command.
+    const probe = request({ type: socket?.protocol === CHUNK_PROTOCOL ? "connection.ping" : "service.status" }, { timeoutMs: heartbeatTimeout })
+      .then(data => {
+        if (current === generation && typeof data?.connectionId === "string" && /^[a-f0-9-]{36}$/.test(data.connectionId))
+          connectionId = data.connectionId;
+      })
       .catch(error => {
         if (current !== generation || disposed) return;
         // An error response still proves the bidirectional connection is alive.
         // Local backpressure is not evidence of a dead peer: the probe never left this client.
         if (error.code === "timeout" && !error.unknown) return;
+        // A FIFO ping may sit behind a partial message; its own idle/total deadline owns liveness.
+        if (error.code === "timeout" && (receiveSerial !== received || receiver.pending)) {
+          diagnostic("heartbeat_delayed_active"); return;
+        }
         if (!["response_error", "pending_limit", "send_limit"].includes(error.code))
           endConnection?.(failure("heartbeat_timeout", "连接无响应，正在恢复"));
       }).finally(() => {
@@ -254,12 +275,17 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
     if (!retry) { failures = 0; protectionFailures = 0; lastResume = -Infinity; }
     clearTimer(timer); timer = undefined;
     const current = ++generation;
+    openedAt = lastReceive = lastSend = lastResponse = null;
+    receiveSerial = 0; stable = false; connectionId = null;
     status("connecting");
     let ws, rejectLifetime;
     const lifetime = new Promise((_, reject) => { rejectLifetime = reject; });
     const isCurrent = () => current === generation && !disposed;
     const end = (error, { normal = false, limited = false } = {}) => {
       if (!isCurrent()) return;
+      diagnostic("connection_ended", { cause: ["disconnected", "connect_timeout", "connect_failed", "restore_timeout",
+        "heartbeat_timeout", "snapshot_timeout", "chunk_timeout", "disposed", "invalid_message", "receive_limit",
+        "merge_failed", "snapshot_failed", "snapshot_request_failed"].includes(error?.code) ? error.code : "restore_failed" });
       ++generation; // Invalidate even when close() never produces an event.
       socket = undefined; opening = undefined; endConnection = undefined;
       clearConnectionTimers();
@@ -272,7 +298,7 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
     };
     endConnection = end;
     const run = (async () => {
-      ws = socket = new Socket(typeof url === "function" ? url() : url, ["axiom"]);
+      ws = socket = new Socket(typeof url === "function" ? url() : url, [CHUNK_PROTOCOL, "axiom"]);
       await new Promise(resolve => {
         handshakeTimer = setTimer(() => end(failure("connect_timeout", "连接超时，正在重试")), connectTimeout);
         ws.onopen = () => {
@@ -283,25 +309,52 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
         ws.onmessage = ({ data }) => {
           if (!isCurrent() || socket !== ws) return;
           try {
-            const message = JSON.parse(data);
+            if (ws.protocol === CHUNK_PROTOCOL && (typeof data !== "string" || data.length > FRAME_BYTES || new Blob([data]).size > FRAME_BYTES))
+              throw new Error("frame too large");
+            if (frameStarted != null && now() - frameStarted >= chunkTotalTimeout) {
+              end(failure("chunk_timeout", "消息传输超过总期限")); return;
+            }
+            const message = receiver.accept(JSON.parse(data), ws.protocol === CHUNK_PROTOCOL);
+            if (message?.type === "response" && (typeof message.id !== "string" || typeof message.ok !== "boolean"))
+              throw new Error("invalid response");
+            lastReceive = now(); receiveSerial++;
+            if (state === "open" && !stable && now() - openedAt >= stableInterval) {
+              stable = true; failures = protectionFailures = 0; diagnostic("connection_stable");
+            }
+            if (state === "restoring") restoreProgress();
+            clearTimer(frameTimer); frameTimer = undefined;
+            if (receiver.pending) {
+              frameStarted ??= now();
+              frameTimer = setTimer(() => end(failure("chunk_timeout", "消息传输长时间无进展或超过总期限")),
+                Math.min(chunkIdleTimeout, Math.max(0, chunkTotalTimeout - (now() - frameStarted))));
+            } else frameStarted = null;
+            if (!message) return;
             if (message.type === "response") {
               const entry = pending.get(message.id);
               if (!entry) return;
-              if (state === "restoring") restoreProgress();
-              if (message.ok && ["session.attach", "session.create", "session.import"].includes(entry.command)) beginSnapshot();
+              lastResponse = now();
+              if (message.ok && ["service.status", "connection.ping"].includes(entry.command) &&
+                  typeof message.data?.connectionId === "string" && /^[a-f0-9-]{36}$/.test(message.data.connectionId)) {
+                connectionId = message.data.connectionId; diagnostic("connection_identified");
+              }
+              if (message.ok && message.id === snapshotRequest && SNAPSHOT_COMMANDS.has(entry.command)) beginSnapshot();
               settle(message.id, message.ok ? null : failure("response_error", message.error), message.data);
             } else receive(message);
           } catch { recover("invalid_message"); }
         };
-        ws.onclose = (event = {}) => end(failure("disconnected", "连接断开"), { normal: event.code === 1000, limited: event.code === 1009 });
+        ws.onclose = (event = {}) => {
+          if (!isCurrent()) return;
+          diagnostic("socket_closed", { closeCode: Number.isInteger(event.code) ? event.code : 0, wasClean: event.wasClean === true });
+          end(failure("disconnected", "连接断开"), { normal: event.code === 1000, limited: event.code === 1009 });
+        };
       });
       if (!isCurrent()) return;
       status("restoring"); restoreProgress();
       await initialize({ isCurrent: () => isCurrent() && socket?.readyState === 1 });
       if (!isCurrent() || !socket) return;
       clearTimer(restoreTimer); restoreTimer = undefined;
-      failures = 0;
-      status("open"); scheduleHeartbeat();
+      openedAt = now();
+      status("open"); diagnostic("connection_open"); scheduleHeartbeat();
     })();
     const attempt = Promise.race([run, lifetime]).catch(error => {
       if (isCurrent()) { diagnostic("restore_failed"); end(error); }
@@ -333,7 +386,8 @@ export function createTransport({ url, WebSocket: Socket = globalThis.WebSocket,
     connect, resume, request, receive, beginSnapshot, commitSnapshot,
     failSnapshot: (cause) => recover("snapshot_failed", cause),
     getConnectionState: () => state,
-    getDiagnostics: () => ({ state, pending: pending.size, queued: gate?.length || 0, queuedBytes, failures }),
+    getDiagnostics: () => ({ state, pending: pending.size, queued: gate?.length || 0, queuedBytes, failures, protectionFailures, generation,
+      protocol: socket?.protocol === CHUNK_PROTOCOL ? CHUNK_PROTOCOL : "axiom" }),
     getSnapshotQueue: () => gate,
     getWatermark: (sessionId) => watermarks.get(sessionId),
     subscribe(type, filter, listener) {

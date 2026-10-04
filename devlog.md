@@ -8,7 +8,28 @@
 - 审查修复：独立只读审查指出工作空间“＋”禁用状态更新遗漏、短屏搜索位置恢复、搜索后同名路径丢失；均补修并加回归。短屏复测用原生事件日志确认 beforeinput→input 间浏览器为sticky光标自动滚动（600→562），改为编辑前捕获与preventScroll，未采用无效的overflow-anchor修补。布局合成数据隔离5秒后台刷新，避免mock被服务端列表替换的偶发失败；不屏蔽生产轮询。
 - 初轮验证：定向38项全过；同步等待确认版本后隔离串行全量1091项，1088通过、3跳过、0失败（331.4秒）。Node已结束，外层Python打印末尾Unicode符号触发GBK编码错误，直接核对完整日志确认测试结果，后续打印改UTF-8。Chromium六视口双主题、0/1/50/500当前工作空间会话、重复目录、折叠轨道、键盘/搜索滚动、触控和320×256边界通过；focus-ui五视口双主题、等待确认三视口双主题与实时转换通过。未测读屏／实体触屏IME／Firefox/WebKit／桌面壳，不宣称整站WCAG合规或性能SLA。
 - 集成：同步最新 `591e7d0` 后依README规则升级 `package.json`／锁文件至 `0.1.13`（依赖不变），最终隔离串行全量1058项：1055通过、3跳过、0失败（334.8秒，`integrated-full-test.log`，Node退出码0）；总数减少来自上游模型配置测试精简，非跳过侧栏用例。六视口双主题整合侧栏、五视口focus-ui、三视口等待确认回归全部重新通过。跳过项仍为POSIX权限、可选真实MCP适配器和不支持平台reveal。测试仅隔离数据与mock预览，未调用模型、访问用户历史或重启在用服务；证据 `F:/worktrees/sidebar-layout-evidence/`。语法／版本一致性／差异检查与 `npm pack --dry-run`（345文件）通过；测试重建的无关INDEX已恢复，主checkout未跟踪清单前后比对一致。原生JS项目无独立生产构建脚本，不冒称执行了不存在的构建。
+- 最终交叉集成：侧栏提交 `93a3340` 推送后，上游新增 `cc5df4e` 连接恢复修复并使用0.1.13；在工作分支合入并保留双方devlog，版本顺延0.1.14（依赖不变）。重新隔离串行全量1088项：1085通过、3跳过、0失败，330.1秒（`merge-cc5-full-test.log`，退出码0）；六视口双主题侧栏、五视口focus-ui、三视口等待确认与实时转换均重新通过（`merge-cc5-*`证据）。定向独立只读审查核对操作可用性、切换/重连代次、搜索滚动保存，无阻断项；真实transport断线与搜索/按钮的组合、IME取消输入未新增专门回归，不扩大测试结论。语法、版本与锁定依赖一致性、打包预检通过；测试生成的INDEX漂移恢复为合入的上游版本，保留上游索引改进。不重启在用服务、不刷新用户页面。
 - 文件：`public/{app.js,index.html,style.css}`、`tests/{app.test.js,sidebar-controls.test.js,session-sidebar-ui.py,sidebar-layout-ui.py}`、`README.md`、`docs/sidebar-layout-research.md`、`package.json`／`package-lock.json`、本记录。
+
+## 2026-10-03 连接修复最终竞态复核与集成交付
+
+- 时间：2026-10-03 22:05（本机 -07:00）。继续在 `feat/connection-resilience` 独立工作树完成一级修复目标；合入模型设置 `591e7d0`（含 `70a21b3`），devlog 保留双方记录。远端已使用0.1.12，本次发布升为0.1.13，package/lock同步、依赖不变。
+- 复核修正：`public/transport.js` 四种快照命令统一所有权（补duplicate），提交/清闸注销旧owner；`public/app.js` 忽略旧召回attach失败；`desktop/connector/index.html` 编辑/提交地址作废旧probe，防止旧端口自动导航或覆盖新提示。仅行为修复，沿用现有Linear样式/token。
+- 回归：新增测试先复现旧实现失败，再修复；三文件定向42/42通过（随后补B仍等待失败和旧手动probe失败两项）。JSDOM夹具修正为完成登录且返回有效会话列表，避免列表空集触发无关自动新建。独立只读复核无阻断项，剩余限制为transport提交仍依赖app身份守卫、未做真实WebView休眠/切网与部署端口实测。
+- 依赖：独立 `npm ci --include=dev` 成功；npm audit报告4项既有依赖告警（2高/1中/1低），锁定依赖未在本任务升级，未执行audit fix或跨主版本SDK更新。证据在 `F:/worktrees/connection-resilience-evidence/audit-final.json`。
+- 最终验证：合入`591e7d0`后0.1.13隔离串行全量1087项，1084通过/3跳过/0失败，320.8秒（`full-0.1.13-serial.log`）；此前一次并行全量同样通过。测试总数变化来自上游原生模型设置简化，非跳过测试。专项59/59含真实ws 34/66MiB、兼容/边界/FIFO、恢复/心跳/地址/竞态；三项跳过为POSIX权限、可选真实MCP adapter、不支持平台reveal。Chromium模型设置认证8组双主题/视口和等待确认3视口双主题回归通过。语法、差异、版本/锁文件一致性、npm pack dry-run（347文件，包含分块模块）通过；原生ESM无独立build。索引重建341文件、0未登记。完整证据保存在`F:/worktrees/connection-resilience-evidence/`。
+- 文件：上述三份实现、`tests/{realtime-transport,snapshot-switch,connection-address}.test.js`、README、devlog、package/lock、codebase-map知识及重建索引。交付前再次fetch确认远端仍`591e7d0`；按项目授权推送工作分支、同步并合并master，再推送成功后清理本任务worktree，保留主checkout原有未跟踪资料。不重启4319/4320、不刷新真实页面；生效仍需维护窗口更新重启各端口并保存草稿后手动刷新。
+
+## 2026-10-03 大消息传输与连接恢复修复
+
+- 时间：2026-10-03 21:05（本机 -07:00）。独立 `feat/connection-resilience` 工作树基于最新 `origin/master 0a4d86a`；不改主 checkout 未跟踪文件，不重启现有4319/4320服务、不刷新用户页面。
+- 原因：现场29条34–66MB message_limit/5条send_failed；1009停止恢复、保护计数跨稳定连接累加、service.status心跳受维护IO拖慢且忽略入站活性。多端口没有踢旧连接机制，端口实际脚本版本不一致需另行升级核验。
+- 实施：协商 `axiom.chunk.v1`，服务端UTF-8安全64KiB分块/512KiB帧、128MiB逻辑消息、每连接256MiB/4096条FIFO与背压；浏览器严格有界组装、30秒空闲/120秒总期限，输入仍32MiB，不重放副作用请求。60秒稳定期加活性证据重置两类预算；轻量ping保留鉴权/维护锁例外，旧服务兼容status。连接ID/时间/关闭码诊断不记录正文凭证；标准80/443、完整URL默认端口及4319/4320隔离解析修复，过期attach/switch不误伤新连接。
+- 复核：只读独立审查发现新ESM静态路由遗漏及分块中10秒心跳提前判死，均修正并新增回归。真实ws单消息34/66MiB、转义/中文/emoji、FIFO事件与末尾ping已通过；新旧协议维持兼容，容量/请求/慢链路仍有有限边界，不宣称整个应用内存有界。
+- 验证：独立npm ci成功；首次非隔离全量受宿主skills污染，改用F:/worktrees内隔离HOME/USERPROFILE/TEMP/TMP/TMPDIR/PI_CODING_AGENT_DIR/AXIOM_HOME串行，基线1085项（1082通过、3跳过、0失败）。定向44项通过；首轮全量发现召回旧attach主动failSnapshot误伤新切换，增加视图/连接代次并移除过期成功的主动断线，保留召回草稿后17项切换/恢复通过。修正后全量1104项（1101通过、3跳过、0失败，338秒）；JS语法、git diff --check与npm pack --dry-run通过，345文件含新模块。远端随后新增cdb4092迁移修复，集成后结果另记。
+- 集成验证：合入最新`origin/master cdb4092`，devlog冲突保留双方完整记录；隔离串行全量1105项（1102通过、3跳过、0失败，348秒）。跳过项为POSIX权限、可选真实MCP适配器、不支持平台reveal；真实ws新旧协议与会话迁移联合回归15/15通过。版本调整后定向76/76、语法及打包345文件检查通过。随后master新增2007f41等待确认状态功能（0.1.11），再次合入并保留完整UI/测试；本修复按README发布约定改升0.1.12，依赖不变；package/lock版本一致。测试/打包日志保存在仓库外`F:/worktrees/connection-resilience-evidence/`。
+- 最终集成复验：合入`2007f41`并升为0.1.12后隔离串行全量1109项（1106通过、3跳过、0失败，342秒，`full-0.1.12.log`）。Chromium待确认回归（3视口×双主题×普通/目标确认、实时关闭/空闲/断线）通过；JS语法、差异检查、版本/锁文件及打包347文件检查通过，含新传输模块。未运行独立build（项目为原生ES模块）；未刷新真实桌面。
+- 文件：`src/{transport,server,protocol}.js`、`public/{transport,transport-framing,app}.js`、`desktop/connector/index.html`，传输/地址/恢复/服务及测试拼接helper；README、本记录、package/lock、codebase-map职责/知识/生成索引。未调用模型、未在实际WebView验证休眠/切网/内存峰值，运行服务的生效需维护窗口更新重启并手动刷新保存过草稿的页面。
 
 ## 2026-10-03 Pi 原生模型配置薄包装
 

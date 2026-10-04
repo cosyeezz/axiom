@@ -36,6 +36,7 @@ desktop/main.mjs ── Electron 桌面入口（Windows x64 已冒烟，macOS �
 浏览器 public/
   index.html ── app.js（唯一入口：视图栈/权威归并/会话设置UI）
                  ├─ transport.js        唯一业务连接、请求回执、逻辑订阅与快照闸门
+                 │    └─ transport-framing.js 协商分块常量、UTF-8有界组装（服务端共享）
                  ├─ session-cache.js     可淘汰阅读位置与未保存输入保护
                  ├─ goal.js/css         Goal 目标面板与轮次分组（复用现有消息节点）
                  ├─ question.js/css     主代理多题回答卡、键盘操作与回执

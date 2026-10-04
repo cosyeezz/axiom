@@ -1,5 +1,10 @@
 # 坑与 bug 知识库（自成长：只追加，不删改历史）
 
+### 2026-10-03 大消息受限与分散恢复失败导致手动重连
+- 症状：服务日志存在34–66MB message_limit，1009使页面limited；保护计数仅手动清零，分散故障也累计停机；慢service.status心跳忽略正常业务活性。端口不同还可能提供不同版本脚本。
+- 修复：src/transport.js每连接FIFO/背压与axiom.chunk.v1协商，public/transport-framing.js严格单消息组装；public/transport.js稳定期活性清预算、轻量鉴权ping、部分消息独立期限、连接ID/关闭码脱敏诊断；app作废迟到attach/switch及闸门请求身份。两份地址解析在URL折叠默认端口前判断省略，完整URL不补4319。
+- 防再犯：真实34/66MiB ws＋UTF-8/转义/FIFO/非法块/背压/期限测试；静态ESM白名单必须登记；心跳必须让位于进行中的有界分块期限，否则慢链路仍10秒误断。32MiB命令上限与128MiB输出/闸门分开，分块不等于RSS有界或业务ACK；旧页面重连不会换JS，服务和页面都要升级。
+
 ### 2026-09-29 共享思考组件的能力边界与表单隔离
 - 症状：拼接源码测试通过而浏览器 ESM 404；隔离守护测试启动超时；旧隐藏思考控件校验错误导致 requestSubmit 不派发发送事件。
 - 根因：新增共享模块未同步静态白名单/隔离包复制，CSS 隐藏不解除原生表单校验；默认未确定模型错误借用当前会话能力，自动压缩关闭时遗漏手动执行适配。
@@ -727,3 +732,9 @@
 - 症状：health 正常，页面一直连接中。根因：todo.js 静态导入 404 阻止 app.js 执行，文字只是 HTML 初始状态。
 - 修复：src/server.js 注册 todo.js/todo.css；tests/server.test.js 覆盖真实 HTTP 资源。
 - 防再犯：验收必须检查浏览器已连接，不能以 health 200 或 HTML 可见代替应用启动。
+
+### 2026-10-03 旧快照和地址探测的所有权必须随切换作废
+- 症状：复制新会话后旧 attach 回执重新挂起事件；召回旧失败污染当前错误区；桌面连接页旧自动探测抢回 4319。
+- 根因：快照命令集合遗漏 duplicate、提交未注销 owner；召回 catch 和异步地址探测缺少代次检查。
+- 修复：public/transport.js 统一快照命令及 clearGate 注销；app.js 同时检查连接/切换代次；desktop/connector 输入或提交递增 revision。
+- 防再犯：realtime-transport、snapshot-switch、connection-address 覆盖迟到成功/失败、B仍等待与已完成、编辑地址和失败重试；app仍负责拒绝过期快照提交，不能把共享传输测试等同真实WebView验收。

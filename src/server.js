@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { readFileSync, statSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { createSender } from "./transport.js";
+import { CHUNK_PROTOCOL } from "../public/transport-framing.js";
 import { WebSocketServer, WebSocket } from "ws";
 import { command } from "./protocol.js";
 import { ACTIVE_TASK_STATES } from "./task-execution.js";
@@ -44,6 +45,7 @@ const assets = new Map(
     ["/session-details.js", "public/session-details.js"],
     ["/compaction-view.js", "public/compaction-view.js"],
     ["/transport.js", "public/transport.js"],
+    ["/transport-framing.js", "public/transport-framing.js"],
     ["/todo.js", "public/todo.js"],
     ["/todo.css", "public/todo.css", "text/css"],
     ["/question.js", "public/question.js"],
@@ -153,7 +155,7 @@ export function createServerApp(sessions, service = {}) {
     // 4 张 × 5MiB 图片 base64 后约 27MiB，预留 JSON 结构余量。
     maxPayload: 32 * 1024 * 1024,
     perMessageDeflate: false,
-    handleProtocols: () => "axiom",
+    handleProtocols: protocols => protocols.has(CHUNK_PROTOCOL) ? CHUNK_PROTOCOL : protocols.has("axiom") ? "axiom" : false,
   });
   const acceptUpgrade = (req, socket, head, isRemote) => {
     if (closing || req.url !== "/ws") {
@@ -237,6 +239,7 @@ export function createServerApp(sessions, service = {}) {
     for (const ws of remoteClients) ws.terminate();
   };
   wss.on("connection", (ws, source) => {
+    const connectionId = sender.register(ws);
     let unsubscribe;
     // 远程连接：每条消息与每 30s 重验身份（whois/status 按 IP 短 TTL 缓存，代价有界），
     // 撤权后的旧连接最多存活一个 TTL。
@@ -287,17 +290,20 @@ export function createServerApp(sessions, service = {}) {
           const input = JSON.parse(raw.toString());
           if (typeof input?.id === "string" && input.id.length <= 200) requestId = input.id;
           request = command.parse(input);
-          if (stopping && request.type !== "service.status") throw new Error("服务正在维护，请在设置中查看进度");
+          if (stopping && !["service.status", "connection.ping"].includes(request.type)) throw new Error("服务正在维护，请在设置中查看进度");
           if (!(await reauth())) {
             ws.terminate(); // 撤权/变更后旧远程连接立即失效
             return;
           }
           // reauth 是异步边界：同一轮多个请求可能都通过最前面的检查。
-          if (stopping && request.type !== "service.status") throw new Error("服务正在维护，请在设置中查看进度");
+          if (stopping && !["service.status", "connection.ping"].includes(request.type)) throw new Error("服务正在维护，请在设置中查看进度");
           let data;
           switch (request.type) {
+            case "connection.ping":
+              data = { alive: true, connectionId }; // No maintenance query, session work or auth bypass.
+              break;
             case "service.status":
-              data = { managed: Boolean(service.restart), error: service.error || "", version: service.version || "", importDir: service.importDir || "", dev: Boolean(service.dev), ...(!ws.isRemote && service.maintenance ? { maintenance: service.maintenance } : {}) };
+              data = { ...(ws.protocol === CHUNK_PROTOCOL ? { connectionId } : {}), managed: Boolean(service.restart), error: service.error || "", version: service.version || "", importDir: service.importDir || "", dev: Boolean(service.dev), ...(!ws.isRemote && service.maintenance ? { maintenance: service.maintenance } : {}) };
               if (service.getOperation) {
                 try { data.operation = await service.getOperation(); }
                 catch { data.operationError = OPERATION_ERROR; }

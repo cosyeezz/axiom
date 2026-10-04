@@ -118,7 +118,7 @@
   const input = document.getElementById("address");
   const button = document.getElementById("connect");
   const status = document.getElementById("status");
-  let busy = false;
+  let busy = false, revision = 0;
 
   const say = (text, kind = "") => { status.textContent = text; status.dataset.kind = kind; };
 
@@ -128,15 +128,17 @@
     const text = String(raw || "").trim();
     if (!text) return null;
     let url;
-    try { url = new URL(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(text) ? text : `http://${text}`); }
+    const full = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(text);
+    const authority = (full ? text.slice(text.indexOf("://") + 3) : text).split(/[/?#]/)[0];
+    if (/[\\\s]/.test(authority) || authority.endsWith(":")) return null;
+    try { url = new URL(full ? text : `http://${text}`); }
     catch { return null; }
     if ((url.protocol !== "http:" && url.protocol !== "https:")
       || !url.hostname || url.username || url.password) return null;
-    const port = url.port ? Number(url.port) : 4319;
-    if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
-    // url.host 已含 IPv6 方括号与显式端口；无端口时补默认 4319。
-    const hostPart = url.port ? url.host : `${url.host}:${port}`;
-    return `${url.protocol}//${hostPart}`;
+    // URL removes explicit :80/:443. Detect omission before normalization, including IPv6.
+    if (!full && !/:\d+$/.test(authority)) url.port = "4319";
+    if (url.port && (Number(url.port) < 1 || Number(url.port) > 65535)) return null;
+    return url.origin;
   }
 
   // no-cors 探测：只要网络层可达且服务返回任意 HTTP 响应即视为在线（opaque 响应不可读属预期）。
@@ -146,6 +148,7 @@
 
   async function connect() {
     if (busy) return;
+    const current = ++revision;
     const origin = normalize(input.value);
     if (!origin) { say("地址无效：请输入 host:port 或 http(s)://host:port", "error"); return; }
     busy = true;
@@ -153,10 +156,12 @@
     say(`正在连接 ${origin} …`);
     try {
       await probe(origin);
+      if (current !== revision) return;
       try { localStorage.setItem(KEY, origin); } catch {}
       say(`已连接 ${origin}，正在打开…`, "ok");
       location.href = origin;
     } catch {
+      if (current !== revision) return;
       busy = false;
       button.disabled = false;
       say(`无法连接 ${origin}：请确认服务已启动、地址与端口正确（远程需 AXIOM_HOST 与防火墙放行）`, "error");
@@ -165,6 +170,8 @@
     }
   }
 
+  // Editing or submitting a new target retires all earlier probes, including startup auto-connect.
+  input.addEventListener("input", () => { ++revision; busy = false; button.disabled = false; say(""); });
   button.onclick = () => void connect();
   input.addEventListener("keydown", (event) => { if (event.key === "Enter") void connect(); });
 
@@ -173,9 +180,10 @@
   try { saved = localStorage.getItem(KEY); } catch {}
   input.value = saved || DEFAULT;
   if (saved && saved !== DEFAULT) {
+    const current = revision;
     probe(saved, 3000)
-      .then(() => { location.href = saved; })
-      .catch(() => { say(`上次地址 ${saved} 未响应，请确认或修改后连接。`, "error"); });
+      .then(() => { if (current === revision) location.href = saved; })
+      .catch(() => { if (current === revision) say(`上次地址 ${saved} 未响应，请确认或修改后连接。`, "error"); });
   }
 })();
 </script>
